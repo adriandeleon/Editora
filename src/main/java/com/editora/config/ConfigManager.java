@@ -221,6 +221,22 @@ public class ConfigManager {
         return shared.bookmarksBucket(currentBookmarkKey());
     }
 
+    /** Every project's bookmark buckets ({@code projectKey → (path → bookmarks)}) — the cross-project panel view. */
+    public Map<String, Map<String, List<Bookmark>>> getAllBookmarks() {
+        return shared.allBookmarks();
+    }
+
+    /** Every project's note buckets ({@code projectKey → (path → notes)}) — the cross-project panel view. */
+    public Map<String, Map<String, List<PersonalNote>>> getAllNotes() {
+        return shared.allNotes();
+    }
+
+    /** This window's project key: {@code ""} for the global/no-project (or untitled) session, else the project id.
+     *  The key the Bookmarks/Notes panels treat as "current" when grouping by project. */
+    public String currentProjectKey() {
+        return currentBookmarkKey();
+    }
+
     public void saveBookmarks() {
         shared.saveBookmarks();
     }

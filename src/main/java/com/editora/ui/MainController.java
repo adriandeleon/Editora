@@ -487,6 +487,22 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public java.util.Map<String, java.util.Map<String, java.util.List<com.editora.config.PersonalNote>>>
+                    allNotes() {
+                return config.getAllNotes();
+            }
+
+            @Override
+            public String currentProjectKey() {
+                return config.currentProjectKey();
+            }
+
+            @Override
+            public String projectName(String key) {
+                return MainController.this.projectDisplayName(key);
+            }
+
+            @Override
             public void saveNotes() {
                 config.saveNotes();
             }
@@ -517,6 +533,22 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public java.util.Map<String, java.util.List<com.editora.config.Bookmark>> bookmarks() {
                 return config.getBookmarks();
+            }
+
+            @Override
+            public java.util.Map<String, java.util.Map<String, java.util.List<com.editora.config.Bookmark>>>
+                    allBookmarks() {
+                return config.getAllBookmarks();
+            }
+
+            @Override
+            public String currentProjectKey() {
+                return config.currentProjectKey();
+            }
+
+            @Override
+            public String projectName(String key) {
+                return MainController.this.projectDisplayName(key);
             }
 
             @Override
@@ -1489,6 +1521,19 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private boolean projectsEnabled() {
         return config.getSettings().isProjectSupport();
+    }
+
+    /** Display name for a bookmark/note project key: {@code ""} → "General", else the project's name (fallback:
+     *  the raw key, e.g. a deleted project's id). Used to label the per-project groups in the Bookmarks/Notes panels. */
+    String projectDisplayName(String key) {
+        if (key == null || key.isEmpty()) {
+            return tr("scope.general");
+        }
+        return config.projects().list().stream()
+                .filter(p -> p.id().equals(key))
+                .map(Project::name)
+                .findFirst()
+                .orElse(key);
     }
 
     /** The projects list with a leading "No Project" entry (returns to the global session). */

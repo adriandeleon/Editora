@@ -4,8 +4,10 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 
@@ -54,7 +56,9 @@ class BookmarksPanelFxTest {
     }
 
     private BookmarksPanel panel() throws Exception {
-        return FxTestSupport.callOnFx(() -> new BookmarksPanel(() -> source, NOOP));
+        // The in-memory bucket is the General (no-project) scope; currentKey "" makes it the current group.
+        return FxTestSupport.callOnFx(() ->
+                new BookmarksPanel(() -> new BookmarksPanel.Scope(Map.of("", source), "", k -> "General"), NOOP));
     }
 
     @SuppressWarnings("unchecked")
@@ -73,11 +77,40 @@ class BookmarksPanelFxTest {
         FxTestSupport.runOnFx(p::refresh);
 
         TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
-        assertEquals(2, root.getChildren().size(), "two non-empty file groups");
-        int totalMarks = FxTestSupport.callOnFx(() -> root.getChildren().stream()
+        assertEquals(1, root.getChildren().size(), "one project group (General)");
+        TreeItem<Object> general = root.getChildren().get(0);
+        assertEquals(2, general.getChildren().size(), "two non-empty file groups under General");
+        int totalMarks = FxTestSupport.callOnFx(() -> general.getChildren().stream()
                 .mapToInt(f -> f.getChildren().size())
                 .sum());
         assertEquals(3, totalMarks, "all bookmarks rendered under their file");
+    }
+
+    @Test
+    void groupsByProjectAndShowAllRevealsOtherProjects() throws Exception {
+        Map<String, Map<String, List<Bookmark>>> byProject = new LinkedHashMap<>();
+        byProject.put("", Map.of("/g/gen.txt", List.of(new Bookmark(1, "g", "g"))));
+        byProject.put("p1", Map.of("/p1/Foo.java", List.of(new Bookmark(2, "cur", "cur"))));
+        byProject.put("p2", Map.of("/p2/Bar.py", List.of(new Bookmark(3, "other", "other"))));
+        Function<String, String> nameFor = k -> switch (k) {
+            case "" -> "General";
+            case "p1" -> "MyProject";
+            default -> "Other";
+        };
+
+        // In project p1: default shows General + current (p1) only — not p2.
+        BookmarksPanel p = FxTestSupport.callOnFx(
+                () -> new BookmarksPanel(() -> new BookmarksPanel.Scope(byProject, "p1", nameFor), NOOP));
+        TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
+        assertEquals(2, root.getChildren().size(), "General + current project only by default");
+
+        // Toggle "Show all projects" → the other project (p2) now appears.
+        ToggleButton showAll = FxTestSupport.field(p, "showAll");
+        FxTestSupport.runOnFx(() -> showAll.setSelected(true));
+        assertEquals(
+                3,
+                FxTestSupport.callOnFx(() -> tree(p).getRoot().getChildren().size()),
+                "all three project groups with Show all on");
     }
 
     @Test
@@ -93,6 +126,7 @@ class BookmarksPanelFxTest {
             p.refresh();
         });
         TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
-        assertEquals(1, root.getChildren().size(), "only the Alpha file matches the filter");
+        assertEquals(1, root.getChildren().size(), "one project group");
+        assertEquals(1, root.getChildren().get(0).getChildren().size(), "only the Alpha file matches the filter");
     }
 }

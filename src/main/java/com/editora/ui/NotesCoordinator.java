@@ -60,6 +60,15 @@ final class NotesCoordinator {
         /** The active project's personal-notes bucket (keyed by canonical path). */
         Map<String, List<PersonalNote>> notes();
 
+        /** Every project's note buckets ({@code projectKey → (path → notes)}) — the cross-project view. */
+        Map<String, Map<String, List<PersonalNote>>> allNotes();
+
+        /** This window's project key ({@code ""} = general/no-project) — the "current" group when grouping. */
+        String currentProjectKey();
+
+        /** Display name for a project key: {@code ""} → "General", else the project's name (fallback: the key). */
+        String projectName(String key);
+
         /** Persists {@code notes.json}. */
         void saveNotes();
     }
@@ -84,7 +93,7 @@ final class NotesCoordinator {
         this.host = host;
         this.ops = ops;
         persistDebounce.setOnFinished(e -> flushPendingPersist());
-        this.panel = new NotesPanel(ops::notes, new NotesPanel.Actions() {
+        this.panel = new NotesPanel(this::scope, new NotesPanel.Actions() {
             @Override
             public void openAndJump(String fileKey, PersonalNote note) {
                 noteActivate(fileKey, note);
@@ -133,6 +142,11 @@ final class NotesCoordinator {
 
     NotesPanel panel() {
         return panel;
+    }
+
+    /** The cross-project view the panel renders on each refresh (every bucket + the current key + a name resolver). */
+    private NotesPanel.Scope scope() {
+        return new NotesPanel.Scope(ops.allNotes(), ops.currentProjectKey(), ops::projectName);
     }
 
     /** Binds the jump pickers to the shared overlay host (called once from {@code MainController.wireOverlayHost}). */

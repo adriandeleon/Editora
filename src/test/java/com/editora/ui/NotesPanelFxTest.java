@@ -59,7 +59,9 @@ class NotesPanelFxTest {
     }
 
     private NotesPanel panel() throws Exception {
-        return FxTestSupport.callOnFx(() -> new NotesPanel(() -> source, NOOP));
+        // The in-memory bucket is the General (no-project) scope; currentKey "" makes it the current group.
+        return FxTestSupport.callOnFx(() ->
+                new NotesPanel(() -> new NotesPanel.Scope(Map.of("", source), "", k -> "General"), NOOP));
     }
 
     @SuppressWarnings("unchecked")
@@ -78,8 +80,10 @@ class NotesPanelFxTest {
         FxTestSupport.runOnFx(p::refresh);
 
         TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
-        assertEquals(2, root.getChildren().size(), "two non-empty file groups");
-        int totalNotes = FxTestSupport.callOnFx(() -> root.getChildren().stream()
+        assertEquals(1, root.getChildren().size(), "one project group (General)");
+        TreeItem<Object> general = root.getChildren().get(0);
+        assertEquals(2, general.getChildren().size(), "two non-empty file groups under General");
+        int totalNotes = FxTestSupport.callOnFx(() -> general.getChildren().stream()
                 .mapToInt(f -> f.getChildren().size())
                 .sum());
         assertEquals(3, totalNotes, "all notes rendered under their file");
@@ -98,6 +102,7 @@ class NotesPanelFxTest {
             p.refresh();
         });
         TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
-        assertEquals(1, root.getChildren().size(), "only the note whose body matches survives");
+        assertEquals(1, root.getChildren().size(), "one project group");
+        assertEquals(1, root.getChildren().get(0).getChildren().size(), "only the note whose body matches survives");
     }
 }
