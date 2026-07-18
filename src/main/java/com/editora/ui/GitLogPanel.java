@@ -17,7 +17,10 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.scene.text.Text;
+import javafx.scene.text.TextFlow;
 
+import com.editora.git.GitFileStatus;
 import com.editora.git.GitService.Commit;
 import com.editora.git.GitService.CommitFile;
 
@@ -167,11 +170,18 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             super.updateItem(c, empty);
             if (empty || c == null) {
                 setText(null);
+                setGraphic(null);
                 setTooltip(null);
                 setContextMenu(null);
                 return;
             }
-            setText(c.shortHash() + "  " + c.subject());
+            // Color the short hash (accent) apart from the subject (default) so the log reads like a git graph.
+            setText(null);
+            Text hash = new Text(c.shortHash());
+            hash.getStyleClass().add("git-log-hash");
+            Text subject = new Text("  " + c.subject());
+            subject.getStyleClass().add("git-log-subject");
+            setGraphic(new TextFlow(hash, subject));
             setTooltip(new Tooltip(c.subject() + "\n" + c.author() + " · " + c.date() + "\n" + c.hash()));
             setContextMenu(buildMenu(c));
         }
@@ -207,15 +217,26 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         @Override
         protected void updateItem(CommitFile f, boolean empty) {
             super.updateItem(f, empty);
+            clearStatusClasses();
             if (empty || f == null) {
                 setText(null);
                 setGraphic(null);
                 setTooltip(null);
                 return;
             }
+            // Color the row by its change status (matching the Commit tool window + Project tree), and use the
+            // real file-type icon (FileIcons) instead of a generic sheet — the .git-tree .git-status-* CSS also
+            // tints the icon (a .toolbar-icon).
+            getStyleClass().add(GitFileStatus.fromLetter(f.status()).cssClass());
             setText(f.status() + "  " + f.path());
-            setGraphic(Icons.fileSheet());
+            setGraphic(FileIcons.forFileName(f.path()));
             setTooltip(new Tooltip(f.origPath() != null ? f.origPath() + " → " + f.path() : f.path()));
+        }
+
+        private void clearStatusClasses() {
+            for (GitFileStatus s : GitFileStatus.values()) {
+                getStyleClass().remove(s.cssClass());
+            }
         }
     }
 }

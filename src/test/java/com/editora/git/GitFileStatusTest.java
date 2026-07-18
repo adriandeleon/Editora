@@ -32,6 +32,19 @@ class GitFileStatusTest {
     }
 
     @Test
+    void fromLetterMapsNameStatusCodesForTheGitLog() {
+        assertEquals(GitFileStatus.ADDED, GitFileStatus.fromLetter('A'));
+        assertEquals(GitFileStatus.MODIFIED, GitFileStatus.fromLetter('M'));
+        assertEquals(GitFileStatus.DELETED, GitFileStatus.fromLetter('D'));
+        assertEquals(GitFileStatus.RENAMED, GitFileStatus.fromLetter('R'));
+        assertEquals(GitFileStatus.RENAMED, GitFileStatus.fromLetter('C'), "a copy is colored like a rename");
+        assertEquals(GitFileStatus.MODIFIED, GitFileStatus.fromLetter('T'), "a type change is modified");
+        assertEquals(GitFileStatus.ADDED, GitFileStatus.fromLetter('a'), "case-insensitive");
+        assertEquals(
+                GitFileStatus.MODIFIED, GitFileStatus.fromLetter('X'), "an unexpected letter defaults to modified");
+    }
+
+    @Test
     void deletedAndAddedTakePrecedenceOverModified() {
         // A file staged-added but also worktree-deleted → deletion wins (it's gone).
         assertEquals(GitFileStatus.DELETED, GitFileStatus.of(new FileEntry("x", 'A', 'D', null)));

@@ -865,6 +865,9 @@
 .project-tree .git-status-deleted, .git-tree .git-status-deleted { -fx-text-fill: -color-fg-muted; }
 .project-tree .git-status-deleted .toolbar-icon, .git-tree .git-status-deleted .toolbar-icon { -fx-fill: -color-fg-muted; }
 .project-tree .git-status-dir-changed { -fx-text-fill: -color-accent-fg; }
+/* Git Log commit list: the short hash reads in the accent color, the subject in the default text color. */
+.git-log-panel .git-log-hash { -fx-fill: -color-accent-fg; }
+.git-log-panel .git-log-subject { -fx-fill: -color-fg-default; }
 /* Unsaved/dirty buffer name in the pickers (Open Files palette + Switcher) — mirrors the dirty-tab
    treatment (amber italic) so every surface that lists open files reads consistently. */
 .dirty-name { -fx-text-fill: #bf8700; -fx-font-style: italic; }
