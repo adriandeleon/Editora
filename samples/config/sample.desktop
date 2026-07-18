@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Editora
+GenericName=Text Editor
+Comment=A keyboard-driven programmer's text editor
+Exec=editora %F
+Icon=editora
+Terminal=false
+Categories=Development;TextEditor;Utility;
+MimeType=text/plain;text/x-java;text/markdown;
+StartupWMClass=com.editora.App
+Keywords=editor;code;programming;
