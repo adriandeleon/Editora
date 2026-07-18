@@ -4331,7 +4331,7 @@ public class EditorBuffer implements TabContent {
             java.nio.file.Path root = local && typstRootResolver != null ? typstRootResolver.apply(path) : fileDir;
             String retainKey = path != null ? path.toString() : ("untitled@" + System.identityHashCode(this));
             javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
-                    TypstImages.node(area.getText(), lw -> lw * scale, retainKey, fileDir, root));
+                    TypstImages.node(area.getText(), lw -> lw * scale, retainKey, fileDir, root, getDisplayName()));
             box.getStyleClass().add("markdown-preview");
             StackPane wrap = new StackPane(box);
             wrap.getStyleClass().add("markdown-preview-wrap");

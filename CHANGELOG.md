@@ -91,6 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A Typst compile error now shows your file name, not an internal temp filename.** Previously every typo in
+  the Typst preview reported an error against `.editora-typst-<uuid>.typ` (the throwaway file Editora renders
+  through). The buffer's name is now shown instead; line and column were already correct. (#462)
 - **A failed settings/session save is now surfaced instead of vanishing silently.** If Editora couldn't write
   `settings.toml` or the session state (full disk, read-only config directory, permissions), a setting change
   or the session on quit was lost with no indication. Editora now shows a status message on the failure. (#418)

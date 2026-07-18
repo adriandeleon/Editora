@@ -116,6 +116,15 @@ public final class TypstRenderer {
      * untitled/remote buffer (→ isolated temp).
      */
     public static Pages renderPages(List<String> cmd, String source, Path fileDir, Path root) {
+        return renderPages(cmd, source, fileDir, root, null);
+    }
+
+    /**
+     * As {@link #renderPages(List, String, Path, Path)}, but a non-null {@code displayName} rewrites the
+     * throwaway {@code .editora-typst-<uuid>.typ} basename in a compile-error message to the buffer's real
+     * name — otherwise every Typst typo shows the internal UUID temp filename, not the user's file (#462).
+     */
+    public static Pages renderPages(List<String> cmd, String source, Path fileDir, Path root, String displayName) {
         Prep p = null;
         Path input = null;
         Path outDir = null;
@@ -129,11 +138,11 @@ public final class TypstRenderer {
                     p.root(), RENDER_TIMEOUT, renderArgs(cmd, p.root(), input, outTemplate, renderPpi()));
             List<byte[]> pages = readPages(outDir);
             if (pages.isEmpty()) {
-                return Pages.fail(r.ok() ? "no pages rendered" : r.message());
+                return Pages.fail(r.ok() ? "no pages rendered" : friendlyMessage(r.message(), displayName));
             }
             return Pages.ok(pages);
         } catch (IOException e) {
-            return Pages.fail(e.getMessage());
+            return Pages.fail(friendlyMessage(e.getMessage(), displayName));
         } finally {
             deleteIfExists(input);
             deleteRecursively(outDir);
@@ -141,6 +150,22 @@ public final class TypstRenderer {
                 deleteRecursively(p.inputDir());
             }
         }
+    }
+
+    /** Matches the throwaway input filename (with any leading path typst may print) in a diagnostic. */
+    private static final Pattern TEMP_INPUT = Pattern.compile("\\S*\\.editora-typst-[0-9a-fA-F-]+\\.typ");
+
+    /**
+     * Rewrites the throwaway {@code .editora-typst-<uuid>.typ} filename in a typst diagnostic to
+     * {@code displayName} (or a neutral {@code document.typ} when none is given), so the user sees their own
+     * file name in an error, not an internal UUID. Line/column are untouched. Pure; unit-tested.
+     */
+    static String friendlyMessage(String message, String displayName) {
+        if (message == null || message.isBlank()) {
+            return message;
+        }
+        String name = displayName == null || displayName.isBlank() ? "document.typ" : displayName;
+        return TEMP_INPUT.matcher(message).replaceAll(Matcher.quoteReplacement(name));
     }
 
     /**
