@@ -1524,6 +1524,11 @@
     -fx-text-fill: -color-fg-muted;
 }
 
+/* A command that can't run in the current context (a disabled feature): shown, but grayed and inert (#532). */
+.command-palette .list-cell .palette-disabled {
+    -fx-opacity: 0.4;
+}
+
 /* Small "ⓘ" info badge (e.g. next to the Enable-projects setting); hover shows a tooltip. */
 .info-badge {
     -fx-text-fill: -color-accent-fg;
