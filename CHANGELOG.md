@@ -91,6 +91,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A whole-line personal note re-attaches to the right line after an external edit.** A note added to a line
+  (rather than a selection) stored no surrounding context, so after the file changed outside the editor it
+  latched onto whichever identical line was nearest — exactly wrong for the lines these notes usually mark
+  (`    }`, `});`, a repeated `import`). Line notes now capture the surrounding lines as context and the
+  relocator scores partial context matches, so the note follows its real line. (From the deferred backlog.)
+
 - **A personal note whose text is extremely common no longer jumps to the wrong place after an edit.** In a
   very large file where a note's text occurs thousands of times, an edit could relocate the note far up-file to
   the wrong occurrence instead of admitting it couldn't be placed. Such a note is now marked orphaned (which is

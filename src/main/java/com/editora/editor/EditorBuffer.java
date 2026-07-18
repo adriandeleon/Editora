@@ -5352,7 +5352,14 @@ public class EditorBuffer implements TabContent {
         int line = area.getCurrentParagraph();
         String lineText = area.getParagraph(line).getText();
         int lineLen = lineText.length();
-        var anchor = new com.editora.config.TextAnchor(line, 0, line, lineLen, lineText, "", "");
+        // Capture surrounding context for a LINE note too (like WORD/RANGE): the lines a LINE note lands on
+        // (`    }`, `});`, `end`, a repeated import) are the most-duplicated in a file, so with empty context
+        // relocation collapsed to pure proximity and the note re-anchored to the nearest identical line (#453).
+        int lineStart = area.getAbsolutePosition(line, 0);
+        int lineEnd = lineStart + lineLen;
+        String linePrefix = doc.substring(Math.max(0, lineStart - CONTEXT_CHARS), lineStart);
+        String lineSuffix = doc.substring(lineEnd, Math.min(doc.length(), lineEnd + CONTEXT_CHARS));
+        var anchor = new com.editora.config.TextAnchor(line, 0, line, lineLen, lineText, linePrefix, lineSuffix);
         return new NoteDraft(com.editora.config.NoteScope.LINE, anchor);
     }
 
