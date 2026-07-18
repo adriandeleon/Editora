@@ -76,10 +76,15 @@ public final class NoteAnchors {
             return new int[] {s, s};
         }
         int span = Math.max(length, needle.length());
-        // Level 1: the saved offset still holds the text.
+        int wantContext = contextWidth(prefix) + contextWidth(suffix);
+        // Level 1: the saved offset still holds the text AND (for a note that captured context) that context
+        // still matches — so an identical line that shifted into the old offset isn't mistaken for the
+        // original. A note with no stored context (an old note, or a WORD note with none) keeps today's
+        // behaviour (`wantContext == 0`), a graceful degrade.
         if (savedStart >= 0
                 && savedStart + needle.length() <= doc.length()
-                && doc.regionMatches(savedStart, needle, 0, needle.length())) {
+                && doc.regionMatches(savedStart, needle, 0, needle.length())
+                && contextScore(doc, savedStart, needle, prefix, suffix) >= wantContext) {
             return new int[] {savedStart, Math.min(savedStart + span, doc.length())};
         }
         List<Integer> occ = occurrences(doc, needle);
@@ -90,13 +95,15 @@ public final class NoteAnchors {
             // scored to the last of those and jumped far up-file (#455).
             return null;
         }
-        // Levels 2-3: prefer an occurrence whose surrounding context matches; tie-break by proximity.
+        // Levels 2-3: prefer an occurrence by how much of its surrounding context matches (a GRADED score, not
+        // a boolean requiring BOTH sides — so a candidate matching one side beats one matching neither), then
+        // tie-break by proximity. Empty context contributes 0, so an old note falls back to pure proximity.
         int best = -1;
         long bestScore = Long.MIN_VALUE;
         int from = Math.max(savedStart, 0);
         for (int o : occ) {
             long score =
-                    (contextMatches(doc, o, needle, prefix, suffix) ? 1_000_000_000L : 0) - Math.abs((long) o - from);
+                    (long) contextScore(doc, o, needle, prefix, suffix) * 1_000_000_000L - Math.abs((long) o - from);
             if (score > bestScore) {
                 bestScore = score;
                 best = o;
@@ -105,15 +112,26 @@ public final class NoteAnchors {
         return new int[] {best, Math.min(best + span, doc.length())};
     }
 
-    private static boolean contextMatches(String doc, int at, String needle, String prefix, String suffix) {
-        boolean pre = prefix == null
-                || prefix.isEmpty()
-                || (at - prefix.length() >= 0 && doc.regionMatches(at - prefix.length(), prefix, 0, prefix.length()));
+    /** How many of {@code needle}'s stored context sides ({@code prefix}/{@code suffix}) match at offset
+     *  {@code at} — 0, 1, or 2. An empty context side contributes nothing (neither matches nor blocks). */
+    private static int contextScore(String doc, int at, String needle, String prefix, String suffix) {
+        int score = 0;
+        if (contextWidth(prefix) > 0
+                && at - prefix.length() >= 0
+                && doc.regionMatches(at - prefix.length(), prefix, 0, prefix.length())) {
+            score++;
+        }
         int after = at + needle.length();
-        boolean suf = suffix == null
-                || suffix.isEmpty()
-                || (after + suffix.length() <= doc.length() && doc.regionMatches(after, suffix, 0, suffix.length()));
-        return pre && suf;
+        if (contextWidth(suffix) > 0
+                && after + suffix.length() <= doc.length()
+                && doc.regionMatches(after, suffix, 0, suffix.length())) {
+            score++;
+        }
+        return score;
+    }
+
+    private static int contextWidth(String s) {
+        return s == null || s.isEmpty() ? 0 : 1;
     }
 
     private static List<Integer> occurrences(String doc, String needle) {

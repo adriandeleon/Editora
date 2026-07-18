@@ -107,4 +107,31 @@ class NoteAnchorsTest {
         int[] r = NoteAnchors.relocate(doc, 14, 18, "word", "..", "..", 4);
         assertArrayEquals(new int[] {14, 18}, r, "the nearest matching occurrence is chosen");
     }
+
+    // --- graded context + level-1 context gate for duplicated lines (#453) --------------------------
+
+    @Test
+    void gradedContextPrefersAPartialMatchOverPureProximity() {
+        // Note captured prefix "P", suffix "Q"; the second "1" (offset 9) is nearer the saved offset but has
+        // no matching context, while the first "1" (offset 1) matches the prefix. A graded score picks the
+        // prefix match; the old boolean (which needed BOTH sides) scored both 0 and fell back to proximity.
+        String doc = "P1RxxxxxZ1w"; // "1" at offsets 1 and 9
+        int[] r = NoteAnchors.relocate(doc, 9, 10, "1", "P", "Q", 1);
+        assertEquals(1, r[0], "a prefix-only context match beats the nearer no-context occurrence");
+    }
+
+    @Test
+    void level1ContextGateRejectsAShiftedInIdenticalLine() {
+        // savedStart (offset 1) holds the needle "}" but with the WRONG context (a/b); the real "}" — with the
+        // captured context x/y — is at offset 7. Level 1 must not blindly keep the old offset.
+        String doc = "a}b...x}y"; // "}" at offsets 1 and 7
+        int[] r = NoteAnchors.relocate(doc, 1, 2, "}", "x", "y", 1);
+        assertEquals(7, r[0], "level-1 must not keep a same-text occurrence whose stored context differs");
+    }
+
+    @Test
+    void oldNotesWithNoContextStillKeepTheSavedOffset() {
+        // A note with empty context (old data / no captured context) keeps today's level-1 behaviour.
+        assertArrayEquals(new int[] {6, 10}, NoteAnchors.relocate("alpha beta gamma", 6, 10, "beta", "", "", 4));
+    }
 }
