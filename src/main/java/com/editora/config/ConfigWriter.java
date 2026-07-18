@@ -53,8 +53,22 @@ public final class ConfigWriter {
         this.io = io;
     }
 
+    /** Sets the write-failure handler (see {@link #onWriteError}); {@code null} restores the no-op. */
+    public void setOnWriteError(java.util.function.BiConsumer<Path, IOException> handler) {
+        this.onWriteError = handler == null ? (f, e) -> {} : handler;
+    }
+
     private final Object lock = new Object();
     private final Map<Path, byte[]> pending = new LinkedHashMap<>();
+
+    /**
+     * Notified (on the writer thread) when an atomic config-file write fails. Lets a durable save on quit /
+     * Settings-apply <em>surface</em> the failure instead of it being silently swallowed — a full disk or a
+     * read-only {@code ~/.editora} otherwise loses the setting/session with no sign (#418). The handler must
+     * marshal to the FX thread itself. Default no-op (writes just log at SEVERE, as before).
+     */
+    private volatile java.util.function.BiConsumer<Path, IOException> onWriteError = (f, e) -> {};
+
     /** Files whose write is revoked: dropped from {@code pending} AND suppressed if a drain already claimed
      *  the bytes but hasn't written them yet. Cleared for a file by a fresh {@link #enqueue}. */
     private final java.util.Set<Path> cancelled = new java.util.HashSet<>();
@@ -123,7 +137,12 @@ public final class ConfigWriter {
                     return; // cancelled after this drain claimed the bytes — don't write (#491)
                 }
             }
-            writeAtomic(file, bytes);
+            try {
+                writeAtomicOrThrow(file, bytes);
+            } catch (IOException e) {
+                LOG.log(Level.SEVERE, "Failed to write config file " + file, e);
+                onWriteError.accept(file, e); // surface it (#418) — no longer a silent swallow
+            }
         });
     }
 

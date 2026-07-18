@@ -78,6 +78,19 @@ public class WindowManager {
                         && shared.getPluginStore().isEnabled(id));
         this.pluginManager.discover();
         openSetReconcile.setOnFinished(e -> reconcileOpenSet());
+        // Surface durable config-write failures (full disk, read-only ~/.editora) instead of silently
+        // swallowing them — a setting/session change would otherwise vanish next launch with no sign (#418).
+        shared.setOnWriteError((file, err) -> javafx.application.Platform.runLater(() -> notifyConfigWriteError(file)));
+    }
+
+    /** Shows a config-write failure in the focused window's status bar (best-effort; logged regardless). */
+    private void notifyConfigWriteError(Path file) {
+        Holder h = focusedHolder();
+        if (h != null && h.controller() != null) {
+            h.controller()
+                    .setStatus(com.editora.i18n.Messages.tr(
+                            "status.config.saveFailed", file.getFileName().toString()));
+        }
     }
 
     /** The shared plugin manager (also read by the Settings → Plugins page to list installed plugins). */

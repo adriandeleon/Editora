@@ -124,4 +124,28 @@ class ConfigWriterTest {
         w.enqueue(file, bytes("late")); // executor rejected → synchronous fallback
         assertEquals("late", Files.readString(file));
     }
+
+    @Test
+    void aWriteFailureNotifiesTheErrorHandler(@TempDir Path dir) throws Exception {
+        // #418: a durable-save write failure must be surfaced, not silently swallowed. Make the write fail
+        // deterministically by pointing at a target whose parent is a regular file (createDirectories throws).
+        Path blocker = dir.resolve("blocker");
+        Files.writeString(blocker, "x");
+        Path target = blocker.resolve("settings.toml");
+
+        ConfigWriter w = new ConfigWriter();
+        java.util.concurrent.atomic.AtomicReference<Path> failed = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        w.setOnWriteError((f, e) -> {
+            failed.set(f);
+            latch.countDown();
+        });
+        w.enqueue(target, bytes("a = 1\n"));
+
+        assertTrue(
+                latch.await(5, java.util.concurrent.TimeUnit.SECONDS),
+                "the write-error handler must be invoked on a failed write");
+        assertEquals(target, failed.get());
+        w.shutdown();
+    }
 }
