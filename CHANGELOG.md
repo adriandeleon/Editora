@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **The File Information panel no longer slows down typing.** It re-counted words (a whole-document scan) on
+  every caret move and re-materialized the whole document on every keystroke — even when the panel was closed.
+  It now rides the debounced change stream, counts words only on an actual edit, reads only the character under
+  the caret (not the whole file), and does nothing at all while its tool window is hidden. (#547)
 - **Zooming text is much smoother.** A text zoom (`Ctrl`+wheel, `Ctrl`+`=`/`-`/`0`, the status-bar `−/+`) reran
   the entire settings-apply cascade per notch — re-swapping the editor-theme stylesheet (a full-scene CSS
   reapply) and re-running ~20 feature `applySupport()` calls (Git, LSP, previews, …), none of which change on a
