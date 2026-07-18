@@ -91,6 +91,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **"Add to Dictionary" now clears the misspelled squiggle in every open window, not just the current one.** The
+  personal dictionary is shared across windows, but adding a word only refreshed the spell check in the window
+  you added it from — other windows kept underlining the word until you touched a setting there. The change now
+  fans out to every window immediately. (From the deferred backlog.)
+
 - **A whole-line personal note re-attaches to the right line after an external edit.** A note added to a line
   (rather than a selection) stored no surrounding context, so after the file changed outside the editor it
   latched onto whichever identical line was nearest — exactly wrong for the lines these notes usually mark

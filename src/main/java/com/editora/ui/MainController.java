@@ -9990,6 +9990,18 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  Dictionary" in one tab used to leave the word squiggled in the others for the rest of the session. */
     private void addUserWordAndRefreshAll(String word) {
         config.addUserWord(word);
+        // The user dictionary is shared app-wide (SharedConfig), so re-run the spell pass in EVERY window's
+        // tabs — otherwise another window's buffers keep the stale squiggle on the just-added word until it
+        // happens to apply a setting (#443). Mirrors broadcastSettingsApplied/broadcastMacrosChanged.
+        if (windowManager != null) {
+            windowManager.broadcastUserDictionaryChanged();
+        } else {
+            refreshSpellAllTabs();
+        }
+    }
+
+    /** Re-runs the spell pass over every open buffer in this window (after the user dictionary changed). */
+    void refreshSpellAllTabs() {
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null) {
