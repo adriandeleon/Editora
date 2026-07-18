@@ -517,14 +517,46 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             } catch (InterruptedException | java.nio.file.ClosedWatchServiceException e) {
                 return; // disposed
             }
-            key.pollEvents(); // we re-list rather than apply individual events; just drain them
+            // Inspect the events so a batch that is ONLY Editora's own throwaway temp files (the typst render
+            // input, created+deleted every render) doesn't spuriously rebuild the tree (#465). Otherwise we
+            // re-list from disk (individual events aren't applied) — an OVERFLOW or any real file forces it.
+            List<java.nio.file.WatchEvent<?>> events = key.pollEvents();
             key.reset();
+            boolean overflow = false;
+            List<String> names = new java.util.ArrayList<>();
+            for (java.nio.file.WatchEvent<?> ev : events) {
+                if (ev.kind() == java.nio.file.StandardWatchEventKinds.OVERFLOW) {
+                    overflow = true;
+                    continue;
+                }
+                Object ctx = ev.context();
+                names.add(ctx instanceof Path p ? p.getFileName().toString() : "");
+            }
+            if (!watchEventsWarrantRefresh(names, overflow)) {
+                continue; // only Editora's own temp files changed — no tree rebuild
+            }
             Platform.runLater(() -> {
                 if (!disposed) {
                     watchDebounce.playFromStart();
                 }
             });
         }
+    }
+
+    /** Whether a batch of filesystem watch events warrants a tree refresh — {@code false} only when every
+     *  changed name is one of Editora's own throwaway temp files (so a typst render, which creates+deletes a
+     *  {@code .editora-typst-*.typ} input beside the file, doesn't rebuild the tree). An OVERFLOW or an empty
+     *  batch forces a refresh (we can't tell what changed). Pure; unit-tested (#465). */
+    static boolean watchEventsWarrantRefresh(List<String> names, boolean overflow) {
+        if (overflow || names.isEmpty()) {
+            return true;
+        }
+        return names.stream().anyMatch(n -> !isEditoraTempName(n));
+    }
+
+    /** Whether {@code name} is an Editora-internal throwaway file the tree watcher should ignore. */
+    static boolean isEditoraTempName(String name) {
+        return name != null && name.startsWith(".editora-typst-");
     }
 
     /** Stops the watcher + its thread; call on window close so the daemon thread + native handles are freed. */
