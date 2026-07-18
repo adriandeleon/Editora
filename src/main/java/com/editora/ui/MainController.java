@@ -982,9 +982,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         snippetPalette.setOverlayHost(overlayHost);
         projectPicker.setOverlayHost(overlayHost);
         fileFinder.setOverlayHost(overlayHost);
-        fileFinder.setKeymap(keymap);
         folderFinder.setOverlayHost(overlayHost);
-        folderFinder.setKeymap(keymap);
         switcher.setOverlayHost(overlayHost);
         branchPopup.setOverlayHost(overlayHost);
         statusBar.setOverlayHost(overlayHost);

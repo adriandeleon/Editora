@@ -84,6 +84,8 @@ public final class BranchPopup {
 
         search.textProperty().addListener((o, a, b) -> filter(b));
         search.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
+        // Emacs caret movement + basic editing (list navigation stays with onKey, registered first).
+        com.editora.command.TextInputKeymap.installShared(search);
 
         titleLabel.getStyleClass().add("palette-title");
         remoteUrlLabel.getStyleClass().add("branch-remote-url");

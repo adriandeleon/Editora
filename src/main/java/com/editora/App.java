@@ -97,6 +97,9 @@ public class App extends Application {
         KeymapManager keymap = new KeymapManager();
         keymap.loadNamed(settings.getKeymap());
         keymap.applyOverrides(settings.getKeybindings());
+        // Make the (single, shared) keymap available to generic popup text fields so they can install Emacs
+        // caret movement + basic editing without threading it through their constructors (see TextInputKeymap).
+        com.editora.command.TextInputKeymap.setShared(keymap);
 
         // Experiment: on macOS, render the UI chrome in the native system font (San Francisco) instead of
         // AtlantaFX's Inter — across every window. A listener on the live window list covers windows

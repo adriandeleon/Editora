@@ -74,6 +74,8 @@ final class WorkspaceSymbolPopup {
         query.setPromptText(tr("lsp.workspaceSymbols.prompt"));
         query.textProperty().addListener((o, a, b) -> debounce.playFromStart());
         query.addEventFilter(KeyEvent.KEY_PRESSED, this::onQueryKey);
+        // Emacs caret movement + basic editing (registered after onQueryKey so its list navigation wins).
+        com.editora.command.TextInputKeymap.installShared(query);
         if (IS_MAC) {
             query.addEventFilter(KeyEvent.KEY_TYPED, e -> {
                 if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
