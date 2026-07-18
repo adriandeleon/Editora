@@ -91,6 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breakpoints in closed files are now hit.** Setting a breakpoint, closing the tab, then starting a debug
+  session left the breakpoint inert — the program ran straight past it. Editora now sends the breakpoints of
+  files with no open tab to the debugger too (re-anchored against the file's current text), matching VS Code
+  and IntelliJ. (#473)
 - **Accepting a completion that begins with its trigger character no longer duplicates it.** For a language
   server that advertises a trigger character which is part of its own insert text (phpactor's `$`, shell
   variables), typing `$` and accepting `$user` inserted `$$user`. The accept now honors the server's

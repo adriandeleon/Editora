@@ -1,14 +1,19 @@
 package com.editora.ui;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
+import javafx.application.Platform;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
@@ -21,10 +26,12 @@ import com.editora.config.PathKeys;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
+import com.editora.editor.BreakpointManager;
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.LspManager;
 import com.editora.run.ProgramArgs;
 import com.editora.run.StackTraceLinks;
+import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -96,6 +103,9 @@ final class DebugCoordinator {
     /** Inline-value fetch cap — frames can hold hundreds of locals; the overlay needs a name→value map. */
     private static final int MAX_INLINE_VALUES = 100;
 
+    /** Don't slurp a huge file just to re-anchor its breakpoints (fall back to the stored line indices). */
+    private static final long MAX_BREAKPOINT_FILE_BYTES = 20L * 1024 * 1024;
+
     private final CoordinatorHost host;
     private final DapManager dapManager;
     private final LspManager lspManager;
@@ -116,6 +126,14 @@ final class DebugCoordinator {
 
     /** The buffer currently carrying inline values + an active hover (cleared on resume/terminate). */
     private EditorBuffer debugValuesBuffer;
+
+    /**
+     * Re-anchored breakpoints of files with <em>no</em> open tab, computed off the FX thread at each session
+     * start (see {@link #withClosedBreakpoints}). Merged into {@link #collectBreakpoints()} so a breakpoint
+     * in a closed file is armed like VS Code / IntelliJ, not silently inert. {@code volatile}: written on the
+     * FX thread, read by the DAP supplier (also the FX thread, but keep it safe).
+     */
+    private volatile List<DapModels.FileBreakpoints> closedBreakpoints = List.of();
 
     DebugCoordinator(CoordinatorHost host, DapManager dapManager, LspManager lspManager, LspCoordinator lsp, Ops ops) {
         this.host = host;
@@ -293,18 +311,132 @@ final class DebugCoordinator {
         return new DapModels.FileBreakpoints(buffer.getPath(), lines);
     }
 
-    /** All open buffers' enabled breakpoints (sent to the adapter when a session initializes). */
+    /**
+     * Every armed breakpoint sent to the adapter: open buffers' live breakpoints merged with
+     * {@link #closedBreakpoints} (files with no open tab, re-anchored at session start). A closed file that
+     * has since been opened is taken from its live buffer, not the cached snapshot.
+     */
     private List<DapModels.FileBreakpoints> collectBreakpoints() {
         List<DapModels.FileBreakpoints> out = new ArrayList<>();
+        Set<String> open = new HashSet<>();
         host.forEachBuffer(b -> {
             if (b.getPath() == null) {
                 return;
             }
+            open.add(b.getPath().toString());
             DapModels.FileBreakpoints fb = fileBreakpoints(b);
             if (!fb.breakpoints().isEmpty()) {
                 out.add(fb);
             }
         });
+        for (DapModels.FileBreakpoints fb : closedBreakpoints) {
+            if (fb.file() != null && !open.contains(fb.file().toString())) {
+                out.add(fb);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Re-anchors the persisted breakpoints of files with no open tab (off the FX thread), caches them in
+     * {@link #closedBreakpoints}, then runs {@code then} on the FX thread. Called before every session start
+     * so the initial {@code setBreakpoints} includes closed files. The open-tab set + a copy of the map are
+     * snapshotted on the FX thread; the file reads happen on a daemon thread.
+     */
+    private void withClosedBreakpoints(Runnable then) {
+        Set<String> openPaths = new HashSet<>();
+        host.forEachBuffer(b -> {
+            if (b.getPath() != null) {
+                openPaths.add(b.getPath().toString());
+            }
+        });
+        Map<String, List<Breakpoint>> map = new LinkedHashMap<>(ops.breakpointMap());
+        Thread t = new Thread(
+                () -> {
+                    List<DapModels.FileBreakpoints> computed =
+                            closedFileBreakpoints(map, openPaths, Vfs::isLocal, DebugCoordinator::readLinesOrNull);
+                    Platform.runLater(() -> {
+                        closedBreakpoints = computed;
+                        then.run();
+                    });
+                },
+                "debug-breakpoints");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Reads a local file's lines for re-anchoring, or {@code null} when it can't be used as-is (unreadable,
+     *  too large, or non-UTF-8) — the caller then falls back to the stored line indices. */
+    private static List<String> readLinesOrNull(Path p) {
+        try {
+            if (!Files.isReadable(p) || Files.size(p) > MAX_BREAKPOINT_FILE_BYTES) {
+                return null;
+            }
+            return Files.readAllLines(p);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * The DAP breakpoints for files that have no open tab, each re-anchored against the file's current text.
+     * Pure/unit-testable: {@code isLocal} skips remote paths, {@code readLines} returns a file's lines (or
+     * {@code null} to keep the stored indices). Open-tab files are excluded — their live buffer supplies them.
+     * A file whose lines are read is re-anchored via {@link BreakpointManager#reanchor} (so an external edit
+     * that shifted lines still hits the right code); an unreadable one keeps its persisted indices rather than
+     * being dropped. Only enabled breakpoints are emitted.
+     */
+    static List<DapModels.FileBreakpoints> closedFileBreakpoints(
+            Map<String, List<Breakpoint>> map,
+            Set<String> openPaths,
+            Predicate<Path> isLocal,
+            Function<Path, List<String>> readLines) {
+        List<DapModels.FileBreakpoints> out = new ArrayList<>();
+        if (map == null) {
+            return out;
+        }
+        for (Map.Entry<String, List<Breakpoint>> e : map.entrySet()) {
+            String key = e.getKey();
+            if (key == null || (openPaths != null && openPaths.contains(key))) {
+                continue;
+            }
+            List<Breakpoint> bps = e.getValue();
+            if (bps == null || bps.isEmpty()) {
+                continue;
+            }
+            Path p;
+            try {
+                p = Path.of(key);
+            } catch (RuntimeException ex) {
+                continue;
+            }
+            if (!isLocal.test(p)) {
+                continue; // remote/SFTP breakpoints aren't sent (the whole debug feature is local-only)
+            }
+            List<String> lines = readLines.apply(p);
+            List<DapModels.LineBreakpoint> out2 = new ArrayList<>();
+            if (lines != null && !lines.isEmpty()) {
+                var anchored = BreakpointManager.reanchor(
+                        bps,
+                        lines.size(),
+                        i -> i >= 0 && i < lines.size() ? lines.get(i) : "",
+                        BreakpointManager.MAX_REANCHOR_SCAN);
+                for (Breakpoint bp : anchored.values()) {
+                    if (bp.enabled()) {
+                        out2.add(new DapModels.LineBreakpoint(bp.line(), bp.condition(), bp.logMessage()));
+                    }
+                }
+            } else {
+                for (Breakpoint bp : bps) {
+                    if (bp.enabled()) {
+                        out2.add(new DapModels.LineBreakpoint(bp.line(), bp.condition(), bp.logMessage()));
+                    }
+                }
+            }
+            if (!out2.isEmpty()) {
+                out.add(new DapModels.FileBreakpoints(p, out2));
+            }
+        }
         return out;
     }
 
@@ -540,7 +672,8 @@ final class DebugCoordinator {
         debugPanel.setSessionFile(b.getPath().getFileName().toString());
         // The debuggee gets the same per-file program arguments the Run feature uses.
         dapManager.setProgramArgs(ProgramArgs.tokenize(ops.programArgs(b.getPath())));
-        dapManager.startLaunch(b.getPath(), language, this::pickMainClass);
+        // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
+        withClosedBreakpoints(() -> dapManager.startLaunch(b.getPath(), language, this::pickMainClass));
     }
 
     /** Whether two paths refer to the same file (normalized absolute comparison; null-safe). */
@@ -598,7 +731,8 @@ final class DebugCoordinator {
                 int port = Integer.parseInt(portStr.trim());
                 ops.openToolWindow();
                 debugPanel.setSessionFile(b.getPath().getFileName().toString());
-                dapManager.startAttach(b.getPath(), hostName, port);
+                String attachHost = hostName;
+                withClosedBreakpoints(() -> dapManager.startAttach(b.getPath(), attachHost, port));
             } catch (NumberFormatException e) {
                 host.setStatus(tr("status.debug.badAddress", text));
             }

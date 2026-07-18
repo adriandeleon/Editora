@@ -22,7 +22,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  */
 public final class BreakpointManager {
 
-    private static final int MAX_REANCHOR_SCAN = 2000;
+    public static final int MAX_REANCHOR_SCAN = 2000;
 
     private final CodeArea area;
     /** line -> breakpoint, sorted; at most one breakpoint per line. */
