@@ -5050,9 +5050,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setOnAddToDictionary(this::addUserWordAndRefreshAll);
         applyViewSettings(buffer);
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
-        buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.persistBookmarks(buffer));
+        buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.schedulePersistBookmarks(buffer));
         buffer.setGutterBookmarkClick(bookmarkCoordinator::onGutterBookmarkClick);
-        buffer.setOnNotesChanged(() -> notesCoordinator.persistNotes(buffer));
+        buffer.setOnNotesChanged(() -> notesCoordinator.schedulePersistNotes(buffer));
         buffer.setNoteMarkerClick(notesCoordinator::onNoteMarkerClick);
         buffer.setGutterBlameClick(git::onGutterBlameClick);
         todoCoordinator.applyToBuffer(buffer); // push the compiled TODO/highlight matcher (on by default)

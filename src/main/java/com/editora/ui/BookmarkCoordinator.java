@@ -54,9 +54,17 @@ final class BookmarkCoordinator {
     private final BookmarksPanel panel;
     private final QuickOpen<BookmarkEntry> jumpPalette;
 
+    // The per-edit (line-shift) persist is coalesced: a synchronous atomic bookmarks.json write + a full
+    // Bookmarks-tree rebuild per newline (holding Enter above a bookmark) would block the FX thread. Explicit
+    // user actions (toggle/add/reorder) still persist immediately via persistBookmarks. (#551)
+    private final javafx.animation.PauseTransition persistDebounce =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+    private EditorBuffer pendingPersist;
+
     BookmarkCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
+        persistDebounce.setOnFinished(e -> flushPendingPersist());
         this.panel = new BookmarksPanel(ops::bookmarks, new BookmarksPanel.Actions() {
             @Override
             public void openAndJump(Path file, int line) {
@@ -108,6 +116,25 @@ final class BookmarkCoordinator {
     }
 
     // --- per-buffer persistence (called from addBuffer / session restore / save) ---------------------
+
+    /**
+     * Coalesces the per-edit persist (fired from {@code BookmarkManager.onChanged} when a line shift moves a
+     * bookmark) so holding Enter above a bookmark doesn't do a synchronous atomic file write + tree rebuild per
+     * newline on the FX thread. The write lands once, ~300 ms after editing settles; a crash before then loses
+     * only line-shift indices, which reanchor-on-open recovers. (#551)
+     */
+    void schedulePersistBookmarks(EditorBuffer buffer) {
+        pendingPersist = buffer;
+        persistDebounce.playFromStart();
+    }
+
+    private void flushPendingPersist() {
+        EditorBuffer b = pendingPersist;
+        pendingPersist = null;
+        if (b != null) {
+            persistBookmarks(b);
+        }
+    }
 
     void persistBookmarks(EditorBuffer buffer) {
         Path file = buffer.getPath();

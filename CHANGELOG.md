@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **Editing above a bookmark, note, or breakpoint no longer stutters.** When an edit shifted a marker's line
+  (e.g. holding Enter above a bookmark), the editor did a blocking `bookmarks.json`/`notes.json` write plus a
+  full tool-window tree rebuild on the UI thread — once per newline. That persist is now coalesced to a single
+  write after editing settles; explicit actions (toggle/add/reorder) still save immediately. (#551)
 - **The Structure outline no longer rebuilds while it's closed.** It re-split the whole document and rebuilt its
   tree on every edit (debounced) even when the tool window was hidden. It now defers the rebuild while closed and
   does it once when the window is reopened. (#549)

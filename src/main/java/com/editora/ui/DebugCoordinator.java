@@ -135,12 +135,19 @@ final class DebugCoordinator {
      */
     private volatile List<DapModels.FileBreakpoints> closedBreakpoints = List.of();
 
+    // Coalesce the per-edit (line-shift) breakpoint persist off the FX hot path — see schedulePersistBreakpoints.
+    // Only the synchronous breakpoints.json write is debounced; the adapter update stays immediate. (#551)
+    private final javafx.animation.PauseTransition persistDebounce =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+    private EditorBuffer pendingPersist;
+
     DebugCoordinator(CoordinatorHost host, DapManager dapManager, LspManager lspManager, LspCoordinator lsp, Ops ops) {
         this.host = host;
         this.dapManager = dapManager;
         this.lspManager = lspManager;
         this.lsp = lsp;
         this.ops = ops;
+        persistDebounce.setOnFinished(e -> flushPendingPersist());
         this.debugPanel = new DebugPanel(debugActions());
         debugPanel.setPrompt(host::promptText);
         debugPanel.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
@@ -269,9 +276,27 @@ final class DebugCoordinator {
 
     /** Persists a buffer's breakpoints + (if a session is live) re-sends that file's set to the adapter. */
     void onBreakpointsChanged(EditorBuffer buffer) {
-        persistBreakpoints(buffer);
+        schedulePersistBreakpoints(buffer); // debounced FS write (off the per-newline hot path)
         if (buffer.getPath() != null && dapManager.isActive()) {
-            dapManager.updateBreakpoints(fileBreakpoints(buffer));
+            dapManager.updateBreakpoints(fileBreakpoints(buffer)); // adapter stays current immediately
+        }
+    }
+
+    /**
+     * Coalesces the synchronous breakpoints.json write fired per line-shifting edit (holding Enter above a
+     * breakpoint) so it lands once, ~300 ms after editing settles, instead of blocking the FX thread per newline.
+     * reanchor-on-open recovers indices lost to a crash before the write. (#551)
+     */
+    private void schedulePersistBreakpoints(EditorBuffer buffer) {
+        pendingPersist = buffer;
+        persistDebounce.playFromStart();
+    }
+
+    private void flushPendingPersist() {
+        EditorBuffer b = pendingPersist;
+        pendingPersist = null;
+        if (b != null) {
+            persistBreakpoints(b);
         }
     }
 
