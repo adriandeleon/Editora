@@ -66,6 +66,18 @@ public final class MermaidImages {
         return t;
     });
 
+    /**
+     * The most-recent render generation submitted per preview <em>surface</em> (a stable key the caller passes
+     * for a live-editing preview). A queued render only spawns mmdc (headless Chromium, ~4 s) if it is still
+     * the latest for its surface — a superseded one skips the spawn instead of running to completion and
+     * landing on a detached node. Without this, each 250 ms edit pulse in a {@code .mmd} enqueued another ~4 s
+     * Chromium spawn on the 2-thread pool, nine of ten thrown away (#458). Markdown diagram blocks pass a
+     * {@code null} surface (they render distinct concurrent diagrams, so there is nothing to coalesce).
+     */
+    private static final Map<String, Long> LATEST = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final java.util.concurrent.atomic.AtomicLong SEQ = new java.util.concurrent.atomic.AtomicLong();
+
     private static volatile boolean enabled;
     private static volatile List<String> mmdc = List.of("mmdc");
     private static volatile List<String> maid = List.of("maid");
@@ -107,6 +119,18 @@ public final class MermaidImages {
         return enabled;
     }
 
+    /** Whether generation {@code gen} for {@code surfaceKey} has been superseded by a newer submission — then
+     *  the queued render should skip its expensive spawn. A null surface (Markdown blocks) is never
+     *  superseded. Pure; unit-tested via {@link #superseded(String, long, Long)}. */
+    private static boolean superseded(String surfaceKey, long gen) {
+        return surfaceKey != null && superseded(surfaceKey, gen, LATEST.get(surfaceKey));
+    }
+
+    /** Pure core: a render is superseded when a newer generation was recorded for its surface. */
+    static boolean superseded(String surfaceKey, long gen, Long latest) {
+        return surfaceKey != null && latest != null && latest.longValue() != gen;
+    }
+
     /**
      * Returns a node for the diagram {@code source}, filled asynchronously: a centered {@link ImageView}
      * on success, or a {@code .mermaid-error} label with mmdc's message on failure. Cache hits apply
@@ -115,13 +139,23 @@ public final class MermaidImages {
      * the zoom factor (so zoom actually resizes the image).
      */
     public static Node node(String source, java.util.function.DoubleUnaryOperator sizer) {
+        return node(source, sizer, null);
+    }
+
+    /**
+     * As {@link #node(String, java.util.function.DoubleUnaryOperator)}, but a non-null {@code surfaceKey}
+     * coalesces live-editing re-renders: only the latest render per surface actually spawns mmdc, so typing
+     * in a {@code .mmd} can't pile up ~4 s Chromium renders (#458).
+     */
+    public static Node node(String source, java.util.function.DoubleUnaryOperator sizer, String surfaceKey) {
         StackPane host = new StackPane();
         host.getStyleClass().add("md-mermaid");
-        fill(host, source, sizer);
+        fill(host, source, sizer, surfaceKey);
         return host;
     }
 
-    private static void fill(StackPane host, String source, java.util.function.DoubleUnaryOperator sizer) {
+    private static void fill(
+            StackPane host, String source, java.util.function.DoubleUnaryOperator sizer, String surfaceKey) {
         String key = key(source, dark);
         Cached hit = CACHE.get(key);
         if (hit != null && hit.expired()) {
@@ -137,7 +171,14 @@ public final class MermaidImages {
         List<String> maidExe = maid;
         boolean useMaid = maidAvailable;
         boolean useDark = dark;
+        long gen = surfaceKey == null ? -1 : SEQ.incrementAndGet();
+        if (surfaceKey != null) {
+            LATEST.put(surfaceKey, gen);
+        }
         EXEC.submit(() -> {
+            if (superseded(surfaceKey, gen)) {
+                return; // a newer pulse for this surface has arrived — skip the ~4 s Chromium spawn (#458)
+            }
             Mermaid.Render r = Mermaid.renderPng(exe, source, useDark);
             Cached result;
             if (r.ok()) {

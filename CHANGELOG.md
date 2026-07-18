@@ -91,6 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Editing a Mermaid diagram no longer piles up background renders.** Each pause while typing in a `.mmd`
+  file queued another headless-Chromium render (~4 s each) even though only the latest result is shown, so a
+  burst of edits could back up many seconds of wasted work. Superseded renders are now skipped, so only the
+  diagram you're actually editing is rendered. (#458)
 - **The Typst preview no longer retains gigabytes of page images.** Its render cache was bounded by document
   count, but each entry is a whole multi-page document — so a 40-page document could retain ~570 MB, and
   editing it (each keystroke a new render) accumulated several times that. The cache is now bounded by total
