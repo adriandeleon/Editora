@@ -9148,7 +9148,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         s.setFontZoom(z);
         requestSave();
-        applyViewSettingsToAllBuffers(s);
+        // A font zoom changes no feature gate or theme — apply only the fonts/per-buffer view, not the full
+        // settings cascade (editor-theme stylesheet swap + ~20 applySupport() calls). #545
+        applyFontsAndPerBufferView(s);
         statusBar.refresh();
         setStatus(tr("status.textZoom", Math.round(z * 100)));
     }
@@ -10220,7 +10222,24 @@ public class MainController implements com.editora.mcp.McpBridge {
         lspCoordinator.applySupport(); // (re)configure LSP: command/enabled change re-detects + re-gates buffers
         debugCoordinator.applySupport(); // (re)configure DAP after LSP (it layers on jdtls)
         applyMarkdownPreviewTheme(); // re-resolve "follow app" previews + the toggle glyph after a theme change
-        // Match the console fonts (External Tools / Run / Debug / build tools) to the editor's code-area font.
+        // Match the console fonts + per-buffer view to the editor font/zoom (shared with the text-zoom path).
+        applyFontsAndPerBufferView(settings);
+        // If the Welcome tab is open, rebuild it so its Open Folder / Clone actions track the
+        // Projects/Git toggles that may have just changed (a font-only zoom skips this rebuild).
+        if (welcomeTab != null) {
+            welcomePane.refresh();
+        }
+    }
+
+    /**
+     * Re-applies fonts (editor buffers, Diff panes, and the console tool windows) and per-buffer view settings to
+     * every open tab, plus the Welcome tab's font scale. Shared by the full {@link #applyViewSettingsToAllBuffers}
+     * and the lighter {@link #textZoom} path — a font zoom changes none of the feature gates or the editor theme,
+     * so {@code textZoom} calls only this and skips the editor-theme stylesheet swap + the ~20 {@code applySupport()}
+     * service calls the full apply runs (a Ctrl+wheel gesture fires many notches, each of which used to re-swap the
+     * scene stylesheet and re-run the whole cascade — #545).
+     */
+    private void applyFontsAndPerBufferView(Settings settings) {
         int consoleFont = Math.max(1, (int) Math.round(settings.getFontSize() * settings.getFontZoom()));
         externalToolCoordinator.panel().setOutputFont(settings.getFontFamily(), consoleFont);
         runCoordinator.panel().setOutputFont(settings.getFontFamily(), consoleFont);
@@ -10234,11 +10253,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 diff.setFont(settings.getFontFamily(), consoleFont); // text zoom applies inside a Diff tab too (#533)
             }
         }
-        // If the Welcome tab is open, rebuild it so its Open Folder / Clone actions track the
-        // Projects/Git toggles that may have just changed, and scale its text to the current zoom (#540).
         if (welcomeTab != null) {
-            welcomePane.refresh();
-            welcomePane.setFontScale(settings.getFontZoom());
+            welcomePane.setFontScale(settings.getFontZoom()); // scale Welcome text to the current zoom (#540)
         }
     }
 

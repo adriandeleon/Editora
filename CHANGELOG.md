@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **Zooming text is much smoother.** A text zoom (`Ctrl`+wheel, `Ctrl`+`=`/`-`/`0`, the status-bar `−/+`) reran
+  the entire settings-apply cascade per notch — re-swapping the editor-theme stylesheet (a full-scene CSS
+  reapply) and re-running ~20 feature `applySupport()` calls (Git, LSP, previews, …), none of which change on a
+  font zoom. Zoom now re-applies only the fonts and per-buffer view, so a Ctrl+wheel gesture no longer churns
+  the scene stylesheet or re-detects every language server. (#545)
 - **Moving the caret or typing in a large file is much lighter.** The status bar recomputed the file size — which
   scans and copies the whole document — on every caret move and keystroke (and re-materialized the whole
   document per keystroke besides). The size now updates only when the file actually changes, debounced, so
