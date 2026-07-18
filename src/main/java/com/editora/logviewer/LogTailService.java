@@ -86,7 +86,9 @@ public final class LogTailService {
                             String text = a.text();
                             Platform.runLater(() -> listener.appended(text));
                         }
-                    } catch (Exception e) {
+                    } catch (Throwable e) {
+                        // Catch Throwable, not Exception: an Error escaping a scheduleWithFixedDelay body cancels
+                        // the recurring task, silently stopping the tail. Report it and mark done instead.
                         done.set(true);
                         String message = e.getMessage() == null ? e.toString() : e.getMessage();
                         Platform.runLater(() -> listener.error(message));
