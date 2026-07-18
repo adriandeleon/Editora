@@ -1930,6 +1930,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                 file -> historyCoordinator.captureBeforeDelete(file)); // snapshot to Local History before delete
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
         projectPanel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
+        // An external program (a terminal `git`, another editor, a build) changed files under the repo while
+        // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
+        // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
+        projectPanel.setOnExternalChange(() -> {
+            git.refresh();
+            refreshBuildTools();
+            diffCoordinator.refreshOpenDiffs();
+        });
         projectPanel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         projectPanel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (local files only).

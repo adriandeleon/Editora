@@ -75,6 +75,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private Consumer<Path> onBeforeDelete = p -> {};
     /** Injected by MainController: show a transient status-bar message (drag-move / multi-delete feedback). */
     private Consumer<String> onStatus = m -> {};
+    /** Notified after the filesystem watcher picks up an <em>external</em> change (not the app's own edit), so
+     *  the window can refresh things anchored to the working tree — Git status / the Commit stripe, build-tool
+     *  markers, open diffs — which otherwise only re-evaluate on focus-regain / tab switch (#529). */
+    private Runnable onExternalChange = () -> {};
     /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
     private Consumer<Path> onNewFromTemplate;
     /** Injected by MainController: reveal a path in the OS file manager. Args: (path, isDirectory). */
@@ -210,6 +214,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
             refreshTree();
             syncWatches(); // a newly-created folder that's expanded would need watching
+            onExternalChange.run(); // an external change → refresh Git/Commit stripe, build markers, diffs (#529)
         });
 
         Label placeholder = new Label(tr("project.placeholder"));
@@ -761,6 +766,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Injects the status-message sink used for drag-move / multi-delete feedback. */
     public void setOnStatus(Consumer<String> onStatus) {
         this.onStatus = onStatus == null ? m -> {} : onStatus;
+    }
+
+    /** Injects the external-change hook (see {@link #onExternalChange}); {@code null} restores the no-op. */
+    public void setOnExternalChange(Runnable onExternalChange) {
+        this.onExternalChange = onExternalChange == null ? () -> {} : onExternalChange;
     }
 
     /** Injects the "Reveal in File Manager" handler ({@code (path, isDirectory)}) for the cell menu. */
