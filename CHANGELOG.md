@@ -57,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Taking your time over an SFTP host-key fingerprint no longer times the connection out.** When connecting to a
+  new server, the trust-on-first-use dialog asks you to compare the host-key fingerprint — but the connection's
+  handshake timeout kept counting while the dialog was open, so a careful comparison could time out from under you.
+  The time the dialog is on screen is now excluded from the handshake deadline; a genuinely unreachable host still
+  fails at the normal timeout. (#486)
 - **The completion popup now offers snippets whose trigger isn't a plain word.** Typing `#in` in C/C++ (or `?xml`,
   `[PSCustomObject]`, …) never surfaced the matching `#include`/`#ifndef`/… snippet in the autocomplete popup — the
   popup only ever looked up the identifier run after the last symbol (`in`), which no snippet is registered under, so

@@ -149,6 +149,36 @@ class RemoteFileSystemsHostKeyFxTest {
         }
     }
 
+    /**
+     * A user who takes longer than the handshake timeout to compare the fingerprint still connects — the dialog's
+     * think-time is excluded from the deadline (#486). The host-key prompt blocks the key exchange that gates
+     * authentication, so it lands inside the auth wait: here the auth timeout is a short 600ms but the prompt
+     * blocks for 1500ms before accepting; without the exclusion the handshake would time out first.
+     */
+    @Test
+    void aSlowHostKeyAnswerDoesNotTimeOutTheHandshake(@TempDir Path dir) throws Exception {
+        fs = new RemoteFileSystems(
+                (host, port, keyType, fingerprint) -> {
+                    try {
+                        Thread.sleep(1500); // the human is reading the fingerprint — longer than the 600ms timeout
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return true;
+                },
+                dir.resolve("known_hosts"),
+                java.time.Duration.ofSeconds(20), // connect: generous (the future fulfils before the prompt)
+                java.time.Duration.ofMillis(600)); // auth: short — the prompt overlaps this wait
+        SshServer server = sftpServer(dir.resolve("host.ser"), 0);
+        try {
+            RemoteFileSystems.Result r = connectAndWait(server.getPort());
+            assertTrue(r.ok(), "a slow fingerprint comparison must not time the handshake out: " + r.error());
+            assertNotNull(r.root());
+        } finally {
+            server.stop(true);
+        }
+    }
+
     /** The prompt is handed the address the user typed and a fingerprint they can compare against the server. */
     @Test
     void thePromptIsToldWhichHostAndWhichKey(@TempDir Path dir) throws Exception {
