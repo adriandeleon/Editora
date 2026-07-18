@@ -91,6 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The JavaScript debug adapter you install through Editora is now the one that's used.** After installing
+  vscode-js-debug via the in-app installer (or `install-js-debug.sh`), Editora could silently keep using an
+  older VS Code extension copy instead. Editora's own installed adapter now takes precedence. (#474)
 - **Breakpoints in closed files are now hit.** Setting a breakpoint, closing the tab, then starting a debug
   session left the breakpoint inert — the program ran straight past it. Editora now sends the breakpoints of
   files with no open tab to the debugger too (re-anchored against the file's current text), matching VS Code
