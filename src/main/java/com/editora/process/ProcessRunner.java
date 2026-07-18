@@ -174,11 +174,18 @@ public final class ProcessRunner {
     private static volatile String cachedPath;
 
     /**
-     * The inherited PATH, the user's <em>login-shell</em> PATH (so a GUI-launched {@code .app} picks up
-     * version-manager dirs like nvm/fnm/asdf/volta and Homebrew that the profile sets — see
-     * {@link #loginShellPath()}), and any {@link #EXTRA_PATH_DIRS} that exist — de-duplicated, in that
+     * The user's <em>login-shell</em> PATH (so a GUI-launched {@code .app} picks up version-manager dirs
+     * like sdkman/nvm/fnm/asdf/volta and Homebrew that the profile sets — see {@link #loginShellPath()}),
+     * then the inherited PATH, then any {@link #EXTRA_PATH_DIRS} that exist — de-duplicated, in that
      * priority order. Cached after the first call. Best warmed off the FX thread (see the warm-up in
      * {@code LspManager}) since the login-shell probe spawns a short-lived process.
+     *
+     * <p>The login-shell PATH is added <em>first</em>, on purpose: when a tool exists in both a
+     * version-manager dir and a stock system dir (e.g. sdkman's {@code java/current/bin/java} is JDK 25
+     * while {@code /usr/bin/java} is JDK 21), the user's shell resolves it to the version-manager copy, and
+     * the app must match — otherwise the stripped inherited PATH a menu/desktop launcher hands the app
+     * (which has {@code /usr/bin} but not the version-manager dir) would shadow it with the older system
+     * copy, and a compact-source run would report the wrong Java version.
      */
     public static String augmentedPath() {
         String cached = cachedPath;
@@ -186,8 +193,8 @@ public final class ProcessRunner {
             return cached;
         }
         LinkedHashSet<String> dirs = new LinkedHashSet<>();
-        addPathEntries(dirs, System.getenv("PATH"));
         addPathEntries(dirs, loginShellPath());
+        addPathEntries(dirs, System.getenv("PATH"));
         for (String d : EXTRA_PATH_DIRS) {
             if (!dirs.contains(d) && Files.isDirectory(Path.of(d))) {
                 dirs.add(d);
