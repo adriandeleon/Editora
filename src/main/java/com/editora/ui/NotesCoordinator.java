@@ -75,9 +75,15 @@ final class NotesCoordinator {
 
     private boolean supportApplied;
 
+    // Coalesce the per-edit (line-shift) persist off the FX hot path — see schedulePersistNotes. (#551)
+    private final javafx.animation.PauseTransition persistDebounce =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+    private EditorBuffer pendingPersist;
+
     NotesCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
+        persistDebounce.setOnFinished(e -> flushPendingPersist());
         this.panel = new NotesPanel(ops::notes, new NotesPanel.Actions() {
             @Override
             public void openAndJump(String fileKey, PersonalNote note) {
@@ -168,6 +174,25 @@ final class NotesCoordinator {
     }
 
     // --- per-buffer persistence (called from addBuffer / session restore / save) ---------------------
+
+    /**
+     * Coalesces the per-edit persist (fired from {@code NoteManager.onChanged} when a line shift moves a note) so
+     * holding Enter above a note doesn't do a synchronous atomic notes.json write + tree rebuild per newline on
+     * the FX thread. The write lands once, ~300 ms after editing settles; relocate-on-open recovers any indices
+     * lost to a crash before then. (#551)
+     */
+    void schedulePersistNotes(EditorBuffer buffer) {
+        pendingPersist = buffer;
+        persistDebounce.playFromStart();
+    }
+
+    private void flushPendingPersist() {
+        EditorBuffer b = pendingPersist;
+        pendingPersist = null;
+        if (b != null) {
+            persistNotes(b);
+        }
+    }
 
     /** Persists the active buffer's notes (keyed by canonical path), preserving the panel's order. */
     void persistNotes(EditorBuffer buffer) {
