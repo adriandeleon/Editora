@@ -10229,6 +10229,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 applyViewSettings(buffer);
+            } else if (tab.getUserData() instanceof DiffViewerPane diff) {
+                diff.setFont(settings.getFontFamily(), consoleFont); // text zoom applies inside a Diff tab too (#533)
             }
         }
         // If the Welcome tab is open, rebuild it so its Open Folder / Clone actions track the

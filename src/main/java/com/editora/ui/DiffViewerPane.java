@@ -58,7 +58,7 @@ public final class DiffViewerPane implements TabContent {
     private String rightText;
     private DiffModel model;
     private final IGrammar grammar;
-    private final String fontStyle;
+    private String fontStyle; // mutable so text zoom can resize the diff areas live (#533)
     private final boolean showLineNumbers;
     private java.util.function.Consumer<String> onExportPatch = p -> {};
     /** Re-fetches both sides + re-renders if changed (set by the controller); the file-on-disk refresh. */
@@ -131,6 +131,21 @@ public final class DiffViewerPane implements TabContent {
 
     public void setOnExportPatch(java.util.function.Consumer<String> onExportPatch) {
         this.onExportPatch = onExportPatch == null ? p -> {} : onExportPatch;
+    }
+
+    /** Resizes the diff areas' font (text zoom): rebuilds the inline font style and re-applies it to whichever
+     *  areas are currently built (side-by-side or unified). Newly built areas pick up the latest style (#533). */
+    public void setFont(String family, int size) {
+        this.fontStyle = "-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;";
+        if (leftArea != null) {
+            leftArea.setStyle(fontStyle);
+        }
+        if (rightArea != null) {
+            rightArea.setStyle(fontStyle);
+        }
+        if (unifiedArea != null) {
+            unifiedArea.setStyle(fontStyle);
+        }
     }
 
     /** Installs the controller's re-fetch-and-rerender hook (run on focus-regain / after git mutation). */
