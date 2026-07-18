@@ -1,0 +1,18 @@
+# Editora menu entry — authored as a jpackage resource-dir TEMPLATE (jpackage substitutes the
+# APPLICATION_* placeholders in a resource-dir "<launcher>.desktop", exactly as it does for its own
+# bundled template.desktop; staged into the DEB wrap's resource dir by scripts/aot_build.java).
+# Adds what jpackage's generated entry lacks: Exec %F (pass opened files as argv), MimeType
+# (GNOME "Open With" / default-editor eligibility), StartupWMClass (bind the running window to this
+# entry), and real Categories. This comment ships in the installed file; details in CLAUDE.md.
+[Desktop Entry]
+Type=Application
+Name=APPLICATION_NAME
+GenericName=Text Editor
+Comment=A keyboard-driven, cross-platform programmer's text editor
+Exec=APPLICATION_LAUNCHER %F
+Icon=APPLICATION_ICON
+Terminal=false
+StartupNotify=true
+StartupWMClass=com.editora.App
+Categories=Development;Utility;TextEditor;IDE;
+MimeType=text/plain;

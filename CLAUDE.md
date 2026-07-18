@@ -109,24 +109,36 @@ build is unaffected. Installers are currently **unsigned** (signing/notarization
 **Linux `.deb` PATH command + menu/icon registration:** jpackage installs everything under
 `/opt/editora/` (launcher at `bin/Editora`, the `.desktop` + the 512×512 `Editora.png` at
 `lib/editora-Editora.desktop`/`lib/Editora.png`) and relies on its **own generated `postinst`** to
-register the `.desktop`/icon system-wide (via `xdg-desktop-menu`). The **`.deb`** ships custom Debian
-maintainer scripts (`packaging/linux/postinst`/`postrm`, passed via `jpackage --resource-dir
-packaging/linux` **in the DEB wrap of `scripts/aot_build.java`** — DEB-only; the RPM bundler uses a
-`.spec` and ignores them, so `.rpm` users run `/opt/editora/bin/Editora`). **Because the override
-*replaces* jpackage's generated scripts, it must reproduce that registration or the launcher is never
-installed into `/usr/share/applications` and the app shows the generic Java icon.** So `postinst`
-(`configure`): (1) symlinks `/usr/bin/editora` → the launcher (found via the `/opt/*/bin/Editora` glob,
-since jpackage lowercases the install dir); (2) **copies the bundled `.desktop` into
-`/usr/share/applications/editora-Editora.desktop`, injecting `StartupWMClass=com.editora.App`** (the
-real `WM_CLASS`, verified via `wmctrl -lx` — JavaFX derives it from the module main `com.editora.App`,
-*not* the app name; jpackage's generated entry omits it, so the *running* window can't be matched to the
-entry — the menu icon itself comes from the `.desktop`'s already-absolute
-`Icon=/opt/editora/lib/Editora.png`); then `update-desktop-database`. **That `lib/Editora.png` must be
-*our* icon, and it isn't by default:** the jpackage app-image phase (panteleyev plugin `<icon>`) leaves
-its generic Java icon there, and the installer wrap runs `jpackage --app-image` which *ignores* `--icon`
-— so **`scripts/aot_build.java` overwrites `<imageRoot>/lib/Editora.png` with `branding/editora.png`
-before wrapping** (Linux-only, guarded). Verify a real `.deb`'s icon by `sha256sum`-ing
-`/opt/editora/lib/Editora.png` against `branding/editora.png` — they must match.
+register the `.desktop`/icon system-wide (via `xdg-desktop-menu`). The **`.deb`** ships a custom **jpackage resource dir** (staged by
+**the DEB wrap of `scripts/aot_build.java`** into `target/dist/jpackage-deb-resources` = the
+`packaging/linux` files + `branding/editora.png` staged as `Editora.png` — DEB-only; the RPM bundler
+uses a `.spec` and ignores these overrides, so `.rpm` users run `/opt/editora/bin/Editora`) carrying
+three overrides: **(a)** Debian maintainer scripts `postinst`/`postrm`, **(b)** the menu-entry
+template **`Editora.desktop`** (jpackage substitutes the `APPLICATION_*` placeholders in a
+resource-dir `<launcher>.desktop` exactly like its bundled `template.desktop`) — ours adds
+**`Exec=… %F`** (without it GNOME launches the app *without* the opened file; the path arrives as
+argv → `App.fileTargets`), **`MimeType=text/plain;`** (registers Editora as a text-file handler so
+GNOME Files offers it under "Open With" and it can be made the default editor via `xdg-mime default
+editora-Editora.desktop text/plain`; GIO follows shared-mime-info subclassing, so `text/plain`
+covers markdown/python/json/…), **`StartupWMClass=com.editora.App`** (the real `WM_CLASS`, verified
+via `wmctrl -lx` — JavaFX derives it from the module main class, *not* the app name; without it the
+*running* window can't be matched to the entry), and real `Categories` (jpackage emits `Unknown`) —
+and **(c)** the **icon `Editora.png`**: the wrap **regenerates `lib/<name>.png` in the DEB payload
+from its own resources**, ignoring `--icon` *and clobbering the app image's already-fixed icon*
+(verified empirically: the wrapped `.deb` shipped a byte-identical copy of jpackage's bundled 32×32
+`JavaApp.png` despite the pre-wrap overwrite), so the icon **must** be supplied as a resource-dir
+override — the pre-wrap `aot_build.java` overwrite of `<imageRoot>/lib/Editora.png` (Linux-only,
+guarded) still matters, but only for the deliveries built directly from the app image (APP_IMAGE /
+`.tar.gz` / `.AppImage`). **Because the maintainer-script override *replaces* jpackage's generated
+scripts, it must reproduce their registration or the launcher is never installed into
+`/usr/share/applications` and the app shows the generic Java icon.** So `postinst` (`configure`):
+(1) symlinks `/usr/bin/editora` → the launcher (found via the `/opt/*/bin/Editora` glob, since
+jpackage lowercases the install dir); (2) **copies the bundled `.desktop` into
+`/usr/share/applications/editora-Editora.desktop`** (the template already carries
+StartupWMClass/MimeType/`%F`, so the copy takes the verbatim fast path; an awk StartupWMClass
+injection remains as a fallback — the menu icon itself comes from the `.desktop`'s already-absolute
+`Icon=/opt/editora/lib/Editora.png`); then `update-desktop-database`. Verify a real `.deb`'s icon by
+`sha256sum`-ing `/opt/editora/lib/Editora.png` against `branding/editora.png` — they must match.
 `postrm` (remove/purge) removes both. **Device-test on Linux** (install the `.deb`: `which editora`
 works + the app shows our icon in the menu and dock; then remove: both are gone) — the macOS dev box and
 the `os-linux` profile can't exercise this. *(If a terminal-launched window's dock icon is still generic,
