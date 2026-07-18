@@ -58,6 +58,9 @@ import static com.editora.i18n.Messages.tr;
  */
 public class ProjectPanel extends VBox implements ToolWindowContent {
 
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(ProjectPanel.class.getName());
+
     private static final int MAX_VISIT = 20_000;
     private static final int MAX_MATCHES = 300;
     private static final int MAX_DEPTH = 25;
@@ -522,29 +525,36 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             } catch (InterruptedException | java.nio.file.ClosedWatchServiceException e) {
                 return; // disposed
             }
-            // Inspect the events so a batch that is ONLY Editora's own throwaway temp files (the typst render
-            // input, created+deleted every render) doesn't spuriously rebuild the tree (#465). Otherwise we
-            // re-list from disk (individual events aren't applied) — an OVERFLOW or any real file forces it.
-            List<java.nio.file.WatchEvent<?>> events = key.pollEvents();
-            key.reset();
-            boolean overflow = false;
-            List<String> names = new java.util.ArrayList<>();
-            for (java.nio.file.WatchEvent<?> ev : events) {
-                if (ev.kind() == java.nio.file.StandardWatchEventKinds.OVERFLOW) {
-                    overflow = true;
-                    continue;
+            try {
+                // Inspect the events so a batch that is ONLY Editora's own throwaway temp files (the typst render
+                // input, created+deleted every render) doesn't spuriously rebuild the tree (#465). Otherwise we
+                // re-list from disk (individual events aren't applied) — an OVERFLOW or any real file forces it.
+                List<java.nio.file.WatchEvent<?>> events = key.pollEvents();
+                key.reset();
+                boolean overflow = false;
+                List<String> names = new java.util.ArrayList<>();
+                for (java.nio.file.WatchEvent<?> ev : events) {
+                    if (ev.kind() == java.nio.file.StandardWatchEventKinds.OVERFLOW) {
+                        overflow = true;
+                        continue;
+                    }
+                    Object ctx = ev.context();
+                    names.add(ctx instanceof Path p ? p.getFileName().toString() : "");
                 }
-                Object ctx = ev.context();
-                names.add(ctx instanceof Path p ? p.getFileName().toString() : "");
-            }
-            if (!watchEventsWarrantRefresh(names, overflow)) {
-                continue; // only Editora's own temp files changed — no tree rebuild
-            }
-            Platform.runLater(() -> {
-                if (!disposed) {
-                    watchDebounce.playFromStart();
+                if (!watchEventsWarrantRefresh(names, overflow)) {
+                    continue; // only Editora's own temp files changed — no tree rebuild
                 }
-            });
+                Platform.runLater(() -> {
+                    if (!disposed) {
+                        watchDebounce.playFromStart();
+                    }
+                });
+            } catch (Throwable t) {
+                // A transient failure processing one batch must NOT kill the watcher thread — that would
+                // silently stop live tree refresh for the rest of the session. Log and keep watching (the
+                // focus-regain refreshTree() still covers any gap).
+                LOG.log(java.util.logging.Level.WARNING, "project filesystem watch loop error", t);
+            }
         }
     }
 

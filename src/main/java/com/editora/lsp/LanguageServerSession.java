@@ -102,7 +102,9 @@ final class LanguageServerSession implements LanguageClient {
     private final java.util.concurrent.atomic.AtomicBoolean deadReported =
             new java.util.concurrent.atomic.AtomicBoolean();
     private volatile boolean disposed;
-    private ServerCapabilities capabilities;
+    // Written on the LSP4J init thread (initialize().whenComplete), read on the FX thread (capabilities()).
+    // volatile gives the FX reader the happens-before edge so it can't transiently see null after init completed.
+    private volatile ServerCapabilities capabilities;
 
     LanguageServerSession(
             LspServerRegistry.ServerSpec spec,

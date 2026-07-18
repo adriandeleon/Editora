@@ -8,6 +8,8 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javafx.application.Platform;
 
@@ -25,6 +27,8 @@ import com.editora.history.HistoryRetention.RetentionPolicy;
  * (the auto-save precedent), so the executor never touches live editor state.
  */
 public final class HistoryService {
+
+    private static final Logger LOG = Logger.getLogger(HistoryService.class.getName());
 
     private final HistoryBlobStore blobs;
 
@@ -57,30 +61,45 @@ public final class HistoryService {
             Consumer<HistoryRevision> onRecorded) {
         List<HistoryRevision> snapshot = existing == null ? List.of() : new ArrayList<>(existing);
         exec.submit(() -> {
-            String sha = HistoryBlobStore.sha256(content);
-            if (!force && HistoryRetention.isDuplicate(snapshot, sha)) {
-                // Unchanged since the last revision — skip the blob write. Still report completion: the
-                // caller counts in-flight records to know when it is safe to GC.
+            try {
+                String sha = HistoryBlobStore.sha256(content);
+                if (!force && HistoryRetention.isDuplicate(snapshot, sha)) {
+                    // Unchanged since the last revision — skip the blob write. Still report completion: the
+                    // caller counts in-flight records to know when it is safe to GC.
+                    Platform.runLater(() -> onRecorded.accept(null));
+                    return;
+                }
+                blobs.put(content, sha);
+                long size = content.getBytes(StandardCharsets.UTF_8).length;
+                HistoryRevision rev =
+                        new HistoryRevision(file.toString(), now, size, sha, reason, label == null ? "" : label);
+                // Deliver just the revision: the caller folds it into the index on the FX thread, against the
+                // list as it is THEN. Building the new list here from the list as it was at submit time meant a
+                // second record for the same file (a label during a slow save; two dirty buffers on one autosave)
+                // overwrote the first one's revision with a list that never contained it.
+                Platform.runLater(() -> onRecorded.accept(rev));
+            } catch (Throwable t) {
+                // A failure here (e.g. the blob disk write) MUST still complete the callback: the caller
+                // decrements an in-flight counter in onRecorded and only GCs when it hits zero, so a stranded
+                // callback silently stops local-history GC for the rest of the session (blobs grow unbounded).
+                // The submit() Future is unobserved, so without this the throw is swallowed and never logged.
+                LOG.log(Level.WARNING, "Failed to record a history revision for " + file, t);
                 Platform.runLater(() -> onRecorded.accept(null));
-                return;
             }
-            blobs.put(content, sha);
-            long size = content.getBytes(StandardCharsets.UTF_8).length;
-            HistoryRevision rev =
-                    new HistoryRevision(file.toString(), now, size, sha, reason, label == null ? "" : label);
-            // Deliver just the revision: the caller folds it into the index on the FX thread, against the
-            // list as it is THEN. Building the new list here from the list as it was at submit time meant a
-            // second record for the same file (a label during a slow save; two dirty buffers on one autosave)
-            // overwrote the first one's revision with a list that never contained it.
-            Platform.runLater(() -> onRecorded.accept(rev));
         });
     }
 
     /** Fetches a revision's body off the FX thread and delivers it (or {@code null}) on the FX thread. */
     public void content(HistoryRevision rev, Consumer<String> onText) {
         exec.submit(() -> {
-            String text = rev == null ? null : blobs.get(rev.sha256());
-            Platform.runLater(() -> onText.accept(text));
+            try {
+                String text = rev == null ? null : blobs.get(rev.sha256());
+                Platform.runLater(() -> onText.accept(text));
+            } catch (Throwable t) {
+                // Always complete the callback so a diff/preview view doesn't hang "loading" on a read failure.
+                LOG.log(Level.WARNING, "Failed to read a history revision body", t);
+                Platform.runLater(() -> onText.accept(null));
+            }
         });
     }
 

@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Local File History keeps garbage-collecting after a failed snapshot.** If writing a history snapshot to disk
+  failed, the internal completion callback was dropped, which left history GC disabled for the rest of the session
+  (old revision blobs then accumulated on disk). Failures are now handled and logged, and GC keeps running. A few
+  related background tasks (the log tail, the project file-watcher, a starting language server) were also hardened
+  so an unexpected error can't silently stop them. (#556)
 - **Text zoom now works inside Diff views.** `Ctrl`+`=`/`-`/`0`, the status-bar `−/+`, and `Ctrl`+mouse-wheel
   resize the font when comparing two files or a file against Git, the same as in a normal editor. (#533)
 - **Text zoom now scales the Welcome page too.** (#540)
