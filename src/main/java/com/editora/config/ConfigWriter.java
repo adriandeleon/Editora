@@ -55,14 +55,25 @@ public final class ConfigWriter {
 
     private final Object lock = new Object();
     private final Map<Path, byte[]> pending = new LinkedHashMap<>();
+    /** Files whose write is revoked: dropped from {@code pending} AND suppressed if a drain already claimed
+     *  the bytes but hasn't written them yet. Cleared for a file by a fresh {@link #enqueue}. */
+    private final java.util.Set<Path> cancelled = new java.util.HashSet<>();
+
+    /** Test seam: run right after {@link #drain} claims a batch (pending cleared), before it writes — lets a
+     *  test slip a {@link #cancel} in between to exercise the "claimed but not yet written" race (#491). */
+    volatile Runnable afterBatchClaimedForTest;
 
     /**
-     * Drops any queued (not yet written) bytes for {@code file}. Used when the file is being <b>deleted</b> —
-     * a coalesced write still sitting in the queue would otherwise land afterwards and re-create it.
+     * Drops any queued bytes for {@code file} and suppresses a write a drain has <b>already claimed</b> but
+     * not yet performed. Used when the file is being <b>deleted</b> — a coalesced write still in the queue (or
+     * mid-drain) would otherwise land afterwards and re-create it. {@code drain} clears {@code pending} under
+     * the lock and writes outside it, so removing from {@code pending} alone couldn't stop a claimed write;
+     * the {@code cancelled} set, re-checked per file just before each write, closes that race (#491).
      */
     public void cancel(Path file) {
         synchronized (lock) {
             pending.remove(file);
+            cancelled.add(file);
         }
     }
 
@@ -70,6 +81,7 @@ public final class ConfigWriter {
     public void enqueue(Path file, byte[] bytes) {
         synchronized (lock) {
             pending.put(file, bytes);
+            cancelled.remove(file); // a fresh, legitimate write un-cancels the file
         }
         try {
             io.execute(this::drain);
@@ -101,7 +113,18 @@ public final class ConfigWriter {
             batch = new LinkedHashMap<>(pending);
             pending.clear();
         }
-        batch.forEach(ConfigWriter::writeAtomic);
+        Runnable hook = afterBatchClaimedForTest;
+        if (hook != null) {
+            hook.run(); // test-only: a window for a racing cancel() (#491); null in production
+        }
+        batch.forEach((file, bytes) -> {
+            synchronized (lock) {
+                if (cancelled.contains(file)) {
+                    return; // cancelled after this drain claimed the bytes — don't write (#491)
+                }
+            }
+            writeAtomic(file, bytes);
+        });
     }
 
     /** Writes {@code bytes} to {@code file} via a temp file + atomic move (a crash never leaves a partial file). */
