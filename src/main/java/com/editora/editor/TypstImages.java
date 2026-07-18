@@ -68,29 +68,27 @@ public final class TypstImages {
     /** How long a failed render is reused before being retried — mirrors {@link PreviewImageLoader}. */
     private static final long FAILURE_TTL_MS = 60_000;
 
-    /** Cap on cached rendered documents (each page pins a GPU texture — bounded LRU). */
-    private static final int MAX_CACHED = 8;
-
     /** Cap on pages stacked in the preview — a many-page document would otherwise pin one texture per page.
      *  Beyond this the preview shows the first N pages + a "… more pages" note; export/print use all pages. */
     private static final int MAX_PREVIEW_PAGES = 40;
 
+    /**
+     * Cache bound expressed in <b>pages</b>, not entries — the cost is one decoded {@link Image} (a pinned GPU
+     * texture) per page, and one Typst entry is a whole {@code MAX_PREVIEW_PAGES}-page document, so a plain
+     * entry-count LRU (copied from {@code DiagramImages}, where an entry is one image) let a single 40-page
+     * doc retain ~570 MB and eight distinct renders ~4.5 GB — against the {@code -Xmx2g} packaged heap (#461).
+     * At A4/192-PPI a page is ~14 MB decoded, so ~60 pages ≈ 850 MB worst case. Both {@link #CACHE} and
+     * {@link #LAST_GOOD} are bounded by this after every insert (never evicting the just-inserted entry).
+     */
+    private static final int MAX_CACHED_PAGES = 60;
+
+    /** Access-ordered so a re-render of the visible doc keeps it; eviction is by {@link #evictToPageBudget}. */
     private static final Map<String, Cached> CACHE =
-            Collections.synchronizedMap(new LinkedHashMap<String, Cached>(16, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, Cached> eldest) {
-                    return size() > MAX_CACHED;
-                }
-            });
+            Collections.synchronizedMap(new LinkedHashMap<String, Cached>(16, 0.75f, true));
 
     /** The last good render per preview surface, so a re-render shows it instead of a placeholder. */
     private static final Map<String, List<Loaded>> LAST_GOOD =
-            Collections.synchronizedMap(new LinkedHashMap<String, List<Loaded>>(16, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, List<Loaded>> eldest) {
-                    return size() > MAX_CACHED * 2;
-                }
-            });
+            Collections.synchronizedMap(new LinkedHashMap<String, List<Loaded>>(16, 0.75f, true));
 
     private static final ExecutorService EXEC = Executors.newFixedThreadPool(2, r -> {
         Thread t = new Thread(r, "typst-render");
@@ -121,6 +119,43 @@ public final class TypstImages {
 
     public static boolean isEnabled() {
         return enabled;
+    }
+
+    /**
+     * Evicts the least-recently-used entries of an access-ordered {@code cache} until the total page count
+     * (via {@code pages}) is within {@code maxPages}, never removing the most-recent (just-inserted) entry.
+     */
+    private static <V> void evictToPageBudget(
+            Map<String, V> cache, java.util.function.ToIntFunction<V> pages, int maxPages) {
+        synchronized (cache) {
+            List<Map.Entry<String, Integer>> oldestFirst = new ArrayList<>();
+            for (Map.Entry<String, V> e : cache.entrySet()) {
+                oldestFirst.add(Map.entry(e.getKey(), Math.max(0, pages.applyAsInt(e.getValue()))));
+            }
+            for (String k : keysToEvict(oldestFirst, maxPages)) {
+                cache.remove(k);
+            }
+        }
+    }
+
+    /**
+     * Given cache entries oldest→newest with their page counts, returns the oldest keys to drop so the total
+     * retained pages fits {@code maxPages}, always keeping the newest entry (so the just-rendered document is
+     * never evicted, even when it alone exceeds the budget). Pure; unit-tested.
+     */
+    static List<String> keysToEvict(List<Map.Entry<String, Integer>> oldestFirst, int maxPages) {
+        int total = 0;
+        for (Map.Entry<String, Integer> e : oldestFirst) {
+            total += e.getValue();
+        }
+        List<String> evict = new ArrayList<>();
+        int i = 0;
+        while (total > maxPages && (oldestFirst.size() - evict.size()) > 1) {
+            Map.Entry<String, Integer> e = oldestFirst.get(i++);
+            evict.add(e.getKey());
+            total -= e.getValue();
+        }
+        return evict;
     }
 
     /**
@@ -185,8 +220,10 @@ public final class TypstImages {
                 result = new Cached(null, r.error(), 0);
             }
             CACHE.put(key, result);
+            evictToPageBudget(CACHE, c -> c.pages() == null ? 0 : c.pages().size(), MAX_CACHED_PAGES);
             if (result.ok()) {
                 LAST_GOOD.put(retainKey, result.pages());
+                evictToPageBudget(LAST_GOOD, List::size, MAX_CACHED_PAGES);
             }
             Platform.runLater(() -> applyCached(host, result, sizer, retainKey));
         });
