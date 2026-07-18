@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **Language-server updates aren't sent twice per keystroke.** After a trigger character (e.g. `.`), the editor
+  materialized and pushed the whole document to the server both on the completion trigger and again on the
+  debounced edit pulse — the same version twice. It now skips a resend when the document hasn't changed since the
+  last one. (#553)
 - **Editing above a bookmark, note, or breakpoint no longer stutters.** When an edit shifted a marker's line
   (e.g. holding Enter above a bookmark), the editor did a blocking `bookmarks.json`/`notes.json` write plus a
   full tool-window tree rebuild on the UI thread — once per newline. That persist is now coalesced to a single
