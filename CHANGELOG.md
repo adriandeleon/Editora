@@ -91,6 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Undoing a Format Document (or an auto-import) is now a single step.** A multi-line reformat applied each of
+  the language server's edits separately, so it took one Ctrl-Z per edit to undo. The whole set is now one undo
+  step. (#415)
 - **Previewing a Typst document no longer churns the project tree.** Each render writes and deletes a
   throwaway `.typ` file beside your document; on some systems the project tree's file watcher reacted to that
   by rebuilding itself on every render. It now ignores Editora's own temporary render files. (#465)

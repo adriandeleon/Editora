@@ -7799,17 +7799,44 @@ public class EditorBuffer implements TabContent {
             return;
         }
         CodeArea a = focusedArea != null ? focusedArea : area;
-        java.util.List<LspTextEdit> sorted = new java.util.ArrayList<>(edits);
-        sorted.sort((x, y) -> Integer.compare(lspEditOffset(a, y), lspEditOffset(a, x)));
-        for (LspTextEdit e : sorted) {
+        // Resolve each edit to an absolute [start,end] against the current document, keep valid + non-overlapping,
+        // sorted ascending. Applying them as ONE MultiChangeBuilder commit makes the whole set a single undo
+        // unit — a multi-line Format Document (or an auto-import's additional edits) was previously one
+        // replaceText per edit, so it took many Ctrl-Z to revert (#415, the Format-Document sub-item).
+        int len = a.getLength();
+        java.util.List<int[]> ranges = new java.util.ArrayList<>(); // {start, end}
+        java.util.List<String> texts = new java.util.ArrayList<>();
+        java.util.List<LspTextEdit> asc = new java.util.ArrayList<>(edits);
+        asc.sort((x, y) -> Integer.compare(lspEditOffset(a, x), lspEditOffset(a, y)));
+        int last = 0;
+        for (LspTextEdit e : asc) {
             try {
                 int s = lspOffset(a, e.startLine(), e.startCol());
                 int en = lspOffset(a, e.endLine(), e.endCol());
-                a.replaceText(Math.min(s, en), Math.max(s, en), e.newText() == null ? "" : e.newText());
+                int from = Math.min(s, en);
+                int to = Math.max(s, en);
+                if (from < last || to > len) {
+                    continue; // overlaps a previous edit or out of range — skip (rare; positions shifted)
+                }
+                ranges.add(new int[] {from, to});
+                texts.add(e.newText() == null ? "" : e.newText());
+                last = to;
             } catch (RuntimeException ignored) {
                 // Position no longer valid (document changed under us) — skip this edit.
             }
         }
+        if (ranges.isEmpty()) {
+            return;
+        }
+        if (ranges.size() == 1) {
+            a.replaceText(ranges.get(0)[0], ranges.get(0)[1], texts.get(0));
+            return;
+        }
+        org.fxmisc.richtext.MultiChangeBuilder<?, ?, ?> builder = a.createMultiChange(ranges.size());
+        for (int i = 0; i < ranges.size(); i++) {
+            builder.replaceTextAbsolutely(ranges.get(i)[0], ranges.get(i)[1], texts.get(i));
+        }
+        builder.commit(); // one undo unit for the whole edit set
     }
 
     private static int lspEditOffset(CodeArea a, LspTextEdit e) {
