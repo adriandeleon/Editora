@@ -112,6 +112,9 @@ public class CommandPalette {
 
         input.textProperty().addListener((obs, old, now) -> filter(now));
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
+        // Emacs caret movement + basic editing in the query field. Registered after onKey so the palette's own
+        // list navigation / C-h docs (C-n/C-p/C-g/C-h) consume those chords first and the keymap yields to it.
+        com.editora.command.TextInputKeymap.install(input, keymap);
         // The opening chord (e.g. M-x) is Alt/Meta+key; on macOS that combination also emits a
         // KEY_TYPED for a special character (Option+x => "≈") that would land in the just-focused
         // field. Swallow any character typed while a chord modifier is held; plain query typing

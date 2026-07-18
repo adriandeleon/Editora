@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
@@ -25,6 +26,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
+
+import com.editora.command.TextInputKeymap;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -82,6 +85,9 @@ public class FileFinder {
 
         input.textProperty().addListener((obs, old, now) -> refresh(now));
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
+        // Emacs caret movement + basic editing in the path field. Registered after onKey so the finder's own
+        // list navigation (C-n/C-p/C-g) consumes those chords first and the keymap yields to it (isConsumed).
+        TextInputKeymap.installShared(input);
         // macOS Option-composed chars while a chord modifier is held are swallowed; the opening chord's
         // trailing KEY_TYPED is already swallowed by the global KeyDispatcher (card is in the main scene).
         if (IS_MAC) {
@@ -126,7 +132,12 @@ public class FileFinder {
                 content,
                 () -> {
                     input.requestFocus();
-                    input.positionCaret(input.getText().length());
+                    // A TextField selects all its text on focus-gain (asynchronously), which would highlight the
+                    // pre-filled path; clear the selection after focus settles and leave the caret at the end.
+                    Platform.runLater(() -> {
+                        input.deselect();
+                        input.positionCaret(input.getText().length());
+                    });
                 },
                 () -> showing = false);
     }

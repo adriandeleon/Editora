@@ -143,6 +143,9 @@ public class QuickOpen<T> {
 
         input.textProperty().addListener((obs, old, now) -> filter(now));
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
+        // Emacs caret movement + basic editing in the query field. Registered after onKey so the picker's own
+        // list navigation (C-n/C-p/C-g) consumes those chords first and the keymap yields to it (isConsumed).
+        com.editora.command.TextInputKeymap.installShared(input);
         // On macOS the opening chord can emit an Option-composed character; swallow chars typed with a
         // chord modifier held (plain typing passes through). The opening chord's trailing KEY_TYPED is
         // already swallowed by the global KeyDispatcher (the card lives in the main scene now).

@@ -113,6 +113,8 @@ final class SearchInFilesPopup {
         query.setPromptText(tr("search.queryPrompt"));
         query.textProperty().addListener((o, a, b) -> debounce.playFromStart());
         query.addEventFilter(KeyEvent.KEY_PRESSED, this::onQueryKey);
+        // Emacs caret movement + basic editing (registered after onQueryKey so its list navigation wins).
+        com.editora.command.TextInputKeymap.installShared(query);
         if (IS_MAC) {
             // Swallow Option-composed chars from the opening chord / chorded keys (mirrors QuickOpen).
             query.addEventFilter(KeyEvent.KEY_TYPED, e -> {
@@ -150,6 +152,9 @@ final class SearchInFilesPopup {
         exclude.setPromptText(tr("search.excludePrompt"));
         include.textProperty().addListener((o, a, b) -> debounce.playFromStart());
         exclude.textProperty().addListener((o, a, b) -> debounce.playFromStart());
+        com.editora.command.TextInputKeymap.installShared(rootField);
+        com.editora.command.TextInputKeymap.installShared(include);
+        com.editora.command.TextInputKeymap.installShared(exclude);
         HBox.setHgrow(include, Priority.ALWAYS);
         HBox.setHgrow(exclude, Priority.ALWAYS);
         HBox globRow = new HBox(6, include, exclude);

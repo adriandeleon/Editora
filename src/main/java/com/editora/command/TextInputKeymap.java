@@ -27,7 +27,24 @@ public final class TextInputKeymap {
 
     private static final Map<String, Consumer<TextInputControl>> ACTIONS = actions();
 
+    /**
+     * The single app-wide {@link KeymapManager} (one instance, reloaded in place on a keymap switch — see
+     * {@code WindowManager.reloadSharedKeymap}), set once at startup so generic popup text fields can install
+     * Emacs bindings via {@link #installShared} without threading the keymap through their constructors.
+     */
+    private static volatile KeymapManager shared;
+
     private TextInputKeymap() {}
+
+    /** Registers the app-wide keymap used by {@link #installShared}. Call once at startup. */
+    public static void setShared(KeymapManager keymap) {
+        shared = keymap;
+    }
+
+    /** Installs the shared configured-keymap bindings on {@code control} (no-op until {@link #setShared}). */
+    public static void installShared(TextInputControl control) {
+        install(control, shared);
+    }
 
     /** Installs configured-keymap caret movement + basic editing on {@code control}. */
     public static void install(TextInputControl control, KeymapManager keymap) {
@@ -37,6 +54,9 @@ public final class TextInputKeymap {
         boolean[] consumed = {false};
         control.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             consumed[0] = false;
+            if (e.isConsumed()) {
+                return; // an earlier filter (e.g. a picker's list navigation) already claimed this chord
+            }
             String token = KeyDispatcher.chord(e);
             if (token == null) {
                 return;
