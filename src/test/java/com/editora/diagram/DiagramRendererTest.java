@@ -86,4 +86,36 @@ class DiagramRendererTest {
     void aQuotedPathIsOneToken() {
         assertEquals(List.of("/opt/My Tools/plantuml"), DiagramRenderer.command("\"/opt/My Tools/plantuml\"", "x"));
     }
+
+    @Test
+    void matchingOutputsCountsEveryProducedDiagramExcludingTheInput() {
+        // #459: a multi-@startuml PlantUML render writes one PNG per diagram (verified with real plantuml:
+        // `diagram.png` + `second.png`); the count drives the "N more" note (extra = count - 1).
+        assertEquals(
+                List.of("diagram.png", "second.png"),
+                DiagramRenderer.matchingOutputs(
+                        List.of("diagram.puml", "diagram.png", "second.png"), "diagram.puml", "png"),
+                "both PNGs, input excluded, sorted");
+
+        // A single-diagram render → one output, extra 0.
+        assertEquals(
+                List.of("diagram.png"),
+                DiagramRenderer.matchingOutputs(List.of("diagram.dot", "diagram.png"), "diagram.dot", "png"));
+
+        // A named single diagram (no `diagram.png`) is still counted.
+        assertEquals(
+                List.of("myclass.png"),
+                DiagramRenderer.matchingOutputs(List.of("diagram.puml", "myclass.png"), "diagram.puml", "png"));
+
+        // Case-insensitive extension, unrelated files ignored.
+        assertEquals(
+                List.of("a.PNG"),
+                DiagramRenderer.matchingOutputs(List.of("diagram.puml", "a.PNG", "notes.txt"), "diagram.puml", "png"));
+    }
+
+    @Test
+    void renderOkClampsNegativeExtraToZero() {
+        assertEquals(0, DiagramRenderer.Render.ok(new byte[] {1}, -1).extra());
+        assertEquals(2, DiagramRenderer.Render.ok(new byte[] {1}, 2).extra());
+    }
 }

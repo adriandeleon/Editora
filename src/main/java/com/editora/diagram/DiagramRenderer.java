@@ -26,17 +26,24 @@ public final class DiagramRenderer {
     private static final Duration RENDER_TIMEOUT = Duration.ofSeconds(60);
 
     /** A render outcome: PNG {@code image} bytes on success, else the tool's {@code error} message. */
-    public record Render(byte[] image, String error) {
+    /** {@code extra} = the number of <em>additional</em> diagrams the tool produced beyond the one shown — a
+     *  PlantUML file with several {@code @startuml} blocks writes one image per diagram, but the preview shows
+     *  the first; a non-zero count surfaces a "N more diagram(s)" note so the rest aren't silently dropped. */
+    public record Render(byte[] image, String error, int extra) {
         public boolean ok() {
             return image != null && error == null;
         }
 
         static Render ok(byte[] image) {
-            return new Render(image, null);
+            return new Render(image, null, 0);
+        }
+
+        static Render ok(byte[] image, int extra) {
+            return new Render(image, null, Math.max(0, extra));
         }
 
         static Render fail(String error) {
-            return new Render(null, error == null || error.isBlank() ? "render failed" : error.strip());
+            return new Render(null, error == null || error.isBlank() ? "render failed" : error.strip(), 0);
         }
     }
 
@@ -111,7 +118,10 @@ public final class DiagramRenderer {
             if (produced == null) {
                 return Render.fail(r.message().isBlank() ? "no output produced" : r.message());
             }
-            return Render.ok(Files.readAllBytes(produced));
+            // A multi-@startuml PlantUML file writes several PNGs; show the first, count the rest so the
+            // preview can say "N more diagram(s)" instead of silently dropping them (#459).
+            int extra = outputCount(dir, in, "png") - 1;
+            return Render.ok(Files.readAllBytes(produced), extra);
         } catch (IOException e) {
             return Render.fail(e.getMessage());
         } finally {
@@ -183,6 +193,27 @@ public final class DiagramRenderer {
      * <p>A multi-diagram source produces several outputs; we take one (deterministically). That is the
      * pre-existing single-diagram limitation, not a regression.
      */
+    /** The number of output files the tool produced in {@code dir} (excluding the input), by extension. */
+    private static int outputCount(Path dir, Path in, String fmt) throws IOException {
+        try (var files = Files.list(dir)) {
+            List<String> names = files.filter(Files::isRegularFile)
+                    .map(p -> p.getFileName().toString())
+                    .toList();
+            return matchingOutputs(names, in.getFileName().toString(), fmt).size();
+        }
+    }
+
+    /** The output file names (of extension {@code fmt}, excluding the input {@code inName}), sorted. Pure — a
+     *  PlantUML multi-{@code @startuml} render produces more than one; the count drives the "N more" note. */
+    static List<String> matchingOutputs(List<String> names, String inName, String fmt) {
+        String suffix = "." + fmt.toLowerCase(Locale.ROOT);
+        return names.stream()
+                .filter(n -> n != null && !n.equals(inName))
+                .filter(n -> n.toLowerCase(Locale.ROOT).endsWith(suffix))
+                .sorted()
+                .toList();
+    }
+
     private static Path producedFile(Path dir, Path in, Path out, String fmt) throws IOException {
         if (Files.isRegularFile(out)) {
             return out;
