@@ -57,8 +57,10 @@ public class CommandPalette {
     private java.util.function.Consumer<String> docsOpener = url -> {};
 
     private Map<String, String> commandToKey;
-    /** Only commands matching this predicate are listed (e.g. project commands hidden when disabled). */
-    private final java.util.function.Predicate<Command> visible;
+    /** A command matching this predicate is <em>enabled</em> (actionable); one that fails it is still listed
+     *  but rendered grayed out and skipped by the selection cursor (e.g. a Git command while Git is off) —
+     *  so the user sees the command exists and its keybinding rather than it silently missing (#532). */
+    private final java.util.function.Predicate<Command> enabled;
 
     private final TextField input = new TextField();
     private final ListView<Command> list = new ListView<>();
@@ -78,12 +80,16 @@ public class CommandPalette {
     }
 
     public CommandPalette(
-            CommandRegistry registry, KeymapManager keymap, java.util.function.Predicate<Command> visible) {
+            CommandRegistry registry, KeymapManager keymap, java.util.function.Predicate<Command> enabled) {
         this.registry = registry;
         this.keymap = keymap;
         this.commandToKey = invert(keymap.bindings());
-        this.visible = visible;
+        this.enabled = enabled;
         build();
+    }
+
+    private boolean isEnabled(Command c) {
+        return enabled.test(c);
     }
 
     /** Rebuilds the chord hints from the current keymap (after a live keymap switch). */
@@ -215,14 +221,25 @@ public class CommandPalette {
         if (size == 0) {
             return;
         }
-        int idx = Math.floorMod(list.getSelectionModel().getSelectedIndex() + delta, size);
-        list.getSelectionModel().select(idx);
-        list.scrollTo(idx);
+        int cur = list.getSelectionModel().getSelectedIndex();
+        if (cur < 0) {
+            cur = 0;
+        }
+        // Step in `delta`'s direction (wrapping) to the next ENABLED command, skipping grayed-out ones.
+        for (int step = 1; step <= size; step++) {
+            int idx = Math.floorMod(cur + delta * step, size);
+            if (isEnabled(items.get(idx))) {
+                list.getSelectionModel().select(idx);
+                list.scrollTo(idx);
+                return;
+            }
+        }
+        // No enabled command anywhere — leave the selection as-is.
     }
 
     private void runSelected() {
         Command command = list.getSelectionModel().getSelectedItem();
-        if (command != null) {
+        if (command != null && isEnabled(command)) { // a grayed-out (disabled) command is not actionable (#532)
             hide();
             registry.run(command.id());
         }
@@ -232,9 +249,8 @@ public class CommandPalette {
         String q = query.toLowerCase(Locale.ROOT).trim();
         List<Command> matches = new ArrayList<>();
         for (Command command : registry.all()) {
-            if (!visible.test(command)) {
-                continue; // e.g. project commands when project support is disabled
-            }
+            // A command that fails the enabled predicate (a disabled feature) is still listed — grayed and
+            // non-actionable — rather than hidden (#532).
             if (q.isEmpty() || isSubsequence(q, command.title().toLowerCase(Locale.ROOT))) {
                 matches.add(command);
             }
@@ -245,9 +261,19 @@ public class CommandPalette {
             matches.sort(Comparator.comparing(Command::title, byRelevance(q)));
         }
         items.setAll(matches);
-        if (!items.isEmpty()) {
-            list.getSelectionModel().select(0);
+        selectFirstEnabled();
+    }
+
+    /** Selects the first <em>enabled</em> result (the cursor never rests on a grayed-out command). */
+    private void selectFirstEnabled() {
+        for (int i = 0; i < items.size(); i++) {
+            if (isEnabled(items.get(i))) {
+                list.getSelectionModel().select(i);
+                list.scrollTo(i);
+                return;
+            }
         }
+        list.getSelectionModel().clearSelection(); // all matches are disabled
     }
 
     /** True if every char of {@code needle} appears in {@code haystack} in order (fuzzy match). */
@@ -327,9 +353,10 @@ public class CommandPalette {
         CommandCell() {
             box.setAlignment(Pos.CENTER_LEFT);
             key.getStyleClass().add("keybinding");
-            // Click a command to run it (the keyboard runs the selected item on Enter).
+            // Click an ENABLED command to run it (the keyboard runs the selected item on Enter). A grayed-out
+            // (disabled-feature) command is inert — clicking it does nothing (#532).
             setOnMouseClicked(e -> {
-                if (e.getButton() == MouseButton.PRIMARY && !isEmpty() && getItem() != null) {
+                if (e.getButton() == MouseButton.PRIMARY && !isEmpty() && getItem() != null && isEnabled(getItem())) {
                     getListView().getSelectionModel().select(getItem());
                     runSelected();
                 }
@@ -351,6 +378,10 @@ public class CommandPalette {
             }
             title.setText(item.title());
             key.setText(commandToKey.getOrDefault(item.id(), ""));
+            box.getStyleClass().remove("palette-disabled");
+            if (!isEnabled(item)) {
+                box.getStyleClass().add("palette-disabled"); // grayed + non-actionable (#532)
+            }
             setGraphic(box);
         }
     }

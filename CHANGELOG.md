@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The command palette now shows commands that can't run in the current context, grayed out**, instead of
+  hiding them. A command for a disabled feature (e.g. Git commands while Git is off) is listed with its
+  keybinding but dimmed and non-actionable, so you can see it exists. (#532)
+
 ### Fixed
 
 - **Text zoom now works inside Diff views.** `Ctrl`+`=`/`-`/`0`, the status-bar `−/+`, and `Ctrl`+mouse-wheel
