@@ -272,18 +272,7 @@ public final class LspManager {
                     // Couldn't create the workspace dir — fall back to the default (better than not starting).
                 }
             }
-            // Per-server initializationOptions:
-            //  - jdtls gets `settings.java.autobuild.enabled=false` always, plus the java-debug plugin
-            //    bundle when debugging is on (see javaInitOptions).
-            //  - gopls ships semantic tokens DISABLED and only advertises semanticTokensProvider when its
-            //    `semanticTokens` option is set at initialize (confirmed: the flat key works, `ui.` doesn't);
-            //    enabling it is free — gopls computes tokens only when we request them.
-            Object initOptions = null;
-            if ("java".equals(serverId)) {
-                initOptions = javaInitOptions(debugBundles);
-            } else if ("go".equals(serverId)) {
-                initOptions = Map.of("semanticTokens", true);
-            }
+            Object initOptions = initOptionsFor(serverId, debugBundles);
             LanguageServerSession session = new LanguageServerSession(
                     spec,
                     root,
@@ -789,6 +778,30 @@ public final class LspManager {
         return debugBundles.isEmpty()
                 ? Map.of("settings", autobuildOff)
                 : Map.of("bundles", debugBundles, "settings", autobuildOff);
+    }
+
+    /**
+     * The {@code initialize.initializationOptions} for a server, or {@code null} for one that needs none. Pure
+     * + package-private so it's unit-tested:
+     * <ul>
+     *   <li><b>java</b> (jdtls): {@code settings.java.autobuild.enabled=false} always + the java-debug plugin
+     *       {@code bundles} when debugging is on (see {@link #javaInitOptions}).</li>
+     *   <li><b>go</b> (gopls): {@code semanticTokens=true} — gopls ships semantic tokens disabled and only
+     *       advertises {@code semanticTokensProvider} when this flat key is set (confirmed; {@code ui.} doesn't).</li>
+     *   <li><b>json/css/html</b> (vscode-*-language-server): {@code provideFormatter=true} — these servers
+     *       implement formatting but only advertise {@code documentFormattingProvider} when VS Code's own
+     *       {@code provideFormatter} flag is passed; without it, Format Document was silently unavailable on a
+     *       {@code .json}/{@code .css}/{@code .html} even though the server would format (#468; verified by
+     *       driving the real servers: the flag flips the advertised capability from false to true).</li>
+     * </ul>
+     */
+    static Object initOptionsFor(String serverId, List<String> debugBundles) {
+        return switch (serverId == null ? "" : serverId) {
+            case "java" -> javaInitOptions(debugBundles);
+            case "go" -> Map.of("semanticTokens", true);
+            case "json", "css", "html" -> Map.of("provideFormatter", true);
+            default -> null;
+        };
     }
 
     /**
