@@ -49,7 +49,11 @@ public final class InstallCatalog {
         ARCHIVE,
         /** {@code npx puppeteer browsers install chrome-headless-shell} — the headless Chrome that
          *  mermaid-cli (mmdc) drives; run from mmdc's own dir so the version matches its Puppeteer. */
-        PUPPETEER_BROWSER
+        PUPPETEER_BROWSER,
+        /** Download a self-contained JVM LSP "zip with dependencies" ({@code directUrl}), extract it into the
+         *  config dir, and set the server command to {@code java -cp "<dir>/*" <mainClass>}. Used for the
+         *  Maven-aware pom.xml server (JVM lemminx + lemminx-maven), whose bundle is cross-platform. */
+        JVM_LSP_ZIP
     }
 
     /** The host OS/arch buckets used to pick a per-platform release asset. */
@@ -78,7 +82,10 @@ public final class InstallCatalog {
         /** {@code rustup} (Rust toolchain manager). */
         RUSTUP,
         /** PHP's {@code composer}. */
-        COMPOSER
+        COMPOSER,
+        /** A Java runtime ({@code java} on PATH) — the JVM lemminx + lemminx-maven server. Same requirement
+         *  jdtls already imposes; the packaged Editora runtime's {@code bin/} is stripped so it can't be used. */
+        JAVA
     }
 
     /** Eclipse JDT-LS rolling release; extracts to top-level {@code bin/ config/ features/ plugins/}. */
@@ -88,6 +95,34 @@ public final class InstallCatalog {
     /** GitHub "latest release" metadata for vscode-js-debug (the {@code js-debug-dap-v*.tar.gz} asset). */
     public static final String JS_DEBUG_RELEASES_API =
             "https://api.github.com/repos/microsoft/vscode-js-debug/releases/latest";
+
+    /** The lemminx-maven release used for the Maven-aware pom.xml server. */
+    public static final String LEMMINX_MAVEN_VERSION = "0.12.0";
+
+    /**
+     * The lemminx-maven "zip with dependencies" — a single self-contained bundle (~10 MB) holding lemminx core
+     * ({@code org.eclipse.lemminx}), the Maven extension, the Maven resolver/embedder deps, and lsp4j. Hosted on
+     * Eclipse's own repository (lemminx-maven is published to neither Maven Central nor GitHub release assets).
+     */
+    public static final String LEMMINX_MAVEN_ZIP_URL =
+            "https://repo.eclipse.org/content/repositories/lemminx-releases/org/eclipse/lemminx/lemminx-maven/"
+                    + LEMMINX_MAVEN_VERSION
+                    + "/lemminx-maven-"
+                    + LEMMINX_MAVEN_VERSION
+                    + "-zip-with-dependencies.zip";
+
+    /** lemminx's stdio launcher main class (inside the bundle's lemminx-core jar). */
+    public static final String LEMMINX_MAIN_CLASS = "org.eclipse.lemminx.XMLServerLauncher";
+
+    /**
+     * The launch command for a JVM LSP whose jars were extracted to {@code dir}:
+     * {@code java -cp "<dir>/*" <mainClass>}. The trailing {@code /*} classpath wildcard is expanded by the JVM
+     * itself (not a shell), so every jar in {@code dir} is picked up; the directory is quoted so a config path
+     * with spaces survives re-tokenizing as one argv element. Pure/unit-testable.
+     */
+    public static String jvmClasspathCommand(java.nio.file.Path dir, String mainClass) {
+        return "java -cp \"" + dir + java.io.File.separator + "*\" " + mainClass;
+    }
 
     /**
      * One install action. Only the fields relevant to {@link #kind} are populated; the rest are
@@ -195,7 +230,9 @@ public final class InstallCatalog {
                 "lua",
                 "xml",
                 "terraform",
-                "typst");
+                "typst",
+                // JVM LSP zip-with-dependencies (needs java): the Maven-aware pom.xml server.
+                "maven-pom");
     }
 
     /** The install steps for an LSP-only server id (empty if it has no installer). Pure. */
@@ -233,6 +270,20 @@ public final class InstallCatalog {
             // --- per-OS/arch binary archives (download + extract into the config dir) ---
             case "clangd", "kotlin", "lua", "xml", "terraform", "typst" ->
                 java.util.Optional.of(List.of(archiveStep(serverId)));
+            // --- JVM lemminx + lemminx-maven (one cross-platform zip; needs java on PATH) ---
+            case "maven-pom" ->
+                java.util.Optional.of(List.of(new Step(
+                        "lemminx-maven",
+                        Kind.JVM_LSP_ZIP,
+                        Set.of(Prereq.JAVA),
+                        null,
+                        null,
+                        null,
+                        null,
+                        LEMMINX_MAVEN_ZIP_URL,
+                        false,
+                        "plugins/lsp/maven",
+                        null)));
             default -> java.util.Optional.empty();
         };
     }

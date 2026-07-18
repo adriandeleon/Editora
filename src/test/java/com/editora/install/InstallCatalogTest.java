@@ -264,4 +264,35 @@ class InstallCatalogTest {
         assertEquals(List.of("@mermaid-js/mermaid-cli"), mmdc.npmPackages());
         assertFalse(mmdc.extractJarOnly());
     }
+
+    @Test
+    void mavenPomServerIsAJvmZipStepNeedingJava() {
+        assertTrue(InstallCatalog.installableServerIds().contains("maven-pom"));
+        Step s = InstallCatalog.serverInstall("maven-pom").orElseThrow().get(0);
+        assertEquals(Kind.JVM_LSP_ZIP, s.kind());
+        assertEquals(java.util.Set.of(Prereq.JAVA), s.prereqs());
+        assertEquals(InstallCatalog.LEMMINX_MAVEN_ZIP_URL, s.directUrl());
+        assertEquals("plugins/lsp/maven", s.destSubpath());
+        // The bundle is served from Eclipse's own repo (not Maven Central / GitHub) and is a self-contained zip.
+        assertTrue(s.directUrl().startsWith("https://repo.eclipse.org/"));
+        assertTrue(s.directUrl().endsWith("-zip-with-dependencies.zip"));
+    }
+
+    @Test
+    void jvmClasspathCommandQuotesTheWildcardDir() {
+        String cmd = InstallCatalog.jvmClasspathCommand(
+                Path.of("/home/u/.editora/plugins/lsp/maven"), InstallCatalog.LEMMINX_MAIN_CLASS);
+        String sep = java.io.File.separator;
+        assertEquals(
+                "java -cp \"/home/u/.editora/plugins/lsp/maven" + sep + "*\" org.eclipse.lemminx.XMLServerLauncher",
+                cmd);
+        // Re-tokenizing (as LspServerRegistry does) keeps the quoted classpath as one argv element.
+        assertEquals(
+                List.of(
+                        "java",
+                        "-cp",
+                        "/home/u/.editora/plugins/lsp/maven" + sep + "*",
+                        "org.eclipse.lemminx.XMLServerLauncher"),
+                com.editora.lsp.LspServerRegistry.tokenize(cmd));
+    }
 }

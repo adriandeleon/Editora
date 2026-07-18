@@ -20,8 +20,10 @@ import java.util.Set;
  * <b>Ruby</b> (ruby-lsp), <b>C/C++</b> (clangd — one server, both language ids), <b>HTML</b> and
  * <b>CSS</b> (vscode-html/css-language-server), <b>Kotlin</b> (kotlin-language-server), <b>Lua</b>
  * (lua-language-server), <b>Dockerfile</b> (docker-langserver), <b>SQL</b> (sqls),
- * <b>Terraform</b> (terraform-ls), <b>TOML</b> (taplo), <b>C#</b> (csharp-ls), and <b>Typst</b>
- * (tinymist). Commands are
+ * <b>Terraform</b> (terraform-ls), <b>TOML</b> (taplo), <b>C#</b> (csharp-ls), <b>Typst</b>
+ * (tinymist), and a Maven-aware <b>pom.xml</b> server (JVM lemminx + the lemminx-maven extension — routed by
+ * file name so a {@code pom.xml} gets dependency/plugin/GAV completion while other XML keeps the fast native
+ * lemminx; see {@link #MAVEN_POM_SERVER_ID}). Commands are
  * user-configurable (Settings) and never bundled. All methods are static + pure (no process launch, no I/O) so they are
  * unit-testable. Adding a server later = one more {@link ServerDef} entry.
  */
@@ -86,6 +88,9 @@ public final class LspServerRegistry {
 
     /** Markers for an XML project root (a build file that often carries the schema, else the repo). */
     public static final List<String> XML_ROOT_MARKERS = List.of("pom.xml", "build.xml", ".git");
+
+    /** Markers for a Maven project root (the pom itself, else the repo). */
+    public static final List<String> MAVEN_POM_ROOT_MARKERS = List.of("pom.xml", ".git");
 
     /** Markers for a JSON project root (package.json, else the repo). */
     public static final List<String> JSON_ROOT_MARKERS = List.of("package.json", ".git");
@@ -156,6 +161,26 @@ public final class LspServerRegistry {
     public static final String DEFAULT_CSHARP_COMMAND = "csharp-ls";
     public static final String DEFAULT_TYPST_COMMAND = "tinymist lsp";
 
+    /**
+     * The Maven-aware {@code pom.xml} server (JVM lemminx + the lemminx-maven extension). It has <b>no</b>
+     * built-in default command: unlike the other servers it is a Java launcher whose classpath points at the
+     * install directory (under the config dir), which is only known at runtime — the install recipe writes the
+     * concrete {@code java -cp "<dir>/*" org.eclipse.lemminx.XMLServerLauncher} command into Settings. Blank
+     * means "not installed", so it stays unavailable and {@code pom.xml} falls back to the native XML server.
+     */
+    public static final String DEFAULT_MAVEN_POM_COMMAND = "";
+
+    /** The server id of the Maven-aware pom.xml server (JVM lemminx + lemminx-maven). */
+    public static final String MAVEN_POM_SERVER_ID = "maven-pom";
+
+    /**
+     * The pseudo language id the {@link #MAVEN_POM_SERVER_ID} server is keyed on. A {@code pom.xml} buffer's
+     * editor language stays {@code xml} (so highlighting/folding/comments are untouched); this id is used only
+     * to <i>route the LSP session</i> to the Maven server. The id sent to the server in {@code didOpen} is
+     * translated back to {@code xml} via {@link #protocolLanguageId} — lemminx keys its XML handling on that.
+     */
+    public static final String MAVEN_POM_LANGUAGE_ID = "maven-pom";
+
     /** A known language server: its id, default command, root markers, and the language ids it serves. */
     private enum ServerDef {
         JAVA("java", DEFAULT_JAVA_COMMAND, JAVA_ROOT_MARKERS, Set.of("java")),
@@ -184,7 +209,11 @@ public final class LspServerRegistry {
         TERRAFORM("terraform", DEFAULT_TERRAFORM_COMMAND, TERRAFORM_ROOT_MARKERS, Set.of("terraform")),
         TOML("toml", DEFAULT_TOML_COMMAND, SHELL_ROOT_MARKERS, Set.of("toml")),
         CSHARP("csharp", DEFAULT_CSHARP_COMMAND, CSHARP_ROOT_MARKERS, Set.of("csharp")),
-        TYPST("typst", DEFAULT_TYPST_COMMAND, TYPST_ROOT_MARKERS, Set.of("typst"));
+        TYPST("typst", DEFAULT_TYPST_COMMAND, TYPST_ROOT_MARKERS, Set.of("typst")),
+        // Maven-aware pom.xml server: JVM lemminx + lemminx-maven. Served language id is the routing-only
+        // pseudo id MAVEN_POM_LANGUAGE_ID; the didOpen id is translated back to "xml" (see protocolLanguageId).
+        MAVEN_POM(
+                MAVEN_POM_SERVER_ID, DEFAULT_MAVEN_POM_COMMAND, MAVEN_POM_ROOT_MARKERS, Set.of(MAVEN_POM_LANGUAGE_ID));
 
         final String id;
         final String defaultCommand;
@@ -214,6 +243,34 @@ public final class LspServerRegistry {
     public static String serverIdFor(String languageId) {
         ServerDef d = defFor(languageId);
         return d == null ? null : d.id;
+    }
+
+    /**
+     * Whether {@code fileName} is a Maven POM (a file literally named {@code pom.xml}, case-insensitive) — the
+     * trigger for routing a buffer to the Maven-aware server instead of the plain XML server. Pure; takes the
+     * bare file name (not a path) so it is trivially unit-testable.
+     */
+    public static boolean isPomFile(String fileName) {
+        return fileName != null && fileName.equalsIgnoreCase("pom.xml");
+    }
+
+    /**
+     * The language id sent to the <i>server</i> in {@code didOpen} for a routing id: the Maven pseudo id
+     * {@link #MAVEN_POM_LANGUAGE_ID} maps back to {@code xml} (lemminx keys its XML handling on that, and
+     * lemminx-maven detects a POM by its URI, not the language id); every other id is passed through.
+     */
+    public static String protocolLanguageId(String routeLanguageId) {
+        return MAVEN_POM_LANGUAGE_ID.equals(routeLanguageId) ? "xml" : routeLanguageId;
+    }
+
+    /** Project-root markers for a <i>server id</i> (empty if unknown). Complements {@link #rootMarkersFor}. */
+    public static List<String> rootMarkersForServer(String serverId) {
+        for (ServerDef d : ServerDef.values()) {
+            if (d.id.equals(serverId)) {
+                return d.rootMarkers;
+            }
+        }
+        return List.of();
     }
 
     /** Whether any registered server serves {@code languageId}. */

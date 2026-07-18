@@ -982,7 +982,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         snippetPalette.setOverlayHost(overlayHost);
         projectPicker.setOverlayHost(overlayHost);
         fileFinder.setOverlayHost(overlayHost);
+        fileFinder.setKeymap(keymap);
         folderFinder.setOverlayHost(overlayHost);
+        folderFinder.setKeymap(keymap);
         switcher.setOverlayHost(overlayHost);
         branchPopup.setOverlayHost(overlayHost);
         statusBar.setOverlayHost(overlayHost);
@@ -7428,6 +7430,26 @@ public class MainController implements com.editora.mcp.McpBridge {
                     tr("install.lang." + l.name().toLowerCase(java.util.Locale.ROOT)),
                     "install.banner.message",
                     cb -> installCoordinator.installSupport(l, cb));
+            return;
+        }
+        // A pom.xml prefers the Maven-aware server (JVM lemminx + lemminx-maven) — offer *that* when it's
+        // enabled but not installed, rather than the native lemminx the generic branch below would pick (which
+        // gives base XML but no dependency/plugin/GAV completion — the whole point of opening this banner).
+        String pomServer = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
+        boolean isPom = buffer.getPath() != null
+                && buffer.getPath().getFileName() != null
+                && com.editora.lsp.LspServerRegistry.isPomFile(
+                        buffer.getPath().getFileName().toString());
+        if (isPom
+                && lspEnabled()
+                && lspCoordinator.serverEnabled(pomServer)
+                && lspCoordinator.isServerMissing(pomServer)
+                && com.editora.install.InstallCatalog.installableServerIds().contains(pomServer)) {
+            offerInstall(
+                    buffer,
+                    installCoordinator.serverName(pomServer),
+                    "install.banner.serverMessage",
+                    cb -> installCoordinator.installServer(pomServer, cb));
             return;
         }
         // …then the LSP-only servers (json/bash/yaml/dockerfile/toml/typst/…). This offers the *language

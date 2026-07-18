@@ -4813,7 +4813,18 @@ public class SettingsWindow {
                         v -> config.getSettings().setTypstLspEnabled(v),
                         () -> config.getSettings().isTypstLspEnabled(),
                         v -> config.getSettings().setTypstLspCommand(v),
-                        () -> config.getSettings().getTypstLspCommand()));
+                        () -> config.getSettings().getTypstLspCommand()),
+                new LspServerUi(
+                        com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID,
+                        com.editora.lsp.LspServerRegistry.DEFAULT_MAVEN_POM_COMMAND,
+                        "settings.lsp.enableMavenPom",
+                        "settings.lsp.mavenPomCommand",
+                        "settings.lsp.mavenPomStatus",
+                        "lsp maven pom.xml lemminx dependency completion language server found command path",
+                        v -> config.getSettings().setMavenPomLspEnabled(v),
+                        () -> config.getSettings().isMavenPomLspEnabled(),
+                        v -> config.getSettings().setMavenPomLspCommand(v),
+                        () -> config.getSettings().getMavenPomLspCommand()));
     }
 
     /** A "[label] [path field] [Browse…]" row for picking a CLI executable. */

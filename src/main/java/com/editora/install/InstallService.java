@@ -101,6 +101,9 @@ public final class InstallService {
             if (onPath("composer")) {
                 have.add(Prereq.COMPOSER);
             }
+            if (onPath("java")) {
+                have.add(Prereq.JAVA);
+            }
             Set<Prereq> result = Set.copyOf(have);
             Platform.runLater(() -> onResult.accept(result));
         });
@@ -157,8 +160,27 @@ public final class InstallService {
             case ARCHIVE -> {
                 return installArchive(s, configDir);
             }
+            case JVM_LSP_ZIP -> {
+                return installJvmLspZip(s, configDir);
+            }
         }
         return null;
+    }
+
+    /** Downloads the self-contained JVM LSP bundle ({@code directUrl}), extracts it into the config dir, and
+     *  returns the {@code java -cp "<dir>/*" <mainClass>} launch command. */
+    private String installJvmLspZip(Step s, Path configDir) throws Exception {
+        byte[] data = download(s.directUrl());
+        Path dest = configDir.resolve(s.destSubpath());
+        deleteRecursively(dest);
+        Files.createDirectories(dest);
+        Unzip.extract(
+                new ByteArrayInputStream(data),
+                dest,
+                MAX_ARCHIVE_ENTRY_BYTES,
+                MAX_ARCHIVE_TOTAL_BYTES,
+                MAX_ARCHIVE_ENTRIES);
+        return InstallCatalog.jvmClasspathCommand(dest, InstallCatalog.LEMMINX_MAIN_CLASS);
     }
 
     /** Downloads + extracts a per-OS binary archive; returns the resolved server command (binary + suffix). */

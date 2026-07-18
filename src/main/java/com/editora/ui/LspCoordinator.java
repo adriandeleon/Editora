@@ -136,7 +136,8 @@ final class LspCoordinator {
         "terraform",
         "toml",
         "csharp",
-        "typst"
+        "typst",
+        com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID
     };
 
     /** Lines of over-scan above/below the viewport when requesting semantic tokens (small scrolls stay covered). */
@@ -330,7 +331,9 @@ final class LspCoordinator {
     private void clearDiagnosticsForServer(String serverId) {
         host.forEachBuffer(b -> {
             Path p = b.getPath();
-            if (p == null || !serverId.equals(com.editora.lsp.LspServerRegistry.serverIdFor(b.getLanguage()))) {
+            // Match by the server actually managing the buffer, not a re-derivation — so it stays correct when
+            // the server is mid-disable (its enable flag already flipped) and for a filename-routed pom.xml.
+            if (p == null || !serverId.equals(lspManager.managedServerId(p))) {
                 return;
             }
             b.setLspActive(false); // drop the editor squiggle overlay/stripes immediately
@@ -373,6 +376,7 @@ final class LspCoordinator {
             case "toml" -> s.isTomlLspEnabled();
             case "csharp" -> s.isCsharpLspEnabled();
             case "typst" -> s.isTypstLspEnabled();
+            case "maven-pom" -> s.isMavenPomLspEnabled();
             default -> s.isJavaLspEnabled();
         };
     }
@@ -402,6 +406,7 @@ final class LspCoordinator {
             case "toml" -> s.getTomlLspCommand();
             case "csharp" -> s.getCsharpLspCommand();
             case "typst" -> s.getTypstLspCommand();
+            case "maven-pom" -> s.getMavenPomLspCommand();
             default -> s.getJavaLspCommand();
         };
     }
@@ -431,6 +436,7 @@ final class LspCoordinator {
             case "toml" -> s.setTomlLspEnabled(on);
             case "csharp" -> s.setCsharpLspEnabled(on);
             case "typst" -> s.setTypstLspEnabled(on);
+            case "maven-pom" -> s.setMavenPomLspEnabled(on);
             default -> s.setJavaLspEnabled(on);
         }
     }
@@ -460,6 +466,7 @@ final class LspCoordinator {
             case "toml" -> s.setTomlLspCommand(command);
             case "csharp" -> s.setCsharpLspCommand(command);
             case "typst" -> s.setTypstLspCommand(command);
+            case "maven-pom" -> s.setMavenPomLspCommand(command);
             default -> s.setJavaLspCommand(command);
         }
     }
@@ -524,8 +531,7 @@ final class LspCoordinator {
     /** Opens+activates an eligible buffer on its language's server, or deactivates+closes it otherwise. */
     void syncBuffer(EditorBuffer buffer) {
         Path path = buffer.getPath();
-        String lang = buffer.getLanguage();
-        String serverId = com.editora.lsp.LspServerRegistry.serverIdFor(lang);
+        String serverId = serverIdForBuffer(buffer); // pom.xml → maven-pom (when available), else the language's server
         boolean eligible = ops.lspFeatureEnabled()
                 && path != null
                 && com.editora.vfs.Vfs.isLocal(path)
@@ -535,10 +541,19 @@ final class LspCoordinator {
                 && serverEnabled(serverId)
                 && Boolean.TRUE.equals(serverAvailable.get(serverId));
         if (eligible) {
-            if (!lspManager.isManaged(path)) {
+            // Open when not yet managed, or re-open when the desired server changed — a pom.xml moving from the
+            // plain XML server to lemminx-maven (once installed/enabled), or back. isManaged() alone can't tell:
+            // it's keyed by URI, not server, so it stays true across a switch (which would otherwise never happen).
+            String managing = lspManager.managedServerId(path);
+            if (!serverId.equals(managing)) {
+                if (managing != null) {
+                    lspManager.closeDocument(path); // drop the old server's document + diagnostics before switching
+                    clearDiagnostics(path);
+                }
                 host.setStatus(tr("status.lsp.starting", serverLabel(serverId)));
                 ops.setLspLoading(true); // show the loading bar until the server reports ready
-                lspManager.openDocument(path, lspRootFor(buffer), lang, buffer.text());
+                lspManager.openDocument(
+                        path, lspRootFor(buffer, serverId), routeLanguageId(buffer, serverId), buffer.text());
             }
             buffer.setLspActive(true);
             // Push the server's completion trigger characters + request initial pull diagnostics. Both are
@@ -568,12 +583,49 @@ final class LspCoordinator {
         }
     }
 
-    /** Workspace root for a buffer: active project (if Projects on), else nearest build file, else dir. */
-    private Path lspRootFor(EditorBuffer buffer) {
+    /** Workspace root for a buffer under {@code serverId}: active project (if Projects on), else nearest build
+     *  file (that server's markers), else the file's dir. */
+    private Path lspRootFor(EditorBuffer buffer, String serverId) {
         return com.editora.lsp.RootResolver.resolve(
                 ops.lspProjectRoot(),
                 buffer.getPath(),
-                com.editora.lsp.LspServerRegistry.rootMarkersFor(buffer.getLanguage()));
+                com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId));
+    }
+
+    /**
+     * The server id that should serve {@code b}, honoring the {@code pom.xml} → Maven-server routing while
+     * leaving every other file on its language's normal server. A {@code pom.xml} routes to the
+     * {@code maven-pom} server when that server is <b>enabled</b>; while its availability is still unknown
+     * (not yet probed) this returns null so the buffer is <i>not</i> opened on the plain XML server first
+     * (which {@link #syncBuffer} would then never switch away from). Once probed: available → {@code maven-pom};
+     * absent → fall back to the language's normal server, so a {@code pom.xml} still gets base-XML LSP when
+     * lemminx-maven isn't installed. Disabling {@code maven-pom} skips the routing entirely (pure native XML).
+     */
+    String serverIdForBuffer(EditorBuffer b) {
+        Path p = b == null ? null : b.getPath();
+        String base = b == null ? null : com.editora.lsp.LspServerRegistry.serverIdFor(b.getLanguage());
+        String pomServer = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
+        String fileName =
+                p == null || p.getFileName() == null ? null : p.getFileName().toString();
+        if (com.editora.lsp.LspServerRegistry.isPomFile(fileName) && serverEnabled(pomServer)) {
+            Boolean mavenOk = serverAvailable.get(pomServer);
+            if (mavenOk == null) {
+                return null; // not yet probed — don't open on the plain XML server first; wait for the probe
+            }
+            if (mavenOk) {
+                return pomServer;
+            }
+            // probed and absent → fall through to the plain XML server (base-XML LSP still works)
+        }
+        return base;
+    }
+
+    /** The LSP <i>routing</i> language id to pass to {@link com.editora.lsp.LspManager#openDocument} for a
+     *  buffer resolved to {@code serverId}: the Maven pseudo id for the pom server, else the buffer's language. */
+    private static String routeLanguageId(EditorBuffer buffer, String serverId) {
+        return com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)
+                ? com.editora.lsp.LspServerRegistry.MAVEN_POM_LANGUAGE_ID
+                : buffer.getLanguage();
     }
 
     /** The accept hook for a completion item: resolve it + apply any additional edits (a TypeScript
@@ -602,8 +654,8 @@ final class LspCoordinator {
     /** Updates the status-bar LSP segment: "LSP: &lt;server&gt;" when the active file is managed, else hidden. */
     void updateStatusBar() {
         EditorBuffer b = host.activeBuffer();
-        boolean managed = b != null && b.getPath() != null && lspManager.isManaged(b.getPath());
-        String serverId = managed ? com.editora.lsp.LspServerRegistry.serverIdFor(b.getLanguage()) : null;
+        // The actually-managing server (so a pom.xml on lemminx-maven reads "maven-pom", not the language's "xml").
+        String serverId = b == null || b.getPath() == null ? null : lspManager.managedServerId(b.getPath());
         ops.setStatusBarLsp(serverId != null ? serverLabel(serverId) : null);
         updateProblemsAvailability(); // the Problems window tracks the same active-file LSP-managed condition
     }
@@ -622,6 +674,10 @@ final class LspCoordinator {
 
     /** The short server name shown in the status bar — the configured command's basename for {@code serverId}. */
     private String serverLabel(String serverId) {
+        // The Maven server launches via `java -cp ...`, whose basename ("java") is meaningless — name it directly.
+        if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
+            return "lemminx-maven";
+        }
         String configured = serverCommand(serverId);
         String cmd = configured == null || configured.isBlank()
                 ? com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId)

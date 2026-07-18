@@ -115,6 +115,10 @@ class LspManagerTest {
         // go keeps its semanticTokens flag; java delegates to javaInitOptions; others need none.
         assertEquals(Map.of("semanticTokens", true), LspManager.initOptionsFor("go", List.of()));
         assertEquals(LspManager.javaInitOptions(List.of()), LspManager.initOptionsFor("java", List.of()));
+        // maven-pom (lemminx-maven): turn the extension on with the heavy Central index disabled (local ~/.m2).
+        assertEquals(
+                Map.of("settings", Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", true))))),
+                LspManager.initOptionsFor("maven-pom", List.of()));
         assertNull(LspManager.initOptionsFor("python", List.of()));
         assertNull(LspManager.initOptionsFor("typescript", List.of()));
         assertNull(LspManager.initOptionsFor(null, List.of()));
