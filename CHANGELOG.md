@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Git Log tool window is colored and uses real file icons.** Each commit's short hash reads in the accent
+  color, and the changed-files list colors each row by its status (added/modified/deleted/renamed) with the
+  actual file-type icon — matching the Commit tool window and Project tree — instead of flat text and a generic
+  sheet icon. (#562)
 - **The Run, External Tools, and Debug consoles now color error output.** A program's stderr (e.g. a Python
   traceback) is tinted so it stands out from normal output, instead of appearing in the same plain color.
   (#558, #560)

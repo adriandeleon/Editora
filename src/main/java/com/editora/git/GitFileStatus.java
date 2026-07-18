@@ -64,6 +64,19 @@ public enum GitFileStatus {
     }
 
     /**
+     * Classifies a {@code git diff-tree --name-status} letter (a commit's changed file): A/M/D/R/C/T. A copy
+     * (C) is treated like a rename (both are violet). Anything else is modified. Pure.
+     */
+    public static GitFileStatus fromLetter(char c) {
+        return switch (Character.toUpperCase(c)) {
+            case 'A' -> ADDED;
+            case 'D' -> DELETED;
+            case 'R', 'C' -> RENAMED;
+            default -> MODIFIED; // M, T, or anything unexpected
+        };
+    }
+
+    /**
      * Maps every changed file in {@code status} to its {@link GitFileStatus}, keyed by <b>absolute, normalized
      * path</b> resolved against {@code root} (the repo root Git reported paths relative to). A rename is keyed
      * by its new path. Returns an empty map for a non-repo / null input. Pure — no filesystem I/O.
