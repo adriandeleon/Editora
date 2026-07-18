@@ -8,11 +8,17 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.CompletionItemLabelDetails;
 import org.eclipse.lsp4j.CompletionItemTag;
+import org.eclipse.lsp4j.InsertReplaceEdit;
 import org.eclipse.lsp4j.InsertTextFormat;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CompletionMapperTest {
@@ -112,5 +118,31 @@ class CompletionMapperTest {
         assertFalse(CompletionMapper.isDeprecated(fresh));
 
         assertTrue(CompletionMapper.map(List.of(tagged)).get(0).deprecated());
+    }
+
+    @Test
+    void textEditRangeStartIsCarriedAsTheReplaceStart() {
+        // A server (e.g. bash) that sends a textEdit whose range starts before the caret must have that
+        // start honored on accept, not the identifier-before-caret walk.
+        CompletionItem te = new CompletionItem("$user");
+        te.setTextEdit(Either.forLeft(new TextEdit(new Range(new Position(2, 0), new Position(2, 1)), "$user")));
+        Completion.ReplaceStart rs = CompletionMapper.map(List.of(te)).get(0).replaceStart();
+        assertEquals(2, rs.line());
+        assertEquals(0, rs.character());
+
+        // The InsertReplaceEdit shape uses the insert range's start.
+        CompletionItem ire = new CompletionItem("$name");
+        ire.setTextEdit(Either.forRight(new InsertReplaceEdit(
+                "$name",
+                new Range(new Position(5, 3), new Position(5, 4)),
+                new Range(new Position(5, 3), new Position(5, 6)))));
+        Completion.ReplaceStart rs2 = CompletionMapper.map(List.of(ire)).get(0).replaceStart();
+        assertEquals(5, rs2.line());
+        assertEquals(3, rs2.character());
+
+        // An insertText-only item carries no replace-start (the editor does the trigger-overlap walk itself).
+        CompletionItem plain = new CompletionItem("length");
+        plain.setInsertText("length");
+        assertNull(CompletionMapper.map(List.of(plain)).get(0).replaceStart());
     }
 }

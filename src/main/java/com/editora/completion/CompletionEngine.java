@@ -149,6 +149,29 @@ public final class CompletionEngine {
         return w.isEmpty() ? w : Character.toUpperCase(w.charAt(0)) + w.substring(1);
     }
 
+    /**
+     * The number of characters at the end of {@code before} that are also the start of {@code insert} — the
+     * overlap the accept should replace so an insert isn't duplicated after the text that triggered it. Used
+     * only when the identifier walk captured nothing (the char before the caret is a non-identifier trigger
+     * such as phpactor's {@code $}): typing {@code $} then accepting {@code $user} must yield {@code $user},
+     * not {@code $$user}. Bounded by the shorter string and stopped at a newline so it never crosses a line.
+     */
+    public static int prefixOverlap(String before, String insert) {
+        if (before == null || insert == null || before.isEmpty() || insert.isEmpty()) {
+            return 0;
+        }
+        // Only consider the trailing run of `before` since the last line break — an overlap must not cross a
+        // line, and a completion's insert never spans back over one.
+        int lineStart = Math.max(before.lastIndexOf('\n'), before.lastIndexOf('\r')) + 1;
+        int max = Math.min(before.length() - lineStart, insert.length());
+        for (int k = max; k >= 1; k--) {
+            if (before.regionMatches(before.length() - k, insert, 0, k)) {
+                return k; // longest suffix of `before` that is a prefix of `insert`
+            }
+        }
+        return 0;
+    }
+
     /** Exact-case prefix matches first, then case-insensitive alphabetical. */
     static int rankCompare(String a, String b, String prefix) {
         boolean ea = a.startsWith(prefix);

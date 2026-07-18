@@ -47,15 +47,16 @@ public final class CompletionMapper {
             String insert = insertText(item, label);
             Runnable onAccept = onAcceptFor == null ? null : onAcceptFor.apply(item);
             out.add(Completion.lsp(
-                    label,
-                    insert,
-                    detailText(item),
-                    onAccept,
-                    iconKindOf(item.getKind()),
-                    item.getSortText(),
-                    Boolean.TRUE.equals(item.getPreselect()),
-                    isDeprecated(item),
-                    item));
+                            label,
+                            insert,
+                            detailText(item),
+                            onAccept,
+                            iconKindOf(item.getKind()),
+                            item.getSortText(),
+                            Boolean.TRUE.equals(item.getPreselect()),
+                            isDeprecated(item),
+                            item)
+                    .withReplaceStart(replaceStartOf(item)));
         }
         return out;
     }
@@ -166,6 +167,30 @@ public final class CompletionMapper {
             i++;
         }
         return i == 0 ? label : label.substring(0, i);
+    }
+
+    /**
+     * The {@code textEdit.range.start} as an editor {@link Completion.ReplaceStart}, or null when the item
+     * carries no {@code textEdit} (an {@code insertText}-only item — the editor then walks the identifier /
+     * trigger overlap itself). Covers both the {@code TextEdit} and {@code InsertReplaceEdit} shapes; the
+     * insert range's start is used (identical to the replace range's start for a completion).
+     */
+    static Completion.ReplaceStart replaceStartOf(CompletionItem item) {
+        if (item.getTextEdit() == null) {
+            return null;
+        }
+        org.eclipse.lsp4j.Range range;
+        if (item.getTextEdit().isLeft()) {
+            range = item.getTextEdit().getLeft().getRange();
+        } else {
+            org.eclipse.lsp4j.InsertReplaceEdit ire = item.getTextEdit().getRight();
+            range = ire == null ? null : ire.getInsert();
+        }
+        if (range == null || range.getStart() == null) {
+            return null;
+        }
+        return new Completion.ReplaceStart(
+                range.getStart().getLine(), range.getStart().getCharacter());
     }
 
     private static String textEditNewText(CompletionItem item) {

@@ -134,4 +134,23 @@ class CompletionEngineTest {
         assertNull(CompletionEngine.ghostSuffix("apple", "apple"), "no suffix to add");
         assertNull(CompletionEngine.ghostSuffix("apple", "banana"));
     }
+
+    @Test
+    void prefixOverlapFindsLongestSuffixThatIsAPrefixOfTheInsert() {
+        // The phpactor case: typed "$" then accept "$user" — the overlap is "$" (1 char), so on accept the
+        // editor replaces it instead of appending → "$user", not "$$user".
+        assertEquals(1, CompletionEngine.prefixOverlap("<?php\n$", "$user"));
+        // A whole identifier already typed overlaps entirely.
+        assertEquals(3, CompletionEngine.prefixOverlap("foo.use", "user"));
+        // No overlap at all.
+        assertEquals(0, CompletionEngine.prefixOverlap("foo.", "$user"));
+        assertEquals(0, CompletionEngine.prefixOverlap("xyz", "abc"));
+        // Longest wins: "aa" is a longer suffix-of-before/prefix-of-insert overlap than "a".
+        assertEquals(2, CompletionEngine.prefixOverlap("baa", "aab"));
+        // Never crosses a line break.
+        assertEquals(0, CompletionEngine.prefixOverlap("user\n", "user"));
+        // Null/empty are safe.
+        assertEquals(0, CompletionEngine.prefixOverlap(null, "x"));
+        assertEquals(0, CompletionEngine.prefixOverlap("x", ""));
+    }
 }

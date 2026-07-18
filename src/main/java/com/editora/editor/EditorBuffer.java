@@ -7714,6 +7714,22 @@ public class EditorBuffer implements TabContent {
         while (start > 0 && isPrefixChar(text.charAt(start - 1))) {
             start--;
         }
+        Completion.ReplaceStart rs = c.replaceStart();
+        if (rs != null) {
+            // The server told us exactly what to replace (LSP textEdit.range) — honor it over the identifier
+            // walk. The end stays the current caret so any chars typed since the request are absorbed.
+            try {
+                start = Math.min(caret, lspOffset(a, rs.line(), rs.character()));
+            } catch (RuntimeException ignored) {
+                // Range no longer valid (document moved) — fall back to the identifier walk above.
+            }
+        } else if (start == caret && caret > 0 && c.snippet() == null) {
+            // The identifier walk captured nothing: the char before the caret is a non-identifier trigger
+            // (e.g. phpactor's `$`, a bash variable sigil). If the insert begins with that overlap, extend the
+            // replaced range back over it so accepting `$user` after typing `$` yields `$user`, not `$$user`.
+            int overlap = CompletionEngine.prefixOverlap(text.substring(0, caret), c.insert());
+            start = caret - overlap;
+        }
         hideCompletion();
         if (c.snippet() != null) {
             startSnippet(a, c.snippet(), start, caret);

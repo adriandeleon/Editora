@@ -91,6 +91,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Accepting a completion that begins with its trigger character no longer duplicates it.** For a language
+  server that advertises a trigger character which is part of its own insert text (phpactor's `$`, shell
+  variables), typing `$` and accepting `$user` inserted `$$user`. The accept now honors the server's
+  `textEdit.range` when present, and otherwise consumes the overlapping trigger character, so it yields
+  `$user`. Ordinary identifier completions are unaffected. (#445)
 - **Format Document now works for JSON, CSS, and HTML.** The language servers for these files implement
   formatting but only advertise it when asked with a specific option, which Editora wasn't sending — so Format
   Document reported "not supported" even though the server would have formatted the file. Editora now sends that
