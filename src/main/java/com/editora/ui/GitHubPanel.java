@@ -69,8 +69,8 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         prsToggle.setToggleGroup(group);
         issuesToggle.setToggleGroup(group);
         prsToggle.setSelected(true);
-        prsToggle.getStyleClass().addAll("flat", "git-toolbar-button");
-        issuesToggle.getStyleClass().addAll("flat", "git-toolbar-button");
+        prsToggle.getStyleClass().add("github-tab");
+        issuesToggle.getStyleClass().add("github-tab");
         prsToggle.setFocusTraversable(false);
         issuesToggle.setFocusTraversable(false);
         // A toggle group lets a selected button be re-clicked to deselect; keep exactly one selected.
