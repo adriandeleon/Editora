@@ -119,6 +119,62 @@ class PluginManagerTest {
         assertTrue(pm.descriptors().isEmpty());
     }
 
+    // --- #442: class-loader lifecycle (close leaked loaders; never close a pinned one) -------------------
+
+    private static PluginManager oneEnabledPlugin(Path pluginsDir) throws Exception {
+        Path a = Files.createDirectories(pluginsDir.resolve("alpha"));
+        Files.writeString(a.resolve("plugin.json"), "{ \"id\": \"alpha\", \"name\": \"Alpha\", \"main\": \"x.Y\" }");
+        return new PluginManager(pluginsDir, id -> true);
+    }
+
+    @Test
+    void reDiscoverClosesTheOrphanedLoaderInsteadOfLeakingIt(@TempDir Path pluginsDir) throws Exception {
+        PluginManager pm = oneEnabledPlugin(pluginsDir);
+        pm.discover();
+        assertEquals(1, pm.liveLoaderCount(), "one loader for the enabled plugin");
+
+        // A Settings Reload / install / uninstall re-discovers. With nothing pinned, the previous loader was
+        // orphaned (never re-instantiated) — it must be closed, not accumulated (the leak).
+        pm.discover();
+        assertEquals(1, pm.liveLoaderCount(), "the old loader is closed; only the freshly-built one remains");
+    }
+
+    @Test
+    void aPinnedLoaderSurvivesReDiscoverAndIsClosedOnceReleased(@TempDir Path pluginsDir) throws Exception {
+        PluginManager pm = oneEnabledPlugin(pluginsDir);
+        pm.discover();
+        ClassLoader running = pm.descriptors().get(0).classLoader(); // a window instantiated this
+        pm.pin(running);
+
+        pm.discover(); // a Settings Reload while the plugin is live in a window
+        assertEquals(2, pm.liveLoaderCount(), "the running (pinned) loader stays open beside the new one");
+        assertTrue(pm.descriptors().get(0).classLoader() != running, "a fresh loader was built");
+
+        pm.release(running); // the window closes → the superseded, now-unpinned loader is closed
+        assertEquals(1, pm.liveLoaderCount(), "the released, superseded loader is closed");
+
+        pm.closeAll();
+        assertEquals(0, pm.liveLoaderCount(), "shutdown closes everything");
+    }
+
+    @Test
+    void releasingTheCurrentLoaderKeepsItOpenForItsStillLivePlugin(@TempDir Path pluginsDir) throws Exception {
+        // Two windows share one loader; closing one window must not close the loader the other still uses.
+        PluginManager pm = oneEnabledPlugin(pluginsDir);
+        pm.discover();
+        ClassLoader shared = pm.descriptors().get(0).classLoader();
+        pm.pin(shared); // window A
+        pm.pin(shared); // window B
+
+        pm.release(shared); // window B closes
+        assertEquals(1, pm.liveLoaderCount(), "still open — window A is using it and it's the current loader");
+
+        pm.release(shared); // window A closes; still the current descriptor's loader → kept until closeAll
+        assertEquals(1, pm.liveLoaderCount(), "kept open (still current) until shutdown");
+        pm.closeAll();
+        assertEquals(0, pm.liveLoaderCount());
+    }
+
     @Test
     void storeIsDisabledByDefaultAndTogglable() {
         com.editora.config.PluginStore store = new com.editora.config.PluginStore();

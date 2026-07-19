@@ -366,8 +366,15 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   (`togglePluginSupport` — persists + `syncPluginsCheck`, reports a restart is needed). `module-info`
   `exports com.editora.plugin;` + `opens com.editora.plugin to com.fasterxml.jackson.databind;` (the manifest
   DTO). **Plugins load at startup only** — enable/disable + the master gate take effect on the next launch (no
-  hot classloader/UI unload; per-window `stop()` on close is the only teardown). **One new exported package; no
-  new Maven dependency.** Plugin-API Javadoc (the author-facing surface) builds + doclint-validates via the `apidocs` profile: `./mvnw -Papidocs javadoc:javadoc` (scoped to `com.editora.plugin`, `doclint=all,-missing` so broken `@link`/HTML fail). Example: `examples/example-plugin/` (a complete Java + declarative plugin with a
+  hot classloader/UI unload; per-window `stop()` on close is the only teardown). **Class-loader lifecycle (#442):**
+  `PluginManager` tracks every `URLClassLoader` it builds in a `live` set and ref-counts them in `pins`. Each
+  window's `PluginCoordinator` `pin`s a loader per started plugin (in `applyPlugins`) and `release`s it in
+  `disposePlugins`; `discover()` closes any previously-built loader that's now orphaned (unpinned and not carried
+  into the new descriptor set — the Reload/install/uninstall leak that held jar handles + locked the jar on
+  Windows), `release` closes a loader once its last pin drops **and** it's no longer a current descriptor's
+  loader, and `WindowManager.onWindowClosed` calls `closeAll()` when the last window closes. A loader still in use
+  by a plugin running in another window is never closed (pinned), so this is safe without hot-reload. **One new
+  exported package; no new Maven dependency.** Plugin-API Javadoc (the author-facing surface) builds + doclint-validates via the `apidocs` profile: `./mvnw -Papidocs javadoc:javadoc` (scoped to `com.editora.plugin`, `doclint=all,-missing` so broken `@link`/HTML fail). Example: `examples/example-plugin/` (a complete Java + declarative plugin with a
   `build.sh`) + `docs/plugins.md`. **Registry / install (browse + from-disk):** a plugin is distributed as a
   **`.zip`** whose top level is the plugin folder contents. **`RegistryIndex`/`RegistryEntry`** (lenient
   Jackson, static `parse`) model a curated **`index.json`**; **`PluginRegistry`** fetches it over HTTPS

@@ -86,6 +86,9 @@ final class PluginCoordinator {
     private final PluginRegistry pluginRegistry;
     private final PluginInstaller pluginInstaller;
     private final List<Plugin> startedPlugins = new ArrayList<>();
+    /** The class loaders this window pinned (one per started Java plugin), released on window close (#442). */
+    private final List<ClassLoader> pinnedLoaders = new ArrayList<>();
+
     private final List<EditorMenuContribution> pluginMenuItems = new ArrayList<>();
     private final List<ToolWindow> pluginToolWindows = new ArrayList<>();
 
@@ -147,6 +150,12 @@ final class PluginCoordinator {
             }
         }
         startedPlugins.clear();
+        // Release this window's loader pins; a loader with no remaining pins that a re-discover superseded is
+        // closed now, freeing its jar handles (#442).
+        for (ClassLoader l : pinnedLoaders) {
+            pluginManager.release(l);
+        }
+        pinnedLoaders.clear();
     }
 
     /** Gates the plugin-contributed tool windows on an open buffer (called from updateBufferToolWindows). */
@@ -231,6 +240,10 @@ final class PluginCoordinator {
                     if (plugin != null) {
                         plugin.start(new PluginContextImpl(d));
                         startedPlugins.add(plugin);
+                        // Pin the shared loader so a re-discover (Reload/uninstall) can't close it out from
+                        // under this running plugin; released in disposePlugins on window close (#442).
+                        pluginManager.pin(d.classLoader());
+                        pinnedLoaders.add(d.classLoader());
                     }
                 }
             } catch (Throwable t) {
