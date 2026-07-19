@@ -3024,6 +3024,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                             if (buildOutputToolWindow != null) {
                                 toolWindows.setAvailable(buildOutputToolWindow, anyBuildDetected());
                             }
+                            // A JVM marker (pom/build.gradle) appearing/vanishing flips the JUnit test gutter —
+                            // re-gate every open buffer (setTestGutterEnabled no-ops on an unchanged flag).
+                            if (tool == BuildTool.MAVEN || tool == BuildTool.GRADLE) {
+                                coordinatorHost.forEachBuffer(MainController.this::applyTestGutter);
+                            }
                         }
                     },
                     buildOutputPanel));
@@ -4199,8 +4204,49 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.testrunner.noBuildTool"));
     }
 
+    /** Whether a JVM build tool (Maven/Gradle) is detected + enabled — the JUnit test gutter's build-side gate. */
+    private boolean jvmBuildDetected() {
+        return buildCoordinators.stream()
+                .anyMatch(c -> (c.tool() == BuildTool.MAVEN || c.tool() == BuildTool.GRADLE)
+                        && c.isEnabled()
+                        && c.isDetected());
+    }
+
+    /** Pushes the JUnit test-gutter gate to a buffer (Test Runner on + not Simple mode + local + JVM project). */
+    private void applyTestGutter(EditorBuffer buffer) {
+        buffer.setTestGutterEnabled(config.getSettings().isTestRunner()
+                && !simpleModeActive()
+                && isLocalBuffer(buffer)
+                && jvmBuildDetected());
+    }
+
+    /** Gutter test ▶ / {@code test.runAtCaret}: run one class/method via the detected JVM build tool. */
+    private void runSingleTest(com.editora.test.JavaTestScanner.TestTarget target) {
+        for (BuildCoordinator c : buildCoordinators) {
+            if ((c.tool() == BuildTool.MAVEN || c.tool() == BuildTool.GRADLE) && c.isEnabled() && c.isDetected()) {
+                c.runTask(
+                        com.editora.test.TestRunRecognizer.singleTestTask(
+                                c.tool(), target.className(), target.methodName()),
+                        List.of());
+                return;
+            }
+        }
+        setStatus(tr("status.testrunner.noBuildTool"));
+    }
+
+    /** {@code test.runAtCaret} (method) / {@code test.runClassAtCaret} (whole class) at the caret. */
+    private void runTestAtCaret(boolean classLevel) {
+        EditorBuffer b = activeBuffer();
+        com.editora.test.JavaTestScanner.TestTarget target = b == null ? null : b.testTargetAtCaret(classLevel);
+        if (target == null) {
+            setStatus(tr("status.testrunner.noTestAtCaret"));
+            return;
+        }
+        runSingleTest(target);
+    }
+
     /** Gates the Test Results tool window: hidden when the feature is off or in Simple UI mode (it becomes
-     *  available again on the next test run). */
+     *  available again on the next test run). Also re-gates every buffer's JUnit test gutter. */
     private void applyTestRunner() {
         if (testResultsToolWindow == null) {
             return;
@@ -4208,6 +4254,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (!config.getSettings().isTestRunner() || simpleModeActive()) {
             toolWindows.setAvailable(testResultsToolWindow, false);
         }
+        coordinatorHost.forEachBuffer(this::applyTestGutter);
     }
 
     /** Test Results double-click: open the test's source file and jump to the method (name-based; the failure
@@ -5391,6 +5438,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
         // Makefile-run rides the same Run-feature gate as Java/Python/shell (setRunEnabled above).
+        buffer.setTestRunHandler(this::runSingleTest); // JUnit class/method gutter ▶ → the build tool
+        applyTestGutter(buffer); // gated by the Test Runner feature + a detected JVM (Maven/Gradle) project
         // Debugging: the breakpoint gutter gate + change/hover hooks (debuggable languages only).
         debugCoordinator.wireBuffer(buffer);
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
@@ -12015,6 +12064,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Test Results (IntelliJ-style test runner): intercepts a build tool's `test` run. Gated by the
         // "Enable Test Results" setting (default on) + suppressed in Simple UI mode.
         registry.register(Command.of("test.run", this::runTestsForContext));
+        registry.register(Command.of("test.runAtCaret", () -> runTestAtCaret(false)));
+        registry.register(Command.of("test.runClassAtCaret", () -> runTestAtCaret(true)));
         registry.register(Command.of("test.rerun", testRunCoordinator::rerun));
         registry.register(Command.of("test.rerunFailed", testRunCoordinator::rerunFailed));
         registry.register(Command.of("test.stop", testRunCoordinator::stop));
