@@ -53,6 +53,15 @@ public final class PdfViewerPane implements TabContent {
     private static final double MAX_ZOOM = 20.0;
     private static final double ZOOM_STEP = 1.25;
 
+    /**
+     * Space reserved around the page when fitting: the holder's 12px padding on each side (24) plus a small
+     * slack so the fitted page stays <b>strictly</b> inside the viewport. Without the slack the fitted page's
+     * preferred size lands exactly at the scrollbar threshold, so the {@link ScrollPane} toggles a scrollbar
+     * every layout pass; each toggle nudges {@code viewportBounds}, re-firing the listener → {@link #relayout()}
+     * → re-fit → … forever (the 73%↔74% oscillation seen on a portrait PDF, burning the FX thread).
+     */
+    private static final double FIT_INSET = 28;
+
     private final Path path;
     private final String title;
     private final BorderPane root = new BorderPane();
@@ -82,6 +91,11 @@ public final class PdfViewerPane implements TabContent {
     private Image image;
     private double zoom = 1.0;
     private boolean fitMode = true;
+
+    /** Viewport size the last fit was computed against; lets {@link #relayout()} ignore self-induced jitter. */
+    private double lastFitViewW = -1;
+
+    private double lastFitViewH = -1;
 
     public PdfViewerPane(Path path) {
         this.path = path;
@@ -267,8 +281,10 @@ public final class PdfViewerPane implements TabContent {
         double natW = image.getWidth();
         double natH = image.getHeight();
         if (fitMode) {
-            double viewW = scroll.getViewportBounds().getWidth() - 24;
-            double viewH = scroll.getViewportBounds().getHeight() - 24;
+            lastFitViewW = scroll.getViewportBounds().getWidth();
+            lastFitViewH = scroll.getViewportBounds().getHeight();
+            double viewW = lastFitViewW - FIT_INSET;
+            double viewH = lastFitViewH - FIT_INSET;
             if (viewW > 1 && viewH > 1) {
                 zoom = Math.min(1.0, Math.min(viewW / natW, viewH / natH));
             } else {
@@ -284,9 +300,17 @@ public final class PdfViewerPane implements TabContent {
 
     /** Re-fits when the tab is first shown / the window resizes (call after the node is in a laid-out scene). */
     void relayout() {
-        if (fitMode) {
-            apply();
+        if (!fitMode) {
+            return;
         }
+        // Only re-fit on a genuine resize: a sub-pixel viewport change is the feedback from our own re-fit
+        // (a scrollbar flickering on/off), and reacting to it re-opens the oscillation loop.
+        double vw = scroll.getViewportBounds().getWidth();
+        double vh = scroll.getViewportBounds().getHeight();
+        if (Math.abs(vw - lastFitViewW) < 1.0 && Math.abs(vh - lastFitViewH) < 1.0) {
+            return;
+        }
+        apply();
     }
 
     /** The page count once loaded (0 while loading / on failure). Test accessor. */
