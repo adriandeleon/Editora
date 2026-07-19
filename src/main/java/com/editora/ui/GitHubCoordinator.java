@@ -89,6 +89,11 @@ final class GitHubCoordinator {
     /** Whether {@link #remoteCheckedRoot}'s remote is a GitHub host (drives the always-on surfaces). */
     private boolean remoteIsGitHub;
 
+    /** The repo root whose open-PR/issue activity has been probed (so the async check runs once per root). */
+    private Path activityCheckedRoot;
+    /** Whether {@link #activityCheckedRoot} has at least one open PR or issue (gates the tool-window stripe). */
+    private boolean hasActivity;
+
     /** Open PR review tabs, keyed by PR number (one tab per PR; re-review re-selects + refreshes it). */
     private final java.util.Map<Integer, PrReviewPane> reviewPanes = new java.util.HashMap<>();
 
@@ -139,13 +144,38 @@ final class GitHubCoordinator {
         applyGating();
     }
 
-    /** Re-derives the always-on surfaces from the cached availability + whether the repo is a GitHub repo. */
+    /**
+     * Re-derives the always-on surfaces: the tool-window stripe shows when GitHub is enabled + {@code gh} is
+     * usable + the repo is a GitHub repo <em>and has at least one open PR or issue</em> (nothing to review ⇒
+     * no icon). Repo-scoped, not buffer-scoped — so it stays visible across tab switches within the same
+     * project window (both the remote-host and the open-activity checks are cached per repo root).
+     */
     private void applyGating() {
-        boolean available = isEnabled() && ready() && contextDir() != null && repoIsGitHub();
+        boolean available = isEnabled() && ready() && repoIsGitHub() && hasOpenActivity();
         ops.setGitHubWindowAvailable(available);
         if (!available) {
             ops.setStatusBarChecks(null);
         }
+    }
+
+    /** Whether the repo has open PRs/issues, probed off-thread once per root (cached; re-gates on completion). */
+    private boolean hasOpenActivity() {
+        Path root = git.repoRoot();
+        if (root == null) {
+            return false;
+        }
+        if (!root.equals(activityCheckedRoot)) {
+            activityCheckedRoot = root;
+            hasActivity = false;
+            service.hasOpenActivity(root, any -> {
+                if (root.equals(activityCheckedRoot)) { // still the current root
+                    hasActivity = any;
+                    applyGating();
+                }
+            });
+            return false;
+        }
+        return hasActivity;
     }
 
     /** Whether {@code gh} is present + authenticated (from the cached probe; false until probed). */
@@ -227,6 +257,9 @@ final class GitHubCoordinator {
     /** Re-detects {@code gh}, re-gates the surfaces, and refreshes the CI-checks segment (the {@code github.refresh}
      *  command). No background polling — checks refresh only here + after a PR checkout. */
     void refresh() {
+        // Invalidate the per-root caches so the stripe re-evaluates (e.g. after the repo's first PR is opened).
+        remoteCheckedRoot = null;
+        activityCheckedRoot = null;
         ifEnabled(() -> service.detect(a -> {
             applyGating();
             host.setStatus(tr(a.ready() ? "status.github.ready" : "status.github.notReady"));

@@ -2987,8 +2987,11 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void setGitHubWindowAvailable(boolean available) {
+                    // Repo-scoped (not buffer-scoped): the GitHub window lists the repo's PRs/issues, so it stays
+                    // available across tab switches (incl. the Welcome tab) as long as the project is a GitHub
+                    // repo with open activity — unlike the Commit/Git Log windows, which act on the active file.
                     if (githubToolWindow != null) {
-                        toolWindows.setAvailable(githubToolWindow, available && activeBuffer() != null);
+                        toolWindows.setAvailable(githubToolWindow, available);
                     }
                 }
 

@@ -246,6 +246,30 @@ public final class GitHubService {
         });
     }
 
+    // --- availability probe (does the repo have anything to review?) -----------------------------
+
+    /**
+     * Whether the repo has at least one open PR <em>or</em> open issue — a cheap one-item probe of each
+     * ({@code gh pr list --limit 1} / {@code gh issue list --limit 1}), used to decide whether to show the
+     * GitHub tool-window stripe. No generation guard: it's a one-shot availability check, not a refreshing list.
+     */
+    public void hasOpenActivity(Path dir, Consumer<Boolean> onResult) {
+        exec.submit(() -> {
+            boolean any = hasAny(dir, "pr") || hasAny(dir, "issue");
+            Platform.runLater(() -> onResult.accept(any));
+        });
+    }
+
+    private boolean hasAny(Path dir, String kind) {
+        ProcessRunner.Result r = gh(dir, NETWORK, kind, "list", "--limit", "1", "--json", "number");
+        if (!r.ok()) {
+            return false;
+        }
+        return kind.equals("pr")
+                ? !PrListParser.parse(r.out()).isEmpty()
+                : !IssueListParser.parse(r.out()).isEmpty();
+    }
+
     // --- open on github --------------------------------------------------------------------------
 
     /**
