@@ -103,7 +103,8 @@ final class Chrome {
             boolean mcp,
             boolean plugins,
             boolean externalTools,
-            boolean log) {}
+            boolean log,
+            boolean testRunner) {}
 
     /**
      * Whether the command palette should show command {@code id} given the feature gates. A command whose
@@ -157,6 +158,9 @@ final class Chrome {
         }
         // The master enable toggle uses the view.* prefix, so it is never hidden by this gate.
         if (!g.log() && id.startsWith("log.")) {
+            return false;
+        }
+        if (!g.testRunner() && (id.startsWith("test.") || id.equals("tool.testResults"))) {
             return false;
         }
         return true;

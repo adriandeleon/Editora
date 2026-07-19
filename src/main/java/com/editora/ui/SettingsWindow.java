@@ -218,6 +218,7 @@ public class SettingsWindow {
     private CheckBox mathSupportCheck;
     private CheckBox editorConfigCheck;
     private CheckBox logViewerCheck;
+    private CheckBox testRunnerCheck;
     private CheckBox csvGridCheck;
     private CheckBox structuredPreviewCheck;
     private CheckBox svgPreviewCheck;
@@ -974,6 +975,7 @@ public class SettingsWindow {
         mathSupportCheck = viewCheck(tr("settings.mathSupport"), Settings::setMathSupport);
         editorConfigCheck = viewCheck(tr("settings.enableEditorConfig"), Settings::setEditorConfigSupport);
         logViewerCheck = viewCheck(tr("settings.logViewer"), Settings::setLogViewer);
+        testRunnerCheck = viewCheck(tr("settings.testRunner"), Settings::setTestRunner);
         csvGridCheck = viewCheck(tr("settings.csvPreview"), Settings::setCsvPreview);
         structuredPreviewCheck = viewCheck(tr("settings.structuredPreview"), Settings::setStructuredPreview);
         svgPreviewCheck = viewCheck(tr("settings.svgPreview"), Settings::setSvgPreview);
@@ -2875,6 +2877,17 @@ public class SettingsWindow {
 
     private VBox buildToolsPage() {
         VBox p = page(tr("settings.cat.buildTools"));
+        Label testSec = section(p, tr("settings.section.testRunner"));
+        row(
+                p,
+                Category.BUILD_TOOLS,
+                testSec,
+                testRunnerCheck,
+                "test results runner junit surefire tree pass fail rerun intellij");
+        Label testHint = note(tr("settings.testRunner.hint"));
+        testHint.setWrapText(true);
+        testHint.setMaxWidth(440);
+        row(p, Category.BUILD_TOOLS, testSec, testHint, "test results runner");
         for (BuildTool bt : BuildTool.enabled()) {
             Label sec = section(p, bt.displayName());
             String kw = bt.id() + " build tool project detected enable command override toolbar";
@@ -5768,6 +5781,7 @@ public class SettingsWindow {
             mathSupportCheck.setSelected(settings.isMathSupport());
             editorConfigCheck.setSelected(settings.isEditorConfigSupport());
             logViewerCheck.setSelected(settings.isLogViewer());
+            testRunnerCheck.setSelected(settings.isTestRunner());
             csvGridCheck.setSelected(settings.isCsvPreview());
             structuredPreviewCheck.setSelected(settings.isStructuredPreview());
             svgPreviewCheck.setSelected(settings.isSvgPreview());
@@ -6282,6 +6296,7 @@ public class SettingsWindow {
         loading = true;
         try {
             logViewerCheck.setSelected(config.getSettings().isLogViewer());
+            testRunnerCheck.setSelected(config.getSettings().isTestRunner());
         } finally {
             loading = prev;
         }
@@ -6359,6 +6374,7 @@ public class SettingsWindow {
             mathSupportCheck.setSelected(s.isMathSupport());
             editorConfigCheck.setSelected(s.isEditorConfigSupport());
             logViewerCheck.setSelected(s.isLogViewer());
+            testRunnerCheck.setSelected(s.isTestRunner());
             csvGridCheck.setSelected(s.isCsvPreview());
             structuredPreviewCheck.setSelected(s.isStructuredPreview());
             svgPreviewCheck.setSelected(s.isSvgPreview());

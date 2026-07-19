@@ -18,6 +18,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.RootResolver;
 import com.editora.run.ProgramArgs;
+import com.editora.test.TestRunRecognizer;
 import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
@@ -77,6 +78,9 @@ final class BuildCoordinator {
 
     private List<String> lastTaskArgs;
     private List<String> lastToggleArgs = List.of();
+
+    /** When set, a recognized test run is forwarded here (the Test Results window); null = feature absent. */
+    private TestRunHook testRunHook;
 
     BuildCoordinator(BuildTool tool, CoordinatorHost host, Ops ops, BuildOutputPanel sharedConsole) {
         this.tool = tool;
@@ -306,12 +310,22 @@ final class BuildCoordinator {
         lastRoot = root;
         lastTaskArgs = taskArgs;
         lastToggleArgs = toggleArgs;
+
+        // Intercept a recognized test run for the Test Results window, without duplicating BuildService: the
+        // same process runs, and its stream is forwarded to the hook. The hook may decline (feature off), in
+        // which case the run proceeds unchanged — and, crucially, Go's argv is only augmented with -json when
+        // the test window will actually consume it (else the console would show raw JSON for nothing).
+        boolean recognized = testRunHook != null && TestRunRecognizer.isTestRun(tool, taskArgs);
+        List<String> augmented = recognized ? TestRunRecognizer.augmentArgv(tool, argv) : argv;
+        boolean claimed = recognized && testRunHook.onTestRunStart(tool, root, taskArgs, toggleArgs, augmented);
+        List<String> runArgv = claimed ? augmented : argv;
+
         ops.openConsole();
         String label = String.join(" ", taskArgs);
         panel.started(this, tool.displayName(), label, tool.outputStyle(), this::stop);
         tree.setRunning(true);
         host.setStatus(tr("status.build.started", tool.displayName(), label));
-        service.run(root, argv, new BuildService.Listener() {
+        service.run(root, runArgv, new BuildService.Listener() {
             @Override
             public void onStart(String commandLine) {
                 panel.started(
@@ -324,13 +338,24 @@ final class BuildCoordinator {
 
             @Override
             public void onOutput(String line, boolean stderr) {
-                panel.appendOutput(BuildCoordinator.this, line, stderr);
+                if (claimed) {
+                    testRunHook.onTestOutput(line, stderr);
+                    String shown = testRunHook.consoleLine(line, stderr);
+                    if (shown != null) {
+                        panel.appendOutput(BuildCoordinator.this, shown, stderr);
+                    }
+                } else {
+                    panel.appendOutput(BuildCoordinator.this, line, stderr);
+                }
             }
 
             @Override
             public void onExit(int code) {
                 panel.finished(BuildCoordinator.this, code);
                 tree.setRunning(false);
+                if (claimed) {
+                    testRunHook.onTestExit(code);
+                }
                 host.setStatus(
                         code == 0
                                 ? tr("status.build.ok", tool.displayName())
@@ -341,9 +366,17 @@ final class BuildCoordinator {
             public void onError(String message) {
                 panel.failed(BuildCoordinator.this, message);
                 tree.setRunning(false);
+                if (claimed) {
+                    testRunHook.onTestError(message);
+                }
                 host.setStatus(tr("status.build.failed", tool.displayName(), message));
             }
         });
+    }
+
+    /** Injects the Test Results hook (a recognized {@code test} run is mirrored there). Null = feature absent. */
+    void setTestRunHook(TestRunHook hook) {
+        this.testRunHook = hook;
     }
 
     /** Stops the running process (Console Stop button / {@code <tool>.stop}). */

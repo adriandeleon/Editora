@@ -20,9 +20,17 @@ final class Icons {
     private Icons() {}
 
     static Node of(String content) {
+        return of(content, (String[]) null);
+    }
+
+    /** As {@link #of(String)}, but also adds {@code extraClasses} to the inner path (e.g. a semantic color). */
+    static Node of(String content, String... extraClasses) {
         SVGPath svg = new SVGPath();
         svg.setContent(content);
         svg.getStyleClass().add("toolbar-icon");
+        if (extraClasses != null) {
+            svg.getStyleClass().addAll(extraClasses);
+        }
         svg.setScaleX(ICON_SCALE);
         svg.setScaleY(ICON_SCALE);
         return new Group(svg);
@@ -214,6 +222,39 @@ final class Icons {
     /** Filled square (Material "stop") — stop a running build/task in the build-tool tree toolbar. */
     static Node stopSquare() {
         return of("M6 6h12v12H6z");
+    }
+
+    /** Test Results: Material Design "test-tube" (beaker) — the test-runner tool window. */
+    static Node testResults() {
+        return of("M7 2v2h1v14a4 4 0 0 0 4 4 4 4 0 0 0 4-4V4h1V2H7zm5 14c-.6 0-1-.4-1-1s.4-1 1-1 "
+                + "1 .4 1 1-.4 1-1 1zm1-4c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm1-5h-4V4h4v3z");
+    }
+
+    /** Test passed: Material "check_circle", tinted green via {@code .test-icon-pass}. */
+    static Node testPassed() {
+        return of(
+                "M12 2a10 10 0 0 0-10 10 10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m-2 15-5-5 1.41-1.41"
+                        + "L10 14.17l7.59-7.59L19 8l-9 9z",
+                "test-icon-pass");
+    }
+
+    /** Test failed/errored: Material "cancel" (x-circle), tinted red via {@code .test-icon-fail}. */
+    static Node testFailed() {
+        return of(
+                "M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2m3.59 5L12 10.59 8.41 7 7 8.41"
+                        + "L10.59 12 7 15.59 8.41 17 12 13.41 15.59 17 17 15.59 13.41 12 17 8.41z",
+                "test-icon-fail");
+    }
+
+    /** Test skipped/ignored: Material "remove_circle", tinted amber via {@code .test-icon-skip}. */
+    static Node testSkipped() {
+        return of("M17 13H7v-2h10m-5-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z", "test-icon-skip");
+    }
+
+    /** Test running/pending: Material "circle-outline" — a hollow ring. */
+    static Node testRunning() {
+        return of("M12 20a8 8 0 0 1-8-8 8 8 0 0 1 8-8 8 8 0 0 1 8 8 8 8 0 0 1-8 8m0-18A10 10 0 0 0 2 12a10 10 "
+                + "0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2z");
     }
 
     /** TODO: Material "checklist" — a checklist for the TODO/highlight tool window. */

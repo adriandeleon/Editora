@@ -2418,3 +2418,31 @@
 }
 .hex-viewer-area .text { -fx-fill: -color-fg-default; }
 .hex-viewer-area .caret { -fx-stroke: -color-fg-default; }
+
+/* Test Results tool window (IntelliJ-style test runner). Status glyph colors are theme-aware semantic
+   vars, so they adapt to every bundled/user theme with no per-theme override. */
+.toolbar-icon.test-icon-pass { -fx-fill: -color-success-fg; }
+.toolbar-icon.test-icon-fail { -fx-fill: -color-danger-fg; }
+.toolbar-icon.test-icon-skip { -fx-fill: -color-warning-fg; }
+.test-runner .test-status { -fx-text-fill: -color-fg-muted; }
+.test-runner .test-chip { -fx-font-size: 11px; -fx-font-weight: bold; }
+.test-runner .test-chip-pass { -fx-text-fill: -color-success-fg; }
+.test-runner .test-chip-fail { -fx-text-fill: -color-danger-fg; }
+.test-runner .test-chip-skip { -fx-text-fill: -color-warning-fg; }
+.test-runner .test-elapsed { -fx-text-fill: -color-fg-muted; }
+.test-runner .test-progress { -fx-pref-width: 140px; }
+.test-runner .test-progress.test-progress-failed .bar { -fx-background-color: -color-danger-fg; }
+.test-runner .test-duration { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; }
+.test-runner .test-tree {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+}
+.test-runner .test-tree .tree-cell { -fx-padding: 1 4 1 4; }
+/* The detail console font is set programmatically to match the editor (TestRunnerPanel.setOutputFont);
+   a -fx-font-size here would override it on every CSS pass, so it is deliberately omitted. */
+.test-runner .test-detail {
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+}
+.test-runner .test-detail .content { -fx-padding: 2 4 2 4; }
