@@ -7348,6 +7348,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         area.copy();
+        if (had) {
+            area.deselect(); // collapse the selection once copied (leaves the caret in place)
+        }
         deactivateMark();
         refreshPasteState(); // clipboard now has content
         setStatus(tr(had ? "status.copied" : "status.nothingToCopy"));
