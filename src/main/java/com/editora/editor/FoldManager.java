@@ -52,6 +52,9 @@ public final class FoldManager {
     private String language = "plaintext";
     /** Max number of lines shown in a collapsed region's hover preview. */
     private static final int PREVIEW_LINES = 40;
+    /** Minimum digit width the line-number gutter pads to, so a file of fewer than 10 lines still reserves
+     *  2-digit width — adding the 10th line then doesn't widen the gutter and shift the text rightward. */
+    private static final int MIN_LINE_DIGITS = 2;
     /** Fixed width of the gutter's bookmark-marker column, reserved on every row so the gutter (and
      *  thus each line's text indentation) keeps a constant width whether or not the line is bookmarked. */
     private static final double BOOKMARK_SLOT_WIDTH = 12;
@@ -844,8 +847,18 @@ public final class FoldManager {
         return String.format("%1$" + digits(total) + "s", line);
     }
 
-    /** Number of decimal digits needed for {@code total} (>= 1). */
+    /**
+     * Digit width the line-number gutter pads to. This is the source of the gutter's (and thus each line's
+     * text-indent) width, so we clamp it to a {@link #MIN_LINE_DIGITS} floor: a file of &lt;10 lines still
+     * reserves 2-digit width, so adding the 10th line no longer widens the gutter and shifts the text
+     * rightward. (Crossing a higher power of ten — 99→100 — still steps once, matching VS Code/IntelliJ.)
+     */
     private static int digits(int total) {
+        return Math.max(MIN_LINE_DIGITS, rawDigits(total));
+    }
+
+    /** Number of decimal digits needed for {@code total} (>= 1). */
+    private static int rawDigits(int total) {
         return (int) Math.floor(Math.log10(Math.max(1, total))) + 1;
     }
 }
