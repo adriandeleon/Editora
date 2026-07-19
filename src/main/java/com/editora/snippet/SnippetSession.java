@@ -250,6 +250,14 @@ public final class SnippetSession {
         if (applying || ended) {
             return;
         }
+        // An undo/redo is rewriting the document (e.g. reverting a mirrored-field edit, now a single undo unit
+        // via replaceInActiveField): end the session cleanly rather than treat the revert as the user leaving
+        // the field and, worse, fire a re-entrant mirror replaceText mid-undo. The document is left consistent
+        // (fully reverted), just no longer tracked (#415).
+        if (area.getUndoManager().isPerformingAction()) {
+            cancel();
+            return;
+        }
         int pos = change.getPosition();
         int removed = change.getRemoved().length();
         int inserted = change.getInserted().length();
@@ -264,6 +272,73 @@ public final class SnippetSession {
         // Grow/shrink the active field and shift everything after the edit.
         shift(allRanges(), indexOf(primary), pos, delta);
         mirrorActive();
+    }
+
+    /**
+     * Applies an edit that replaces {@code [from, to)} (which must lie within the active field's primary) with
+     * {@code replacement}, updating the primary <b>and every mirror</b> as a <b>single undo unit</b> — so one
+     * Ctrl-Z reverts the field and its mirrors together instead of leaving a half-reverted document, and the
+     * session stays consistent (#415). Returns {@code false} (edit not handled, caller does it normally) when
+     * there's no active session, the edit falls outside the active field, or the field has <b>no mirror</b> — a
+     * single-occurrence field's reactive edit is already one undo unit, so intercepting it buys nothing.
+     *
+     * <p>The reactive {@link #mirrorActive} path (an after-the-fact {@code replaceText}) is what produced the
+     * separate undo step; this intercepts the edit <em>before</em> it commits and applies the primary edit +
+     * mirror replacements atomically via a {@code MultiChangeBuilder}. Field ranges are then re-derived with the
+     * same pure {@link #shift} arithmetic (ascending, cumulative delta), each edit growing its own target range.
+     */
+    public boolean replaceInActiveField(int from, int to, String replacement) {
+        if (ended || active < 0 || replacement == null) {
+            return false;
+        }
+        Field f = fields.get(active);
+        if (f.ranges.size() < 2) {
+            return false; // no mirror → the reactive edit is already one undo unit
+        }
+        int[] p = f.primary();
+        if (from < p[0] || to > p[1] || from > to) {
+            return false; // the edit isn't confined to the active field
+        }
+        String oldPrimary = area.getText(p[0], p[1]);
+        int relFrom = from - p[0];
+        String newPrimary = oldPrimary.substring(0, relFrom) + replacement + oldPrimary.substring(to - p[0]);
+
+        // The field's occurrences in document order (the primary may not be leftmost).
+        List<int[]> occ = new ArrayList<>(f.ranges);
+        occ.sort((x, y) -> Integer.compare(x[0], y[0]));
+
+        // Reconstruct the whole span from the first occurrence to the last: each occurrence becomes the field's
+        // new text, and the literal text between occurrences is copied verbatim. Applying it as ONE replaceText
+        // makes the field edit + all its mirrors a single undo unit (#415), sidestepping the reactive-mirror's
+        // separate change. (Any *other* fields living between occurrences keep their current text, preserved by
+        // the verbatim copy; their tracked ranges are shifted by the pure arithmetic below.)
+        StringBuilder rebuilt = new StringBuilder();
+        for (int i = 0; i < occ.size(); i++) {
+            rebuilt.append(newPrimary);
+            if (i + 1 < occ.size()) {
+                rebuilt.append(area.getText(occ.get(i)[1], occ.get(i + 1)[0]));
+            }
+        }
+        int spanStart = occ.get(0)[0];
+        int spanEnd = occ.get(occ.size() - 1)[1];
+        applying = true;
+        try {
+            area.replaceText(spanStart, spanEnd, rebuilt.toString());
+        } finally {
+            applying = false;
+        }
+
+        // Re-derive every tracked range with the same pure shift() arithmetic the reactive path uses: each
+        // occurrence (in document order) changes from its old length to newPrimary's. shift() mutates the arrays
+        // in place, so a later occurrence's start is already in current coordinates by the time we reach it —
+        // read o[0] directly (no cumulative-delta adjustment, which would double-count).
+        List<int[]> all = allRanges();
+        for (int[] o : occ) {
+            shift(all, all.indexOf(o), o[0], newPrimary.length() - (o[1] - o[0]));
+        }
+        int caret = p[0] + relFrom + replacement.length(); // p[0] was shifted in place by the loop above
+        area.moveTo(Math.min(caret, area.getLength()));
+        return true;
     }
 
     /** Replaces every mirror of the active field with the primary's current text. */

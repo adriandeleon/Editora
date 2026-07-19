@@ -57,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Undo inside a snippet no longer half-reverts a repeated field.** When a snippet field appears more than once
+  (e.g. `$1 = $1;`), typing into it mirrored the text to every occurrence — but each mirror was a separate change,
+  so one Ctrl-Z reverted only the mirror and left the field half-reverted (`x = ;`), cancelling the snippet. The
+  field edit and its mirrors are now applied as a single change, so one Ctrl-Z reverts them together and the
+  document stays consistent. (#415)
 - **A keyboard config synced between macOS and Windows/Linux no longer double-binds your custom shortcuts.**
   Custom keybinding overrides were kept in a single map, but a chord is modifier-specific (Cmd on macOS, Ctrl
   elsewhere) — so a shortcut rebound on a Mac and then opened on Windows stayed bound to *both* your new chord and
