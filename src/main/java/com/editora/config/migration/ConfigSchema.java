@@ -137,7 +137,9 @@ public enum ConfigSchema {
                     Map.entry(79, (Migration) ConfigMigrations::identity), // v79→80: + toolbarLayout (additive)
                     // v80→81: split keybindings into per-platform maps (keybindings=Ctrl, keybindingsMac=Cmd) so a
                     // synced config no longer double-binds a rebound command across macOS/Windows (#439).
-                    Map.entry(80, (Migration) ConfigMigrations::splitKeybindingsByPlatform))),
+                    Map.entry(80, (Migration) ConfigMigrations::splitKeybindingsByPlatform),
+                    Map.entry(
+                            81, (Migration) ConfigMigrations::identity))), // v81→82: + githubSupport/ghPath (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

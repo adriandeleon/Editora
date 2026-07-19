@@ -358,6 +358,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     private GitLogPanel gitLogPanel;
     private GitLogPanel.Actions gitLogOps; // reused by the git.log.* palette commands (act on the selected commit)
     private ToolWindow gitLogToolWindow;
+    /** GitHub PR/issue tool window; available only inside a GitHub repo. */
+    private GitHubPanel githubPanel;
+
+    private ToolWindow githubToolWindow;
     /** The path the Git Log is currently filtered to (file history), or null for the whole repo. */
     private Path gitLogFilter;
     /** Local File History: snapshots local files on save/auto-save/external reload (off-thread). */
@@ -595,6 +599,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 config,
                 toolWindows,
                 git.service(),
+                github.service(),
                 mermaid.service(),
                 diagram.service(),
                 typst.service(),
@@ -718,6 +723,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyChromeVisibility();
         applyProjectSupport(); // hide project UI when disabled (default)
         git.applySupport(); // hide Git UI when disabled (default)
+        github.applySupport(); // detect gh + gate the GitHub PR/issue surfaces (on by default, inert until gh is found)
         refreshBuildTools(); // initial marker detection; each toolbar button stays hidden until one is found
         historyCoordinator.applySupport(); // Local File History tool window availability + list (on by default)
         notesCoordinator.applySupport(); // hide Personal Notes UI when disabled (default)
@@ -913,6 +919,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         return new Chrome.PaletteGates(
                 s.isProjectSupport(),
                 git.isEnabled(),
+                github.isEnabled(),
                 s.isNotesSupport(),
                 s.isMermaidSupport(),
                 diagram.isEnabled(),
@@ -1285,6 +1292,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         lspManager.shutdownAll(); // don't orphan this window's external language servers
         dapManager.stop(); // end any debug session
         git.shutdown();
+        github.shutdown(); // stop the gh worker thread
         if (historyCoordinator != null) {
             historyCoordinator.shutdown();
         }
@@ -1335,6 +1343,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             hex.dispose();
         } else if (tab.getUserData() instanceof PdfViewerPane pdf) {
             pdf.dispose();
+        } else if (tab.getUserData() instanceof PrReviewPane pr) {
+            github.onReviewPaneClosed(pr); // drop it from the coordinator's per-PR map (no resource to release)
         }
     }
 
@@ -2221,6 +2231,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         gitLogPanel = new GitLogPanel(gitLogOps = gitLogActions());
         gitLogToolWindow = new ToolWindow(
                 "gitLog", tr("toolwindow.gitLog"), ToolWindow.Side.BOTTOM, Icons::gitLog, gitLogPanel, "tool.gitLog");
+        githubPanel = new GitHubPanel(githubActions());
+        githubToolWindow = new ToolWindow(
+                "github", tr("toolwindow.github"), ToolWindow.Side.BOTTOM, Icons::github, githubPanel, "tool.github");
         historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps());
         fileHistoryToolWindow = new ToolWindow(
                 "fileHistory",
@@ -2468,6 +2481,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(notesToolWindow);
         toolWindows.register(commitToolWindow);
         toolWindows.register(gitLogToolWindow);
+        toolWindows.register(githubToolWindow, false); // stripe off by default; available inside a GitHub repo
+        toolWindows.setAvailable(githubToolWindow, false);
         toolWindows.setAvailable(
                 gitLogToolWindow, false); // shown only inside a repo (gated by GitCoordinator#applyState)
         toolWindows.register(fileHistoryToolWindow);
@@ -2509,6 +2524,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // directly, bypassing showGitLog) or a command. open() only fires this on a real open.
                 if (opened && git.isEnabled()) {
                     loadGitLog(gitLogFilter);
+                }
+                return;
+            }
+            if (tw == githubToolWindow) {
+                if (opened && github.isEnabled()) {
+                    reloadGithubPanel(); // fetch the current mode's list when the window is opened
                 }
                 return;
             }
@@ -2940,6 +2961,98 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public String editorConfigCharset(Path file) {
                     return editorConfigCharsetFor(file);
+                }
+            });
+
+    // --- GitHub (native `gh` CLI: PR checkout/diff/create + open-on-GitHub) ---------------------------
+
+    /** The GitHub integration (gh-backed); see {@link GitHubCoordinator}. Rides on {@code git} for the repo
+     *  root and reuses {@code diffCoordinator} for PR diff review. */
+    private final GitHubCoordinator github =
+            new GitHubCoordinator(coordinatorHost, git, diffCoordinator, new GitHubCoordinator.WindowOps() {
+                @Override
+                public void reloadAllFromDiskSilently() {
+                    MainController.this.reloadAllFromDiskSilently();
+                }
+
+                @Override
+                public void checkExternalChanges() {
+                    MainController.this.checkExternalChanges();
+                }
+
+                @Override
+                public com.editora.command.KeymapManager keymap() {
+                    return keymap;
+                }
+
+                @Override
+                public void setGitHubWindowAvailable(boolean available) {
+                    // Repo-scoped (not buffer-scoped): the GitHub window lists the repo's PRs/issues, so it stays
+                    // available across tab switches (incl. the Welcome tab) as long as the project is a GitHub
+                    // repo with open activity — unlike the Commit/Git Log windows, which act on the active file.
+                    if (githubToolWindow != null) {
+                        toolWindows.setAvailable(githubToolWindow, available);
+                    }
+                }
+
+                @Override
+                public void toggleGitHubWindow() {
+                    if (githubToolWindow != null) {
+                        toolWindows.toggle(githubToolWindow);
+                    }
+                }
+
+                @Override
+                public void setStatusBarChecks(com.editora.github.ChecksParser.ChecksSummary summary) {
+                    statusBar.setGitHubChecks(summary);
+                }
+
+                @Override
+                public void addReviewTab(com.editora.editor.TabContent pane) {
+                    if (pane instanceof PrReviewPane p) {
+                        p.setFontScale(config.getSettings().getFontZoom());
+                    }
+                    addContentTab(pane, true);
+                }
+
+                @Override
+                public boolean selectTabOf(com.editora.editor.TabContent pane) {
+                    for (Tab t : tabPane.getTabs()) {
+                        if (t.getUserData() == pane) {
+                            tabPane.getSelectionModel().select(t);
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                @Override
+                public void reloadGitHubPanel() {
+                    MainController.this.reloadGithubPanel();
+                }
+
+                // The Build Output console is owner-routed, so passing the GitHub coordinator as the owner
+                // gives CI logs their own persistent "CI" tab beside the Maven/npm build tabs.
+                @Override
+                public void ciLogStarted(String header, Runnable onStop) {
+                    toolWindows.open(buildOutputToolWindow);
+                    buildOutputPanel.started(
+                            github, tr("github.ci.tab"), header, com.editora.build.OutputStyle.ci(), onStop);
+                }
+
+                @Override
+                public void ciLogAppend(String line) {
+                    buildOutputPanel.appendOutput(github, line, false);
+                }
+
+                @Override
+                public void ciLogFinished() {
+                    buildOutputPanel.finished(github, 0);
+                }
+
+                @Override
+                public void ciLogFailed(String message) {
+                    buildOutputPanel.failed(github, message);
                 }
             });
 
@@ -4156,8 +4269,25 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Path resolveRunLinkFile(String fileToken) {
         try {
             Path p = Path.of(fileToken);
+            if (p.isAbsolute() && java.nio.file.Files.isRegularFile(p)) {
+                return p; // a genuinely local absolute path (a local run/build log)
+            }
+            // A CI log carries the *runner's* paths (absolute /home/runner/work/<r>/<r>/… or repo-relative),
+            // which don't exist locally — try progressively shorter repo-relative suffixes under the project
+            // root so a GitHub Actions failure frame still jumps to the local file. Exact paths are tried
+            // first (candidate 0), so local behaviour is unchanged.
+            Project activeProject = projects == null ? null : projects.active();
+            if (activeProject != null) {
+                Path root = Path.of(activeProject.root());
+                for (String candidate : com.editora.run.RunnerPaths.candidates(fileToken)) {
+                    Path c = root.resolve(candidate);
+                    if (java.nio.file.Files.isRegularFile(c)) {
+                        return c;
+                    }
+                }
+            }
             if (p.isAbsolute()) {
-                return java.nio.file.Files.isRegularFile(p) ? p : null;
+                return null; // absolute, not local, and no repo-relative suffix matched
             }
             String name = p.getFileName().toString();
             for (Tab t : tabPane.getTabs()) { // an open tab with that file name wins
@@ -4175,13 +4305,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                     return sibling;
                 }
             }
-            Project active = projects == null ? null : projects.active();
-            if (active != null) {
-                Path inRoot = Path.of(active.root()).resolve(name);
-                if (java.nio.file.Files.isRegularFile(inRoot)) {
-                    return inRoot;
-                }
-            }
+            // (The old "<project root>/<bare name>" fallback is subsumed by the candidate walk above — the
+            // last candidate is always the bare file name, resolved against the same root.)
         } catch (RuntimeException ignored) {
             // Malformed path token — treat as unresolvable.
         }
@@ -4393,6 +4518,77 @@ public class MainController implements com.editora.mcp.McpBridge {
                     git::checkoutBranch,
                     git::checkoutRemoteBranch);
         });
+    }
+
+    // --- GitHub tool window ----------------------------------------------------------------------
+
+    /** The {@link GitHubPanel.Actions} the GitHub tool window routes user actions through. */
+    private GitHubPanel.Actions githubActions() {
+        return new GitHubPanel.Actions() {
+            @Override
+            public void refresh() {
+                reloadGithubPanel();
+            }
+
+            @Override
+            public void showPrs() {
+                github.fetchPrs(githubPanel::setPrs);
+            }
+
+            @Override
+            public void showIssues() {
+                github.fetchIssues(githubPanel::setIssues);
+            }
+
+            @Override
+            public void showRuns() {
+                github.fetchRuns(githubPanel::setRuns);
+            }
+
+            @Override
+            public void viewRunLog(long runId, String workflowName) {
+                github.viewRunLog(runId, workflowName);
+            }
+
+            @Override
+            public void rerunRun(long runId, boolean failedOnly) {
+                github.rerunRun(runId, failedOnly);
+            }
+
+            @Override
+            public void cancelRun(long runId) {
+                github.cancelRun(runId);
+            }
+
+            @Override
+            public void checkoutPr(int number) {
+                github.checkoutNumber(number);
+            }
+
+            @Override
+            public void reviewPr(int number) {
+                github.reviewPrNumber(number);
+            }
+
+            @Override
+            public void openUrl(String url) {
+                github.openUrl(url);
+            }
+
+            @Override
+            public void copyUrl(String url) {
+                github.copyUrl(url);
+            }
+        };
+    }
+
+    /** Re-fetches the GitHub tool window's current segment (PRs, Issues, or Runs). */
+    private void reloadGithubPanel() {
+        switch (githubPanel.mode()) {
+            case PRS -> github.fetchPrs(githubPanel::setPrs);
+            case ISSUES -> github.fetchIssues(githubPanel::setIssues);
+            case RUNS -> github.fetchRuns(githubPanel::setRuns);
+        }
     }
 
     // --- Git Log / History tool window -----------------------------------------------------------
@@ -7757,6 +7953,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                 toolWindows.setAvailable(gitLogToolWindow, false);
             }
         }
+        // Re-derive the GitHub window's availability (its setGitHubWindowAvailable already ANDs an open buffer).
+        if (githubToolWindow != null) {
+            github.refreshAvailability();
+        }
     }
 
     /**
@@ -10620,6 +10820,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyChromeVisibility();
         applyProjectSupport();
         git.applySupport();
+        github.applySupport(); // re-detect gh + re-gate the GitHub surfaces
         historyCoordinator.applySupport(); // re-gate the Local File History tool window + refresh its list
         git.applyBlame(); // (re)apply inline blame to the active buffer (effective gate: git + setting + !simple)
         notesCoordinator.applySupport();
@@ -10678,6 +10879,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         if (welcomeTab != null) {
             welcomePane.setFontScale(settings.getFontZoom()); // scale Welcome text to the current zoom (#540)
+        }
+        for (Tab t : tabPane.getTabs()) {
+            if (t.getUserData() instanceof PrReviewPane pr) {
+                pr.setFontScale(settings.getFontZoom()); // scale the PR review tab like Welcome
+            }
         }
     }
 
@@ -12163,6 +12369,25 @@ public class MainController implements com.editora.mcp.McpBridge {
                     git.invalidateCaches();
                     git.afterMutation();
                 })));
+        // GitHub (native `gh` CLI). Gated by the "Enable GitHub" setting (on by default, inert until gh is
+        // found + authenticated). Each flow reports the precise reason when gh isn't usable / not a GitHub repo.
+        registry.register(Command.of("github.checkoutPr", github::checkoutPr));
+        registry.register(Command.of("github.viewPrDiff", github::viewPrDiff));
+        registry.register(Command.of("github.createPr", github::createPr));
+        registry.register(Command.of("github.submitReview", github::submitReviewPicked));
+        registry.register(Command.of("github.openOnGitHub", github::openOnGitHub));
+        registry.register(Command.of(
+                "github.showRuns",
+                () -> github.ifEnabled(() -> {
+                    toolWindows.open(githubToolWindow);
+                    githubPanel.selectRuns();
+                    github.fetchRuns(githubPanel::setRuns);
+                })));
+        registry.register(Command.of("github.viewRunLog", github::viewRunLogPicked));
+        registry.register(Command.of("github.refresh", github::refresh));
+        registry.register(Command.of("view.toggleGithub", github::toggleSupport));
+        registry.register(
+                Command.of("tool.github", () -> github.ifEnabled(() -> toolWindows.toggle(githubToolWindow))));
         // History / Log, blame, and stash (Core-trio parity with IntelliJ/VSCode).
         registry.register(Command.of("tool.gitLog", () -> git.ifEnabled(this::showGitLog)));
         registry.register(Command.of("tool.fileHistory", historyCoordinator::showActive));

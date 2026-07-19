@@ -114,6 +114,7 @@ public class SettingsWindow {
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
         // Version control
         GIT(tr("settings.cat.git"), Group.VERSION_CONTROL, true),
+        GITHUB(tr("settings.cat.github"), Group.VERSION_CONTROL, true),
         // System
         KEYMAPS(tr("settings.cat.keymaps"), Group.SYSTEM),
         MACROS(tr("settings.cat.macros"), Group.SYSTEM),
@@ -157,6 +158,7 @@ public class SettingsWindow {
 
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
+    private final com.editora.github.GitHubService githubService;
     private final com.editora.mermaid.MermaidService mermaidService;
     private final com.editora.diagram.DiagramService diagramService;
     private final com.editora.typst.TypstService typstService;
@@ -297,6 +299,9 @@ public class SettingsWindow {
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
     private CheckBox blameCheck;
+    private CheckBox githubCheck;
+    private TextField ghPathField;
+    private Label githubStatusLabel;
     private CheckBox updateCheckCheck;
     private CheckBox localHistoryCheck;
     private Spinner<Integer> historyMaxPerFileSpinner;
@@ -452,6 +457,7 @@ public class SettingsWindow {
             ConfigManager config,
             ToolWindowManager toolWindows,
             com.editora.git.GitService gitService,
+            com.editora.github.GitHubService githubService,
             com.editora.mermaid.MermaidService mermaidService,
             com.editora.diagram.DiagramService diagramService,
             com.editora.typst.TypstService typstService,
@@ -467,6 +473,7 @@ public class SettingsWindow {
         this.config = config;
         this.toolWindows = toolWindows;
         this.gitService = gitService;
+        this.githubService = githubService;
         this.mermaidService = mermaidService;
         this.diagramService = diagramService;
         this.typstService = typstService;
@@ -570,6 +577,7 @@ public class SettingsWindow {
         refreshLspStatus();
         refreshDebugStatus();
         refreshMermaidStatus();
+        refreshGithubStatus();
         refreshBuildToolStatus();
         refreshAgentClientStatus();
     }
@@ -1012,6 +1020,21 @@ public class SettingsWindow {
         blameCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setGitBlameInline(now);
             apply();
+        });
+
+        githubCheck = new CheckBox(tr("settings.enableGithub"));
+        githubCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setGithubSupport(now);
+            apply();
+            ghPathField.setDisable(!now);
+            refreshGithubStatus();
+        });
+        ghPathField = new TextField();
+        ghPathField.setPromptText("gh");
+        ghPathField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setGhPath(now);
+            apply();
+            refreshGithubStatus();
         });
 
         updateCheckCheck = viewCheck(tr("settings.checkForUpdates"), Settings::setUpdateCheck);
@@ -1461,6 +1484,7 @@ public class SettingsWindow {
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
         // Version control
         pages.put(Category.GIT, gitPage());
+        pages.put(Category.GITHUB, githubPage());
         // System
         pages.put(Category.KEYMAPS, keymapsPage());
         pages.put(Category.MACROS, macrosPage());
@@ -2731,6 +2755,28 @@ public class SettingsWindow {
         hint.setWrapText(true);
         hint.setMaxWidth(440);
         row(p, Category.GIT, null, hint, "git version control vcs enable");
+        return p;
+    }
+
+    private VBox githubPage() {
+        VBox p = page(tr("settings.cat.github"));
+        githubStatusLabel = new Label(tr("settings.github.checking"));
+        githubStatusLabel.getStyleClass().add("settings-git-status");
+        githubStatusLabel.setWrapText(true);
+        githubStatusLabel.setMaxWidth(440);
+        row(p, Category.GITHUB, null, githubStatusLabel, "github gh cli found installed authenticated not found");
+        row(p, Category.GITHUB, null, githubCheck, "github gh pull request pr enable");
+        row(
+                p,
+                Category.GITHUB,
+                null,
+                exePathRow(tr("settings.github.ghPath"), ghPathField),
+                "github gh path executable command");
+        Label hint = note(tr("settings.github.hint"));
+        hint.setWrapText(true);
+        hint.setMaxWidth(440);
+        row(p, Category.GITHUB, null, hint, "github gh cli token credentials auth");
+        refreshGithubStatus();
         return p;
     }
 
@@ -4919,6 +4965,27 @@ public class SettingsWindow {
         });
     }
 
+    private void refreshGithubStatus() {
+        if (githubStatusLabel == null || githubService == null) {
+            return;
+        }
+        githubStatusLabel.getStyleClass().setAll("settings-git-status");
+        githubStatusLabel.setText(tr("settings.github.checking"));
+        githubService.setCommand(config.getSettings().getGhPath());
+        githubService.detect(a -> {
+            if (!a.found()) {
+                githubStatusLabel.getStyleClass().setAll("settings-git-status", "settings-git-missing");
+                githubStatusLabel.setText(tr("settings.github.notFound"));
+            } else if (!a.authenticated()) {
+                githubStatusLabel.getStyleClass().setAll("settings-git-status", "settings-git-missing");
+                githubStatusLabel.setText(tr("settings.github.foundNoAuth"));
+            } else {
+                githubStatusLabel.getStyleClass().setAll("settings-git-status", "settings-git-found");
+                githubStatusLabel.setText(tr("settings.github.found", a.version()));
+            }
+        });
+    }
+
     /** Reads each build coordinator's currently-cached detection (no subprocess probe needed — "found" just
      *  means the marker file parsed for the active context) and colors that tool's status row green/red. */
     private void refreshBuildToolStatus() {
@@ -5804,6 +5871,10 @@ public class SettingsWindow {
             gitCheck.setSelected(settings.isGitSupport());
             blameCheck.setSelected(settings.isGitBlameInline());
             blameCheck.setDisable(!settings.isGitSupport());
+            githubCheck.setSelected(settings.isGithubSupport());
+            ghPathField.setText(settings.getGhPath());
+            ghPathField.setDisable(!settings.isGithubSupport());
+            refreshGithubStatus();
             updateCheckCheck.setSelected(settings.isUpdateCheck());
             localHistoryCheck.setSelected(settings.isLocalHistory());
             historyMaxPerFileSpinner.getValueFactory().setValue(settings.getHistoryMaxPerFile());

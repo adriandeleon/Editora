@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 81;
+    public static final int SCHEMA_VERSION = 82;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -185,6 +185,13 @@ public class Settings {
      *  and Git commands/keybindings. Self-gates on detection: when {@code git} isn't on PATH it stays inert
      *  (so this is effectively "on when Git is installed"). */
     private boolean gitSupport = true;
+    /** GitHub integration via the {@code gh} CLI: on by default — PR checkout, PR diff review, create PR,
+     *  open-on-GitHub. Self-gates on detection: inert until {@code gh} is on PATH and authenticated
+     *  ({@code gh auth status}). Rides on the Git integration + the user's own {@code gh} credentials —
+     *  Editora never handles a token. */
+    private boolean githubSupport = true;
+    /** Path/command for the GitHub CLI; blank = resolve {@code gh} on PATH. */
+    private String ghPath = "";
     /** Inline git blame: off by default — when Git is on, paints a GitLens-style annotation
      *  ("author, N days ago • summary") after the caret line. */
     private boolean gitBlameInline = false;
@@ -1284,6 +1291,22 @@ public class Settings {
 
     public void setGitSupport(boolean gitSupport) {
         this.gitSupport = gitSupport;
+    }
+
+    public boolean isGithubSupport() {
+        return githubSupport;
+    }
+
+    public void setGithubSupport(boolean githubSupport) {
+        this.githubSupport = githubSupport;
+    }
+
+    public String getGhPath() {
+        return ghPath;
+    }
+
+    public void setGhPath(String ghPath) {
+        this.ghPath = ghPath == null ? "" : ghPath;
     }
 
     public boolean isGitBlameInline() {

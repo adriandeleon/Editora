@@ -31,6 +31,27 @@ class PatchParserTest {
     }
 
     @Test
+    void countsAdditionsAndDeletionsExcludingContext() {
+        // Two context lines carried on both sides, plus one add + two deletes — the counts must ignore context.
+        String patch = """
+                --- a/Foo.txt
+                +++ b/Foo.txt
+                @@ -1,4 +1,3 @@
+                 keep1
+                -gone1
+                -gone2
+                +added1
+                 keep2
+                """;
+        FilePatch f = PatchParser.parse(patch).get(0);
+        assertEquals(1, f.additions());
+        assertEquals(2, f.deletions());
+        // oldLines/newLines include the 2 context lines, so their sizes are NOT the diff stat.
+        assertEquals(4, f.oldLines().size());
+        assertEquals(3, f.newLines().size());
+    }
+
+    @Test
     void gitStyleSingleFileDiff() {
         String patch = """
                 diff --git a/src/Main.java b/src/Main.java

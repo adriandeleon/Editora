@@ -43,6 +43,9 @@ public final class StatusBar extends HBox {
     private final MessageLogPopup messageLogPopup = new MessageLogPopup();
     /** Git branch + ahead/behind; clickable to switch branches. Hidden outside a Git repo. */
     private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
+    /** GitHub PR CI checks roll-up (✓/✗/○ + fail count); clickable → refresh. Hidden unless the current
+     *  branch has a PR with checks. */
+    private final Label githubChecks = segment("github.refresh", tr("statusbar.tip.githubChecks"));
     /** Active language server for the current file (e.g. "LSP: jdtls"); clickable → Problems. Hidden when
      *  the active buffer isn't served by LSP. */
     private final Label lsp = segment("tool.problems", tr("statusbar.tip.lsp"));
@@ -92,6 +95,8 @@ public final class StatusBar extends HBox {
     private boolean gitFeatureEnabled = true;
 
     private boolean gitInRepo;
+    /** Latest GitHub PR check roll-up (null = hidden), so Simple-mode toggling can re-apply its visibility. */
+    private com.editora.github.ChecksParser.ChecksSummary githubChecksSummary;
     /** Latest LSP server name + loading state, so Simple-mode toggling can re-apply their visibility. */
     private String lspServerName = "";
 
@@ -127,6 +132,10 @@ public final class StatusBar extends HBox {
 
         git.getStyleClass().add("status-git");
         git.setText(tr("statusbar.noVcs")); // always shown; updated by setGitBranch
+
+        githubChecks.getStyleClass().add("status-git");
+        githubChecks.setVisible(false); // shown only when the current branch's PR has checks
+        githubChecks.setManaged(false);
 
         lsp.getStyleClass().add("status-lsp");
         lsp.setVisible(false); // shown only when the active file is served by a language server
@@ -179,6 +188,7 @@ public final class StatusBar extends HBox {
                         debug,
                         lspProgress,
                         git,
+                        githubChecks,
                         lsp,
                         mcp,
                         readOnly,
@@ -326,6 +336,36 @@ public final class StatusBar extends HBox {
         boolean vis = gitFeatureEnabled && gitInRepo && !simpleMode;
         git.setVisible(vis);
         git.setManaged(vis);
+    }
+
+    /**
+     * Updates the GitHub PR CI-checks roll-up ({@code ✓/✗/○} + fail count). A {@code null} summary (or one with
+     * no meaningful runs) hides the segment; otherwise it shows the overall status. Hidden in Simple UI mode.
+     */
+    public void setGitHubChecks(com.editora.github.ChecksParser.ChecksSummary summary) {
+        githubChecksSummary =
+                summary == null || summary.overall() == com.editora.github.ChecksParser.Overall.NONE ? null : summary;
+        if (githubChecksSummary != null) {
+            String glyph =
+                    switch (githubChecksSummary.overall()) {
+                        case PASS -> "✓"; // ✓
+                        case FAIL -> "✗"; // ✗
+                        case PENDING -> "○"; // ○
+                        case NONE -> "";
+                    };
+            String text = glyph + " " + tr("statusbar.checks");
+            if (githubChecksSummary.fail() > 0) {
+                text += " " + githubChecksSummary.fail();
+            }
+            githubChecks.setText(text);
+        }
+        applyChecksVisibility();
+    }
+
+    private void applyChecksVisibility() {
+        boolean vis = githubChecksSummary != null && !simpleMode;
+        githubChecks.setVisible(vis);
+        githubChecks.setManaged(vis);
     }
 
     /**
@@ -557,6 +597,7 @@ public final class StatusBar extends HBox {
             refresh();
             applyLspStatusVisibility(); // the LSP segment + loading bar are event-driven, not in refresh()
             applyMcpStatusVisibility(); // the MCP segment is event-driven too
+            applyChecksVisibility(); // the GitHub checks segment is event-driven too
         }
     }
 
