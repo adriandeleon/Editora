@@ -20,6 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -72,14 +73,56 @@ class RemoteFileSystemsHostKeyFxTest {
 
     /** Runs a connect and waits for the Result the FX callback delivers. */
     private RemoteFileSystems.Result connectAndWait(int port) throws Exception {
+        return connectAndWait(fs, port);
+    }
+
+    private static RemoteFileSystems.Result connectAndWait(RemoteFileSystems engine, int port) throws Exception {
         AtomicReference<RemoteFileSystems.Result> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        fs.connect(connection(port), "pw".toCharArray(), r -> {
+        engine.connect(connection(port), "pw".toCharArray(), r -> {
             got.set(r);
             done.countDown();
         });
         assertTrue(done.await(30, TimeUnit.SECONDS), "the connect attempt should have reported back");
         return got.get();
+    }
+
+    /**
+     * Two windows connecting to different SFTP hosts don't strand each other (#436). Each {@link RemoteFileSystems}
+     * registers its own {@link Vfs.RemoteProvider}, so both hosts' {@code sftp://} paths keep resolving — and
+     * closing one window's engine leaves the other's paths resolvable.
+     */
+    @Test
+    void twoWindowsToDifferentHostsDoNotStrandEachOther(@TempDir Path dir) throws Exception {
+        SshServer serverA = sftpServer(dir.resolve("a.ser"), 0);
+        SshServer serverB = sftpServer(dir.resolve("b.ser"), 0);
+        RemoteFileSystems fsA = new RemoteFileSystems((h, p, t, f) -> true, dir.resolve("known_hosts"));
+        RemoteFileSystems fsB = new RemoteFileSystems((h, p, t, f) -> true, dir.resolve("known_hosts"));
+        try {
+            // Connect on the test thread (the Result callback fires on the FX thread and releases the latch).
+            connectAndWait(fsA, serverA.getPort());
+            connectAndWait(fsB, serverB.getPort());
+            String uriA = "sftp://tester@127.0.0.1:" + serverA.getPort() + "/srv/app.js";
+            String uriB = "sftp://tester@127.0.0.1:" + serverB.getPort() + "/srv/app.js";
+
+            // Both hosts resolve through the shared registry, and a resolved path round-trips back to its URI
+            // via the owning engine's storable (Vfs is pure, so this runs on the test thread).
+            Path pathA = Vfs.parseStorable(uriA);
+            Path pathB = Vfs.parseStorable(uriB);
+            assertNotNull(pathA, "window A's host resolves");
+            assertNotNull(pathB, "window B's host resolves");
+            assertEquals(uriA, Vfs.toStorableString(pathA), "A's path stores back via its own engine");
+            assertEquals(uriB, Vfs.toStorableString(pathB), "B's path stores back via its own engine");
+
+            fsB.shutdown(); // window B closes
+            assertNotNull(Vfs.parseStorable(uriA), "A still resolves after B closed (the single-slot bug stranded it)");
+            assertNull(Vfs.parseStorable(uriB), "B's host no longer resolves once its window is gone");
+        } finally {
+            fsA.shutdown();
+            fsB.shutdown();
+            serverA.stop(true);
+            serverB.stop(true);
+        }
     }
 
     @Test

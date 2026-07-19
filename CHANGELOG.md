@@ -57,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Two windows connected to different SFTP servers no longer strand each other's remote files.** With more than
+  one window open, the last one to connect took over remote-path resolution, so the first window's remote recent
+  files and session paths stopped resolving — and closing the second window broke them for the first even while it
+  was still connected. Each window's SFTP engine is now registered independently, so every open connection keeps
+  resolving its own paths. (#436)
 - **Undo inside a snippet no longer half-reverts a repeated field.** When a snippet field appears more than once
   (e.g. `$1 = $1;`), typing into it mirrored the text to every occurrence — but each mirror was a separate change,
   so one Ctrl-Z reverted only the mirror and left the field half-reverted (`x = ;`), cancelling the snippet. The
