@@ -401,6 +401,9 @@ public class WindowManager {
         }
         controller.disposePlugins(); // stop() the window's plugins
         windows.remove(holder);
+        if (windows.isEmpty()) {
+            pluginManager.closeAll(); // last window gone — close every plugin class loader, freeing jar handles (#442)
+        }
         openSetReconcile.playFromStart();
     }
 

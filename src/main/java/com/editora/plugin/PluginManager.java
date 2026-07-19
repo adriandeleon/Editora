@@ -8,9 +8,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -37,6 +41,18 @@ public final class PluginManager {
     private final ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
     private volatile List<PluginDescriptor> descriptors = List.of();
+
+    /**
+     * Every {@link URLClassLoader} this manager has built and not yet closed. A loader holds its plugin's jar
+     * file handles open (and on Windows locks the jar), so it must be {@code close()}d when it is no longer used
+     * — but never while a plugin is still running in some window (#442). {@link #pins} ref-counts how many live
+     * {@link Plugin} instances (across windows) use each loader; a loader is closed only when it's both unpinned
+     * and no longer the current one for its plugin (superseded by a re-{@link #discover()}), or by {@link
+     * #closeAll()} at app shutdown. Concurrent because {@code discover()} runs off the FX thread.
+     */
+    private final Set<URLClassLoader> live = ConcurrentHashMap.newKeySet();
+
+    private final Map<URLClassLoader, Integer> pins = new ConcurrentHashMap<>();
 
     /**
      * @param pluginsDir {@code <configDir>/plugins}
@@ -66,6 +82,82 @@ public final class PluginManager {
             }
         }
         descriptors = List.copyOf(found);
+        closeOrphanedLoaders(currentLoaders());
+    }
+
+    /** The {@link URLClassLoader}s of the current descriptor set (freshly built by the latest discover). */
+    private Set<URLClassLoader> currentLoaders() {
+        return descriptors.stream()
+                .map(PluginDescriptor::classLoader)
+                .filter(URLClassLoader.class::isInstance)
+                .map(URLClassLoader.class::cast)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * Closes every open loader that is neither in {@code keep} (the current descriptors' loaders) nor pinned by a
+     * live plugin instance — the loaders a re-discover just orphaned (Reload / install / uninstall previously
+     * leaked one per discover, holding jar handles and locking the jar on Windows). A loader still running in a
+     * window stays open (pinned) and is released later, so this never breaks a live plugin.
+     */
+    private void closeOrphanedLoaders(Set<URLClassLoader> keep) {
+        for (URLClassLoader l : new ArrayList<>(live)) {
+            if (!keep.contains(l) && pins.getOrDefault(l, 0) <= 0) {
+                closeLoader(l);
+            }
+        }
+    }
+
+    private void closeLoader(URLClassLoader l) {
+        live.remove(l);
+        pins.remove(l);
+        try {
+            l.close();
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Failed to close plugin class loader " + l.getName(), e);
+        }
+    }
+
+    /**
+     * Pins {@code loader} while a {@link Plugin} instance built from it is live in a window (call once per
+     * successful start). A pinned loader is never closed by {@link #discover()}; releasing balances it.
+     */
+    public void pin(ClassLoader loader) {
+        if (loader instanceof URLClassLoader ucl) {
+            pins.merge(ucl, 1, Integer::sum);
+        }
+    }
+
+    /**
+     * Releases a pin taken by {@link #pin} (call once per plugin {@code stop()} on window close). When the last
+     * pin is released <em>and</em> the loader is no longer a current descriptor's loader (it was superseded by a
+     * re-discover while the window was open), the loader is closed — otherwise it stays open for its still-current
+     * plugin and is closed by the next {@link #discover()} or {@link #closeAll()}.
+     */
+    public void release(ClassLoader loader) {
+        if (!(loader instanceof URLClassLoader ucl)) {
+            return;
+        }
+        int remaining = pins.merge(ucl, -1, Integer::sum);
+        if (remaining <= 0) {
+            pins.remove(ucl);
+            if (!currentLoaders().contains(ucl)) {
+                closeLoader(ucl);
+            }
+        }
+    }
+
+    /** Closes every open loader (app shutdown / last window closing). Idempotent. */
+    public void closeAll() {
+        for (URLClassLoader l : new ArrayList<>(live)) {
+            closeLoader(l);
+        }
+        pins.clear();
+    }
+
+    /** How many class loaders this manager currently holds open — for tests + lifecycle assertions. */
+    int liveLoaderCount() {
+        return live.size();
     }
 
     private PluginDescriptor loadDescriptor(Path dir, Path manifestFile) {
@@ -96,14 +188,16 @@ public final class PluginManager {
     }
 
     /** Builds a child loader from the plugin's {@code *.jar} and {@code lib/*.jar}; parent = the app loader. */
-    private ClassLoader buildClassLoader(Path dir) {
+    private URLClassLoader buildClassLoader(Path dir) {
         List<URL> urls = new ArrayList<>();
         collectJars(dir, urls);
         collectJars(dir.resolve("lib"), urls);
-        return new URLClassLoader(
+        URLClassLoader loader = new URLClassLoader(
                 "plugin:" + dir.getFileName(),
                 urls.toArray(new URL[0]),
                 getClass().getClassLoader());
+        live.add(loader); // tracked so discover()/closeAll() can close it (see the `live`/`pins` note above)
+        return loader;
     }
 
     private static void collectJars(Path dir, List<URL> out) {

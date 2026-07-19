@@ -57,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reloading or uninstalling plugins no longer leaks jar file handles.** Each plugin's class loader was never
+  closed, so every Settings → Plugins reload (and every install/uninstall) left the old loader — and its open jar
+  handles — behind; on Windows that also kept the jar locked, blocking uninstall/update while the app ran. Loaders
+  are now closed once no window is using them (on reload, and at shutdown), while a plugin still running in another
+  window keeps its loader until that window closes. (#442)
 - **Two windows connected to different SFTP servers no longer strand each other's remote files.** With more than
   one window open, the last one to connect took over remote-path resolution, so the first window's remote recent
   files and session paths stopped resolving — and closing the second window broke them for the first even while it
