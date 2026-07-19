@@ -52,6 +52,9 @@ public final class FoldManager {
     private String language = "plaintext";
     /** Max number of lines shown in a collapsed region's hover preview. */
     private static final int PREVIEW_LINES = 40;
+    /** Minimum digit width the line-number gutter pads to, so a file of fewer than 10 lines still reserves
+     *  2-digit width — adding the 10th line then doesn't widen the gutter and shift the text rightward. */
+    private static final int MIN_LINE_DIGITS = 2;
     /** Fixed width of the gutter's bookmark-marker column, reserved on every row so the gutter (and
      *  thus each line's text indentation) keeps a constant width whether or not the line is bookmarked. */
     private static final double BOOKMARK_SLOT_WIDTH = 12;
@@ -88,6 +91,10 @@ public final class FoldManager {
     private IntPredicate isRunLine = i -> false;
     /** Invoked with the clicked line when the user clicks a gutter Run glyph. */
     private IntConsumer onRun = i -> {};
+    /** An extra style class for a line's Run glyph (e.g. {@code test-run-marker}), or {@code null}. */
+    private IntFunction<String> runExtraClass = i -> null;
+    /** Hover text for a line's Run glyph (e.g. "Run test method foo"), or {@code null} for no tooltip. */
+    private IntFunction<String> runTooltip = i -> null;
 
     /** Whether debugging is enabled for this buffer (reserve the leftmost breakpoint slot on every row). */
     private BooleanSupplier breakpointsEnabled = () -> false;
@@ -287,9 +294,28 @@ public final class FoldManager {
      * {@code isRunLine} marks the top-level {@code main} line, and {@code onRun} runs the file on a click.
      */
     public void setRunHooks(BooleanSupplier enabled, IntPredicate isRunLine, IntConsumer onRun) {
+        setRunHooks(enabled, isRunLine, onRun, null);
+    }
+
+    /** As {@link #setRunHooks(BooleanSupplier, IntPredicate, IntConsumer)}, plus {@code extraClassFor} — an
+     *  extra CSS class per Run-glyph line (e.g. {@code test-run-marker} to tint a JUnit test ▶), or null. */
+    public void setRunHooks(
+            BooleanSupplier enabled, IntPredicate isRunLine, IntConsumer onRun, IntFunction<String> extraClassFor) {
+        setRunHooks(enabled, isRunLine, onRun, extraClassFor, null);
+    }
+
+    /** As above, plus {@code tooltipFor} — hover text per Run-glyph line (e.g. "Run test method foo"), or null. */
+    public void setRunHooks(
+            BooleanSupplier enabled,
+            IntPredicate isRunLine,
+            IntConsumer onRun,
+            IntFunction<String> extraClassFor,
+            IntFunction<String> tooltipFor) {
         this.runEnabled = enabled == null ? () -> false : enabled;
         this.isRunLine = isRunLine == null ? i -> false : isRunLine;
         this.onRun = onRun == null ? i -> {} : onRun;
+        this.runExtraClass = extraClassFor == null ? i -> null : extraClassFor;
+        this.runTooltip = tooltipFor == null ? i -> null : tooltipFor;
     }
 
     /**
@@ -650,8 +676,14 @@ public final class FoldManager {
             runSlot.setPrefWidth(RUN_SLOT_WIDTH);
             runSlot.setMaxWidth(RUN_SLOT_WIDTH);
             if (isRunLine.test(idx)) {
-                Node marker = runGlyph();
+                Node marker = runGlyph(runExtraClass.apply(idx));
                 marker.setCursor(Cursor.HAND);
+                String runTip = runTooltip.apply(idx);
+                if (runTip != null && !runTip.isBlank()) {
+                    Tooltip tip = new Tooltip(runTip);
+                    tip.setShowDelay(javafx.util.Duration.millis(300));
+                    Tooltip.install(marker, tip);
+                }
                 final int runIdx = idx;
                 marker.setOnMouseClicked(e -> {
                     if (e.getButton() == MouseButton.PRIMARY) {
@@ -783,9 +815,17 @@ public final class FoldManager {
      *  colored via the {@code .run-marker} CSS class. Returned in a {@link Group} so its bounds reflect
      *  the scaled size and the gutter stays narrow. */
     static Node runGlyph() {
+        return runGlyph(null);
+    }
+
+    /** {@code extraClass} (e.g. {@code test-run-marker}) tints/distinguishes the glyph; null for the plain ▶. */
+    static Node runGlyph(String extraClass) {
         SVGPath svg = new SVGPath();
         svg.setContent(RUN_GLYPH_PATH);
         svg.getStyleClass().add("run-marker");
+        if (extraClass != null) {
+            svg.getStyleClass().add(extraClass);
+        }
         svg.setScaleX(1.217); // 20% bigger than before (1.014) so the Run target is easier to click
         svg.setScaleY(1.217);
         return new Group(svg);
@@ -826,8 +866,18 @@ public final class FoldManager {
         return String.format("%1$" + digits(total) + "s", line);
     }
 
-    /** Number of decimal digits needed for {@code total} (>= 1). */
+    /**
+     * Digit width the line-number gutter pads to. This is the source of the gutter's (and thus each line's
+     * text-indent) width, so we clamp it to a {@link #MIN_LINE_DIGITS} floor: a file of &lt;10 lines still
+     * reserves 2-digit width, so adding the 10th line no longer widens the gutter and shifts the text
+     * rightward. (Crossing a higher power of ten — 99→100 — still steps once, matching VS Code/IntelliJ.)
+     */
     private static int digits(int total) {
+        return Math.max(MIN_LINE_DIGITS, rawDigits(total));
+    }
+
+    /** Number of decimal digits needed for {@code total} (>= 1). */
+    private static int rawDigits(int total) {
         return (int) Math.floor(Math.log10(Math.max(1, total))) + 1;
     }
 }

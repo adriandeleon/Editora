@@ -320,7 +320,13 @@ final class BuildCoordinator {
         boolean claimed = recognized && testRunHook.onTestRunStart(tool, root, taskArgs, toggleArgs, augmented);
         List<String> runArgv = claimed ? augmented : argv;
 
-        ops.openConsole();
+        // A claimed test run shows the Test Results window (the hook already opened it); opening the shared
+        // console too would displace it — both live on the single-window bottom stripe. The console TAB is
+        // still created + fed below (panel.started/appendOutput), so switching to Build Output shows the raw
+        // stream; it's just not fronted over the Test Results tree.
+        if (!claimed) {
+            ops.openConsole();
+        }
         String label = String.join(" ", taskArgs);
         panel.started(this, tool.displayName(), label, tool.outputStyle(), this::stop);
         tree.setRunning(true);

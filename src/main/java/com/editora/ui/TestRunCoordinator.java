@@ -22,13 +22,16 @@ import javafx.util.Duration;
 
 import com.editora.build.BuildTool;
 import com.editora.run.StackTraceLinks;
+import com.editora.test.JavaTestScanner;
 import com.editora.test.JvmReportDirs;
 import com.editora.test.ParsedSuite;
 import com.editora.test.TapParser;
 import com.editora.test.TestNode;
+import com.editora.test.TestPlan;
 import com.editora.test.TestResultParser;
 import com.editora.test.TestResultParsers;
 import com.editora.test.TestRun;
+import com.editora.test.TestRunRecognizer;
 import com.editora.test.TestTreeBuilder;
 
 import static com.editora.i18n.Messages.tr;
@@ -71,6 +74,12 @@ final class TestRunCoordinator implements TestRunHook {
     private static final int WALK_DEPTH = 5;
     /** Cap the npm sniff buffer so a non-TAP runner can't grow memory before we give up on structure. */
     private static final int NPM_SNIFF_LIMIT = 200;
+    /** Bounds for the pre-seed project test-source scan (skip seeding beyond these — fall back to pop-in). */
+    private static final int SEED_WALK_DEPTH = 12;
+
+    private static final int MAX_SEED_FILES = 4000;
+    private static final int MAX_SEED_TESTS = 20_000;
+    private static final long MAX_SEED_FILE_BYTES = 512 * 1024;
 
     private final CoordinatorHost host;
     private final Ops ops;
@@ -86,7 +95,11 @@ final class TestRunCoordinator implements TestRunHook {
     private TestResultParser parser;
     private boolean fileBased;
     private ScheduledFuture<?> pollTask;
+    // seenMtimes/baselineMtimes are touched ONLY on the poller thread (baseline task → ticks → final sweep).
     private final Map<Path, Long> seenMtimes = new HashMap<>();
+    private final Map<Path, Long> baselineMtimes = new HashMap<>(); // pre-run report mtimes (skip stale leftovers)
+    private int runGeneration; // bumped per run (FX thread); guards a late poll tick from merging into a newer run
+    private boolean seeded; // this run pre-seeded pending nodes → prune the never-reported ones at finish
     private Timeline elapsedTimer;
     private boolean refreshPending;
 
@@ -136,14 +149,28 @@ final class TestRunCoordinator implements TestRunHook {
         npm = tool == BuildTool.NPM;
         tapDecided = false;
         npmSniff.clear();
-        seenMtimes.clear();
+        seeded = false;
 
         panel.startRun(String.join(" ", taskArgs));
         ops.setTestResultsAvailable(true);
         ops.openTestResults();
         startElapsedTimer();
+        int gen = ++runGeneration;
         if (fileBased) {
-            startPolling(tool, workingDir);
+            Path dir = workingDir;
+            BuildTool t = tool;
+            // Snapshot the pre-run report mtimes on the poller thread BEFORE the first tick, so a leftover
+            // TEST-*.xml from a prior run is never parsed as this run's result (a full `mvn test` recreates
+            // the dir, but `-Dtest=Foo` leaves every other class's stale report in place).
+            poller.execute(() -> baselineReports(t, dir));
+            startPolling(gen, t, dir);
+            // IntelliJ-style: pre-seed the whole expected test list greyed-out (RUNNING) for an unfiltered run,
+            // so tests show as pending and flip to green/red instead of popping in per finished class. A
+            // filtered run (-Dtest=/--tests) only touches its target, so seeding everything would mislead.
+            if (!TestRunRecognizer.isFilteredRun(tool, taskArgs)) {
+                seeded = true;
+                poller.execute(() -> seedFromSources(gen, dir));
+            }
         }
         return true;
     }
@@ -194,18 +221,38 @@ final class TestRunCoordinator implements TestRunHook {
             return;
         }
         stopPolling();
+        stopElapsedTimer();
+        TestRun run = currentRun;
+        int gen = runGeneration;
         if (fileBased) {
-            sweepReports(currentTool, currentRun.workingDir(), true); // final sweep: catch the last class
+            BuildTool tool = currentTool;
+            Path dir = run.workingDir();
+            // The final sweep walks + DOM-parses the reports — file I/O, never on the FX thread. The
+            // single-threaded poller serializes this after any in-flight tick; its mergeAll runLater is posted
+            // before completeRun, so the last class lands before the run is marked finished.
+            poller.execute(() -> {
+                sweepReports(gen, tool, dir, true); // full: catch the last class + anything a tick missed
+                Platform.runLater(() -> completeRun(run, gen, code));
+            });
         } else {
             mergeAll(parser.onExit(code));
             if (npm && !tapDecided) {
                 // No structured (TAP) output — surface an honest banner rather than an empty tree.
-                TestTreeBuilder.merge(currentRun.root(), new ParsedSuite(tr("testrunner.tap.unavailable"), List.of()));
+                TestTreeBuilder.merge(run.root(), new ParsedSuite(tr("testrunner.tap.unavailable"), List.of()));
             }
+            completeRun(run, gen, code);
         }
-        stopElapsedTimer();
-        currentRun.finish(code, System.currentTimeMillis());
-        TestRun run = currentRun;
+    }
+
+    /** FX thread. Finalizes the run unless a newer run has already superseded it. */
+    private void completeRun(TestRun run, int gen, int code) {
+        if (gen != runGeneration || run != currentRun) {
+            return;
+        }
+        if (seeded) {
+            run.root().pruneRunning(); // drop pre-seeded placeholders that never got a result (parameterized/skipped)
+        }
+        run.finish(code, System.currentTimeMillis());
         panel.finishRun(run, code);
     }
 
@@ -255,9 +302,22 @@ final class TestRunCoordinator implements TestRunHook {
 
     // --- JVM report polling ------------------------------------------------------------------------
 
-    private void startPolling(BuildTool tool, Path root) {
+    private void startPolling(int gen, BuildTool tool, Path root) {
         pollTask = poller.scheduleWithFixedDelay(
-                () -> sweepReports(tool, root, false), POLL_MS, POLL_MS, TimeUnit.MILLISECONDS);
+                () -> sweepReports(gen, tool, root, false), POLL_MS, POLL_MS, TimeUnit.MILLISECONDS);
+    }
+
+    /** Poller thread: snapshot the pre-run report mtimes (and reset the seen/baseline maps for the new run). */
+    private void baselineReports(BuildTool tool, Path root) {
+        seenMtimes.clear();
+        baselineMtimes.clear();
+        for (Path file : reportFiles(tool, root)) {
+            try {
+                baselineMtimes.put(file, Files.getLastModifiedTime(file).toMillis());
+            } catch (Exception ignored) {
+                // unreadable — treat as absent, so it's parsed if the run (re)writes it
+            }
+        }
     }
 
     private void stopPolling() {
@@ -268,15 +328,78 @@ final class TestRunCoordinator implements TestRunHook {
     }
 
     /**
+     * Poller thread: walk the project's Java test sources, scan each ({@link JavaTestScanner}) for JUnit tests,
+     * and merge a greyed-out pending list ({@link TestPlan#seed}) into the tree on the FX thread — so the full
+     * expected test set shows up front and each entry flips to green/red as results arrive. Bounded + capped;
+     * skips seeding for a pathologically large project (falls back to per-class pop-in).
+     */
+    private void seedFromSources(int gen, Path root) {
+        List<JavaTestScanner.TestTarget> targets = new ArrayList<>();
+        int files = 0;
+        try (Stream<Path> walk = Files.walk(root, SEED_WALK_DEPTH)) {
+            List<Path> javaTestFiles = walk.filter(Files::isRegularFile)
+                    .filter(TestRunCoordinator::isTestSourceFile)
+                    .limit(MAX_SEED_FILES + 1L)
+                    .toList();
+            if (javaTestFiles.size() > MAX_SEED_FILES) {
+                return; // too many files — don't stall the run scanning them; per-class pop-in still works
+            }
+            for (Path f : javaTestFiles) {
+                files++;
+                if (Files.size(f) > MAX_SEED_FILE_BYTES) {
+                    continue;
+                }
+                targets.addAll(JavaTestScanner.scan(Files.readString(f)));
+                if (targets.size() > MAX_SEED_TESTS) {
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            return; // an FS error during the pre-scan must never break the run; results still stream in
+        }
+        List<ParsedSuite> seed = TestPlan.seed(targets);
+        if (seed.isEmpty()) {
+            return;
+        }
+        Platform.runLater(() -> {
+            if (gen == runGeneration && currentRun != null) {
+                for (ParsedSuite s : seed) {
+                    TestTreeBuilder.seed(currentRun.root(), s); // create-missing-only: never downgrades a result
+                }
+                requestRefresh();
+            }
+        });
+    }
+
+    /** A Java file under a {@code test} source dir (heuristic to skip {@code src/main} + speed the scan). */
+    private static boolean isTestSourceFile(Path f) {
+        String name = f.getFileName().toString();
+        if (!name.endsWith(".java")) {
+            return false;
+        }
+        for (Path seg : f) {
+            String s = seg.toString();
+            if (s.equals("test") || s.equals("tests")) {
+                return true; // src/test/java, or a Gradle test source set
+            }
+        }
+        return false;
+    }
+
+    /**
      * Scans the report dirs for {@code TEST-*.xml} files, parses those whose mtime advanced (all of them when
      * {@code full}), and merges the results on the FX thread. Runs on the poll thread (or the FX thread for the
      * final sweep — parsing is bounded and off the hot path either way).
      */
-    private void sweepReports(BuildTool tool, Path root, boolean full) {
+    private void sweepReports(int gen, BuildTool tool, Path root, boolean full) {
         try {
             List<ParsedSuite> parsed = new ArrayList<>();
             for (Path file : reportFiles(tool, root)) {
                 long mtime = Files.getLastModifiedTime(file).toMillis();
+                Long base = baselineMtimes.get(file);
+                if (base != null && base == mtime) {
+                    continue; // an untouched leftover from a previous run — never this run's result
+                }
                 Long seen = seenMtimes.get(file);
                 if (!full && seen != null && seen == mtime) {
                     continue;
@@ -288,7 +411,11 @@ final class TestRunCoordinator implements TestRunHook {
                 }
             }
             if (!parsed.isEmpty()) {
-                Platform.runLater(() -> mergeAll(parsed));
+                Platform.runLater(() -> {
+                    if (gen == runGeneration) { // drop a late tick from a superseded run
+                        mergeAll(parsed);
+                    }
+                });
             }
         } catch (Exception e) {
             // A transient FS error mid-run must not kill the poller; the next tick / final sweep retries.

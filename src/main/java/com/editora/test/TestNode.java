@@ -205,6 +205,32 @@ public final class TestNode {
         return status;
     }
 
+    /**
+     * Removes {@code TEST} leaves still {@code RUNNING} (pre-seeded placeholders that never got a result — a
+     * parameterized method's plain-name seed, a filtered-out class), then drops any suite left with no
+     * children. Called once when a run finishes so the tree shows only tests that actually ran. Returns whether
+     * anything was removed.
+     */
+    public boolean pruneRunning() {
+        boolean removed = false;
+        for (var it = children.iterator(); it.hasNext(); ) {
+            TestNode child = it.next();
+            if (child.kind == TestNodeKind.TEST) {
+                if (child.status == TestStatus.RUNNING) {
+                    it.remove();
+                    removed = true;
+                }
+            } else {
+                removed |= child.pruneRunning();
+                if (child.children.isEmpty()) {
+                    it.remove();
+                    removed = true;
+                }
+            }
+        }
+        return removed;
+    }
+
     /** Depth-first collection of all {@code TEST} leaves whose status {@link TestStatus#isFailure()}. */
     public List<TestNode> failedLeaves() {
         List<TestNode> out = new ArrayList<>();

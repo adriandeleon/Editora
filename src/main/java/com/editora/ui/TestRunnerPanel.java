@@ -64,6 +64,8 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     private final Map<TestNode, TreeItem<TestNode>> items = new IdentityHashMap<>();
 
     private TestNode lastRoot;
+    private TestRun lastRun; // for the no-selection run summary in the detail pane
+    private String runLabel = "";
     private Runnable onRerun;
     private Runnable onRerunFailed;
     private Runnable onStop;
@@ -164,25 +166,31 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     void startRun(String label) {
         items.clear();
         rootItem.getChildren().clear();
-        detail.clear();
         lastRoot = null;
-        status.setText(tr("testrunner.running", label));
+        lastRun = null;
+        runLabel = label == null ? "" : label;
+        status.setText(tr("testrunner.running", runLabel));
         setChips(TestCounts.ZERO);
         progress.setProgress(0);
         progress.getStyleClass().remove("test-progress-failed");
         rerunButton.setDisable(true);
         rerunFailedButton.setDisable(true);
         stopButton.setDisable(false);
+        showRunSummary(); // the detail pane shows the run header until a test is selected
     }
 
     /** Live update: sync the tree from the (mutated-in-place) root and refresh the header counts/progress. */
     void update(TestRun run) {
+        lastRun = run;
         sync(run.root());
         TestCounts counts = run.counts();
         setChips(counts);
         int total = counts.total();
         progress.setProgress(total == 0 ? 0 : (double) counts.finished() / total);
         setProgressFailed(counts.anyFailed());
+        if (tree.getSelectionModel().getSelectedItem() == null) {
+            showRunSummary(); // keep the run summary live while nothing is selected
+        }
     }
 
     void setElapsed(long ms) {
@@ -201,6 +209,12 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         rerunButton.setDisable(onRerun == null);
         rerunFailedButton.setDisable(!counts.anyFailed() || onRerunFailed == null);
         stopButton.setDisable(true);
+        refreshDetail(); // a selected node's header flips from Running to its settled status
+    }
+
+    private void refreshDetail() {
+        TreeItem<TestNode> sel = tree.getSelectionModel().getSelectedItem();
+        showDetail(sel == null ? null : sel.getValue());
     }
 
     // --- tree sync ---------------------------------------------------------------------------------
@@ -256,10 +270,21 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
     private void showDetail(TestNode node) {
         if (node == null) {
-            detail.clear();
+            showRunSummary();
             return;
         }
         StringBuilder sb = new StringBuilder();
+        sb.append(node.displayName()).append(" — ").append(statusLabel(node.status()));
+        if (node.durationMs() > 0) {
+            sb.append(" (").append(node.durationMs()).append(" ms)");
+        }
+        sb.append('\n');
+        if (node.kind() != TestNodeKind.TEST) {
+            TestCounts c = node.tally();
+            sb.append(tr("testrunner.detail.suiteSummary", c.total(), c.passed(), c.failedOrErrored(), c.skipped()))
+                    .append('\n');
+        }
+        sb.append('\n');
         if (node.failureType() != null || node.failureMessage() != null) {
             if (node.failureType() != null) {
                 sb.append(node.failureType());
@@ -285,6 +310,31 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         if (body != null && !body.isBlank()) {
             sb.append("\n--- ").append(title).append(" ---\n").append(body).append("\n");
         }
+    }
+
+    /** The detail pane when no node is selected: the run command + counts + elapsed. */
+    private void showRunSummary() {
+        if (lastRun == null) {
+            detail.replaceText(runLabel.isBlank() ? "" : tr("testrunner.detail.runHeader", runLabel));
+            detail.moveTo(0);
+            return;
+        }
+        TestCounts c = lastRun.counts();
+        String text = tr("testrunner.detail.runHeader", runLabel) + "\n"
+                + tr("testrunner.detail.suiteSummary", c.total(), c.passed(), c.failedOrErrored(), c.skipped()) + "\n"
+                + tr("testrunner.detail.elapsed", formatElapsed(lastRun.elapsedMillis(System.currentTimeMillis())));
+        detail.replaceText(text);
+        detail.moveTo(0);
+    }
+
+    private static String statusLabel(TestStatus status) {
+        return switch (status) {
+            case PASSED -> tr("testrunner.detail.status.passed");
+            case FAILED -> tr("testrunner.detail.status.failed");
+            case ERROR -> tr("testrunner.detail.status.error");
+            case SKIPPED -> tr("testrunner.detail.status.skipped");
+            case RUNNING -> tr("testrunner.detail.status.running");
+        };
     }
 
     // --- header helpers ----------------------------------------------------------------------------

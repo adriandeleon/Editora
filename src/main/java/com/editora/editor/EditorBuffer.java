@@ -444,6 +444,12 @@ public class EditorBuffer implements TabContent {
     private java.util.Map<Integer, String> makeTargets = java.util.Map.of();
     /** Fired with the clicked target's name when a Makefile Run glyph is clicked (runs {@code make <name>}). */
     private java.util.function.Consumer<String> makeRunHandler = t -> {};
+    /** JUnit test-gutter gate (Test Runner feature + a detected JVM build tool), pushed by MainController. */
+    private boolean testGutterEnabled;
+    /** 0-based line → JUnit test target (class-decl line + each test method) for the gutter ▶; empty otherwise. */
+    private java.util.Map<Integer, com.editora.test.JavaTestScanner.TestTarget> testLines = java.util.Map.of();
+    /** Fired with a test target when its gutter ▶ is clicked (runs one class/method via the build tool). */
+    private java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> testRunHandler = t -> {};
     /** Whether this file is runnable (a Java 25 compact source file, a Python script, or — when the Bash
      *  LSP is enabled — a shell script) — drives the gutter Run glyph + the Run tool window. */
     private boolean runnable;
@@ -657,7 +663,12 @@ public class EditorBuffer implements TabContent {
                 line -> changeHunks == null ? null : changeHunks.get(line));
         // Gutter Run glyph: reserved for a runnable file — one entry line for a script, or one per
         // request for a .http file.
-        folds.setRunHooks(() -> runnable, this::isRunGlyphLine, this::onRunGlyph);
+        folds.setRunHooks(
+                () -> runnable,
+                this::isRunGlyphLine,
+                this::onRunGlyph,
+                line -> testLines.containsKey(line) ? "test-run-marker" : null,
+                this::runGlyphTooltip);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(
                 () -> debugEnabled,
@@ -1652,8 +1663,16 @@ public class EditorBuffer implements TabContent {
         contextMenu.getStyleClass().add("editor-context-menu");
         area.setOnContextMenuRequested(e -> {
             List<MenuItem> items = new java.util.ArrayList<>();
-            // Run a runnable file (compact Java source / Python script).
-            if (runnable && runHandler != null) {
+            // A JUnit test file runs its tests ("Run Tests", blue ▶ matching the gutter) rather than the
+            // generic green "Run File"; anything else runnable (compact Java source / Python script) keeps it.
+            com.editora.test.JavaTestScanner.TestTarget classTarget = testClassTarget();
+            if (classTarget != null) {
+                MenuItem runTests = new MenuItem(tr("editmenu.runTests"));
+                runTests.setGraphic(FoldManager.runGlyph("test-run-marker")); // blue, matching the test gutter ▶
+                runTests.setOnAction(ev -> testRunHandler.accept(classTarget));
+                items.add(runTests);
+                items.add(new SeparatorMenuItem());
+            } else if (runnable && runHandler != null) {
                 MenuItem run = new MenuItem(tr("command.file.run"));
                 run.setGraphic(FoldManager.runGlyph()); // green play icon, matching the gutter glyph
                 run.setOnAction(ev -> runHandler.run());
@@ -2912,11 +2931,62 @@ public class EditorBuffer implements TabContent {
         this.makeRunHandler = handler == null ? t -> {} : handler;
     }
 
+    /** Enables/disables the JUnit test gutter ▶ (gated by the Test Runner feature + a detected JVM build
+     *  tool). When on, a Java buffer's test class + each test method get a Run glyph. */
+    public void setTestGutterEnabled(boolean enabled) {
+        if (enabled != testGutterEnabled) {
+            testGutterEnabled = enabled;
+            recomputeRun();
+        }
+    }
+
+    /** Injects the handler run with the clicked test target (class ▶ has {@code methodName == null}). */
+    public void setTestRunHandler(java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> handler) {
+        this.testRunHandler = handler == null ? t -> {} : handler;
+    }
+
+    /**
+     * The whole-class JUnit target for this buffer (the "Run Tests" context-menu item), or {@code null} when
+     * this isn't a test file / the test gutter is off.
+     */
+    public com.editora.test.JavaTestScanner.TestTarget testClassTarget() {
+        for (var t : testLines.values()) {
+            if (t.methodName() == null) {
+                return t; // the class-declaration target the scanner emits first
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The JUnit test target at or nearest above the caret, for {@code test.runAtCaret}/{@code runClassAtCaret}.
+     * {@code classLevel} forces the whole-class target (methodName null). Returns null when the caret isn't in
+     * a test class.
+     */
+    public com.editora.test.JavaTestScanner.TestTarget testTargetAtCaret(boolean classLevel) {
+        int caret = area.getCurrentParagraph();
+        com.editora.test.JavaTestScanner.TestTarget best = null;
+        for (var e : testLines.entrySet()) {
+            if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
+                best = e.getValue();
+            }
+        }
+        if (best == null) {
+            return null;
+        }
+        return classLevel
+                ? new com.editora.test.JavaTestScanner.TestTarget(best.line(), best.className(), null, false)
+                : best;
+    }
+
     /** Whether {@code line} draws a Run glyph: every request line for an enabled {@code .http} buffer,
      *  else the single script entry line. */
     private boolean isRunGlyphLine(int line) {
         if (!runnable) {
             return false;
+        }
+        if (testLines.containsKey(line)) {
+            return true;
         }
         if (httpFeatureEnabled && isHttpFile()) {
             return httpRequestLines.contains(line);
@@ -2929,8 +2999,22 @@ public class EditorBuffer implements TabContent {
 
     /** Dispatches a Run-glyph click: a {@code .http} request runner (with the clicked line), a Makefile
      *  target runner (with the clicked target's name), else the script run handler. */
+    /** Hover text for a gutter Run glyph: explains what the blue JUnit ▶ runs (class vs method). */
+    private String runGlyphTooltip(int line) {
+        com.editora.test.JavaTestScanner.TestTarget t = testLines.get(line);
+        if (t == null) {
+            return null; // the plain script/Makefile/.http ▶ keeps its untooltipped look
+        }
+        return t.methodName() == null
+                ? tr("testrunner.gutter.runClass", com.editora.test.TestSourceLocator.simpleName(t.className()))
+                : tr("testrunner.gutter.runMethod", t.methodName());
+    }
+
     private void onRunGlyph(int line) {
-        if (httpFeatureEnabled && isHttpFile()) {
+        com.editora.test.JavaTestScanner.TestTarget testTarget = testLines.get(line);
+        if (testTarget != null) {
+            testRunHandler.accept(testTarget); // a JUnit class/method ▶ (never coincides with a compact-source main)
+        } else if (httpFeatureEnabled && isHttpFile()) {
             httpRunHandler.accept(line);
         } else if (isMakefile()) {
             String target = makeTargets.get(line);
@@ -2949,10 +3033,14 @@ public class EditorBuffer implements TabContent {
         boolean eligible = runFeatureEnabled && !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT;
         boolean httpEligible =
                 httpFeatureEnabled && !largeFile && isHttpFile() && area.getLength() <= COMPACT_SCAN_LIMIT;
-        // Only materialize the whole document when we actually scan it (compact-source / .http detection).
+        // Test gutter: independent of the LSP-gated run feature, so it has its own eligibility (a Java buffer
+        // in a JVM project with the Test Runner on). Additive — a test file also keeps any compact-source ▶.
+        boolean testEligible =
+                testGutterEnabled && !largeFile && "java".equals(language) && area.getLength() <= COMPACT_SCAN_LIMIT;
+        // Only materialize the whole document when we actually scan it (compact-source / .http / test detection).
         // Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on every
         // 150 ms edit pulse just to discard it as run-ineligible.
-        String text = (eligible || httpEligible) ? area.getText() : "";
+        String text = (eligible || httpEligible || testEligible) ? area.getText() : "";
         boolean nowRunnable;
         int nowLine;
         java.util.List<Integer> nowHttpLines = java.util.List.of();
@@ -2989,19 +3077,32 @@ public class EditorBuffer implements TabContent {
             nowRunnable = false;
             nowLine = -1;
         }
+        // JUnit test glyphs are additive to whatever the run type above decided (a test file is usually neither
+        // compact-source nor a script), so they OR into runnable and get their own line→target map.
+        java.util.Map<Integer, com.editora.test.JavaTestScanner.TestTarget> nowTestLines = java.util.Map.of();
+        if (testEligible) {
+            java.util.Map<Integer, com.editora.test.JavaTestScanner.TestTarget> tl = new java.util.LinkedHashMap<>();
+            for (com.editora.test.JavaTestScanner.TestTarget t : com.editora.test.JavaTestScanner.scan(text)) {
+                tl.put(t.line(), t);
+            }
+            nowTestLines = tl;
+            nowRunnable = nowRunnable || !tl.isEmpty();
+        }
         boolean changed = nowRunnable != runnable;
         boolean httpLinesChanged = !nowHttpLines.equals(httpRequestLines);
         boolean makeTargetsChanged = !nowMakeTargets.equals(makeTargets);
+        boolean testLinesChanged = !nowTestLines.equals(testLines);
         int oldLine = runLine;
         runnable = nowRunnable;
         runLine = nowLine;
         httpRequestLines = nowHttpLines;
         makeTargets = nowMakeTargets;
+        testLines = nowTestLines;
         if (changed) {
             onRunnableChanged.run();
             refreshGutter(); // the Run slot appeared/disappeared on every row — rebuild the factory
-        } else if (httpLinesChanged || makeTargetsChanged) {
-            refreshGutter(); // requests/targets added/removed — relight the glyphs on the new lines
+        } else if (httpLinesChanged || makeTargetsChanged || testLinesChanged) {
+            refreshGutter(); // requests/targets/test methods added/removed — relight the glyphs on the new lines
         } else if (nowLine != oldLine) {
             // The entry line moved (edits above it) — repaint just the old and new gutter rows.
             if (oldLine >= 0) {

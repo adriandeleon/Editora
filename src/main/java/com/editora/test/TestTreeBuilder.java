@@ -26,6 +26,26 @@ public final class TestTreeBuilder {
         }
     }
 
+    /**
+     * Seeds pending placeholders: upserts the suite, then adds any test that isn't already present as a
+     * {@code RUNNING} leaf — but <b>never touches an existing node</b>, so a result that arrived before the
+     * seed (a fast class) is not downgraded back to RUNNING. Used to pre-populate the "grey" pending list.
+     */
+    public static void seed(TestNode root, ParsedSuite suite) {
+        TestNode suiteNode = root.childById(suite.suiteName());
+        if (suiteNode == null) {
+            suiteNode = root.addChild(new TestNode(TestNodeKind.SUITE, suite.suiteName(), suite.suiteName()));
+        }
+        for (ParsedTest test : suite.tests()) {
+            if (suiteNode.childById(test.id()) == null) {
+                TestNode node = suiteNode.addChild(new TestNode(TestNodeKind.TEST, test.id(), test.methodName()));
+                node.setStatus(TestStatus.RUNNING);
+                node.setClassName(test.className());
+                node.setMethodName(test.methodName());
+            }
+        }
+    }
+
     private static void upsertTest(TestNode suiteNode, ParsedTest test) {
         TestNode node = suiteNode.childById(test.id());
         if (node == null) {

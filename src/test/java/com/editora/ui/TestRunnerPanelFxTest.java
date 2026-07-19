@@ -73,13 +73,24 @@ class TestRunnerPanelFxTest {
         assertEquals("ex/pkg", suite.getValue().displayName());
         assertEquals(2, suite.getChildren().size(), "two tests");
 
+        // With nothing selected, the detail pane shows the run summary (not blank) — the Stage-3 fix.
+        CodeArea detail = FxTestSupport.field(panel, "detail");
+        assertTrue(detail.getText().contains("test ./..."), "detail shows the run header when nothing is selected");
+
+        // Selecting a PASSING leaf shows a header (previously the pane was empty for a pass).
+        TreeItem<TestNode> passed = suite.getChildren().stream()
+                .filter(i -> i.getValue().status() == TestStatus.PASSED)
+                .findFirst()
+                .orElseThrow();
+        FxTestSupport.runOnFx(() -> tree.getSelectionModel().select(passed));
+        assertTrue(detail.getText().contains("TestA"), "detail shows the passing test's header");
+
         // Selecting the failed leaf populates the detail console with its message/stack.
         TreeItem<TestNode> failed = suite.getChildren().stream()
                 .filter(i -> i.getValue().status() == TestStatus.FAILED)
                 .findFirst()
                 .orElseThrow();
         FxTestSupport.runOnFx(() -> tree.getSelectionModel().select(failed));
-        CodeArea detail = FxTestSupport.field(panel, "detail");
         assertTrue(detail.getText().contains("boom"), "detail shows the failure message");
         assertTrue(detail.getText().contains("foo_test.go:9"), "detail shows the stack frame");
 

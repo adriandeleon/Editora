@@ -47,4 +47,40 @@ class TestRunRecognizerTest {
         // other tools untouched
         assertEquals(List.of("mvn", "test"), TestRunRecognizer.augmentArgv(BuildTool.MAVEN, List.of("mvn", "test")));
     }
+
+    @Test
+    void isFilteredRun() {
+        assertTrue(TestRunRecognizer.isFilteredRun(BuildTool.MAVEN, List.of("test", "-Dtest=FooTest#bar")));
+        assertFalse(TestRunRecognizer.isFilteredRun(BuildTool.MAVEN, List.of("test")));
+        assertFalse(TestRunRecognizer.isFilteredRun(BuildTool.MAVEN, List.of("test", "-DfailIfNoTests=false")));
+        assertTrue(TestRunRecognizer.isFilteredRun(BuildTool.GRADLE, List.of("test", "--tests", "com.x.FooTest")));
+        assertFalse(TestRunRecognizer.isFilteredRun(BuildTool.GRADLE, List.of("test")));
+        assertFalse(TestRunRecognizer.isFilteredRun(BuildTool.GO, List.of("test", "-run", "^X$", "./...")));
+    }
+
+    @Test
+    void singleTestTaskPerTool() {
+        // Maven: simple class name + #method (matches Surefire's -Dtest), + failIfNoTests=false for reactors.
+        assertEquals(
+                List.of("test", "-Dtest=FooTest#bar", "-DfailIfNoTests=false"),
+                TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.FooTest", "bar"));
+        assertEquals(
+                List.of("test", "-Dtest=FooTest", "-DfailIfNoTests=false"),
+                TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.FooTest", null));
+        // Gradle: FQN.method / FQN.
+        assertEquals(
+                List.of("test", "--tests", "com.x.FooTest.bar"),
+                TestRunRecognizer.singleTestTask(BuildTool.GRADLE, "com.x.FooTest", "bar"));
+        assertEquals(
+                List.of("test", "--tests", "com.x.FooTest"),
+                TestRunRecognizer.singleTestTask(BuildTool.GRADLE, "com.x.FooTest", null));
+        // Non-JVM tools have no per-test filter → empty (caller does nothing / a full run).
+        assertTrue(TestRunRecognizer.singleTestTask(BuildTool.GO, "x", "y").isEmpty());
+        assertTrue(TestRunRecognizer.singleTestTask(BuildTool.NPM, "x", "y").isEmpty());
+        // The produced Maven/Gradle task still registers as a test run (flows through the hook).
+        assertTrue(TestRunRecognizer.isTestRun(
+                BuildTool.MAVEN, TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.FooTest", "bar")));
+        assertTrue(TestRunRecognizer.isTestRun(
+                BuildTool.GRADLE, TestRunRecognizer.singleTestTask(BuildTool.GRADLE, "com.x.FooTest", "bar")));
+    }
 }

@@ -14,6 +14,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import javafx.application.Platform;
+import javafx.scene.Node;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
@@ -644,6 +645,12 @@ final class DebugCoordinator {
             return;
         }
         clearExecHighlight();
+        // Revealing the line focuses the editor (openPath calls requestFocus on the buffer). When the user
+        // is driving the session from the Debug panel — the single-key step shortcuts — that yanks focus to
+        // the code after every step, so the next key press is lost and they must re-focus the panel each
+        // time. Preserve the panel's focus across the reveal in that case only; a fresh breakpoint hit while
+        // editing (focus not in the panel) still lands in the code at the stopped line, as before.
+        Node keepFocus = debugPanelFocusOwner();
         ops.openPath(frame.file()); // opens or focuses the tab
         // Take the frame's OWN buffer, not whatever is active: openPath opens nothing when the source
         // isn't on disk (a frame in a dependency, or a path baked in by a build on another machine — it
@@ -654,6 +661,23 @@ final class DebugCoordinator {
             execHighlightBuffer = b;
             b.setExecutionLine(frame.line());
         }
+        if (keepFocus != null) {
+            Platform.runLater(keepFocus::requestFocus); // after openPath's own requestFocus, so the panel wins
+        }
+    }
+
+    /** The Debug-panel descendant that currently owns keyboard focus (so it can be restored across an
+     *  editor-focusing reveal), or {@code null} when focus is elsewhere. */
+    private Node debugPanelFocusOwner() {
+        var window = host.window();
+        var scene = window == null ? null : window.getScene();
+        Node owner = scene == null ? null : scene.getFocusOwner();
+        for (Node n = owner; n != null; n = n.getParent()) {
+            if (n == debugPanel) {
+                return owner;
+            }
+        }
+        return null;
     }
 
     private void clearExecHighlight() {
