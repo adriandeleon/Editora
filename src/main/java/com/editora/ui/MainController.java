@@ -9056,6 +9056,25 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /**
+     * Toggles the active buffer between Editor and the given preview mode — backs the file-type-agnostic
+     * "Toggle Preview" ({@link EditorBuffer.MarkdownViewMode#PREVIEW}) and "Toggle Split Preview"
+     * ({@link EditorBuffer.MarkdownViewMode#SPLIT}) commands. Works for any previewable file
+     * ({@link EditorBuffer#hasPreview()}): Markdown, CSV, Mermaid, diagrams, Typst, SVG, structured data,
+     * crontab/fstab/systemd/etc. Pressing it while already in {@code target} collapses back to Editor;
+     * otherwise it switches to {@code target} (so the two commands also flip Split ⇄ Preview between them).
+     */
+    private void togglePreviewMode(EditorBuffer.MarkdownViewMode target) {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.hasPreview()) {
+            setStatus(tr("status.noPreview"));
+            return;
+        }
+        EditorBuffer.MarkdownViewMode next =
+                b.getMarkdownViewMode() == target ? EditorBuffer.MarkdownViewMode.EDITOR : target;
+        b.setMarkdownViewMode(next);
+    }
+
     /** Runs a Markdown format action on the active buffer; reports when it isn't an editable Markdown file. */
     private void withMarkdown(java.util.function.Consumer<EditorBuffer> action) {
         EditorBuffer b = activeBuffer();
@@ -11553,62 +11572,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("markwhen.exportJson", this::exportMarkwhenJson));
         registry.register(Command.of("markwhen.toggleView", this::toggleMarkwhenView));
         registry.register(Command.of("structured.toggleView", this::toggleStructuredView));
-        registry.register(Command.of(
-                "view.toggleStructuredPreview",
-                () -> toggleSetting(
-                        "view.toggleStructuredPreview",
-                        () -> config.getSettings().isStructuredPreview(),
-                        v -> config.getSettings().setStructuredPreview(v),
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleSvgPreview",
-                () -> toggleSetting(
-                        "view.toggleSvgPreview",
-                        () -> config.getSettings().isSvgPreview(),
-                        v -> config.getSettings().setSvgPreview(v),
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleCrontabPreview",
-                () -> toggleSetting(
-                        "view.toggleCrontabPreview",
-                        () -> config.getSettings().isCrontabPreview(),
-                        v -> config.getSettings().setCrontabPreview(v),
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleFstabPreview",
-                () -> toggleSetting(
-                        "view.toggleFstabPreview",
-                        () -> config.getSettings().isFstabPreview(),
-                        v -> config.getSettings().setFstabPreview(v),
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleSystemdPreview",
-                () -> toggleSetting(
-                        "view.toggleSystemdPreview",
-                        () -> config.getSettings().isSystemdPreview(),
-                        v -> config.getSettings().setSystemdPreview(v),
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleSshConfigPreview",
-                () -> toggleSetting(
-                        "view.toggleSshConfigPreview",
-                        () -> config.getSettings().isSshConfigPreview(),
-                        v -> config.getSettings().setSshConfigPreview(v),
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleDockerfilePreview",
-                () -> toggleSetting(
-                        "view.toggleDockerfilePreview",
-                        () -> config.getSettings().isDockerfilePreview(),
-                        v -> config.getSettings().setDockerfilePreview(v),
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleGithubActionsPreview",
-                () -> toggleSetting(
-                        "view.toggleGithubActionsPreview",
-                        () -> config.getSettings().isGithubActionsPreview(),
-                        v -> config.getSettings().setGithubActionsPreview(v),
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        // Two file-type-agnostic view-mode toggles replace the former per-type view.toggle*Preview palette
+        // commands (Structured/SVG/Crontab/Fstab/Systemd/SshConfig/Dockerfile/GitHubActions): one flips
+        // Editor ⇄ full Preview, the other Editor ⇄ Split (editor+preview). Those preview types can still be
+        // enabled/disabled per-type via Settings → Editor.
+        registry.register(
+                Command.of("view.togglePreview", () -> togglePreviewMode(EditorBuffer.MarkdownViewMode.PREVIEW)));
+        registry.register(
+                Command.of("view.toggleSplitPreview", () -> togglePreviewMode(EditorBuffer.MarkdownViewMode.SPLIT)));
         registry.register(Command.of("mermaid.export", mermaid::export));
         registry.register(Command.of("diagram.export", diagram::export));
         registry.register(Command.of(
