@@ -91,6 +91,7 @@ final class Chrome {
     record PaletteGates(
             boolean projects,
             boolean git,
+            boolean github,
             boolean notes,
             boolean mermaid,
             boolean diagram,
@@ -116,6 +117,9 @@ final class Chrome {
             return false;
         }
         if (!g.git() && (id.startsWith("git.") || id.equals("tool.commit") || id.equals("tool.gitLog"))) {
+            return false;
+        }
+        if (!g.github() && (id.startsWith("github.") || id.equals("tool.github"))) {
             return false;
         }
         if (!g.notes() && (id.startsWith("notes.") || id.equals("tool.notes"))) {
