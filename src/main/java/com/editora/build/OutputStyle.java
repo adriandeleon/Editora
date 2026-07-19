@@ -26,6 +26,36 @@ public interface OutputStyle {
         return OutputStyle::mavenStyle;
     }
 
+    /**
+     * A GitHub Actions log classifier: an Actions workflow-command error/warning ({@code ##[error]} /
+     * {@code ##[warning]}) or a level token anywhere in the line. Unlike Maven's, this searches the whole line
+     * because gh prefixes every log line with {@code job<TAB>step<TAB>timestamp}.
+     */
+    static OutputStyle ci() {
+        return OutputStyle::ciStyle;
+    }
+
+    private static String ciStyle(String line) {
+        if (line == null) {
+            return null;
+        }
+        if (line.contains("##[error]")) {
+            return "log-error";
+        }
+        if (line.contains("##[warning]")) {
+            return "log-warn";
+        }
+        LogLevel level = LogPatterns.levelOf(line);
+        if (level == null) {
+            return null;
+        }
+        return switch (level) {
+            case ERROR, FATAL -> "log-error";
+            case WARN -> "log-warn";
+            case DEBUG, TRACE, INFO -> null; // CI logs are mostly INFO noise — don't paint the whole console
+        };
+    }
+
     private static String mavenStyle(String line) {
         if (line == null) {
             return null;

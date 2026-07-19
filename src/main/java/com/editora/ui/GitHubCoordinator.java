@@ -28,6 +28,7 @@ import com.editora.github.PrCreateArgs;
 import com.editora.github.PrListParser;
 import com.editora.github.PrReviewArgs;
 import com.editora.github.PrViewParser;
+import com.editora.github.RunListParser;
 import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
@@ -73,6 +74,20 @@ final class GitHubCoordinator {
 
         /** Selects the already-open tab whose content is {@code pane}; {@code false} when it isn't open. */
         boolean selectTabOf(com.editora.editor.TabContent pane);
+
+        /** Re-fetches the GitHub panel's current segment (after a rerun/cancel changes run state). */
+        void reloadGitHubPanel();
+
+        // --- the shared Build Output console, on its own owner-routed "CI" tab -----------------------
+
+        /** Opens the Build Output console on the CI tab and puts it in the running state. */
+        void ciLogStarted(String header, Runnable onStop);
+
+        void ciLogAppend(String line);
+
+        void ciLogFinished();
+
+        void ciLogFailed(String message);
     }
 
     /** Above this many changed files, "Open all files" confirms first so a big PR can't spam tabs. */
@@ -408,6 +423,111 @@ final class GitHubCoordinator {
     /** Fetches open issues for the tool window. */
     void fetchIssues(Consumer<List<com.editora.github.IssueListParser.Issue>> onResult) {
         ready(dir -> service.issueList(dir, res -> onResult.accept(res.ok() ? res.issues() : List.of())));
+    }
+
+    /** Fetches recent workflow runs for the tool window. */
+    void fetchRuns(Consumer<List<RunListParser.WorkflowRun>> onResult) {
+        ready(dir -> service.runList(dir, res -> {
+            if (!res.ok()) {
+                // A repo with Actions disabled / no permission errors here — report, don't modal.
+                host.setStatus(tr("status.github.runListFailed"));
+                onResult.accept(List.of());
+            } else {
+                onResult.accept(res.runs());
+            }
+        }));
+    }
+
+    // --- CI failure log → the shared Build Output console -----------------------------------------
+
+    /** Bumped per log request so a superseded (or Stopped) fetch is dropped instead of painting the console. */
+    private long ciLogGen;
+
+    /**
+     * Dumps a failed run's log ({@code gh run view <id> --log-failed}) into the shared Build Output console's
+     * CI tab, where {@code RunPanel.installLinkClicks} + {@code MainController.openRunLink} make its stack
+     * frames clickable — the runner's paths resolve to local files via the pure {@code run/RunnerPaths}.
+     */
+    void viewRunLog(long runId, String workflowName) {
+        ready(dir -> {
+            long gen = ++ciLogGen;
+            // There's no live process to kill — Stop just abandons the pending delivery.
+            ops.ciLogStarted(workflowName + " · run " + runId, () -> ciLogGen++);
+            service.runFailedLog(dir, runId, res -> {
+                if (gen != ciLogGen) {
+                    return; // superseded by another request, or stopped
+                }
+                if (!res.ok()) {
+                    ops.ciLogFailed(res.error());
+                    ghError(tr("status.github.runLogFailed"), res.error());
+                    return;
+                }
+                if (res.truncated()) {
+                    ops.ciLogAppend(tr("github.ci.truncated"));
+                }
+                for (String line : res.lines()) {
+                    ops.ciLogAppend(line);
+                }
+                ops.ciLogFinished();
+            });
+        });
+    }
+
+    /** Palette flow: pick a run (failed ones only, or all when none failed) and show its failure log. */
+    void viewRunLogPicked() {
+        ready(dir -> service.runList(dir, res -> {
+            if (!res.ok()) {
+                ghError(tr("status.github.runListFailed"), res.error());
+                return;
+            }
+            if (res.runs().isEmpty()) {
+                host.setStatus(tr("status.github.noRuns"));
+                return;
+            }
+            List<RunListParser.WorkflowRun> failed =
+                    res.runs().stream().filter(r -> r.state().failed()).toList();
+            List<RunListParser.WorkflowRun> choices = failed.isEmpty() ? res.runs() : failed;
+            QuickOpen<RunListParser.WorkflowRun> picker = new QuickOpen<>(
+                    tr("github.picker.runTitle"),
+                    tr("github.picker.runPrompt"),
+                    () -> choices,
+                    r -> r.state().glyph() + "  " + r.workflowName() + "  " + r.displayTitle(),
+                    r -> r.headBranch() + " · " + r.event(),
+                    r -> r.workflowName() + " " + r.displayTitle() + " " + r.headBranch(),
+                    r -> viewRunLog(r.databaseId(), r.workflowName()));
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        }));
+    }
+
+    /** Re-runs a workflow run (optionally only its failed jobs), then refreshes the panel. */
+    void rerunRun(long runId, boolean failedOnly) {
+        ready(dir -> {
+            host.setStatus(tr("status.github.rerunning", runId));
+            service.runRerun(dir, runId, failedOnly, r -> {
+                if (r.ok()) {
+                    host.setStatus(tr("status.github.rerunStarted", runId));
+                    ops.reloadGitHubPanel();
+                } else {
+                    ghError(tr("status.github.rerunFailed"), r.message());
+                }
+            });
+        });
+    }
+
+    /** Cancels an in-flight workflow run, then refreshes the panel. */
+    void cancelRun(long runId) {
+        ready(dir -> {
+            host.setStatus(tr("status.github.cancelling", runId));
+            service.runCancel(dir, runId, r -> {
+                if (r.ok()) {
+                    host.setStatus(tr("status.github.runCancelled", runId));
+                    ops.reloadGitHubPanel();
+                } else {
+                    ghError(tr("status.github.cancelFailed"), r.message());
+                }
+            });
+        });
     }
 
     /** Opens a GitHub URL in the browser (a panel row's "Open on GitHub"). */

@@ -246,16 +246,89 @@ public final class GitHubService {
         });
     }
 
+    // --- workflow runs (GitHub Actions) ----------------------------------------------------------
+
+    /** Result of a run list: {@code ok} distinguishes a failed {@code gh} call from a genuinely empty list. */
+    public record RunListResult(boolean ok, List<RunListParser.WorkflowRun> runs, String error) {}
+
+    /** Lists recent workflow runs ({@code gh run list --json …}); generation-guarded like {@link #prList}. */
+    public void runList(Path dir, Consumer<RunListResult> onResult) {
+        long gen = listGen.incrementAndGet();
+        exec.submit(() -> {
+            ProcessRunner.Result r = gh(
+                    dir,
+                    NETWORK,
+                    "run",
+                    "list",
+                    "--limit",
+                    "30",
+                    "--json",
+                    "databaseId,displayTitle,workflowName,headBranch,status,conclusion,event,createdAt,url");
+            RunListResult res = r.ok()
+                    ? new RunListResult(true, RunListParser.parse(r.out()), "")
+                    : new RunListResult(false, List.of(), r.message());
+            if (gen == listGen.get()) {
+                Platform.runLater(() -> onResult.accept(res));
+            }
+        });
+    }
+
+    /** How many trailing log lines are kept — the failure tail is what matters, and this keeps the FX thread
+     *  from ever receiving megabytes of text (the console trims to its own char cap anyway). */
+    private static final int MAX_LOG_LINES = 3000;
+
+    /** A run's failure log: the (tail-capped) lines, and whether earlier output was dropped. */
+    public record RunLogResult(boolean ok, List<String> lines, boolean truncated, String error) {}
+
+    /**
+     * Fetches a failed run's log ({@code gh run view <id> --log-failed}). Deliberately one-shot rather than
+     * streamed: gh downloads the completed run's log archive and prints it, so there's nothing to stream — a
+     * finished run's log never grows. Capped twice: {@link ProcessRunner}'s 10 MB capture, then trimmed here
+     * (off the FX thread) to the last {@link #MAX_LOG_LINES} lines.
+     */
+    public void runFailedLog(Path dir, long id, Consumer<RunLogResult> onResult) {
+        exec.submit(() -> {
+            ProcessRunner.Result r = gh(dir, NETWORK, "run", "view", String.valueOf(id), "--log-failed");
+            RunLogResult res;
+            if (!r.ok()) {
+                res = new RunLogResult(false, List.of(), false, r.message());
+            } else {
+                List<String> all = List.of(r.out().split("\n", -1));
+                boolean truncated = all.size() > MAX_LOG_LINES;
+                List<String> kept = truncated ? List.copyOf(all.subList(all.size() - MAX_LOG_LINES, all.size())) : all;
+                res = new RunLogResult(true, kept, truncated, "");
+            }
+            RunLogResult posted = res;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** Re-runs a workflow run ({@code gh run rerun <id> [--failed]}); posts the raw result. */
+    public void runRerun(Path dir, long id, boolean failedOnly, Consumer<ProcessRunner.Result> onResult) {
+        if (failedOnly) {
+            run(dir, NETWORK, onResult, "run", "rerun", String.valueOf(id), "--failed");
+        } else {
+            run(dir, NETWORK, onResult, "run", "rerun", String.valueOf(id));
+        }
+    }
+
+    /** Cancels an in-flight workflow run ({@code gh run cancel <id>}); posts the raw result. */
+    public void runCancel(Path dir, long id, Consumer<ProcessRunner.Result> onResult) {
+        run(dir, NETWORK, onResult, "run", "cancel", String.valueOf(id));
+    }
+
     // --- availability probe (does the repo have anything to review?) -----------------------------
 
     /**
-     * Whether the repo has at least one open PR <em>or</em> open issue — a cheap one-item probe of each
-     * ({@code gh pr list --limit 1} / {@code gh issue list --limit 1}), used to decide whether to show the
-     * GitHub tool-window stripe. No generation guard: it's a one-shot availability check, not a refreshing list.
+     * Whether the repo has at least one open PR, open issue, <em>or</em> workflow run — a cheap one-item probe
+     * of each, used to decide whether to show the GitHub tool-window stripe. Runs are included (checked last,
+     * so the {@code ||} short-circuits and most repos never pay for it) because a trunk-based repo with no open
+     * PRs/issues but a red CI run is exactly the case the Runs tab exists for — hiding the stripe there would
+     * bury it. No generation guard: it's a one-shot availability check, not a refreshing list.
      */
     public void hasOpenActivity(Path dir, Consumer<Boolean> onResult) {
         exec.submit(() -> {
-            boolean any = hasAny(dir, "pr") || hasAny(dir, "issue");
+            boolean any = hasAny(dir, "pr") || hasAny(dir, "issue") || hasAnyRun(dir);
             Platform.runLater(() -> onResult.accept(any));
         });
     }
@@ -268,6 +341,12 @@ public final class GitHubService {
         return kind.equals("pr")
                 ? !PrListParser.parse(r.out()).isEmpty()
                 : !IssueListParser.parse(r.out()).isEmpty();
+    }
+
+    /** Whether the repo has at least one workflow run (Actions enabled + something has run). */
+    private boolean hasAnyRun(Path dir) {
+        ProcessRunner.Result r = gh(dir, NETWORK, "run", "list", "--limit", "1", "--json", "databaseId");
+        return r.ok() && !RunListParser.parse(r.out()).isEmpty();
     }
 
     // --- open on github --------------------------------------------------------------------------

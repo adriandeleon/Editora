@@ -901,6 +901,15 @@
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;
 }
+/* Workflow-run state glyphs in the GitHub tool window's Runs segment — same semantic palette as the
+   .git-status-* file colors, so every AtlantaFX theme inherits correctly. */
+.git-tree .github-run-success { -fx-fill: -color-success-fg; }
+.git-tree .github-run-failure { -fx-fill: -color-danger-fg; }
+.git-tree .github-run-running { -fx-fill: -color-accent-fg; }
+.git-tree .github-run-queued { -fx-fill: -color-fg-muted; }
+.git-tree .github-run-cancelled { -fx-fill: -color-fg-muted; }
+.git-tree .github-run-skipped { -fx-fill: -color-fg-muted; }
+.git-tree .github-run-unknown { -fx-fill: -color-fg-muted; }
 /* PR review tab (GitHub "Files changed" style): a centered scrolling column of file rows. Font sizes are
    em-relative so setFontScale scales the whole tree with the editor text zoom. */
 .pr-review-pane { -fx-background-color: -color-bg-default; }

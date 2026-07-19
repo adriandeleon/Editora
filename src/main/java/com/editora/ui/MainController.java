@@ -3025,6 +3025,35 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                     return false;
                 }
+
+                @Override
+                public void reloadGitHubPanel() {
+                    MainController.this.reloadGithubPanel();
+                }
+
+                // The Build Output console is owner-routed, so passing the GitHub coordinator as the owner
+                // gives CI logs their own persistent "CI" tab beside the Maven/npm build tabs.
+                @Override
+                public void ciLogStarted(String header, Runnable onStop) {
+                    toolWindows.open(buildOutputToolWindow);
+                    buildOutputPanel.started(
+                            github, tr("github.ci.tab"), header, com.editora.build.OutputStyle.ci(), onStop);
+                }
+
+                @Override
+                public void ciLogAppend(String line) {
+                    buildOutputPanel.appendOutput(github, line, false);
+                }
+
+                @Override
+                public void ciLogFinished() {
+                    buildOutputPanel.finished(github, 0);
+                }
+
+                @Override
+                public void ciLogFailed(String message) {
+                    buildOutputPanel.failed(github, message);
+                }
             });
 
     // --- Mermaid (mmdc render/export + maid lint) ----------------------------------------------------
@@ -4235,8 +4264,25 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Path resolveRunLinkFile(String fileToken) {
         try {
             Path p = Path.of(fileToken);
+            if (p.isAbsolute() && java.nio.file.Files.isRegularFile(p)) {
+                return p; // a genuinely local absolute path (a local run/build log)
+            }
+            // A CI log carries the *runner's* paths (absolute /home/runner/work/<r>/<r>/… or repo-relative),
+            // which don't exist locally — try progressively shorter repo-relative suffixes under the project
+            // root so a GitHub Actions failure frame still jumps to the local file. Exact paths are tried
+            // first (candidate 0), so local behaviour is unchanged.
+            Project activeProject = projects == null ? null : projects.active();
+            if (activeProject != null) {
+                Path root = Path.of(activeProject.root());
+                for (String candidate : com.editora.run.RunnerPaths.candidates(fileToken)) {
+                    Path c = root.resolve(candidate);
+                    if (java.nio.file.Files.isRegularFile(c)) {
+                        return c;
+                    }
+                }
+            }
             if (p.isAbsolute()) {
-                return java.nio.file.Files.isRegularFile(p) ? p : null;
+                return null; // absolute, not local, and no repo-relative suffix matched
             }
             String name = p.getFileName().toString();
             for (Tab t : tabPane.getTabs()) { // an open tab with that file name wins
@@ -4254,13 +4300,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                     return sibling;
                 }
             }
-            Project active = projects == null ? null : projects.active();
-            if (active != null) {
-                Path inRoot = Path.of(active.root()).resolve(name);
-                if (java.nio.file.Files.isRegularFile(inRoot)) {
-                    return inRoot;
-                }
-            }
+            // (The old "<project root>/<bare name>" fallback is subsumed by the candidate walk above — the
+            // last candidate is always the bare file name, resolved against the same root.)
         } catch (RuntimeException ignored) {
             // Malformed path token — treat as unresolvable.
         }
@@ -4453,6 +4494,26 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public void showRuns() {
+                github.fetchRuns(githubPanel::setRuns);
+            }
+
+            @Override
+            public void viewRunLog(long runId, String workflowName) {
+                github.viewRunLog(runId, workflowName);
+            }
+
+            @Override
+            public void rerunRun(long runId, boolean failedOnly) {
+                github.rerunRun(runId, failedOnly);
+            }
+
+            @Override
+            public void cancelRun(long runId) {
+                github.cancelRun(runId);
+            }
+
+            @Override
             public void checkoutPr(int number) {
                 github.checkoutNumber(number);
             }
@@ -4474,12 +4535,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         };
     }
 
-    /** Re-fetches the GitHub tool window's current mode (PRs or Issues). */
+    /** Re-fetches the GitHub tool window's current segment (PRs, Issues, or Runs). */
     private void reloadGithubPanel() {
-        if (githubPanel.showingPrs()) {
-            github.fetchPrs(githubPanel::setPrs);
-        } else {
-            github.fetchIssues(githubPanel::setIssues);
+        switch (githubPanel.mode()) {
+            case PRS -> github.fetchPrs(githubPanel::setPrs);
+            case ISSUES -> github.fetchIssues(githubPanel::setIssues);
+            case RUNS -> github.fetchRuns(githubPanel::setRuns);
         }
     }
 
@@ -12288,6 +12349,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("github.createPr", github::createPr));
         registry.register(Command.of("github.submitReview", github::submitReviewPicked));
         registry.register(Command.of("github.openOnGitHub", github::openOnGitHub));
+        registry.register(Command.of(
+                "github.showRuns",
+                () -> github.ifEnabled(() -> {
+                    toolWindows.open(githubToolWindow);
+                    githubPanel.selectRuns();
+                    github.fetchRuns(githubPanel::setRuns);
+                })));
+        registry.register(Command.of("github.viewRunLog", github::viewRunLogPicked));
         registry.register(Command.of("github.refresh", github::refresh));
         registry.register(Command.of("view.toggleGithub", github::toggleSupport));
         registry.register(
