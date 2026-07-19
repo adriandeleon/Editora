@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import com.editora.command.KeymapManager;
@@ -34,6 +35,19 @@ final class FxWindowFixture {
 
     /** Boot a window on the FX thread, isolated to a fresh temp config dir. */
     static FxWindowFixture create() throws Exception {
+        return create(false, false, false, c -> {});
+    }
+
+    /**
+     * Boot a window with the session-only CLI chrome flags ({@code --zen}/{@code --expert}/{@code --simple}).
+     *
+     * <p>{@code onBuilt} runs on the FX thread <em>inside the same runnable as the build</em>, so no queued
+     * {@code Platform.runLater} has had a chance to run yet. That lets a test assert what the window looked
+     * like on its <b>first frame</b> rather than after the deferred startup work settles — the distinction
+     * that separates "chrome applied before show()" from "chrome fixed up a moment later".
+     */
+    static FxWindowFixture create(boolean zen, boolean expert, boolean simple, Consumer<MainController> onBuilt)
+            throws Exception {
         Path dir = Files.createTempDirectory("editora-fx-test");
         return FxTestSupport.callOnFx(() -> {
             ConfigManager bootstrap = new ConfigManager(dir);
@@ -43,7 +57,8 @@ final class FxWindowFixture {
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
             WindowManager wm = new WindowManager(shared, keymap, null);
-            MainController controller = wm.buildWindowForTest();
+            MainController controller = wm.buildWindowForTest(zen, expert, simple);
+            onBuilt.accept(controller);
             return new FxWindowFixture(dir, shared, wm, controller);
         });
     }
