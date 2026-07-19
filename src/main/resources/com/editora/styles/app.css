@@ -2138,6 +2138,9 @@
 /* Green play glyph for the gutter Run marker (compact source main line) + the right-click Run item. */
 .run-marker { -fx-fill: #3fb950; }
 .fold-gutter .run-slot:hover .run-marker { -fx-fill: #56d364; }
+/* JUnit test gutter ▶ — theme-aware accent so it's tellable-apart from the fixed-green script/make ▶. */
+.run-marker.test-run-marker { -fx-fill: -color-accent-fg; }
+.fold-gutter .run-slot:hover .run-marker.test-run-marker { -fx-fill: -color-accent-emphasis; }
 
 /* Gutter breakpoint dot (leftmost strip). Plain = solid red; conditional/logpoint tint it; disabled is
    hollow/grey. A faint dot previews on hover over an empty strip so the click target is discoverable. */

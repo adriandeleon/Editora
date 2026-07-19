@@ -88,6 +88,8 @@ public final class FoldManager {
     private IntPredicate isRunLine = i -> false;
     /** Invoked with the clicked line when the user clicks a gutter Run glyph. */
     private IntConsumer onRun = i -> {};
+    /** An extra style class for a line's Run glyph (e.g. {@code test-run-marker}), or {@code null}. */
+    private IntFunction<String> runExtraClass = i -> null;
 
     /** Whether debugging is enabled for this buffer (reserve the leftmost breakpoint slot on every row). */
     private BooleanSupplier breakpointsEnabled = () -> false;
@@ -287,9 +289,17 @@ public final class FoldManager {
      * {@code isRunLine} marks the top-level {@code main} line, and {@code onRun} runs the file on a click.
      */
     public void setRunHooks(BooleanSupplier enabled, IntPredicate isRunLine, IntConsumer onRun) {
+        setRunHooks(enabled, isRunLine, onRun, null);
+    }
+
+    /** As {@link #setRunHooks(BooleanSupplier, IntPredicate, IntConsumer)}, plus {@code extraClassFor} — an
+     *  extra CSS class per Run-glyph line (e.g. {@code test-run-marker} to tint a JUnit test ▶), or null. */
+    public void setRunHooks(
+            BooleanSupplier enabled, IntPredicate isRunLine, IntConsumer onRun, IntFunction<String> extraClassFor) {
         this.runEnabled = enabled == null ? () -> false : enabled;
         this.isRunLine = isRunLine == null ? i -> false : isRunLine;
         this.onRun = onRun == null ? i -> {} : onRun;
+        this.runExtraClass = extraClassFor == null ? i -> null : extraClassFor;
     }
 
     /**
@@ -650,7 +660,7 @@ public final class FoldManager {
             runSlot.setPrefWidth(RUN_SLOT_WIDTH);
             runSlot.setMaxWidth(RUN_SLOT_WIDTH);
             if (isRunLine.test(idx)) {
-                Node marker = runGlyph();
+                Node marker = runGlyph(runExtraClass.apply(idx));
                 marker.setCursor(Cursor.HAND);
                 final int runIdx = idx;
                 marker.setOnMouseClicked(e -> {
@@ -783,9 +793,17 @@ public final class FoldManager {
      *  colored via the {@code .run-marker} CSS class. Returned in a {@link Group} so its bounds reflect
      *  the scaled size and the gutter stays narrow. */
     static Node runGlyph() {
+        return runGlyph(null);
+    }
+
+    /** {@code extraClass} (e.g. {@code test-run-marker}) tints/distinguishes the glyph; null for the plain ▶. */
+    static Node runGlyph(String extraClass) {
         SVGPath svg = new SVGPath();
         svg.setContent(RUN_GLYPH_PATH);
         svg.getStyleClass().add("run-marker");
+        if (extraClass != null) {
+            svg.getStyleClass().add(extraClass);
+        }
         svg.setScaleX(1.217); // 20% bigger than before (1.014) so the Run target is easier to click
         svg.setScaleY(1.217);
         return new Group(svg);

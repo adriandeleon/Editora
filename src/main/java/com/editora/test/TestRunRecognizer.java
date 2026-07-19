@@ -46,6 +46,25 @@ public final class TestRunRecognizer {
         return out;
     }
 
+    /**
+     * The task args that run one test class ({@code methodName == null}) or one method — the gutter ▶ / run-at-
+     * caret dispatch. Only the JVM tools have a usable per-test filter; Go/Cargo in-file runs are out of scope
+     * (returns an empty list). Maven's {@code -Dtest} matches the <b>simple</b> class name (like
+     * {@link TestRun#failedTestFilters}); Gradle's {@code --tests} takes the FQN. {@code -DfailIfNoTests=false}
+     * keeps a reactor build from failing the modules that don't hold the target.
+     */
+    public static List<String> singleTestTask(BuildTool tool, String className, String methodName) {
+        return switch (tool) {
+            case MAVEN -> {
+                String cls = TestSourceLocator.simpleName(className);
+                String sel = methodName == null ? cls : cls + "#" + methodName;
+                yield List.of("test", "-Dtest=" + sel, "-DfailIfNoTests=false");
+            }
+            case GRADLE -> List.of("test", "--tests", methodName == null ? className : className + "." + methodName);
+            default -> List.of();
+        };
+    }
+
     /** The canonical {@code test} task args for a tool (what the {@code test.run} command launches). */
     public static List<String> defaultTestTask(BuildTool tool) {
         return switch (tool) {
