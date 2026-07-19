@@ -137,9 +137,29 @@ jpackage lowercases the install dir); (2) **copies the bundled `.desktop` into
 `/usr/share/applications/editora-Editora.desktop`** (the template already carries
 StartupWMClass/MimeType/`%F`, so the copy takes the verbatim fast path; an awk StartupWMClass
 injection remains as a fallback — the menu icon itself comes from the `.desktop`'s already-absolute
-`Icon=/opt/editora/lib/Editora.png`); then `update-desktop-database`. Verify a real `.deb`'s icon by
+`Icon=/opt/editora/lib/Editora.png`); (3) **derives a second menu entry
+`/usr/share/applications/editora-Editora-expert.desktop`** ("Editora Expert Mode") from the
+just-registered primary via `sed` — `Exec=… --expert --single-window %F`, `StartupWMClass`
+**dropped** (both entries launch the same `WM_CLASS` `com.editora.App`; only the primary may claim
+it or GNOME binds the running window/dock icon to an arbitrary entry), and a `MimeType` listing the
+concrete text types; and (4) **registers Expert Mode as the system-wide default text editor** by
+merging a `[Default Applications]` `type=editora-Editora-expert.desktop` line per type into
+`/usr/share/applications/mimeapps.list` (the freedesktop mime-apps mechanism GIO honors for system
+defaults; idempotent across re-runs, drops a competing default for the same type, preserves
+unrelated entries). The type list is the **canonical shared-mime-info names** (verified via
+`xdg-mime query filetype` on Debian 13): the `text/*` source/config types plus the `application/*`
+text formats (json/yaml/toml/xml/sql/x-shellscript/x-ruby/x-php/x-perl); anything unlisted still
+reaches Editora via GIO's `text/plain` **subclass fallback** (a type with its own explicit default
+elsewhere doesn't fall back — that's why the explicit list exists). **`text/html` and
+`image/svg+xml` are deliberately excluded** (browser / image viewer keep those), and a user's own
+`~/.config/mimeapps.list` choice still wins over the system default (deliberate, per Debian
+convention — postinst runs as root and must not rewrite per-user config). Then
+`update-desktop-database`. Verify a real `.deb`'s icon by
 `sha256sum`-ing `/opt/editora/lib/Editora.png` against `branding/editora.png` — they must match.
-`postrm` (remove/purge) removes both. **Device-test on Linux** (install the `.deb`: `which editora`
+`postrm` (remove/purge) removes all of it: the symlink, both `.desktop` entries, and the
+expert-default lines from `mimeapps.list` (deleting that file only when nothing but section headers
+remains, i.e. postinst created it). DEB-only — the RPM bundler ignores the resource-dir maintainer
+scripts, and the `.tar.gz`'s `tarball-install.sh` installs its own single `.desktop`. **Device-test on Linux** (install the `.deb`: `which editora`
 works + the app shows our icon in the menu and dock; then remove: both are gone) — the macOS dev box and
 the `os-linux` profile can't exercise this. *(If a terminal-launched window's dock icon is still generic,
 the real `WM_CLASS` differs from `Editora` — check `xprop WM_CLASS` and fix the injected value.)*
