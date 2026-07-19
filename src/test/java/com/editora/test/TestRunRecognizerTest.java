@@ -49,6 +49,16 @@ class TestRunRecognizerTest {
     }
 
     @Test
+    void isFilteredRun() {
+        assertTrue(TestRunRecognizer.isFilteredRun(BuildTool.MAVEN, List.of("test", "-Dtest=FooTest#bar")));
+        assertFalse(TestRunRecognizer.isFilteredRun(BuildTool.MAVEN, List.of("test")));
+        assertFalse(TestRunRecognizer.isFilteredRun(BuildTool.MAVEN, List.of("test", "-DfailIfNoTests=false")));
+        assertTrue(TestRunRecognizer.isFilteredRun(BuildTool.GRADLE, List.of("test", "--tests", "com.x.FooTest")));
+        assertFalse(TestRunRecognizer.isFilteredRun(BuildTool.GRADLE, List.of("test")));
+        assertFalse(TestRunRecognizer.isFilteredRun(BuildTool.GO, List.of("test", "-run", "^X$", "./...")));
+    }
+
+    @Test
     void singleTestTaskPerTool() {
         // Maven: simple class name + #method (matches Surefire's -Dtest), + failIfNoTests=false for reactors.
         assertEquals(

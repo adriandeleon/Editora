@@ -65,6 +65,23 @@ public final class TestRunRecognizer {
         };
     }
 
+    /**
+     * Whether the invocation targets a specific subset of tests (Maven {@code -Dtest=…}, Gradle
+     * {@code --tests …}) rather than the whole suite. An unfiltered run is the one worth pre-seeding with the
+     * full project test list; a filtered run only touches its target(s), so seeding everything would show a
+     * misleading grey tree.
+     */
+    public static boolean isFilteredRun(BuildTool tool, List<String> taskArgs) {
+        if (taskArgs == null) {
+            return false;
+        }
+        return switch (tool) {
+            case MAVEN -> taskArgs.stream().anyMatch(a -> a.startsWith("-Dtest="));
+            case GRADLE -> taskArgs.contains("--tests");
+            default -> false;
+        };
+    }
+
     /** The canonical {@code test} task args for a tool (what the {@code test.run} command launches). */
     public static List<String> defaultTestTask(BuildTool tool) {
         return switch (tool) {

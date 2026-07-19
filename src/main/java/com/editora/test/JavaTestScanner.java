@@ -25,8 +25,12 @@ public final class JavaTestScanner {
     /**
      * A runnable test target on {@code line} (0-based): the fully-qualified {@code className} plus
      * {@code methodName}, or {@code methodName == null} for the class-declaration line (run the whole class).
+     * {@code dynamic} is true for the parameterized family ({@code @ParameterizedTest}/{@code @RepeatedTest}/
+     * {@code @TestFactory}/{@code @TestTemplate}) whose runtime case ids ({@code foo(int)[1]}) don't match the
+     * method name — so pre-seeding skips them (they'd be grey ghosts); false for a plain {@code @Test} + the
+     * class target.
      */
-    public record TestTarget(int line, String className, String methodName) {}
+    public record TestTarget(int line, String className, String methodName, boolean dynamic) {}
 
     private static final Set<String> TEST_ANNOTATIONS =
             Set.of("Test", "ParameterizedTest", "RepeatedTest", "TestFactory", "TestTemplate");
@@ -51,6 +55,7 @@ public final class JavaTestScanner {
         int outerLine = -1;
         int classBodyDepth = -1;
         boolean pendingAnno = false;
+        boolean pendingDynamic = false;
         int depth = 0;
         List<TestTarget> methods = new ArrayList<>();
 
@@ -73,14 +78,16 @@ public final class JavaTestScanner {
             }
             // Detection at the outer class body depth only (nested-class methods sit one level deeper).
             if (classBodyDepth >= 0 && depth == classBodyDepth) {
-                if (TEST_ANNO.matcher(trimmed).find()) {
+                Matcher am = TEST_ANNO.matcher(trimmed);
+                if (am.find()) {
                     pendingAnno = true;
+                    pendingDynamic = !"Test".equals(am.group(1)); // parameterized family → dynamic case ids
                 }
                 if (pendingAnno) {
                     String afterAnno = LEADING_ANNOTATIONS.matcher(trimmed).replaceFirst("");
                     Matcher mm = METHOD.matcher(afterAnno);
                     if (mm.find() && outerClass != null) {
-                        methods.add(new TestTarget(li, fqcn(pkg, outerClass), mm.group(1)));
+                        methods.add(new TestTarget(li, fqcn(pkg, outerClass), mm.group(1), pendingDynamic));
                         pendingAnno = false;
                     }
                 }
@@ -103,7 +110,7 @@ public final class JavaTestScanner {
             return List.of();
         }
         List<TestTarget> out = new ArrayList<>(methods.size() + 1);
-        out.add(new TestTarget(outerLine, fqcn(pkg, outerClass), null));
+        out.add(new TestTarget(outerLine, fqcn(pkg, outerClass), null, false));
         out.addAll(methods);
         return out;
     }
