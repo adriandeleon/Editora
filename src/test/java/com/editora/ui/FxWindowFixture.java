@@ -41,7 +41,7 @@ final class FxWindowFixture {
             SharedConfig shared = bootstrap.shared();
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
-            keymap.applyOverrides(shared.getSettings().getKeybindings());
+            keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
             WindowManager wm = new WindowManager(shared, keymap, null);
             MainController controller = wm.buildWindowForTest();
             return new FxWindowFixture(dir, shared, wm, controller);

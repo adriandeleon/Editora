@@ -57,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A keyboard config synced between macOS and Windows/Linux no longer double-binds your custom shortcuts.**
+  Custom keybinding overrides were kept in a single map, but a chord is modifier-specific (Cmd on macOS, Ctrl
+  elsewhere) — so a shortcut rebound on a Mac and then opened on Windows stayed bound to *both* your new chord and
+  the original default. Overrides are now stored per platform, so each OS uses (and only sees) its own. Existing
+  configs migrate in place to the platform they're opened on. (#439)
 - **Taking your time over an SFTP host-key fingerprint no longer times the connection out.** When connecting to a
   new server, the trust-on-first-use dialog asks you to compare the host-key fingerprint — but the connection's
   handshake timeout kept counting while the dialog was open, so a careful comparison could time out from under you.

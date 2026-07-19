@@ -241,6 +241,39 @@ public final class ConfigMigrations {
      * (else it would be resurrected as an Anthropic key). Anthropic was the default, so the common case — a
      * key saved under Anthropic — already lands in the right field and is left untouched.
      */
+    /**
+     * v80 → v81 for {@code settings.toml}: split the single {@code keybindings} override map into per-platform
+     * maps ({@code keybindings} = Ctrl-based Windows/Linux, {@code keybindingsMac} = Cmd-based macOS), so a config
+     * synced between OSes no longer double-binds a rebound command (#439). A rebind's UNBIND suppressor keys to
+     * the resolved chord, so a mac-written {@code Cmd-S UNBIND} doesn't suppress the {@code Ctrl-S} default on
+     * Windows, leaving it live alongside the (platform-neutral) new chord. We assume the existing map belongs to
+     * the platform running the migration and move it into that slot, clearing the other so the leak can't happen.
+     */
+    static JsonNode splitKeybindingsByPlatform(JsonNode input) {
+        boolean mac = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("mac");
+        return input instanceof ObjectNode o ? splitKeybindings(o, mac) : input;
+    }
+
+    /**
+     * Pure core of {@link #splitKeybindingsByPlatform}. On non-macOS the existing {@code keybindings} already is
+     * the Ctrl slot (and {@code keybindingsMac} defaults empty), so it's identity. On macOS the existing map is
+     * Cmd-based: move it to {@code keybindingsMac} and empty {@code keybindings}, so a later Windows/Linux load of
+     * the same file starts from defaults instead of stale Cmd-chord overrides.
+     */
+    static ObjectNode splitKeybindings(ObjectNode o, boolean mac) {
+        if (!mac) {
+            return o;
+        }
+        JsonNode existing = o.get("keybindings");
+        o.set(
+                "keybindingsMac",
+                existing != null && existing.isObject() ? existing.deepCopy() : JsonNodeFactory.instance.objectNode());
+        o.set("keybindings", JsonNodeFactory.instance.objectNode());
+        return o;
+    }
+
     static JsonNode splitAiApiKeyByProvider(JsonNode input) {
         if (!(input instanceof ObjectNode o)) {
             return input;
