@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-07-18
+
 ### Performance
 
 - **Opening the first file of a language no longer freezes the editor for a beat.** Starting a language server
@@ -54,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The command palette now shows commands that can't run in the current context, grayed out**, instead of
   hiding them. A command for a disabled feature (e.g. Git commands while Git is off) is listed with its
   keybinding but dimmed and non-actionable, so you can see it exists. (#532)
+- **The Maven / Gradle / npm / Cargo / Go task panels now open on the right by default** instead of the bottom
+  (a better fit for a vertical task list). A panel you've already moved keeps its side. (#531)
+- **The gutter fold arrow is 35% larger** — easier to see and click. (#530)
 
 ### Fixed
 
@@ -100,12 +105,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command, another editor, a build) modified files under the repo while Editora was focused, the Commit stripe,
   Git status, and gutter change bars didn't update until you clicked away and back. They now refresh as soon as
   the project tree sees the change. (#529)
-
-### Changed
-
-- **The Maven / Gradle / npm / Cargo / Go task panels now open on the right by default** instead of the bottom
-  (a better fit for a vertical task list). A panel you've already moved keeps its side. (#531)
-- **The gutter fold arrow is 35% larger** — easier to see and click. (#530)
 
 ## [0.9.6] - 2026-07-17
 
