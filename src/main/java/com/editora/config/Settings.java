@@ -257,6 +257,10 @@ public class Settings {
     /** Override command for launching Gradle; blank = auto (prefer the project's ./gradlew wrapper, else
      *  resolve "gradle" on PATH). */
     private String gradleCommand = "";
+    /** Test Results window: intercept a build tool's {@code test} run and show an IntelliJ-style results tree
+     *  (per-test pass/fail/skip + stack traces) instead of only the raw Build Output console. On by default;
+     *  suppressed in Simple UI mode. */
+    private boolean testRunner = true;
     /** Use ripgrep to accelerate Find in Files when it's detected on PATH (default on; falls back otherwise). */
     private boolean ripgrepSearch = true;
     /** Path/command for ripgrep; blank = resolve "rg" on PATH. */
@@ -1417,6 +1421,14 @@ public class Settings {
 
     public void setMavenSupport(boolean mavenSupport) {
         this.mavenSupport = mavenSupport;
+    }
+
+    public boolean isTestRunner() {
+        return testRunner;
+    }
+
+    public void setTestRunner(boolean testRunner) {
+        this.testRunner = testRunner;
     }
 
     public String getMavenCommand() {

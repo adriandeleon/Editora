@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.SampleTest" time="0.123" tests="4" errors="1" skipped="1" failures="1">
+  <testcase name="passes" classname="com.example.SampleTest" time="0.010"/>
+  <testcase name="failsAssertion" classname="com.example.SampleTest" time="0.020">
+    <failure message="expected: &lt;1&gt; but was: &lt;2&gt;" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: expected: &lt;1&gt; but was: &lt;2&gt;
+	at com.example.SampleTest.failsAssertion(SampleTest.java:42)</failure>
+  </testcase>
+  <testcase name="throws" classname="com.example.SampleTest" time="0.030">
+    <error message="boom" type="java.lang.IllegalStateException">java.lang.IllegalStateException: boom
+	at com.example.SampleTest.throws(SampleTest.java:55)</error>
+  </testcase>
+  <testcase name="disabled" classname="com.example.SampleTest" time="0">
+    <skipped message="not ready"/>
+  </testcase>
+  <system-out><![CDATA[hello from stdout]]></system-out>
+</testsuite>

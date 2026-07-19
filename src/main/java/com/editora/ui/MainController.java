@@ -326,6 +326,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private ToolWindow buildOutputToolWindow;
 
+    /** The IntelliJ-style Test Results window; available once a {@code test} run has occurred. */
+    private ToolWindow testResultsToolWindow;
+
     /** Checks GitHub for a newer release (background, once/day + manual). */
     private final com.editora.update.UpdateService updateService = new com.editora.update.UpdateService();
     /** The newest release found to be newer than the running version, shared across windows in-process (so a
@@ -922,7 +925,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 mcpEnabled(),
                 pluginsEnabled(),
                 externalToolsEnabled(),
-                logViewer.isEnabled());
+                logViewer.isEnabled(),
+                s.isTestRunner() && !simpleModeActive());
     }
 
     /**
@@ -1301,6 +1305,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         officeService.shutdown();
         printService.shutdown();
         runCoordinator.shutdown();
+        testRunCoordinator.shutdown(); // stop the report poller + elapsed timer
         if (installCoordinator != null) {
             installCoordinator.shutdown();
         }
@@ -2392,6 +2397,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::terminal,
                 buildOutputPanel,
                 "tool.buildOutput");
+        testResultsToolWindow = new ToolWindow(
+                "testResults",
+                tr("toolwindow.testResults"),
+                ToolWindow.Side.BOTTOM,
+                Icons::testResults,
+                testRunCoordinator.panel(),
+                "tool.testResults");
+        // Mirror a recognized `test` run of any build tool into the Test Results window.
+        buildCoordinators.forEach(c -> c.setTestRunHook(testRunCoordinator));
         installCoordinator = new InstallCoordinator(coordinatorHost, new InstallCoordinator.Ops() {
             @Override
             public java.nio.file.Path configDir() {
@@ -2480,6 +2494,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         toolWindows.register(buildOutputToolWindow, false); // shared console stripe off by default; auto-opens on run
         toolWindows.setAvailable(buildOutputToolWindow, false); // …available once any build tool is detected
+        toolWindows.register(testResultsToolWindow, false); // stripe off by default; auto-opens on a `test` run
+        toolWindows.setAvailable(testResultsToolWindow, false); // …available once a test run has occurred
         toolWindows.register(remoteToolWindow, false); // off by default (niche); always available — no buffer needed
         toolWindows.register(
                 agentToolWindow, false); // stripe off by default; shown via tool.agent / Settings → AI Agent
@@ -3265,6 +3281,46 @@ public class MainController implements com.editora.mcp.McpBridge {
             openRunLink(link);
         }
     });
+
+    /** The IntelliJ-style Test Results feature: it hooks each build coordinator (see the injection where the
+     *  tool windows are built) and builds the results tree from a recognized {@code test} run. See
+     *  {@link TestRunCoordinator}. */
+    private final TestRunCoordinator testRunCoordinator =
+            new TestRunCoordinator(coordinatorHost, new TestRunCoordinator.Ops() {
+                @Override
+                public void openTestResults() {
+                    if (testResultsToolWindow != null) {
+                        toolWindows.open(testResultsToolWindow, false);
+                    }
+                }
+
+                @Override
+                public void setTestResultsAvailable(boolean available) {
+                    if (testResultsToolWindow != null) {
+                        toolWindows.setAvailable(testResultsToolWindow, available);
+                    }
+                }
+
+                @Override
+                public void openLink(com.editora.run.StackTraceLinks.Link link) {
+                    openRunLink(link);
+                }
+
+                @Override
+                public void jumpToTest(com.editora.test.TestNode node, BuildTool tool) {
+                    jumpToTestSource(node, tool);
+                }
+
+                @Override
+                public void runTest(BuildTool tool, Path root, List<String> taskArgs, List<String> toggleArgs) {
+                    buildCoordinatorFor(tool).ifPresent(c -> c.runTask(taskArgs, toggleArgs));
+                }
+
+                @Override
+                public void stopTest(BuildTool tool) {
+                    buildCoordinatorFor(tool).ifPresent(BuildCoordinator::stop);
+                }
+            });
 
     /** The whole LSP integration (nav/format, diagnostics routing, the configure/detect/per-buffer-sync
      *  gating + lifecycle, the status-bar segment, structure outline, semantic tokens); see
@@ -4125,6 +4181,103 @@ public class MainController implements com.editora.mcp.McpBridge {
             // Malformed path token — treat as unresolvable.
         }
         return null;
+    }
+
+    /** The build coordinator that owns {@code tool} (for the Test Results rerun/stop hooks). */
+    private java.util.Optional<BuildCoordinator> buildCoordinatorFor(BuildTool tool) {
+        return buildCoordinators.stream().filter(c -> c.tool() == tool).findFirst();
+    }
+
+    /** {@code test.run}: run the {@code test} task of the first detected build tool for the active context. */
+    private void runTestsForContext() {
+        for (BuildCoordinator c : buildCoordinators) {
+            if (c.isEnabled() && c.isDetected()) {
+                c.runTask(com.editora.test.TestRunRecognizer.defaultTestTask(c.tool()), List.of());
+                return;
+            }
+        }
+        setStatus(tr("status.testrunner.noBuildTool"));
+    }
+
+    /** Gates the Test Results tool window: hidden when the feature is off or in Simple UI mode (it becomes
+     *  available again on the next test run). */
+    private void applyTestRunner() {
+        if (testResultsToolWindow == null) {
+            return;
+        }
+        if (!config.getSettings().isTestRunner() || simpleModeActive()) {
+            toolWindows.setAvailable(testResultsToolWindow, false);
+        }
+    }
+
+    /** Test Results double-click: open the test's source file and jump to the method (name-based; the failure
+     *  path already prefers the exact stack-trace frame via {@link #openRunLink}). */
+    private void jumpToTestSource(com.editora.test.TestNode node, BuildTool tool) {
+        String hint = com.editora.test.TestSourceLocator.fileHint(node.className(), tool);
+        Path file = hint == null ? null : resolveTestSourceFile(hint);
+        if (file == null) {
+            setStatus(tr("status.testrunner.noSource", node.displayName()));
+            return;
+        }
+        openPath(file);
+        jumpToTestMethod(file, node.methodName());
+    }
+
+    /** Resolves a test source file by name: an open tab / last-run dir / project root first, else a bounded
+     *  walk of the project tree (test sources live deep under src/test/…). */
+    private Path resolveTestSourceFile(String name) {
+        Path direct = resolveRunLinkFile(name);
+        if (direct != null) {
+            return direct;
+        }
+        Path root = windowProject != null ? Path.of(windowProject.root()) : null;
+        if (root == null || !java.nio.file.Files.isDirectory(root)) {
+            return null;
+        }
+        try (java.util.stream.Stream<Path> walk = java.nio.file.Files.walk(root, 12)) {
+            return walk.filter(java.nio.file.Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().equals(name))
+                    .filter(p -> {
+                        String s = p.toString();
+                        return !s.contains("/target/") && !s.contains("/node_modules/") && !s.contains("/build/");
+                    })
+                    .findFirst()
+                    .orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Moves the caret to a test method's declaration in an already-open file (text search; strips param/
+     *  parameterized/subtest suffixes). Best-effort — leaves the caret at the top if not found. */
+    private void jumpToTestMethod(Path file, String methodName) {
+        EditorBuffer buffer = bufferOf(tabForPath(file));
+        if (buffer == null || methodName == null || methodName.isBlank()) {
+            return;
+        }
+        String name = methodName;
+        for (char sep : new char[] {'(', '[', '/', ' '}) {
+            int cut = name.indexOf(sep);
+            if (cut > 0) {
+                name = name.substring(0, cut);
+            }
+        }
+        String text = buffer.getContent();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(name) + "\\b")
+                .matcher(text);
+        if (!m.find()) {
+            return;
+        }
+        int idx = m.start();
+        int line = 1;
+        int lineStart = 0;
+        for (int i = 0; i < idx; i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+                lineStart = i + 1;
+            }
+        }
+        gotoInFile(file, line, idx - lineStart + 1, true);
     }
 
     /** Whether the Personal Notes feature is enabled in Settings (default off). */
@@ -10407,6 +10560,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         aiCoordinator.applySupport(); // re-probe connectivity + re-gate the floating selection Explain/Rewrite bar
         todoCoordinator.applyHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
         csvCoordinator.applySupport(); // re-gate the in-editor CSV grid preview on every open buffer
+        applyTestRunner(); // re-gate the Test Results window (off / Simple UI mode hides it)
         applyMarkdownLint(); // push Markdown-lint enabled state to every buffer
         applyAutoSave();
         applyAutocomplete();
@@ -10437,6 +10591,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         runCoordinator.panel().setOutputFont(settings.getFontFamily(), consoleFont);
         debugCoordinator.panel().setConsoleFont(settings.getFontFamily(), consoleFont);
         buildOutputPanel.setOutputFont(settings.getFontFamily(), consoleFont);
+        testRunCoordinator.setOutputFont(settings.getFontFamily(), consoleFont);
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
@@ -11878,6 +12033,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("run.stop", runCoordinator::stopRun));
         registry.register(Command.of("run.clear", runCoordinator::clearConsole));
         registry.register(Command.of("tool.run", () -> toolWindows.toggle(runToolWindow)));
+        // Test Results (IntelliJ-style test runner): intercepts a build tool's `test` run. Gated by the
+        // "Enable Test Results" setting (default on) + suppressed in Simple UI mode.
+        registry.register(Command.of("test.run", this::runTestsForContext));
+        registry.register(Command.of("test.rerun", testRunCoordinator::rerun));
+        registry.register(Command.of("test.rerunFailed", testRunCoordinator::rerunFailed));
+        registry.register(Command.of("test.stop", testRunCoordinator::stop));
+        registry.register(Command.of("tool.testResults", () -> toolWindows.toggle(testResultsToolWindow)));
+        registry.register(Command.of(
+                "view.toggleTestRunner",
+                () -> toggleSetting(
+                        "view.toggleTestRunner",
+                        config.getSettings()::isTestRunner,
+                        config.getSettings()::setTestRunner,
+                        this::applyTestRunner)));
         registry.register(Command.of("tool.externalTools", () -> toolWindows.toggle(externalToolToolWindow)));
         // HTTP Client (.http via ijhttp). Gated by the "Enable HTTP Client" setting (default off).
         registry.register(Command.of("http.runRequest", httpClient::runRequestAtCaret));
