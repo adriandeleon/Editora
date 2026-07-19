@@ -10,12 +10,34 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Unit tests for the pure VFS helpers (local branches; remote reconstruction tested via an injected resolver). */
+/** Unit tests for the pure VFS helpers (local branches; remote reconstruction tested via registered providers). */
 class VfsTest {
 
+    /** A test remote engine that resolves exactly the URIs it's told to (and owns no paths). */
+    private record StubProvider(java.util.function.Function<String, Path> resolver) implements Vfs.RemoteProvider {
+        @Override
+        public Path resolve(String uri) {
+            return resolver.apply(uri);
+        }
+
+        @Override
+        public String storable(Path path) {
+            return null;
+        }
+    }
+
+    private final java.util.List<Vfs.RemoteProvider> registered = new java.util.ArrayList<>();
+
+    private void register(java.util.function.Function<String, Path> resolver) {
+        Vfs.RemoteProvider p = new StubProvider(resolver);
+        Vfs.registerRemoteProvider(p);
+        registered.add(p);
+    }
+
     @AfterEach
-    void clearResolver() {
-        Vfs.setRemoteResolver(null);
+    void clearProviders() {
+        registered.forEach(Vfs::unregisterRemoteProvider);
+        registered.clear();
     }
 
     @Test
@@ -38,10 +60,32 @@ class VfsTest {
     }
 
     @Test
-    void remoteUriUsesTheInjectedResolver() {
+    void remoteUriUsesTheRegisteredProvider() {
         Path stub = Path.of("/marker");
-        Vfs.setRemoteResolver(s -> "sftp://ada@host/srv/app.js".equals(s) ? stub : null);
+        register(s -> "sftp://ada@host/srv/app.js".equals(s) ? stub : null);
         assertEquals(stub, Vfs.parseStorable("sftp://ada@host/srv/app.js"));
+    }
+
+    @Test
+    void multipleWindowsResolveTheirOwnHostsAndSurviveEachOtherClosing() {
+        // #436: two windows connect to different hosts; each provider owns only its authority.
+        Path pa = Path.of("/on-a");
+        Path pb = Path.of("/on-b");
+        Vfs.RemoteProvider a = new StubProvider(s -> s.contains("@hostA") ? pa : null);
+        Vfs.RemoteProvider b = new StubProvider(s -> s.contains("@hostB") ? pb : null);
+        Vfs.registerRemoteProvider(a);
+        Vfs.registerRemoteProvider(b);
+        registered.add(a);
+        registered.add(b);
+
+        assertEquals(pa, Vfs.parseStorable("sftp://ada@hostA/x"), "window A's host resolves");
+        assertEquals(pb, Vfs.parseStorable("sftp://ada@hostB/x"), "window B's host resolves");
+
+        // Window B closes → A's paths must still resolve (the single-slot bug stranded them here).
+        Vfs.unregisterRemoteProvider(b);
+        registered.remove(b);
+        assertEquals(pa, Vfs.parseStorable("sftp://ada@hostA/x"), "A still resolves after B closed");
+        assertNull(Vfs.parseStorable("sftp://ada@hostB/x"), "B's host no longer resolves (its window is gone)");
     }
 
     @Test

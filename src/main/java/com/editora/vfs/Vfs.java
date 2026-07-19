@@ -2,7 +2,8 @@ package com.editora.vfs;
 
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
-import java.util.function.Function;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * Small helpers for the virtual-filesystem abstraction. Editora keeps using {@link Path} everywhere, but a
@@ -13,43 +14,40 @@ import java.util.function.Function;
  */
 public final class Vfs {
 
-    /** Injected by {@code RemoteFileSystems} (once SFTP support is wired) to turn a remote URI back into a
-     *  live {@link Path}; {@code null} until then (and remote URIs then deserialize to {@code null}). */
-    private static volatile Function<String, Path> remoteResolver;
-    /** Injected by {@code RemoteFileSystems} to turn a remote {@link Path} into its {@code sftp://} URI —
-     *  we can't use {@code Path.toUri()} because MINA SSHD's implementation throws for SFTP paths. */
-    private static volatile Function<Path, String> remoteStorable;
+    /**
+     * A remote-filesystem engine ({@code RemoteFileSystems}) that can resolve the URIs / paths it owns. There is
+     * one <b>per window</b>, so this is a <b>registry</b>, not a single slot: window B connecting to a second host
+     * must not clobber window A's resolution, and closing B must not strand A's still-live remote paths (#436).
+     * Resolution dispatches to the provider that owns the authority (for a URI) or the {@code FileSystem} (for a
+     * path); a provider returns {@code null} for anything it doesn't own.
+     */
+    public interface RemoteProvider {
+        /** A live {@link Path} for a remote URI whose authority this provider has connected, else {@code null}. */
+        Path resolve(String uri);
+
+        /** The {@code sftp://} storable for a {@link Path} on a filesystem this provider owns, else {@code null}. */
+        String storable(Path path);
+    }
+
+    /** Live remote engines (one per window). Copy-on-write: registration/lookup races are harmless and rare. */
+    private static final Set<RemoteProvider> providers = new CopyOnWriteArraySet<>();
 
     private Vfs() {}
 
-    /** The object whose hooks are currently installed, so only it may clear them (see {@link #clearRemoteHooksIf}). */
-    private static volatile Object remoteOwner;
-
-    /**
-     * Clears the remote hooks if {@code owner} is the one that installed them. The hooks are static, so a
-     * closed window's {@code RemoteFileSystems} would otherwise be pinned here (with its SSH client and open
-     * sessions) for the rest of the process. Guarded by identity so a *newer* window's hooks survive an older
-     * window closing after it.
-     */
-    public static void clearRemoteHooksIf(Object owner) {
-        if (remoteOwner == owner) {
-            remoteResolver = null;
-            remoteStorable = null;
-            remoteOwner = null;
+    /** Registers a window's remote engine so its {@code sftp://} paths resolve (see {@link RemoteProvider}). */
+    public static void registerRemoteProvider(RemoteProvider provider) {
+        if (provider != null) {
+            providers.add(provider);
         }
     }
 
-    /** Records who installed the hooks (call with the owner right after setting them). */
-    public static void setRemoteOwner(Object owner) {
-        remoteOwner = owner;
-    }
-
-    public static void setRemoteResolver(Function<String, Path> resolver) {
-        remoteResolver = resolver;
-    }
-
-    public static void setRemoteStorable(Function<Path, String> fn) {
-        remoteStorable = fn;
+    /**
+     * Deregisters a window's remote engine (on window close / app exit). The registry is {@code static}, so
+     * without this a closed window's engine (its SSH client, NIO threads, open sessions) would stay reachable
+     * for the process's life. Only this window's provider is removed — every other window's stays live.
+     */
+    public static void unregisterRemoteProvider(RemoteProvider provider) {
+        providers.remove(provider);
     }
 
     /** True when {@code path} is on the local default filesystem (a {@code null} path — untitled — counts
@@ -72,19 +70,30 @@ public final class Vfs {
         if (isLocal(path)) {
             return path.toString();
         }
-        Function<Path, String> fn = remoteStorable;
-        return fn != null ? fn.apply(path) : path.toString(); // never Path.toUri() — it throws for SFTP
+        // Dispatch to the provider that owns this path's FileSystem (never Path.toUri() — it throws for SFTP).
+        for (RemoteProvider p : providers) {
+            String s = p.storable(path);
+            if (s != null) {
+                return s;
+            }
+        }
+        return path.toString(); // no live owner (disconnected) — best-effort
     }
 
-    /** Reconstructs a path from {@link #toStorableString}: a local path directly, or a remote path via the
-     *  injected resolver ({@code null} when not connected / no resolver yet). */
+    /** Reconstructs a path from {@link #toStorableString}: a local path directly, or a remote path via whichever
+     *  registered engine owns its authority ({@code null} when none is connected to that host). */
     public static Path parseStorable(String stored) {
         if (stored == null || stored.isBlank()) {
             return null;
         }
         if (isRemoteUri(stored)) {
-            Function<String, Path> resolver = remoteResolver;
-            return resolver == null ? null : resolver.apply(stored);
+            for (RemoteProvider p : providers) {
+                Path r = p.resolve(stored);
+                if (r != null) {
+                    return r;
+                }
+            }
+            return null;
         }
         return Path.of(stored);
     }

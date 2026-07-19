@@ -36,7 +36,7 @@ import org.apache.sshd.sftp.client.fs.SftpFileSystem;
  * the rest of the app keeps using {@link Path} unchanged. Connect/auth run off the FX thread (the
  * {@code GitService} idiom: a daemon executor + {@link Platform#runLater} callbacks).
  */
-public final class RemoteFileSystems {
+public final class RemoteFileSystems implements Vfs.RemoteProvider {
 
     /** The result of a connect attempt: {@code root} is the remote start directory (the connection's last
      *  path, else the SFTP home) when {@code ok}, else {@code error} explains the failure. */
@@ -112,9 +112,9 @@ public final class RemoteFileSystems {
         // refused outright, without asking. That last case is the man-in-the-middle, and it is the point.
         client.setServerKeyVerifier(new KnownHostsServerKeyVerifier(unknownHostVerifier(prompt), knownHosts));
         client.start();
-        Vfs.setRemoteResolver(this::resolve); // remote sftp:// strings → live Paths
-        Vfs.setRemoteStorable(this::storableFor); // remote Path → sftp:// string (Path.toUri() throws for SFTP)
-        Vfs.setRemoteOwner(this); // so shutdown() can un-pin these statics (see Vfs.clearRemoteHooksIf)
+        // Register this window's engine in the Vfs provider registry (one per window). resolve()/storable() only
+        // answer for authorities/filesystems this instance owns, so windows never clobber each other (#436).
+        Vfs.registerRemoteProvider(this);
     }
 
     /** {@code ~/.ssh/known_hosts} — shared with OpenSSH deliberately (see the constructor). */
@@ -147,14 +147,19 @@ public final class RemoteFileSystems {
         };
     }
 
-    /** The {@code sftp://user@host:port/path} string for a remote Path, by finding its owning connection. */
-    private String storableFor(Path path) {
+    /**
+     * The {@code sftp://user@host:port/path} string for a Path on a connection <b>this</b> engine owns, else
+     * {@code null} (the {@link Vfs.RemoteProvider} contract — the caller tries the next provider). Matching by
+     * {@code FileSystem} identity is exact, so in a multi-window session a path is stored by its owning window.
+     */
+    @Override
+    public String storable(Path path) {
         for (Map.Entry<String, SftpFileSystem> e : byAuthority.entrySet()) {
             if (path.getFileSystem() == e.getValue()) {
                 return "sftp://" + e.getKey() + path; // key is user@host:port; path starts with '/'
             }
         }
-        return path.toString(); // unknown filesystem (disconnected) — best-effort
+        return null; // not one of this engine's filesystems
     }
 
     /** Connects (off-thread) and posts the {@link Result} on the FX thread; {@code secret} (a password or
@@ -329,7 +334,12 @@ public final class RemoteFileSystems {
         return fs == null ? null : fs.getPath(uri.path());
     }
 
-    private Path resolve(String storable) {
+    /**
+     * A live {@link Path} for a remote URI whose authority this engine has connected, else {@code null} (the
+     * {@link Vfs.RemoteProvider} contract — an unowned authority falls through to the next registered provider).
+     */
+    @Override
+    public Path resolve(String storable) {
         return pathFor(SftpUri.parse(storable));
     }
 
@@ -345,14 +355,13 @@ public final class RemoteFileSystems {
     /**
      * Closes every connection + the client. Called when the owning window closes (and on app exit).
      *
-     * <p>Also clears the app-wide {@link Vfs} resolver hooks this instance installed in its constructor — they
-     * are {@code static}, so without this a closed window's instance (its SSH client, NIO threads, and every
-     * open SFTP session) stays strongly reachable for the life of the process and can never be collected.
-     * Only clears them if they still point at <em>this</em> instance, so a newer window's hooks aren't
-     * unhooked from under it.
+     * <p>Also deregisters this engine from the app-wide {@link Vfs} provider registry — it is {@code static}, so
+     * without this a closed window's instance (its SSH client, NIO threads, and every open SFTP session) stays
+     * strongly reachable for the life of the process and can never be collected. Only <em>this</em> provider is
+     * removed, so every other window's stays live (a closed window no longer strands another's remote paths).
      */
     public void shutdown() {
-        Vfs.clearRemoteHooksIf(this);
+        Vfs.unregisterRemoteProvider(this);
         byAuthority.values().forEach(RemoteFileSystems::close);
         byAuthority.clear();
         client.stop();
