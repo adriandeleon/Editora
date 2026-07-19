@@ -93,6 +93,8 @@ public final class FoldManager {
     private IntConsumer onRun = i -> {};
     /** An extra style class for a line's Run glyph (e.g. {@code test-run-marker}), or {@code null}. */
     private IntFunction<String> runExtraClass = i -> null;
+    /** Hover text for a line's Run glyph (e.g. "Run test method foo"), or {@code null} for no tooltip. */
+    private IntFunction<String> runTooltip = i -> null;
 
     /** Whether debugging is enabled for this buffer (reserve the leftmost breakpoint slot on every row). */
     private BooleanSupplier breakpointsEnabled = () -> false;
@@ -299,10 +301,21 @@ public final class FoldManager {
      *  extra CSS class per Run-glyph line (e.g. {@code test-run-marker} to tint a JUnit test ▶), or null. */
     public void setRunHooks(
             BooleanSupplier enabled, IntPredicate isRunLine, IntConsumer onRun, IntFunction<String> extraClassFor) {
+        setRunHooks(enabled, isRunLine, onRun, extraClassFor, null);
+    }
+
+    /** As above, plus {@code tooltipFor} — hover text per Run-glyph line (e.g. "Run test method foo"), or null. */
+    public void setRunHooks(
+            BooleanSupplier enabled,
+            IntPredicate isRunLine,
+            IntConsumer onRun,
+            IntFunction<String> extraClassFor,
+            IntFunction<String> tooltipFor) {
         this.runEnabled = enabled == null ? () -> false : enabled;
         this.isRunLine = isRunLine == null ? i -> false : isRunLine;
         this.onRun = onRun == null ? i -> {} : onRun;
         this.runExtraClass = extraClassFor == null ? i -> null : extraClassFor;
+        this.runTooltip = tooltipFor == null ? i -> null : tooltipFor;
     }
 
     /**
@@ -665,6 +678,12 @@ public final class FoldManager {
             if (isRunLine.test(idx)) {
                 Node marker = runGlyph(runExtraClass.apply(idx));
                 marker.setCursor(Cursor.HAND);
+                String runTip = runTooltip.apply(idx);
+                if (runTip != null && !runTip.isBlank()) {
+                    Tooltip tip = new Tooltip(runTip);
+                    tip.setShowDelay(javafx.util.Duration.millis(300));
+                    Tooltip.install(marker, tip);
+                }
                 final int runIdx = idx;
                 marker.setOnMouseClicked(e -> {
                     if (e.getButton() == MouseButton.PRIMARY) {

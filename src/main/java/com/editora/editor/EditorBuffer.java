@@ -667,7 +667,8 @@ public class EditorBuffer implements TabContent {
                 () -> runnable,
                 this::isRunGlyphLine,
                 this::onRunGlyph,
-                line -> testLines.containsKey(line) ? "test-run-marker" : null);
+                line -> testLines.containsKey(line) ? "test-run-marker" : null,
+                this::runGlyphTooltip);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(
                 () -> debugEnabled,
@@ -1662,8 +1663,16 @@ public class EditorBuffer implements TabContent {
         contextMenu.getStyleClass().add("editor-context-menu");
         area.setOnContextMenuRequested(e -> {
             List<MenuItem> items = new java.util.ArrayList<>();
-            // Run a runnable file (compact Java source / Python script).
-            if (runnable && runHandler != null) {
+            // A JUnit test file runs its tests ("Run Tests", blue ▶ matching the gutter) rather than the
+            // generic green "Run File"; anything else runnable (compact Java source / Python script) keeps it.
+            com.editora.test.JavaTestScanner.TestTarget classTarget = testClassTarget();
+            if (classTarget != null) {
+                MenuItem runTests = new MenuItem(tr("editmenu.runTests"));
+                runTests.setGraphic(FoldManager.runGlyph("test-run-marker")); // blue, matching the test gutter ▶
+                runTests.setOnAction(ev -> testRunHandler.accept(classTarget));
+                items.add(runTests);
+                items.add(new SeparatorMenuItem());
+            } else if (runnable && runHandler != null) {
                 MenuItem run = new MenuItem(tr("command.file.run"));
                 run.setGraphic(FoldManager.runGlyph()); // green play icon, matching the gutter glyph
                 run.setOnAction(ev -> runHandler.run());
@@ -2937,6 +2946,19 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
+     * The whole-class JUnit target for this buffer (the "Run Tests" context-menu item), or {@code null} when
+     * this isn't a test file / the test gutter is off.
+     */
+    public com.editora.test.JavaTestScanner.TestTarget testClassTarget() {
+        for (var t : testLines.values()) {
+            if (t.methodName() == null) {
+                return t; // the class-declaration target the scanner emits first
+            }
+        }
+        return null;
+    }
+
+    /**
      * The JUnit test target at or nearest above the caret, for {@code test.runAtCaret}/{@code runClassAtCaret}.
      * {@code classLevel} forces the whole-class target (methodName null). Returns null when the caret isn't in
      * a test class.
@@ -2952,7 +2974,9 @@ public class EditorBuffer implements TabContent {
         if (best == null) {
             return null;
         }
-        return classLevel ? new com.editora.test.JavaTestScanner.TestTarget(best.line(), best.className(), null) : best;
+        return classLevel
+                ? new com.editora.test.JavaTestScanner.TestTarget(best.line(), best.className(), null, false)
+                : best;
     }
 
     /** Whether {@code line} draws a Run glyph: every request line for an enabled {@code .http} buffer,
@@ -2975,6 +2999,17 @@ public class EditorBuffer implements TabContent {
 
     /** Dispatches a Run-glyph click: a {@code .http} request runner (with the clicked line), a Makefile
      *  target runner (with the clicked target's name), else the script run handler. */
+    /** Hover text for a gutter Run glyph: explains what the blue JUnit ▶ runs (class vs method). */
+    private String runGlyphTooltip(int line) {
+        com.editora.test.JavaTestScanner.TestTarget t = testLines.get(line);
+        if (t == null) {
+            return null; // the plain script/Makefile/.http ▶ keeps its untooltipped look
+        }
+        return t.methodName() == null
+                ? tr("testrunner.gutter.runClass", com.editora.test.TestSourceLocator.simpleName(t.className()))
+                : tr("testrunner.gutter.runMethod", t.methodName());
+    }
+
     private void onRunGlyph(int line) {
         com.editora.test.JavaTestScanner.TestTarget testTarget = testLines.get(line);
         if (testTarget != null) {

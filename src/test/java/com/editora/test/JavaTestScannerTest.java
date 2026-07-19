@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -47,6 +48,23 @@ class JavaTestScannerTest {
         assertEquals(
                 List.of("a", "b", "c", "d", "e"),
                 t.stream().skip(1).map(JavaTestScanner.TestTarget::methodName).toList());
+    }
+
+    @Test
+    void dynamicFlagSetForParameterizedFamilyOnly() {
+        List<JavaTestScanner.TestTarget> t = JavaTestScanner.scan(
+                src("class T {", "  @Test void plain() {}", "  @ParameterizedTest void param() {}", "}"));
+        JavaTestScanner.TestTarget plain = t.stream()
+                .filter(x -> "plain".equals(x.methodName()))
+                .findFirst()
+                .orElseThrow();
+        JavaTestScanner.TestTarget param = t.stream()
+                .filter(x -> "param".equals(x.methodName()))
+                .findFirst()
+                .orElseThrow();
+        assertFalse(plain.dynamic());
+        assertTrue(param.dynamic());
+        assertFalse(t.get(0).dynamic()); // class target
     }
 
     @Test
