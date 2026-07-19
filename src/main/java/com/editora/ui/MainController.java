@@ -5388,31 +5388,52 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Runnable pendingAfterRestore;
 
     /**
-     * Startup entry point (replaces the bare {@code openInitialBuffer()} call): optionally activates a
-     * project, restores the session, then — once restore completes — opens any command-line files
-     * (jumping to line:column) and enters Zen/Expert, all additive on top of the restored session. With no
-     * arguments it's exactly the old {@code openInitialBuffer()}.
+     * Applies the <b>session-only chrome flags</b> — {@code --simple}, {@code --zen}, {@code --expert} — and is
+     * called during window construction <em>before the stage is shown</em> ({@code WindowManager.buildWindow}).
+     *
+     * <p><b>Why not with the other CLI actions:</b> these only shape chrome and depend on nothing the session
+     * restore produces, so they must not ride {@link #pendingAfterRestore} alongside the file targets. That
+     * runnable fires only once the pulse-paced restore has finished, which left the window on screen in full
+     * chrome for the whole restore and then visibly stripped it — a flash that grew with the number of
+     * restored files. Applying them pre-{@code show()} means the first frame is already correct.
+     *
+     * <p>Running before the session exists is safe: there are no buffers yet, and every file restored
+     * afterwards picks the mode up because {@link #addBuffer} runs {@link #applyViewSettings} per buffer.
      */
-    public void startup(
-            Path projectDir, List<OpenTarget> targets, boolean zen, boolean expert, String newFile, boolean simple) {
+    public void applyStartupChrome(boolean zen, boolean expert, boolean simple) {
+        if (simple) {
+            // --simple: a session-only override (doesn't change the saved setting).
+            cliSimpleOverride = true;
+            applyViewSettingsToAllBuffers(config.getSettings());
+            settingsWindow.syncSimpleModeCheck();
+        }
+        // --zen / --expert: session-only overrides, like --simple. If both were given, Expert wins — the two
+        // are mutually exclusive. (applyCliFocusMode stashes the restored tool windows for the quit-time
+        // restore, so it must run after init's toolWindows.restore() — which buildWindow guarantees.)
+        if (expert) {
+            applyCliFocusMode(true);
+        } else if (zen) {
+            applyCliFocusMode(false);
+        }
+    }
+
+    /**
+     * Startup entry point (replaces the bare {@code openInitialBuffer()} call): optionally activates a
+     * project, restores the session, then — once restore completes — opens any command-line files (jumping to
+     * line:column), additive on top of the restored session. With no arguments it's exactly the old
+     * {@code openInitialBuffer()}. The chrome flags are applied earlier, by {@link #applyStartupChrome}.
+     */
+    public void startup(Path projectDir, List<OpenTarget> targets, String newFile) {
         if (projectDir != null && projectsEnabled()) {
             activateStartupProject(projectDir); // swap to the project's session before it's restored
         }
         // Run CLI actions AFTER the (deferred, pulse-paced) session restore, so a restored caret can't
         // override a requested line:column.
-        pendingAfterRestore = () -> applyStartupTargets(targets, zen, expert, newFile, simple);
+        pendingAfterRestore = () -> applyStartupTargets(targets, newFile);
         openInitialBuffer();
     }
 
-    private void applyStartupTargets(
-            List<OpenTarget> targets, boolean zen, boolean expert, String newFile, boolean simple) {
-        if (simple) {
-            // --simple: a session-only override (doesn't change the saved setting). Re-apply chrome +
-            // per-buffer view settings now that the session's buffers are restored.
-            cliSimpleOverride = true;
-            applyViewSettingsToAllBuffers(config.getSettings());
-            settingsWindow.syncSimpleModeCheck();
-        }
+    private void applyStartupTargets(List<OpenTarget> targets, String newFile) {
         if (newFile != null) {
             // --new-file[=NAME]: open a fresh buffer instead of the Welcome page. "" = blank untitled.
             EditorBuffer buffer = new EditorBuffer();
@@ -5436,13 +5457,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                 });
             }
-        }
-        // --zen / --expert: session-only overrides (they don't change the saved session), like --simple.
-        // If both were given, Expert wins — the two are mutually exclusive.
-        if (expert) {
-            applyCliFocusMode(true);
-        } else if (zen) {
-            applyCliFocusMode(false);
         }
     }
 

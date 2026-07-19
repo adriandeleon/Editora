@@ -14,6 +14,22 @@ case "$1" in
             esac
         fi
         rm -f /usr/share/applications/editora-Editora.desktop
+        rm -f /usr/share/applications/editora-Editora-expert.desktop
+
+        # Strip the Expert Mode default-handler lines postinst added to the system-wide
+        # mimeapps.list; if nothing but section headers remains (i.e. postinst created the file),
+        # remove it entirely.
+        mimeapps=/usr/share/applications/mimeapps.list
+        if [ -f "$mimeapps" ]; then
+            tmp=$(mktemp)
+            grep -v '=editora-Editora-expert\.desktop$' "$mimeapps" > "$tmp" || true
+            if grep -q '=' "$tmp"; then
+                mv "$tmp" "$mimeapps"
+                chmod 0644 "$mimeapps"
+            else
+                rm -f "$mimeapps" "$tmp"
+            fi
+        fi
         ;;
 esac
 

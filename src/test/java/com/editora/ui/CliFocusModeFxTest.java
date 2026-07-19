@@ -48,7 +48,8 @@ class CliFocusModeFxTest {
         return config.getWorkspaceState();
     }
 
-    /** Applies the CLI flag exactly as {@code applyStartupTargets} does. */
+    /** Applies the CLI flag exactly as {@code applyStartupChrome} does. (That it runs before the window is
+     *  shown — not after the session restore — is guarded by {@link CliChromeFirstFrameFxTest}.) */
     private void applyCliFocusMode(boolean expert) throws Exception {
         FxTestSupport.call(fx.controller, "applyCliFocusMode", new Class<?>[] {boolean.class}, expert);
     }

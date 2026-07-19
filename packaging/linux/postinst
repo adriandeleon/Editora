@@ -45,6 +45,74 @@ case "$1" in
             chmod 0644 /usr/share/applications/editora-Editora.desktop
             break
         done
+
+        # 3) Second menu entry: "Editora Expert Mode" — the same app launched with
+        #    --expert --single-window. Derived from the just-registered primary entry so it always
+        #    tracks the real launcher path/icon. StartupWMClass is dropped: both entries launch the
+        #    same WM_CLASS (com.editora.App) and only one .desktop may claim it, or GNOME binds the
+        #    running window/dock icon to an arbitrary entry — the primary keeps it. MimeType lists
+        #    the concrete text types (canonical shared-mime-info names) so this entry can be the
+        #    DEFAULT for them in step 4; types not listed still reach it via the text/plain
+        #    subclass fallback. text/html and image/svg+xml are deliberately excluded (browser /
+        #    image viewer keep those).
+        mime_types="text/plain text/markdown text/csv text/tab-separated-values text/css \
+text/javascript text/rust text/x-python text/x-go text/x-java text/x-csrc text/x-c++src \
+text/x-chdr text/x-c++hdr text/x-makefile text/x-log text/x-lua text/x-kotlin text/x-csharp \
+application/json application/yaml application/toml application/xml application/sql \
+application/x-shellscript application/x-ruby application/x-php application/x-perl"
+        primary=/usr/share/applications/editora-Editora.desktop
+        expert=/usr/share/applications/editora-Editora-expert.desktop
+        if [ -f "$primary" ]; then
+            mime_line=$(printf '%s;' $mime_types)
+            if grep -q '^Exec=.*%F' "$primary"; then
+                exec_expr='s/^Exec=\(.*\) %F$/Exec=\1 --expert --single-window %F/'
+            else
+                exec_expr='s/^Exec=\(.*\)$/Exec=\1 --expert --single-window %F/'
+            fi
+            sed -e 's/^Name=.*/Name=Editora Expert Mode/' \
+                -e 's/^Comment=.*/Comment=Editora with minimal chrome, one window (--expert --single-window)/' \
+                -e "$exec_expr" \
+                -e '/^StartupWMClass=/d' \
+                -e "s|^MimeType=.*|MimeType=$mime_line|" \
+                "$primary" > "$expert"
+            chmod 0644 "$expert"
+        fi
+
+        # 4) Make Expert Mode the system-wide default handler for text files: a
+        #    [Default Applications] entry per type in /usr/share/applications/mimeapps.list (the
+        #    freedesktop mime-apps mechanism GIO honors for distro/system defaults). A user's own
+        #    ~/.config/mimeapps.list choice still wins — deliberately, per Debian convention.
+        if [ -f "$expert" ]; then
+            mimeapps=/usr/share/applications/mimeapps.list
+            tmp=$(mktemp)
+            # Start from the existing file minus any line already pointing at the expert entry
+            # (idempotent across upgrades/reinstalls).
+            if [ -f "$mimeapps" ]; then
+                grep -v '=editora-Editora-expert\.desktop$' "$mimeapps" > "$tmp" || true
+            fi
+            grep -q '^\[Default Applications\]' "$tmp" || printf '[Default Applications]\n' >> "$tmp"
+            # Insert our defaults right under the header, dropping a competing default for the
+            # same type (a duplicated key in a keyfile is undefined — never leave two).
+            awk -v id=editora-Editora-expert.desktop -v types="$mime_types" '
+                BEGIN { n = split(types, t, " "); for (i = 1; i <= n; i++) mine[t[i]] = 1 }
+                /^\[Default Applications\]$/ {
+                    print
+                    for (i = 1; i <= n; i++) print t[i] "=" id
+                    insection = 1
+                    next
+                }
+                /^\[/ { insection = 0 }
+                {
+                    if (insection) {
+                        eq = index($0, "=")
+                        if (eq > 0 && (substr($0, 1, eq - 1) in mine)) next
+                    }
+                    print
+                }
+            ' "$tmp" > "$mimeapps"
+            rm -f "$tmp"
+            chmod 0644 "$mimeapps"
+        fi
         ;;
 esac
 

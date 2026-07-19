@@ -615,6 +615,13 @@ public class WindowManager {
             stage.setTitle("Editora");
             loadAppIcons(stage);
             controller.applyEditorTheme(settings.getEditorTheme());
+            // --simple / --zen / --expert BEFORE show(): these only shape chrome, so applying them here makes
+            // the very first frame correct. They used to ride the deferred CLI-target runnable, which fires
+            // only after the pulse-paced session restore — so the window appeared in full chrome and then
+            // visibly stripped itself, a flash that grew with the number of restored files. Must stay after
+            // init() (which runs toolWindows.restore(), whose state a focus mode stashes) and after
+            // setWindowContext (which selects this window's session).
+            controller.applyStartupChrome(zen, expert, simple);
             restoreWindowBounds(stage, config.getWorkspaceState());
             // Don't bury a secondary window full-screen on top of an existing one: drop maximized so it
             // falls back to normal (cascadable) bounds. (Projects carried identical saved bounds — incl.
@@ -648,7 +655,7 @@ public class WindowManager {
             focus(stage);
 
             windows.add(new Holder(key, stage, controller));
-            controller.startup(null, targets, zen, expert, newFile, simple);
+            controller.startup(null, targets, newFile); // chrome flags already applied, pre-show()
             return stage;
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException("Failed to build a window for project '" + key + "'", e);
@@ -663,7 +670,13 @@ public class WindowManager {
      * FxWindowFixture} and the Tests note in CLAUDE.md.
      */
     MainController buildWindowForTest() {
-        buildWindow("", null, null, List.of(), false, false, null, false);
+        return buildWindowForTest(false, false, false);
+    }
+
+    /** As {@link #buildWindowForTest()}, with the session-only CLI chrome flags ({@code --zen}/{@code --expert}/
+     *  {@code --simple}) — so a test can check the window's <em>first frame</em>, not its settled state. */
+    MainController buildWindowForTest(boolean zen, boolean expert, boolean simple) {
+        buildWindow("", null, null, List.of(), zen, expert, null, simple);
         return windows.get(windows.size() - 1).controller();
     }
 
