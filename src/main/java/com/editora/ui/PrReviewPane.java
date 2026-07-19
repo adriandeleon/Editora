@@ -50,6 +50,7 @@ public final class PrReviewPane extends Region implements TabContent {
     private final Runnable onOpenAll;
     private final Consumer<String> onOpenUrl;
     private final Runnable onRefresh;
+    private final Runnable onSubmitReview;
 
     private PrDetail detail;
     private List<FilePatch> files = List.of();
@@ -63,12 +64,14 @@ public final class PrReviewPane extends Region implements TabContent {
             Consumer<FilePatch> onOpenFile,
             Runnable onOpenAll,
             Consumer<String> onOpenUrl,
-            Runnable onRefresh) {
+            Runnable onRefresh,
+            Runnable onSubmitReview) {
         this.prNumber = prNumber;
         this.onOpenFile = onOpenFile;
         this.onOpenAll = onOpenAll;
         this.onOpenUrl = onOpenUrl;
         this.onRefresh = onRefresh;
+        this.onSubmitReview = onSubmitReview;
 
         getStyleClass().add("pr-review-pane");
         content.getStyleClass().add("pr-review-content");
@@ -168,6 +171,7 @@ public final class PrReviewPane extends Region implements TabContent {
         if (files.size() > 1) {
             row.getChildren().add(link(tr("github.review.openAll", files.size()), onOpenAll));
         }
+        row.getChildren().add(link(tr("github.review.submit"), onSubmitReview));
         row.getChildren().add(link(tr("github.review.refresh"), onRefresh));
         return row;
     }

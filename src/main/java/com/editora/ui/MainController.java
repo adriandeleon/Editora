@@ -12283,6 +12283,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("github.checkoutPr", github::checkoutPr));
         registry.register(Command.of("github.viewPrDiff", github::viewPrDiff));
         registry.register(Command.of("github.createPr", github::createPr));
+        registry.register(Command.of("github.submitReview", github::submitReviewPicked));
         registry.register(Command.of("github.openOnGitHub", github::openOnGitHub));
         registry.register(Command.of("github.refresh", github::refresh));
         registry.register(Command.of("view.toggleGithub", github::toggleSupport));

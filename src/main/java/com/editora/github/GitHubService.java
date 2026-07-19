@@ -189,6 +189,11 @@ public final class GitHubService {
         run(dir, NETWORK, onResult, ghArgs.toArray(new String[0]));
     }
 
+    /** Submits a top-level PR review ({@code gh pr review …}); posts the raw result (argv from {@link PrReviewArgs}). */
+    public void prReview(Path dir, List<String> ghArgs, Consumer<ProcessRunner.Result> onResult) {
+        run(dir, NETWORK, onResult, ghArgs.toArray(new String[0]));
+    }
+
     /** Result of a PR checks query: the runs, or an error. Parsed regardless of exit code (see {@link ChecksParser}). */
     public record ChecksResult(boolean ok, List<ChecksParser.CheckRun> runs, String error) {}
 

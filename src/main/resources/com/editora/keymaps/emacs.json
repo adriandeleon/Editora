@@ -97,6 +97,7 @@
   "M-g j": "nav.aceJump",
   "M-g S-l": "nav.aceJumpLine",
   "M-g h": "tool.gitLog",
+  "M-g p": "tool.github",
   "M-g l": "tool.fileHistory",
   "M-g u": "tool.undoHistory",
   "M-g r": "tool.remote",

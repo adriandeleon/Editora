@@ -26,6 +26,7 @@ import com.editora.github.GitHubRemote;
 import com.editora.github.GitHubService;
 import com.editora.github.PrCreateArgs;
 import com.editora.github.PrListParser;
+import com.editora.github.PrReviewArgs;
 import com.editora.github.PrViewParser;
 import com.editora.vfs.Vfs;
 
@@ -345,7 +346,8 @@ final class GitHubCoordinator {
                     openAllFiles(number, p != null ? p.files() : files);
                 },
                 this::openUrl,
-                () -> reviewPrNumber(number));
+                () -> reviewPrNumber(number),
+                () -> submitReview(number));
         pane.update(detail, files);
         reviewPanes.put(number, pane);
         ops.addReviewTab(pane);
@@ -550,6 +552,90 @@ final class GitHubCoordinator {
                     null,
                     true);
         });
+    }
+
+    // --- submit review (approve / request changes / comment) -------------------------------------
+
+    /** Picks a PR then opens the submit-review form (the {@code github.submitReview} palette command). */
+    void submitReviewPicked() {
+        ready(dir -> pickPr(tr("github.picker.reviewTitle"), pr -> submitReviewForm(dir, pr.number())));
+    }
+
+    /** Opens the submit-review form for a specific PR (the review pane's "Submit review" link). */
+    void submitReview(int number) {
+        ready(dir -> submitReviewForm(dir, number));
+    }
+
+    private void submitReviewForm(Path dir, int number) {
+        KeymapManager keymap = ops.keymap();
+        javafx.scene.control.ComboBox<PrReviewArgs.ReviewAction> actionBox = new javafx.scene.control.ComboBox<>();
+        actionBox.getItems().setAll(PrReviewArgs.ReviewAction.values());
+        actionBox.getSelectionModel().select(PrReviewArgs.ReviewAction.APPROVE);
+        actionBox.setConverter(new javafx.util.StringConverter<>() {
+            @Override
+            public String toString(PrReviewArgs.ReviewAction a) {
+                return a == null
+                        ? ""
+                        : tr(
+                                switch (a) {
+                                    case APPROVE -> "dialog.review.approve";
+                                    case REQUEST_CHANGES -> "dialog.review.requestChanges";
+                                    case COMMENT -> "dialog.review.comment";
+                                });
+            }
+
+            @Override
+            public PrReviewArgs.ReviewAction fromString(String s) {
+                return null;
+            }
+        });
+
+        TextArea body = new TextArea();
+        body.setPromptText(tr("dialog.review.bodyPrompt"));
+        body.setPrefRowCount(5);
+        body.setWrapText(true);
+        TextInputKeymap.install(body, keymap);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(8);
+        grid.setVgap(8);
+        grid.add(new Label(tr("dialog.review.action")), 0, 0);
+        grid.add(actionBox, 1, 0);
+        grid.add(new Label(tr("dialog.review.body")), 0, 1);
+        grid.add(body, 1, 1);
+        GridPane.setHgrow(body, Priority.ALWAYS);
+
+        // Approve may be submitted with no comment; request-changes / comment require a body (gh rejects empty).
+        BooleanProperty valid = new SimpleBooleanProperty(false);
+        Runnable revalidate = () -> {
+            PrReviewArgs.ReviewAction a = actionBox.getValue();
+            valid.set(a != null
+                    && (!PrReviewArgs.bodyRequired(a) || !body.getText().isBlank()));
+        };
+        actionBox.valueProperty().addListener((o, x, y) -> revalidate.run());
+        body.textProperty().addListener((o, x, y) -> revalidate.run());
+        revalidate.run();
+
+        OverlayInput.show(
+                host.overlayHost(),
+                tr("dialog.review.title", number),
+                grid,
+                body,
+                tr("dialog.review.button"),
+                valid,
+                () -> {
+                    List<String> args = PrReviewArgs.build(number, actionBox.getValue(), body.getText());
+                    host.setStatus(tr("status.github.reviewing", number));
+                    service.prReview(dir, args, r -> {
+                        if (r.ok()) {
+                            host.setStatus(tr("status.github.reviewed", number));
+                        } else {
+                            ghError(tr("status.github.reviewFailed"), r.message());
+                        }
+                    });
+                },
+                null,
+                true);
     }
 
     // --- shared helpers --------------------------------------------------------------------------
