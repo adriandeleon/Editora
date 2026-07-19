@@ -29,14 +29,25 @@ public final class PatchParser {
 
     /** One file's reconstructed diff. {@code oldPath}/{@code newPath} come from the {@code ---}/{@code +++}
      *  header lines, with a git {@code a/}/{@code b/} prefix stripped and any {@code /dev/null} (add/delete)
-     *  side left as-is; either may be {@code ""} when the header was missing entirely. */
-    public record FilePatch(String oldPath, String newPath, List<String> oldLines, List<String> newLines) {}
+     *  side left as-is; either may be {@code ""} when the header was missing entirely. {@code additions}/
+     *  {@code deletions} count the {@code +}/{@code -} tagged hunk lines — the true diff stat, unlike
+     *  {@code oldLines.size()}/{@code newLines.size()} which also include the context lines carried on both
+     *  sides. */
+    public record FilePatch(
+            String oldPath,
+            String newPath,
+            List<String> oldLines,
+            List<String> newLines,
+            int additions,
+            int deletions) {}
 
     private static final class Pending {
         String oldPath = "";
         String newPath = "";
         final List<String> oldLines = new ArrayList<>();
         final List<String> newLines = new ArrayList<>();
+        int additions;
+        int deletions;
 
         boolean hasContent() {
             return !oldLines.isEmpty() || !newLines.isEmpty() || !oldPath.isEmpty() || !newPath.isEmpty();
@@ -71,10 +82,12 @@ public final class PatchParser {
                 switch (tag) {
                     case '+' -> {
                         cur.newLines.add(rest);
+                        cur.additions++;
                         newRemaining--;
                     }
                     case '-' -> {
                         cur.oldLines.add(rest);
+                        cur.deletions++;
                         oldRemaining--;
                     }
                     default -> { // ' ' (context) or any unrecognized tag: treat as common to both sides
@@ -126,7 +139,8 @@ public final class PatchParser {
     }
 
     private static FilePatch toFilePatch(Pending p) {
-        return new FilePatch(p.oldPath, p.newPath, List.copyOf(p.oldLines), List.copyOf(p.newLines));
+        return new FilePatch(
+                p.oldPath, p.newPath, List.copyOf(p.oldLines), List.copyOf(p.newLines), p.additions, p.deletions);
     }
 
     /** Strips a trailing {@code \t<timestamp>} (GNU diff) and a leading git {@code a/}/{@code b/} prefix. */

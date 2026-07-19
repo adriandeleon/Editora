@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -27,6 +26,7 @@ import com.editora.github.GitHubRemote;
 import com.editora.github.GitHubService;
 import com.editora.github.PrCreateArgs;
 import com.editora.github.PrListParser;
+import com.editora.github.PrViewParser;
 import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
@@ -66,6 +66,12 @@ final class GitHubCoordinator {
 
         /** (Slice 3) Pushes the active PR's CI-check roll-up to the status bar (null = hide). */
         void setStatusBarChecks(com.editora.github.ChecksParser.ChecksSummary summary);
+
+        /** Opens the PR review overview as a selected editor tab. */
+        void addReviewTab(com.editora.editor.TabContent pane);
+
+        /** Selects the already-open tab whose content is {@code pane}; {@code false} when it isn't open. */
+        boolean selectTabOf(com.editora.editor.TabContent pane);
     }
 
     /** Above this many changed files, "Open all files" confirms first so a big PR can't spam tabs. */
@@ -81,6 +87,9 @@ final class GitHubCoordinator {
     private Path remoteCheckedRoot;
     /** Whether {@link #remoteCheckedRoot}'s remote is a GitHub host (drives the always-on surfaces). */
     private boolean remoteIsGitHub;
+
+    /** Open PR review tabs, keyed by PR number (one tab per PR; re-review re-selects + refreshes it). */
+    private final java.util.Map<Integer, PrReviewPane> reviewPanes = new java.util.HashMap<>();
 
     GitHubCoordinator(CoordinatorHost host, GitCoordinator git, DiffCoordinator diff, WindowOps ops) {
         this.host = host;
@@ -265,33 +274,86 @@ final class GitHubCoordinator {
 
     // --- PR diff review --------------------------------------------------------------------------
 
-    /** Picks an open PR and opens its diff in the read-only diff viewer (one file, or a file picker). */
+    /** Picks an open PR and opens its changed files in a review tab (GitHub "Files changed" style). */
     void viewPrDiff() {
         ready(dir -> pickPr(tr("github.picker.diffTitle"), pr -> doPrDiff(dir, pr.number())));
     }
 
-    /** Opens a specific PR's diff by number (the panel's row action / double-click). */
+    /** Opens a specific PR's review tab by number (the panel's row action / double-click). */
     void reviewPrNumber(int number) {
         ready(dir -> doPrDiff(dir, number));
     }
 
+    /**
+     * Fetches the PR's diff + metadata concurrently, then opens the review tab. Both {@code gh} calls deliver
+     * on the FX thread, so the two-slot join uses plain fields (no synchronization). The metadata ({@code gh pr
+     * view}) is optional — if it fails, the tab still opens with a number-only header; only a failed diff aborts.
+     */
     private void doPrDiff(Path dir, int number) {
-        service.prDiff(dir, number, res -> {
+        PrViewParser.PrDetail[] detailSlot = new PrViewParser.PrDetail[1];
+        GitHubService.DiffResult[] diffSlot = new GitHubService.DiffResult[1];
+        boolean[] detailDone = {false};
+        boolean[] diffDone = {false};
+        Runnable join = () -> {
+            if (!detailDone[0] || !diffDone[0]) {
+                return;
+            }
+            GitHubService.DiffResult res = diffSlot[0];
             if (!res.ok()) {
                 ghError(tr("status.github.diffFailed"), res.error());
                 return;
             }
-            List<PatchParser.FilePatch> files = res.files();
-            if (files.isEmpty()) {
-                host.setStatus(tr("status.github.prDiffEmpty", number));
-                return;
-            }
-            if (files.size() == 1) {
-                openFileDiff(number, files.get(0));
-                return;
-            }
-            pickPrFile(number, files);
+            openReview(number, detailSlot[0], res.files());
+        };
+        service.prView(dir, number, d -> {
+            detailSlot[0] = d;
+            detailDone[0] = true;
+            join.run();
         });
+        service.prDiff(dir, number, r -> {
+            diffSlot[0] = r;
+            diffDone[0] = true;
+            join.run();
+        });
+    }
+
+    /**
+     * Opens (or refreshes-in-place) the PR review tab. A tab already open for this PR is re-selected + updated;
+     * otherwise a brand-new review of a single-file PR opens that file's diff directly (the overview adds
+     * nothing), an empty diff reports a status, and a multi-file PR opens the {@link PrReviewPane}.
+     */
+    private void openReview(int number, PrViewParser.PrDetail detail, List<PatchParser.FilePatch> files) {
+        PrReviewPane existing = reviewPanes.get(number);
+        if (existing != null && ops.selectTabOf(existing)) {
+            existing.update(detail, files); // Refresh of an already-open tab
+            return;
+        }
+        reviewPanes.remove(number); // a stale entry whose tab was closed — rebuild
+        if (files.isEmpty()) {
+            host.setStatus(tr("status.github.prDiffEmpty", number));
+            return;
+        }
+        if (files.size() == 1) {
+            openFileDiff(number, files.get(0));
+            return;
+        }
+        PrReviewPane pane = new PrReviewPane(
+                number,
+                fp -> openFileDiff(number, fp),
+                () -> {
+                    PrReviewPane p = reviewPanes.get(number);
+                    openAllFiles(number, p != null ? p.files() : files);
+                },
+                this::openUrl,
+                () -> reviewPrNumber(number));
+        pane.update(detail, files);
+        reviewPanes.put(number, pane);
+        ops.addReviewTab(pane);
+    }
+
+    /** Drops a closed review tab from the map (called by {@code MainController} on tab disposal). */
+    void onReviewPaneClosed(PrReviewPane pane) {
+        reviewPanes.values().remove(pane);
     }
 
     // --- tool-window feeds (slice 2) -------------------------------------------------------------
@@ -348,32 +410,6 @@ final class GitHubCoordinator {
                 ops.setStatusBarChecks(null); // no PR for this branch, or no checks
             }
         });
-    }
-
-    /** Shows a file picker for a multi-file PR diff, with an "Open all N files" entry (guarded by a confirm). */
-    private void pickPrFile(int prNumber, List<PatchParser.FilePatch> files) {
-        // A null-file sentinel is the "Open all" row; every real row is one changed file.
-        List<PrFileChoice> choices = new ArrayList<>();
-        choices.add(new PrFileChoice(null, files.size()));
-        for (PatchParser.FilePatch fp : files) {
-            choices.add(new PrFileChoice(fp, 0));
-        }
-        QuickOpen<PrFileChoice> picker = new QuickOpen<>(
-                tr("github.picker.fileTitle", prNumber),
-                tr("github.picker.filePrompt"),
-                () -> choices,
-                c -> c.file() == null ? tr("github.picker.openAll", files.size()) : displayName(c.file()),
-                c -> c.file() == null ? "" : changeStat(c.file()),
-                c -> c.file() == null ? tr("github.picker.openAll", files.size()) : displayName(c.file()),
-                c -> {
-                    if (c.file() == null) {
-                        openAllFiles(prNumber, files);
-                    } else {
-                        openFileDiff(prNumber, c.file());
-                    }
-                });
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.window());
     }
 
     /** Opens every changed file of a PR as its own diff tab — confirming first past {@link #MAX_OPEN_ALL_WITHOUT_CONFIRM}. */
@@ -543,17 +579,6 @@ final class GitHubCoordinator {
         });
     }
 
-    /** The display name for a changed file: its new path, else its old path. */
-    private static String displayName(PatchParser.FilePatch fp) {
-        String n = cleanLabel(fp.newPath());
-        return !n.isEmpty() ? n : cleanLabel(fp.oldPath());
-    }
-
-    /** A muted "+adds/-dels" stat for a file row. */
-    private static String changeStat(PatchParser.FilePatch fp) {
-        return "+" + fp.newLines().size() + " −" + fp.oldLines().size();
-    }
-
     /** {@code ""} for a missing / {@code /dev/null} patch label, else the label unchanged. */
     private static String cleanLabel(String path) {
         return path == null || path.isBlank() || "/dev/null".equals(path) ? "" : path;
@@ -586,7 +611,4 @@ final class GitHubCoordinator {
     void shutdown() {
         service.shutdown();
     }
-
-    /** One row in the multi-file PR-diff picker: a real file, or (file == null) the "Open all" sentinel. */
-    private record PrFileChoice(PatchParser.FilePatch file, int count) {}
 }

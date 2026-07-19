@@ -901,6 +901,45 @@
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;
 }
+/* PR review tab (GitHub "Files changed" style): a centered scrolling column of file rows. Font sizes are
+   em-relative so setFontScale scales the whole tree with the editor text zoom. */
+.pr-review-pane { -fx-background-color: -color-bg-default; }
+.pr-review-header { -fx-padding: 0 0 6 0; }
+.pr-review-number { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.4em; }
+.pr-review-title { -fx-text-fill: -color-fg-default; -fx-font-size: 1.4em; -fx-font-weight: bold; }
+.pr-review-meta { -fx-text-fill: -color-fg-muted; }
+.pr-review-branch {
+    -fx-text-fill: -color-fg-default;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 4;
+    -fx-padding: 1 6 1 6;
+    -fx-font-family: monospace;
+}
+.pr-review-state {
+    -fx-text-fill: -color-accent-fg;
+    -fx-border-color: -color-accent-muted;
+    -fx-border-radius: 8;
+    -fx-padding: 0 8 0 8;
+    -fx-font-size: 0.85em;
+}
+.pr-review-stats { -fx-text-fill: -color-fg-muted; }
+.pr-review-adds { -fx-text-fill: -color-success-fg; }
+.pr-review-dels { -fx-text-fill: -color-fg-muted; }
+.pr-review-action { -fx-text-fill: -color-accent-fg; }
+.pr-review-files { -fx-padding: 6 0 0 0; }
+.pr-review-file-row { -fx-padding: 3 6 3 6; -fx-background-radius: 4; }
+.pr-review-file-row:hover { -fx-background-color: -color-bg-subtle; }
+.pr-review-file-status { -fx-min-width: 14; -fx-font-weight: bold; -fx-font-family: monospace; }
+.pr-review-file-link { -fx-text-fill: -color-fg-default; }
+/* Color the per-file status letter + icon by change kind, reusing the Project-tree/Commit palette. */
+.pr-review-file-row.git-status-added .pr-review-file-status,
+.pr-review-file-row.git-status-added .toolbar-icon { -fx-text-fill: -color-success-fg; -fx-fill: -color-success-fg; }
+.pr-review-file-row.git-status-modified .pr-review-file-status,
+.pr-review-file-row.git-status-modified .toolbar-icon { -fx-text-fill: -color-accent-fg; -fx-fill: -color-accent-fg; }
+.pr-review-file-row.git-status-deleted .pr-review-file-status,
+.pr-review-file-row.git-status-deleted .toolbar-icon { -fx-text-fill: -color-fg-muted; -fx-fill: -color-fg-muted; }
+.pr-review-file-row.git-status-renamed .pr-review-file-status,
+.pr-review-file-row.git-status-renamed .toolbar-icon { -fx-text-fill: #9a5cd0; -fx-fill: #9a5cd0; }
 /* Unsaved/dirty buffer name in the pickers (Open Files palette + Switcher) — mirrors the dirty-tab
    treatment (amber italic) so every surface that lists open files reads consistently. */
 .dirty-name { -fx-text-fill: #bf8700; -fx-font-style: italic; }

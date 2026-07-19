@@ -1343,6 +1343,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             hex.dispose();
         } else if (tab.getUserData() instanceof PdfViewerPane pdf) {
             pdf.dispose();
+        } else if (tab.getUserData() instanceof PrReviewPane pr) {
+            github.onReviewPaneClosed(pr); // drop it from the coordinator's per-PR map (no resource to release)
         }
     }
 
@@ -3000,6 +3002,25 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public void setStatusBarChecks(com.editora.github.ChecksParser.ChecksSummary summary) {
                     statusBar.setGitHubChecks(summary);
+                }
+
+                @Override
+                public void addReviewTab(com.editora.editor.TabContent pane) {
+                    if (pane instanceof PrReviewPane p) {
+                        p.setFontScale(config.getSettings().getFontZoom());
+                    }
+                    addContentTab(pane, true);
+                }
+
+                @Override
+                public boolean selectTabOf(com.editora.editor.TabContent pane) {
+                    for (Tab t : tabPane.getTabs()) {
+                        if (t.getUserData() == pane) {
+                            tabPane.getSelectionModel().select(t);
+                            return true;
+                        }
+                    }
+                    return false;
                 }
             });
 
@@ -10721,6 +10742,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         if (welcomeTab != null) {
             welcomePane.setFontScale(settings.getFontZoom()); // scale Welcome text to the current zoom (#540)
+        }
+        for (Tab t : tabPane.getTabs()) {
+            if (t.getUserData() instanceof PrReviewPane pr) {
+                pr.setFontScale(settings.getFontZoom()); // scale the PR review tab like Welcome
+            }
         }
     }
 
