@@ -6345,6 +6345,28 @@ public class EditorBuffer implements TabContent {
      * so a plain Tab still indents.
      */
     private void addSnippetKeys(CodeArea a) {
+        // Typing a printable char into a MIRRORED snippet field is applied atomically (the char + its mirror
+        // update as one undo unit) so a single Ctrl-Z reverts them together instead of leaving the document
+        // half-reverted (#415). Only mirrored fields are intercepted; everything else (single-occurrence fields,
+        // newlines, control keys, paste) falls through to the normal insert + reactive mirror, which is already
+        // one undo unit when there's nothing to mirror.
+        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            if (!hasActiveSnippet() || multiCaretActiveOn(a) || !isEditable()) {
+                return;
+            }
+            String ch = e.getCharacter();
+            if (ch == null || ch.length() != 1 || e.isControlDown() || e.isMetaDown()) {
+                return;
+            }
+            char c = ch.charAt(0);
+            if (c < 0x20 || c == 0x7F) {
+                return; // control / non-printable (Enter, Tab, Backspace handled elsewhere)
+            }
+            if (snippetSession.replaceInActiveField(
+                    a.getSelection().getStart(), a.getSelection().getEnd(), ch)) {
+                e.consume(); // handled atomically; don't let the area also insert the char
+            }
+        });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
