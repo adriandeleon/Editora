@@ -7996,7 +7996,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             windowManager.reloadSharedKeymap();
         } else {
             keymap.loadNamed(config.getSettings().getKeymap());
-            keymap.applyOverrides(config.getSettings().getKeybindings());
+            keymap.applyOverrides(config.getSettings().keybindingsFor(com.editora.command.KeymapManager.isMac()));
         }
     }
 
@@ -8020,22 +8020,27 @@ public class MainController implements com.editora.mcp.McpBridge {
         return rows;
     }
 
-    /** Persists a new user-overrides map, then reloads the shared keymap so the change is live. */
+    /** Persists a new user-overrides map (for the running platform), then reloads the shared keymap live. */
     private void applyKeybindingOverrides(java.util.Map<String, String> overrides) {
-        config.getSettings().setKeybindings(overrides);
+        config.getSettings().setKeybindingsFor(com.editora.command.KeymapManager.isMac(), overrides);
         config.save();
         reloadKeymap();
     }
 
+    /** This platform's current user overrides (Cmd map on macOS, Ctrl map elsewhere) — see {@link Settings}. */
+    private java.util.Map<String, String> currentKeybindings() {
+        return config.getSettings().keybindingsFor(com.editora.command.KeymapManager.isMac());
+    }
+
     private void rebindShortcut(String commandId, String chordSeq) {
-        applyKeybindingOverrides(com.editora.command.KeybindingEdits.rebind(
-                baseBindings(), config.getSettings().getKeybindings(), commandId, chordSeq));
+        applyKeybindingOverrides(
+                com.editora.command.KeybindingEdits.rebind(baseBindings(), currentKeybindings(), commandId, chordSeq));
         setStatus(tr("status.shortcut.bound", chordSeq, commandTitle(commandId)));
     }
 
     private void resetShortcut(String commandId) {
-        applyKeybindingOverrides(com.editora.command.KeybindingEdits.reset(
-                baseBindings(), config.getSettings().getKeybindings(), commandId));
+        applyKeybindingOverrides(
+                com.editora.command.KeybindingEdits.reset(baseBindings(), currentKeybindings(), commandId));
         setStatus(tr("status.shortcut.reset", commandTitle(commandId)));
     }
 

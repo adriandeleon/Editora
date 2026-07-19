@@ -40,7 +40,8 @@ public class KeymapManager {
         return AVAILABLE.getOrDefault(id, id);
     }
 
-    private static boolean isMac() {
+    /** Whether the running OS is macOS — selects the {@code .mac} keymap variant and the Cmd-based override map. */
+    public static boolean isMac() {
         return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
     }
 

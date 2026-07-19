@@ -539,7 +539,7 @@ public class WindowManager {
     public void reloadSharedKeymap() {
         Settings settings = shared.getSettings();
         keymap.loadNamed(settings.getKeymap());
-        keymap.applyOverrides(settings.getKeybindings());
+        keymap.applyOverrides(settings.keybindingsFor(com.editora.command.KeymapManager.isMac()));
         if (settings.isPluginSupport()) {
             for (com.editora.plugin.PluginDescriptor d : pluginManager.descriptors()) {
                 if (d.enabled() && d.loadError() == null && d.manifest().keymap != null) {

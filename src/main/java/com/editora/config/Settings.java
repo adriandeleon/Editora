@@ -27,6 +27,7 @@ public class Settings {
     public static void resetToDefaults(Settings live) {
         double fontZoom = live.getFontZoom();
         Map<String, String> keybindings = live.getKeybindings();
+        Map<String, String> keybindingsMac = live.getKeybindingsMac();
         ObjectMapper mapper = new ObjectMapper();
         try {
             mapper.readerForUpdating(live).readValue(mapper.writeValueAsBytes(new Settings()));
@@ -35,10 +36,11 @@ public class Settings {
         }
         live.setFontZoom(fontZoom);
         live.setKeybindings(keybindings);
+        live.setKeybindingsMac(keybindingsMac);
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 80;
+    public static final int SCHEMA_VERSION = 81;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -431,8 +433,18 @@ public class Settings {
     /** PDF export page size: "letter" (default) or "a4". */
     private String pdfPageSize = "letter";
 
-    /** Optional per-binding overrides applied on top of the named keymap: chord -> command id. */
+    /**
+     * Optional per-binding overrides applied on top of the named keymap: chord -&gt; command id. <b>Split per
+     * platform</b> because a chord is modifier-specific (Cmd on macOS, Ctrl elsewhere) and a rebind's UNBIND
+     * suppressors key to the <em>resolved</em> chord — one shared map double-binds a command across OSes when a
+     * config is synced (a mac-written {@code Cmd-S UNBIND} matches nothing on Windows, leaving the Ctrl-S default
+     * live alongside the new chord). {@link #keybindings} holds the Ctrl-based (Windows/Linux) overrides;
+     * {@link #keybindingsMac} the Cmd-based (macOS) ones. Read the running platform's via {@link #keybindingsFor}
+     * (#439).
+     */
     private Map<String, String> keybindings = new LinkedHashMap<>();
+
+    private Map<String, String> keybindingsMac = new LinkedHashMap<>();
 
     public int getSchemaVersion() {
         return schemaVersion;
@@ -1966,5 +1978,32 @@ public class Settings {
 
     public void setKeybindings(Map<String, String> keybindings) {
         this.keybindings = keybindings;
+    }
+
+    public Map<String, String> getKeybindingsMac() {
+        return keybindingsMac;
+    }
+
+    public void setKeybindingsMac(Map<String, String> keybindingsMac) {
+        this.keybindingsMac = keybindingsMac;
+    }
+
+    /** The keybinding overrides for the running platform (Cmd map on macOS, Ctrl map elsewhere); never null. */
+    public Map<String, String> keybindingsFor(boolean mac) {
+        Map<String, String> m = mac ? keybindingsMac : keybindings;
+        if (m == null) {
+            m = new LinkedHashMap<>();
+            setKeybindingsFor(mac, m);
+        }
+        return m;
+    }
+
+    /** Replaces the running platform's keybinding overrides (see {@link #keybindingsFor}). */
+    public void setKeybindingsFor(boolean mac, Map<String, String> overrides) {
+        if (mac) {
+            this.keybindingsMac = overrides;
+        } else {
+            this.keybindings = overrides;
+        }
     }
 }

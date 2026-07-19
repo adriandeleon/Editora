@@ -134,7 +134,10 @@ public enum ConfigSchema {
                     Map.entry(77, (Migration) ConfigMigrations::splitAiApiKeyByProvider),
                     // v78→79: + mavenPomLspEnabled/mavenPomLspCommand (Maven-aware pom.xml server; additive)
                     Map.entry(78, (Migration) ConfigMigrations::identity),
-                    Map.entry(79, (Migration) ConfigMigrations::identity))), // v79→80: + toolbarLayout (additive)
+                    Map.entry(79, (Migration) ConfigMigrations::identity), // v79→80: + toolbarLayout (additive)
+                    // v80→81: split keybindings into per-platform maps (keybindings=Ctrl, keybindingsMac=Cmd) so a
+                    // synced config no longer double-binds a rebound command across macOS/Windows (#439).
+                    Map.entry(80, (Migration) ConfigMigrations::splitKeybindingsByPlatform))),
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

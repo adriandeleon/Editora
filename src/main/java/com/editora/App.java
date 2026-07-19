@@ -96,7 +96,7 @@ public class App extends Application {
 
         KeymapManager keymap = new KeymapManager();
         keymap.loadNamed(settings.getKeymap());
-        keymap.applyOverrides(settings.getKeybindings());
+        keymap.applyOverrides(settings.keybindingsFor(KeymapManager.isMac()));
         // Make the (single, shared) keymap available to generic popup text fields so they can install Emacs
         // caret movement + basic editing without threading it through their constructors (see TextInputKeymap).
         com.editora.command.TextInputKeymap.setShared(keymap);

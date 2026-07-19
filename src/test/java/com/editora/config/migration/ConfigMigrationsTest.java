@@ -147,6 +147,38 @@ class ConfigMigrationsTest {
     // --- v77→78: split aiApiKey onto per-provider fields (#480) --------------------------------------
 
     @Test
+    void splitKeybindingsMovesTheMapIntoTheMacSlotAndClearsTheBaseSlot() throws Exception {
+        // A config edited on macOS: the overrides are Cmd-based and the UNBIND suppressor ("") keys to Cmd-S.
+        JsonNode in = mapper.readTree("{\"keybindings\":{\"Cmd-S\":\"\",\"Cmd-K\":\"file.save\"},\"fontSize\":14}");
+        ObjectNode out = ConfigMigrations.splitKeybindings((ObjectNode) in, true);
+        // Moved into the mac slot verbatim…
+        assertEquals("", out.get("keybindingsMac").get("Cmd-S").asText());
+        assertEquals("file.save", out.get("keybindingsMac").get("Cmd-K").asText());
+        // …and the base (Windows/Linux) slot is emptied, so a later non-mac load of this synced file sees no
+        // stale Cmd-chord UNBINDs and keeps its own Ctrl defaults — no double-bind (#439).
+        assertTrue(out.get("keybindings").isObject());
+        assertEquals(0, out.get("keybindings").size());
+        assertEquals(14, out.get("fontSize").asInt(), "unrelated fields untouched");
+    }
+
+    @Test
+    void splitKeybindingsIsIdentityOnNonMac() throws Exception {
+        // On Windows/Linux the existing map already IS the Ctrl slot; keybindingsMac defaults empty on load.
+        JsonNode in = mapper.readTree("{\"keybindings\":{\"C-S\":\"\",\"C-K\":\"file.save\"}}");
+        ObjectNode out = ConfigMigrations.splitKeybindings((ObjectNode) in, false);
+        assertEquals("file.save", out.get("keybindings").get("C-K").asText());
+        assertFalse(out.has("keybindingsMac"));
+    }
+
+    @Test
+    void splitKeybindingsOnMacWithNoExistingMapYieldsTwoEmptyMaps() throws Exception {
+        ObjectNode out = ConfigMigrations.splitKeybindings((ObjectNode) mapper.readTree("{}"), true);
+        assertTrue(out.get("keybindingsMac").isObject());
+        assertEquals(0, out.get("keybindingsMac").size());
+        assertEquals(0, out.get("keybindings").size());
+    }
+
+    @Test
     void splitAiApiKeyMovesTheKeyOffAnOpenAiActiveConfig() throws Exception {
         JsonNode in = mapper.readTree("{\"aiProvider\":\"openai\",\"aiApiKey\":\"sk-openrouter\"}");
         ObjectNode out = (ObjectNode) ConfigMigrations.splitAiApiKeyByProvider(in);
