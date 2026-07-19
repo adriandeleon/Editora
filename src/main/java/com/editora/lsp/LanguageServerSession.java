@@ -45,6 +45,7 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ReferenceContext;
 import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.ReferencesCapabilities;
+import org.eclipse.lsp4j.RegistrationParams;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.SynchronizationCapabilities;
@@ -54,6 +55,7 @@ import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.UnregistrationParams;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
@@ -703,6 +705,26 @@ final class LanguageServerSession implements LanguageClient {
      */
     @Override
     public CompletableFuture<Void> refreshDiagnostics() {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Acknowledges {@code client/registerCapability} / {@code client/unregisterCapability}. Servers
+     * that use dynamic capability registration (e.g. tinymist, whose init reports
+     * {@code cfg_change_registration: true}) send these requests after initialize. lsp4j's default
+     * {@link LanguageClient#registerCapability}/{@link LanguageClient#unregisterCapability} throw
+     * {@code UnsupportedOperationException}, which lsp4j logs as a SEVERE "Internal error" and the
+     * server then reports back as a failed registration. We don't track dynamic registrations
+     * (capabilities are read from the initialize result), so accept-and-ignore is the correct
+     * minimal handling — it silences the crash without changing behavior.
+     */
+    @Override
+    public CompletableFuture<Void> registerCapability(RegistrationParams params) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> unregisterCapability(UnregistrationParams params) {
         return CompletableFuture.completedFuture(null);
     }
 
