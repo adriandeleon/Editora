@@ -20,6 +20,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -148,19 +149,23 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         // IntelliJ-style grouped, icon-only toolbar; the session state + file sit at the right edge.
         HBox toolbar = new HBox(
                 2,
-                btn(start, "debug.start", actions::start, Icons.run()),
-                btn(pause, "debug.pause", actions::pause, Icons.debugPause()),
-                btn(stop, "debug.stop", actions::stop, Icons.debugStop()),
-                btn(restart, "debug.restart", actions::restart, Icons.refresh()),
+                btn(start, "debug.start", "C", actions::start, Icons.run()),
+                btn(pause, "debug.pause", "P", actions::pause, Icons.debugPause()),
+                btn(stop, "debug.stop", "K", actions::stop, Icons.debugStop()),
+                btn(restart, "debug.restart", "R", actions::restart, Icons.refresh()),
                 groupSeparator(),
-                btn(stepOver, "debug.stepOver", actions::stepOver, Icons.debugStepOver()),
-                btn(stepInto, "debug.stepInto", actions::stepInto, Icons.debugStepInto()),
-                btn(stepOut, "debug.stepOut", actions::stepOut, Icons.debugStepOut()),
-                btn(runToCursor, "debug.runToCursor", actions::runToCursor, Icons.debugRunToCursor()),
+                btn(stepOver, "debug.stepOver", "N", actions::stepOver, Icons.debugStepOver()),
+                btn(stepInto, "debug.stepInto", "S", actions::stepInto, Icons.debugStepInto()),
+                btn(stepOut, "debug.stepOut", "F", actions::stepOut, Icons.debugStepOut()),
+                btn(runToCursor, "debug.runToCursor", "U", actions::runToCursor, Icons.debugRunToCursor()),
                 spacer(),
                 status);
         start.getStyleClass().add("debug-start"); // green play accent
         toolbar.setAlignment(Pos.CENTER_LEFT);
+        // gdb-style single-key shortcuts, live only while focus is somewhere in this panel (the eval field
+        // is exempt so the REPL types normally). Bare letters aren't bound in any keymap, so the scene
+        // KeyDispatcher lets them fall through to this capture-phase filter untouched.
+        addEventFilter(KeyEvent.KEY_PRESSED, this::handleDebugKey);
 
         // Thread selector (IntelliJ's dropdown over the frames list).
         threads.getStyleClass().add("debug-threads");
@@ -323,14 +328,50 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         return l;
     }
 
-    /** An icon-only toolbar button: the full command title lives in the tooltip (IntelliJ-style). */
-    private Button btn(Button b, String key, Runnable action, Node icon) {
+    /** An icon-only toolbar button: the full command title + its single-key shortcut live in the tooltip
+     *  (IntelliJ-style), so the shortcut is discoverable on hover. */
+    private Button btn(Button b, String key, String shortcut, Runnable action, Node icon) {
         b.setGraphic(icon);
-        b.setTooltip(new Tooltip(tr("command." + key)));
+        b.setTooltip(new Tooltip(tr("command." + key) + "  (" + shortcut + ")"));
         b.getStyleClass().addAll("flat", "debug-toolbar-button");
         b.setFocusTraversable(false);
         b.setOnAction(e -> action.run());
         return b;
+    }
+
+    /**
+     * gdb/lldb-style single-key control while the Debug panel is focused: c=continue, p=pause, k=kill/stop,
+     * r=restart, n=next/step-over, s=step-into, f=finish/step-out, u=until/run-to-cursor. Fires the matching
+     * toolbar button (respecting its enabled state) and swallows the key so the stack/variables lists don't
+     * treat it as type-ahead. Exempts the evaluate REPL field and any modified chord so normal typing and
+     * global chords (e.g. C-x o to leave the panel) still work.
+     */
+    private void handleDebugKey(KeyEvent e) {
+        if (e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShortcutDown()) {
+            return; // leave modified chords (incl. C-x o focus cycling) to the global dispatcher
+        }
+        if (evalInput.isFocused() || e.getTarget() == evalInput) {
+            return; // typing an expression in the REPL
+        }
+        Button target =
+                switch (e.getCode()) {
+                    case C -> start;
+                    case P -> pause;
+                    case K -> stop;
+                    case R -> restart;
+                    case N -> stepOver;
+                    case S -> stepInto;
+                    case F -> stepOut;
+                    case U -> runToCursor;
+                    default -> null;
+                };
+        if (target == null) {
+            return;
+        }
+        if (!target.isDisabled()) {
+            target.fire();
+        }
+        e.consume(); // reserve these letters in the panel even when the action is currently disabled
     }
 
     private static Separator groupSeparator() {

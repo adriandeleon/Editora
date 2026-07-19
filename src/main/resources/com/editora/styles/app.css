@@ -933,6 +933,16 @@
     -fx-fill: -color-accent-fg;
 }
 
+/* Stronger highlight when the tool window holds keyboard focus (IntelliJ-style "active"), distinct from
+   the subtle merely-open tint above. Listed after :open so it wins the background when both apply. */
+.tool-stripe-button:tw-active {
+    -fx-background-color: -color-accent-muted;
+}
+
+.tool-stripe-button:tw-active .toolbar-icon {
+    -fx-fill: -color-accent-fg;
+}
+
 /* Stripe-icon reordering (mirrors the tab-strip drag UI): dim the dragged icon, draw an accent
    insertion line on the side the dropped icon would land (top/bottom for vertical stripes,
    left/right for the horizontal bottom stripe). */

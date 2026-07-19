@@ -8464,6 +8464,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     private static void focusWindow(Node target) {
         if (target instanceof StructurePanel structure) {
             structure.focusContent();
+        } else if (target instanceof ToolWindowContent content) {
+            // Focus a real focusable child (e.g. the Debug stack list) rather than the panel container —
+            // a bare VBox isn't focus-traversable, so requestFocus() on it wouldn't move focus in, leaving
+            // the panel's local key shortcuts (e.g. the Debug toolbar keys) inert after C-x o.
+            content.focusFirstItem();
         } else {
             target.requestFocus();
         }

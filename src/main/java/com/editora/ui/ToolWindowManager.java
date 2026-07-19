@@ -46,6 +46,10 @@ import static com.editora.i18n.Messages.tr;
 public class ToolWindowManager {
 
     private static final PseudoClass OPEN = PseudoClass.getPseudoClass("open");
+    /** Set on the stripe button of the tool window that currently holds keyboard focus (IntelliJ-style
+     *  "active" highlight, stronger than the merely-{@link #OPEN} tint). Custom name to avoid colliding
+     *  with JavaFX's built-in {@code :active}/{@code :focused} button pseudo-classes. */
+    private static final PseudoClass ACTIVE = PseudoClass.getPseudoClass("tw-active");
 
     private final ConfigManager config;
     private final KeymapManager keymap;
@@ -112,11 +116,22 @@ public class ToolWindowManager {
         });
     }
 
-    /** Marks the tool window panel that contains the scene's focus owner as active (others inactive). */
+    /**
+     * Marks the tool window that contains the scene's focus owner as active (others inactive): its panel
+     * gets the active border and its stripe button gets the {@link #ACTIVE} highlight. Iterates every
+     * registered window so a window that just lost focus is cleared too (closed windows have no panel and
+     * so are never active).
+     */
     private void updateActivePanel(Node focusOwner) {
-        for (Region panel : panels.values()) {
+        for (ToolWindow tw : byId.values()) {
+            Region panel = panels.get(tw); // non-null only while the window is open
+            boolean active = panel != null && focusOwner != null && isDescendant(focusOwner, panel);
             if (panel instanceof ToolWindowPanel p) {
-                p.setActive(focusOwner != null && isDescendant(focusOwner, p));
+                p.setActive(active);
+            }
+            Button button = stripeButtons.get(tw);
+            if (button != null) {
+                button.pseudoClassStateChanged(ACTIVE, active);
             }
         }
     }
