@@ -81,6 +81,25 @@ public final class PrReviewSummary {
         return t;
     }
 
+    /** Whether a PR description is long enough to collapse (more than {@code maxLines} lines OR {@code maxChars}
+     *  characters), so the review tab shows a few lines + a "Show more" toggle. */
+    public static boolean isLongDescription(String body, int maxLines, int maxChars) {
+        return body != null && (body.lines().count() > maxLines || body.length() > maxChars);
+    }
+
+    /** The collapsed form of {@code body}: its first {@code maxLines} lines, further capped at {@code maxChars}
+     *  characters (trailing whitespace stripped). The caller signals "there's more" via the toggle. */
+    public static String collapseDescription(String body, int maxLines, int maxChars) {
+        if (body == null) {
+            return "";
+        }
+        String head = String.join("\n", body.lines().limit(maxLines).toList());
+        if (head.length() > maxChars) {
+            head = head.substring(0, maxChars).stripTrailing();
+        }
+        return head;
+    }
+
     private static boolean isAbsent(String p) {
         return clean(p).isEmpty();
     }

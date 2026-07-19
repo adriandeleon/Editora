@@ -923,6 +923,15 @@
     -fx-font-size: 0.85em;
 }
 .pr-review-stats { -fx-text-fill: -color-fg-muted; }
+/* PR description card (the gh pr view body), GitHub-style: a subtle boxed block above the file list. */
+.pr-review-description {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 6;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 6;
+    -fx-padding: 8 10 8 10;
+}
+.pr-review-body { -fx-text-fill: -color-fg-default; }
 .pr-review-adds { -fx-text-fill: -color-success-fg; }
 .pr-review-dels { -fx-text-fill: -color-fg-muted; }
 .pr-review-action { -fx-text-fill: -color-accent-fg; }

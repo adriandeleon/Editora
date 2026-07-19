@@ -127,6 +127,34 @@ public final class DiffViewerPane implements TabContent {
         root.getStyleClass().add("diff-viewer");
         root.setTop(buildToolbar());
         showSideBySide();
+        installChangeNavKeys();
+    }
+
+    /**
+     * Single-key change navigation for a <em>read-only</em> diff (e.g. a PR review diff): {@code n} = next
+     * change, {@code p} = previous. Gated on {@link EditableSide#NONE} so it never swallows typing in an
+     * editable "apply change" diff (where the RIGHT/LEFT side is a live editor). The filter is on {@code root},
+     * so it runs before the focused area's own key handling; a modifier held (so {@code C-n}/… still reach the
+     * area) is ignored.
+     */
+    private void installChangeNavKeys() {
+        root.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (editableSide != EditableSide.NONE
+                    || e.isShortcutDown()
+                    || e.isControlDown()
+                    || e.isAltDown()
+                    || e.isMetaDown()
+                    || e.isShiftDown()) {
+                return;
+            }
+            if (e.getCode() == javafx.scene.input.KeyCode.N) {
+                nextChange();
+                e.consume();
+            } else if (e.getCode() == javafx.scene.input.KeyCode.P) {
+                prevChange();
+                e.consume();
+            }
+        });
     }
 
     public void setOnExportPatch(java.util.function.Consumer<String> onExportPatch) {

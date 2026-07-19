@@ -39,6 +39,21 @@ class PrReviewSummaryTest {
     }
 
     @Test
+    void descriptionCollapse() {
+        String shortBody = "line1\nline2";
+        assertEquals(false, PrReviewSummary.isLongDescription(shortBody, 6, 500));
+        assertEquals(false, PrReviewSummary.isLongDescription(null, 6, 500));
+
+        String manyLines = "a\nb\nc\nd\ne\nf\ng\nh";
+        org.junit.jupiter.api.Assertions.assertTrue(PrReviewSummary.isLongDescription(manyLines, 6, 500));
+        assertEquals("a\nb\nc\nd\ne\nf", PrReviewSummary.collapseDescription(manyLines, 6, 500));
+
+        String longLine = "x".repeat(600);
+        org.junit.jupiter.api.Assertions.assertTrue(PrReviewSummary.isLongDescription(longLine, 6, 500));
+        assertEquals(500, PrReviewSummary.collapseDescription(longLine, 6, 500).length());
+    }
+
+    @Test
     void rowsAndTotals() {
         List<FilePatch> files =
                 List.of(fp("", "a.txt", 10, 0), fp("b.txt", "b.txt", 3, 4), fp("c.txt", "/dev/null", 0, 7));

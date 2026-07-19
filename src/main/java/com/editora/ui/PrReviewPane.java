@@ -17,6 +17,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.diff.PatchParser.FilePatch;
+import com.editora.editor.MarkdownRenderer;
 import com.editora.editor.TabContent;
 import com.editora.github.PrReviewSummary;
 import com.editora.github.PrReviewSummary.FileRow;
@@ -27,9 +28,10 @@ import static com.editora.i18n.Messages.tr;
 /**
  * A GitHub "Files changed"-style review tab for a pull request — a {@link TabContent} built like
  * {@link WelcomePane} (a centered, scrolling column). It shows the PR meta (number/title/author, {@code head
- * → base}, state, {@code +adds −dels} roll-up) + Open-on-GitHub / Open-all / Refresh links above a list of
- * clickable file rows (status letter + {@link FileIcons} glyph colored via the shared {@code .git-status-*}
- * classes + path + per-file {@code +a −d}). Clicking a file opens its read-only diff.
+ * → base}, state, {@code +adds −dels} roll-up), a collapsible PR description (the {@code gh pr view} body — a
+ * few lines with a Show more/less toggle when long), Open-on-GitHub / Open-all / Submit-review / Refresh
+ * links, and a list of clickable file rows (status letter + {@link FileIcons} glyph colored via the shared
+ * {@code .git-status-*} classes + path + per-file {@code +a −d}). Clicking a file opens its read-only diff.
  *
  * <p>Kept decoupled from the coordinator: all actions are injected callbacks and {@link #update} feeds it the
  * already-fetched {@link PrDetail} (nullable — a degraded header renders from just the number) + parsed
@@ -41,6 +43,11 @@ public final class PrReviewPane extends Region implements TabContent {
     /** Above this many rows the list is capped (Open-on-GitHub is the escape hatch) so a pathological PR
      *  can't build tens of thousands of nodes on the FX thread. */
     private static final int MAX_REVIEW_ROWS = 500;
+
+    /** The PR description is collapsed to this many lines / characters, with a "Show more" toggle past it. */
+    private static final int DESC_COLLAPSED_LINES = 6;
+
+    private static final int DESC_COLLAPSED_CHARS = 500;
 
     private static final double MARGIN = 48;
     private static final double CONTENT_WIDTH = 640;
@@ -54,6 +61,8 @@ public final class PrReviewPane extends Region implements TabContent {
 
     private PrDetail detail;
     private List<FilePatch> files = List.of();
+    /** Whether the (long) PR description is expanded; sticky across a Refresh of the same tab. */
+    private boolean bodyExpanded;
 
     private final VBox content = new VBox();
     private final StackPane centerHost = new StackPane(content);
@@ -106,11 +115,69 @@ public final class PrReviewPane extends Region implements TabContent {
     private void rebuild() {
         List<FileRow> rows = PrReviewSummary.rows(files);
         content.getChildren().setAll(header(rows));
+        Node description = descriptionBlock();
+        if (description != null) {
+            content.getChildren().add(description);
+        }
         if (files.isEmpty()) {
             content.getChildren().add(caption(tr("github.review.noFiles")));
             return;
         }
         content.getChildren().add(fileList(rows));
+    }
+
+    /** The PR description (from {@code gh pr view}), rendered as Markdown, collapsed to a few lines with a Show
+     *  more/less toggle when long. {@code null} when there's no description. */
+    private Node descriptionBlock() {
+        if (detail == null) {
+            return null;
+        }
+        String body = detail.body() == null ? "" : detail.body().strip();
+        if (body.isEmpty()) {
+            return null;
+        }
+        VBox box = new VBox(4);
+        box.getStyleClass().add("pr-review-description");
+        StackPane rendered = new StackPane();
+        rendered.setAlignment(Pos.TOP_LEFT);
+        box.getChildren().add(rendered);
+
+        if (PrReviewSummary.isLongDescription(body, DESC_COLLAPSED_LINES, DESC_COLLAPSED_CHARS)) {
+            Hyperlink toggle = new Hyperlink();
+            toggle.getStyleClass().add("pr-review-action");
+            Runnable sync = () -> {
+                String shown = bodyExpanded
+                        ? body
+                        : PrReviewSummary.collapseDescription(body, DESC_COLLAPSED_LINES, DESC_COLLAPSED_CHARS);
+                rendered.getChildren().setAll(renderMarkdown(shown));
+                toggle.setText(tr(bodyExpanded ? "github.review.showLess" : "github.review.showMore"));
+                toggle.setGraphic(bodyExpanded ? Icons.arrowUp() : Icons.arrowDown());
+            };
+            sync.run();
+            toggle.setOnAction(e -> {
+                bodyExpanded = !bodyExpanded;
+                sync.run();
+            });
+            box.getChildren().add(toggle);
+        } else {
+            rendered.getChildren().setAll(renderMarkdown(body));
+        }
+        return box;
+    }
+
+    /** Renders a Markdown string to a native JavaFX node (the shared preview renderer); a plain-text label is
+     *  the fallback if rendering fails, so a malformed body never breaks the tab. */
+    private static Node renderMarkdown(String markdown) {
+        try {
+            Node node = MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(markdown), null);
+            node.getStyleClass().add("pr-review-md");
+            return node;
+        } catch (RuntimeException e) {
+            Label fallback = new Label(markdown);
+            fallback.getStyleClass().add("pr-review-body");
+            fallback.setWrapText(true);
+            return fallback;
+        }
     }
 
     private Node header(List<FileRow> rows) {
