@@ -179,3 +179,52 @@ jobs:
             out/jreleaser/trace.log
             out/jreleaser/output.properties
           if-no-files-found: ignore
+
+  # Reopen master for development: after a real release, put the pom back on the NEXT patch with a
+  # -SNAPSHOT suffix, so anything built off master until the next release identifies itself as a
+  # development build (AppInfo.isSnapshot() -> the toolbar badge, About, --version).
+  #
+  # Deliberately skipped for pre-releases (vX.Y.Z-rcN): an rc is cut from the -SNAPSHOT line and must
+  # not advance it. Also skipped on workflow_dispatch, which is only ever a dry run.
+  bump:
+    name: Reopen master for development
+    needs: release
+    if: github.event_name == 'push' && github.ref_type == 'tag' && !contains(github.ref_name, '-rc')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out master
+        uses: actions/checkout@v6
+        with:
+          ref: master
+          # Default GITHUB_TOKEN; if master is branch-protected, swap in a PAT with bypass rights.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump pom to the next -SNAPSHOT
+        shell: bash
+        run: |
+          set -euo pipefail
+          released="${GITHUB_REF_NAME#v}"
+          current="$(grep -m1 '<version>' pom.xml | sed -E 's/.*<version>(.+)<\/version>.*/\1/')"
+
+          # Idempotence guard: only advance when master still sits on the version we just released.
+          # Anything else (already a -SNAPSHOT, or moved on) means a human got there first — leave it.
+          if [ "$current" != "$released" ]; then
+            echo "master pom is '$current', not the released '$released' — nothing to bump."
+            exit 0
+          fi
+
+          # Next patch. A released version is always plain X.Y.Z here (the tag drives it).
+          IFS='.' read -r major minor patch <<< "$released"
+          next="${major}.${minor}.$((patch + 1))-SNAPSHOT"
+
+          # Replace only the FIRST <version> — the project's own, before any dependency/plugin ones.
+          sed -i -E "0,/<version>${released}<\/version>/s//<version>${next}<\/version>/" pom.xml
+          grep -m1 '<version>' pom.xml
+
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add pom.xml
+          git commit -m "chore: reopen master at ${next} after ${GITHUB_REF_NAME}"
+          git push origin HEAD:master

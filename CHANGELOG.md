@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Development builds now say so.** Between releases the project version carries a `-SNAPSHOT` suffix, and a
+  `snapshot` badge appears in the toolbar (beside the `dev mode` one). The suffix also shows in `--version`,
+  the About dialog, and the Welcome footer — so a build made from the current source is never mistaken for an
+  installed release. A release build shows no badge.
+
+### Changed
+
+- The release flow reopens `master` at the next patch `-SNAPSHOT` automatically once a release publishes, so
+  the only manual version edit is setting the release version before tagging. Pre-releases (`-rcN`) don't
+  advance it.
+
 ## [0.9.7] - 2026-07-18
 
 ### Performance

@@ -5066,6 +5066,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         HBox.setHgrow(spacer, Priority.ALWAYS);
         items.add(spacer);
 
+        // Snapshot badge when the pom carries -SNAPSHOT, i.e. this was built off master between
+        // releases rather than from a release tag — so a test build is obvious without opening About.
+        if (com.editora.AppInfo.isSnapshot()) {
+            Label snapshotBadge = new Label(tr("badge.snapshot"));
+            snapshotBadge.getStyleClass().add("snapshot-badge");
+            snapshotBadge.setTooltip(new Tooltip(tr("badge.snapshot.tip", com.editora.AppInfo.VERSION)));
+            items.addAll(toolbarGap(), snapshotBadge);
+        }
+
         // Dev-mode badge (just left of the About icon) when running with --dev, so a development
         // instance is visually distinct from the production one.
         if (config.isDev()) {

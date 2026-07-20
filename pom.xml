@@ -6,7 +6,7 @@
 
     <groupId>com.editora</groupId>
     <artifactId>editora</artifactId>
-    <version>0.9.7</version>
+    <version>0.9.8-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>Editora</name>
@@ -1097,8 +1097,11 @@
                          passes through unchanged). This placeholder only satisfies jpackage's CLI
                          validation — aot_build.java's fixMacBundleMetadata immediately rewrites the built
                          app's Info.plist CFBundleVersion/CFBundleShortVersionString back to the TRUE
-                         ${project.version} (passed separately, see the aot-train-and-deliver execution
-                         below) before the DMG wrap runs, so the delivered app never shows the placeholder. -->
+                         jpackage.publicVersion (passed separately, see the aot-train-and-deliver execution
+                         below) before the DMG wrap runs, so the delivered app never shows the placeholder.
+                         publicVersion is project.version minus any -SNAPSHOT: the plist needs a plain
+                         dotted number too, and the in-app About/version CLI still read the real (suffixed)
+                         version from build-info.properties, so a snapshot build stays self-identifying. -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-antrun-plugin</artifactId>
@@ -1113,8 +1116,20 @@
                                 <configuration>
                                     <exportAntProperties>true</exportAntProperties>
                                     <target>
-                                        <loadresource property="jpackage.appVersion">
+                                        <!-- Strip any -SNAPSHOT first: between releases the pom carries one
+                                             (see the release flow), and every jpackage/Info.plist version
+                                             must be a plain dotted number. This stripped value is also the
+                                             publicVersion handed to fixMacBundleMetadata. -->
+                                        <loadresource property="jpackage.publicVersion">
                                             <propertyresource name="project.version"/>
+                                            <filterchain>
+                                                <tokenfilter>
+                                                    <replaceregex pattern="-SNAPSHOT$" replace="" flags="gi"/>
+                                                </tokenfilter>
+                                            </filterchain>
+                                        </loadresource>
+                                        <loadresource property="jpackage.appVersion">
+                                            <propertyresource name="jpackage.publicVersion"/>
                                             <filterchain>
                                                 <tokenfilter>
                                                     <replaceregex pattern="^0\." replace="1." flags="g"/>
@@ -1137,9 +1152,44 @@
                 <jpackage.icon>${project.basedir}/branding/editora.ico</jpackage.icon>
                 <!-- Keep Direct3D first on Windows (Metal is macOS-only); es2/sw fallback. -->
                 <prism.pipeline>d3d,es2,sw</prism.pipeline>
-                <!-- Windows/Linux jpackage accepts a leading-zero version fine — unlike macOS (see os-mac). -->
-                <jpackage.appVersion>${project.version}</jpackage.appVersion>
             </properties>
+            <build>
+                <plugins>
+                    <!-- Between releases the pom carries a -SNAPSHOT suffix (see the release flow), which
+                         jpackage rejects in its app-version flag (MSI/DEB versions must be plain dotted numbers).
+                         Strip it into jpackage.appVersion, passed to both the jpackage-maven-plugin build
+                         and aot_build.java's later wrap. A leading zero is fine here — unlike macOS, which
+                         additionally bumps "0." to "1." (see os-mac). -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>windows-jpackage-app-version</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <exportAntProperties>true</exportAntProperties>
+                                    <target>
+                                        <loadresource property="jpackage.publicVersion">
+                                            <propertyresource name="project.version"/>
+                                            <filterchain>
+                                                <tokenfilter>
+                                                    <replaceregex pattern="-SNAPSHOT$" replace="" flags="gi"/>
+                                                </tokenfilter>
+                                            </filterchain>
+                                        </loadresource>
+                                        <property name="jpackage.appVersion" value="${jpackage.publicVersion}"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
         <profile>
             <id>os-linux</id>
@@ -1153,8 +1203,44 @@
                 <jpackage.icon>${project.basedir}/branding/editora.png</jpackage.icon>
                 <!-- es2 first on Linux (no Metal/Direct3D there); sw fallback. -->
                 <prism.pipeline>es2,sw</prism.pipeline>
-                <jpackage.appVersion>${project.version}</jpackage.appVersion>
             </properties>
+            <build>
+                <plugins>
+                    <!-- Between releases the pom carries a -SNAPSHOT suffix (see the release flow), which
+                         jpackage rejects in its app-version flag (MSI/DEB versions must be plain dotted numbers).
+                         Strip it into jpackage.appVersion, passed to both the jpackage-maven-plugin build
+                         and aot_build.java's later wrap. A leading zero is fine here — unlike macOS, which
+                         additionally bumps "0." to "1." (see os-mac). -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>linux-jpackage-app-version</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <exportAntProperties>true</exportAntProperties>
+                                    <target>
+                                        <loadresource property="jpackage.publicVersion">
+                                            <propertyresource name="project.version"/>
+                                            <filterchain>
+                                                <tokenfilter>
+                                                    <replaceregex pattern="-SNAPSHOT$" replace="" flags="gi"/>
+                                                </tokenfilter>
+                                            </filterchain>
+                                        </loadresource>
+                                        <property name="jpackage.appVersion" value="${jpackage.publicVersion}"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
 
         <!-- `mvn -Pdist package` builds a self-contained app image / native installer. -->
@@ -1366,7 +1452,7 @@
                                         <argument>${project.build.directory}/aot-image</argument>
                                         <argument>Editora</argument>
                                         <argument>${jpackage.appVersion}</argument>
-                                        <argument>${project.version}</argument>
+                                        <argument>${jpackage.publicVersion}</argument>
                                         <argument>${jpackage.type}</argument>
                                         <argument>${jpackage.icon}</argument>
                                         <argument>${project.build.directory}/dist</argument>

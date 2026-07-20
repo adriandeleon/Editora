@@ -1,8 +1,23 @@
 # Releasing
 
+## Snapshot vs release versions
+
+Between releases `master`'s `pom.xml` carries a **`-SNAPSHOT`** suffix (e.g. `0.9.8-SNAPSHOT`).
+Only a release tag is cut from a plain `X.Y.Z` version. That makes any build self-identifying:
+
+- **`AppInfo.VERSION`** (from the pom, via the Maven-filtered `build-info.properties`) shows the
+  suffix in `--version`, the About dialog, and the Welcome footer.
+- **`AppInfo.isSnapshot()`** drives a **`snapshot` badge** in the toolbar (beside the `--dev`
+  badge), so a test build is obvious at a glance without opening About.
+- **`AppInfo.releaseVersion()`** is the suffix-stripped form, for anywhere a version must be a
+  plain dotted number — the versioned docs URLs, and the jpackage/`Info.plist` metadata (see
+  below).
+
+So: a toolbar with no snapshot badge means you are running a real release build.
+
 ## Cutting a release
 
-1. Bump `<version>` in `pom.xml`.
+1. Set `<version>` in `pom.xml` to the release version (drop the `-SNAPSHOT`).
 2. Update `CHANGELOG.md` (move `[Unreleased]` into a versioned section).
 3. Push a `vX.Y.Z` tag. A `-rcN` suffix (`vX.Y.Z-rcN`) marks a pre-release.
 
@@ -13,6 +28,35 @@ git push origin vX.Y.Z
 
 The tag triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml). (Manual
 dispatch is available for a dry run.)
+
+**Step 1 is the only manual version edit.** After the release publishes, the workflow's final
+`bump` job reopens `master` at the next patch `-SNAPSHOT` for you — see below.
+
+## Reopening master (the post-release bump)
+
+The `bump` job runs after JReleaser succeeds and commits a one-line pom change to `master`:
+
+```
+chore: reopen master at 0.9.8-SNAPSHOT after v0.9.7
+```
+
+- It is **skipped for pre-releases** (`vX.Y.Z-rcN`) — an rc is cut from the `-SNAPSHOT` line and
+  must not advance it — and on `workflow_dispatch`, which is only ever a dry run.
+- It is **idempotent**: it bumps only when `master`'s pom still reads exactly the version just
+  released. If a human already moved it, the job logs and exits cleanly.
+- It pushes with the default `GITHUB_TOKEN`. **If `master` becomes branch-protected, that push
+  will fail** (the release itself is already published by then) — swap in a PAT with bypass
+  rights, or do step 1's inverse by hand.
+
+### `-SNAPSHOT` and the native installers
+
+jpackage rejects a non-numeric `--app-version`, so the suffix must never reach it. Each OS
+profile's antrun step strips it into **`jpackage.publicVersion`**, and `jpackage.appVersion`
+derives from that (macOS additionally bumps a leading `0.` to `1.` — see the comment in
+`pom.xml`). `aot_build.java` writes `publicVersion` into the macOS `Info.plist`. A local
+`-Pdist` build off `master` therefore produces an installer whose *bundle metadata* reads
+`0.9.8` while the *app itself* still reports `0.9.8-SNAPSHOT` — which is the bit that matters
+for telling builds apart.
 
 ## The pipeline
 
