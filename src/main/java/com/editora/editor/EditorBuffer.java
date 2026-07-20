@@ -377,6 +377,13 @@ public class EditorBuffer implements TabContent {
      * trigger it must gate is ~280 ms away.
      */
     private long suppressCompletionAtVersion = -1;
+    /**
+     * The edit the last completion accept made, measured around it, so the {@code additionalTextEdits} a later
+     * {@code completionItem/resolve} returns — positions the server computed against the document as it stood
+     * <em>before</em> that accept — can be translated into the document as it stands now. See
+     * {@link LspEditShift}.
+     */
+    private LspEditShift.Change pendingCompletionShift;
     /** Inline "ghost text" suggestion (prose buffers): a single muted suffix drawn after the caret. */
     private Label ghostLabel;
 
@@ -7907,11 +7914,22 @@ public class EditorBuffer implements TabContent {
             start = caret - overlap;
         }
         hideCompletion();
+        // Measured around our own edit so a later completionItem/resolve's additionalTextEdits — positions the
+        // server computed against the document as it is right here, before the accept — can be translated onto
+        // the document the accept leaves behind (#410). Taken before the edit; completed just after it.
+        var preStart = lspPosition(a, start);
+        var preEnd = lspPosition(a, caret);
+        int preLength = text.length();
         if (c.snippet() != null) {
             startSnippet(a, c.snippet(), start, caret);
         } else {
             a.replaceText(start, caret, c.insert());
         }
+        // Where the replaced range's end landed. Derived from the net length change rather than the accepted
+        // text, so it holds for the snippet path too (its expansion re-indents and adds tab stops).
+        var postEnd = lspPosition(a, caret + (a.getLength() - preLength));
+        pendingCompletionShift =
+                new LspEditShift.Change(preStart[0], preStart[1], preEnd[0], preEnd[1], postEnd[0], postEnd[1]);
         // Stamped AFTER the edit (which bumps docVersion), so the auto-trigger that edit schedules is the
         // one suppressed — the user typing on afterwards bumps the version again and re-enables it.
         suppressCompletionAtVersion = docVersion;
@@ -7947,6 +7965,16 @@ public class EditorBuffer implements TabContent {
      */
     public long docVersion() {
         return docVersion;
+    }
+
+    /**
+     * Applies the {@code additionalTextEdits} a {@code completionItem/resolve} returned for the completion this
+     * buffer last accepted (an auto-import line). Unlike {@link #applyLspEdits}, the positions are first
+     * translated across the accept's own insertion, which moved everything below the caret after the server
+     * computed them — see {@link LspEditShift}.
+     */
+    public void applyCompletionAdditionalEdits(java.util.List<LspTextEdit> edits) {
+        applyLspEdits(LspEditShift.shift(edits, pendingCompletionShift));
     }
 
     public void applyLspEdits(java.util.List<LspTextEdit> edits) {
@@ -8007,6 +8035,17 @@ public class EditorBuffer implements TabContent {
         int par = Math.max(0, Math.min(line, a.getParagraphs().size() - 1));
         int len = a.getParagraph(par).length();
         return a.getAbsolutePosition(par, Math.max(0, Math.min(col, len)));
+    }
+
+    /**
+     * The 0-based LSP {@code {line, character}} of an absolute offset (the inverse of {@link #lspOffset}),
+     * clamped to the document. {@code Backward} bias so an offset at a line's end reads as that line's last
+     * column rather than the next line's column 0 — the two ends of the accept's change must agree.
+     */
+    private static int[] lspPosition(CodeArea a, int offset) {
+        int clamped = Math.max(0, Math.min(offset, a.getLength()));
+        var pos = a.offsetToPosition(clamped, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
+        return new int[] {pos.getMajor(), pos.getMinor()};
     }
 
     private static void toggleStyleClass(Node node, String styleClass, boolean on) {

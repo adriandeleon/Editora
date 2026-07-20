@@ -645,14 +645,17 @@ final class LspCoordinator {
             if (buffer.getPath() == null) {
                 return;
             }
-            // The resolve is a round-trip; its edits carry positions computed against the document as it is
-            // right now (this runs just after the accept's own edit). If the document moves meanwhile — the
-            // user undoes the accept, or edits above the insert point — those positions are stale and
-            // applying them blind writes an import into the wrong place (or for a symbol that's gone).
+            // Two different staleness problems, so two guards. (1) The resolve is a round-trip: if the document
+            // moves while it is in flight — the user undoes the accept, or edits above the insert point — the
+            // positions are stale and applying them blind writes an import into the wrong place (or for a symbol
+            // that's gone), so drop the response. (2) Even with the document untouched since, these positions
+            // were computed against the document as it was BEFORE the accept, and the accept's own insertion may
+            // have moved everything below the caret — so applyCompletionAdditionalEdits translates them across
+            // that insertion rather than applying them verbatim (#410).
             long version = buffer.docVersion();
             lspManager.resolveCompletion(buffer.getPath(), item, edits -> {
                 if (buffer.docVersion() == version) {
-                    buffer.applyLspEdits(edits);
+                    buffer.applyCompletionAdditionalEdits(edits);
                 }
             });
         };
