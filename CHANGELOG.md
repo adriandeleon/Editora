@@ -7,8 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-07-20
+
 ### Added
 
+- **GitHub integration, via your own `gh` CLI.** Editora never handles a token — it shells out to the
+  authenticated `gh` you already have, so GitHub Enterprise works with no extra setup. It stays invisible
+  until a repo actually has something to look at:
+  - **Review a pull request in the editor.** A "Files changed" tab lists every file with its status and
+    per-file `+`/`−` counts; clicking one opens a read-only diff. The PR description renders as Markdown in
+    a card above the list (long ones collapse behind a Show more toggle), and `n`/`p` step through changes
+    in any read-only diff.
+  - **Submit a review** — approve, request changes, or comment — without leaving the editor.
+  - **Check out a PR**, **create a PR**, and **open the current file on GitHub** at the caret line.
+  - A **PR / issue / Actions-runs tool window** (`M-g p`), plus a **status-bar CI checks** indicator for the
+    current branch.
+  - **A failed CI run's log opens in the Build Output console, and its stack frames are clickable** — runner
+    paths like `/home/runner/work/repo/repo/src/…` are mapped back onto your local checkout, so a red build
+    takes you straight to the line.
+- **Test runner polish.** An unfiltered `test` run now pre-seeds the whole expected test list greyed-out and
+  flips each entry green or red as results land, instead of classes popping in already finished. JUnit test
+  classes and methods get a **run icon in the gutter** (with a tooltip naming what it runs), and a test file's
+  right-click menu offers **Run Tests** for the whole class.
+- **Debug tool window: gdb-style single-key controls** (`n`/`s`/`f`/…) with an active-focus highlight showing
+  when the panel has the keyboard.
+- **Linux `.deb`: an "Editora Expert Mode" launcher.** A second menu entry starts Editora with
+  `--expert --single-window`, and is registered as the system-wide default handler for text and source files.
+  Your own per-user file-handler choices still win.
 - **Development builds now say so.** Between releases the project version carries a `-SNAPSHOT` suffix, and a
   `snapshot` badge appears in the toolbar (beside the `dev mode` one). The suffix also shows in `--version`,
   the About dialog, and the Welcome footer — so a build made from the current source is never mistaken for an
@@ -16,9 +41,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **One pair of preview commands for every file type.** The per-type toggles (Markdown preview, CSV grid, …)
+  are replaced by shared `view.togglePreview` and `view.toggleSplitPreview` commands that act on whatever the
+  active file previews as. Each preview type still has its own Settings checkbox.
+- The GitHub tool window is **repo-scoped rather than buffer-scoped**, so it no longer disappears when you
+  switch to the Welcome tab, and it only appears when the repo has an open PR, issue, or workflow run.
 - The release flow reopens `master` at the next patch `-SNAPSHOT` automatically once a release publishes, so
   the only manual version edit is setting the release version before tagging. Pre-releases (`-rcN`) don't
   advance it.
+
+### Fixed
+
+- **An auto-import no longer lands on the wrong line.** Accepting a completion whose text spans lines (a
+  snippet, or an insert carrying newlines) shifted everything below the caret before the server's extra edits
+  were applied, so the import silently went to the wrong place. Those edits are now translated across the
+  accept. Also fixes a same-line edit being off after a plain single-line accept. (#410)
+- **Launching with `--zen`, `--expert`, or `--simple` no longer flashes full chrome first.** The window used
+  to appear with the normal toolbar and tab bar and visibly strip itself once the session finished restoring —
+  up to a second of wrong UI with a few tabs open. The mode is now applied before the window is shown.
+- **Stepping in the debugger keeps focus in the Debug panel.** Each step revealed the stopped line and yanked
+  focus to the editor, so the next key press was lost. A fresh breakpoint hit while editing still takes you to
+  the code. (#592)
+- **The line-number gutter no longer shifts text when a file reaches 10 lines.** It now reserves two digits
+  minimum, so the 9→10 transition stops nudging every line's indentation rightward. (#590)
+- **Copy no longer leaves the selection highlighted.** (#581)
+- **Test Results:** running tests now brings up the Test Results window rather than Build Output; the tree
+  updates live instead of only at the end; a stale report from a previous run is never merged; and the detail
+  pane shows a header for every selection (and the run summary when nothing is selected) instead of going
+  blank for a passing test.
+- The GitHub panel's PR/issue toggle now shows a clearly visible selected state.
 
 ## [0.9.7] - 2026-07-18
 
