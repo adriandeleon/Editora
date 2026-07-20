@@ -46,10 +46,12 @@ public class CommandPalette {
     /**
      * Base URL for per-command documentation on the website; the command id is appended. The docs are
      * versioned per app release ({@code /docs/v-<appVersion>/commands/<command-id>}), so the running
-     * version's docs are opened.
+     * version's docs are opened. Uses {@code releaseVersion()}, not the raw version: a snapshot build's
+     * {@code -SNAPSHOT} suffix is never a published docs path, so it would always 404 — the release it is
+     * working toward at least resolves once that version ships.
      */
     private static final String DOCS_BASE =
-            com.editora.AppInfo.HOMEPAGE + "/docs/v-" + com.editora.AppInfo.VERSION + "/commands/";
+            com.editora.AppInfo.HOMEPAGE + "/docs/v-" + com.editora.AppInfo.releaseVersion() + "/commands/";
 
     private final CommandRegistry registry;
     private final KeymapManager keymap;

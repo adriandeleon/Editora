@@ -1436,6 +1436,15 @@
     -fx-padding: 0 6 0 6;
 }
 
+/* Marks a build made off master between releases (pom version ends in -SNAPSHOT). Semantic
+   colour so it tracks the theme; distinct from the red dev-mode badge beside it. */
+.snapshot-badge {
+    -fx-text-fill: -color-warning-fg;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 6 0 6;
+}
+
 /* Inline remove button on each Recent Files dropdown row. */
 .recent-remove {
     -fx-padding: 0 4 0 4;

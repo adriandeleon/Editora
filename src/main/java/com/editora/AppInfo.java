@@ -11,9 +11,12 @@ import java.util.Properties;
 public final class AppInfo {
 
     public static final String NAME = "Editora";
-    /** The release version — the single source is {@code pom.xml}'s {@code <version>}, Maven-filtered into
-     *  {@code build-info.properties} and read here, so a bump touches only the pom. */
+    /** The version — the single source is {@code pom.xml}'s {@code <version>}, Maven-filtered into
+     *  {@code build-info.properties} and read here, so a bump touches only the pom. Between releases the
+     *  pom (and so this) carries a {@code -SNAPSHOT} suffix — see {@link #isSnapshot()}. */
     public static final String VERSION = loadVersion();
+    /** Maven's marker for an unreleased development version, appended to the pom right after each release. */
+    private static final String SNAPSHOT_SUFFIX = "-SNAPSHOT";
     /** Project home page (the website's custom domain). */
     public static final String HOMEPAGE = "https://editora-project.dev";
     /** Copyright notice (matches the bundled {@code LICENSE} file). */
@@ -63,6 +66,40 @@ public final class AppInfo {
         } catch (IOException e) {
             return "unknown";
         }
+    }
+
+    /**
+     * Whether this build runs an unreleased development version, i.e. the pom carries {@code -SNAPSHOT}.
+     * The release flow bumps the pom to {@code <next>-SNAPSHOT} right after each tag, so anything built
+     * off {@code master} between releases answers {@code true} and anything built from a release tag
+     * answers {@code false} — which is how a test build tells itself apart from a shipped one.
+     */
+    public static boolean isSnapshot() {
+        return isSnapshot(VERSION);
+    }
+
+    /** Pure form of {@link #isSnapshot()}, for tests. */
+    static boolean isSnapshot(String version) {
+        return version != null
+                && version.strip().toUpperCase(java.util.Locale.ROOT).endsWith(SNAPSHOT_SUFFIX);
+    }
+
+    /**
+     * {@link #VERSION} without any {@code -SNAPSHOT} suffix — the release this build is working toward.
+     * Use it wherever a version must be a plain dotted number: the native-installer/bundle metadata
+     * (jpackage rejects a non-numeric {@code --app-version}) and the versioned docs URLs.
+     */
+    public static String releaseVersion() {
+        return releaseVersion(VERSION);
+    }
+
+    /** Pure form of {@link #releaseVersion()}, for tests. */
+    static String releaseVersion(String version) {
+        if (version == null) {
+            return "";
+        }
+        String v = version.strip();
+        return isSnapshot(v) ? v.substring(0, v.length() - SNAPSHOT_SUFFIX.length()) : v;
     }
 
     /** A one-line version string for {@code --version}, e.g. {@code "Editora 1.0.0 (built …)"}. */
