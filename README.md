@@ -5,7 +5,7 @@
 [![CI](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml/badge.svg)](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/adriandeleon/Editora)](LICENSE)
 ![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk&logoColor=white)
-![JavaFX](https://img.shields.io/badge/JavaFX-25-1e90ff)
+![JavaFX](https://img.shields.io/badge/JavaFX-26-1e90ff)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 [![Stars](https://img.shields.io/github/stars/adriandeleon/Editora?style=flat)](https://github.com/adriandeleon/Editora/stargazers)
 
