@@ -5302,12 +5302,25 @@ public class MainController implements com.editora.mcp.McpBridge {
         List<EditorBuffer> buffers = new ArrayList<>();
         int activeIndex = 0;
         for (int i = 0; i < files.size(); i++) {
+            if (files.get(i).getPath().equals(activePath)) {
+                activeIndex = i;
+                break;
+            }
+        }
+        // A command-line FILE must be on screen from the first frame — otherwise the session's own active
+        // file is selected + filled first and the user watches an unrelated file (with its LSP starting)
+        // before theirs appears. So: if the requested file is itself part of the session, make *its* tab the
+        // selected one and fill it first; if it isn't (or --new-file was given), open it up front so the
+        // restored tabs are appended around it without ever stealing the selection.
+        int cliIndex = indexOfStartupTarget(files);
+        if (cliIndex < 0 && pendingAfterRestore != null && hasStartupWork) {
+            runPendingStartupAction(true); // synchronous: its tab must exist before any restored tab
+        }
+        int selectIndex = cliIndex >= 0 ? cliIndex : (hasStartupWork ? -1 : activeIndex);
+        for (int i = 0; i < files.size(); i++) {
             WorkspaceState.OpenFile f = files.get(i);
             Path p = com.editora.vfs.Vfs.parseStorable(f.getPath()); // non-null: the filter above kept only readable
-            boolean active = f.getPath().equals(activePath);
-            if (active) {
-                activeIndex = i;
-            }
+            boolean active = i == selectIndex;
             // A raster image restores into the read-only image viewer (a null buffer placeholder keeps the
             // per-file fill indices aligned; fillSessionFiles skips nulls).
             if (ImageFormats.isSupported(p.getFileName().toString())) {
@@ -5346,11 +5359,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
             buffers.add(buffer);
         }
-        // Fill order: the active file first, then the rest in tab order.
+        // Fill order: the selected file first (the CLI target when there is one, else the session's active
+        // file), then the rest in tab order.
+        int firstIndex = selectIndex >= 0 ? selectIndex : activeIndex;
         List<Integer> order = new ArrayList<>();
-        order.add(activeIndex);
+        order.add(firstIndex);
         for (int i = 0; i < files.size(); i++) {
-            if (i != activeIndex) {
+            if (i != firstIndex) {
                 order.add(i);
             }
         }
@@ -5369,6 +5384,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             EditorBuffer buffer = buffers.get(i);
             if (buffer != null) { // null = an image-viewer tab; nothing to fill
                 fillSessionBuffer(files.get(i), buffer);
+            }
+            if (k == 0) {
+                // The requested file (already selected + just filled) is the one the CLI action targets, so
+                // run it now rather than after the whole restore — a caret jump needs its content, nothing
+                // more. The remaining files keep filling behind it.
+                runPendingStartupAction(false);
             }
             fillSessionFiles(files, buffers, order, k + 1);
         });
@@ -5393,8 +5414,48 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     public record OpenTarget(Path file, int line, int column) {}
 
-    /** A one-shot action run after {@link #openInitialBuffer()} finishes restoring the session. */
+    /** A one-shot action applying the command-line startup targets; see {@link #runPendingStartupAction}. */
     private Runnable pendingAfterRestore;
+    /** The command-line {@code FILE} targets, consulted by {@link #openInitialBuffer()} to pick the tab to
+     *  select + fill first, so the requested file is on screen from the first frame. */
+    private List<OpenTarget> startupTargets = List.of();
+    /** True when the command line asked for anything to be opened (a {@code FILE} target or --new-file). */
+    private boolean hasStartupWork;
+
+    /**
+     * The index in {@code files} of the first command-line {@code FILE} target that is also part of the
+     * restored session, or {@code -1} (no targets, or none of them is a session file).
+     */
+    private int indexOfStartupTarget(List<WorkspaceState.OpenFile> files) {
+        for (OpenTarget t : startupTargets) {
+            Path want = t.file().toAbsolutePath().normalize();
+            for (int i = 0; i < files.size(); i++) {
+                Path p = com.editora.vfs.Vfs.parseStorable(files.get(i).getPath());
+                if (p != null && p.toAbsolutePath().normalize().equals(want)) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Runs the one-shot command-line startup action (opening {@code FILE} targets / --new-file), if it hasn't
+     * run yet. {@code now} runs it synchronously — used when its tab must exist before the restored tabs are
+     * appended; otherwise it's deferred one pulse.
+     */
+    private void runPendingStartupAction(boolean now) {
+        Runnable r = pendingAfterRestore;
+        pendingAfterRestore = null;
+        if (r == null) {
+            return;
+        }
+        if (now) {
+            r.run();
+        } else {
+            Platform.runLater(r);
+        }
+    }
 
     /**
      * Applies the <b>session-only chrome flags</b> — {@code --simple}, {@code --zen}, {@code --expert} — and is
@@ -5436,8 +5497,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (projectDir != null && projectsEnabled()) {
             activateStartupProject(projectDir); // swap to the project's session before it's restored
         }
-        // Run CLI actions AFTER the (deferred, pulse-paced) session restore, so a restored caret can't
-        // override a requested line:column.
+        startupTargets = targets == null ? List.of() : List.copyOf(targets);
+        hasStartupWork = !startupTargets.isEmpty() || newFile != null;
+        // The CLI action still runs after the requested file's own content is in place (so a restored caret
+        // can't override a requested line:column) — but openInitialBuffer now front-loads that one file
+        // rather than waiting for the whole session to finish restoring.
         pendingAfterRestore = () -> applyStartupTargets(targets, newFile);
         openInitialBuffer();
     }
@@ -5469,13 +5533,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /** Invokes the one-shot {@link #pendingAfterRestore} action (if any), deferred one pulse. */
+    /** Marks the restore complete, running the CLI startup action first if it hasn't already run. */
     private void runPendingAfterRestore() {
-        Runnable r = pendingAfterRestore;
-        pendingAfterRestore = null;
-        if (r != null) {
-            Platform.runLater(r);
-        }
+        runPendingStartupAction(false);
         // The session is fully restored now — re-enable HTTP auto-show and reconcile once for the active
         // buffer (the layout is settled, so the panel sizes correctly, unlike a mid-restore open).
         restoringSession = false;

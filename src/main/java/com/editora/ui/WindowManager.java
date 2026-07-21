@@ -676,7 +676,14 @@ public class WindowManager {
     /** As {@link #buildWindowForTest()}, with the session-only CLI chrome flags ({@code --zen}/{@code --expert}/
      *  {@code --simple}) — so a test can check the window's <em>first frame</em>, not its settled state. */
     MainController buildWindowForTest(boolean zen, boolean expert, boolean simple) {
-        buildWindow("", null, null, List.of(), zen, expert, null, simple);
+        return buildWindowForTest(zen, expert, simple, List.of());
+    }
+
+    /** As above, with command-line {@code FILE} targets — so a test can check that the requested file is the
+     *  one on screen from the first frame, ahead of whatever the session restores. */
+    MainController buildWindowForTest(
+            boolean zen, boolean expert, boolean simple, List<MainController.OpenTarget> targets) {
+        buildWindow("", null, null, targets, zen, expert, null, simple);
         return windows.get(windows.size() - 1).controller();
     }
 
