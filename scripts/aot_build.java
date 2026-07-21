@@ -64,13 +64,16 @@ public class aot_build {
             Path aot = appDir.resolve("editora.aot");
             trainBestEffort(imageJava, aot, module);
             if (Files.isRegularFile(aot)) {
-                System.out.println("[aot] cache present: " + aot + " (" + (Files.size(aot) / (1024 * 1024)) + " MB)");
+                long mb = Files.size(aot) / (1024 * 1024);
+                System.out.println("[aot] cache present: " + aot + " (" + mb + " MB)");
+                summarize("✅ AOT cache trained (" + mb + " MB)");
             } else {
-                System.out.println("[aot] no cache produced — app will start uncached (graceful)");
+                reportNoCache("training produced no cache file");
             }
         } else {
             System.out.println("[aot] could not locate image java/cfg (java=" + imageJava + ", cfg=" + cfg
                     + ") — skipping training; app will start uncached");
+            reportNoCache("could not locate the image's java/cfg, so training was skipped");
         }
 
         // --- 2) strip the runtime bin/ (reclaim the footprint we deferred from jLinkOptions so bin/java
@@ -149,6 +152,52 @@ public class aot_build {
         }
     }
 
+    /**
+     * A missing cache is a <b>silent</b> ~28% cold-start regression: the app runs fine uncached, so nothing
+     * downstream notices. macOS arm64 shipped that way from v0.9.1 to v0.9.8 with the only trace a stdout
+     * line in a 10k-line build log. So say it on stderr, raise a GitHub annotation (which surfaces on the
+     * run summary page with no workflow change), and write a row into the job summary.
+     *
+     * <p>Non-fatal by default so a local or dry-run build is never blocked by a perf-only artifact. Set
+     * {@code EDITORA_REQUIRE_AOT=1} to make it fail the build instead — intended for release tags, once a
+     * green tag has confirmed every target trains.
+     */
+    private static void reportNoCache(String reason) {
+        String target = System.getenv("EDITORA_TARGET");
+        String where = target == null || target.isBlank()
+                ? System.getProperty("os.name", "?") + "/" + System.getProperty("os.arch", "?")
+                : target;
+        String message = "AOT cache missing on " + where + " — " + reason
+                + "; the app will start uncached (~28% slower cold start)";
+        System.err.println("[aot] " + message);
+        // A GitHub annotation: shows on the run summary page without touching the workflow.
+        System.out.println("::error title=AOT cache missing (" + where + ")::" + message);
+        summarize("❌ AOT cache MISSING — " + reason);
+        if ("1".equals(System.getenv("EDITORA_REQUIRE_AOT"))) {
+            System.err.println("[aot] EDITORA_REQUIRE_AOT=1 — failing the build");
+            System.exit(3);
+        }
+    }
+
+    /** Appends a per-target line to the GitHub job summary, when running under Actions. Best-effort. */
+    private static void summarize(String line) {
+        String file = System.getenv("GITHUB_STEP_SUMMARY");
+        if (file == null || file.isBlank()) {
+            return;
+        }
+        String target = System.getenv("EDITORA_TARGET");
+        String where = target == null || target.isBlank() ? System.getProperty("os.name", "?") : target;
+        try {
+            Files.writeString(
+                    Path.of(file),
+                    "- **" + where + "**: " + line + System.lineSeparator(),
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND);
+        } catch (Exception ignore) {
+            // a summary write must never affect the build
+        }
+    }
+
     /** Run the GUI app against the image runtime with -XX:AOTCacheOutput; render one frame then exit. */
     private static void trainBestEffort(Path imageJava, Path aot, String module) {
         Path tmpCfg = null;
@@ -171,6 +220,24 @@ public class aot_build {
                     // (com.editora.MacOpenFiles degrades gracefully without it, but include it so the cache
                     // matches the shipped app and covers the handler's classes.)
                     "--add-exports=javafx.graphics/com.sun.glass.ui=com.editora",
+                    // Training must not depend on the host having a REAL GPU. CI runners present
+                    // virtualized ones, and JavaFX 26 made Metal the default macOS pipeline (pom.xml's
+                    // os-mac ${prism.pipeline} = mtl,es2,sw) — on the macOS ARM runner's paravirtual GPU
+                    // that aborts the process outright:
+                    //   -[AppleParavirtDevice newArgumentEncoderWithLayout:]: unrecognized selector
+                    // an Obj-C NSException, so it is an abort() and NOT something Prism's own mtl→es2→sw
+                    // fallback chain can catch. That is why macOS arm64 has shipped WITHOUT a cache since
+                    // v0.9.1 while x64 (a different virtual GPU) always trained fine — and why it never
+                    // reproduced on real Apple silicon, which has a proper Metal device. Pinning a
+                    // software-capable chain here keeps training host-independent on every runner.
+                    //
+                    // Deliberate divergence from the shipped launcher (the one option that is NOT
+                    // mirrored): the cache then archives the es2 pipeline's classes rather than Metal's.
+                    // The bulk of the win — scene graph, controls, CSS, the editor, highlighting — is
+                    // pipeline-independent and still lands; a class the runtime does not use is dead
+                    // weight in the cache, not a correctness problem, and any class not archived simply
+                    // loads normally.
+                    "-Dprism.order=es2,sw",
                     "-Dprism.maxvram=2G", "-Dprism.maxTextureSize=16384",
                     "-Deditora.aotTrainExit=true",
                     "-XX:AOTCacheOutput=" + aot,
@@ -181,6 +248,13 @@ public class aot_build {
             if (!p.waitFor(180, TimeUnit.SECONDS)) {
                 p.destroyForcibly();
                 System.out.println("[aot] training timed out — continuing without cache");
+                return;
+            }
+            // Report the exit code: it was previously discarded, so a crashing trainer was
+            // indistinguishable from a clean run and the only symptom was the absent file.
+            int exit = p.exitValue();
+            if (exit != 0) {
+                System.out.println("[aot] training exited " + exit + " (see its output above)");
             }
         } catch (Exception e) {
             System.out.println("[aot] training failed (" + e + ") — continuing without cache");

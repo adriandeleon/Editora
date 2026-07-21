@@ -50,6 +50,17 @@ jobs:
         # or an IDE compiler left deleted in target/classes — javac sees the .java as up-to-date and skips
         # it. jlink then ships a jimage missing that class and the packaged app throws ClassNotFoundException
         # on the first keypress. A clean target/ guarantees every class is regenerated.
+        env:
+          # Names this leg in the AOT step's job-summary row and, if the cache is missing, in its error
+          # annotation — so "which target shipped uncached?" is answerable from the run page.
+          EDITORA_TARGET: ${{ matrix.target }}
+          # Set to '1' to make a missing AOT cache FAIL the leg rather than only annotate it. Left off for
+          # now: macOS arm64 shipped uncached from v0.9.1 through v0.9.8 (JavaFX 26's Metal pipeline
+          # aborting on that runner's paravirtual GPU), and the fix cannot be verified anywhere except this
+          # runner — arming the gate before a green tag would risk blocking a release over a perf-only
+          # artifact. Once a release shows "AOT cache trained" for all five targets, flip this to '1' to
+          # keep it that way.
+          EDITORA_REQUIRE_AOT: '0'
         run: ./mvnw -B --no-transfer-progress clean -Pdist -DskipTests package
 
       # Portable single-file Linux build from the AOT-trained app-image (no sandbox — host tools work;
