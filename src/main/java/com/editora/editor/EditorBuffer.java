@@ -8267,6 +8267,24 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * Applies style spans without letting the viewport jump.
+     *
+     * <p>{@code setStyleSpans} re-runs the document update and can drop the virtual flow's scroll to the top:
+     * measured as {@code estimatedScrollY} going 184 → 0 on the first highlight pass after a session restore,
+     * a couple of pulses after the file had already painted at its saved caret. That is what showed as a
+     * restored file jumping to line 1 on open. Restoring the scroll only when it actually collapsed to the
+     * top keeps this inert for every normal re-highlight (typing, scrolling), where the flow doesn't reset.
+     */
+    private void setStyleSpansPreservingScroll(int from, StyleSpans<Collection<String>> spans) {
+        Double before = area.estimatedScrollYProperty().getValue();
+        area.setStyleSpans(from, spans);
+        Double after = area.estimatedScrollYProperty().getValue();
+        if (before != null && before > 1 && (after == null || after <= 1)) {
+            area.estimatedScrollYProperty().setValue(before);
+        }
+    }
+
     private void applyHighlighting() {
         if (largeFile) {
             // Large-file mode: leave the document as plain text and drop any structure symbols/state.
@@ -8342,7 +8360,7 @@ public class EditorBuffer implements TabContent {
                         spans = spans.overlay(sem, (lex, s) -> s.isEmpty() ? lex : s);
                     }
                 }
-                area.setStyleSpans(a.fromOffset(), spans);
+                setStyleSpansPreservingScroll(a.fromOffset(), spans);
                 scheduleBraceMatch(); // re-apply the match highlight the spans just overwrote
                 // Replace per-line end-states from fromLine onward (the prefix is unchanged).
                 while (lineStates.size() > fromLine) {
