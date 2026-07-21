@@ -56,6 +56,8 @@ public class SharedConfig {
     private ConnectionStore connectionStore = new ConnectionStore();
     /** Plugin enable-state (id → enabled), stored in {@code plugins.json} — see {@link PluginStore}. */
     private PluginStore pluginStore = new PluginStore();
+    /** Trusted workspace roots, stored in {@code trusted-folders.json} — see {@link TrustStore}. */
+    private TrustStore trustStore = new TrustStore();
     /** Saved keyboard macros (app-global, not per-project), stored in {@code macros.json} — see {@link MacroStore}. */
     private MacroStore macroStore = new MacroStore();
     /** User-added spell-check words (one per line in {@code dictionary.txt}); lower-cased, shared globally. */
@@ -97,6 +99,7 @@ public class SharedConfig {
         loadNotes();
         loadConnections();
         loadPlugins();
+        loadTrust();
         loadMacros();
         loadUserDictionary();
     }
@@ -230,6 +233,33 @@ public class SharedConfig {
             ConfigWriter.writeAtomic(getPluginsFile(), json, pluginStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write plugins to " + getPluginsFile(), e);
+        }
+    }
+
+    // --- workspace trust (folders allowed to run their own build wrapper) ---
+
+    public Path getTrustFile() {
+        return configDir.resolve(ConfigManager.TRUST_FILE_NAME);
+    }
+
+    public TrustStore getTrustStore() {
+        return trustStore;
+    }
+
+    private void loadTrust() {
+        if (Files.exists(getTrustFile())) {
+            trustStore = ConfigMigrations.readVersioned(getTrustFile(), json, new TrustStore(), ConfigSchema.TRUST);
+        } else {
+            trustStore = new TrustStore();
+        }
+    }
+
+    public void saveTrust() {
+        try {
+            Files.createDirectories(configDir);
+            ConfigWriter.writeAtomic(getTrustFile(), json, trustStore);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to write trusted folders to " + getTrustFile(), e);
         }
     }
 

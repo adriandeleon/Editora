@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
+import javafx.beans.binding.Bindings;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -155,6 +156,10 @@ public class SettingsWindow {
     private Runnable onOpenPersonalDictionary;
     /** Security-notice confirm shown before the MCP checkbox enables the server; null = no gate. */
     private java.util.function.BooleanSupplier mcpConfirm;
+    /** The Workspace page's trusted-folder list + its backing store accessor (null until wired). */
+    private final ListView<String> trustedFoldersList = new ListView<>();
+
+    private TrustActions trustActions;
 
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
@@ -558,6 +563,32 @@ public class SettingsWindow {
     /** Wires the security-notice confirm shown before the MCP checkbox enables the server. */
     public void setMcpConfirm(java.util.function.BooleanSupplier confirm) {
         this.mcpConfirm = confirm;
+    }
+
+    /** Opens Settings focused on the Workspace page (the {@code workspace.manageTrust} command). */
+    public void showWorkspace(Window owner) {
+        show(owner);
+        sidebar.getSelectionModel().select(Category.WORKSPACE);
+    }
+
+    /** Reads/mutates the trusted-workspace-root store for the Workspace page's Trusted Folders list. */
+    public interface TrustActions {
+        List<String> trustedRoots();
+
+        void revoke(String root);
+
+        void revokeAll();
+    }
+
+    /** Wires the Workspace page's Trusted Folders list to the controller's trust store. */
+    public void setTrustActions(TrustActions actions) {
+        this.trustActions = actions;
+        refreshTrustedFolders();
+    }
+
+    /** Repopulates the Trusted Folders list from the store (after a revoke, or a newly granted trust). */
+    public void refreshTrustedFolders() {
+        trustedFoldersList.getItems().setAll(trustActions == null ? List.of() : trustActions.trustedRoots());
     }
 
     /** Wires the Settings Install buttons (LSP/Mermaid pages) to {@code InstallCoordinator.installSupport}.
@@ -2602,6 +2633,42 @@ public class SettingsWindow {
         updateNote.setWrapText(true);
         updateNote.setMaxWidth(440);
         row(p, Category.WORKSPACE, updates, updateNote, "update check github network privacy");
+
+        Label trust = section(p, tr("settings.section.trustedFolders"));
+        Label trustNote = note(tr("settings.trustedFolders.note"));
+        trustNote.setWrapText(true);
+        trustNote.setMaxWidth(440);
+        row(p, Category.WORKSPACE, trust, trustNote, "workspace trust build wrapper mvnw gradlew security");
+        trustedFoldersList.setPrefHeight(120);
+        trustedFoldersList.setPlaceholder(new Label(tr("settings.trustedFolders.empty")));
+        Button revoke = new Button(tr("settings.trustedFolders.revoke"));
+        Button revokeAll = new Button(tr("settings.trustedFolders.revokeAll"));
+        revoke.disableProperty()
+                .bind(trustedFoldersList
+                        .getSelectionModel()
+                        .selectedItemProperty()
+                        .isNull());
+        revoke.setOnAction(e -> {
+            String sel = trustedFoldersList.getSelectionModel().getSelectedItem();
+            if (sel != null && trustActions != null) {
+                trustActions.revoke(sel);
+                refreshTrustedFolders();
+            }
+        });
+        revokeAll.setOnAction(e -> {
+            if (trustActions != null) {
+                trustActions.revokeAll();
+                refreshTrustedFolders();
+            }
+        });
+        revokeAll.disableProperty().bind(Bindings.isEmpty(trustedFoldersList.getItems()));
+        row(p, Category.WORKSPACE, trust, trustedFoldersList, "workspace trust trusted folders list revoke");
+        row(
+                p,
+                Category.WORKSPACE,
+                trust,
+                new HBox(8, revoke, revokeAll),
+                "workspace trust revoke remove trusted folder");
         return p;
     }
 

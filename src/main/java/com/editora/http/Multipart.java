@@ -127,7 +127,9 @@ public final class Multipart {
             write(out, "\r\n");
             if (p.filePath() != null) {
                 try {
-                    out.writeBytes(baseDir != null ? Files.readAllBytes(baseDir.resolve(p.filePath())) : new byte[0]);
+                    // contained: a file part must not read outside the request file's own folder
+                    Path file = HttpPaths.contained(baseDir, p.filePath());
+                    out.writeBytes(file == null ? new byte[0] : Files.readAllBytes(file));
                 } catch (Exception ignore) {
                     // a missing file part — leave it empty
                 }

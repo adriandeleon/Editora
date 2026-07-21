@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -64,9 +65,37 @@ class BuildCoordinatorFxTest {
         int toolbarVisibleCount;
         boolean lastVisible;
 
+        /** Workspace trust: the answer the fake prompt gives, and what it was asked about. */
+        boolean trusted;
+
+        boolean promptAnswer;
+        int promptCount;
+        Path promptedRoot;
+        Path promptedWrapper;
+        int trustCount;
+
         @Override
         public Path projectRoot() {
             return projectRoot;
+        }
+
+        @Override
+        public boolean isTrusted(Path root) {
+            return trusted;
+        }
+
+        @Override
+        public boolean confirmTrust(Path root, Path wrapper) {
+            promptCount++;
+            promptedRoot = root;
+            promptedWrapper = wrapper;
+            return promptAnswer;
+        }
+
+        @Override
+        public void trust(Path root) {
+            trustCount++;
+            trusted = true;
         }
 
         @Override
@@ -325,6 +354,151 @@ class BuildCoordinatorFxTest {
         host.simpleMode = false;
         FxTestSupport.runOnFx(c::reapplyVisibility);
         assertTrue(ops.lastVisible, "leaving Simple Mode re-shows it from the cached detection, no re-detect");
+    }
+
+    // --- workspace trust (#412) ---------------------------------------------------------------------
+
+    /** Writes an executable {@code mvnw} beside the pom, i.e. a repo-supplied script the build would run. */
+    private static void writeMavenWrapper(Path dir) throws Exception {
+        boolean windows = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win");
+        Path f = Files.writeString(dir.resolve(windows ? "mvnw.cmd" : "mvnw"), "#!/bin/sh\nexit 0\n");
+        if (!windows) {
+            f.toFile().setExecutable(true);
+        }
+    }
+
+    /** A detected Maven coordinator over {@code dir}, with a wrapper on disk. */
+    private static BuildCoordinator detectedWithWrapper(FakeHost host, FakeOps ops, Path dir) throws Exception {
+        host.settings.setMavenSupport(true);
+        ops.projectRoot = dir;
+        Files.writeString(dir.resolve("pom.xml"), VALID_POM);
+        writeMavenWrapper(dir);
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "pom.xml parses");
+        return c;
+    }
+
+    @Test
+    void aRootWithNoWrapperIsNeverPrompted(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = dir;
+        Files.writeString(dir.resolve("pom.xml"), VALID_POM); // no mvnw
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "pom.xml parses");
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+
+        assertEquals(0, ops.promptCount, "argv[0] is the user's own tool — nothing to consent to");
+        assertEquals(1, ops.openConsoleCount, "and the run proceeds as before");
+    }
+
+    @Test
+    void anUntrustedWrapperRootBlocksTheRunAndNeverOpensTheConsole(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        ops.promptAnswer = false; // the user declines
+        BuildCoordinator c = detectedWithWrapper(host, ops, dir);
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+
+        assertEquals(1, ops.promptCount, "an untrusted wrapper root must ask");
+        assertEquals(0, ops.trustCount, "declining must not record trust");
+        assertEquals(0, ops.openConsoleCount, "declining must not run anything");
+        assertEquals(tr("status.build.untrusted", disp(BuildTool.MAVEN)), host.lastStatus);
+    }
+
+    @Test
+    void decliningDoesNotFallBackToThePathTool(@TempDir Path dir) throws Exception {
+        // The tempting "fall back to mvn" would still execute a hostile pom's plugins — no must mean no build.
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        ops.promptAnswer = false;
+        BuildCoordinator c = detectedWithWrapper(host, ops, dir);
+        host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+
+        assertEquals(0, ops.openConsoleCount);
+        assertFalse(
+                host.lastStatus.startsWith(tr("status.build.failed", disp(BuildTool.MAVEN), "")),
+                "must not have attempted a launch at all, got: " + host.lastStatus);
+    }
+
+    @Test
+    void acceptingRecordsTrustAndProceeds(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        ops.promptAnswer = true; // the user trusts the folder
+        BuildCoordinator c = detectedWithWrapper(host, ops, dir);
+        host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+
+        assertEquals(1, ops.promptCount);
+        assertEquals(1, ops.trustCount, "accepting must persist the decision");
+        assertEquals(1, ops.openConsoleCount, "and the run proceeds");
+        assertEquals(dir, ops.promptedRoot, "prompts about the marker root");
+        assertNotNull(ops.promptedWrapper);
+        assertTrue(
+                ops.promptedWrapper.getFileName().toString().startsWith("mvnw"),
+                "names the script it is about to run: " + ops.promptedWrapper);
+    }
+
+    @Test
+    void anAlreadyTrustedRootIsNotPromptedAgain(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        ops.trusted = true; // trusted in an earlier session
+        BuildCoordinator c = detectedWithWrapper(host, ops, dir);
+        host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+
+        assertEquals(0, ops.promptCount, "trust is remembered — asking once per repo, not once per build");
+        assertEquals(1, ops.openConsoleCount);
+    }
+
+    @Test
+    void trustIsAskedOnceThenRemembered(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        ops.promptAnswer = true;
+        BuildCoordinator c = detectedWithWrapper(host, ops, dir);
+        host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("test"), List.of()));
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("package"), List.of()));
+
+        assertEquals(1, ops.promptCount, "three builds, one prompt");
+        assertEquals(3, ops.openConsoleCount);
+    }
+
+    @Test
+    void rerunLastIsGatedToo(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        ops.promptAnswer = true;
+        BuildCoordinator c = detectedWithWrapper(host, ops, dir);
+        host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
+
+        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+        assertEquals(1, ops.promptCount);
+
+        // Trust revoked between runs (Settings → Workspace): the remembered rerun must re-ask, not slip past.
+        ops.trusted = false;
+        ops.promptAnswer = false;
+        FxTestSupport.runOnFx(c::rerunLast);
+
+        assertEquals(2, ops.promptCount, "rerunLast goes through the same gate");
+        assertEquals(1, ops.openConsoleCount, "and the declined rerun never ran");
     }
 
     /** Polls {@code condition} (each check on the FX thread) until it's true or a few seconds elapse. */

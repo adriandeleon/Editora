@@ -648,6 +648,24 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
         this.settingsWindow.setTemplateRegistry(templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
+        this.settingsWindow.setTrustActions(new SettingsWindow.TrustActions() {
+            @Override
+            public List<String> trustedRoots() {
+                return config.getTrustStore().trustedRoots();
+            }
+
+            @Override
+            public void revoke(String root) {
+                config.getTrustStore().revoke(java.nio.file.Path.of(root));
+                config.saveTrust();
+            }
+
+            @Override
+            public void revokeAll() {
+                config.getTrustStore().revokeAll();
+                config.saveTrust();
+            }
+        });
         this.settingsWindow.setRipgrepProbe(
                 searchCoordinator::probeRipgrep); // Settings → Search found/not-found status
         this.settingsWindow.setAiConnectionProbe(
@@ -3145,6 +3163,22 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 coordinatorHost.forEachBuffer(MainController.this::applyTestGutter);
                             }
                         }
+
+                        @Override
+                        public boolean isTrusted(java.nio.file.Path root) {
+                            return config.getTrustStore().isTrusted(root);
+                        }
+
+                        @Override
+                        public boolean confirmTrust(java.nio.file.Path root, java.nio.file.Path wrapper) {
+                            return MainController.this.confirmTrustFolder(root, wrapper);
+                        }
+
+                        @Override
+                        public void trust(java.nio.file.Path root) {
+                            config.getTrustStore().trust(root);
+                            config.saveTrust(); // durable: a security decision must survive a crash
+                        }
                     },
                     buildOutputPanel));
         }
@@ -3718,6 +3752,55 @@ public class MainController implements com.editora.mcp.McpBridge {
         confirm.setHeaderText(tr("dialog.mcp.enableHeader"));
         confirm.getDialogPane().setMinWidth(480);
         return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    /** Opens Settings on the Workspace page, where the trusted-folder list lives ({@code workspace.manageTrust}). */
+    private void showTrustedFolders() {
+        settingsWindow.refreshTrustedFolders();
+        settingsWindow.showWorkspace(stage);
+    }
+
+    /**
+     * Revokes trust for the active window's project root ({@code workspace.revokeTrust}) — the quick undo for
+     * a folder trusted by mistake, without hunting for it in the Settings list. Only an <em>explicit</em>
+     * entry for this exact root is dropped; trust inherited from an ancestor has to be revoked at that
+     * ancestor, which the status message says so the user is never told "revoked" while it still runs.
+     */
+    private void revokeTrustForActiveRoot() {
+        java.nio.file.Path root = windowProject != null ? java.nio.file.Path.of(windowProject.root()) : null;
+        if (root == null) {
+            setStatus(tr("status.trust.noProject"));
+            return;
+        }
+        config.getTrustStore().revoke(root);
+        config.saveTrust();
+        settingsWindow.refreshTrustedFolders();
+        setStatus(tr(
+                config.getTrustStore().isTrusted(root) ? "status.trust.revokedButInherited" : "status.trust.revoked",
+                root.getFileName() == null
+                        ? root.toString()
+                        : root.getFileName().toString()));
+    }
+
+    /**
+     * The workspace-trust confirmation, shown before a build tool executes a script the <em>repository</em>
+     * supplies ({@code ./mvnw}, {@code ./gradlew}) from a folder the user has not trusted yet. Returns true
+     * to grant trust. Mirrors {@link #confirmEnableMcp} / {@code confirmEnablePlugin} — the default button is
+     * Cancel, so dismissing the dialog never grants trust.
+     */
+    private boolean confirmTrustFolder(java.nio.file.Path root, java.nio.file.Path wrapper) {
+        java.nio.file.Path name = root.getFileName();
+        ButtonType trust = new ButtonType(tr("dialog.trust.accept"), ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = new Alert(
+                Alert.AlertType.WARNING,
+                tr("dialog.trust.body", wrapper.getFileName().toString(), root.toString()),
+                ButtonType.CANCEL,
+                trust);
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("dialog.trust.title"));
+        confirm.setHeaderText(tr("dialog.trust.header", name == null ? root.toString() : name.toString()));
+        confirm.getDialogPane().setMinWidth(520);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == trust;
     }
 
     /**
@@ -12035,6 +12118,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("view.togglePlugins", pluginCoordinator::toggleSupport));
         registry.register(Command.of("plugins.browse", pluginCoordinator::browse));
         registry.register(Command.of("plugins.installFromDisk", pluginCoordinator::installFromDisk));
+        registry.register(Command.of("workspace.manageTrust", this::showTrustedFolders));
+        registry.register(Command.of("workspace.revokeTrust", this::revokeTrustForActiveRoot));
         registry.register(Command.of("config.export", this::exportConfig));
         registry.register(Command.of("editor.setIndentStyle", this::chooseIndentStyle));
         registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
