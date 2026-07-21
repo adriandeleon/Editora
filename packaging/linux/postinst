@@ -65,12 +65,12 @@ application/x-shellscript application/x-ruby application/x-php application/x-per
         if [ -f "$primary" ]; then
             mime_line=$(printf '%s;' $mime_types)
             if grep -q '^Exec=.*%F' "$primary"; then
-                exec_expr='s/^Exec=\(.*\) %F$/Exec=\1 --expert --single-window %F/'
+                exec_expr='s/^Exec=\(.*\) %F$/Exec=\1 --expert --single-window --no-session %F/'
             else
-                exec_expr='s/^Exec=\(.*\)$/Exec=\1 --expert --single-window %F/'
+                exec_expr='s/^Exec=\(.*\)$/Exec=\1 --expert --single-window --no-session %F/'
             fi
             sed -e 's/^Name=.*/Name=Editora Expert Mode/' \
-                -e 's/^Comment=.*/Comment=Editora with minimal chrome, one window (--expert --single-window)/' \
+                -e 's/^Comment=.*/Comment=Editora with minimal chrome, one window, just this file (--expert --single-window --no-session)/' \
                 -e "$exec_expr" \
                 -e '/^StartupWMClass=/d' \
                 -e "s|^MimeType=.*|MimeType=$mime_line|" \

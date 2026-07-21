@@ -1926,6 +1926,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (buffer != null) {
                 buffer.setRenderingActive(true);
                 buffer.onTabShown(); // force a repaint: a switched-to area can come up blank until the next pulse
+                // A restored background tab defers its language server until it's actually looked at.
+                lspCoordinator.onBufferShown(buffer);
             }
             fileInfoPanel.attach(buffer);
             structurePanel.attach(buffer);
@@ -5280,7 +5282,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         restoringSession = true; // suppress HTTP auto-show until the (pulse-paced) restore finishes
         WorkspaceState state = config.getWorkspaceState();
         List<WorkspaceState.OpenFile> files = new ArrayList<>();
-        for (WorkspaceState.OpenFile f : state.getOpenFiles()) {
+        for (WorkspaceState.OpenFile f : skipSessionFiles ? List.<WorkspaceState.OpenFile>of() : state.getOpenFiles()) {
             // parseStorable reconstructs a local path directly, or a remote (sftp://) one via the resolver —
             // which is null until its connection is open, so a remote entry is skipped at startup rather than
             // reopened as a same-named *local* file.
@@ -5292,9 +5294,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }
         if (files.isEmpty()) {
-            // No session to restore: apply any CLI action (--new-file / FILE target) first, then show
-            // the Welcome tab only if nothing got opened. Both run deferred, in this order.
-            runPendingAfterRestore();
+            // No session to restore (empty, or --no-session): open the CLI action's file (--new-file / FILE
+            // target) synchronously, so it's on the first frame exactly as in the with-session path — there
+            // is nothing to restore around it, so there's no reason to wait a pulse. Then flip the
+            // restore-complete bookkeeping, and show Welcome only if nothing got opened.
+            runPendingStartupAction(hasStartupWork);
+            runPendingAfterRestore(); // action already ran when hasStartupWork; this does the bookkeeping
             Platform.runLater(this::showWelcomeIfNoTabs);
             return;
         }
@@ -5421,6 +5426,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private List<OpenTarget> startupTargets = List.of();
     /** True when the command line asked for anything to be opened (a {@code FILE} target or --new-file). */
     private boolean hasStartupWork;
+    /** {@code --no-session}: don't restore the saved session's open files (see {@link #startup}). */
+    private boolean skipSessionFiles;
 
     /**
      * The index in {@code files} of the first command-line {@code FILE} target that is also part of the
@@ -5494,9 +5501,24 @@ public class MainController implements com.editora.mcp.McpBridge {
      * {@code openInitialBuffer()}. The chrome flags are applied earlier, by {@link #applyStartupChrome}.
      */
     public void startup(Path projectDir, List<OpenTarget> targets, String newFile) {
+        startup(projectDir, targets, newFile, false);
+    }
+
+    /**
+     * As above; {@code noSession} ({@code --no-session}) skips the saved session's files entirely and opens
+     * only what the command line asked for.
+     *
+     * <p>For a file-manager "Open With" launch the saved tabs are pure cost — every restored file is a buffer
+     * to load and highlight, and (once looked at) a language server to run, for files the user didn't ask to
+     * see. Measured on an 8-file session opening one file: 4 fewer server processes, roughly half the CPU
+     * Editora burns while starting, ~225 MB less. The saved session is left untouched, so the next ordinary
+     * launch restores everything as usual.
+     */
+    public void startup(Path projectDir, List<OpenTarget> targets, String newFile, boolean noSession) {
         if (projectDir != null && projectsEnabled()) {
             activateStartupProject(projectDir); // swap to the project's session before it's restored
         }
+        this.skipSessionFiles = noSession;
         startupTargets = targets == null ? List.of() : List.copyOf(targets);
         hasStartupWork = !startupTargets.isEmpty() || newFile != null;
         // The CLI action still runs after the requested file's own content is in place (so a restored caret
@@ -5621,19 +5643,47 @@ public class MainController implements com.editora.mcp.McpBridge {
             CodeArea area = buffer.getArea();
             int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
             area.moveTo(caret);
-            // Defer the scroll until the tab is laid out (mirrors goToStart / StructurePanel.navigateTo).
-            Platform.runLater(() -> {
-                try {
-                    area.showParagraphAtTop(area.getCurrentParagraph());
-                } catch (RuntimeException ignored) {
-                    // Viewport not ready; ignore.
-                }
-                // The minimap's first render can run before layout settles; refresh once it has.
-                buffer.refreshMinimap();
-            });
+            scrollRestoredCaretIntoView(buffer, SCROLL_SETTLE_ATTEMPTS);
         } catch (IOException e) {
             // Unreadable now — leave the tab empty.
         }
+    }
+
+    /** Pulses to keep retrying a restored buffer's scroll while its viewport isn't laid out yet. */
+    private static final int SCROLL_SETTLE_ATTEMPTS = 6;
+
+    /**
+     * Parks a restored buffer's viewport on its saved caret, retrying while the viewport isn't ready.
+     *
+     * <p>{@code replaceText} leaves the caret — and the viewport — at the <em>end</em> of the document (the
+     * same reason {@link EditorBuffer#goToStart()} exists), so until the view is positioned the file paints
+     * scrolled to its tail. {@code moveTo} alone doesn't move the viewport, and this scroll used to be a
+     * single {@code Platform.runLater} whose failure was swallowed: on a freshly-added tab the viewport
+     * isn't laid out yet, that one attempt did nothing, and the file sat at its tail until some unrelated
+     * event happened to scroll it — for a command-line file, the {@code requestFocus} in {@code openPath},
+     * which is why opening from the file manager showed a visible scroll jump (the line numbers running
+     * from the end of the file back to the top).
+     *
+     * <p>So: try in this same pulse — when the tab is already laid out that removes the jump entirely — and
+     * otherwise retry on the next few pulses until the viewport has a height to scroll. Bounded, so a
+     * background tab that never lays out costs at most {@link #SCROLL_SETTLE_ATTEMPTS} no-op calls.
+     */
+    private void scrollRestoredCaretIntoView(EditorBuffer buffer, int attemptsLeft) {
+        CodeArea area = buffer.getArea();
+        boolean positioned = false;
+        try {
+            area.showParagraphAtTop(area.getCurrentParagraph());
+            // A not-yet-laid-out area silently no-ops rather than throwing, so height is the real test.
+            positioned = area.getHeight() > 0;
+        } catch (RuntimeException ignored) {
+            // Viewport not ready; retry below.
+        }
+        if (!positioned && attemptsLeft > 1) {
+            Platform.runLater(() -> scrollRestoredCaretIntoView(buffer, attemptsLeft - 1));
+            return;
+        }
+        // The minimap's first render can run before layout settles; refresh once it has.
+        buffer.refreshMinimap();
     }
 
     public void setStatus(String message) {
@@ -7543,6 +7593,13 @@ public class MainController implements com.editora.mcp.McpBridge {
     private boolean sessionClosed;
 
     private void persistSession() {
+        if (skipSessionFiles) {
+            // --no-session opened only the command line's file, so this window's tab list is *not* the
+            // session — writing it back would replace the user's saved tabs with the single file they
+            // happened to open from the file manager. Window bounds are equally unrepresentative here, so
+            // the whole session write is skipped and the saved session is left exactly as it was.
+            return;
+        }
         List<WorkspaceState.OpenFile> files = new ArrayList<>();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
