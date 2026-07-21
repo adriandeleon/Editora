@@ -48,6 +48,11 @@ public enum BuildTool {
         public List<String> executable(Path root, boolean isWindows, String override) {
             return BuildExecutable.resolve(wrapperArgv(root, isWindows, "mvnw", "mvnw.cmd"), override, "mvn");
         }
+
+        @Override
+        public Path repoWrapper(Path root, boolean isWindows) {
+            return wrapperFile(root, isWindows, "mvnw", "mvnw.cmd");
+        }
     },
 
     /** Node — {@code package.json}; runs the detected package manager (npm/yarn/pnpm/bun), no wrapper. */
@@ -159,6 +164,11 @@ public enum BuildTool {
         }
 
         @Override
+        public Path repoWrapper(Path root, boolean isWindows) {
+            return wrapperFile(root, isWindows, "gradlew", "gradlew.bat");
+        }
+
+        @Override
         public Optional<String> taskLoadLabel() {
             return Optional.of("buildpopup.loadTasks");
         }
@@ -220,6 +230,20 @@ public enum BuildTool {
     /** The argv prefix to launch the tool from {@code root} (project wrapper, else the Settings override, else
      *  the tool's default command). {@code override} is the Settings command override (blank = none). */
     public abstract List<String> executable(Path root, boolean isWindows, String override);
+
+    /**
+     * The <b>repo-shipped</b> wrapper script this tool would execute from {@code root} ({@code ./mvnw},
+     * {@code ./gradlew}), or {@code null} when the launch would instead use the Settings override or the tool
+     * the user installed on PATH.
+     *
+     * <p>This is the workspace-trust question: a non-null result means {@code argv[0]} is a file the
+     * <em>repository</em> supplies, so running the build hands a repo author code execution with the user's
+     * privileges. Only Maven and Gradle have wrappers; every other tool returns {@code null} and so is never
+     * gated. Empty by default so a new tool is un-gated unless it opts in.
+     */
+    public Path repoWrapper(Path root, boolean isWindows) {
+        return null;
+    }
 
     /** For a DSL-based tool whose full task list can't be parsed up front (Gradle): the i18n key of the
      *  popup's on-demand "Load all tasks…" action. Empty for statically-parsed tools (no such action shown). */
@@ -301,14 +325,28 @@ public enum BuildTool {
      * child chdirs to the working directory before exec, so it resolves, and it reads better in the console.
      */
     private static List<String> wrapperArgv(Path root, boolean isWindows, String unixName, String windowsName) {
-        Path wrapper = root.resolve(isWindows ? windowsName : unixName);
-        if (!Files.isRegularFile(wrapper)) {
+        Path wrapper = wrapperFile(root, isWindows, unixName, windowsName);
+        if (wrapper == null) {
             return List.of();
         }
-        if (!isWindows && !Files.isExecutable(wrapper)) {
-            return List.of(); // present but not +x — fall back rather than fail the run
-        }
         return List.of(isWindows ? wrapper.toAbsolutePath().normalize().toString() : "./" + unixName);
+    }
+
+    /**
+     * The wrapper file {@link #wrapperArgv} would launch, or {@code null} when there isn't a usable one. The
+     * single source of truth for "would this run repo-controlled code?": a non-null result here is exactly
+     * the case where {@link BuildExecutable#resolve} prefers the wrapper over the user's own tool, which is
+     * what the workspace-trust gate keys on.
+     */
+    private static Path wrapperFile(Path root, boolean isWindows, String unixName, String windowsName) {
+        Path wrapper = root.resolve(isWindows ? windowsName : unixName);
+        if (!Files.isRegularFile(wrapper)) {
+            return null;
+        }
+        if (!isWindows && !Files.isExecutable(wrapper)) {
+            return null; // present but not +x — fall back rather than fail the run
+        }
+        return wrapper;
     }
 
     private static String npmPackageManager(Path root, NpmProject project) {

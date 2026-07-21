@@ -14,6 +14,7 @@ import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
 import com.editora.config.SearchHistory;
 import com.editora.config.Settings;
+import com.editora.config.TrustStore;
 import com.editora.config.WorkspaceState;
 
 /**
@@ -156,7 +157,9 @@ public enum ConfigSchema {
     SEARCH_HISTORY(SearchHistory.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 backfilled agentId ("claude") on every session predating multi-agent support.
     AGENT_SESSIONS(AgentSessionHistory.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::addDefaultAgentIdToSessions)),
-    MACROS(MacroStore.SCHEMA_VERSION, 1, Map.of());
+    MACROS(MacroStore.SCHEMA_VERSION, 1, Map.of()),
+    /** Trusted workspace roots. Failing open to defaults (= nothing trusted) is the safe direction here. */
+    TRUST(TrustStore.SCHEMA_VERSION, 1, Map.of());
 
     private final int currentVersion;
     private final int assumedLegacyVersion;

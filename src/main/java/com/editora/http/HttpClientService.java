@@ -174,7 +174,13 @@ public final class HttpClientService {
             try {
                 HttpFile.BodyRef ref = request.bodyRef();
                 Charset cs = ref.encoding() == null ? StandardCharsets.UTF_8 : Charset.forName(ref.encoding());
-                String content = new String(Files.readAllBytes(baseDir.resolve(ref.path())), cs);
+                Path bodyFile = HttpPaths.contained(baseDir, ref.path());
+                if (bodyFile == null) {
+                    return new BodyContent(
+                            HttpRequest.BodyPublishers.noBody(),
+                            "(body file outside the request folder: " + ref.path() + ")");
+                }
+                String content = new String(Files.readAllBytes(bodyFile), cs);
                 if (ref.substitute()) {
                     content = sub.apply(content);
                 }
@@ -259,11 +265,10 @@ public final class HttpClientService {
         if (baseDir == null || result.failed()) {
             return;
         }
-        Path baseReal = baseDir.toAbsolutePath().normalize();
         for (HttpFile.Redirect r : request.redirects()) {
             try {
-                Path target = baseReal.resolve(r.path()).normalize();
-                if (!target.startsWith(baseReal)) {
+                Path target = HttpPaths.contained(baseDir, r.path());
+                if (target == null) {
                     continue; // a ">> ../../x" must not write outside the request file's folder
                 }
                 if (!r.force() && Files.exists(target)) {

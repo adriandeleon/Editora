@@ -40,6 +40,7 @@ public class ConfigManager {
     static final String PLUGINS_FILE_NAME = "plugins.json";
     static final String PLUGINS_DIR_NAME = "plugins";
     static final String MACROS_FILE_NAME = "macros.json";
+    static final String TRUST_FILE_NAME = "trusted-folders.json";
     static final String PROJECTS_DIR_NAME = "projects";
     /** Local File History lives under {@code history/}: a small {@code index.json} + {@code blobs/} bodies. */
     static final String HISTORY_DIR_NAME = "history";
@@ -151,6 +152,16 @@ public class ConfigManager {
     /** Persists the plugin enable-state. */
     public void savePlugins() {
         shared.savePlugins();
+    }
+
+    /** The shared trusted-workspace-root store ({@code trusted-folders.json}). */
+    public TrustStore getTrustStore() {
+        return shared.getTrustStore();
+    }
+
+    /** Persists the trusted workspace roots. */
+    public void saveTrust() {
+        shared.saveTrust();
     }
 
     /** The shared keyboard-macro store ({@code macros.json}). */

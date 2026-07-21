@@ -50,6 +50,18 @@ final class BuildCoordinator {
 
         /** Shows/hides this tool's tasks-tree stripe (and re-derives the shared console's) to match detection. */
         void setToolWindowsAvailable(boolean available);
+
+        /** Whether {@code root} is a trusted workspace (it, or an ancestor, was granted trust). */
+        boolean isTrusted(Path root);
+
+        /**
+         * Asks the user whether to trust {@code root}, which ships the build script {@code wrapper}. Blocking
+         * (a security decision must not be dismissible by clicking past it). Returns true to grant trust.
+         */
+        boolean confirmTrust(Path root, Path wrapper);
+
+        /** Records {@code root} as trusted and persists it. */
+        void trust(Path root);
     }
 
     private final BuildTool tool;
@@ -306,7 +318,40 @@ final class BuildCoordinator {
         return tool.executable(root, isWindows(), tool.commandIn(host.settings()));
     }
 
+    /**
+     * The workspace-trust gate: whether a build may execute from {@code root} right now.
+     *
+     * <p>Passes straight through for a root with no repo-shipped wrapper — {@code argv[0]} is then the tool
+     * the <em>user</em> installed, so there is nothing new to consent to and the overwhelmingly common case
+     * costs one {@code Files.isRegularFile} probe. When the root does ship a wrapper ({@code ./mvnw},
+     * {@code ./gradlew}), running the build hands whoever wrote that file code execution with the user's
+     * privileges, so it runs only once the user has trusted the folder. Trust is remembered per root (and
+     * inherited by subfolders), so this asks once per repository, not once per build.
+     *
+     * <p>Declining does <b>not</b> silently fall back to the PATH tool: a hostile {@code pom.xml} or
+     * {@code build.gradle} can execute code through {@code mvn}/{@code gradle} just as well (build plugins
+     * and Gradle scripts run in-process), so "no" has to mean no build, not a quieter one.
+     */
+    private boolean allowRun(Path root) {
+        if (root == null) {
+            return false;
+        }
+        Path wrapper = tool.repoWrapper(root, isWindows());
+        if (wrapper == null || ops.isTrusted(root)) {
+            return true;
+        }
+        if (!ops.confirmTrust(root, wrapper)) {
+            host.setStatus(tr("status.build.untrusted", tool.displayName()));
+            return false;
+        }
+        ops.trust(root);
+        return true;
+    }
+
     private void launch(Path root, List<String> argv, List<String> taskArgs, List<String> toggleArgs) {
+        if (!allowRun(root)) {
+            return;
+        }
         lastRoot = root;
         lastTaskArgs = taskArgs;
         lastToggleArgs = toggleArgs;
@@ -406,6 +451,11 @@ final class BuildCoordinator {
             return;
         }
         Path root = markerRoot;
+        // Gated too: this spawns `./gradlew tasks --all` on its own, bypassing launch() entirely — enumerating
+        // tasks runs the repo's wrapper (and its build scripts) exactly like running one does.
+        if (!allowRun(root)) {
+            return;
+        }
         int gen = detectGeneration;
         String override = tool.commandIn(host.settings());
         host.setStatus(tr("status.build.loadingTasks", tool.displayName()));
