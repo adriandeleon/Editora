@@ -827,6 +827,39 @@ public class EditorBuffer implements TabContent {
         });
     }
 
+    /** Preview content height last seen by the scroll-sync listener; see the listener in {@link #previewPane()}. */
+    private double previewContentHeight = -1;
+    /** When the preview's content height last changed, so layout-driven vvalue moves can be ignored. */
+    private long previewLayoutChangedAt;
+    /** How long after a preview content-height change to keep treating vvalue moves as layout, not scrolling. */
+    private static final long PREVIEW_SETTLE_NANOS = 250_000_000L;
+
+    /**
+     * Whether the preview's content height moved enough to call this vvalue change layout-driven. Pure.
+     * The epsilon keeps sub-pixel layout noise from being mistaken for a real resize.
+     */
+    static boolean previewHeightChanged(double lastHeight, double newHeight) {
+        return Math.abs(newHeight - lastHeight) > 0.5;
+    }
+
+    /**
+     * Whether we're still inside the settle window after the preview's content last resized, i.e. a vvalue
+     * change should be read as the pane re-anchoring rather than as the user scrolling. Pure.
+     *
+     * <p>A window rather than a single-event check because a progressive render (typst pages, diagrams,
+     * images) resizes over many pulses, and the vvalue changes it provokes don't all land on the same pulse
+     * as the resize itself.
+     */
+    static boolean previewSettling(long nanosSinceResize, long settleNanos) {
+        return nanosSinceResize < settleNanos;
+    }
+
+    /** The rendered preview's current content height, or -1 when there's nothing to measure. */
+    private double previewContentHeight() {
+        javafx.scene.Node c = previewPane == null ? null : previewPane.getContent();
+        return c == null ? -1 : c.getLayoutBounds().getHeight();
+    }
+
     /** editor → preview: copy the editor's scroll fraction onto the preview's vvalue. */
     private void syncPreviewToEditorScroll() {
         if (previewPane == null) {
@@ -3904,7 +3937,28 @@ public class EditorBuffer implements TabContent {
             });
             // SPLIT-mode scroll sync (preview → editor); the editor → preview half is in installSplitScrollSync.
             previewPane.vvalueProperty().addListener((o, ov, nv) -> {
-                if (markdownViewMode == MarkdownViewMode.SPLIT && !syncingScroll && previewPane.isHover()) {
+                if (syncingScroll) {
+                    return; // our own programmatic set
+                }
+                // A ScrollPane's vvalue moves for two quite different reasons: the user wheeling, and the
+                // pane re-anchoring as its content grows. isHover() can't tell them apart, and a preview
+                // that renders progressively (typst pages, Mermaid diagrams, images resolving) changes
+                // height many times over a second or two — each one arriving here looking exactly like a
+                // scroll and dragging the editor with it. That was visible as the editor drifting ~100
+                // lines down and back over ~2 s after opening a file in SPLIT, with the mouse merely
+                // resting over the preview.
+                double h = previewContentHeight();
+                if (previewHeightChanged(previewContentHeight, h)) {
+                    previewContentHeight = h;
+                    previewLayoutChangedAt = System.nanoTime();
+                }
+                if (previewSettling(System.nanoTime() - previewLayoutChangedAt, PREVIEW_SETTLE_NANOS)) {
+                    // Still settling: the editor is the source of truth, so re-anchor the preview to it
+                    // rather than letting a layout-driven vvalue move the editor.
+                    syncPreviewToEditorScroll();
+                    return;
+                }
+                if (markdownViewMode == MarkdownViewMode.SPLIT && previewPane.isHover()) {
                     syncEditorToPreviewScroll();
                 }
             });
