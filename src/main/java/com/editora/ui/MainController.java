@@ -5649,8 +5649,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /** Pulses to keep retrying a restored buffer's scroll while its viewport isn't laid out yet. */
-    private static final int SCROLL_SETTLE_ATTEMPTS = 6;
+    /** Pulses to keep defending a restored buffer's scroll while the layout is still moving under it. */
+    private static final int SCROLL_SETTLE_ATTEMPTS = 24;
 
     /**
      * Parks a restored buffer's viewport on its saved caret, retrying while the viewport isn't ready.
@@ -5667,21 +5667,58 @@ public class MainController implements com.editora.mcp.McpBridge {
      * <p>So: try in this same pulse — when the tab is already laid out that removes the jump entirely — and
      * otherwise retry on the next few pulses until the viewport has a height to scroll. Bounded, so a
      * background tab that never lays out costs at most {@link #SCROLL_SETTLE_ATTEMPTS} no-op calls.
+     *
+     * <p>Positioning it once isn't enough, though: the virtual flow <b>re-anchors itself to the top during a
+     * later layout pass</b> — stack-traced to {@code Parent.layout → VirtualFlow.layoutChildren →
+     * Navigator.fillViewportFrom → CellListManager.cropTo}, with no app code involved — which showed as a
+     * file restored deep in the document flashing to line 1 and back. (A second, distinct collapse from the
+     * one inside {@code setStyleSpans} that {@code EditorBuffer.setStyleSpansPreservingScroll} handles.) So
+     * once the target offset is known, a listener defends it for the settle window: a drop to the top while
+     * we wanted a non-zero offset is put back <em>in the same pulse</em>, before that frame renders.
+     * Correcting it a pulse later instead — the obvious poll — only turns the jump into a bounce.
      */
     private void scrollRestoredCaretIntoView(EditorBuffer buffer, int attemptsLeft) {
         CodeArea area = buffer.getArea();
-        boolean positioned = false;
+        double[] targetY = {-1}; // the scroll offset the restore produced, once it's known
+        boolean[] applying = {false}; // re-entrancy guard: our own set fires the listener again
+        javafx.beans.value.ChangeListener<Number> hold = (o, ov, nv) -> {
+            if (applying[0] || targetY[0] <= 1 || nv == null || nv.doubleValue() > 1) {
+                return;
+            }
+            applying[0] = true;
+            try {
+                area.estimatedScrollYProperty().setValue(targetY[0]);
+            } catch (RuntimeException ignored) {
+                // Flow not in a state to scroll; the pulse loop will retry.
+            } finally {
+                applying[0] = false;
+            }
+        };
+        area.estimatedScrollYProperty().addListener(hold);
+        holdRestoredScroll(
+                buffer,
+                targetY,
+                attemptsLeft,
+                () -> area.estimatedScrollYProperty().removeListener(hold));
+    }
+
+    /** Positions the viewport once the area is laid out, then disarms the hold listener. */
+    private void holdRestoredScroll(EditorBuffer buffer, double[] targetY, int attemptsLeft, Runnable disarm) {
+        CodeArea area = buffer.getArea();
         try {
-            area.showParagraphAtTop(area.getCurrentParagraph());
-            // A not-yet-laid-out area silently no-ops rather than throwing, so height is the real test.
-            positioned = area.getHeight() > 0;
+            if (targetY[0] <= 1 && area.getHeight() > 0) { // not positioned yet, and now laid out
+                area.showParagraphAtTop(area.getCurrentParagraph());
+                Double y = area.estimatedScrollYProperty().getValue();
+                targetY[0] = y == null ? -1 : y; // a file restored at the top needs no defending
+            }
         } catch (RuntimeException ignored) {
             // Viewport not ready; retry below.
         }
-        if (!positioned && attemptsLeft > 1) {
-            Platform.runLater(() -> scrollRestoredCaretIntoView(buffer, attemptsLeft - 1));
+        if (attemptsLeft > 1) {
+            Platform.runLater(() -> holdRestoredScroll(buffer, targetY, attemptsLeft - 1, disarm));
             return;
         }
+        disarm.run();
         // The minimap's first render can run before layout settles; refresh once it has.
         buffer.refreshMinimap();
     }
