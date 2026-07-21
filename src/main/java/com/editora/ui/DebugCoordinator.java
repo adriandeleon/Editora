@@ -757,6 +757,23 @@ final class DebugCoordinator {
     }
 
     /** Attaches to a running JVM (asks for {@code host:port}). */
+    /**
+     * Attaches to an already-suspended JVM on {@code host:port} without prompting — used by the Test Results
+     * "Debug Test" action, where Surefire/Gradle forked the test JVM suspended and printed its JDWP port.
+     * {@code anchorFile} names the debug session and anchors breakpoint resolution.
+     */
+    void attachToPort(Path anchorFile, String attachHost, int port) {
+        if (!debugEffective()) {
+            host.setStatus(tr("status.debug.unavailable"));
+            return;
+        }
+        ops.openToolWindow();
+        if (anchorFile != null) {
+            debugPanel.setSessionFile(anchorFile.getFileName().toString());
+        }
+        withClosedBreakpoints(() -> dapManager.startAttach(anchorFile, attachHost, port));
+    }
+
     void debugAttach() {
         EditorBuffer b = host.activeBuffer();
         if (b == null || b.getPath() == null) {

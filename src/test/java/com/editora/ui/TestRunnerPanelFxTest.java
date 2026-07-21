@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import javafx.scene.control.Label;
+import javafx.scene.control.ToggleButton;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -43,7 +45,19 @@ class TestRunnerPanelFxTest {
         TestRun run = new TestRun(BuildTool.GO, Path.of("."), List.of("test", "./..."), List.of(), 0L);
         TestTreeBuilder.merge(
                 run.root(),
-                new ParsedSuite("ex/pkg", List.of(ParsedTest.of("ex/pkg", "TestA", TestStatus.PASSED, 20))));
+                new ParsedSuite(
+                        "ex/pkg",
+                        List.of(new ParsedTest(
+                                "ex/pkg",
+                                "TestA",
+                                TestStatus.PASSED,
+                                20,
+                                null,
+                                null,
+                                null,
+                                "hello from the test",
+                                null,
+                                0))));
         TestTreeBuilder.merge(
                 run.root(),
                 new ParsedSuite(
@@ -77,13 +91,15 @@ class TestRunnerPanelFxTest {
         CodeArea detail = FxTestSupport.field(panel, "detail");
         assertTrue(detail.getText().contains("test ./..."), "detail shows the run header when nothing is selected");
 
-        // Selecting a PASSING leaf shows a header (previously the pane was empty for a pass).
+        // Selecting a PASSING leaf shows real results, not just "Passed": the fully-qualified name and its
+        // captured output (previously the pane was empty / status-only for a pass).
         TreeItem<TestNode> passed = suite.getChildren().stream()
                 .filter(i -> i.getValue().status() == TestStatus.PASSED)
                 .findFirst()
                 .orElseThrow();
         FxTestSupport.runOnFx(() -> tree.getSelectionModel().select(passed));
-        assertTrue(detail.getText().contains("TestA"), "detail shows the passing test's header");
+        assertTrue(detail.getText().contains("ex/pkg.TestA"), "detail shows the fully-qualified test name");
+        assertTrue(detail.getText().contains("hello from the test"), "detail shows the test's captured output");
 
         // Selecting the failed leaf populates the detail console with its message/stack.
         TreeItem<TestNode> failed = suite.getChildren().stream()
@@ -99,5 +115,42 @@ class TestRunnerPanelFxTest {
         FxTestSupport.runOnFx(() -> panel.finishRun(run, 1));
         Label status = FxTestSupport.field(panel, "status");
         assertTrue(status.getText() != null && !status.getText().isBlank());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void trackRunningTestFollowsUntilTheUserSelectsARow() throws Exception {
+        TestRun run = new TestRun(BuildTool.GO, Path.of("."), List.of("test", "./..."), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "ex/pkg",
+                        List.of(
+                                ParsedTest.of("ex/pkg", "TestA", TestStatus.PASSED, 1),
+                                ParsedTest.of("ex/pkg", "TestB", TestStatus.PASSED, 1))));
+
+        TestRunnerPanel panel = FxTestSupport.callOnFx(() -> {
+            TestRunnerPanel p = new TestRunnerPanel();
+            p.startRun("test ./...");
+            return p;
+        });
+        ToggleButton follow = FxTestSupport.field(panel, "followToggle");
+        assertTrue(follow.isSelected(), "a fresh run tracks by default");
+
+        // A live update with a frontier node keeps tracking on and must not throw.
+        TestNode frontier = run.root().childById("ex/pkg").childById("ex/pkg#TestB");
+        FxTestSupport.runOnFx(() -> panel.update(run, frontier));
+        assertTrue(follow.isSelected());
+
+        // Selecting a row means "I'm reading this" → tracking stops so the view isn't yanked away.
+        TreeView<TestNode> tree = FxTestSupport.field(panel, "tree");
+        TreeItem<TestNode> first =
+                tree.getRoot().getChildren().get(0).getChildren().get(0);
+        FxTestSupport.runOnFx(() -> tree.getSelectionModel().select(first));
+        assertFalse(follow.isSelected(), "user selection disables tracking");
+
+        // A new run re-enables it.
+        FxTestSupport.runOnFx(() -> panel.startRun("test ./..."));
+        assertTrue(follow.isSelected(), "a new run re-enables tracking");
     }
 }
