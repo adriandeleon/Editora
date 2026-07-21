@@ -586,8 +586,10 @@ public class WindowManager {
             loader.setClassLoader(WindowManager.class.getClassLoader());
             BorderPane root = loader.load();
             MainController controller = loader.getController();
+            com.editora.perf.Startup.mark(com.editora.perf.Startup.FXML_LOADED);
             controller.setPluginManager(pluginManager); // before init: applyPlugins() runs inside init
             controller.init(stage, config, registry, keymap);
+            com.editora.perf.Startup.mark(com.editora.perf.Startup.CONTROLLER_INIT);
             controller.setHostServices(hostServices);
             controller.setWindowContext(this, project);
 
@@ -635,7 +637,9 @@ public class WindowManager {
             if (secondary && stage.isMaximized()) {
                 stage.setMaximized(false);
             }
+            com.editora.perf.Startup.mark(com.editora.perf.Startup.WINDOW_BUILT);
             stage.show();
+            com.editora.perf.Startup.mark(com.editora.perf.Startup.WINDOW_SHOWN);
             // AOT-cache training hook (build-time only; see the dist profile in pom.xml). When
             // -Deditora.aotTrainExit is set, render the first window then exit, so a -XX:AOTCacheOutput
             // training run captures the real GUI startup classes (JavaFX scene/controls/CSS, the editor,

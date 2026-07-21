@@ -42,6 +42,7 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) throws IOException {
+        com.editora.perf.Startup.mark(com.editora.perf.Startup.FX_START);
         com.editora.ui.Fonts.load(); // register bundled fonts before any UI/CSS uses them
 
         // On macOS the JavaFX/AppKit (FX application) thread's context classloader can be null, which
@@ -62,6 +63,7 @@ public class App extends Application {
                 : new ConfigManager(devFlag(rawArgs));
         Settings settings = bootstrap.load();
         SharedConfig shared = bootstrap.shared();
+        com.editora.perf.Startup.mark(com.editora.perf.Startup.CONFIG_LOADED);
         // Flush any pending off-thread settings/session writes on exit, covering paths where persistSession()
         // doesn't run (the normal quit already flushes via its blocking config.save()).
         Runtime.getRuntime().addShutdownHook(new Thread(shared::flushWrites, "config-flush"));
@@ -227,6 +229,7 @@ public class App extends Application {
         // AppKit, so SVG rendering still works while the AWT↔JavaFX conflict disappears. Must be set
         // before any AWT class loads; main() is the first app code, so this is safe for every entry point.
         System.setProperty("java.awt.headless", "true");
+        com.editora.perf.Startup.mark(com.editora.perf.Startup.MAIN);
         // Capture java.util.logging output + uncaught exceptions in-memory so a packaged build (no
         // visible stderr) can show them via the Debug Log window. Cheap; safe before launch.
         com.editora.ui.DebugLog.install();
