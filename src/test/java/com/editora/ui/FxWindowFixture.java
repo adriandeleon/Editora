@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -48,7 +49,21 @@ final class FxWindowFixture {
      */
     static FxWindowFixture create(boolean zen, boolean expert, boolean simple, Consumer<MainController> onBuilt)
             throws Exception {
-        Path dir = Files.createTempDirectory("editora-fx-test");
+        return create(Files.createTempDirectory("editora-fx-test"), zen, expert, simple, List.of(), onBuilt);
+    }
+
+    /**
+     * Boot a window against a caller-supplied config dir (so a test can seed {@code workspace-state.json}
+     * first) and with command-line {@code FILE} targets, as {@code editora FILE} does.
+     */
+    static FxWindowFixture create(
+            Path dir,
+            boolean zen,
+            boolean expert,
+            boolean simple,
+            List<MainController.OpenTarget> targets,
+            Consumer<MainController> onBuilt)
+            throws Exception {
         return FxTestSupport.callOnFx(() -> {
             ConfigManager bootstrap = new ConfigManager(dir);
             bootstrap.load();
@@ -57,7 +72,7 @@ final class FxWindowFixture {
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
             WindowManager wm = new WindowManager(shared, keymap, null);
-            MainController controller = wm.buildWindowForTest(zen, expert, simple);
+            MainController controller = wm.buildWindowForTest(zen, expert, simple, targets);
             onBuilt.accept(controller);
             return new FxWindowFixture(dir, shared, wm, controller);
         });
