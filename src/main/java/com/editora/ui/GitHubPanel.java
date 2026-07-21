@@ -10,6 +10,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
@@ -79,6 +80,13 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     private final ToggleButton runsToggle = new ToggleButton(tr("github.panel.runs"));
     private final ListView<Object> list = new ListView<>();
     private final Label placeholder = new Label(tr("github.panel.noPrs"));
+    private final VBox loading = buildLoading();
+
+    /**
+     * The segment whose fetch is in flight. Each {@code gh} call takes seconds, so switching segments twice
+     * can land the first response after the second — this drops a result whose segment is no longer wanted.
+     */
+    private Mode requested = Mode.PRS;
 
     public GitHubPanel(Actions actions) {
         this.actions = actions;
@@ -100,16 +108,19 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         prsToggle.setOnAction(e -> {
             prsToggle.setSelected(true);
             placeholder.setText(tr("github.panel.noPrs"));
+            beginLoading(Mode.PRS);
             actions.showPrs();
         });
         issuesToggle.setOnAction(e -> {
             issuesToggle.setSelected(true);
             placeholder.setText(tr("github.panel.noIssues"));
+            beginLoading(Mode.ISSUES);
             actions.showIssues();
         });
         runsToggle.setOnAction(e -> {
             runsToggle.setSelected(true);
             placeholder.setText(tr("github.panel.noRuns"));
+            beginLoading(Mode.RUNS);
             actions.showRuns();
         });
 
@@ -151,6 +162,36 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         return b;
     }
 
+    private static VBox buildLoading() {
+        ProgressIndicator spinner = new ProgressIndicator();
+        spinner.setPrefSize(28, 28);
+        spinner.setMaxSize(28, 28);
+        Label label = new Label(tr("github.panel.loading"));
+        label.getStyleClass().add("tool-window-placeholder");
+        VBox box = new VBox(8, spinner, label);
+        box.setAlignment(Pos.CENTER);
+        return box;
+    }
+
+    /**
+     * Clears the stale list and shows a spinner while {@code gh} runs — a {@code gh pr list} round-trip takes
+     * seconds, and leaving the previous segment's rows on screen reads as a frozen window.
+     */
+    private void beginLoading(Mode mode) {
+        requested = mode;
+        list.getItems().clear();
+        list.setPlaceholder(loading);
+    }
+
+    /** Applies a fetch result only when its segment is still the one the user wants. */
+    private boolean accept(Mode mode) {
+        if (requested != mode) {
+            return false;
+        }
+        list.setPlaceholder(placeholder);
+        return true;
+    }
+
     /** Which segment is showing — the controller re-fetches that one on refresh. */
     public Mode mode() {
         if (issuesToggle.isSelected()) {
@@ -163,22 +204,37 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     public void selectRuns() {
         runsToggle.setSelected(true);
         placeholder.setText(tr("github.panel.noRuns"));
+        beginLoading(Mode.RUNS);
+    }
+
+    /** Shows the spinner for the segment currently selected — used by a refresh that isn't a segment switch. */
+    public void showLoading() {
+        beginLoading(mode());
     }
 
     /** Replaces the list with pull requests. */
     public void setPrs(List<PullRequest> prs) {
+        if (!accept(Mode.PRS)) {
+            return;
+        }
         prsToggle.setSelected(true);
         list.getItems().setAll(prs);
     }
 
     /** Replaces the list with issues. */
     public void setIssues(List<Issue> issues) {
+        if (!accept(Mode.ISSUES)) {
+            return;
+        }
         issuesToggle.setSelected(true);
         list.getItems().setAll(issues);
     }
 
     /** Replaces the list with workflow runs. */
     public void setRuns(List<WorkflowRun> runs) {
+        if (!accept(Mode.RUNS)) {
+            return;
+        }
         runsToggle.setSelected(true);
         placeholder.setText(tr("github.panel.noRuns"));
         list.getItems().setAll(runs);
