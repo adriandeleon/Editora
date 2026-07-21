@@ -205,10 +205,11 @@ final class BookmarkCoordinator {
     // --- editor + command entry points ---------------------------------------------------------------
 
     /**
-     * Handles a click in the gutter: adds a bookmark on an unbookmarked line, or asks for confirmation
-     * before removing an existing one. (The keyboard toggle {@code C-c m} removes without a prompt.)
+     * Handles the editor right-click menu's bookmark item: adds a bookmark on an unbookmarked line, or asks
+     * for confirmation before removing an existing one. (The keyboard toggle {@code C-c m} removes without a
+     * prompt.) The gutter marker itself is display-only — clicking it does nothing.
      */
-    void onGutterBookmarkClick(EditorBuffer buffer, int line) {
+    void onBookmarkToggleRequest(EditorBuffer buffer, int line) {
         if (buffer.getBookmarkManager().isBookmarked(line)) {
             Alert confirm = new Alert(
                     Alert.AlertType.CONFIRMATION,
