@@ -132,4 +132,33 @@ class MultiFileSearchTest {
         assertEquals("foo", r.text());
         assertEquals(0, r.count());
     }
+
+    /**
+     * Full case folding reaches multi-file search + replace too (#444). The replace path splices at the
+     * matcher's offsets, so a length-changing fold is where a bad offset would corrupt the file rather than
+     * merely miss a hit — {@code ß} is one char but folds to two.
+     */
+    @Test
+    void fullCaseFoldMatchesAcrossLengthChangingFolds() {
+        List<LineMatch> ms = MultiFileSearch.matchesInText("die Straße\ndie Strasse\n", q("STRASSE"));
+        assertEquals(2, ms.size());
+        assertEquals(1, ms.get(0).line());
+        assertEquals(5, ms.get(0).col());
+        assertEquals(6, ms.get(0).length(), "the match spans the ORIGINAL 6-char word, not its 7-char fold");
+        assertEquals(7, ms.get(1).length());
+    }
+
+    @Test
+    void replaceAcrossALengthChangingFoldSplicesTheOriginalSpan() {
+        MultiFileSearch.ReplaceResult r = MultiFileSearch.replaceAll("die Straße hier", q("STRASSE"), "Weg");
+        assertEquals("die Weg hier", r.text());
+        assertEquals(1, r.count());
+    }
+
+    @Test
+    void replaceIsUnaffectedForAsciiText() {
+        MultiFileSearch.ReplaceResult r = MultiFileSearch.replaceAll("foo Foo FOO", q("foo"), "bar");
+        assertEquals("bar bar bar", r.text());
+        assertEquals(3, r.count());
+    }
 }

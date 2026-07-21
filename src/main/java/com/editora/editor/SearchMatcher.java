@@ -75,6 +75,12 @@ public final class SearchMatcher {
     }
 
     private static List<int[]> literalMatches(String text, String query, boolean caseSensitive, boolean wholeWord) {
+        // regionMatches folds per character, so it cannot match a case pair of different lengths (ß↔SS,
+        // ﬁ↔FI). Take the full-folding path only when one side actually contains such a character — the
+        // check is one comparison per char and rejects all ASCII, so ordinary code pays nothing (#444).
+        if (!caseSensitive && (CaseFold.mayExpand(query) || CaseFold.mayExpand(text))) {
+            return foldedMatches(text, query, wholeWord);
+        }
         List<int[]> out = new ArrayList<>();
         int n = text.length();
         int m = query.length();
@@ -88,6 +94,30 @@ public final class SearchMatcher {
                 }
             }
             i++;
+        }
+        return out;
+    }
+
+    /**
+     * Case-insensitive literal matching under <b>full</b> case folding, so a length-changing fold matches in
+     * both directions. Offsets are the original text's throughout — {@link CaseFold#matchAt} folds on the fly
+     * rather than searching a folded copy, so there is no index map to translate back through.
+     */
+    private static List<int[]> foldedMatches(String text, String query, boolean wholeWord) {
+        String folded = CaseFold.fold(query);
+        if (folded.isEmpty()) {
+            return List.of();
+        }
+        List<int[]> out = new ArrayList<>();
+        int n = text.length();
+        for (int i = 0; i < n; ) {
+            int end = CaseFold.matchAt(text, i, folded);
+            if (end > i && (!wholeWord || isWordBounded(text, i, end))) {
+                out.add(new int[] {i, end});
+                i = end; // non-overlapping
+                continue;
+            }
+            i += Character.charCount(text.codePointAt(i));
         }
         return out;
     }
