@@ -353,9 +353,45 @@ final class LspCoordinator {
 
     /** Applies the detection-dependent gate to every open buffer (per the file's own server). */
     void applyGating() {
-        host.forEachBuffer(this::syncBuffer);
+        host.forEachBuffer(this::syncBufferWhenShown);
         updateStatusBar();
         ops.onDetectionSettled(); // re-evaluate the install banner now that detection has updated
+    }
+
+    /**
+     * Buffers whose language server hasn't been started because their tab has never been shown. Weakly keyed
+     * so a closed buffer drops out on its own.
+     */
+    private final java.util.Set<EditorBuffer> deferredLsp =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /**
+     * Starts a buffer's language server only once its tab is actually shown.
+     *
+     * <p>{@link #wireBuffer} runs for <em>every</em> restored tab, so a session of N files used to fork up to
+     * N servers during launch — measured on an 8-file session: 4 extra server processes (including jdtls, a
+     * second JVM plus its Eclipse indexing), ~2× the CPU Editora itself burns while starting, and ~225 MB,
+     * all for files the user hadn't looked at. Deferring costs nothing for the file being opened (it's the
+     * active buffer, so it syncs immediately) and moves the rest to the first tab switch.
+     *
+     * <p>The trade-off is deliberate: a background file's diagnostics appear when you first visit it rather
+     * than at startup. Everything else — the disable/close path, capability pushes, gating — is unchanged,
+     * because a deferred buffer simply runs the same {@link #syncBuffer} later.
+     */
+    void syncBufferWhenShown(EditorBuffer buffer) {
+        if (buffer == host.activeBuffer()) {
+            deferredLsp.remove(buffer);
+            syncBuffer(buffer);
+        } else {
+            deferredLsp.add(buffer);
+        }
+    }
+
+    /** Called when a tab becomes visible: starts the server we deferred at wire time, if any. */
+    void onBufferShown(EditorBuffer buffer) {
+        if (buffer != null && deferredLsp.remove(buffer)) {
+            syncBuffer(buffer);
+        }
     }
 
     /** Whether a server's own enable toggle is on (under the global LSP enable). */
@@ -808,7 +844,8 @@ final class LspCoordinator {
             }
         });
         buffer.setLspNavActions(this::gotoDefinition, this::findReferences, this::showHover, this::formatDocument);
-        syncBuffer(buffer);
+        // Only the visible buffer starts its server now; a restored background tab waits for its first show.
+        syncBufferWhenShown(buffer);
     }
 
     /** Palette picker over the LSP servers: toggles the chosen server's per-server enable ({@code lsp.toggleServer}). */

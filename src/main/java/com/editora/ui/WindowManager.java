@@ -51,6 +51,10 @@ public class WindowManager {
      *  one-window run never shrinks the saved multi-window layout). See {@link #reconcileOpenSet()}. */
     private boolean singleWindowSession;
 
+    /** Set by {@code --no-session}: open only the command line's files, skipping the saved session's.
+     *  Session-only — the saved session is never rewritten from a {@code --no-session} run. */
+    private boolean noSession;
+
     /**
      * Debounce for persisting the open-window restore set after a close. Each close calls {@code
      * playFromStart}, so a run of closes ending in the app quitting (an OS/Cmd-Q burst <em>or</em> the user
@@ -117,8 +121,10 @@ public class WindowManager {
             boolean expert,
             String newFile,
             boolean simple,
-            String singleWindow) {
+            String singleWindow,
+            boolean noSession) {
         this.primaryStage = primaryStage; // reused for the first window built
+        this.noSession = noSession;
         // --single-window[=name]: open exactly one window (the named project, else the no-project window)
         // instead of restoring the whole saved set. Session-only — we don't touch the persisted open set.
         if (singleWindow != null) {
@@ -655,7 +661,7 @@ public class WindowManager {
             focus(stage);
 
             windows.add(new Holder(key, stage, controller));
-            controller.startup(null, targets, newFile); // chrome flags already applied, pre-show()
+            controller.startup(null, targets, newFile, noSession); // chrome flags already applied, pre-show()
             return stage;
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException("Failed to build a window for project '" + key + "'", e);
@@ -683,6 +689,13 @@ public class WindowManager {
      *  one on screen from the first frame, ahead of whatever the session restores. */
     MainController buildWindowForTest(
             boolean zen, boolean expert, boolean simple, List<MainController.OpenTarget> targets) {
+        return buildWindowForTest(zen, expert, simple, targets, false);
+    }
+
+    /** As above, with {@code --no-session} — the saved session's files are not restored. */
+    MainController buildWindowForTest(
+            boolean zen, boolean expert, boolean simple, List<MainController.OpenTarget> targets, boolean noSession) {
+        this.noSession = noSession;
         buildWindow("", null, null, targets, zen, expert, null, simple);
         return windows.get(windows.size() - 1).controller();
     }

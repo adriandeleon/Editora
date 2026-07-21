@@ -64,6 +64,13 @@ class AppArgsTest {
     }
 
     @Test
+    void noSessionFlag() {
+        assertTrue(App.noSessionFlag(List.of("--no-session")));
+        assertTrue(App.noSessionFlag(List.of("--expert", "--single-window", "--no-session", "cv.typ")));
+        assertFalse(App.noSessionFlag(List.of("--expert", "--single-window", "cv.typ")));
+    }
+
+    @Test
     void devFlag() {
         assertTrue(App.devFlag(List.of("--dev")));
         assertFalse(App.devFlag(List.of("--zen", "f.txt")));

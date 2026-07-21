@@ -64,6 +64,19 @@ final class FxWindowFixture {
             List<MainController.OpenTarget> targets,
             Consumer<MainController> onBuilt)
             throws Exception {
+        return create(dir, zen, expert, simple, targets, false, onBuilt);
+    }
+
+    /** As above, with {@code --no-session} (open only {@code targets}, skipping the saved session's files). */
+    static FxWindowFixture create(
+            Path dir,
+            boolean zen,
+            boolean expert,
+            boolean simple,
+            List<MainController.OpenTarget> targets,
+            boolean noSession,
+            Consumer<MainController> onBuilt)
+            throws Exception {
         return FxTestSupport.callOnFx(() -> {
             ConfigManager bootstrap = new ConfigManager(dir);
             bootstrap.load();
@@ -72,7 +85,7 @@ final class FxWindowFixture {
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
             WindowManager wm = new WindowManager(shared, keymap, null);
-            MainController controller = wm.buildWindowForTest(zen, expert, simple, targets);
+            MainController controller = wm.buildWindowForTest(zen, expert, simple, targets, noSession);
             onBuilt.accept(controller);
             return new FxWindowFixture(dir, shared, wm, controller);
         });

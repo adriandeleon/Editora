@@ -119,7 +119,8 @@ public class App extends Application {
                 expertFlag(rawArgs),
                 newFileArg(rawArgs),
                 simpleFlag(rawArgs),
-                singleWindowArg(rawArgs));
+                singleWindowArg(rawArgs),
+                noSessionFlag(rawArgs));
 
         // macOS: receive files opened via Finder's "Open With" (a CFBundleDocumentTypes association added by
         // the packaged app — see packaging/mac/file-associations.properties). Finder delivers the path as an
@@ -265,6 +266,7 @@ public class App extends Application {
                   --project[=]<dir>     Open <dir> as a project (only when Projects are enabled)
                   --new-file[=name]     Open a new buffer instead of the Welcome page (optionally named)
                   --single-window[=project]  Open just one window (the named project, else no-project)
+                  --no-session          Open only the files given here; don't restore the saved session
                                         instead of restoring all windows; doesn't change the saved layout
                   --zen                 Start in Zen (distraction-free) mode (session only)
                   --expert              Start in Expert mode: like Zen, but keeps the editor
@@ -302,6 +304,19 @@ public class App extends Application {
     /** True if {@code --simple} is present (session-only Simple UI mode override). */
     static boolean simpleFlag(java.util.List<String> args) {
         return args != null && args.contains("--simple");
+    }
+
+    /**
+     * True if {@code --no-session} is present: open only what the command line asks for, skipping the saved
+     * session's files entirely.
+     *
+     * <p>Meant for a file-manager "Open With" launch, where restoring the last session's tabs is pure cost —
+     * each restored file is a buffer to highlight and (on first view) a language server to run, for files the
+     * user didn't ask to see. Session-only: the saved session is left untouched, so the next normal launch
+     * restores everything as usual.
+     */
+    static boolean noSessionFlag(java.util.List<String> args) {
+        return args != null && args.contains("--no-session");
     }
 
     /**
