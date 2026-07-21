@@ -27,6 +27,56 @@ class PrCreateArgsTest {
     }
 
     @Test
+    void emitsOneRepeatedFlagPerReviewerAssigneeAndLabel() {
+        List<String> args = PrCreateArgs.build("t", "b", "", false, "alice, bob", "carol", "bug, ui");
+        assertEquals(
+                List.of(
+                        "pr",
+                        "create",
+                        "--title",
+                        "t",
+                        "--body",
+                        "b",
+                        "--reviewer",
+                        "alice",
+                        "--reviewer",
+                        "bob",
+                        "--assignee",
+                        "carol",
+                        "--label",
+                        "bug",
+                        "--label",
+                        "ui"),
+                args);
+    }
+
+    @Test
+    void blankPeopleFieldsOmitTheirFlagsEntirely() {
+        List<String> args = PrCreateArgs.build("t", "b", "", false, "", "   ", null);
+        assertFalse(args.contains("--reviewer"));
+        assertFalse(args.contains("--assignee"));
+        assertFalse(args.contains("--label"));
+    }
+
+    @Test
+    void splitTrimsBlanksAndDedupesCaseInsensitively() {
+        assertEquals(List.of("a", "b"), PrCreateArgs.split(" a , ,b,  A "));
+        assertEquals(List.of(), PrCreateArgs.split(null));
+    }
+
+    @Test
+    void handlesDropALeadingAtButKeepAtMe() {
+        // gh wants the bare handle; @me is its own token for the authenticated user.
+        assertEquals(List.of("octocat", "org/team", "@me"), PrCreateArgs.handles("@octocat, org/team, @me"));
+    }
+
+    @Test
+    void labelsKeepALeadingAtSinceTheyAreNotHandles() {
+        List<String> args = PrCreateArgs.build("t", "b", "", false, null, null, "@release");
+        assertEquals("@release", args.get(args.indexOf("--label") + 1));
+    }
+
+    @Test
     void nullTitleAndBodyBecomeEmptyStrings() {
         List<String> args = PrCreateArgs.build(null, null, null, false);
         assertTrue(args.contains("--title"));
