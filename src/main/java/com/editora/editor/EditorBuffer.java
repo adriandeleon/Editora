@@ -530,8 +530,9 @@ public class EditorBuffer implements TabContent {
 
     private final FoldManager folds = new FoldManager(area);
     private final BookmarkManager bookmarks = new BookmarkManager(area);
-    /** Handles a gutter click on a line: the controller adds, or confirms a removal. Default: toggle. */
-    private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBookmarkClick =
+    /** Handles a bookmark add/remove request for a line (from the right-click menu): the controller adds,
+     *  or confirms a removal. Default: toggle. */
+    private java.util.function.BiConsumer<EditorBuffer, Integer> bookmarkToggleRequest =
             (buffer, line) -> buffer.toggleBookmark(line);
     /** Breakpoints for this buffer (gutter strip + persistence + sent to a live DAP session). */
     private final BreakpointManager breakpoints = new BreakpointManager(area);
@@ -659,7 +660,7 @@ public class EditorBuffer implements TabContent {
         refreshGutter();
         // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
         // defaults to a plain toggle so the editor works standalone (and in tests).
-        folds.setBookmarkHooks(bookmarks::isBookmarked, line -> gutterBookmarkClick.accept(this, line));
+        folds.setBookmarkHooks(bookmarks::isBookmarked);
         // Personal-Notes markers are drawn inline at each note's start by noteOverlay (no gutter slot).
         notes.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         // Git change bars: the slot is reserved only while tracking is on (changeBars != null); the
@@ -1753,6 +1754,17 @@ public class EditorBuffer implements TabContent {
                     items.addAll(extra);
                 }
             }
+            // Bookmarks: the gutter marker is display-only, so add/remove lives here (and in the palette).
+            // Acts on the right-clicked line, not the caret line, matching the LSP items above.
+            if (path != null) {
+                items.add(new SeparatorMenuItem());
+                int clickedLine = clickLineAt(e.getX(), e.getY());
+                boolean marked = bookmarks.isBookmarked(clickedLine);
+                MenuItem bookmark = new MenuItem(tr(marked ? "editmenu.removeBookmark" : "editmenu.addBookmark"));
+                bookmark.setGraphic(MenuIcons.bookmark());
+                bookmark.setOnAction(ev -> bookmarkToggleRequest.accept(this, clickedLine));
+                items.add(bookmark);
+            }
             if (path != null && notesEnabled) {
                 items.add(new SeparatorMenuItem());
                 boolean hasSelection = area.getSelection().getLength() > 0;
@@ -1787,6 +1799,16 @@ public class EditorBuffer implements TabContent {
             return area.hit(x, y).getInsertionIndex();
         } catch (RuntimeException ex) {
             return area.getCaretPosition();
+        }
+    }
+
+    /** The 0-based paragraph under a context-menu click (for the bookmark item); caret line if it misses. */
+    private int clickLineAt(double x, double y) {
+        try {
+            return area.offsetToPosition(clickOffsetAt(x, y), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                    .getMajor();
+        } catch (RuntimeException ex) {
+            return area.getCurrentParagraph();
         }
     }
 
@@ -5360,10 +5382,11 @@ public class EditorBuffer implements TabContent {
         return bookmarks;
     }
 
-    /** Sets the gutter-click handler ({@code (buffer, line)}): used to add or confirm-remove bookmarks. */
-    public void setGutterBookmarkClick(java.util.function.BiConsumer<EditorBuffer, Integer> handler) {
+    /** Sets the bookmark add/remove handler ({@code (buffer, line)}) used by the right-click menu item;
+     *  the controller adds, or confirms a removal. */
+    public void setBookmarkToggleRequest(java.util.function.BiConsumer<EditorBuffer, Integer> handler) {
         if (handler != null) {
-            this.gutterBookmarkClick = handler;
+            this.bookmarkToggleRequest = handler;
         }
     }
 

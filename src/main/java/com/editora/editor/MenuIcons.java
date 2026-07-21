@@ -199,6 +199,11 @@ final class MenuIcons {
         return of("M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z");
     }
 
+    /** Material "bookmark" — "Add/Remove Bookmark" (matches the gutter bookmark marker). */
+    static Node bookmark() {
+        return of("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z");
+    }
+
     /** Material "file_download" — "Export to PDF". */
     static Node download() {
         return of("M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z");

@@ -82,8 +82,6 @@ public final class FoldManager {
 
     /** Whether a line carries a bookmark (drawn as a gutter marker); default none. */
     private IntPredicate isBookmarked = i -> false;
-    /** Invoked when the user clicks a line's gutter bookmark marker. */
-    private IntConsumer onBookmarkToggle = i -> {};
 
     /** Whether this is a compact source file (reserve the Run slot on every row while true). */
     private BooleanSupplier runEnabled = () -> false;
@@ -279,10 +277,11 @@ public final class FoldManager {
         }
     }
 
-    /** Wires the bookmark gutter marker: a predicate for which lines are bookmarked + a click handler. */
-    public void setBookmarkHooks(IntPredicate isBookmarked, IntConsumer onToggle) {
+    /** Wires the bookmark gutter marker: a predicate for which lines are bookmarked. The marker is purely
+     *  a visual indicator — adding/removing a bookmark is done from the command palette or the editor's
+     *  right-click menu, never by clicking the gutter (see {@link #buildGutter}). */
+    public void setBookmarkHooks(IntPredicate isBookmarked) {
         this.isBookmarked = isBookmarked == null ? i -> false : isBookmarked;
-        this.onBookmarkToggle = onToggle == null ? i -> {} : onToggle;
     }
 
     /** Wires the Personal-Notes gutter marker: a predicate for which lines carry a note + a click handler
@@ -608,14 +607,11 @@ public final class FoldManager {
         clip.widthProperty().bind(box.widthProperty());
         clip.heightProperty().bind(box.heightProperty());
         box.setClip(clip);
-        // Clicking the gutter toggles a bookmark on that line (add, or — handled upstream — confirm a
-        // removal). The fold chevron consumes its own click so folding doesn't also toggle a bookmark.
-        box.setCursor(Cursor.HAND);
-        box.setOnMouseClicked(e -> {
-            if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 1) {
-                onBookmarkToggle.accept(idx);
-            }
-        });
+        // The gutter itself is deliberately NOT clickable: a whole-gutter click used to toggle a bookmark,
+        // which misfired constantly on the narrow breakpoint / Run targets sitting inside it (a slightly-off
+        // click on the ▶ or the breakpoint strip added a stray bookmark instead). Bookmarks are added from
+        // the command palette (`bookmarks.toggle`) or the editor right-click menu; only the individual
+        // slots below (breakpoint, Run, blame, fold chevron) handle clicks, each on its own glyph/strip.
 
         // Blame "Annotate" column (leftmost, IntelliJ-style): a fixed-width per-line author + date with an
         // age-heatmap background tint, a hover tooltip (full commit), and click → show that line's commit.
@@ -626,8 +622,7 @@ public final class FoldManager {
         }
 
         // Breakpoint strip (leftmost), reserved on every row only while debugging is enabled. Clicking
-        // anywhere in the strip toggles a breakpoint and consumes the event, so it never also triggers the
-        // gutter's bookmark-toggle click. The red dot is drawn only on breakpointed lines.
+        // anywhere in the strip toggles a breakpoint. The red dot is drawn only on breakpointed lines.
         if (breakpointsEnabled.getAsBoolean()) {
             StackPane bpSlot = new StackPane();
             bpSlot.getStyleClass().add("breakpoint-slot");
@@ -635,13 +630,14 @@ public final class FoldManager {
             bpSlot.setPrefWidth(BREAKPOINT_SLOT_WIDTH);
             bpSlot.setMaxWidth(BREAKPOINT_SLOT_WIDTH);
             bpSlot.setMaxHeight(Double.MAX_VALUE);
+            bpSlot.setCursor(Cursor.HAND);
             if (isBreakpoint.test(idx)) {
                 bpSlot.getChildren().add(breakpointMarker(breakpointClass.apply(idx)));
             }
             bpSlot.setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY) {
                     onBreakpointToggle.accept(idx);
-                    e.consume(); // don't also toggle a bookmark via the gutter box click
+                    e.consume();
                 }
             });
             box.getChildren().add(bpSlot);
@@ -688,7 +684,7 @@ public final class FoldManager {
                 marker.setOnMouseClicked(e -> {
                     if (e.getButton() == MouseButton.PRIMARY) {
                         onRun.accept(runIdx);
-                        e.consume(); // don't also toggle a bookmark via the gutter click
+                        e.consume();
                     }
                 });
                 runSlot.getChildren().add(marker);
@@ -722,7 +718,7 @@ public final class FoldManager {
                 } else {
                     fold(region.get());
                 }
-                e.consume(); // don't let a fold click also toggle a bookmark on the gutter
+                e.consume(); // a fold click is not a text click
             });
         }
         box.getChildren().add(chevron);
@@ -793,21 +789,20 @@ public final class FoldManager {
         slot.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY) {
                 onBlameClick.accept(blameIdx);
-                e.consume(); // don't also toggle a bookmark via the gutter box click
+                e.consume();
             }
         });
         return slot;
     }
 
     /** A small bookmark glyph for the gutter (Material "bookmark"); colored via the {@code .bookmark-marker}
-     *  CSS class (an SVG fill). Clicking it toggles the bookmark on that line. */
+     *  CSS class (an SVG fill). Display only — it has no click behavior. */
     private Node bookmarkMarker() {
         SVGPath svg = new SVGPath();
         svg.setContent("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z");
         svg.getStyleClass().add("bookmark-marker");
         svg.setScaleX(0.55);
         svg.setScaleY(0.55);
-        // No own click handler: the gutter box handles clicks (so clicking the marker isn't a double toggle).
         return new Group(svg); // Group bounds reflect the scaled glyph, so the gutter stays narrow
     }
 
