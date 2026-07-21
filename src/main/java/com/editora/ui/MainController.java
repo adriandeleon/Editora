@@ -4669,6 +4669,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Re-fetches the GitHub tool window's current segment (PRs, Issues, or Runs). */
     private void reloadGithubPanel() {
+        githubPanel.showLoading();
         switch (githubPanel.mode()) {
             case PRS -> github.fetchPrs(githubPanel::setPrs);
             case ISSUES -> github.fetchIssues(githubPanel::setIssues);
