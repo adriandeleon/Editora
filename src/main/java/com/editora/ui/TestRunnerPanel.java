@@ -8,7 +8,9 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.ToggleButton;
@@ -55,6 +57,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     private final Button rerunFailedButton = iconButton(Icons.testFailed(), "testrunner.rerunFailed");
     private final Button stopButton = iconButton(Icons.stopSquare(), "testrunner.stop");
     private final ToggleButton showPassedToggle = new ToggleButton();
+    private final ToggleButton followToggle = new ToggleButton();
 
     private final TreeItem<TestNode> rootItem = new TreeItem<>(null);
     private final TreeView<TestNode> tree = new TreeView<>(rootItem);
@@ -70,6 +73,9 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     private Runnable onRerunFailed;
     private Runnable onStop;
     private Consumer<TestNode> onActivate;
+    private Consumer<TestNode> onRerunOne;
+    private Consumer<TestNode> onDebugOne;
+    private java.util.function.BooleanSupplier debugAvailable = () -> false;
     private Consumer<StackTraceLinks.Link> onLink;
 
     TestRunnerPanel() {
@@ -90,8 +96,14 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         showPassedToggle.setSelected(true);
         showPassedToggle.setTooltip(new Tooltip(tr("testrunner.showPassed")));
         showPassedToggle.setOnAction(e -> rebuild());
+        // "Track running test": keep the newest result scrolled into view so a long run reads as live
+        // progress. Auto-disabled the moment the user selects a row (they're inspecting — don't yank the view).
+        followToggle.setGraphic(Icons.arrowDown());
+        followToggle.getStyleClass().add("toolbar-restore");
+        followToggle.setSelected(true);
+        followToggle.setTooltip(new Tooltip(tr("testrunner.followRunning")));
 
-        HBox toolbar = new HBox(2, rerunButton, rerunFailedButton, stopButton, showPassedToggle);
+        HBox toolbar = new HBox(2, rerunButton, rerunFailedButton, stopButton, showPassedToggle, followToggle);
         toolbar.setAlignment(Pos.CENTER_LEFT);
         HBox header = new HBox(10, status, progress, passedChip, failedChip, skippedChip, spacer(), elapsed, toolbar);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -100,9 +112,14 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         tree.setShowRoot(false);
         rootItem.setExpanded(true);
         tree.setCellFactory(t -> new TestTreeCell());
-        tree.getSelectionModel()
-                .selectedItemProperty()
-                .addListener((obs, old, sel) -> showDetail(sel == null ? null : sel.getValue()));
+        tree.getSelectionModel().selectedItemProperty().addListener((obs, old, sel) -> {
+            showDetail(sel == null ? null : sel.getValue());
+            if (sel != null) {
+                // Selection only ever changes by user action here (we never select programmatically), so this
+                // means "I'm reading this one" — stop auto-scrolling out from under them.
+                followToggle.setSelected(false);
+            }
+        });
         tree.setOnMouseClicked(e -> {
             if (e.getClickCount() == 2) {
                 activateSelected();
@@ -113,6 +130,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
                 activateSelected();
             }
         });
+        installContextMenu();
 
         detail.setEditable(false);
         detail.setWrapText(false);
@@ -140,6 +158,19 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
     void setOnActivate(Consumer<TestNode> c) {
         this.onActivate = c;
+    }
+
+    void setOnRerunOne(Consumer<TestNode> c) {
+        this.onRerunOne = c;
+    }
+
+    void setOnDebugOne(Consumer<TestNode> c) {
+        this.onDebugOne = c;
+    }
+
+    /** Whether "Debug Test" is offered (Java debugging configured + a JVM build tool). */
+    void setDebugAvailable(java.util.function.BooleanSupplier available) {
+        this.debugAvailable = available == null ? () -> false : available;
     }
 
     void setOnLink(Consumer<StackTraceLinks.Link> c) {
@@ -176,11 +207,26 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         rerunButton.setDisable(true);
         rerunFailedButton.setDisable(true);
         stopButton.setDisable(false);
+        followToggle.setSelected(true); // a fresh run tracks again, even if the last one was pinned by a click
         showRunSummary(); // the detail pane shows the run header until a test is selected
     }
 
     /** Live update: sync the tree from the (mutated-in-place) root and refresh the header counts/progress. */
     void update(TestRun run) {
+        update(run, null);
+    }
+
+    /**
+     * As {@link #update(TestRun)}, plus {@code follow} — the test whose result just arrived (the run's
+     * frontier). While the run is live and "track running test" is on, it is scrolled into view so the user
+     * watches progress in real time.
+     */
+    void update(TestRun run, TestNode follow) {
+        update0(run);
+        revealFollow(run, follow);
+    }
+
+    private void update0(TestRun run) {
         lastRun = run;
         sync(run.root());
         TestCounts counts = run.counts();
@@ -190,6 +236,28 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         setProgressFailed(counts.anyFailed());
         if (tree.getSelectionModel().getSelectedItem() == null) {
             showRunSummary(); // keep the run summary live while nothing is selected
+        }
+    }
+
+    /**
+     * Scrolls the run's newest result into view (JavaFX only moves the viewport when the row isn't already
+     * fully visible, so a steady run doesn't jitter). No-op once the run finishes, when the user turned
+     * tracking off, or when the row is filtered out by "show passed".
+     */
+    private void revealFollow(TestRun run, TestNode follow) {
+        if (follow == null || !followToggle.isSelected() || !run.isRunning()) {
+            return;
+        }
+        TreeItem<TestNode> item = items.get(follow);
+        if (item == null) {
+            return;
+        }
+        for (TreeItem<TestNode> p = item.getParent(); p != null; p = p.getParent()) {
+            p.setExpanded(true);
+        }
+        int row = tree.getRow(item);
+        if (row >= 0) {
+            tree.scrollTo(row);
         }
     }
 
@@ -259,6 +327,55 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /**
+     * Right-click a test/class row: jump to its source, rerun just it, or debug it. Rebuilt per request so the
+     * items reflect the clicked node (and so "Debug" is only offered when Java debugging is actually usable).
+     */
+    private void installContextMenu() {
+        ContextMenu menu = new ContextMenu();
+        tree.setOnContextMenuRequested(e -> {
+            TreeItem<TestNode> sel = tree.getSelectionModel().getSelectedItem();
+            TestNode node = sel == null ? null : sel.getValue();
+            if (node == null || node.className() == null) {
+                menu.hide();
+                return;
+            }
+            boolean isTest = node.kind() == TestNodeKind.TEST;
+            menu.getItems().clear();
+
+            MenuItem goTo = new MenuItem(isTest ? tr("testrunner.menu.goToTest") : tr("testrunner.menu.goToClass"));
+            goTo.setGraphic(Icons.find());
+            goTo.setOnAction(a -> {
+                if (onActivate != null) {
+                    onActivate.accept(node);
+                }
+            });
+
+            MenuItem rerun = new MenuItem(isTest ? tr("testrunner.menu.rerunTest") : tr("testrunner.menu.rerunClass"));
+            rerun.setGraphic(Icons.run());
+            rerun.setOnAction(a -> {
+                if (onRerunOne != null) {
+                    onRerunOne.accept(node);
+                }
+            });
+
+            menu.getItems().addAll(goTo, rerun);
+            if (debugAvailable.getAsBoolean()) {
+                MenuItem debug =
+                        new MenuItem(isTest ? tr("testrunner.menu.debugTest") : tr("testrunner.menu.debugClass"));
+                debug.setGraphic(Icons.debug());
+                debug.setOnAction(a -> {
+                    if (onDebugOne != null) {
+                        onDebugOne.accept(node);
+                    }
+                });
+                menu.getItems().add(debug);
+            }
+            menu.show(tree, e.getScreenX(), e.getScreenY());
+            e.consume();
+        });
+    }
+
     private void activateSelected() {
         TreeItem<TestNode> sel = tree.getSelectionModel().getSelectedItem();
         if (sel != null && sel.getValue() != null && sel.getValue().kind() == TestNodeKind.TEST && onActivate != null) {
@@ -274,7 +391,11 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
             return;
         }
         StringBuilder sb = new StringBuilder();
-        sb.append(node.displayName()).append(" — ").append(statusLabel(node.status()));
+        // Fully-qualified name first: a bare method name isn't enough to know *which* test you're looking at.
+        String fq = node.className() == null || node.methodName() == null
+                ? node.displayName()
+                : node.className() + "." + node.methodName();
+        sb.append(fq).append('\n').append(statusLabel(node.status()));
         if (node.durationMs() > 0) {
             sb.append(" (").append(node.durationMs()).append(" ms)");
         }
@@ -300,10 +421,27 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         if (node.stackTrace() != null && !node.stackTrace().equals(node.failureMessage())) {
             sb.append(node.stackTrace()).append("\n");
         }
+        boolean hadOutput = hasText(node.stdout()) || hasText(node.stderr());
         appendSection(sb, tr("testrunner.detail.stdout"), node.stdout());
         appendSection(sb, tr("testrunner.detail.stderr"), node.stderr());
+        // A passing JVM test usually has no per-test capture (Surefire writes system-out at the CLASS level),
+        // which used to leave the pane showing just "Passed" — fall back to the class's captured output.
+        if (!hadOutput && node.kind() == TestNodeKind.TEST && node.parent() != null) {
+            TestNode suite = node.parent();
+            boolean classOut = hasText(suite.stdout()) || hasText(suite.stderr());
+            if (classOut) {
+                appendSection(sb, tr("testrunner.detail.classOutput"), suite.stdout());
+                appendSection(sb, tr("testrunner.detail.classErrOutput"), suite.stderr());
+            } else if (!hasText(node.failureMessage()) && !hasText(node.stackTrace())) {
+                sb.append('\n').append(tr("testrunner.detail.noOutput")).append('\n');
+            }
+        }
         detail.replaceText(sb.toString().strip());
         detail.moveTo(0);
+    }
+
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
     }
 
     private static void appendSection(StringBuilder sb, String title, String body) {

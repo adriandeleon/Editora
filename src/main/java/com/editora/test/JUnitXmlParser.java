@@ -85,8 +85,13 @@ public final class JUnitXmlParser implements TestResultParser {
             failureMessage = attr(skipped, "message", null);
         }
         String fileHint = TestSourceLocator.fileHint(className, tool);
+        // Per-testcase captured output when the runner writes it (Surefire's is usually suite-level, but a
+        // <testcase><system-out> does occur) — without this a passing test's detail pane had nothing to show.
+        String out = text(firstChild(tc, "system-out"));
+        String err = text(firstChild(tc, "system-err"));
+        String captured = out == null ? err : (err == null ? out : out + "\n" + err);
         return new ParsedTest(
-                className, method, status, durationMs, failureType, failureMessage, stackTrace, null, fileHint, 0);
+                className, method, status, durationMs, failureType, failureMessage, stackTrace, captured, fileHint, 0);
     }
 
     private static long seconds(String time) {

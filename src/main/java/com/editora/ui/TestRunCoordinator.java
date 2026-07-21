@@ -26,7 +26,9 @@ import com.editora.test.JavaTestScanner;
 import com.editora.test.JvmReportDirs;
 import com.editora.test.ParsedSuite;
 import com.editora.test.TapParser;
+import com.editora.test.TestDebug;
 import com.editora.test.TestNode;
+import com.editora.test.TestNodeKind;
 import com.editora.test.TestPlan;
 import com.editora.test.TestResultParser;
 import com.editora.test.TestResultParsers;
@@ -66,6 +68,12 @@ final class TestRunCoordinator implements TestRunHook {
 
         /** Stop the running build for {@code tool} (the tool's own BuildService). */
         void stopTest(BuildTool tool);
+
+        /** Whether "Debug Test" can work (Java debugging configured + adapter available). */
+        boolean debugAvailable();
+
+        /** Attach the debugger to a test JVM suspended on {@code port} ({@code className} anchors the source). */
+        void attachDebugger(String className, String host, int port);
     }
 
     /** JVM report poll interval — reports appear per class as each finishes; ~750 ms is responsive + cheap. */
@@ -100,6 +108,8 @@ final class TestRunCoordinator implements TestRunHook {
     private final Map<Path, Long> baselineMtimes = new HashMap<>(); // pre-run report mtimes (skip stale leftovers)
     private int runGeneration; // bumped per run (FX thread); guards a late poll tick from merging into a newer run
     private boolean seeded; // this run pre-seeded pending nodes → prune the never-reported ones at finish
+    private TestNode followTarget; // the newest result — kept scrolled into view while the run is live
+    private String awaitingAttachFor; // class whose suspended test JVM we should attach to (Debug Test)
     private Timeline elapsedTimer;
     private boolean refreshPending;
 
@@ -116,6 +126,9 @@ final class TestRunCoordinator implements TestRunHook {
         panel.setOnStop(this::stop);
         panel.setOnLink(ops::openLink);
         panel.setOnActivate(this::activate);
+        panel.setOnRerunOne(this::rerunOne);
+        panel.setOnDebugOne(this::debugOne);
+        panel.setDebugAvailable(ops::debugAvailable);
     }
 
     TestRunnerPanel panel() {
@@ -150,6 +163,8 @@ final class TestRunCoordinator implements TestRunHook {
         tapDecided = false;
         npmSniff.clear();
         seeded = false;
+        followTarget = null;
+        awaitingAttachFor = null;
 
         panel.startRun(String.join(" ", taskArgs));
         ops.setTestResultsAvailable(true);
@@ -177,7 +192,20 @@ final class TestRunCoordinator implements TestRunHook {
 
     @Override
     public void onTestOutput(String line, boolean stderr) {
-        if (currentRun == null || fileBased) {
+        if (currentRun == null) {
+            return;
+        }
+        // "Debug Test": the suspended test JVM prints the JDWP banner — attach as soon as we see it. Checked
+        // before the file-based return, because for Maven/Gradle the console is the ONLY place it appears.
+        if (awaitingAttachFor != null) {
+            int port = TestDebug.jdwpPort(line);
+            if (port > 0) {
+                String cls = awaitingAttachFor;
+                awaitingAttachFor = null;
+                ops.attachDebugger(cls, "localhost", port);
+            }
+        }
+        if (fileBased) {
             return; // JVM: results come from the report files, not the console
         }
         if (npm && !tapDecided) {
@@ -262,6 +290,19 @@ final class TestRunCoordinator implements TestRunHook {
         }
         for (ParsedSuite suite : suites) {
             TestTreeBuilder.merge(currentRun.root(), suite);
+            // Remember the run's frontier — the newest result — so the panel can keep it scrolled into view
+            // ("track running test"). Only result merges move it; the pending pre-seed deliberately doesn't,
+            // or the view would jump to the bottom of the whole list before anything has run.
+            if (!suite.tests().isEmpty()) {
+                TestNode suiteNode = currentRun.root().childById(suite.suiteName());
+                if (suiteNode != null) {
+                    TestNode leaf = suiteNode.childById(
+                            suite.tests().get(suite.tests().size() - 1).id());
+                    if (leaf != null) {
+                        followTarget = leaf;
+                    }
+                }
+            }
         }
         requestRefresh();
     }
@@ -275,7 +316,7 @@ final class TestRunCoordinator implements TestRunHook {
         Platform.runLater(() -> {
             refreshPending = false;
             if (currentRun != null) {
-                panel.update(currentRun);
+                panel.update(currentRun, followTarget);
             }
         });
     }
@@ -485,6 +526,44 @@ final class TestRunCoordinator implements TestRunHook {
             }
         }
         return fallback;
+    }
+
+    /** Context menu: rerun just the clicked test (or class, for a suite row). */
+    private void rerunOne(TestNode node) {
+        runOne(node, false);
+    }
+
+    /** Context menu: rerun the clicked test/class with the JVM suspended, then attach the debugger. */
+    private void debugOne(TestNode node) {
+        runOne(node, true);
+    }
+
+    private void runOne(TestNode node, boolean debug) {
+        if (node == null || currentRun == null || node.className() == null) {
+            return;
+        }
+        BuildTool tool = currentRun.tool();
+        String method = node.kind() == TestNodeKind.TEST ? node.methodName() : null;
+        List<String> args = debug
+                ? TestDebug.debugTaskArgs(tool, node.className(), method)
+                : TestRunRecognizer.singleTestTask(tool, node.className(), method);
+        if (args.isEmpty()) {
+            host.setStatus(tr(debug ? "status.testrunner.debugUnsupported" : "status.testrunner.rerunUnsupported"));
+            return;
+        }
+        Path dir = currentRun.workingDir();
+        List<String> toggles = currentRun.toggleArgs();
+        if (debug) {
+            host.setStatus(tr("status.testrunner.debugWaiting"));
+        }
+        ops.runTest(tool, dir, args, toggles);
+        if (debug) {
+            // Set AFTER the launch: ops.runTest re-enters onTestRunStart synchronously, which resets the
+            // per-run state (including this flag) — arming it beforehand would be wiped before the JVM ever
+            // printed its JDWP banner. Surefire/Gradle fork the test JVM suspended; onTestOutput sees the
+            // banner and attaches.
+            awaitingAttachFor = node.className();
+        }
     }
 
     void rerun() {

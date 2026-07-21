@@ -3474,6 +3474,24 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public void stopTest(BuildTool tool) {
                     buildCoordinatorFor(tool).ifPresent(BuildCoordinator::stop);
                 }
+
+                @Override
+                public boolean debugAvailable() {
+                    return debugCoordinator.debugEffectiveFor("java"); // already folds in the master gate
+                }
+
+                @Override
+                public void attachDebugger(String className, String host, int port) {
+                    // Anchor the session on the test's own source when we can find it, else the active buffer.
+                    String hint = com.editora.test.TestSourceLocator.fileHint(className, BuildTool.MAVEN);
+                    Path anchor = hint == null ? null : resolveTestSourceFile(hint);
+                    if (anchor == null) {
+                        EditorBuffer b = activeBuffer();
+                        anchor = b == null ? null : b.getPath();
+                    }
+                    setStatus(tr("status.testrunner.debugAttaching", port));
+                    debugCoordinator.attachToPort(anchor, host, port);
+                }
             });
 
     /** The whole LSP integration (nav/format, diagnostics routing, the configure/detect/per-buffer-sync
