@@ -33,6 +33,7 @@ import com.editora.git.GitFormat;
 import com.editora.git.GitService;
 import com.editora.git.GitStatus;
 import com.editora.git.RelativeTime;
+import com.editora.process.ProcessRunner;
 import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
@@ -628,6 +629,38 @@ final class GitCoordinator {
             return;
         }
         gitSync(tr("gitlabel.push"), GitService.pushArgs(branchName, upstream));
+    }
+
+    /**
+     * Whether the current branch has no upstream, i.e. it has never been pushed. Creating a PR from such a
+     * branch needs a push first — {@code gh pr create} would otherwise want to ask where to push, and the
+     * GitHub integration runs {@code gh} with prompting disabled and stdin closed, so it just fails.
+     */
+    boolean currentBranchUnpushed() {
+        return repoRoot != null && !branchName.isBlank() && upstream.isBlank();
+    }
+
+    /**
+     * Pushes the current branch and hands the outcome back, for a caller that must chain work onto a
+     * successful push (creating a PR). Same argv decision as {@link #gitPush} (the pure
+     * {@link GitService#pushArgs}), but the result is reported to {@code onDone} — on the FX thread — rather
+     * than only echoed, so the caller decides what a failure means. Does nothing (beyond the standard
+     * "not a repo" echo) when there's no repo.
+     */
+    void pushCurrentBranch(Consumer<ProcessRunner.Result> onDone) {
+        if (reportIfNoRepo()) {
+            return;
+        }
+        service.runNetwork(
+                repoRoot,
+                r -> {
+                    if (r.ok()) {
+                        ops.reloadAllFromDiskSilently();
+                    }
+                    afterMutation();
+                    onDone.accept(r);
+                },
+                GitService.pushArgs(branchName, upstream));
     }
 
     /** Opens the Git tool window and focuses the commit message box. */

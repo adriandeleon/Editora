@@ -659,7 +659,24 @@ final class GitHubCoordinator {
             TextField baseField = new TextField(); // blank ⇒ gh uses the repo's default base branch
             baseField.setPromptText(tr("dialog.createPr.basePrompt"));
             TextInputKeymap.install(baseField, keymap);
+            // Comma-separated; parsed + normalized by the pure PrCreateArgs.
+            TextField reviewersField = new TextField();
+            reviewersField.setPromptText(tr("dialog.createPr.reviewersPrompt"));
+            TextInputKeymap.install(reviewersField, keymap);
+            TextField assigneesField = new TextField();
+            assigneesField.setPromptText(tr("dialog.createPr.assigneesPrompt"));
+            TextInputKeymap.install(assigneesField, keymap);
+            TextField labelsField = new TextField();
+            labelsField.setPromptText(tr("dialog.createPr.labelsPrompt"));
+            TextInputKeymap.install(labelsField, keymap);
+
             CheckBox draft = new CheckBox(tr("dialog.createPr.draft"));
+            // A branch with no upstream isn't on the remote yet, so `gh pr create` can't open a PR for it
+            // (it would want to prompt for where to push, which our prompt-disabled/stdin-closed gh can't
+            // answer). Offer the push here rather than failing with gh's opaque error.
+            boolean unpushed = git.currentBranchUnpushed();
+            CheckBox push = new CheckBox(tr("dialog.createPr.push", git.branchName()));
+            push.setSelected(true);
 
             GridPane grid = new GridPane();
             grid.setHgap(8);
@@ -670,10 +687,22 @@ final class GitHubCoordinator {
             grid.add(bodyField, 1, 1);
             grid.add(new Label(tr("dialog.createPr.baseLabel")), 0, 2);
             grid.add(baseField, 1, 2);
-            grid.add(draft, 1, 3);
+            grid.add(new Label(tr("dialog.createPr.reviewersLabel")), 0, 3);
+            grid.add(reviewersField, 1, 3);
+            grid.add(new Label(tr("dialog.createPr.assigneesLabel")), 0, 4);
+            grid.add(assigneesField, 1, 4);
+            grid.add(new Label(tr("dialog.createPr.labelsLabel")), 0, 5);
+            grid.add(labelsField, 1, 5);
+            grid.add(draft, 1, 6);
+            if (unpushed) {
+                grid.add(push, 1, 7);
+            }
             GridPane.setHgrow(titleField, Priority.ALWAYS);
             GridPane.setHgrow(bodyField, Priority.ALWAYS);
             GridPane.setHgrow(baseField, Priority.ALWAYS);
+            GridPane.setHgrow(reviewersField, Priority.ALWAYS);
+            GridPane.setHgrow(assigneesField, Priority.ALWAYS);
+            GridPane.setHgrow(labelsField, Priority.ALWAYS);
 
             BooleanProperty valid =
                     new SimpleBooleanProperty(!titleField.getText().isBlank());
@@ -688,22 +717,44 @@ final class GitHubCoordinator {
                     valid,
                     () -> {
                         List<String> args = PrCreateArgs.build(
-                                titleField.getText(), bodyField.getText(), baseField.getText(), draft.isSelected());
-                        host.setStatus(tr("status.github.creatingPr"));
-                        service.prCreate(dir, args, r -> {
-                            String url = r.out() == null ? "" : r.out().strip();
-                            if (r.ok()) {
-                                host.setStatus(tr("status.github.createdPr"));
-                                if (!url.isEmpty()) {
-                                    host.openExternalUrl(lastUrl(url));
+                                titleField.getText(),
+                                bodyField.getText(),
+                                baseField.getText(),
+                                draft.isSelected(),
+                                reviewersField.getText(),
+                                assigneesField.getText(),
+                                labelsField.getText());
+                        if (unpushed && push.isSelected()) {
+                            host.setStatus(tr("status.github.pushingBranch", git.branchName()));
+                            git.pushCurrentBranch(r -> {
+                                if (r.ok()) {
+                                    runPrCreate(dir, args);
+                                } else {
+                                    ghError(tr("status.github.pushFailed"), r.message());
                                 }
-                            } else {
-                                ghError(tr("status.github.createFailed"), r.message());
-                            }
-                        });
+                            });
+                        } else {
+                            runPrCreate(dir, args);
+                        }
                     },
                     null,
                     true);
+        });
+    }
+
+    /** Runs {@code gh pr create} with the form's argv and opens the created PR. */
+    private void runPrCreate(Path dir, List<String> args) {
+        host.setStatus(tr("status.github.creatingPr"));
+        service.prCreate(dir, args, r -> {
+            String url = r.out() == null ? "" : r.out().strip();
+            if (r.ok()) {
+                host.setStatus(tr("status.github.createdPr"));
+                if (!url.isEmpty()) {
+                    host.openExternalUrl(lastUrl(url));
+                }
+            } else {
+                ghError(tr("status.github.createFailed"), r.message());
+            }
         });
     }
 
