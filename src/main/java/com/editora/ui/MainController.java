@@ -6290,6 +6290,49 @@ public class MainController implements com.editora.mcp.McpBridge {
      * </ul>
      */
     private String loadInto(EditorBuffer buffer, Path file) throws IOException {
+        String note = loadIntoImpl(buffer, file);
+        notePerfContentLoaded(buffer);
+        return note;
+    }
+
+    /**
+     * Startup instrumentation (inert unless {@code -Deditora.perf}): a buffer's content is in place, so the
+     * next rendered frame is the one that shows the user their file.
+     *
+     * <p>The <b>first</b> loaded buffer is the one that counts, and it is deliberately not gated on being the
+     * active buffer: on the fresh-open path ({@code --no-session}, or any file not in the session)
+     * {@code loadInto} runs <em>before</em> the tab is added, so the buffer isn't selected yet and such a
+     * guard silently never fired — the run then never marked first paint at all. Taking the first load is
+     * correct in both paths anyway, since the CLI target is front-loaded: with a session it's the selected
+     * tab filled first, without one it's the only file opened.
+     */
+    private void notePerfContentLoaded(EditorBuffer buffer) {
+        if (!com.editora.perf.Startup.enabled() || perfPaintTimerStarted) {
+            return;
+        }
+        perfPaintTimerStarted = true;
+        com.editora.perf.Startup.mark(com.editora.perf.Startup.FILE_LOADED);
+        // A pulse's handle() runs at the *start* of a pulse, before that pulse renders. So the first tick
+        // only means "a pulse is beginning"; it's the second tick that proves the pulse in between — the one
+        // that laid out and painted this content — completed. Accurate to about one frame (~16 ms), which is
+        // the honest resolution of "when did the user first see it" without hooking Prism internals.
+        new javafx.animation.AnimationTimer() {
+            private int ticks;
+
+            @Override
+            public void handle(long now) {
+                if (++ticks >= 2) {
+                    stop();
+                    com.editora.perf.Startup.mark(com.editora.perf.Startup.FIRST_PAINT);
+                }
+            }
+        }.start();
+    }
+
+    /** True once the first-paint timer has been armed, so it arms for one buffer only. */
+    private boolean perfPaintTimerStarted;
+
+    private String loadIntoImpl(EditorBuffer buffer, Path file) throws IOException {
         // One stat call for both size + mtime instead of two separate syscalls per file load.
         long size;
         long mtime;
