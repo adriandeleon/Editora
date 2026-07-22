@@ -43,6 +43,7 @@
   "C-w": "edit.cut",
   "M-w": "edit.copy",
   "C-y": "edit.paste",
+  "M-y": "edit.yankPop",
   "C-d": "edit.deleteChar",
   "M-d": "edit.killWord",
   "C-k": "edit.killLine",

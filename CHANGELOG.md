@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Emacs kill ring.** The kill commands — `C-k`, `M-d`, `M-DEL`, `C-M-k`, `C-S-DEL`, `M-z` — used to
+  simply delete, so `C-k` followed by `C-y` pasted whatever unrelated thing happened to be on the system
+  clipboard. They now put their text on a 120-entry ring that `C-y` yanks from, **`M-y`** (yank-pop) steps
+  back through, and a new palette command *Edit: Yank from Kill Ring…* lets you pick from directly.
+  Consecutive kills accumulate into one entry the way Emacs does, so `C-k C-k C-k` then `C-y` restores all
+  three lines — and backward kills prepend, so `M-DEL M-DEL` then `C-y` gives the words back in reading
+  order. Kills are still written to the system clipboard, so pasting into another application is unchanged;
+  conversely, text you copied in another application wins over the ring, so `C-y` never surprises you with a
+  stale kill. The ring is per window and lives only for the session.
+
 ## [0.9.9] - 2026-07-21
 
 ### Added
