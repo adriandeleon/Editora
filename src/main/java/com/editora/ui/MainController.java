@@ -571,9 +571,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Project commands (incl. the Project tool window) are hidden from the palette unless project
         // support is enabled.
         // Project + Git commands are hidden from the palette unless their feature is enabled.
-        // A command whose feature is off is hidden from the palette (see Chrome.paletteVisible, which is
-        // pure + unit-tested); paletteGates() snapshots the live feature-enabled state per filter call.
-        this.palette = new CommandPalette(registry, keymap, c -> Chrome.paletteVisible(c.id(), paletteGates()));
+        // A command whose feature is off, or which has nothing to act on right now, is listed but grayed
+        // out and inert (see Chrome.paletteEnabled, which is pure + unit-tested). The gate/context snapshot
+        // is taken once per palette refresh — not once per command — because the predicate runs over the
+        // whole registry (several hundred commands) on every keystroke in the query field, and the context
+        // half reads the active buffer (whose hasPreview() sniffs buffer text).
+        this.palette = new CommandPalette(registry, keymap, () -> {
+            Chrome.PaletteGates gates = paletteGates();
+            Chrome.PaletteContext context = paletteContext();
+            return c -> Chrome.paletteEnabled(c.id(), gates, context);
+        });
+        // Tooltip on a grayed row explaining why, and naming the command that would re-enable it.
+        this.palette.setDisabledReason(c -> disabledCommandReason(c.id()));
         this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
@@ -938,7 +947,63 @@ public class MainController implements com.editora.mcp.McpBridge {
                 pluginsEnabled(),
                 externalToolsEnabled(),
                 logViewer.isEnabled(),
-                s.isTestRunner() && !simpleModeActive());
+                s.isTestRunner() && !simpleModeActive(),
+                // debugCoordinator is assigned during init(); the palette can't be shown before then, but
+                // the predicate is lazy so guard rather than assume the ordering.
+                debugCoordinator != null && debugCoordinator.debugSupportEnabled(),
+                aiCoordinator.isEnabled(),
+                agentCoordinator.isEnabled(),
+                s.isTodoHighlight(),
+                s.isSpellCheck(),
+                s.isCsvPreview(),
+                s.isStructuredPreview(),
+                markdownLintEnabled(),
+                editorConfigEnabled(),
+                simpleModeActive());
+    }
+
+    /**
+     * The localized explanation for a grayed-out palette row — why the command can't run, and (for a
+     * switched-off feature) the localized title of the command that would switch it back on. Null when the
+     * command is actionable or there is nothing useful to say.
+     *
+     * <p>Only called for rows that already failed the enabled predicate, i.e. at most once per <em>visible</em>
+     * cell, so re-deriving the gate/context snapshot here costs nothing measurable — unlike the predicate
+     * itself, which runs over the whole registry.
+     */
+    private String disabledCommandReason(String commandId) {
+        Chrome.DisabledReason reason = Chrome.disabledReason(commandId, paletteGates(), paletteContext());
+        if (reason == null) {
+            return null;
+        }
+        if (reason.commandArg() == null) {
+            return tr(reason.messageKey());
+        }
+        // The argument is a command id; show its localized title so the tooltip names what the user would
+        // actually type into this very palette.
+        return tr(reason.messageKey(), tr("command." + reason.commandArg()));
+    }
+
+    /**
+     * Snapshot of what the window can act on right now, for {@link Chrome#contextEnabled} — the second half
+     * of the palette's enabled test. Unlike {@link #paletteGates()} these are all fully-enabled features
+     * that simply have nothing to operate on (no buffer, no repo, no suspended debug session), so their
+     * commands would no-op with a status message if run.
+     */
+    private Chrome.PaletteContext paletteContext() {
+        EditorBuffer b = activeBuffer();
+        boolean debugActive = dapManager.isActive();
+        boolean suspended = dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED;
+        return new Chrome.PaletteContext(
+                b != null,
+                git.repoRoot() != null,
+                b != null && (b.isMarkdown() || b.isTypst()),
+                b != null && b.isCsv(),
+                b != null && b.isHttpFile(),
+                b != null && b.isTypst(),
+                b != null && b.hasPreview(),
+                debugActive,
+                suspended);
     }
 
     /**
@@ -12135,6 +12200,19 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> {
                             csvCoordinator.applySupport(); // (de)attach the in-editor grid on every CSV buffer
                             updateBufferToolWindows();
+                        })));
+        // The structured-data preview had a Settings checkbox but no palette command, against the
+        // every-setting-is-a-command convention — and once structured.* is gated on it, the palette would
+        // otherwise have no way to switch it back on.
+        registry.register(Command.of(
+                "view.toggleStructuredPreview",
+                () -> toggleSetting(
+                        "view.toggleStructuredPreview",
+                        () -> config.getSettings().isStructuredPreview(),
+                        config.getSettings()::setStructuredPreview,
+                        () -> {
+                            applyViewSettingsToAllBuffers(config.getSettings());
+                            settingsWindow.syncAll();
                         })));
         registry.register(Command.of(
                 "view.toggleCsvRainbow",

@@ -16,6 +16,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
@@ -59,10 +60,29 @@ public class CommandPalette {
     private java.util.function.Consumer<String> docsOpener = url -> {};
 
     private Map<String, String> commandToKey;
-    /** A command matching this predicate is <em>enabled</em> (actionable); one that fails it is still listed
-     *  but rendered grayed out and skipped by the selection cursor (e.g. a Git command while Git is off) —
-     *  so the user sees the command exists and its keybinding rather than it silently missing (#532). */
-    private final java.util.function.Predicate<Command> enabled;
+    /**
+     * Builds the enabled-predicate for one pass over the command list. A command matching the predicate is
+     * <em>enabled</em> (actionable); one that fails it is still listed but rendered grayed out and skipped
+     * by the selection cursor (e.g. a Git command while Git is off, or a Markdown command in a Java file) —
+     * so the user sees the command exists and its keybinding rather than it silently missing (#532).
+     *
+     * <p>A <b>supplier</b>, not a bare predicate, so the caller can snapshot expensive live state (feature
+     * gates, active-buffer type, repo root) <em>once per refresh</em> instead of once per command: this runs
+     * over the whole registry — several hundred commands — on every keystroke in the query field, so a
+     * per-command snapshot re-derives the same answer hundreds of times per keypress. See
+     * {@link #enabledSnapshot}.
+     */
+    private final java.util.function.Supplier<java.util.function.Predicate<Command>> enabledPolicy;
+
+    /** The current pass's predicate, refreshed by {@link #filter} and read by the cells while they render. */
+    private java.util.function.Predicate<Command> enabledSnapshot = c -> true;
+
+    /**
+     * Explains why a grayed-out command can't run ("Git is turned off — run …"), shown as the row's tooltip.
+     * Returns null/blank when there is nothing useful to say, in which case no tooltip is installed.
+     * Injected rather than derived here so {@link CommandPalette} stays free of the feature-gate model.
+     */
+    private java.util.function.Function<Command, String> disabledReason = c -> null;
 
     private final TextField input = new TextField();
     private final ListView<Command> list = new ListView<>();
@@ -81,17 +101,25 @@ public class CommandPalette {
         this(registry, keymap, c -> true);
     }
 
+    /** Constant policy — the predicate never changes between passes (used by tests and the no-gate ctor). */
     public CommandPalette(
             CommandRegistry registry, KeymapManager keymap, java.util.function.Predicate<Command> enabled) {
+        this(registry, keymap, () -> enabled);
+    }
+
+    public CommandPalette(
+            CommandRegistry registry,
+            KeymapManager keymap,
+            java.util.function.Supplier<java.util.function.Predicate<Command>> enabledPolicy) {
         this.registry = registry;
         this.keymap = keymap;
         this.commandToKey = invert(keymap.bindings());
-        this.enabled = enabled;
+        this.enabledPolicy = enabledPolicy;
         build();
     }
 
     private boolean isEnabled(Command c) {
-        return enabled.test(c);
+        return enabledSnapshot.test(c);
     }
 
     /** Rebuilds the chord hints from the current keymap (after a live keymap switch). */
@@ -153,6 +181,14 @@ public class CommandPalette {
         // (No MOUSE_CLICKED consume on the card: the backdrop dismisses on MOUSE_PRESSED targeted at
         // itself, so a click inside the card never reaches it — and consuming MOUSE_CLICKED here would
         // swallow the result cells' own click-to-run handler.)
+    }
+
+    /**
+     * Injects the explainer for grayed-out rows (see {@link #disabledReason}). Only consulted for a command
+     * that already failed the enabled predicate, so it costs nothing on the common path.
+     */
+    public void setDisabledReason(java.util.function.Function<Command, String> disabledReason) {
+        this.disabledReason = disabledReason == null ? c -> null : disabledReason;
     }
 
     /** Injects the shared overlay host used to show the palette card. */
@@ -251,6 +287,8 @@ public class CommandPalette {
     }
 
     private void filter(String query) {
+        // One snapshot of the live feature/context state for this whole pass — see enabledPolicy.
+        enabledSnapshot = enabledPolicy.get();
         String q = query.toLowerCase(Locale.ROOT).trim();
         List<Command> matches = new ArrayList<>();
         for (Command command : registry.all()) {
@@ -384,8 +422,19 @@ public class CommandPalette {
             title.setText(item.title());
             key.setText(commandToKey.getOrDefault(item.id(), ""));
             box.getStyleClass().remove("palette-disabled");
+            setTooltip(null); // cells are recycled — never leave a previous row's explanation behind
             if (!isEnabled(item)) {
                 box.getStyleClass().add("palette-disabled"); // grayed + non-actionable (#532)
+                // Say why it's grayed, and which command would fix it — a gray row with no explanation
+                // reads as a bug rather than a state.
+                String why = disabledReason.apply(item);
+                if (why != null && !why.isBlank()) {
+                    Tooltip tip = new Tooltip(why);
+                    tip.setWrapText(true);
+                    tip.setMaxWidth(380);
+                    tip.getStyleClass().add("palette-disabled-tooltip");
+                    setTooltip(tip);
+                }
             }
             setGraphic(box);
         }

@@ -5,20 +5,27 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 class MessagesTest {
 
     /** The non-base bundled locales; each must mirror the English base's key set exactly. */
     private static final List<String> LOCALES = List.of("it", "es", "fr", "pt", "de");
+
+    /** The base catalog ("") plus every overlay — for checks that apply to all six equally. */
+    private static final List<String> ALL_CATALOGS = List.of("", "it", "es", "fr", "pt", "de");
 
     private static Properties loadProps(String resource) {
         Properties p = new Properties();
@@ -77,11 +84,58 @@ class MessagesTest {
         assertTrue(missing.isEmpty(), "command titles without a .desc description: " + missing);
     }
 
+    /**
+     * A command family either prefixes all of its titles ({@code Edit: Cut}, {@code Git: Push}) or none of
+     * them — never a mix. The palette lists ~550 commands, so a half-prefixed family scatters related
+     * entries when scanning; {@code view.*} was a 46/48 coin flip before this was pinned. Families that are
+     * deliberately bare in full (their titles are self-describing nouns — "Command Palette", "Switcher")
+     * stay bare, which this allows; what it forbids is the mix.
+     *
+     * <p>Every locale is checked, not just the base: the prefix is part of the translated string, so a
+     * catalog can drift on its own.
+     */
+    @Test
+    void aCommandFamilyIsEitherFullyPrefixedOrFullyBare() {
+        // Allows hyphens/apostrophes/accents ("HTML-Vorschau: ", "Fenêtre d'outils : ") and the French
+        // space-before-colon convention.
+        Pattern prefix = Pattern.compile("^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9'’\\- ]*\\s?: ");
+        for (String lang : ALL_CATALOGS) {
+            Properties props =
+                    loadProps("/com/editora/i18n/messages" + (lang.isEmpty() ? "" : "_" + lang) + ".properties");
+            Map<String, Set<String>> prefixed = new TreeMap<>();
+            Map<String, Set<String>> bare = new TreeMap<>();
+            for (String key : props.stringPropertyNames()) {
+                if (!key.startsWith("command.") || key.endsWith(".desc")) {
+                    continue;
+                }
+                String[] parts = key.split("\\.", 3);
+                if (parts.length < 3) {
+                    continue;
+                }
+                String family = parts[1];
+                String title = props.getProperty(key).trim();
+                (prefix.matcher(title).find() ? prefixed : bare)
+                        .computeIfAbsent(family, f -> new TreeSet<>())
+                        .add(key);
+                // A prefix applied twice ("Markdown: Table: Add Row") is always a bug.
+                assertFalse(
+                        prefix.matcher(prefix.matcher(title).replaceFirst("")).find(),
+                        lang + ": doubled family prefix in " + key + " = " + title);
+            }
+            for (String family : prefixed.keySet()) {
+                if (bare.containsKey(family)) {
+                    fail(lang + ": command family '" + family + "' mixes prefixed and bare titles — bare: "
+                            + bare.get(family) + ", prefixed: " + prefixed.get(family));
+                }
+            }
+        }
+    }
+
     @Test
     void trFallsBackOverlayThenBaseThenKey() {
         Messages.init("es");
-        // A key present in the overlay returns the Spanish value.
-        assertEquals("Configuración", Messages.tr("command.view.settings"));
+        // A key present in the overlay returns the Spanish value ("Ver: " is the view.* family prefix).
+        assertEquals("Ver: Configuración", Messages.tr("command.view.settings"));
         // A wholly unknown key returns the key itself (never an exception).
         assertEquals("no.such.key.exists", Messages.tr("no.such.key.exists"));
         Messages.init("en");

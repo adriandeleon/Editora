@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The command palette now grays out far more of what it can't run.** Commands whose feature is switched
+  off were already shown grayed and inert, but only 17 features were wired up — so on a fresh install just
+  19 of ~550 commands were ever affected, and the feature looked broken. Two fixes:
+  - **Missing features added to the gate**: debugging, AI, the AI agent, TODO highlighting, spell check, the
+    CSV grid, the structured-data preview, Markdown lint, and EditorConfig. Debugging in particular is off by
+    default, so its whole command family used to look fully available on a fresh install.
+  - **Commands are now also grayed when they have nothing to act on**, not just when their feature is off:
+    Markdown commands outside a Markdown (or Typst) file, CSV commands outside a CSV, HTTP commands outside a
+    `.http` file, preview/export commands on a file with no preview, Git commands outside a repository
+    (except Clone), editing and navigation commands with no file open, and debugger step/inspect commands
+    with no suspended session.
+
+  The master toggle that switches a feature back on is never grayed, and commands that legitimately work
+  with no file open (New, Open, Clone, the palette itself) stay actionable.
+
+- **A grayed palette row now explains itself on hover**, and says what to do about it — "Unavailable — this
+  feature is turned off. Run “Toggle Debugging Support” to enable it", or "Unavailable — the active file is
+  not inside a Git repository". Where Simple UI mode is what's forcing a feature off, the tooltip points at
+  Simple mode rather than the feature's own toggle, which wouldn't have helped.
+
+### Added
+
+- `view.toggleStructuredPreview` — the structured-data preview had a Settings checkbox but no palette
+  command, unlike every other setting.
+
+### Fixed
+
+- **Command titles in the palette now use their family prefix consistently.** 75% of titles already read
+  `Family: Action` (`Edit: Cut`, `Git: Push`), but the `view.*` family was a coin flip — 46 prefixed, 48 bare
+  — so related commands scattered when scanning the list. All 48 are now prefixed, in all six languages, and
+  a handful of minority spellings within one language were normalised too (Portuguese had `Exibir:`, `Ver:`
+  and `Vista:` all in use). Also prefixed the stragglers in the `edit`/`editor`/`app`/`diagram`/`preview`/
+  `file`/`install`/`typst` families, rewording where the prefix would have repeated a word ("Run File" became
+  `File: Run`, not `File: Run File`).
+
+  Also brought into line: **`tool.*`** now reads `Tool Window: <name>` throughout, reusing each window's
+  already-translated name (Italian, Spanish, French and Portuguese had each been using *two* competing
+  prefixes) — this also fixes `tool.go`, whose title was the bare word "Go" and collided with the 33-command
+  `Go:` navigation family in palette search; **`markdown.*`** formatting commands are now `Markdown: Bold`
+  rather than a bare "Bold", with the table commands grouped under the existing `Table:`; and **`lsp.*`** is
+  uniformly `LSP:`. A new test (`MessagesTest.aCommandFamilyIsEitherFullyPrefixedOrFullyBare`) pins the
+  convention across all six catalogs, so a family can no longer drift into a half-prefixed state.
+
+- Fixed one command (`view.toggleSearchGitignore`) that used the verb "Toggle" as a pseudo-prefix instead of
+  its family's, in every language, and eight non-breaking spaces before colons in the French catalog where
+  the other 741 use a regular space.
+
 ## [0.9.8] - 2026-07-20
 
 ### Added
