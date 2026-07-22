@@ -7,8 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.9] - 2026-07-21
+
+### Added
+
+- **Workspace trust for build wrappers.** A repository that ships its own `./mvnw` or `./gradlew` gets that
+  script run with your privileges the moment you trigger a Maven or Gradle build — so Editora now asks before
+  the first build in a folder it hasn't been told to trust. Trust is remembered per folder and inherited by
+  subfolders, so a multi-module repo asks once; it's revocable from Settings → Workspace → Trusted Folders or
+  the palette. Declining means no build rather than a quieter one — a hostile `pom.xml` or `build.gradle`
+  executes code through the PATH `mvn`/`gradle` too. Every other build tool launches your own toolchain and is
+  never gated.
+- **Create a pull request from the GitHub tool window** — a `+` button beside Refresh, opening the same form as
+  the palette command, with the panel refreshing afterwards so the new PR appears in the list you created it
+  from.
+- **The Create Pull Request form gained reviewers, assignees and labels**, and can **push a never-pushed
+  branch first**. `gh pr create` on a branch with no upstream used to fail with an opaque error, because it
+  could not prompt for where to push; the form now offers a pre-checked "Push branch to origin first" when
+  that applies, and reports a push failure as a push failure.
+- **The Git Log file list gained a context menu** — Show Diff / Open File / Show File History / Copy Path
+  (Open File is disabled for a deleted file), plus Enter to open a diff.
+- **Startup instrumentation** (`EDITORA_PERF=1`, `scripts/measure-startup.sh`) measuring launch through to the
+  first frame that actually carries the file's content. Inert by default.
+- `view.toggleStructuredPreview` — the structured-data preview had a Settings checkbox but no palette
+  command, unlike every other setting.
+
 ### Changed
 
+- **The HTTP Client is now the `.http` file's preview**, not a separate tool window. Every other rich file type
+  in Editora presents itself through the shared Editor/Split/Preview view, and `.http` now does too — running a
+  request from the gutter opens the response beside the source, and the per-file view mode is remembered.
+- **Console panels scroll with your configured keybindings.** Build Output, Run, External Tools and Debug marked
+  themselves as owning their keys but had nothing to hand the chords to, so `C-n`/`C-p`, `C-v`/`M-v` and
+  `M-<`/`M->` were silently swallowed and only the raw arrows worked. Auto-follow is also conditional now:
+  scrolling back through a *running* build stays put instead of being yanked to the tail by the next output line.
+- **The Git Log commit list takes focus when the window opens.** It tried to, but the log is fetched
+  asynchronously, so the list was still empty; `n`/`p` also move the selection in both lists now.
+- **The GitHub panel shows a spinner while a segment loads.** Switching between Pull Requests / Issues / Runs
+  left the previous segment's rows on screen for the seconds each `gh` call takes, which read as a frozen
+  window. A stale response from a fast double-switch is now dropped rather than repainting the wrong segment.
+- **Test Results tracks the running test.** The tree scrolls to the newest result while a run is live, governed
+  by a Follow toggle that auto-disables the moment you select a row. Clicking a test now shows its real output —
+  per-test `system-out`/`system-err` were being dropped outright, so a passing test rendered as just "Passed" —
+  and rows gained a context menu: Go to Test/Class, Rerun, and Debug This Test (with the test JVM suspended)
+  when Java debugging is configured.
+- **Adding a bookmark moved off the gutter.** A click anywhere in the gutter used to toggle one, and the
+  breakpoint strip and Run glyph are narrow targets inside that same gutter — so a slightly-off click added a
+  stray bookmark instead of setting a breakpoint or running the file. Use `C-c m` or the editor right-click
+  menu's Add/Remove Bookmark, which acts on the right-clicked line.
 - **The command palette now grays out far more of what it can't run.** Commands whose feature is switched
   off were already shown grayed and inert, but only 17 features were wired up — so on a fresh install just
   19 of ~550 commands were ever affected, and the feature looked broken. Two fixes:
@@ -29,13 +75,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not inside a Git repository". Where Simple UI mode is what's forcing a feature off, the tooltip points at
   Simple mode rather than the feature's own toggle, which wouldn't have helped.
 
-### Added
-
-- `view.toggleStructuredPreview` — the structured-data preview had a Settings checkbox but no palette
-  command, unlike every other setting.
-
 ### Fixed
 
+- **macOS on Apple silicon starts ~28% faster.** Every tagged release from v0.9.1 through v0.9.8 shipped
+  macOS arm64 without its ahead-of-time class cache — costing 300–480 ms of cold start — because the build's
+  cache-training run crashed on the CI runner's virtual GPU once JavaFX 26 made Metal the default pipeline.
+  Training now pins a pipeline any runner can render (the shipped app still uses Metal), and a missing cache
+  fails loudly instead of leaving one line in a 10,000-line build log. Nothing about this was visible on real
+  Apple silicon, which is why device testing never caught it.
+- **Opening a file from the file manager is much faster and no longer jumps around.** The requested file is
+  shown first instead of after the whole previous session has restored, language servers start per tab as you
+  visit it rather than all at once during launch, and `--no-session` skips the saved tabs entirely (which the
+  Linux "Editora Expert Mode" launcher now uses). Measured on an 8-file session opening one file: 5 → 1 child
+  processes, 19 s → 8 s of CPU, 917 → 696 MB.
+- **A restored file no longer flashes to the top of the document.** Two separate causes: applying syntax
+  highlighting collapsed the viewport to line 1 a few frames after the file had already painted at its saved
+  caret, and the virtual flow separately re-anchored itself to the top during a plain layout pass. Both are
+  now held in the same frame they happen — correcting a frame later only turns the jump into a bounce.
+- **A restored file no longer renders at its tail first**, with the line numbers running from the end of the
+  file back to the top.
+- **A progressively-rendered preview no longer drags the editor around in Split view.** Opening a typst,
+  Mermaid or image-heavy file made the editor drift ~100 lines down and back over about two seconds, because
+  the preview pane re-anchoring as its content grew looked identical to the user scrolling it.
+- **Case-insensitive search now matches case pairs that change length** — searching `STRASSE` finds `Straße`,
+  and `FI` finds `ﬁ`. Applies to literal search in open buffers; regex search and the ripgrep-accelerated half
+  of Find in Files keep their own engines' simpler folding.
+- **No more "Already open" on every launch** when a file passed on the command line is also part of the
+  restored session — Editora was reporting a tab it had just created itself.
 - **Command titles in the palette now use their family prefix consistently.** 75% of titles already read
   `Family: Action` (`Edit: Cut`, `Git: Push`), but the `view.*` family was a coin flip — 46 prefixed, 48 bare
   — so related commands scattered when scanning the list. All 48 are now prefixed, in all six languages, and
