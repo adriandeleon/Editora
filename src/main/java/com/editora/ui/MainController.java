@@ -5598,7 +5598,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         if (targets != null) {
             for (OpenTarget t : targets) {
-                openPath(t.file().toAbsolutePath().normalize());
+                openPath(t.file().toAbsolutePath().normalize(), true);
             }
             if (targets.stream().anyMatch(t -> t.line() > 0)) {
                 // Defer once more so it runs after openPath's own goToStart for any newly-opened file.
@@ -6217,6 +6217,18 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void openPath(Path file) {
+        openPath(file, false);
+    }
+
+    /**
+     * Opens a file, or re-selects its tab when it is already open.
+     *
+     * <p>{@code quietIfOpen} suppresses the "Already open" echo for the startup path: a command-line
+     * {@code FILE} that is also part of the restored session has its tab created + selected by
+     * {@link #openInitialBuffer()} a pulse earlier, so the CLI action's own {@code openPath} always finds it
+     * there — reporting "Already open" for a tab Editora itself just made is noise, not information.
+     */
+    private void openPath(Path file, boolean quietIfOpen) {
         Tab existing = tabForPath(file);
         if (existing != null) {
             // Already open — switch to its tab instead of opening a duplicate.
@@ -6228,7 +6240,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
-            setStatus(tr("status.alreadyOpen", file.getFileName()));
+            if (!quietIfOpen) {
+                setStatus(tr("status.alreadyOpen", file.getFileName()));
+            }
             return;
         }
         // A raster image opens in the read-only image viewer instead of dumping its bytes into a text buffer.
