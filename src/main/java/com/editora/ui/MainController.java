@@ -68,6 +68,7 @@ import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
+import com.editora.editops.KillRing;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.LanguageRegistry;
@@ -380,6 +381,29 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Button toolbarRestoreButton;
     /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
     private boolean markActive;
+    /**
+     * The Emacs kill ring. Per window rather than app-global: every kill is also written to the system
+     * clipboard, so the most recent kill still crosses windows — only the ring's *history* is per-window.
+     */
+    private final KillRing killRing = new KillRing();
+    /**
+     * Where the previous kill left off: buffer identity + document version + caret. A kill starting at
+     * exactly that point accumulates into the same ring entry (Emacs' consecutive-kill behaviour), and
+     * anything the user does in between — typing, moving, switching tabs — moves one of the three and so
+     * starts a fresh entry. Keying off {@link EditorBuffer#docVersion()} avoids needing a
+     * command-sequencing hook (the single {@code CommandRegistry} execution listener belongs to macro
+     * recording).
+     */
+    private EditorBuffer lastKillBuffer;
+
+    private long lastKillDocVersion = -1;
+    private int lastKillCaret = -1;
+    /** The range the last yank/yank-pop inserted, so {@code M-y} knows what to replace. Same guard shape. */
+    private EditorBuffer lastYankBuffer;
+
+    private long lastYankDocVersion = -1;
+    private int lastYankStart = -1;
+    private int lastYankEnd = -1;
     /** Cycle state for {@code move-to-window-line-top-bottom} (M-r): center → top → bottom. */
     private int windowLineCycle = -1;
     /** Re-entrancy guard so the external-change prompt (which steals focus) doesn't re-trigger itself. */
@@ -7930,6 +7954,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         EditorBuffer b = activeBuffer();
         if (b != null && b.multiCaretCut()) { // every caret's selection, one undoable step
+            adoptClipboardAsKill();
             deactivateMark();
             refreshPasteState();
             setStatus(tr("status.cut"));
@@ -7942,12 +7967,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean had = area.getSelection().getLength() > 0;
         if (!had && config.getSettings().isCopyLineWhenNoSelection() && b != null) {
             b.cutCurrentLine(); // empty selection → cut the whole current line (VS Code editor.emptySelectionClipboard)
+            adoptClipboardAsKill();
             deactivateMark();
             refreshPasteState();
             setStatus(tr("status.cutLine"));
             return;
         }
         area.cut();
+        adoptClipboardAsKill(); // Emacs kill-region: the cut text joins the kill ring
         deactivateMark();
         refreshPasteState(); // clipboard now has content
         setStatus(tr(had ? "status.cut" : "status.nothingToCut"));
@@ -7957,6 +7984,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void onCopy() {
         EditorBuffer b = activeBuffer();
         if (b != null && b.multiCaretCopy()) { // every caret's selection (VS Code one-line-per-caret)
+            adoptClipboardAsKill();
             deactivateMark();
             refreshPasteState();
             setStatus(tr("status.copied"));
@@ -7970,6 +7998,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (!had && config.getSettings().isCopyLineWhenNoSelection() && b != null) {
             b.copyCurrentLine(); // empty selection → copy the whole current line (VS Code
             // editor.emptySelectionClipboard)
+            adoptClipboardAsKill();
             deactivateMark();
             refreshPasteState();
             setStatus(tr("status.copiedLine"));
@@ -7979,6 +8008,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (had) {
             area.deselect(); // collapse the selection once copied (leaves the caret in place)
         }
+        adoptClipboardAsKill(); // Emacs kill-ring-save
         deactivateMark();
         refreshPasteState(); // clipboard now has content
         setStatus(tr(had ? "status.copied" : "status.nothingToCopy"));
@@ -8008,7 +8038,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (area == null) {
             return;
         }
-        area.paste();
+        if (b == null || !yankFromRing(b, area)) {
+            area.paste(); // nothing on the ring — fall back to the platform paste
+        }
         deactivateMark();
         setStatus(tr("status.pasted"));
     }
@@ -11458,6 +11490,214 @@ public class MainController implements com.editora.mcp.McpBridge {
         area.requestFocus();
     }
 
+    // --- Kill ring -------------------------------------------------------------------------------
+
+    /**
+     * Whether a kill starting here continues the previous one (Emacs: {@code last-command} was a kill),
+     * in which case the text accumulates into the newest ring entry instead of pushing a new one.
+     */
+    private boolean continuesPreviousKill(EditorBuffer buffer, int caret) {
+        return buffer == lastKillBuffer && buffer.docVersion() == lastKillDocVersion && caret == lastKillCaret;
+    }
+
+    /**
+     * Records {@code text} as killed and mirrors the resulting ring entry to the system clipboard (Emacs'
+     * {@code select-enable-clipboard}), then remembers this position so an immediately following kill
+     * accumulates. Call <em>after</em> the deletion has been applied — the caret and document version are
+     * read as they now stand — and pass the {@code merge} verdict taken <em>before</em> it, since applying
+     * the edit has already bumped {@link EditorBuffer#docVersion()} past the recorded one.
+     */
+    private void pushKill(EditorBuffer buffer, CodeArea area, String text, KillRing.Direction dir, boolean merge) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        killRing.kill(text, dir, merge);
+        setClipboardString(killRing.current()); // the whole accumulated entry, as Emacs does
+        lastKillBuffer = buffer;
+        lastKillDocVersion = buffer.docVersion();
+        lastKillCaret = area.getCaretPosition();
+        invalidateYank();
+        refreshPasteState();
+    }
+
+    /** Mirrors whatever a cut/copy just placed on the clipboard into the ring as a fresh entry. */
+    private void adoptClipboardAsKill() {
+        Clipboard cb = Clipboard.getSystemClipboard();
+        if (cb.hasString()) {
+            pushSave(cb.getString());
+        }
+    }
+
+    /** Records copied (not killed) text: a fresh ring entry, never an accumulation. */
+    private void pushSave(String text) {
+        killRing.save(text);
+        invalidateYank();
+        resetKillAccumulation();
+    }
+
+    /** Breaks any consecutive-kill run, so the next kill starts a new ring entry. */
+    private void resetKillAccumulation() {
+        lastKillBuffer = null;
+        lastKillDocVersion = -1;
+        lastKillCaret = -1;
+    }
+
+    private void invalidateYank() {
+        lastYankBuffer = null;
+        lastYankDocVersion = -1;
+        lastYankStart = -1;
+        lastYankEnd = -1;
+    }
+
+    private void recordYank(EditorBuffer buffer, int start, int end) {
+        lastYankBuffer = buffer;
+        lastYankDocVersion = buffer.docVersion();
+        lastYankStart = start;
+        lastYankEnd = end;
+    }
+
+    private void setClipboardString(String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        ClipboardContent content = new ClipboardContent();
+        content.putString(text);
+        Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    /**
+     * The variant of {@link #emacsEdit} for the commands that <em>kill</em> (the removed text joins the
+     * kill ring) rather than merely delete: {@code C-k}, {@code M-d}, {@code M-DEL}, {@code C-M-k},
+     * {@code C-S-DEL}. The plain {@code emacsEdit} still backs {@code delete-horizontal-space} and
+     * friends, which Emacs likewise keeps off the ring.
+     */
+    private void emacsKill(
+            java.util.function.BiFunction<String, Integer, com.editora.editops.EmacsEdits.Edit> op,
+            KillRing.Direction dir) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        com.editora.editops.EmacsEdits.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        if (edit == null) {
+            return;
+        }
+        boolean merge = continuesPreviousKill(buffer, area.getCaretPosition()); // decide before the edit
+        String killed = area.getText(edit.from(), edit.to());
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.moveTo(edit.caret());
+        pushKill(buffer, area, killed, dir, merge);
+        deactivateMark();
+        area.requestFocus();
+    }
+
+    /**
+     * Emacs {@code yank} ({@code C-y}) for the plain paste path: inserts the current ring entry. The
+     * system clipboard wins when it holds something the ring doesn't (i.e. the user copied in another
+     * application) — Emacs' {@code interprogram-paste-function}. Returns false when there is nothing to
+     * yank, so the caller can fall back to the platform paste.
+     */
+    private boolean yankFromRing(EditorBuffer buffer, CodeArea area) {
+        Clipboard cb = Clipboard.getSystemClipboard();
+        if (cb.hasString()) {
+            killRing.adoptExternal(cb.getString());
+        }
+        String text = killRing.current();
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        var sel = area.getSelection();
+        int start = sel.getStart();
+        area.replaceText(start, sel.getEnd(), text);
+        area.moveTo(start + text.length());
+        recordYank(buffer, start, start + text.length());
+        resetKillAccumulation();
+        return true;
+    }
+
+    /**
+     * Emacs {@code yank-pop} ({@code M-y}): replaces the text the immediately preceding yank inserted
+     * with the next-older ring entry. Only legal directly after a yank — if the document has moved since,
+     * there is no known range to replace and we say so rather than guessing.
+     */
+    private void yankPop() {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        if (buffer != lastYankBuffer || buffer.docVersion() != lastYankDocVersion || lastYankStart < 0) {
+            setStatus(tr("status.yankPop.notAfterYank"));
+            return;
+        }
+        if (killRing.size() < 2) {
+            setStatus(tr("status.yankPop.ringEmpty"));
+            return;
+        }
+        String text = killRing.rotate();
+        if (text == null) {
+            return;
+        }
+        area.replaceText(lastYankStart, lastYankEnd, text);
+        area.moveTo(lastYankStart + text.length());
+        recordYank(buffer, lastYankStart, lastYankStart + text.length());
+        setClipboardString(text);
+        refreshPasteState();
+        setStatus(tr("status.yankPop", killRing.yankIndex() + 1, killRing.size()));
+        area.requestFocus();
+    }
+
+    /**
+     * Palette-only {@code edit.yankFromRing}: pick any past kill from the ring instead of stepping back
+     * through it with {@code M-y}.
+     */
+    private void showKillRingPicker() {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        if (killRing.isEmpty()) {
+            setStatus(tr("status.yankPop.ringEmpty"));
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        QuickOpen<String> picker = new QuickOpen<>(
+                tr("dialog.killRing.title"),
+                tr("dialog.killRing.prompt"),
+                killRing::entries,
+                MainController::killRingLabel,
+                entry -> tr("dialog.killRing.detail", entry.length()),
+                entry -> {
+                    var sel = area.getSelection();
+                    int start = sel.getStart();
+                    area.replaceText(start, sel.getEnd(), entry);
+                    area.moveTo(start + entry.length());
+                    recordYank(buffer, start, start + entry.length());
+                    resetKillAccumulation();
+                    area.requestFocus();
+                });
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** One-line preview of a ring entry for the picker: whitespace flattened, elided when long. */
+    static String killRingLabel(String entry) {
+        String flat = entry.replace('\n', '⏎').replace('\t', ' ').strip();
+        return flat.length() <= KILL_RING_LABEL_MAX ? flat : flat.substring(0, KILL_RING_LABEL_MAX) + "…";
+    }
+
+    private static final int KILL_RING_LABEL_MAX = 80;
+
     /** Emacs {@code upcase-region} (`C-x C-u`) / {@code downcase-region} (`C-x C-l`): case the selection. */
     private void emacsCaseRegion(boolean upper) {
         if (!activeEditable()) {
@@ -11518,10 +11758,12 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Emacs {@code kill-sexp} (`C-M-k`): delete the balanced expression after the caret. */
     private void killSexp() {
-        emacsEdit((text, caret) -> {
-            int end = com.editora.editops.SexpNav.forward(text, caret);
-            return end > caret ? new com.editora.editops.EmacsEdits.Edit(caret, end, "", caret) : null;
-        });
+        emacsKill(
+                (text, caret) -> {
+                    int end = com.editora.editops.SexpNav.forward(text, caret);
+                    return end > caret ? new com.editora.editops.EmacsEdits.Edit(caret, end, "", caret) : null;
+                },
+                KillRing.Direction.FORWARD);
     }
 
     /**
@@ -11556,8 +11798,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     setStatus(tr("status.zapNotFound", ch));
                     return;
                 }
+                boolean merge = continuesPreviousKill(buffer, area.getCaretPosition());
+                String killed = area.getText(edit.from(), edit.to());
                 area.replaceText(edit.from(), edit.to(), edit.replacement());
                 area.moveTo(edit.caret());
+                pushKill(buffer, area, killed, KillRing.Direction.FORWARD, merge);
                 deactivateMark();
                 setStatus("");
             }
@@ -12774,6 +13019,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.cut", this::onCut));
         registry.register(Command.of("edit.copy", this::onCopy));
         registry.register(Command.of("edit.paste", this::onPaste));
+        registry.register(Command.of("edit.yankPop", this::yankPop));
+        registry.register(Command.of("edit.yankFromRing", this::showKillRingPicker));
         registry.register(Command.of("edit.undo", this::onUndo));
         registry.register(Command.of("edit.redo", this::onRedo));
         registry.register(Command.of("edit.cancel", this::cancel));
@@ -12895,14 +13142,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.deleteChar", () -> withArea(CodeArea::deleteNextChar)));
         registry.register(Command.of(
                 "edit.killWord",
-                () -> withArea(a -> {
-                    int caret = a.getCaretPosition();
-                    a.deleteText(caret, nextWordBoundary(a.getText(), caret));
-                })));
-        registry.register(Command.of("edit.killLine", () -> withArea(this::killLine)));
-        // Additional Emacs editing/movement commands (kill-ring features remain deferred).
+                () -> emacsKill(
+                        (text, caret) -> {
+                            int end = nextWordBoundary(text, caret);
+                            return end > caret ? new com.editora.editops.EmacsEdits.Edit(caret, end, "", caret) : null;
+                        },
+                        KillRing.Direction.FORWARD)));
         registry.register(
-                Command.of("edit.backwardKillWord", () -> emacsEdit(com.editora.editops.EmacsEdits::backwardKillWord)));
+                Command.of("edit.killLine", () -> emacsKill(MainController::killLineEdit, KillRing.Direction.FORWARD)));
+        registry.register(Command.of(
+                "edit.backwardKillWord",
+                () -> emacsKill(com.editora.editops.EmacsEdits::backwardKillWord, KillRing.Direction.BACKWARD)));
         registry.register(Command.of("edit.upcaseWord", () -> emacsEdit(com.editora.editops.EmacsEdits::upcaseWord)));
         registry.register(
                 Command.of("edit.downcaseWord", () -> emacsEdit(com.editora.editops.EmacsEdits::downcaseWord)));
@@ -12919,8 +13169,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(
                 Command.of("edit.deleteBlankLines", () -> emacsEdit(com.editora.editops.EmacsEdits::deleteBlankLines)));
         registry.register(Command.of("edit.openLine", () -> emacsEdit(com.editora.editops.EmacsEdits::openLine)));
-        registry.register(
-                Command.of("edit.killWholeLine", () -> emacsEdit(com.editora.editops.EmacsEdits::killWholeLine)));
+        registry.register(Command.of(
+                "edit.killWholeLine",
+                () -> emacsKill(com.editora.editops.EmacsEdits::killWholeLine, KillRing.Direction.FORWARD)));
         registry.register(Command.of("edit.zapToChar", this::zapToChar));
         registry.register(Command.of("edit.killSexp", this::killSexp));
         registry.register(Command.of("edit.markSexp", this::markSexp));
@@ -12935,15 +13186,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("nav.moveToWindowLine", this::moveToWindowLine));
     }
 
-    private void killLine(CodeArea a) {
-        int caret = a.getCaretPosition();
-        int para = a.getCurrentParagraph();
-        int eol = a.getAbsolutePosition(para, a.getParagraphLength(para));
-        if (caret < eol) {
-            a.deleteText(caret, eol);
-        } else if (para + 1 < a.getParagraphs().size()) {
-            a.deleteText(caret, caret + 1);
+    /**
+     * Emacs {@code kill-line} (`C-k`) as a pure span: from the caret to the end of the line, or — when the
+     * caret is already there — the line break itself, so repeated presses eat successive lines.
+     */
+    static com.editora.editops.EmacsEdits.Edit killLineEdit(String text, int caret) {
+        int eol = caret;
+        while (eol < text.length() && text.charAt(eol) != '\n') {
+            eol++;
         }
+        if (caret < eol) {
+            return new com.editora.editops.EmacsEdits.Edit(caret, eol, "", caret);
+        }
+        return eol < text.length() ? new com.editora.editops.EmacsEdits.Edit(caret, caret + 1, "", caret) : null;
     }
 
     /** Position of the next word boundary at or after {@code from}: skip non-word chars, then word chars. */

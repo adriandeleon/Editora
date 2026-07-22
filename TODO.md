@@ -959,8 +959,11 @@ A backlog of planned features and improvements. Unordered within each section.
       delete-horizontal-space (`M-\`), just-one-space (`M-SPC`), delete-blank-lines (`C-x C-o`),
       open-line (`C-o`), kill-whole-line (`C-S-DEL`), zap-to-char (`M-z`), forward/backward-sexp +
       mark/kill-sexp (`C-M-f`/`C-M-b`/`C-M-SPC`/`C-M-k`), beginning/end-of-defun (`C-M-a`/`C-M-e`),
-      mark-paragraph (`M-h`), mark-whole-buffer (`C-x h`), move-to-window-line (`M-r`). *Kill ring
-      (yank-pop / consecutive-kill accumulation) still deferred.*
+      mark-paragraph (`M-h`), mark-whole-buffer (`C-x h`), move-to-window-line (`M-r`).
+- [x] Kill ring — every kill command feeds a bounded ring; `C-y` yank, `M-y` yank-pop, consecutive-kill
+      accumulation (forward appends, backward prepends), a palette picker over past kills, and system-clipboard
+      bridging in both directions. *Per window and session-only; registers / rectangles / `C-u` prefix argument
+      remain deferred.*
 - [x] Fully configurable shortcuts — keybinding editor in Settings → Keymaps: searchable command list,
       multi-key chord recorder, conflict warnings, per-command + global reset; live (no restart), persisted
       as overrides on top of the active keymap theme
