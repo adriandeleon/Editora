@@ -749,6 +749,8 @@ final class GitHubCoordinator {
             String url = r.out() == null ? "" : r.out().strip();
             if (r.ok()) {
                 host.setStatus(tr("status.github.createdPr"));
+                // The new PR belongs in the tool window's list — it's the surface the button was clicked from.
+                ops.reloadGitHubPanel();
                 if (!url.isEmpty()) {
                     host.openExternalUrl(lastUrl(url));
                 }

@@ -4634,6 +4634,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public void createPr() {
+                github.createPr();
+            }
+
+            @Override
             public void showPrs() {
                 github.fetchPrs(githubPanel::setPrs);
             }

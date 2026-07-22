@@ -51,6 +51,9 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     public interface Actions {
         void refresh();
 
+        /** Opens the same create-pull-request form as the {@code github.createPr} palette command. */
+        void createPr();
+
         void showPrs();
 
         void showIssues();
@@ -124,10 +127,11 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             actions.showRuns();
         });
 
+        Button createPr = iconButton(Icons.newFile(), tr("github.panel.createPrTip"), actions::createPr);
         Button refresh = iconButton(Icons.refresh(), tr("github.panel.refreshTip"), actions::refresh);
         HBox spacer = new HBox();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox toolbar = new HBox(2, prsToggle, issuesToggle, runsToggle, spacer, refresh);
+        HBox toolbar = new HBox(2, prsToggle, issuesToggle, runsToggle, spacer, createPr, refresh);
         toolbar.getStyleClass().add("git-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
