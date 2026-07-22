@@ -69,6 +69,7 @@ import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
 import com.editora.editops.KillRing;
+import com.editora.editops.Rectangle;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.LanguageRegistry;
@@ -11698,6 +11699,146 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private static final int KILL_RING_LABEL_MAX = 80;
 
+    // --- Rectangles ------------------------------------------------------------------------------
+
+    /**
+     * Emacs' {@code killed-rectangle}: the last killed/copied rectangle, one string per line. Deliberately
+     * separate from the kill ring — in Emacs {@code C-x r y} yanks this and {@code C-y} the ring, and
+     * mixing them would make each corrupt the other's shape.
+     */
+    private java.util.List<String> killedRectangle = java.util.List.of();
+
+    /**
+     * Resolves the current selection to a rectangle and hands it to {@code op}, applying the resulting
+     * block replacement as one undoable edit. Rectangle commands read the ordinary mark-based selection;
+     * the multi-caret box selection is a different mechanism whose carets we cannot enumerate, so rather
+     * than silently acting on the primary caret's line alone we say so.
+     */
+    private void rectangleEdit(java.util.function.BiFunction<String, Rectangle.Bounds, Rectangle.Edit> op) {
+        withRectangle((buffer, area, bounds) -> {
+            Rectangle.Edit edit = op.apply(area.getText(), bounds);
+            if (edit == null) {
+                setStatus(tr("status.rectangle.noChange"));
+                return;
+            }
+            applyRectangleEdit(area, edit);
+        });
+    }
+
+    /** Shared preamble for every rectangle command that needs a region: guards, then resolves bounds. */
+    private void withRectangle(TriConsumer<EditorBuffer, CodeArea, Rectangle.Bounds> body) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        if (buffer.hasMultipleCarets()) {
+            setStatus(tr("status.rectangle.multiCaret"));
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        var sel = area.getSelection();
+        if (sel.getLength() == 0) {
+            setStatus(tr("status.rectangle.noRegion"));
+            return;
+        }
+        body.accept(buffer, area, Rectangle.bounds(area.getText(), sel.getStart(), sel.getEnd()));
+    }
+
+    private void applyRectangleEdit(CodeArea area, Rectangle.Edit edit) {
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.moveTo(Math.min(edit.caret(), area.getLength()));
+        deactivateMark();
+        area.requestFocus();
+    }
+
+    /** Emacs {@code kill-rectangle} (`C-x r k`): remove the rectangle and remember it for a later yank. */
+    private void killRectangle() {
+        withRectangle((buffer, area, bounds) -> {
+            killedRectangle = Rectangle.extract(area.getText(), bounds);
+            Rectangle.Edit edit = Rectangle.delete(area.getText(), bounds);
+            if (edit != null) {
+                applyRectangleEdit(area, edit);
+            }
+            setStatus(tr("status.rectangle.killed", killedRectangle.size()));
+        });
+    }
+
+    /** Emacs {@code copy-rectangle-as-kill} (`C-x r M-w`): remember the rectangle without removing it. */
+    private void copyRectangle() {
+        withRectangle((buffer, area, bounds) -> {
+            killedRectangle = Rectangle.extract(area.getText(), bounds);
+            deactivateMark();
+            setStatus(tr("status.rectangle.copied", killedRectangle.size()));
+        });
+    }
+
+    /** Emacs {@code yank-rectangle} (`C-x r y`): insert the last killed rectangle at the caret. */
+    private void yankRectangle() {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        if (killedRectangle.isEmpty()) {
+            setStatus(tr("status.rectangle.empty"));
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        Rectangle.Edit edit = Rectangle.yank(area.getText(), area.getCaretPosition(), killedRectangle);
+        if (edit != null) {
+            applyRectangleEdit(area, edit);
+        }
+    }
+
+    /** Emacs {@code string-rectangle} (`C-x r t`): replace each line's segment with a typed string. */
+    private void stringRectangle() {
+        withRectangle((buffer, area, bounds) ->
+                promptText(tr("dialog.stringRectangle.title"), tr("dialog.stringRectangle.label"), "", value -> {
+                    if (value == null) {
+                        return;
+                    }
+                    // The prompt is an overlay, so re-resolve the text; the document cannot have moved
+                    // (the overlay owns the keys) but the area reference must be read fresh either way.
+                    Rectangle.Edit edit = Rectangle.replace(area.getText(), bounds, value);
+                    if (edit == null) {
+                        setStatus(tr("status.rectangle.noChange"));
+                        return;
+                    }
+                    applyRectangleEdit(area, edit);
+                }));
+    }
+
+    /** Emacs {@code rectangle-number-lines} (`C-x r N`): number the lines down the rectangle's left edge. */
+    private void numberRectangle() {
+        withRectangle((buffer, area, bounds) ->
+                promptText(tr("dialog.numberRectangle.title"), tr("dialog.numberRectangle.label"), "1", value -> {
+                    int first;
+                    try {
+                        first = Integer.parseInt(value == null ? "1" : value.trim());
+                    } catch (NumberFormatException e) {
+                        setStatus(tr("status.rectangle.badNumber"));
+                        return;
+                    }
+                    Rectangle.Edit edit = Rectangle.numberLines(area.getText(), bounds, first);
+                    if (edit == null) {
+                        setStatus(tr("status.rectangle.noChange"));
+                        return;
+                    }
+                    applyRectangleEdit(area, edit);
+                }));
+    }
+
+    /** A three-argument {@link java.util.function.BiConsumer}. */
+    @FunctionalInterface
+    private interface TriConsumer<A, B, C> {
+        void accept(A a, B b, C c);
+    }
+
     /** Emacs {@code upcase-region} (`C-x C-u`) / {@code downcase-region} (`C-x C-l`): case the selection. */
     private void emacsCaseRegion(boolean upper) {
         if (!activeEditable()) {
@@ -13021,6 +13162,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.paste", this::onPaste));
         registry.register(Command.of("edit.yankPop", this::yankPop));
         registry.register(Command.of("edit.yankFromRing", this::showKillRingPicker));
+        registry.register(Command.of("edit.killRectangle", this::killRectangle));
+        registry.register(Command.of("edit.copyRectangle", this::copyRectangle));
+        registry.register(Command.of("edit.yankRectangle", this::yankRectangle));
+        registry.register(Command.of("edit.deleteRectangle", () -> rectangleEdit(Rectangle::delete)));
+        registry.register(Command.of("edit.clearRectangle", () -> rectangleEdit(Rectangle::clear)));
+        registry.register(Command.of("edit.openRectangle", () -> rectangleEdit(Rectangle::open)));
+        registry.register(Command.of("edit.stringRectangle", this::stringRectangle));
+        registry.register(Command.of("edit.numberRectangle", this::numberRectangle));
         registry.register(Command.of("edit.undo", this::onUndo));
         registry.register(Command.of("edit.redo", this::onRedo));
         registry.register(Command.of("edit.cancel", this::cancel));

@@ -960,6 +960,10 @@ A backlog of planned features and improvements. Unordered within each section.
       open-line (`C-o`), kill-whole-line (`C-S-DEL`), zap-to-char (`M-z`), forward/backward-sexp +
       mark/kill-sexp (`C-M-f`/`C-M-b`/`C-M-SPC`/`C-M-k`), beginning/end-of-defun (`C-M-a`/`C-M-e`),
       mark-paragraph (`M-h`), mark-whole-buffer (`C-x h`), move-to-window-line (`M-r`).
+- [x] Rectangles — the `C-x r` family: kill/copy/yank/delete/clear/open, string-rectangle and
+      rectangle-number-lines, over the mark-based selection, each a single undo step and remembered
+      separately from the kill ring. *Character columns, so tab-indented text does not line up with the
+      display; rectangle registers deferred with registers generally.*
 - [x] Kill ring — every kill command feeds a bounded ring; `C-y` yank, `M-y` yank-pop, consecutive-kill
       accumulation (forward appends, backward prepends), a palette picker over past kills, and system-clipboard
       bridging in both directions. *Per window and session-only; registers / rectangles / `C-u` prefix argument

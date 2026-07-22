@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Emacs rectangle commands** (`C-x r …`) — operate on the *columns* between point and mark instead of the
+  linear span: kill (`C-x r k`), copy (`C-x r M-w`), yank (`C-x r y`), delete (`C-x r d`), clear to spaces
+  (`C-x r c`), open/shift-right (`C-x r o`), replace every line's segment with a string (`C-x r t`) and
+  number the lines down the left edge (`C-x r N`). A zero-width rectangle makes `C-x r t` the
+  prefix-a-block-of-lines idiom. Each command is one undo step, and the rectangle is remembered separately
+  from the kill ring, as in Emacs. Columns are character columns, so a rectangle over tab-indented text does
+  not follow what is on screen — that, and rectangle registers, are still to come.
+
 - **The Emacs kill ring.** The kill commands — `C-k`, `M-d`, `M-DEL`, `C-M-k`, `C-S-DEL`, `M-z` — used to
   simply delete, so `C-k` followed by `C-y` pasted whatever unrelated thing happened to be on the system
   clipboard. They now put their text on a 120-entry ring that `C-y` yanks from, **`M-y`** (yank-pop) steps
