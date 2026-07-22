@@ -13,6 +13,8 @@ import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -57,6 +59,15 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         void cherryPick(String hash);
 
         void newBranch(String hash);
+
+        /** Opens the working-tree copy of a commit's file in the editor. */
+        void openFile(String repoRelativePath);
+
+        /** Filters the log to that file's history. */
+        void showFileHistory(String repoRelativePath);
+
+        /** Copies the file's repo-relative path to the clipboard. */
+        void copyPath(String repoRelativePath);
     }
 
     private final Actions actions;
@@ -66,6 +77,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     private final ListView<CommitFile> files = new ListView<>();
     private final SplitPane split = new SplitPane();
     private final Label placeholder = new Label(tr("gitlog.noCommits"));
+    private boolean focusPending; // focusFirstItem() ran before the async log arrived
 
     public GitLogPanel(Actions actions) {
         this.actions = actions;
@@ -87,6 +99,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
         commits.getStyleClass().add("git-tree");
         commits.setCellFactory(v -> new CommitCell());
+        installListNav(commits);
         commits.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             files.getItems().clear();
             if (now != null) {
@@ -96,6 +109,13 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
         files.getStyleClass().add("git-tree");
         files.setCellFactory(v -> new FileCell());
+        installListNav(files);
+        files.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == KeyCode.ENTER) {
+                openSelectedFile();
+                e.consume();
+            }
+        });
         files.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                 openSelectedFile();
@@ -111,6 +131,34 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         placeholder.setWrapText(true);
 
         getChildren().setAll(toolbar, split);
+    }
+
+    /**
+     * Emacs-style {@code n}/{@code p} (bare, and with Control) move the selection — the lists hold no text
+     * input, so the bare letters are free. Arrow keys keep working via the ListView's own behavior.
+     */
+    private static void installListNav(ListView<?> list) {
+        list.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
+            if (e.isAltDown() || e.isMetaDown() || e.isShiftDown()) {
+                return;
+            }
+            int delta =
+                    switch (e.getCode()) {
+                        case N -> 1;
+                        case P -> -1;
+                        default -> 0;
+                    };
+            if (delta == 0) {
+                return;
+            }
+            int size = list.getItems().size();
+            if (size > 0) {
+                int i = Math.clamp(list.getSelectionModel().getSelectedIndex() + delta, 0, size - 1);
+                list.getSelectionModel().clearAndSelect(i);
+                list.scrollTo(i);
+            }
+            e.consume();
+        });
     }
 
     private static Button iconButton(javafx.scene.Node icon, String tip, Runnable action) {
@@ -133,6 +181,11 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         commits.getItems().setAll(log);
         if (log.isEmpty()) {
             commits.setPlaceholder(placeholder);
+        }
+        // A fresh open focuses the panel before the async log arrives — complete that focus now.
+        if (focusPending && selectFirstCommit()) {
+            focusPending = false;
+            commits.requestFocus();
         }
     }
 
@@ -157,11 +210,22 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
     @Override
     public void focusFirstItem() {
-        if (!commits.getItems().isEmpty() && commits.getSelectionModel().isEmpty()) {
+        // The log loads asynchronously, so on a fresh open the list is still empty here — remember that focus
+        // was wanted and let setLog() finish the job when the commits arrive.
+        focusPending = !selectFirstCommit();
+        commits.requestFocus();
+    }
+
+    /** Selects the first commit when there is one and nothing is selected yet; false when the list is empty. */
+    private boolean selectFirstCommit() {
+        if (commits.getItems().isEmpty()) {
+            return false;
+        }
+        if (commits.getSelectionModel().isEmpty()) {
             commits.getSelectionModel().select(0);
             commits.scrollTo(0);
         }
-        commits.requestFocus();
+        return true;
     }
 
     private final class CommitCell extends ListCell<Commit> {
@@ -222,6 +286,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
                 setText(null);
                 setGraphic(null);
                 setTooltip(null);
+                setContextMenu(null);
                 return;
             }
             // Color the row by its change status (matching the Commit tool window + Project tree), and use the
@@ -231,6 +296,24 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             setText(f.status() + "  " + f.path());
             setGraphic(FileIcons.forFileName(f.path()));
             setTooltip(new Tooltip(f.origPath() != null ? f.origPath() + " → " + f.path() : f.path()));
+            setContextMenu(buildMenu(f));
+        }
+
+        /** Show Diff / Open File / Show File History / Copy Path for the right-clicked file. */
+        private ContextMenu buildMenu(CommitFile f) {
+            String path = f.path();
+            MenuItem diff = item(tr("gitlog.menu.showDiff"), Icons.diff(), () -> {
+                Commit c = commits.getSelectionModel().getSelectedItem();
+                if (c != null) {
+                    actions.openFileDiff(c.hash(), path, f.origPath());
+                }
+            });
+            MenuItem open = item(tr("gitlog.menu.openFile"), Icons.fileSheet(), () -> actions.openFile(path));
+            MenuItem history = item(tr("gitlog.menu.fileHistory"), Icons.gitLog(), () -> actions.showFileHistory(path));
+            MenuItem copy = item(tr("gitlog.menu.copyPath"), Icons.copy(), () -> actions.copyPath(path));
+            // A deleted file has no working-tree copy to open.
+            open.setDisable(GitFileStatus.fromLetter(f.status()) == GitFileStatus.DELETED);
+            return new ContextMenu(diff, open, history, copy);
         }
 
         private void clearStatusClasses() {

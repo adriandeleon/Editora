@@ -4745,6 +4745,36 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public void openFile(String repoRel) {
+                Path root = git.repoRoot();
+                if (root == null) {
+                    return;
+                }
+                Path file = root.resolve(repoRel);
+                if (Files.exists(file)) {
+                    openPath(file);
+                } else {
+                    setStatus(tr("status.git.fileGone", repoRel));
+                }
+            }
+
+            @Override
+            public void showFileHistory(String repoRel) {
+                Path root = git.repoRoot();
+                if (root != null) {
+                    openGitLog(root.resolve(repoRel));
+                }
+            }
+
+            @Override
+            public void copyPath(String repoRel) {
+                ClipboardContent content = new ClipboardContent();
+                content.putString(repoRel);
+                Clipboard.getSystemClipboard().setContent(content);
+                setStatus(tr("status.copiedPath"));
+            }
+
+            @Override
             public void copyHash(String hash) {
                 ClipboardContent content = new ClipboardContent();
                 content.putString(hash);
