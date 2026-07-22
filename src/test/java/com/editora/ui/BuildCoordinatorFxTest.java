@@ -473,9 +473,11 @@ class BuildCoordinatorFxTest {
         BuildCoordinator c = detectedWithWrapper(host, ops, dir);
         host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
 
-        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
-        FxTestSupport.runOnFx(() -> c.runTask(List.of("test"), List.of()));
-        FxTestSupport.runOnFx(() -> c.runTask(List.of("package"), List.of()));
+        // Each run really forks the wrapper script, and runTask refuses to start while one is alive — so the
+        // next run has to wait for the previous to exit or it is dropped by the busy guard, not the trust gate.
+        runToCompletion(c, "compile");
+        runToCompletion(c, "test");
+        runToCompletion(c, "package");
 
         assertEquals(1, ops.promptCount, "three builds, one prompt");
         assertEquals(3, ops.openConsoleCount);
@@ -489,7 +491,9 @@ class BuildCoordinatorFxTest {
         BuildCoordinator c = detectedWithWrapper(host, ops, dir);
         host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
 
-        FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+        // Must finish before the rerun: rerunLast's busy guard returns ahead of the trust gate, so a still-live
+        // first build would make the rerun skip the prompt for the wrong reason and pass the assertion below.
+        runToCompletion(c, "compile");
         assertEquals(1, ops.promptCount);
 
         // Trust revoked between runs (Settings → Workspace): the remembered rerun must re-ask, not slip past.
@@ -499,6 +503,20 @@ class BuildCoordinatorFxTest {
 
         assertEquals(2, ops.promptCount, "rerunLast goes through the same gate");
         assertEquals(1, ops.openConsoleCount, "and the declined rerun never ran");
+    }
+
+    /**
+     * Runs one task and waits for its process to die.
+     *
+     * <p>The wrapper fixture is a real {@code #!/bin/sh\nexit 0} script, so a run is a genuine fork whose exit
+     * lands asynchronously — and {@code runTask}/{@code rerunLast} both refuse to start while one is alive.
+     * Firing them back to back therefore raced: on an idle machine the {@code sh} exited within the FX
+     * round-trip and every run proceeded, but under CI load the busy guard swallowed one, which surfaced as an
+     * off-by-one on the prompt/console counters ("expected 3 but was 2") — a flake that reached master.
+     */
+    private static void runToCompletion(BuildCoordinator c, String task) throws Exception {
+        FxTestSupport.runOnFx(() -> c.runTask(List.of(task), List.of()));
+        waitUntil(() -> !c.isRunning(), "the '" + task + "' build finished");
     }
 
     /** Polls {@code condition} (each check on the FX thread) until it's true or a few seconds elapse. */
