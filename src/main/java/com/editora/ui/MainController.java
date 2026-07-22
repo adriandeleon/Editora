@@ -288,19 +288,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
     private final com.editora.office.OfficeExportService officeService = new com.editora.office.OfficeExportService();
     private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
-    /** HTTP Client: the {@code .http} request runner + response tool window; see {@link HttpClientCoordinator}. */
-    private ToolWindow httpToolWindow;
-    /** True while we programmatically auto-show/hide the HTTP window, so the state listener ignores it. */
-    private boolean httpAutoMutating;
-    /** True while the session is being restored (tabs fill per pulse); HTTP auto-show is suppressed until it
-     *  completes, then reconciled once — opening a tool window mid-restore mis-sizes it in the SplitPane. */
-    private boolean restoringSession;
-    /** A right-side tool window we displaced to auto-show HTTP, restored when we auto-hide it (null if none). */
-    private ToolWindow httpDisplacedRight;
-    /** {@code .http} buffers whose HTTP window the user closed manually — suppresses auto-show for them.
-     *  Weak keys so a closed buffer drops out without manual cleanup. */
-    private final java.util.Set<EditorBuffer> httpUserClosed =
-            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
     /** Buffers whose install banner the user dismissed this session (don't re-offer). Weak keys, like above. */
     private final java.util.Set<EditorBuffer> installDismissed =
             java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
@@ -1980,6 +1967,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             updateRunButton(); // show the Run button only for a compact source file
             updateBufferToolWindows(); // hide buffer-only tool windows when there's no actionable buffer
             csvCoordinator.refreshFor(activeBuffer()); // re-target the CSV grid at the new active buffer
+            httpClient.refreshFor(activeBuffer()); // …and the .http response preview
             historyCoordinator.refresh(); // re-gate + reload the Local File History list for the new active file
             maybeOfferInstall(activeBuffer()); // offer to install this language's LSP/DAP if it's missing
         });
@@ -2011,6 +1999,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             }
                             logViewer.onBufferClosed(closed); // cancel tail-follow + drop per-buffer state
                             csvCoordinator.onBufferClosed(closed); // drop the CSV grid's edit listener
+                            httpClient.onBufferClosed(closed); // drop this buffer's HTTP response panel
                             closed.dispose();
                         } else {
                             // Tab.setOnClosed only fires for a click on the ✕ — never for a programmatic
@@ -2391,13 +2380,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::debug,
                 debugCoordinator.panel(),
                 "tool.debug");
-        httpToolWindow = new ToolWindow(
-                "http",
-                tr("toolwindow.http"),
-                ToolWindow.Side.RIGHT,
-                Icons::httpClient,
-                httpClient.panel(),
-                "tool.http");
         externalToolToolWindow = new ToolWindow(
                 "externalTool",
                 tr("toolwindow.externalTools"),
@@ -2519,8 +2501,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.setAvailable(runToolWindow, false); // shown only when the active file is a compact source
         toolWindows.register(debugToolWindow);
         toolWindows.setAvailable(debugToolWindow, false); // shown only while debugging is enabled
-        toolWindows.register(httpToolWindow);
-        toolWindows.setAvailable(httpToolWindow, false); // shown only for a .http file with the feature on
         toolWindows.register(externalToolToolWindow, false); // stripe off by default; reachable via the
         // tool.externalTools command / externalTool.run picker / Settings → Tool Windows
         for (ToolWindow tw : buildToolWindows.values()) {
@@ -2536,8 +2516,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 agentToolWindow, false); // stripe off by default; shown via tool.agent / Settings → AI Agent
         toolWindows.setAvailable(agentToolWindow, agentCoordinator.isEnabled());
         updateBufferToolWindows(); // hide buffer-only windows until there's an actionable buffer (no Welcome flash)
-        // Detect a *user* open/close of the HTTP window (vs. our own auto show/hide, guarded by
-        // httpAutoMutating) so a manual close is remembered per .http buffer and a manual open clears it.
         toolWindows.setStateListener((tw, opened) -> {
             if (tw == gitLogToolWindow) {
                 // Refresh the log whenever the window is opened — via the stripe button (which toggles
@@ -2552,18 +2530,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                     reloadGithubPanel(); // fetch the current mode's list when the window is opened
                 }
                 return;
-            }
-            if (tw != httpToolWindow || httpAutoMutating) {
-                return;
-            }
-            EditorBuffer b = activeBuffer();
-            if (b == null || !b.isHttpFile()) {
-                return;
-            }
-            if (opened) {
-                httpUserClosed.remove(b); // a manual open re-enables auto-show for this buffer
-            } else {
-                httpUserClosed.add(b); // a manual close suppresses auto-show until the user reopens it
             }
         });
     }
@@ -3591,20 +3557,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public void openTab(EditorBuffer buffer) {
                     addBuffer(buffer, true);
-                }
-
-                @Override
-                public void openToolWindow(boolean focus) {
-                    if (focus) {
-                        toolWindows.open(httpToolWindow, true);
-                    } else {
-                        toolWindows.open(httpToolWindow);
-                    }
-                }
-
-                @Override
-                public void toggleToolWindow() {
-                    toolWindows.toggle(httpToolWindow);
                 }
 
                 @Override
@@ -5381,7 +5333,6 @@ public class MainController implements com.editora.mcp.McpBridge {
      * background file can't freeze startup. Tab order and pinning are preserved.
      */
     public void openInitialBuffer() {
-        restoringSession = true; // suppress HTTP auto-show until the (pulse-paced) restore finishes
         WorkspaceState state = config.getWorkspaceState();
         List<WorkspaceState.OpenFile> files = new ArrayList<>();
         for (WorkspaceState.OpenFile f : skipSessionFiles ? List.<WorkspaceState.OpenFile>of() : state.getOpenFiles()) {
@@ -5660,10 +5611,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Marks the restore complete, running the CLI startup action first if it hasn't already run. */
     private void runPendingAfterRestore() {
         runPendingStartupAction(false);
-        // The session is fully restored now — re-enable HTTP auto-show and reconcile once for the active
-        // buffer (the layout is settled, so the panel sizes correctly, unlike a mid-restore open).
-        restoringSession = false;
-        applyHttpAutoToolWindow();
     }
 
     /** Activates {@code dir} as the active project (startup-safe; no open buffers to confirm). */
@@ -8221,12 +8168,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (runToolWindow != null) {
             toolWindows.setAvailable(runToolWindow, runnable);
         }
-        boolean httpActive = http && httpClient.isEnabled();
-        if (httpToolWindow != null) {
-            applyHttpAutoToolWindow();
-        }
-        if (httpActive) {
-            httpClient.refreshEnvironments(buffer);
+        if (http && httpClient.isEnabled()) {
+            httpClient.refreshEnvironments(buffer); // the response preview's environment picker
         }
     }
 
@@ -8281,18 +8224,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /**
-     * Auto-shows the HTTP tool window for a {@code .http} buffer and auto-hides it otherwise. Showing it
-     * displaces (and later restores) any other right-side window. A user's manual close is remembered per
-     * buffer ({@link #httpUserClosed}) so it isn't re-shown until they reopen it; an automatic close (leaving
-     * the buffer) is not remembered, so returning re-shows it. All our open/close run under
-     * {@link #httpAutoMutating} so the state listener doesn't mistake them for user actions.
-     *
-     * <p>Deferred to a {@code Platform.runLater} so the SplitPane add + divider positioning land on a
-     * settled layout pulse (the tool-window {@code open}/{@code close} idiom) rather than mid-tab-switch —
-     * adding a right-side panel synchronously during the selection event mis-sized it; the active buffer is
-     * re-read inside in case the user switched again before it runs.
-     */
     /**
      * Shows the in-editor "install language support?" banner on {@code buffer} when the file's language has an
      * installer (Java/Python/JS/Mermaid), the relevant feature is enabled but that language server (or the
@@ -8406,45 +8337,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             case JAVASCRIPT -> lspEnabled() && lspCoordinator.isServerMissing("typescript");
             case MERMAID -> mermaid.isEnabled() && mermaid.mmdcDetected() && !mermaid.mmdcAvailable();
         };
-    }
-
-    private void applyHttpAutoToolWindow() {
-        if (restoringSession) {
-            return; // restore() + persistence handle the initial open; reconciled in runPendingAfterRestore
-        }
-        Platform.runLater(() -> {
-            if (httpToolWindow == null || restoringSession) {
-                return;
-            }
-            EditorBuffer b = activeBuffer();
-            boolean httpActive = b != null && b.isHttpFile() && httpClient.isEnabled();
-            httpAutoMutating = true;
-            try {
-                toolWindows.setAvailable(httpToolWindow, httpActive); // false also closes it if open
-                if (httpActive) {
-                    if (!toolWindows.isOpen(httpToolWindow) && !httpUserClosed.contains(b)) {
-                        httpDisplacedRight = openRightWindowExcept(httpToolWindow);
-                        toolWindows.open(httpToolWindow, false); // don't steal focus from the editor
-                    }
-                } else if (httpDisplacedRight != null) {
-                    // We left the .http buffer (setAvailable already closed HTTP) — restore what we displaced.
-                    toolWindows.open(httpDisplacedRight, false);
-                    httpDisplacedRight = null;
-                }
-            } finally {
-                httpAutoMutating = false;
-            }
-        });
-    }
-
-    /** The tool window currently open on the RIGHT side other than {@code except}, or null. */
-    private ToolWindow openRightWindowExcept(ToolWindow except) {
-        for (ToolWindow tw : toolWindows.getOpenToolWindows()) {
-            if (tw != except && toolWindows.currentSide(tw) == ToolWindow.Side.RIGHT) {
-                return tw;
-            }
-        }
-        return null;
     }
 
     /** The remembered program-arguments string for {@code path} ("" when none); shared with debug launches. */
@@ -9564,9 +9456,11 @@ public class MainController implements com.editora.mcp.McpBridge {
      * sun/moon control is Markdown-only (it themes the Markdown CSS; diagrams follow the app theme).
      */
     private void ensurePreviewControls(EditorBuffer buffer) {
-        // A CSV buffer becomes previewable (hasPreview()) only once its grid node is injected, so do that
-        // first — then the same Editor/Split/Preview toggle attaches below, exactly like Markdown/Mermaid.
+        // A CSV / .http buffer becomes previewable (hasPreview()) only once its grid / response panel is
+        // injected, so do that first — the same Editor/Split/Preview toggle then attaches below, exactly
+        // like Markdown/Mermaid.
         csvCoordinator.ensureCsvPreview(buffer);
+        httpClient.ensureHttpPreview(buffer);
         boolean want = buffer.hasPreview();
         boolean has = buffer.hasViewModeControl();
         if (want && !has) {
@@ -9588,9 +9482,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         mermaid.refreshLint(buffer);
     }
 
-    /** Restores a Markdown/CSV file's saved view mode after it is opened (and its toggle is wired). */
+    /** Restores a Markdown/CSV/.http file's saved view mode after it is opened (and its toggle is wired). */
     private void restoreMarkdownMode(EditorBuffer buffer) {
-        csvCoordinator.ensureCsvPreview(buffer); // inject the grid first so a CSV buffer reports hasPreview()
+        // Inject the node-gated previews first so those buffers report hasPreview().
+        csvCoordinator.ensureCsvPreview(buffer);
+        httpClient.ensureHttpPreview(buffer);
         Path file = buffer.getPath();
         if (file == null || !buffer.hasPreview()) {
             return;
@@ -12615,7 +12511,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("http.importCurl", httpClient::importCurl));
         registry.register(Command.of("http.copyAsCurl", httpClient::copyActiveAsCurl));
         registry.register(Command.of("http.openResponseInTab", httpClient::openActiveResponseInTab));
-        registry.register(Command.of("tool.http", httpClient::toggleToolWindow));
         // Debugging (DAP). Gated by the "Enable Java debugging" setting (default off).
         registry.register(Command.of("debug.start", () -> debugCoordinator.ifDebug(debugCoordinator::debugStart)));
         registry.register(Command.of("debug.stop", () -> debugCoordinator.ifDebug(dapManager::stop)));

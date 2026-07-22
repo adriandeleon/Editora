@@ -118,7 +118,6 @@ class ChromeTest {
             "lsp.gotoDefinition",
             "tool.problems",
             "http.runRequest",
-            "tool.http",
             "externalTool.run",
             "tool.externalTools",
             "project.open",
@@ -154,7 +153,7 @@ class ChromeTest {
         assertFalse(Chrome.paletteVisible("tool.commit", off));
         assertFalse(Chrome.paletteVisible("tool.gitLog", off));
         assertFalse(Chrome.paletteVisible("tool.problems", off));
-        assertFalse(Chrome.paletteVisible("tool.http", off));
+        assertFalse(Chrome.paletteVisible("http.runRequest", off));
         assertFalse(Chrome.paletteVisible("tool.externalTools", off));
         assertFalse(Chrome.paletteVisible("tool.fileHistory", off));
         assertFalse(Chrome.paletteVisible("tool.project", off));
@@ -185,8 +184,8 @@ class ChromeTest {
                         true, true)));
         assertFalse(Chrome.paletteVisible("tool.gitLog", gitOff));
         assertTrue(Chrome.paletteVisible("lsp.hover", gitOff));
-        assertTrue(Chrome.paletteVisible("tool.http", gitOff));
         assertTrue(Chrome.paletteVisible("externalTool.run", gitOff));
+        assertTrue(Chrome.paletteVisible("http.runRequest", gitOff));
     }
 
     @Test
@@ -216,7 +215,7 @@ class ChromeTest {
         assertTrue(Chrome.paletteVisible("npm.showActions", mavenOff)); // other build tool unaffected
         assertTrue(Chrome.paletteVisible("tool.npm", mavenOff));
         assertTrue(Chrome.paletteVisible("git.commit", mavenOff));
-        assertTrue(Chrome.paletteVisible("tool.http", mavenOff));
+        assertTrue(Chrome.paletteVisible("http.runRequest", mavenOff));
 
         // npm disabled, Maven still enabled → the mirror case.
         PaletteGates npmOff = new PaletteGates(

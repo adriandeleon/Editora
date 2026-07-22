@@ -142,7 +142,7 @@ final class Chrome {
         if (!g.lsp() && (id.startsWith("lsp.") || id.equals("tool.problems"))) {
             return false;
         }
-        if (!g.http() && (id.startsWith("http.") || id.equals("tool.http"))) {
+        if (!g.http() && id.startsWith("http.")) {
             return false;
         }
         if (!g.htmlPreview() && id.startsWith("htmlPreview.")) {

@@ -200,6 +200,13 @@ public class EditorBuffer implements TabContent {
     private Runnable csvPreviewRefresh = () -> {};
     /** Wraps the CSV grid so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
     private StackPane csvPreviewHost;
+    /** The HTTP response panel (a ui-layer {@code HttpClientPanel}), injected for {@code .http} buffers when
+     *  the feature is on; non-null doubles as the HTTP-preview enablement gate (mirrors {@link
+     *  #csvPreviewNode}). Unlike every other preview it is <b>not</b> derived from the buffer text — it shows
+     *  the result of running a request — so the debounced pulse deliberately never re-renders it. */
+    private Node httpPreviewNode;
+    /** Wraps the HTTP panel so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
+    private StackPane httpPreviewHost;
     /** Structured-data (JSON/YAML/TOML) preview: on when the feature is enabled (pushed from settings). */
     private boolean structuredPreviewEnabled;
     /** SVG image preview for .svg files: on when the feature is enabled (pushed from settings). */
@@ -2359,6 +2366,7 @@ public class EditorBuffer implements TabContent {
                 || (isDiagram() && MermaidImages.isEnabled())
                 || (isRenderedDiagram() && DiagramImages.isEnabled())
                 || hasCsvPreview()
+                || hasHttpPreview()
                 || hasStructuredPreview()
                 || hasXmlPreview()
                 || hasSvgPreview()
@@ -2375,6 +2383,12 @@ public class EditorBuffer implements TabContent {
      *  injected node doubles as the enablement gate, mirroring {@link #htmlPreviewControl}. */
     public boolean hasCsvPreview() {
         return isCsv() && csvPreviewNode != null;
+    }
+
+    /** A {@code .http} buffer whose response panel has been injected (i.e. the HTTP Client feature is on).
+     *  The injected node doubles as the enablement gate, mirroring {@link #hasCsvPreview()}. */
+    public boolean hasHttpPreview() {
+        return isHttpFile() && httpPreviewNode != null;
     }
 
     /** A standalone SVG file (by {@code .svg} extension — the buffer stays XML text, so it also gets XML
@@ -3622,6 +3636,33 @@ public class EditorBuffer implements TabContent {
         this.csvPreviewRefresh = refresh == null ? () -> {} : refresh;
     }
 
+    /** Injects the HTTP response panel (a ui-layer {@code HttpClientPanel}); {@code null} removes it. Non-null
+     *  makes the buffer previewable ({@link #hasPreview()}), so the Editor/Split/Preview toggle attaches. */
+    public void setHttpPreviewNode(Node node) {
+        if (this.httpPreviewNode == node) {
+            return;
+        }
+        this.httpPreviewNode = node;
+        if (node == null) {
+            httpPreviewHost = null;
+            if (markdownViewMode != MarkdownViewMode.EDITOR) {
+                markdownViewMode = MarkdownViewMode.EDITOR; // the panel is gone — fall back to source
+            }
+        }
+        rebuildViewHost();
+    }
+
+    /**
+     * Shows the HTTP response preview beside the source, used when a request is run from the gutter ▶ while
+     * the buffer is still in EDITOR mode. A buffer already in SPLIT or PREVIEW is left alone, so the per-file
+     * mode the user last chose (persisted in {@code WorkspaceState.markdownViewModes}) wins over this nudge.
+     */
+    public void revealHttpPreview() {
+        if (hasHttpPreview() && markdownViewMode == MarkdownViewMode.EDITOR) {
+            setMarkdownViewMode(MarkdownViewMode.SPLIT);
+        }
+    }
+
     // --- Log viewer ----------------------------------------------------------------------------------
 
     /** Whether this is a log buffer: a {@code .log} file (language {@code "log"}) or forced "View as Log". */
@@ -3901,9 +3942,9 @@ public class EditorBuffer implements TabContent {
         }
         rebuildViewHost();
         setMinimapVisible(minimapVisible); // re-apply: the minimap is hidden while the preview is shown
-        // The paging-focus + scroll-sync tail is Markdown-preview-specific (the CSV grid and the structured
-        // tree/docs scroll themselves and have no ScrollPane host), so skip it for those.
-        if (!hasCsvPreview() && !hasTreePreview()) {
+        // The paging-focus + scroll-sync tail is Markdown-preview-specific (the CSV grid, the HTTP response
+        // panel and the structured tree/docs scroll themselves and have no ScrollPane host), so skip those.
+        if (!hasCsvPreview() && !hasHttpPreview() && !hasTreePreview()) {
             if (target == MarkdownViewMode.PREVIEW) {
                 // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
                 Platform.runLater(previewPane()::requestFocus);
@@ -4331,6 +4372,13 @@ public class EditorBuffer implements TabContent {
             csvPreviewRefresh.run(); // the coordinator re-parses the buffer text into its per-buffer grid
             return;
         }
+        if (hasHttpPreview()) {
+            // The HTTP panel shows the result of *running* a request, not a rendering of the buffer text —
+            // re-rendering on the debounced edit pulse would be meaningless (and firing requests would be
+            // catastrophic). It is repopulated only by HttpClientCoordinator when a run completes. This
+            // branch exists so the buffer never falls through to the Markdown tail below.
+            return;
+        }
         if (hasGithubActionsPreview()) {
             // A workflow is also YAML, so this must precede the structured (YAML tree) branch to win. Parse
             // off-thread, build the specialized workflow digest on the FX thread into the shared host.
@@ -4620,9 +4668,7 @@ public class EditorBuffer implements TabContent {
         detachViewModeControl();
         Node content;
         if (markdownViewMode == MarkdownViewMode.PREVIEW) {
-            StackPane host = hasCsvPreview()
-                    ? csvPreviewHost()
-                    : hasTreePreview() ? structuredPreviewHost() : previewHost(); // preview (+ zoom for md)
+            StackPane host = previewModeHost();
             if (viewModeControl != null) {
                 StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
                 StackPane.setMargin(viewModeControl, new Insets(6, 10, 0, 0));
@@ -4630,9 +4676,7 @@ public class EditorBuffer implements TabContent {
             }
             content = host;
         } else if (markdownViewMode == MarkdownViewMode.SPLIT) {
-            Node previewSide =
-                    hasCsvPreview() ? csvPreviewNode : hasTreePreview() ? structuredContentHolder() : previewHost();
-            SplitPane pane = new SplitPane(root, previewSide);
+            SplitPane pane = new SplitPane(root, previewSplitSide());
             pane.setOrientation(Orientation.HORIZONTAL);
             pane.setDividerPositions(0.5);
             attachControlToCodePane();
@@ -4649,6 +4693,38 @@ public class EditorBuffer implements TabContent {
             content = root;
         }
         viewHost.getChildren().setAll(content);
+    }
+
+    /**
+     * The PREVIEW-mode wrapper for whichever preview this buffer has. Each self-scrolling preview (CSV grid,
+     * HTTP responses, the structured/tree family) brings its own {@code StackPane} so the floating mode toggle
+     * can be overlaid on it; everything else falls through to the Markdown-style {@link #previewHost()}.
+     */
+    private StackPane previewModeHost() {
+        if (hasCsvPreview()) {
+            return csvPreviewHost();
+        }
+        if (hasHttpPreview()) {
+            return httpPreviewHost();
+        }
+        if (hasTreePreview()) {
+            return structuredPreviewHost();
+        }
+        return previewHost(); // preview (+ zoom for markdown)
+    }
+
+    /** The SPLIT-mode preview side: the bare node (the mode toggle rides the code pane, not the preview). */
+    private Node previewSplitSide() {
+        if (hasCsvPreview()) {
+            return csvPreviewNode;
+        }
+        if (hasHttpPreview()) {
+            return httpPreviewNode;
+        }
+        if (hasTreePreview()) {
+            return structuredContentHolder();
+        }
+        return previewHost();
     }
 
     private StackPane previewHost() {
@@ -4672,6 +4748,16 @@ public class EditorBuffer implements TabContent {
         }
         csvPreviewHost.getChildren().setAll(csvPreviewNode); // the toggle is added by rebuildViewHost()
         return csvPreviewHost;
+    }
+
+    /** Wraps the injected HTTP response panel so the mode toggle can overlay it in PREVIEW mode (the panel
+     *  scrolls its own response body, so it needs no ScrollPane host — mirrors {@link #csvPreviewHost()}). */
+    private StackPane httpPreviewHost() {
+        if (httpPreviewHost == null) {
+            httpPreviewHost = new StackPane();
+        }
+        httpPreviewHost.getChildren().setAll(httpPreviewNode); // the toggle is added by rebuildViewHost()
+        return httpPreviewHost;
     }
 
     /** Sets the freshly parsed structured node (tree / OpenAPI docs / error) into the self-scrolling holder. */

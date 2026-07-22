@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,12 +28,16 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * Owns the HTTP Client feature (the {@code .http} request runner), extracted from {@code MainController} as
- * a feature coordinator. It is the most window-entangled of the coordinators — it has a response tool window
- * ({@link HttpClientPanel}), opens response tabs, reads/writes the clipboard, and scans {@code .env} files —
- * so beyond the shared {@link CoordinatorHost} it takes a small {@link WindowOps} extension for the few
- * http-specific window services (open a tab, open/toggle the tool window, re-gate the run affordance, persist
- * the selected environment). {@code MainController} keeps the {@code ToolWindow} registration + availability
- * plumbing and delegates the logic here.
+ * a feature coordinator. The response viewer ({@link HttpClientPanel}) is embedded <em>in the editor</em> as
+ * that buffer's preview — an Editor/Split/Preview view of the {@code .http} file, mirroring the CSV grid (see
+ * {@link CsvCoordinator}) rather than living in a tool window. So each {@code .http} buffer gets its
+ * <b>own</b> panel (a Node can't live in two tabs), injected via {@link EditorBuffer#setHttpPreviewNode}; once
+ * injected the buffer reports {@link EditorBuffer#hasPreview()} and the floating {@link MarkdownViewToggle}
+ * attaches automatically. Unlike every other preview it is not rendered from the buffer text — the debounced
+ * edit pulse deliberately skips it and only a completed run repopulates it.
+ *
+ * <p>Beyond the shared {@link CoordinatorHost} it takes a small {@link WindowOps} extension for the few
+ * http-specific window services (open a tab, re-gate the run affordance, persist the selected environment).
  */
 final class HttpClientCoordinator {
 
@@ -41,13 +46,7 @@ final class HttpClientCoordinator {
         /** Opens {@code buffer} in a new, selected editor tab (a response / imported-curl buffer). */
         void openTab(EditorBuffer buffer);
 
-        /** Opens the HTTP response tool window (optionally focusing it). */
-        void openToolWindow(boolean focus);
-
-        /** Toggles the HTTP response tool window. */
-        void toggleToolWindow();
-
-        /** Re-gates the run/HTTP affordance for the active buffer (tool-window availability). */
+        /** Re-gates the run affordance for the active buffer (Run tool-window availability). */
         void updateRunGating();
 
         /** The persisted selected environment for this window's session. */
@@ -60,7 +59,10 @@ final class HttpClientCoordinator {
     private final CoordinatorHost host;
     private final WindowOps ops;
     private final com.editora.http.HttpClientService service = new com.editora.http.HttpClientService();
-    private HttpClientPanel panel; // built lazily for the tool window (needs the editor font from Settings)
+
+    /** One response panel per open {@code .http} buffer (a Node can't be shared across tabs); dropped on
+     *  close ({@link #onBufferClosed}) and when the feature is switched off. */
+    private final Map<EditorBuffer, HttpClientPanel> panels = new IdentityHashMap<>();
 
     HttpClientCoordinator(CoordinatorHost host, WindowOps ops) {
         this.host = host;
@@ -72,27 +74,91 @@ final class HttpClientCoordinator {
         return host.settings().isHttpClientSupport() && !host.simpleModeActive();
     }
 
-    /** The response tool window's content (built lazily; {@code MainController} wraps it in a {@code ToolWindow}). */
-    HttpClientPanel panel() {
-        if (panel == null) {
-            var s = host.settings();
-            panel = new HttpClientPanel(
-                    this::saveResponse, this::copyAsCurl, this::openResponseInTab, s.getFontFamily(), Math.max(1, (int)
-                            Math.round(s.getFontSize() * s.getFontZoom())));
-            panel.setOnEnvironmentChanged(ops::persistEnvironment);
+    // --- preview lifecycle -----------------------------------------------------------------------------
+
+    /**
+     * Attaches or removes the in-editor response panel to match the HTTP-client gate, mirroring {@link
+     * CsvCoordinator#ensureCsvPreview}. Called from {@code ensurePreviewControls}/{@code
+     * restoreMarkdownMode} <em>before</em> they read {@link EditorBuffer#hasPreview()}, since for a
+     * node-gated preview the injected node <em>is</em> the gate.
+     */
+    void ensureHttpPreview(EditorBuffer buffer) {
+        if (buffer == null) {
+            return;
         }
-        return panel;
+        boolean want = buffer.isHttpFile() && isEnabled();
+        boolean has = buffer.hasHttpPreview();
+        if (want && !has) {
+            HttpClientPanel p = createPanelFor(buffer);
+            panels.put(buffer, p);
+            buffer.setHttpPreviewNode(p); // makes hasPreview() true → the toggle attaches (controller)
+            refreshEnvironments(buffer);
+        } else if (!want && has) {
+            buffer.setHttpPreviewNode(null); // resets the buffer to EDITOR
+            panels.remove(buffer);
+        }
+    }
+
+    /** Re-target on tab switch: (re)evaluate the active buffer's preview attachment + environment list. */
+    void refreshFor(EditorBuffer active) {
+        if (active != null) {
+            ensureHttpPreview(active);
+        }
+    }
+
+    /** Drops the closed buffer's panel (the map is strongly keyed, so this hook is required). */
+    void onBufferClosed(EditorBuffer closed) {
+        if (closed != null) {
+            panels.remove(closed);
+        }
+    }
+
+    private HttpClientPanel createPanelFor(EditorBuffer buffer) {
+        var s = host.settings();
+        HttpClientPanel p = new HttpClientPanel(
+                () -> saveResponse(buffer),
+                this::copyAsCurl,
+                this::openResponseInTab,
+                s.getFontFamily(),
+                editorFontSize());
+        p.setOnEnvironmentChanged(ops::persistEnvironment);
+        return p;
+    }
+
+    private int editorFontSize() {
+        var s = host.settings();
+        return Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
+    }
+
+    /** This buffer's response panel, or {@code null} when it has none (not a {@code .http} file / feature off). */
+    private HttpClientPanel panelFor(EditorBuffer buffer) {
+        return buffer == null ? null : panels.get(buffer);
+    }
+
+    /** The active buffer's response panel, or {@code null}. */
+    private HttpClientPanel activePanel() {
+        return panelFor(host.activeBuffer());
+    }
+
+    /** Test-harness accessor for a buffer's response panel (mirrors {@code CsvCoordinator.gridNodeFor}). */
+    HttpClientPanel panelForTest(EditorBuffer buffer) {
+        return panelFor(buffer);
     }
 
     /**
-     * Reconciles the feature with its setting: gates the request ▶ glyphs on every buffer, updates the panel
-     * font, and re-gates the tool window. Runs at startup and on every settings apply.
+     * Reconciles the feature with its setting: gates the request ▶ glyphs on every buffer, (de)attaches the
+     * in-editor preview, refreshes each panel's font, and re-gates the run affordance. Runs at startup and on
+     * every settings apply.
      */
     void applySupport() {
         boolean on = isEnabled();
-        host.forEachBuffer(b -> b.setHttpEnabled(on));
-        var s = host.settings();
-        panel().setEditorFont(s.getFontFamily(), Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom())));
+        host.forEachBuffer(b -> {
+            b.setHttpEnabled(on);
+            ensureHttpPreview(b);
+        });
+        String family = host.settings().getFontFamily();
+        int size = editorFontSize();
+        panels.values().forEach(p -> p.setEditorFont(family, size));
         ops.updateRunGating();
     }
 
@@ -115,9 +181,9 @@ final class HttpClientCoordinator {
         HttpFile.Request req = HttpFile.parse(text).get(index);
         HttpFile.Parsed parsed = HttpFile.parseRequest(req);
         String label = parsed.method() + " " + parsed.url();
-        startRun(label);
+        startRun(buffer, label);
         Path baseDir = buffer.getPath().toAbsolutePath().getParent();
-        service.run(parsed, variables(buffer, text), baseDir, ex -> finishRun(label, ex));
+        service.run(parsed, variables(buffer, text), baseDir, ex -> finishRun(buffer, label, ex));
     }
 
     // --- commands ---
@@ -154,19 +220,32 @@ final class HttpClientCoordinator {
                 return;
             }
             String label = b.getPath().getFileName().toString();
-            startRun(label);
+            startRun(b, label);
             Path baseDir = b.getPath().toAbsolutePath().getParent();
             service.runAll(reqs, variables(b, text), baseDir, exchanges -> {
-                panel().showExchanges(exchanges);
+                HttpClientPanel p = panelFor(b);
+                if (p != null) {
+                    p.showExchanges(exchanges);
+                }
                 boolean allOk = exchanges.stream().allMatch(ex -> ex.result().ok());
                 host.setStatus(allOk ? tr("status.http.done", label) : tr("status.http.failed", exchanges.size()));
             });
         });
     }
 
-    /** {@code http.selectEnvironment}: open + focus the tool window to pick an environment. */
+    /** {@code http.selectEnvironment}: reveal the response preview and focus its environment picker. */
     void selectEnvironment() {
-        ifHttp(() -> ops.openToolWindow(true));
+        ifHttp(() -> {
+            EditorBuffer b = host.activeBuffer();
+            HttpClientPanel p = panelFor(b);
+            if (p == null) {
+                host.setStatus(tr("status.http.noRequest"));
+                return;
+            }
+            b.revealHttpPreview();
+            refreshEnvironments(b);
+            p.focusEnvironment();
+        });
     }
 
     /** {@code http.importCurl}: turn a clipboard {@code curl} command into a request block. */
@@ -196,7 +275,8 @@ final class HttpClientCoordinator {
     /** {@code http.copyAsCurl}: copy the response viewer's selected request as a {@code curl} command. */
     void copyActiveAsCurl() {
         ifHttp(() -> {
-            HttpExchange ex = panel().getSelectedExchange();
+            HttpClientPanel p = activePanel();
+            HttpExchange ex = p == null ? null : p.getSelectedExchange();
             if (ex == null) {
                 host.setStatus(tr("status.http.noResponse"));
                 return;
@@ -208,7 +288,8 @@ final class HttpClientCoordinator {
     /** {@code http.openResponseInTab}: open the response viewer's selected response in a new editor tab. */
     void openActiveResponseInTab() {
         ifHttp(() -> {
-            HttpExchange ex = panel().getSelectedExchange();
+            HttpClientPanel p = activePanel();
+            HttpExchange ex = p == null ? null : p.getSelectedExchange();
             if (ex == null) {
                 host.setStatus(tr("status.http.noResponse"));
                 return;
@@ -217,32 +298,39 @@ final class HttpClientCoordinator {
         });
     }
 
-    /** {@code tool.http}: toggle the HTTP response tool window. */
-    void toggleToolWindow() {
-        ifHttp(ops::toggleToolWindow);
-    }
-
     /**
-     * Updates the tool window's environment picker for the active {@code .http} buffer (called from the
-     * focus/tab-switch run-gating pass when this buffer is an active, enabled {@code .http} file).
+     * Updates this buffer's environment picker from the {@code .env}/env-JSON files beside it (called when
+     * the preview is attached and from the focus/tab-switch run-gating pass).
      */
     void refreshEnvironments(EditorBuffer buffer) {
-        if (buffer != null && buffer.getPath() != null) {
+        HttpClientPanel p = panelFor(buffer);
+        if (p != null && buffer.getPath() != null) {
             Path dir = buffer.getPath().toAbsolutePath().getParent();
-            panel().setEnvironments(environmentNames(dir), ops.savedEnvironment());
+            p.setEnvironments(environmentNames(dir), ops.savedEnvironment());
         }
     }
 
     // --- internals ---
 
-    private void startRun(String label) {
-        ops.openToolWindow(false);
-        panel().started(label);
+    /**
+     * Shows the request as running in {@code buffer}'s response preview, revealing that preview (Editor →
+     * Split) so the result is visible without the user having to open it — the in-editor equivalent of the
+     * tool window this feature used to auto-open.
+     */
+    private void startRun(EditorBuffer buffer, String label) {
+        HttpClientPanel p = panelFor(buffer);
+        if (p != null) {
+            buffer.revealHttpPreview();
+            p.started(label);
+        }
         host.setStatus(tr("status.http.running", label));
     }
 
-    private void finishRun(String label, HttpExchange ex) {
-        panel().showExchanges(List.of(ex));
+    private void finishRun(EditorBuffer buffer, String label, HttpExchange ex) {
+        HttpClientPanel p = panelFor(buffer);
+        if (p != null) {
+            p.showExchanges(List.of(ex));
+        }
         HttpResult r = ex.result();
         host.setStatus(r.failed() || !r.ok() ? tr("status.http.failed", r.status()) : tr("status.http.done", label));
     }
@@ -267,8 +355,10 @@ final class HttpClientCoordinator {
         buffer.setContent(HttpResponseFormat.prettyBody(r.body(), r.contentType()));
     }
 
-    private void saveResponse() {
-        String text = panel().getResponseText();
+    /** Save-response, bound to the owning buffer's own panel when it is created. */
+    private void saveResponse(EditorBuffer buffer) {
+        HttpClientPanel p = panelFor(buffer);
+        String text = p == null ? null : p.getResponseText();
         if (text == null || text.isEmpty()) {
             host.setStatus(tr("status.http.noResponse"));
             return;
@@ -291,7 +381,10 @@ final class HttpClientCoordinator {
     /** The resolved variable map for a {@code .http} buffer: env vars overlaid with the file's {@code @var}s. */
     private Map<String, String> variables(EditorBuffer buffer, String text) {
         Path dir = buffer.getPath().toAbsolutePath().getParent();
-        String env = panel().getSelectedEnvironment();
+        // This buffer's own picker — each .http file has its own panel, so a run always resolves {{vars}}
+        // against the environment selected for the file being run.
+        HttpClientPanel p = panelFor(buffer);
+        String env = p == null ? "" : p.getSelectedEnvironment();
         Map<String, String> envVars = new LinkedHashMap<>();
         envVars.putAll(envVars(dir == null ? null : dir.resolve("http-client.env.json"), env));
         envVars.putAll(envVars(dir == null ? null : dir.resolve("http-client.private.env.json"), env));

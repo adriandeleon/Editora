@@ -381,8 +381,9 @@ Editora is built with the help of AI coding tools.
   size/project). On by default; local-only; off in Simple UI mode.
 - **HTTP client** _(Beta)_ — open a `.http`/`.rest` file and click the green ▶ next to a request to run it with
   Editora's **built-in** HTTP client; the response (status, headers, pretty-printed JSON body, timing/
-  size) shows in an HTTP Client tool window (`M-0`, docked on the **right**, which auto-opens for `.http`
-  buffers and auto-hides when you switch away — close it manually to keep it shut for that file) with a content-type-highlighted viewer, an in-session
+  size) shows in the file's **preview** — the same Editor/Split/Preview view Markdown and CSV use, so the
+  floating toggle top-right switches between the requests, a side-by-side view, and the response alone.
+  Running a request opens the split for you. The viewer is content-type-highlighted and keeps an in-session
   history, **Copy as cURL** / **Import cURL**, and Open-in-editor. Close to IntelliJ's HTTP Client: `{{var}}`/
   `@var` substitution and **dynamic variables** (`{{$random.*}}`, `{{$datetime}}` with date math, `{{$dotenv.X}}`,
   …), **request chaining** (reference an earlier request's response), **multipart** and external-file bodies,
