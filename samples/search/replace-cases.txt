@@ -1,0 +1,62 @@
+Find-bar replace fixture — capture groups, preserve case, find in selection.
+Open with C-s (find) / C-r, and use the AB and Sel toggles.
+
+== 1. capture groups (turn .* ON) ==
+Find:    (\w+)_(\w+)
+Replace: $2-$1
+Expect:  each pair below swaps and joins with a hyphen.
+
+alpha_beta
+gamma_delta
+epsilon_zeta
+
+== 2. capture groups must NOT expand in literal mode (turn .* OFF) ==
+Find:    price
+Replace: $1
+Expect:  the literal text $1 — not an empty string, not an error.
+
+price tag
+price list
+
+== 3. bad group reference (turn .* ON) ==
+Find:    (\w+)_(\w+)
+Replace: $9
+Expect:  a status message, and NOTHING below changes.
+
+untouched_one
+untouched_two
+
+== 4. preserve case (turn AB ON; find "widget", replace "gadget") ==
+Expect:  WIDGET -> GADGET, widget -> gadget, Widget -> Gadget.
+         With AB OFF, all three become the literal "gadget".
+
+WIDGET in caps
+widget in lower
+Widget in title
+
+== 5. preserve case across separators (AB ON) ==
+Find:    old_name      Replace: new_value
+Expect:  per-segment casing, not a flattened whole-string rule.
+
+OLD_NAME
+old_name
+Old_Name
+
+== 6. find in selection ==
+Select the three lines between the BEGIN/END markers, then press C-s.
+Expect:  the Sel toggle switches itself ON (the selection is multi-line).
+         Find "target", replace "changed", Replace All.
+         Only the lines inside the block change; the ones outside do not.
+
+target OUTSIDE the block (must not change)
+--- BEGIN SELECTION ---
+target inside one
+target inside two
+target inside three
+--- END SELECTION ---
+target OUTSIDE the block (must not change)
+
+== 7. scope survives an edit above it ==
+With the block above still scoped, type a few lines at the very top of the
+file, then run Replace All again. The scope should still cover the same three
+lines — not slide off onto the wrong ones.
