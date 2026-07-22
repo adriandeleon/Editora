@@ -55,6 +55,7 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
         output.setWrapText(false);
         output.getStyleClass().addAll("editor-area", "run-output");
         RunPanel.installLinkClicks(output, () -> onLink);
+        ConsoleNav.installShared(output); // configured-keymap scrolling while the console has focus
 
         VirtualizedScrollPane<CodeArea> scroll = new VirtualizedScrollPane<>(output);
         VBox.setVgrow(scroll, Priority.ALWAYS);

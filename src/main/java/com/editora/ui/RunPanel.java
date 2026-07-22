@@ -74,6 +74,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         output.setWrapText(false);
         output.getStyleClass().addAll("editor-area", "run-output");
         installLinkClicks(output, () -> onLink);
+        ConsoleNav.installShared(output); // configured-keymap scrolling while the console has focus
 
         // stdin: one line per Enter, echoed into the console (the program won't echo it back).
         input.getStyleClass().add("run-input");
@@ -179,6 +180,8 @@ public final class RunPanel extends VBox implements ToolWindowContent {
      *  auto-scrolls. stderr lines get {@code .text.run-stderr} so error output stands out. */
     public void appendOutput(String line, boolean stderr) {
         int start = output.getLength();
+        int caretBefore = output.getCaretPosition();
+        boolean follow = caretBefore >= start; // scrolled back? stay put
         output.appendText(line + "\n");
         if (stderr && !line.isEmpty()) {
             StyleSpans<Collection<String>> spans = new StyleSpansBuilder<Collection<String>>()
@@ -186,12 +189,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
                     .create();
             output.setStyleSpans(start, spans);
         }
-        int len = output.getLength();
-        if (len > MAX_CHARS) {
-            output.deleteText(0, len - MAX_CHARS);
-        }
-        output.moveTo(output.getLength());
-        output.requestFollowCaret();
+        ConsoleNav.afterAppend(output, caretBefore, follow, MAX_CHARS);
     }
 
     /** The process exited; shows the exit code (or a "stopped" note for a killed run) and disables Stop. */

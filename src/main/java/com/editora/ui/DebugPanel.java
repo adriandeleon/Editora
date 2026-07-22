@@ -264,6 +264,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         console.setWrapText(false);
         console.getStyleClass().addAll("editor-area", "debug-console");
         RunPanel.installLinkClicks(console, () -> onLink); // double-click a stack-trace line → jump
+        ConsoleNav.installShared(console); // configured-keymap scrolling while the console has focus
         evalInput.getStyleClass().add("debug-eval");
         evalInput.setPromptText(tr("debugpanel.evalPrompt"));
         evalInput.setOnAction(e -> runEval());
@@ -642,6 +643,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             return;
         }
         int start = console.getLength();
+        int caretBefore = console.getCaretPosition();
+        boolean follow = caretBefore >= start; // scrolled back? stay put
         console.appendText(text);
         if ("stderr".equals(category) && !text.isEmpty()) {
             StyleSpans<Collection<String>> spans = new StyleSpansBuilder<Collection<String>>()
@@ -649,12 +652,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     .create();
             console.setStyleSpans(start, spans);
         }
-        int len = console.getLength();
-        if (len > MAX_CONSOLE_CHARS) {
-            console.deleteText(0, len - MAX_CONSOLE_CHARS);
-        }
-        console.moveTo(console.getLength());
-        console.requestFollowCaret();
+        ConsoleNav.afterAppend(console, caretBefore, follow, MAX_CONSOLE_CHARS);
     }
 
     private void runEval() {

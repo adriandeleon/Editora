@@ -41,6 +41,12 @@ public final class TextInputKeymap {
         shared = keymap;
     }
 
+    /** The app-wide keymap registered by {@link #setShared}, or null before startup has set it. Also read by
+     *  {@code com.editora.ui.ConsoleNav}, the {@code CodeArea} analogue of this class. */
+    public static KeymapManager sharedKeymap() {
+        return shared;
+    }
+
     /** Installs the shared configured-keymap bindings on {@code control} (no-op until {@link #setShared}). */
     public static void installShared(TextInputControl control) {
         install(control, shared);

@@ -75,6 +75,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         output.setShowCaret(Caret.CaretVisibility.OFF);
         output.getStyleClass().addAll("editor-area", "run-output");
         RunPanel.installLinkClicks(output, () -> onLink);
+        ConsoleNav.installShared(output);
 
         VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(output);
         VBox.setVgrow(scrollPane, Priority.ALWAYS);
@@ -117,9 +118,16 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         stopButton.setDisable(false);
     }
 
-    /** Appends one line, colored per this tool's {@link OutputStyle}, auto-scrolling to the bottom. */
+    /**
+     * Appends one line, colored per this tool's {@link OutputStyle}, auto-scrolling to the bottom — but
+     * only while the caret is already at the end. A user who has scrolled back through a running build's
+     * output (see {@link ConsoleNav}) stays put instead of being yanked to the tail on every new line;
+     * navigating back to the end resumes the follow.
+     */
     public void appendOutput(String line, boolean stderr) {
         int start = output.getLength();
+        int caretBefore = output.getCaretPosition();
+        boolean follow = caretBefore >= start;
         output.appendText(line + "\n");
         String styleClass = style.styleClassFor(line);
         if (styleClass != null) {
@@ -128,12 +136,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
                     .create();
             output.setStyleSpans(start, spans);
         }
-        int len = output.getLength();
-        if (len > MAX_CHARS) {
-            output.deleteText(0, len - MAX_CHARS);
-        }
-        output.moveTo(output.getLength());
-        output.requestFollowCaret();
+        ConsoleNav.afterAppend(output, caretBefore, follow, MAX_CHARS);
     }
 
     public void finished(int code) {
