@@ -154,6 +154,11 @@ final class BuildCoordinator {
         return detectedLabel;
     }
 
+    /** Whether a launched build is still alive — the same state {@link #runTask} / {@link #rerunLast} gate on. */
+    boolean isRunning() {
+        return service.isRunning();
+    }
+
     /** The path whose project drives this tool's UI: the active local file, else the active project root. */
     Path contextPath() {
         EditorBuffer b = host.activeBuffer();
