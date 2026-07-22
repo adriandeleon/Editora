@@ -185,7 +185,7 @@ final class DiffCoordinator {
             host.setStatus(tr("status.diff.applyFailed", target.getFileName()));
             return;
         }
-        b.getArea().replaceText(newText);
+        b.replaceWholeDocument(newText); // widens first: newText is whole-document text
         host.setStatus(tr("status.diff.applied"));
         refreshOpenDiffs();
     }

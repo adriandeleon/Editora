@@ -580,6 +580,10 @@ final class LspCoordinator {
                 && com.editora.vfs.Vfs.isLocal(path)
                 && !buffer.isLargeFile() // 5+ MB files skip LSP (like highlighting/minimap/git) — see setLspActive
                 && !buffer.isHeavyFile() // intermediate large-source tier also skips LSP (keeps highlighting)
+                // While narrowed the area holds only the region, so every position the server sends or
+                // receives is offset — a formatting edit or code action would land in the wrong place and
+                // corrupt the file. Suspend the document until the buffer is widened again.
+                && !buffer.isNarrowed()
                 && serverId != null
                 && serverEnabled(serverId)
                 && Boolean.TRUE.equals(serverAvailable.get(serverId));
