@@ -116,6 +116,11 @@ Editora is built with the help of AI coding tools.
   fixups (`M-\`, `M-SPC`), delete-blank-lines (`C-x C-o`), open-line (`C-o`), kill-whole-line (`C-S-DEL`),
   zap-to-char (`M-z`), balanced-expression motion (`C-M-f`/`C-M-b`, mark/kill-sexp), defun motion
   (`C-M-a`/`C-M-e`), and mark-paragraph / mark-whole-buffer. All palette-discoverable and rebindable.
+- **Rectangles** (`C-x r …`) — the Emacs column-oriented commands: kill/copy/yank a rectangle, delete it,
+  clear it to spaces, open it (shifting text right), replace each line's segment with a string, or number
+  the lines down its left edge. Point and mark define the corners, so a zero-width rectangle is the classic
+  way to prefix a block of lines. Each is a single undo step. Distinct from Alt+drag column selection, which
+  gives you independent cursors instead.
 - **Kill ring** — every kill command feeds a 120-entry ring rather than just deleting: `C-y` yanks the most
   recent, **`M-y`** (yank-pop) steps back through older entries, and *Edit: Yank from Kill Ring…* picks from
   it directly. Consecutive kills accumulate into one entry (`C-k C-k C-k` then `C-y` restores all three
