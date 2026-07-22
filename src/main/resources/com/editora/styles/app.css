@@ -1661,6 +1661,14 @@
     -fx-opacity: 0.4;
 }
 
+/* Why that row is grayed, and which command would re-enable it. Full opacity on purpose — it explains the
+   dimmed row, so dimming the explanation too would be self-defeating. */
+.palette-disabled-tooltip {
+    -fx-font-size: 12px;
+    -fx-background-color: -color-bg-overlay;
+    -fx-text-fill: -color-fg-default;
+}
+
 /* Small "ⓘ" info badge (e.g. next to the Enable-projects setting); hover shows a tooltip. */
 .info-badge {
     -fx-text-fill: -color-accent-fg;
