@@ -200,6 +200,10 @@ inert samples (fake values, not real system files).
   use them to test multi-file results, case sensitivity, and whole-word.
 - `samples/search/regex-cases.txt` — regex patterns plus a multibyte `é` to verify ripgrep
   byte→char column mapping.
+- `samples/search/replace-cases.txt` — the in-file find bar's **replace** paths: regex capture groups
+  (`$1`/`$2`), `$` staying literal in non-regex mode, a bad group reference leaving the buffer alone,
+  **preserve case** (`AB`) including per-segment `snake_case`, and **find in selection** (`Sel`) with a
+  marked block plus decoys outside it. Each section states the query and the expected result inline.
 
 ## csv/ — CSV/TSV grid, rainbow columns, delimiter detection
 
