@@ -46,11 +46,6 @@ final class Icons {
                 + "8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z");
     }
 
-    /** Request/response arrows (Material "swap_horiz") — the HTTP Client tool window. */
-    static Node httpClient() {
-        return of("M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z");
-    }
-
     /** A robot glyph (MDI "robot") for the AI Agent chat tool window. */
     static Node agent() {
         return of("M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 "

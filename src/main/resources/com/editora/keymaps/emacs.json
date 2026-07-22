@@ -32,7 +32,6 @@
   "M-7": "tool.structure",
   "M-8": "tool.problems",
   "M-9": "tool.run",
-  "M-0": "tool.http",
   "C-c r": "file.run",
   "M-.": "lsp.gotoDefinition",
   "M-S-/": "lsp.findReferences",

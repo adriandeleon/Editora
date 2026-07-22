@@ -34,14 +34,18 @@ import org.fxmisc.richtext.CodeArea;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The "HTTP Client" tool window: a request/response viewer modeled on {@link RunPanel}. Shows the selected
+ * The HTTP Client response viewer: a request/response viewer modeled on {@link RunPanel}. Shows the selected
  * {@link HttpExchange}'s status + response headers in one pane and its body — syntax-highlighted by content
  * type (JSON/XML/HTML, reusing the editor's TextMate grammars) — in a read-only {@link CodeArea} below. A
  * history picker keeps the last runs, plus actions for "Copy as cURL", "Open in editor tab", Save, and
  * Clear, and an environment picker for {@code {{var}}} resolution. The controller drives it via
  * {@code started}/{@code showExchanges} on the FX thread.
+ *
+ * <p>This is the {@code .http} buffer's <b>preview</b> — one instance per open {@code .http} buffer, embedded
+ * in the editor's Editor/Split/Preview view by {@link HttpClientCoordinator}. It scrolls its own body area,
+ * so it is hosted directly (no {@code ScrollPane} wrapper), like {@link CsvGridPanel}.
  */
-public final class HttpClientPanel extends VBox implements ToolWindowContent {
+public final class HttpClientPanel extends VBox {
 
     private static final int MAX_HISTORY = 20;
     private static final int MAX_BODY_CHARS = 400_000;
@@ -389,8 +393,8 @@ public final class HttpClientPanel extends VBox implements ToolWindowContent {
         return ex == null ? "" : HttpResponseFormat.render(ex.result());
     }
 
-    @Override
-    public void focusFirstItem() {
-        bodyArea.requestFocus();
+    /** Focuses the environment picker (the {@code http.selectEnvironment} command's target). */
+    public void focusEnvironment() {
+        envCombo.requestFocus();
     }
 }
