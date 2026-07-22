@@ -26,6 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   order. Kills are still written to the system clipboard, so pasting into another application is unchanged;
   conversely, text you copied in another application wins over the ring, so `C-y` never surprises you with a
   stale kill. The ring is per window and lives only for the session.
+- **Preserve case when replacing** (the `AB` toggle in the find bar). Replacing `foo` with `bar` now rewrites
+  `FOO` as `BAR` and `Foo` as `Bar` instead of flattening everything to lowercase, so a rename across
+  mixed-case usages takes one pass rather than three. `snake_case` and `kebab-case` are cased per segment.
+- **Find in selection** (the `Sel` toggle). Opening the find bar with a **multi-line** selection now scopes the
+  search and Replace All to it automatically; single-line selections keep seeding the query as before, so the
+  two never fight over the same gesture. The scope follows its content as the buffer is edited.
+
+### Fixed
+
+- **Regex capture groups now work in the find bar's replace.** `$1` was being inserted *literally* — searching
+  `(\w+)_(\w+)` and replacing with `$2-$1` put the text `$2-$1` into the buffer. The same query in Find in
+  Files substituted correctly, so the two halves of search disagreed and the documentation described the
+  working half. Replacing a single match honours groups too, and a replacement naming a group the pattern
+  doesn't have now reports the error and leaves the buffer untouched instead of half-rewriting it. Literal
+  (non-regex) mode still inserts `$` verbatim.
+- **Replace All no longer rewrites the whole document.** It replaces only the span from the first to the last
+  match, so the untouched remainder stays out of the undo entry and the caret is left where it was.
 
 ## [0.9.9] - 2026-07-21
 
