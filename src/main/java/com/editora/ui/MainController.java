@@ -1456,6 +1456,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             dispatcher.setKeyListener(macroCoordinator::onKey);
             dispatcher.setRecordTarget(macroCoordinator::isRecordableTarget);
         }
+        // Prefix argument (C-u): setMark reads it (C-u C-SPC = pop-to-mark); every other command is repeated;
+        // a self-inserting character is typed N times.
+        dispatcher.setPrefixArgumentSupport(
+                "edit.setMark"::equals, arg -> currentPrefixArg = arg, this::selfInsertRepeat);
         dispatcher.setPreDispatch((token, target) -> {
             if (!"M-g".equals(token)) {
                 return false;
@@ -11343,10 +11347,28 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Emacs {@code C-SPC}: drop the mark at the caret so subsequent movement selects from here. */
+    /** The prefix argument ({@code C-u}) available while a count-aware command runs, else null. */
+    private Integer currentPrefixArg;
+
+    /** Inserts {@code ch} {@code count} times at the caret as one undoable edit ({@code C-u 40 -}). */
+    private void selfInsertRepeat(char ch, int count) {
+        if (count <= 0 || !activeEditable()) {
+            return;
+        }
+        CodeArea area = activeArea();
+        if (area != null) {
+            area.insertText(area.getCaretPosition(), String.valueOf(ch).repeat(count));
+        }
+    }
+
     private void setMark() {
         EditorBuffer buffer = activeBuffer();
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
         if (area == null) {
+            return;
+        }
+        if (currentPrefixArg != null) {
+            popMark(); // Emacs C-u C-SPC = pop-to-mark instead of setting a new one
             return;
         }
         int caret = area.getCaretPosition();
@@ -13729,6 +13751,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.setMark", this::setMark));
         registry.register(Command.of("edit.exchangePointAndMark", this::exchangePointAndMark));
         registry.register(Command.of("edit.popMark", this::popMark));
+        registry.register(Command.of(com.editora.command.KeyDispatcher.UNIVERSAL_ARGUMENT, () -> {}));
         registry.register(Command.of("edit.deleteChar", () -> withArea(CodeArea::deleteNextChar)));
         registry.register(Command.of(
                 "edit.killWord",

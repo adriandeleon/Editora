@@ -27,6 +27,22 @@ public class KeyDispatcher {
     private String pending = "";
     /** True when the last KEY_PRESSED was consumed, so its paired KEY_TYPED is swallowed too. */
     private boolean consumedPress;
+
+    /** The Emacs prefix (universal) argument being entered, if any. See {@link #handle}. */
+    private final PrefixArg prefixArg = new PrefixArg();
+    /** How many times the next {@code KEY_TYPED} self-insert character is repeated ({@code C-u 40 -}), or 0. */
+    private int pendingSelfInsert;
+    /** Which command ids read the argument themselves rather than being repeated (e.g. {@code C-u C-SPC}). */
+    private java.util.function.Predicate<String> countAware = id -> false;
+    /** Stashes the numeric argument for a count-aware command to read (null clears it). */
+    private Consumer<Integer> prefixSink = n -> {};
+    /** Inserts a self-inserted character N times ({@code C-u 40 -}); null disables self-insert repeat. */
+    private java.util.function.ObjIntConsumer<Character> selfInsert;
+    /** A runaway {@code C-u 9999999} can't hang the UI: repeats and self-inserts are clamped to this. */
+    static final int MAX_REPEAT = 100_000;
+
+    /** The command id {@code C-u} maps to (bound per keymap, so only Emacs starts a prefix argument). */
+    public static final String UNIVERSAL_ARGUMENT = "edit.universalArgument";
     /** Optional first-look hook: given the chord token + event target, returns true if it handled the
      *  key (then the event is consumed and dispatch stops). Used e.g. to let {@code M-g} close a
      *  focused tool window. Only consulted when no multi-key prefix is pending. */
@@ -46,6 +62,22 @@ public class KeyDispatcher {
     /** Installs a first-look hook (see {@link #preDispatch}); may be null to clear. */
     public void setPreDispatch(java.util.function.BiPredicate<String, EventTarget> hook) {
         this.preDispatch = hook;
+    }
+
+    /**
+     * Wires the prefix-argument ({@code C-u}) support. {@code countAware} names the command ids that read
+     * the numeric argument themselves rather than being repeated (via {@code sink}); every other command is
+     * simply run |value| times. {@code selfInsert} inserts a self-inserting character N times ({@code C-u 40
+     * -}). Any may be null to disable that part. The trigger chord is the keymap binding for
+     * {@link #UNIVERSAL_ARGUMENT}, so a keymap that does not bind it has no prefix argument at all.
+     */
+    public void setPrefixArgumentSupport(
+            java.util.function.Predicate<String> countAware,
+            Consumer<Integer> sink,
+            java.util.function.ObjIntConsumer<Character> selfInsert) {
+        this.countAware = countAware != null ? countAware : id -> false;
+        this.prefixSink = sink != null ? sink : n -> {};
+        this.selfInsert = selfInsert;
     }
 
     /**
@@ -128,6 +160,18 @@ public class KeyDispatcher {
             event.consume();
             return;
         }
+        // Prefix-argument self-insert (C-u 40 -): the press left a repeat count for this character. Insert it
+        // that many times and swallow the event so the area does not also type a single copy.
+        if (pendingSelfInsert > 0) {
+            int count = pendingSelfInsert;
+            pendingSelfInsert = 0;
+            event.consume();
+            String s = event.getCharacter();
+            if (selfInsert != null && s != null && !s.isEmpty()) {
+                selfInsert.accept(s.charAt(0), count);
+            }
+            return;
+        }
         // A genuine character reaching the editor — feed it to the macro recorder (if any). Gated on the
         // target: this is a scene filter, so it also sees keys typed into the palette/find bar/pickers.
         if (typedListener != null && recordTarget.test(event.getTarget())) {
@@ -160,6 +204,29 @@ public class KeyDispatcher {
         if (token == null) {
             return; // a modifier key on its own
         }
+        // While a prefix argument is being entered (C-u …), intercept its continuation keys — digits and a
+        // leading minus accumulate, C-g/Escape cancels. Anything else falls through to be the command (or
+        // self-inserted char) the argument applies to. C-u itself is resolved via the keymap below.
+        if (prefixArg.isActive()) {
+            if (token.equals("C-g") || token.equals("escape")) {
+                cancelPrefixArgument();
+                consumeAsArg(event);
+                return;
+            }
+            Integer d = plainDigit(token);
+            if (d != null) {
+                prefixArg.digit(d);
+                statusListener.accept(prefixArg.describe());
+                consumeAsArg(event);
+                return;
+            }
+            if (token.equals("-") && !prefixArg.hasDigits()) {
+                prefixArg.negate();
+                statusListener.accept(prefixArg.describe());
+                consumeAsArg(event);
+                return;
+            }
+        }
         if (pending.isEmpty() && preDispatch != null && preDispatch.test(token, event.getTarget())) {
             event.consume();
             consumedPress = true; // swallow the paired KEY_TYPED
@@ -178,11 +245,19 @@ public class KeyDispatcher {
             return; // let the focused window handle this editor-context key
         }
 
+        // C-u (universal-argument): start or extend the prefix argument instead of running a command.
+        if (UNIVERSAL_ARGUMENT.equals(commandId)) {
+            prefixArg.universal();
+            statusListener.accept(prefixArg.describe());
+            consumeAsArg(event);
+            return;
+        }
+
         if (commandId != null) {
             event.consume();
             consumedPress = true; // set before run(): a modal command defers the paired KEY_TYPED
             reset();
-            registry.run(commandId);
+            dispatch(commandId);
             return;
         }
 
@@ -200,6 +275,16 @@ public class KeyDispatcher {
             consumedPress = true;
             statusListener.accept(sequence + " is undefined");
             reset();
+            prefixArg.reset();
+            return;
+        }
+        // Prefix argument + a self-inserting character (C-u 40 -): let the paired KEY_TYPED do the insert N
+        // times. We do NOT consume the press — the character arrives on KEY_TYPED, which handleTyped()
+        // repeats and swallows. Digits/minus were already intercepted above, so they can't reach here.
+        if (prefixArg.isActive() && selfInsert != null && selfInsertCandidate(event)) {
+            pendingSelfInsert = clampRepeat(prefixArg.value());
+            prefixArg.reset();
+            statusListener.accept("");
             return;
         }
         // Windows/Linux: an UNBOUND plain-Alt chord (e.g. M-n with no binding) must still be consumed.
@@ -209,7 +294,14 @@ public class KeyDispatcher {
         if (plainAltActive(IS_MAC, event.isAltDown(), event.isControlDown())) {
             event.consume();
             consumedPress = true;
+            prefixArg.reset();
             return;
+        }
+        // A stray unbound key (not a self-insert candidate) ends any pending argument rather than leaving it
+        // to apply to some later, unrelated command.
+        if (prefixArg.isActive()) {
+            prefixArg.reset();
+            statusListener.accept("");
         }
         // A lone, unbound key: let it fall through so normal text input works. If it's an editing or
         // navigation key aimed at the editor, hand it to the macro recorder first — the area handles these
@@ -223,6 +315,84 @@ public class KeyDispatcher {
                     event.getCode().name()));
         }
     }
+
+    /** Consumes a key event that was absorbed into the prefix argument (C-u, a digit, a minus, a cancel). */
+    private void consumeAsArg(KeyEvent event) {
+        event.consume();
+        consumedPress = true; // swallow the paired KEY_TYPED so the digit/char is not also inserted
+    }
+
+    private void cancelPrefixArgument() {
+        prefixArg.reset();
+        reset(); // also drop any half-entered multi-key chord (C-u C-x C-g)
+        statusListener.accept("");
+    }
+
+    /**
+     * Runs {@code commandId}, applying any prefix argument: a count-aware command reads the numeric value
+     * (via the sink) and runs once; every other command is repeated |value| times. Without an argument it
+     * runs exactly once — the normal path.
+     */
+    private void dispatch(String commandId) {
+        if (!prefixArg.isActive()) {
+            registry.run(commandId);
+            return;
+        }
+        int value = prefixArg.value();
+        prefixArg.reset(); // clear before running so a nested dispatch starts clean
+        statusListener.accept("");
+        if (countAware.test(commandId)) {
+            prefixSink.accept(value);
+            try {
+                registry.run(commandId);
+            } finally {
+                prefixSink.accept(null);
+            }
+        } else {
+            int n = clampRepeat(value);
+            for (int i = 0; i < n; i++) {
+                registry.run(commandId);
+            }
+        }
+    }
+
+    /** The bounded, non-negative repeat count for a raw argument value (0 stays 0 → a no-op). */
+    static int clampRepeat(int value) {
+        return Math.min(Math.abs(value), MAX_REPEAT);
+    }
+
+    /** A bare single digit token ({@code "0"}…{@code "9"}, no modifiers), else null. */
+    static Integer plainDigit(String token) {
+        if (token.length() == 1) {
+            char c = token.charAt(0);
+            if (c >= '0' && c <= '9') {
+                return c - '0';
+            }
+        }
+        return null;
+    }
+
+    /** Whether this key would type a character (so a prefix argument repeats it): no C-/M-/Cmd- modifier. */
+    private static boolean selfInsertCandidate(KeyEvent event) {
+        if (event.isControlDown() || event.isAltDown() || event.isMetaDown()) {
+            return false;
+        }
+        KeyCode c = event.getCode();
+        return c == KeyCode.SPACE || c.isLetterKey() || c.isDigitKey() || SELF_INSERT_PUNCT.contains(c);
+    }
+
+    private static final java.util.Set<KeyCode> SELF_INSERT_PUNCT = java.util.Set.of(
+            KeyCode.SLASH,
+            KeyCode.BACK_SLASH,
+            KeyCode.PERIOD,
+            KeyCode.COMMA,
+            KeyCode.SEMICOLON,
+            KeyCode.MINUS,
+            KeyCode.EQUALS,
+            KeyCode.OPEN_BRACKET,
+            KeyCode.CLOSE_BRACKET,
+            KeyCode.QUOTE,
+            KeyCode.BACK_QUOTE);
 
     /**
      * The bare keys a macro must capture: they change the document or the caret, are handled natively by the

@@ -7,6 +7,7 @@
   "C-x C-x": "edit.exchangePointAndMark",
   "C-x C-space": "edit.popMark",
   "C-space": "edit.setMark",
+  "C-u": "edit.universalArgument",
   "C-x v =": "diff.vsHead",
   "C-x b": "buffer.jump",
   "C-x k": "buffer.close",
