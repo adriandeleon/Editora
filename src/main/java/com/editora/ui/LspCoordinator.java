@@ -1529,6 +1529,61 @@ final class LspCoordinator {
         });
     }
 
+    // --- Watched files (#677) ------------------------------------------------------------------
+
+    /** Pending external file changes (latest kind wins per path), flushed coalesced to the servers. */
+    private final Map<Path, com.editora.lsp.LspManager.WatchedKind> pendingWatched = new LinkedHashMap<>();
+
+    /** Coalesces watcher bursts (a branch switch touches hundreds of files) into one flush. */
+    private final javafx.animation.PauseTransition watchedFlush =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+
+    /**
+     * Queues external file changes for the language servers ({@code workspace/didChangeWatchedFiles}) —
+     * fed by the Project tree's filesystem watcher and the external-change/branch-switch reload paths.
+     * Without this a git checkout or a CLI build left every server's project model stale until restart
+     * (#677). FX thread; bursts coalesce (300 ms) into one notification per session.
+     */
+    void watchedFilesChanged(List<ProjectPanel.FsChange> changes) {
+        if (!ops.lspFeatureEnabled() || changes == null || changes.isEmpty()) {
+            return;
+        }
+        for (var c : changes) {
+            if (c == null || c.path() == null) {
+                continue;
+            }
+            pendingWatched.put(
+                    c.path(),
+                    switch (c.kind()) {
+                        case CREATED -> com.editora.lsp.LspManager.WatchedKind.CREATED;
+                        case DELETED -> com.editora.lsp.LspManager.WatchedKind.DELETED;
+                        case CHANGED -> com.editora.lsp.LspManager.WatchedKind.CHANGED;
+                    });
+        }
+        watchedFlush.setOnFinished(e -> flushWatchedFiles());
+        watchedFlush.playFromStart();
+    }
+
+    /** Convenience for the reload paths: a batch of files that changed on disk (kind CHANGED). */
+    void watchedFilesReloaded(List<Path> files) {
+        if (files == null || files.isEmpty()) {
+            return;
+        }
+        watchedFilesChanged(files.stream()
+                .map(f -> new ProjectPanel.FsChange(f, ProjectPanel.FsKind.CHANGED))
+                .toList());
+    }
+
+    private void flushWatchedFiles() {
+        if (pendingWatched.isEmpty()) {
+            return;
+        }
+        List<com.editora.lsp.LspManager.WatchedFile> batch = new java.util.ArrayList<>(pendingWatched.size());
+        pendingWatched.forEach((path, kind) -> batch.add(new com.editora.lsp.LspManager.WatchedFile(path, kind)));
+        pendingWatched.clear();
+        lspManager.notifyWatchedFiles(batch);
+    }
+
     /** Refreshes (or closes) a showing signature popup on the typing pause — called from the buffer's
      *  debounced change listener, so the active parameter tracks the arguments as they're typed. */
     private void refreshSignatureHelpIfShowing() {

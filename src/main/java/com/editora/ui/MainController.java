@@ -2164,6 +2164,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             refreshBuildTools();
             diffCoordinator.refreshOpenDiffs();
         });
+        // Forward the watcher's raw events to the language servers (didChangeWatchedFiles) so a git
+        // checkout / CLI build / external editor doesn't leave their project models stale (#677).
+        projectPanel.setFsChangeSink(lspCoordinator::watchedFilesChanged);
         projectPanel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         projectPanel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (local files only).
@@ -5198,6 +5201,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** After a branch switch/pull, silently reload any open buffer whose file changed on disk. */
     private void reloadAllFromDiskSilently() {
+        java.util.List<Path> reloaded = new java.util.ArrayList<>();
         for (Tab tab : tabPane.getTabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer == null || buffer.getPath() == null || buffer.isDirty()) {
@@ -5206,8 +5210,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             Path file = buffer.getPath();
             if (Files.exists(file) && buffer.diskChangedFrom(lastModifiedMillis(file), fileSize(file))) {
                 reloadFromDisk(tab, buffer);
+                reloaded.add(file);
             }
         }
+        // A branch switch / pull changed these on disk — tell the language servers too (#677). The open
+        // buffers' didChange covers their content, but the servers' project models (dependencies, indexes)
+        // key off watched-file events. The project watcher only covers expanded dirs, so this path matters.
+        lspCoordinator.watchedFilesReloaded(reloaded);
     }
 
     private void setupToolbar() {
@@ -6787,6 +6796,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             buffer.markClean();
             area.moveTo(Math.min(caret, area.getLength()));
             updateTabMeta(tab, buffer);
+            lspCoordinator.watchedFilesReloaded(java.util.List.of(file)); // the server's model too (#677)
             setStatus(note.isEmpty() ? tr("status.reloaded", file.getFileName()) : note);
         } catch (IOException e) {
             setStatus(tr("status.failedReload", file.getFileName(), e.getMessage()));

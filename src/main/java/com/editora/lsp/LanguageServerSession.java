@@ -387,6 +387,9 @@ final class LanguageServerSession implements LanguageClient {
         ws.setConfiguration(true);
         ws.setDidChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationCapabilities());
         ws.setSymbol(new org.eclipse.lsp4j.SymbolCapabilities()); // we answer workspace/symbol (Go to Symbol)
+        // We push watched-file events (#677) — without them a git checkout / CLI build leaves the server's
+        // project model stale until restart. Static push only (no dynamic watcher registration).
+        ws.setDidChangeWatchedFiles(new org.eclipse.lsp4j.DidChangeWatchedFilesCapabilities(false));
         // We answer workspace/applyEdit (#670) — how a server-side command (a jdtls quick fix routed
         // through executeCommand) actually lands its edits in the editor. documentChanges=true because
         // jdtls emits the modern TextDocumentEdit[] shape when the client accepts it.
@@ -711,6 +714,21 @@ final class LanguageServerSession implements LanguageClient {
         }
         var params = new org.eclipse.lsp4j.RenameParams(new TextDocumentIdentifier(uri), pos, newName);
         return server.getTextDocumentService().rename(params).exceptionally(t -> null);
+    }
+
+    /** Notifies the server of external file changes ({@code workspace/didChangeWatchedFiles}) so its
+     *  project model tracks a git checkout / CLI build / external editor (#677). Dropped when not ready —
+     *  a starting server reads the disk fresh anyway. */
+    void didChangeWatchedFiles(List<org.eclipse.lsp4j.FileEvent> events) {
+        if (!ready() || events == null || events.isEmpty()) {
+            return;
+        }
+        try {
+            server.getWorkspaceService()
+                    .didChangeWatchedFiles(new org.eclipse.lsp4j.DidChangeWatchedFilesParams(events));
+        } catch (RuntimeException ignored) {
+            // best effort — an advisory notification
+        }
     }
 
     CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(String uri, Position pos) {

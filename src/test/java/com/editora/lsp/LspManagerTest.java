@@ -195,6 +195,23 @@ class LspManagerTest {
         assertEquals(Set.of(), LspManager.signatureTriggerCharsOf(null));
     }
 
+    // --- Watched files (#677) ------------------------------------------------------------------
+
+    @Test
+    void eventsUnderRootFilterByPathContainmentAndMapKinds() {
+        var changes = List.of(
+                new LspManager.WatchedFile(java.nio.file.Path.of("/proj/src/A.java"), LspManager.WatchedKind.CHANGED),
+                new LspManager.WatchedFile(java.nio.file.Path.of("/proj/pom.xml"), LspManager.WatchedKind.CREATED),
+                new LspManager.WatchedFile(java.nio.file.Path.of("/other/B.java"), LspManager.WatchedKind.DELETED),
+                // /proj2 must NOT be contained by /proj (component containment, not string prefix)
+                new LspManager.WatchedFile(java.nio.file.Path.of("/proj2/C.java"), LspManager.WatchedKind.CHANGED));
+        var events = LspManager.eventsUnderRoot(changes, java.nio.file.Path.of("/proj"));
+        assertEquals(2, events.size());
+        assertEquals(org.eclipse.lsp4j.FileChangeType.Changed, events.get(0).getType());
+        assertTrue(events.get(0).getUri().endsWith("A.java"));
+        assertEquals(org.eclipse.lsp4j.FileChangeType.Created, events.get(1).getType());
+    }
+
     // --- Rename (#676) -------------------------------------------------------------------------
 
     @Test
