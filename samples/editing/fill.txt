@@ -1,0 +1,8 @@
+Auto-fill breaks a line at a word boundary as you type past the fill column.
+Turn it on (View: Toggle Auto-Fill), set a small fill column (C-x f, e.g. 40),
+then type more words at the end of a paragraph line below and watch it wrap.
+It applies to plain text and Markdown only, never code. M-q reflows a whole paragraph.
+
+Keep typing at the end of this paragraph and it should wrap by itself once you go past the fill column without pressing Enter
+
+    an indented paragraph: keep typing here and the wrapped continuation lines should also start with this same indentation rather than jumping back to column zero

@@ -1,0 +1,23 @@
+Align a column across lines with Edit: Align Regexp (enter a regexp, e.g. = or :).
+Select each block first. It only adds spaces, so re-running it is a no-op.
+
+# align on =
+int a = 1;
+String name = "x";
+double ratio = 0.5;
+boolean ok = true;
+
+# align on : (key/value)
+host: localhost
+port: 8080
+scheme: https
+
+# already-uneven spacing before = : align pads to the widest, it does not collapse the extra
+a     = 1
+bb = 2
+ccc   = 3
+
+# align trailing comments on //
+foo();      // call foo
+barbaz();  // and bar
+q();   // q
