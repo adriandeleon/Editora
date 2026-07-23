@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   half-typed argument. Most commands are simply run that many times; `C-u C-SPC` is special-cased to
   **pop-mark** (as in Emacs). Only the Emacs keymap binds `C-u`, so the other keymaps are unaffected.
 
+- **Expand / shrink selection** — grow the selection outward through syntactic levels (word → brackets or
+  string → line → enclosing definition → paragraph → whole document) and shrink back through the exact same
+  steps. `Shift+Alt+Right`/`Left` in the VS Code, CUA and Sublime keymaps; `Ctrl+W`/`Ctrl+Shift+W` in the
+  IntelliJ keymap (`Option+Up`/`Down` on macOS); palette-discoverable everywhere. Bracket and string matching
+  is text-based (it doesn't yet consult a language server), so it's the always-available baseline rather than
+  fully syntax-aware.
 - **Occur** (`M-s o`) — list every line in the current buffer matching a regular expression in a keyboard
   picker; pick one to jump to it. The buffer-scoped counterpart to Find in Files.
 - **Tabify / Untabify** — convert the selection (or whole buffer) between tab and space indentation using
