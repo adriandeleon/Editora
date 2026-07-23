@@ -363,6 +363,11 @@ Editora is built with the help of AI coding tools.
 - **Welcome page** — a VSCode-style start panel (New File / Open File / recent files) shown in the editor
   area when no files are open, instead of a blank Untitled buffer; `--new-file[=name]` opens a fresh buffer
   instead.
+- **Doctor** — a `flutter doctor`-style health screen (`View: Doctor` in the palette, or from the Welcome
+  page) that checks every external CLI Editora's features use — Git/GitHub CLI, ripgrep, the
+  preview/diagram tools, all enabled language servers, the debug adapters, the Run interpreters, build
+  tools, the AI agent CLI, and the installer prerequisites — with versions, plain-language tips, and
+  one-click **Install…** / **Settings…** fixes. Disabled features show as gray rows and aren't probed.
 - **Recent files** — persistent most-recently-used list.
 - **Image viewer** — opening a raster image (`.png`, `.jpg`/`.jpeg`, `.gif`, `.bmp`) renders the picture in a
   read-only tab instead of dumping its binary bytes as text, with zoom out/in/fit/actual-size (and Ctrl+wheel

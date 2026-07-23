@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Doctor — external-tool health screen** — `View: Doctor` in the palette (also on the Welcome page)
+  opens a full-tab report, like `flutter doctor`, of every external CLI Editora's features rely on: Git
+  and the GitHub CLI (including its sign-in state), ripgrep, the preview/diagram tools (mmdc, maid,
+  Graphviz, PlantUML, Typst), every enabled language server, the debug adapters (java-debug, debugpy,
+  js-debug), the Run interpreters (JDK 25 check, python3, bash, make), the build tools, the selected AI
+  agent CLI, elevated save, browsers, and the in-app installer's prerequisites. Each row shows the
+  resolved command, its version where available, and — when something's off — a plain-language tip plus
+  an **Install…** button (the in-app installer) or a **Settings…** link to the right page. Features that
+  are switched off show as gray informational rows and are never probed; all probes run off the UI
+  thread and only when the screen is opened or refreshed.
+
 - **Navigate inside library source (LSP, Java)** — Go to Definition now also works *from within* an
   opened JDK/dependency source tab: put the caret on a symbol inside `String.class`'s source and `M-.`
   chains onward — into another library class (opened the same way) or back into your own code. (#684)

@@ -105,9 +105,9 @@ public final class RunService {
     /**
      * Parses the major version out of {@code java -version} output (pure — tested): the first quoted
      * version token, e.g. {@code openjdk version "25.0.3"} → 25, {@code "21"} → 21, and the legacy
-     * {@code "1.8.0_392"} → 8. Returns -1 when absent/unparseable.
+     * {@code "1.8.0_392"} → 8. Returns -1 when absent/unparseable. Public: the Doctor screen reuses it.
      */
-    static int javaMajorOf(String output) {
+    public static int javaMajorOf(String output) {
         if (output == null) {
             return -1;
         }

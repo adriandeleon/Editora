@@ -3,6 +3,13 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Doctor — external-tool health screen** — `view.doctor` opens a Welcome-style tab reporting the
+      health of every external CLI (git/gh/rg/mmdc/maid/dot/plantuml/typst, the enabled LSP servers, the
+      3 debug adapters, run interpreters, build tools, agent CLI, installer prereqs) with fresh
+      off-thread probes, versions, tips, and Install…/Settings… fix actions. Pure `doctor/` package
+      (model + rules + probes + service, unit-tested) + `ui/DoctorPane`/`DoctorCoordinator`; disabled
+      features are gray terminal rows and never probed. *Deferred: an AI endpoint reachability row
+      (network ping, not a CLI), copy-report-to-clipboard, per-row re-check.*
 - [x] **jdt:// chained navigation** (#684) — deferred from #665: the read-only library-source tab has no
       filesystem path, so `M-.` inside it was dead. `LspCoordinator.librarySources` (weak-keyed) records
       each library tab's own jdt URI + the workspace anchor file whose session produced it;

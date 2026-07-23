@@ -621,6 +621,21 @@ final class LspCoordinator {
         };
     }
 
+    /** Known server ids in Settings-page order (read by the Doctor screen's check catalog). */
+    static java.util.List<String> serverIds() {
+        return java.util.List.of(SERVER_IDS);
+    }
+
+    /**
+     * The tokenized launch argv for {@code serverId} — the configured command, blank ⇒ the registry
+     * default; empty for a server with neither (an uninstalled {@code maven-pom}). Doctor-screen read.
+     */
+    java.util.List<String> serverArgv(String serverId) {
+        String raw = serverCommand(serverId);
+        return com.editora.lsp.LspServerRegistry.commandFor(
+                serverId, raw == null ? java.util.Map.of() : java.util.Map.of(serverId, raw));
+    }
+
     /** Sets a server's per-server enable toggle (mirrors {@link #serverEnabled}). */
     private void setServerEnabled(String serverId, boolean on) {
         var s = host.settings();

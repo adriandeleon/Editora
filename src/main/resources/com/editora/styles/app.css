@@ -2036,6 +2036,72 @@
     -fx-font-size: 0.9em;
 }
 
+/* Doctor screen (external-tool health, a Welcome-style tab): sectioned rows of status glyph + tool +
+   command + version/tip, all in semantic colors so every theme reads correctly. */
+.doctor-pane {
+    -fx-background-color: -color-bg-default;
+}
+.doctor-scroll,
+.doctor-scroll > .viewport,
+.doctor-scroll-content {
+    -fx-background-color: transparent;
+}
+.doctor-scroll {
+    -fx-padding: 0;
+    -fx-background-insets: 0;
+}
+.doctor-content {
+    -fx-spacing: 4;
+}
+.doctor-title {
+    -fx-font-size: 2.4em;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+}
+.doctor-caption {
+    -fx-text-fill: -color-fg-muted;
+}
+.doctor-summary {
+    -fx-text-fill: -color-fg-default;
+}
+.doctor-status-line {
+    -fx-padding: 10 0 0 0;
+}
+.doctor-section {
+    -fx-font-size: 1.15em;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 22 0 6 0;
+}
+.doctor-row {
+    -fx-padding: 3 0 3 0;
+}
+.doctor-name {
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+}
+.doctor-command, .doctor-detail {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.92em;
+}
+.doctor-tip {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.92em;
+}
+.doctor-settings-link {
+    -fx-text-fill: -color-accent-fg;
+    -fx-border-color: transparent;
+    -fx-padding: 0 0 0 4;
+}
+.doctor-status {
+    -fx-font-weight: bold;
+}
+.doctor-status-ok { -fx-text-fill: -color-success-fg; }
+.doctor-status-warn { -fx-text-fill: -color-warning-fg; }
+.doctor-status-missing { -fx-text-fill: -color-danger-fg; }
+.doctor-status-disabled { -fx-text-fill: -color-fg-muted; }
+.doctor-status-checking { -fx-text-fill: -color-fg-muted; }
+
 /* TODO tool window: file-group rows + the per-pattern color tag. (The in-editor highlight is a Canvas
    overlay colored inline per pattern, so it needs no CSS.) */
 .todo-panel .todo-summary { -fx-text-fill: -color-fg-muted; }
