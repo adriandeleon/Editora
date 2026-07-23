@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Occur** (`M-s o`) — list every line in the current buffer matching a regular expression in a keyboard
+  picker; pick one to jump to it. The buffer-scoped counterpart to Find in Files.
+- **Tabify / Untabify** — convert the selection (or whole buffer) between tab and space indentation using
+  the tab width. Untabify expands tabs to spaces; tabify turns runs of spaces back into tabs where they
+  reach a tab stop.
+- **Align regexp** — pad the selection's lines with spaces so a regular expression lines up in a column
+  (e.g. align a block of `=` assignments or `:` key/values). It only adds spaces, so re-running it is a
+  no-op.
+
 - **Mark ring** — `C-SPC` now also records the spot on a per-buffer ring, and **`C-x C-SPC`** (pop-mark)
   jumps the caret back to the most recent mark, cycling through older ones — and back to where you started —
   on repeat. Marks follow their text as you edit, so returning to one lands on the right place even after
