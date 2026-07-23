@@ -38,20 +38,44 @@ public final class SnippetSession {
     private Runnable onEnd = () -> {};
     private ContextMenu choiceMenu;
 
-    /** One tab stop's live document ranges; {@code ranges.get(0)} is the editable primary, rest mirror. */
+    /**
+     * One tab stop's live document ranges. {@code ranges.get(primaryIdx)} is the editable field; the rest
+     * mirror it. {@code transforms} runs parallel to {@code ranges}: a non-null entry derives that
+     * occurrence's text from the primary via a regex transform instead of copying it verbatim (the primary
+     * entry is always null).
+     */
     private static final class Field {
         final int number;
         final List<int[]> ranges;
         final List<String> choices;
+        final List<SnippetTransform> transforms;
+        final int primaryIdx;
 
-        Field(int number, List<int[]> ranges, List<String> choices) {
+        Field(int number, List<int[]> ranges, List<String> choices, List<SnippetTransform> transforms, int primaryIdx) {
             this.number = number;
             this.ranges = ranges;
             this.choices = choices;
+            this.transforms = transforms;
+            this.primaryIdx = primaryIdx;
         }
 
         int[] primary() {
-            return ranges.get(0);
+            return ranges.get(primaryIdx);
+        }
+
+        /** The text occurrence {@code i} should show given the primary's current {@code value}. */
+        String textFor(int i, String value) {
+            SnippetTransform t = i < transforms.size() ? transforms.get(i) : null;
+            return t == null ? value : t.apply(value);
+        }
+
+        boolean hasTransforms() {
+            for (SnippetTransform t : transforms) {
+                if (t != null) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -75,7 +99,7 @@ public final class SnippetSession {
             if (s.isFinal()) {
                 dollarZero = abs.get(0);
             } else {
-                fields.add(new Field(s.number(), abs, s.choices()));
+                fields.add(new Field(s.number(), abs, s.choices(), s.transforms(), s.primaryIndex()));
             }
         }
         this.finalRange = dollarZero;
@@ -303,24 +327,30 @@ public final class SnippetSession {
         int relFrom = from - p[0];
         String newPrimary = oldPrimary.substring(0, relFrom) + replacement + oldPrimary.substring(to - p[0]);
 
-        // The field's occurrences in document order (the primary may not be leftmost).
-        List<int[]> occ = new ArrayList<>(f.ranges);
-        occ.sort((x, y) -> Integer.compare(x[0], y[0]));
+        // Occurrence indices (into f.ranges/f.transforms) in document order — the primary may be neither
+        // leftmost nor first.
+        List<Integer> order = new ArrayList<>();
+        for (int i = 0; i < f.ranges.size(); i++) {
+            order.add(i);
+        }
+        order.sort((x, y) -> Integer.compare(f.ranges.get(x)[0], f.ranges.get(y)[0]));
 
-        // Reconstruct the whole span from the first occurrence to the last: each occurrence becomes the field's
-        // new text, and the literal text between occurrences is copied verbatim. Applying it as ONE replaceText
-        // makes the field edit + all its mirrors a single undo unit (#415), sidestepping the reactive-mirror's
-        // separate change. (Any *other* fields living between occurrences keep their current text, preserved by
-        // the verbatim copy; their tracked ranges are shifted by the pure arithmetic below.)
+        // Reconstruct the whole span from the first occurrence to the last: each occurrence becomes its own
+        // derived text (the value verbatim, or a transform of it), and the literal text between occurrences is
+        // copied verbatim. Applying it as ONE replaceText makes the field edit + all its mirrors a single undo
+        // unit (#415) and avoids mutating the document from inside the outer edit's change event — the reason a
+        // reactive mirror cannot safely rewrite text ahead of the caret. (Other fields between occurrences keep
+        // their text via the verbatim copy; their ranges are shifted by the arithmetic below.)
         StringBuilder rebuilt = new StringBuilder();
-        for (int i = 0; i < occ.size(); i++) {
-            rebuilt.append(newPrimary);
-            if (i + 1 < occ.size()) {
-                rebuilt.append(area.getText(occ.get(i)[1], occ.get(i + 1)[0]));
+        for (int k = 0; k < order.size(); k++) {
+            int i = order.get(k);
+            rebuilt.append(f.textFor(i, newPrimary));
+            if (k + 1 < order.size()) {
+                rebuilt.append(area.getText(f.ranges.get(i)[1], f.ranges.get(order.get(k + 1))[0]));
             }
         }
-        int spanStart = occ.get(0)[0];
-        int spanEnd = occ.get(occ.size() - 1)[1];
+        int spanStart = f.ranges.get(order.get(0))[0];
+        int spanEnd = f.ranges.get(order.get(order.size() - 1))[1];
         applying = true;
         try {
             area.replaceText(spanStart, spanEnd, rebuilt.toString());
@@ -328,31 +358,87 @@ public final class SnippetSession {
             applying = false;
         }
 
-        // Re-derive every tracked range with the same pure shift() arithmetic the reactive path uses: each
-        // occurrence (in document order) changes from its old length to newPrimary's. shift() mutates the arrays
-        // in place, so a later occurrence's start is already in current coordinates by the time we reach it —
-        // read o[0] directly (no cumulative-delta adjustment, which would double-count).
+        // Re-derive every tracked range: each occurrence (in document order) changes from its old length to its
+        // derived text's length. shift() mutates the arrays in place, so by the time we reach a later occurrence
+        // its start is already in current coordinates — read o[0] directly (no cumulative-delta double-count).
         List<int[]> all = allRanges();
-        for (int[] o : occ) {
-            shift(all, all.indexOf(o), o[0], newPrimary.length() - (o[1] - o[0]));
+        for (int i : order) {
+            int[] o = f.ranges.get(i);
+            int newLen = f.textFor(i, newPrimary).length();
+            shift(all, all.indexOf(o), o[0], newLen - (o[1] - o[0]));
         }
         int caret = p[0] + relFrom + replacement.length(); // p[0] was shifted in place by the loop above
         area.moveTo(Math.min(caret, area.getLength()));
         return true;
     }
 
-    /** Replaces every mirror of the active field with the primary's current text. */
+    /**
+     * Reactively mirrors the active field's value into its other occurrences after a non-typed edit (paste,
+     * backspace); typed characters take the atomic {@link #replaceInActiveField} path and never reach here.
+     *
+     * <p>When every mirror sits <em>after</em> the field, the rewrite is done synchronously inside the
+     * triggering change event, exactly as before — no behaviour change for an ordinary snippet. But a mirror
+     * <em>before</em> the field (a leading transform occurrence, or a bare {@code $1} ahead of the value
+     * placeholder) rewrites text ahead of the caret, and doing that from within the outer edit's change event
+     * corrupts that edit's own caret placement. Those defer to {@link #mirrorDeferred} so the outer edit
+     * commits first.
+     */
     private void mirrorActive() {
         Field f = fields.get(active);
         if (f.ranges.size() < 2) {
             return;
         }
+        if (mirrorPrecedesCaret(f)) {
+            Platform.runLater(this::mirrorDeferred);
+        } else {
+            mirrorInto(f, false);
+        }
+    }
+
+    /** The deferred half of {@link #mirrorActive}, re-validated because it runs a pulse later. */
+    private void mirrorDeferred() {
+        if (ended || active < 0) {
+            return;
+        }
+        Field f = fields.get(active);
+        if (f.ranges.size() >= 2) {
+            mirrorInto(f, true);
+        }
+    }
+
+    /** True when any non-primary occurrence starts before the editable field (so mirroring it moves the caret). */
+    private static boolean mirrorPrecedesCaret(Field f) {
+        int primaryStart = f.primary()[0];
+        for (int i = 0; i < f.ranges.size(); i++) {
+            if (i != f.primaryIdx && f.ranges.get(i)[0] < primaryStart) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Rewrites each non-primary occurrence to its derived text (verbatim value, or a transform of it). Each
+     * occurrence's length is computed independently, so a length-changing transform ({@code /snakecase})
+     * shifts the following ranges correctly. When {@code restoreCaret}, the caret is parked low during the
+     * rewrites and returned into the field afterwards — needed only on the deferred path, where a mirror
+     * before the field would otherwise leave the caret momentarily out of bounds.
+     */
+    private void mirrorInto(Field f, boolean restoreCaret) {
         int[] primary = f.primary();
-        String text = area.getText(primary[0], primary[1]);
+        String value = area.getText(primary[0], primary[1]);
+        int caretInField = restoreCaret ? clamp(area.getCaretPosition() - primary[0], 0, primary[1] - primary[0]) : 0;
         applying = true;
         try {
-            for (int i = 1; i < f.ranges.size(); i++) {
+            if (restoreCaret) {
+                area.moveTo(0);
+            }
+            for (int i = 0; i < f.ranges.size(); i++) {
+                if (i == f.primaryIdx) {
+                    continue;
+                }
                 int[] m = f.ranges.get(i);
+                String text = f.textFor(i, value);
                 int oldLen = m[1] - m[0];
                 if (oldLen == text.length() && area.getText(m[0], m[1]).equals(text)) {
                     continue;
@@ -376,6 +462,14 @@ public final class SnippetSession {
         } finally {
             applying = false;
         }
+        if (restoreCaret) {
+            int[] pr = f.primary(); // offsets may have shifted if a mirror before it changed length
+            area.moveTo(Math.min(pr[0] + caretInField, area.getLength()));
+        }
+    }
+
+    private static int clamp(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     private List<int[]> allRanges() {
@@ -442,8 +536,10 @@ public final class SnippetSession {
             for (int[] r : s.ranges()) {
                 rs.add(new int[] {r[0] + add[r[0]], r[1] + add[r[1]]});
             }
-            stops.add(new TabStop(s.number(), rs, s.placeholder(), s.choices())); // keep choices (the 3-arg
-            // ctor drops them → a multi-line ${1|a,b|} choice field would lose its dropdown after re-indent)
+            // Keep choices, transforms AND primaryIndex through re-indent: the 3-/4-arg ctors drop them, which
+            // would lose a multi-line choice field's dropdown or a transform occurrence's derivation. Range
+            // order is unchanged (offsets only shift), so primaryIndex still points at the same occurrence.
+            stops.add(new TabStop(s.number(), rs, s.placeholder(), s.choices(), s.transforms(), s.primaryIndex()));
         }
         return new ParsedSnippet(sb.toString(), stops);
     }

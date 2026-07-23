@@ -177,4 +177,29 @@ class SnippetManagerTest {
                 m.bundledSnippets("java").stream().noneMatch(s -> "MyMain".equals(s.name())),
                 "bundledSnippets must not include user entries");
     }
+
+    /**
+     * The bundled PowerShell snippets use regex transforms, and used to expand wrongly — the transform was
+     * ignored and a leading non-value occurrence stole the value slot (#624 / #642). Expand the real shipped
+     * bodies and check the derived text, so a regression in the transform pipeline is caught end to end.
+     */
+    @Test
+    void bundledPowershellTransformSnippetsExpandCorrectly(@TempDir Path dir) {
+        SnippetManager m = manager(dir);
+
+        Snippet foreachItem = m.byPrefix("powershell", "foreach-item");
+        assertNotNull(foreachItem, "the bundled foreach-item snippet");
+        // TM_SELECTED_TEXT empty → ${1:${TM_SELECTED_TEXT:collection}} falls back to "collection"
+        String a = SnippetParser.parse(foreachItem.body(), name -> null).text();
+        assertTrue(
+                a.contains("foreach (collectionItem in collection)"),
+                "foreach-item derives the loop variable and keeps the collection default: " + a);
+
+        Snippet splat = m.byPrefix("powershell", "splat");
+        assertNotNull(splat, "the bundled splat snippet");
+        String b = SnippetParser.parse(splat.body(), name -> "Get-Item").text();
+        // $${1/[^\w]/_/}Params must sanitise to $Get_ItemParams, never the invalid $Get-ItemParams
+        assertTrue(b.contains("$Get_ItemParams"), "splat sanitises non-word chars in the mirror: " + b);
+        assertTrue(!b.contains("$Get-ItemParams"), "the invalid unsanitised form must not appear: " + b);
+    }
 }
