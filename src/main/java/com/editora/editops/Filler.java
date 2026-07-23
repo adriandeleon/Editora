@@ -148,7 +148,8 @@ public final class Filler {
      * language line-comment token, a Markdown blockquote {@code >}, or a Javadoc {@code *} — that marker and
      * the whitespace after it. Pure (the controller supplies {@code lineComment}).
      */
-    static String fillPrefix(String firstLine, String lineComment) {
+    /** The continuation prefix (leading indent, plus a comment/quote marker for a comment line). */
+    public static String fillPrefix(String firstLine, String lineComment) {
         int ws = leadingWhitespace(firstLine);
         String rest = firstLine.substring(ws);
         for (String marker : markers(lineComment)) {

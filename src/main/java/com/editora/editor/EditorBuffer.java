@@ -819,6 +819,9 @@ public class EditorBuffer implements TabContent {
         // Auto-rename tag: mirror a tag-name edit onto the paired open/close tag (html/xml only —
         // the handler's first checks are two cheap boolean/string compares for every other buffer).
         area.plainTextChanges().subscribe(this::maybeMirrorTagRename);
+        // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
+        // so the very first check short-circuits for every buffer that hasn't turned it on).
+        area.plainTextChanges().subscribe(this::maybeAutoFill);
         area.caretPositionProperty().addListener((obs, old, now) -> {
             resetGoalColumn();
             scheduleBraceMatch();
@@ -3774,6 +3777,76 @@ public class EditorBuffer implements TabContent {
      * it doesn't apply is one boolean/language check; the document lex runs only when the change
      * sits inside a tag name.
      */
+    private boolean autoFill;
+
+    private int fillColumn = com.editora.editops.Filler.DEFAULT_FILL_COLUMN;
+    private boolean applyingAutoFill;
+
+    /** Enables/disables auto-fill (break-as-you-type) for this buffer; pushed from Settings by the controller. */
+    public void setAutoFillEnabled(boolean on) {
+        this.autoFill = on;
+    }
+
+    public void setFillColumn(int column) {
+        this.fillColumn = column > 0 ? column : com.editora.editops.Filler.DEFAULT_FILL_COLUMN;
+    }
+
+    /**
+     * Emacs {@code auto-fill-mode}: after an insertion, break the current line at a word boundary if it has
+     * grown past the fill column. Prose only ({@link #isProse()}), so it never wraps code. Runs on the
+     * post-edit {@code plainTextChanges} (the tag-rename pattern) — the first field check short-circuits when
+     * off, keeping the per-keystroke cost at one boolean for every buffer that hasn't enabled it.
+     */
+    private void maybeAutoFill(org.fxmisc.richtext.model.PlainTextChange c) {
+        if (!autoFill || applyingAutoFill || hugeFile || !isEditable() || !isProse()) {
+            return;
+        }
+        // Only a single typed character (Emacs self-insert): no deletion, exactly one char, not a newline
+        // (which starts a fresh line). This excludes pastes, file loads/reloads and programmatic reflows —
+        // auto-fill breaks as you *type*, it never rewraps a block that arrived some other way.
+        if (!c.getRemoved().isEmpty()
+                || c.getInserted().length() != 1
+                || c.getInserted().charAt(0) == '\n') {
+            return;
+        }
+        if (hasActiveSnippet()
+                || area.getUndoManager().isPerformingAction()
+                || (area2 != null && area2.getUndoManager().isPerformingAction())) {
+            return;
+        }
+        CodeArea a = getFocusedArea();
+        if (multiCaretActiveOn(a)) {
+            return;
+        }
+        int par = a.getCurrentParagraph();
+        String line = a.getParagraph(par).getText();
+        if (line.length() <= fillColumn) {
+            return;
+        }
+        String prefix = com.editora.editops.Filler.fillPrefix(
+                line, com.editora.editops.Commenter.styleFor(getLanguage()).line());
+        com.editora.editops.AutoFill.Break brk = com.editora.editops.AutoFill.compute(line, fillColumn, prefix);
+        if (brk == null) {
+            return;
+        }
+        int lineStart = a.getAbsolutePosition(par, 0);
+        int caret = a.getCaretPosition();
+        int delta = brk.insert().length() - brk.removeLen();
+        int end = lineStart + brk.at() + brk.removeLen();
+        int restored = caret >= end ? caret + delta : caret; // the user's caret, shifted past the inserted prefix
+        applyingAutoFill = true;
+        try {
+            a.replaceText(lineStart + brk.at(), end, brk.insert());
+        } finally {
+            applyingAutoFill = false;
+        }
+        // Restore the caret AFTER the change settles: we ran inside the triggering insertion's
+        // plainTextChanges, and RichTextFX re-applies that insertion's own caret position once our
+        // subscriber returns — which would strand the caret inside the inserted prefix (delta > 0) and send
+        // the next characters to the wrong place. Deferring makes our position the last one to win.
+        javafx.application.Platform.runLater(() -> a.moveTo(Math.min(restored, a.getLength())));
+    }
+
     private void maybeMirrorTagRename(org.fxmisc.richtext.model.PlainTextChange c) {
         if (!autoRenameTag || applyingTagRename || largeFile || hugeFile || !isEditable()) {
             return;

@@ -11078,6 +11078,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         buffer.setAutoRenameTag(s.isAutoRenameTag()); // paired-tag rename mirroring (html/xml buffers only)
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
+        buffer.setFillColumn(s.getFillColumn());
+        buffer.setAutoFillEnabled(s.isAutoFill()); // break prose lines at the fill column as you type (prose only)
         applyEditorConfig(buffer); // .editorconfig overrides the global indent/EOL/ruler/charset (when on)
     }
 
@@ -13095,6 +13097,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleAutoRenameTag",
                         () -> config.getSettings().isAutoRenameTag(),
                         config.getSettings()::setAutoRenameTag,
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleAutoFill",
+                () -> toggleSetting(
+                        "view.toggleAutoFill",
+                        () -> config.getSettings().isAutoFill(),
+                        config.getSettings()::setAutoFill,
                         () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of(
                 "view.toggleAutoCloseTags",

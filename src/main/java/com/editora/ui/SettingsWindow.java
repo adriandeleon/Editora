@@ -237,6 +237,7 @@ public class SettingsWindow {
     private CheckBox githubActionsPreviewCheck;
     private CheckBox csvRainbowCheck;
     private CheckBox autoRenameTagCheck;
+    private CheckBox autoFillCheck;
     private CheckBox autoCloseTagsCheck;
     private CheckBox todoHighlightCheck;
     private javafx.scene.layout.VBox todoPatternsBox;
@@ -1026,6 +1027,7 @@ public class SettingsWindow {
         githubActionsPreviewCheck = viewCheck(tr("settings.githubActionsPreview"), Settings::setGithubActionsPreview);
         csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
+        autoFillCheck = viewCheck(tr("settings.autoFill"), Settings::setAutoFill);
         autoCloseTagsCheck = viewCheck(tr("settings.autoCloseTags"), Settings::setAutoCloseTags);
         todoHighlightCheck = viewCheck(tr("settings.todoHighlight"), Settings::setTodoHighlight);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
@@ -2134,6 +2136,7 @@ public class SettingsWindow {
                 copyLineNoSelectionCheck,
                 "copy cut whole current line empty no selection clipboard vs code");
         row(p, Category.EDITOR, display, autoRenameTagCheck, "auto rename tag html xml paired close mirror vs code");
+        row(p, Category.EDITOR, display, autoFillCheck, "auto fill mode break wrap prose lines fill column emacs");
         row(
                 p,
                 Category.EDITOR,
@@ -5927,6 +5930,7 @@ public class SettingsWindow {
             githubActionsPreviewCheck.setSelected(settings.isGithubActionsPreview());
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
+            autoFillCheck.setSelected(settings.isAutoFill());
             autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
             rebuildTodoRows();
@@ -6524,6 +6528,7 @@ public class SettingsWindow {
             githubActionsPreviewCheck.setSelected(s.isGithubActionsPreview());
             csvRainbowCheck.setSelected(s.isCsvRainbow());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());
+            autoFillCheck.setSelected(s.isAutoFill());
             autoCloseTagsCheck.setSelected(s.isAutoCloseTags());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
             rebuildTodoRows();

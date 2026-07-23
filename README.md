@@ -116,6 +116,9 @@ Editora is built with the help of AI coding tools.
   fixups (`M-\`, `M-SPC`), delete-blank-lines (`C-x C-o`), open-line (`C-o`), kill-whole-line (`C-S-DEL`),
   zap-to-char (`M-z`), balanced-expression motion (`C-M-f`/`C-M-b`, mark/kill-sexp), defun motion
   (`C-M-a`/`C-M-e`), and mark-paragraph / mark-whole-buffer. All palette-discoverable and rebindable.
+- **Auto-fill mode** — automatically break plain-text and Markdown lines at the fill column as you type
+  (Emacs `auto-fill-mode`). Prose-only (never wraps code); wrapped lines keep the indent. Off by default;
+  Settings → Editor or `view.toggleAutoFill`. Complements `M-q` (fill paragraph).
 - **`C-u` prefix argument** — give a command a numeric argument: `C-u 5 C-n` (down five lines), `C-u 3 C-k`
   (kill three), `C-u 40 -` (forty dashes). Bare `C-u` is 4, `C-u C-u` is 16, or `C-u` then digits; `C-g`
   cancels. `C-u C-SPC` pops the mark ring. Emacs keymap only.
