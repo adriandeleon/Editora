@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Real language-server progress** — servers that report their long-running work through the standard
+  LSP progress channel (jdtls importing/indexing a project, gopls loading packages, rust-analyzer's first
+  check) now drive the status-bar loading bar and show what they're doing (title + percentage) in the
+  echo area, instead of Editora guessing with a bare spinner that only covered startup. (#683)
+
 - **Language servers now track external file changes** — a `git checkout`/branch switch, a CLI build, or
   an external editor touching project files is forwarded to the running language servers
   (`workspace/didChangeWatchedFiles`), so their project models no longer go quietly stale until a

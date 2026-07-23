@@ -3,6 +3,13 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP $/progress** (#683) — client declares `window.workDoneProgress`; the session implements
+      `createProgress` (accept the token; lsp4j's default throws) + `notifyProgress`: a Begin routes
+      `onStatus("Progress", title — message (pct%))` (pure/unit-tested `progressText`), an End routes
+      `("ProgressEnd", message)`. Per-step Report notifications are deliberately NOT echoed — jdtls emits
+      hundreds and the echo is one line; the bar alone says "still working". `onServerStatus` maps
+      Progress → bar on, ProgressEnd → bar off (a boolean bar, so overlap with the startup lifecycle is
+      benign). *Deferred: a determinate (percentage) loading bar — needs a StatusBar API change.*
 - [x] **LSP didChangeWatchedFiles** (#677) — external changes reach the servers instead of leaving their
       project models stale until restart. Client declares `workspace.didChangeWatchedFiles` (static push,
       no dynamic watcher registration). Sources: **(a)** the ProjectPanel filesystem watcher — the drain

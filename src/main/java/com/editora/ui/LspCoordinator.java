@@ -849,6 +849,15 @@ final class LspCoordinator {
         }
         if (type != null) {
             String t = type.toLowerCase(Locale.ROOT);
+            // $/progress (#683): a Begin spins the loading bar for long server work (jdtls indexing, a
+            // gradle sync) — not just startup; its End stops it. The bar is a plain boolean, so an overlap
+            // with the startup lifecycle is benign (worst case it stops a beat early and ServiceReady or
+            // the next Begin corrects it).
+            if (t.equals("progress")) {
+                ops.setLspLoading(true);
+            } else if (t.equals("progressend")) {
+                ops.setLspLoading(false);
+            }
             if (t.contains("ready") || t.contains("error")) {
                 ops.setLspLoading(false); // server finished starting (or failed)
             }

@@ -381,6 +381,12 @@ final class LanguageServerSession implements LanguageClient {
                 stRequests, SEMANTIC_TOKEN_TYPES, SEMANTIC_TOKEN_MODIFIERS, java.util.List.of("relative")));
         ClientCapabilities cc = new ClientCapabilities();
         cc.setTextDocument(td);
+        // $/progress (#683): the standard progress channel every server speaks (jdtls indexing, gopls
+        // setup, rust-analyzer's cargo check) — drives the status-bar loading bar + echo, replacing the
+        // guessed indeterminate spinner for servers that report real progress.
+        var window = new org.eclipse.lsp4j.WindowClientCapabilities();
+        window.setWorkDoneProgress(true);
+        cc.setWindow(window);
         // Declare we answer workspace/configuration — otherwise Pyright never asks for
         // python.analysis.autoImportCompletions and keeps its (off) default, so no auto-imports.
         org.eclipse.lsp4j.WorkspaceClientCapabilities ws = new org.eclipse.lsp4j.WorkspaceClientCapabilities();
@@ -649,6 +655,44 @@ final class LanguageServerSession implements LanguageClient {
 
     void setOnApplyEdit(java.util.function.BiConsumer<org.eclipse.lsp4j.WorkspaceEdit, Consumer<Boolean>> handler) {
         this.onApplyEdit = handler == null ? (edit, respond) -> respond.accept(false) : handler;
+    }
+
+    /** {@code window/workDoneProgress/create} — the server allocates a progress token. Accepted (we key
+     *  nothing off tokens; begin/report/end arrive via {@code $/progress}). lsp4j's default throws. */
+    @Override
+    public CompletableFuture<Void> createProgress(org.eclipse.lsp4j.WorkDoneProgressCreateParams params) {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * {@code $/progress} (#683): a server's long-running work — jdtls project import/indexing, gopls
+     * loading, rust-analyzer's initial check. Begin starts the status-bar loading bar (with the title in
+     * the echo area); End stops it. Per-step Report notifications are deliberately NOT echoed — jdtls
+     * emits hundreds and the echo area is one line — the bar alone signals "still working".
+     */
+    @Override
+    public void notifyProgress(org.eclipse.lsp4j.ProgressParams params) {
+        if (params == null || params.getValue() == null || !params.getValue().isLeft()) {
+            return;
+        }
+        var n = params.getValue().getLeft();
+        if (n instanceof org.eclipse.lsp4j.WorkDoneProgressBegin begin) {
+            onStatus.accept("Progress", progressText(begin.getTitle(), begin.getMessage(), begin.getPercentage()));
+        } else if (n instanceof org.eclipse.lsp4j.WorkDoneProgressEnd end) {
+            onStatus.accept("ProgressEnd", end.getMessage()); // null message ⇒ just stop the bar
+        }
+    }
+
+    /** Pure: the echo-area text for a progress Begin — title, plus the message and/or percentage. */
+    static String progressText(String title, String message, Integer percentage) {
+        StringBuilder sb = new StringBuilder(title == null || title.isBlank() ? "…" : title.strip());
+        if (message != null && !message.isBlank()) {
+            sb.append(" — ").append(message.strip());
+        }
+        if (percentage != null) {
+            sb.append(" (").append(percentage).append("%)");
+        }
+        return sb.toString();
     }
 
     /**

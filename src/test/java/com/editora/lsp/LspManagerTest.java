@@ -195,6 +195,18 @@ class LspManagerTest {
         assertEquals(Set.of(), LspManager.signatureTriggerCharsOf(null));
     }
 
+    // --- $/progress (#683) ---------------------------------------------------------------------
+
+    @Test
+    void progressTextComposesTitleMessageAndPercentage() {
+        assertEquals("Importing projects", LanguageServerSession.progressText("Importing projects", null, null));
+        assertEquals(
+                "Importing projects — 3/10 (30%)",
+                LanguageServerSession.progressText("Importing projects", "3/10", 30));
+        assertEquals("Build (75%)", LanguageServerSession.progressText("Build", "  ", 75));
+        assertEquals("…", LanguageServerSession.progressText(null, null, null), "no title still yields something");
+    }
+
     // --- Watched files (#677) ------------------------------------------------------------------
 
     @Test
