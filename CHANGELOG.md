@@ -142,6 +142,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **Cheaper diagnostics bursts.** Language servers publish project-wide diagnostics in bursts (jdtls
+  especially, on workspace open); matching each publish to its open tab re-resolved every tab's canonical
+  path with filesystem syscalls, on the UI thread. Successful resolutions are now cached (bounded LRU,
+  dropped whenever the filesystem may have shifted — a rename/delete, an external change, window focus
+  regain), so a burst costs map lookups instead of stat chains. The not-exists fallback is deliberately
+  never cached, preserving the symlinked-path identity fix. (#680)
+
 - **Find bar's "Replace All" can no longer freeze the editor.** A valid-but-pathological regular expression
   (catastrophic backtracking, e.g. `(a+)+b`) ran unbounded on the UI thread during Replace All and could hang
   the whole editor with no way out — the incremental *search* was already time-budgeted, but the *replace*
