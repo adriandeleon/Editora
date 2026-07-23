@@ -116,6 +116,9 @@ Editora is built with the help of AI coding tools.
   fixups (`M-\`, `M-SPC`), delete-blank-lines (`C-x C-o`), open-line (`C-o`), kill-whole-line (`C-S-DEL`),
   zap-to-char (`M-z`), balanced-expression motion (`C-M-f`/`C-M-b`, mark/kill-sexp), defun motion
   (`C-M-a`/`C-M-e`), and mark-paragraph / mark-whole-buffer. All palette-discoverable and rebindable.
+- **Mark ring** — `C-SPC` records the caret on a per-buffer ring; `C-x C-SPC` pops back to the most recent
+  mark and cycles through older ones on repeat. Marks track their text through edits. Distinct from the
+  automatic jump-history (`nav.back`/`nav.forward`).
 - **Query-replace** (`M-%`, `C-M-%` for regexp) — Emacs replace-with-confirmation: stop on each match and
   press `y`/`n`/`!`/`.`/`q` to replace, skip, do-all-the-rest, replace-and-stop, or quit. Regexp mode
   expands `$1` group references. (In the Emacs keymap, `M-%` runs this rather than the find bar's replace.)

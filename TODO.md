@@ -960,6 +960,10 @@ A backlog of planned features and improvements. Unordered within each section.
       open-line (`C-o`), kill-whole-line (`C-S-DEL`), zap-to-char (`M-z`), forward/backward-sexp +
       mark/kill-sexp (`C-M-f`/`C-M-b`/`C-M-SPC`/`C-M-k`), beginning/end-of-defun (`C-M-a`/`C-M-e`),
       mark-paragraph (`M-h`), mark-whole-buffer (`C-x h`), move-to-window-line (`M-r`).
+- [x] Mark ring — `C-SPC` pushes the caret onto a per-buffer ring (bounded 16, edit-tracked), `C-x C-SPC`
+      (`edit.popMark`) pops back and cycles. Pure `editops/MarkRing`. *Explicit marks only — automatic
+      jump-back is the separate NavigationHistory; no C-u prefix, so pop is its own command; session-only;
+      no global (cross-buffer) mark ring.*
 - [x] Query-replace — interactive `M-%` / `C-M-%` (regexp): per-match `y`/`n`/`!`/`.`/`q` loop, regex
       group expansion, case-insensitive search. Pure `editor/QueryReplace` kernel + a modal session.
       *`,` (replace-and-pause), `^` (back to previous), region-restricted replace, and case preservation
