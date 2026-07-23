@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Interactive query-replace** (`M-%`, and `C-M-%` for regexp) — the Emacs replace-with-confirmation loop:
+  it stops on each match, highlights it, and waits for a keystroke — `y`/Space to replace, `n`/Backspace to
+  skip, `!` to replace all the rest at once, `.` to replace this one and stop, `q`/Enter/Esc to quit. Regexp
+  mode expands `$1` group references, honouring lookbehind/lookahead. In the **Emacs keymap only**, `M-%`
+  now runs query-replace instead of opening the find bar's replace mode; the find bar's replace is still on
+  the find bar (`C-s`) and in the palette. The other keymaps are unchanged.
+
 - **Narrowing** (`C-x n …`) — restrict the buffer to a region and work on it alone: `C-x n n` narrows to the
   selection, `C-x n d` to the enclosing function, `C-x n f` to the foldable block around the caret, and
   `C-x n w` widens again. This is real narrowing, not a display filter — the rest of the file is genuinely
