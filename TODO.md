@@ -960,6 +960,11 @@ A backlog of planned features and improvements. Unordered within each section.
       open-line (`C-o`), kill-whole-line (`C-S-DEL`), zap-to-char (`M-z`), forward/backward-sexp +
       mark/kill-sexp (`C-M-f`/`C-M-b`/`C-M-SPC`/`C-M-k`), beginning/end-of-defun (`C-M-a`/`C-M-e`),
       mark-paragraph (`M-h`), mark-whole-buffer (`C-x h`), move-to-window-line (`M-r`).
+- [x] `C-u` prefix (universal) argument — `C-u`/`C-u C-u`/`C-u <digits>`/`C-u -`, repeats the next command
+      (or count-aware commands read it: `C-u C-SPC` = pop-mark), and self-inserts a character N times. Pure
+      `command/PrefixArg` state machine + `KeyDispatcher` wiring; bound only in the Emacs keymap.
+      *Repeat-based, so a negative argument doesn't reverse motion and `C-u 0`-style specials aren't honored;
+      native unbound keys (arrows/Backspace) aren't repeated — use the bound C-n/C-f/… equivalents.*
 - [x] Occur — `M-s o`: regexp-match the current buffer's lines in a picker, jump to a match (buffer-scoped
       counterpart to Find in Files). *Picker, not a persistent occur-buffer with occur-edit.*
 - [x] Tabify / Untabify — `edit.tabify`/`edit.untabify`, pure `editops/TabConvert`, region or whole buffer.

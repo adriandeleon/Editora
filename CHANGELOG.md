@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The `C-u` prefix (universal) argument.** `C-u` before a command gives it a numeric argument: `C-u 5 C-n`
+  moves down five lines, `C-u 3 C-k` kills three, `C-u 40 -` inserts forty dashes. A bare `C-u` is 4, `C-u
+  C-u` is 16 (each repeat multiplies by four), and `C-u` followed by digits is that number; `C-g` cancels a
+  half-typed argument. Most commands are simply run that many times; `C-u C-SPC` is special-cased to
+  **pop-mark** (as in Emacs). Only the Emacs keymap binds `C-u`, so the other keymaps are unaffected.
+
 - **Occur** (`M-s o`) — list every line in the current buffer matching a regular expression in a keyboard
   picker; pick one to jump to it. The buffer-scoped counterpart to Find in Files.
 - **Tabify / Untabify** — convert the selection (or whole buffer) between tab and space indentation using
