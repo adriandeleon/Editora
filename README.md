@@ -173,7 +173,8 @@ Editora is built with the help of AI coding tools.
   Inline diagnostics + a Problems tool window (`M-8`) + minimap/scrollbar stripes, go-to-definition
   (`M-.` — for Java this includes JDK/dependency classes, opened as read-only library source), find
   references (`M-?`), hover docs (`C-c h`), **signature help** (overloads + active parameter as you
-  type a call), LSP-backed completion, auto-imports,
+  type a call), **occurrence highlighting** (rest the caret on a symbol — reads and writes wash
+  differently), LSP-backed completion, auto-imports,
   **Code Actions / quick fixes** (`Ctrl-.` in the VS Code/Sublime/IntelliJ keymaps, or the palette /
   right-click menu — apply the server's fixes, organize imports, refactorings), and
   **Format Document** (whole-file reformat via the server, when it advertises formatting — palette or the

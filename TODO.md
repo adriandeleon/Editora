@@ -3,6 +3,17 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP document highlight** (#675) — `textDocument/documentHighlight`: occurrences of the symbol
+      under the resting caret, Read vs Write shaded differently. Neutral `editor/OccurrenceSpan` record
+      (editor stays lsp4j-free); `editor/OccurrenceHighlightOverlay` is a structural clone of
+      `SearchHighlightOverlay` (mouse-transparent Canvas, coalesced per pulse, visible-paragraphs-only,
+      1×1 texture when empty — the common case). Trigger: a 300 ms `PauseTransition` caret-idle timer per
+      buffer (`installOccurrenceTrigger`, both views; three field checks per caret move when off); any
+      caret move clears the wash at once (stale spans paint the wrong word) and re-arms. The coordinator's
+      `requestOccurrences` gates on `documentHighlightProvider` and drops a response whose `docVersion`
+      moved (in-flight edit ⇒ meaningless offsets). No command/setting — ambient, riding the LSP master
+      toggle. *Deferred: a visibility toggle if the wash proves noisy; split-view second-area overlay
+      (matches the search overlay's primary-view-only behavior).*
 - [x] **LSP signature help** (#674) — `textDocument/signatureHelp`. Client declares markdown docs +
       `labelOffsetSupport` + `activeParameterSupport`; the pure/unit-tested **`lsp/SignatureFormat`**
       resolves the active signature + the active parameter's `[start,end)` span (label offsets win;
