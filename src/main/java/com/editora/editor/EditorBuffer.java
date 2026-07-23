@@ -822,6 +822,8 @@ public class EditorBuffer implements TabContent {
         // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
         // so the very first check short-circuits for every buffer that hasn't turned it on).
         area.plainTextChanges().subscribe(this::maybeAutoFill);
+        // Abbrev auto-expand: when abbrev-mode is on, typing a word terminator expands the word before it.
+        area.plainTextChanges().subscribe(this::maybeExpandAbbrev);
         area.caretPositionProperty().addListener((obs, old, now) -> {
             resetGoalColumn();
             scheduleBraceMatch();
@@ -3797,6 +3799,81 @@ public class EditorBuffer implements TabContent {
      * post-edit {@code plainTextChanges} (the tag-rename pattern) — the first field check short-circuits when
      * off, keeping the per-keystroke cost at one boolean for every buffer that hasn't enabled it.
      */
+    private java.util.Map<String, String> abbrevTable = java.util.Map.of();
+
+    private boolean abbrevMode;
+    private boolean applyingAbbrev;
+
+    /** Pushes the abbreviation dictionary (lower-cased keys) and the auto-expand mode from Settings. */
+    public void setAbbrevs(java.util.Map<String, String> table, boolean autoExpand) {
+        this.abbrevTable = table == null ? java.util.Map.of() : table;
+        this.abbrevMode = autoExpand;
+    }
+
+    /**
+     * Emacs {@code expand-abbrev} ({@code C-x a e}): expand the abbreviation immediately before the caret,
+     * regardless of abbrev-mode. Returns whether anything expanded.
+     */
+    public boolean expandAbbrevAtCaret() {
+        if (!isEditable() || abbrevTable.isEmpty()) {
+            return false;
+        }
+        CodeArea a = getFocusedArea();
+        com.editora.editops.Abbrev.Edit edit =
+                com.editora.editops.Abbrev.expand(a.getText(), a.getCaretPosition(), abbrevTable);
+        if (edit == null) {
+            return false;
+        }
+        a.replaceText(edit.from(), edit.to(), edit.replacement());
+        return true;
+    }
+
+    /**
+     * Abbrev-mode auto-expand: when the just-typed single character is a word terminator (anything but a
+     * letter/digit), expand the word that ended just before it. The terminator stays. Same guarded
+     * {@code plainTextChanges} shape as {@link #maybeAutoFill}; the first field check short-circuits when off.
+     */
+    private void maybeExpandAbbrev(org.fxmisc.richtext.model.PlainTextChange c) {
+        if (!abbrevMode || applyingAbbrev || hugeFile || !isEditable() || abbrevTable.isEmpty()) {
+            return;
+        }
+        if (!c.getRemoved().isEmpty() || c.getInserted().length() != 1) {
+            return;
+        }
+        char typed = c.getInserted().charAt(0);
+        if (Character.isLetterOrDigit(typed)) {
+            return; // still inside a word — nothing has terminated yet
+        }
+        if (hasActiveSnippet()
+                || area.getUndoManager().isPerformingAction()
+                || (area2 != null && area2.getUndoManager().isPerformingAction())) {
+            return;
+        }
+        CodeArea a = getFocusedArea();
+        if (multiCaretActiveOn(a)) {
+            return;
+        }
+        // The terminator sits at c.getPosition(); expand the word ending there.
+        com.editora.editops.Abbrev.Edit edit =
+                com.editora.editops.Abbrev.expand(a.getText(), c.getPosition(), abbrevTable);
+        if (edit == null) {
+            return;
+        }
+        int caret = a.getCaretPosition();
+        int delta = edit.replacement().length() - (edit.to() - edit.from());
+        applyingAbbrev = true;
+        try {
+            a.replaceText(edit.from(), edit.to(), edit.replacement());
+        } finally {
+            applyingAbbrev = false;
+        }
+        // The edit lies before the caret (the terminator we just typed), so shift the caret by the length
+        // change. Deferred for the same reason as auto-fill: RichTextFX re-applies the triggering
+        // insertion's caret after this subscriber returns, which would otherwise mis-place it.
+        int restored = caret + delta;
+        javafx.application.Platform.runLater(() -> a.moveTo(Math.max(0, Math.min(restored, a.getLength()))));
+    }
+
     private void maybeAutoFill(org.fxmisc.richtext.model.PlainTextChange c) {
         if (!autoFill || applyingAutoFill || hugeFile || !isEditable() || !isProse()) {
             return;

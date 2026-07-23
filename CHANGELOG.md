@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Abbreviations** — a simple text-replacement dictionary: define short abbreviations that expand to longer
+  text. Expand the word before the caret on demand with `C-x a e`, or turn on *Abbrev Mode* to expand
+  automatically as you type a space or punctuation. Define a new one with `C-x a g`, and manage the whole
+  dictionary (add / edit / delete) in Settings → Editor → Abbreviations. The typed case is carried onto the
+  expansion (`btw` → `by the way`, `Btw` → `By the way`, `BTW` → `BY THE WAY`), and a lowercase abbrev keeps
+  any capitals inside its expansion.
+
 - **Auto-fill mode** — break plain-text and Markdown lines at the fill column automatically as you type
   (Emacs `auto-fill-mode`), the break-as-you-type companion to `M-q` (fill paragraph). Off by default;
   toggle it in Settings → Editor or with the palette. It's prose-only, so it never wraps code, and each

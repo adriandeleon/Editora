@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 83;
+    public static final int SCHEMA_VERSION = 84;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -149,6 +149,8 @@ public class Settings {
     private String todoPriorityLowColor = com.editora.todo.TodoColors.priorityColor("low");
 
     private java.util.List<com.editora.externaltool.ExternalTool> externalTools = new java.util.ArrayList<>();
+    private java.util.List<Abbreviation> abbreviations = new java.util.ArrayList<>();
+    private boolean abbrevMode = false; // auto-expand abbreviations as you type on a word terminator
     /**
      * The user's customized main-toolbar layout (item ids + {@code "|"} separator tokens from {@code
      * com.editora.toolbar.ToolbarCatalog}). Empty ⇒ use {@code ToolbarCatalog.defaultLayout()}, so the
@@ -1139,6 +1141,33 @@ public class Settings {
 
     public void setExternalTools(java.util.List<com.editora.externaltool.ExternalTool> externalTools) {
         this.externalTools = externalTools;
+    }
+
+    public java.util.List<Abbreviation> getAbbreviations() {
+        return abbreviations == null ? java.util.List.of() : abbreviations;
+    }
+
+    public void setAbbreviations(java.util.List<Abbreviation> abbreviations) {
+        this.abbreviations = abbreviations;
+    }
+
+    public boolean isAbbrevMode() {
+        return abbrevMode;
+    }
+
+    public void setAbbrevMode(boolean abbrevMode) {
+        this.abbrevMode = abbrevMode;
+    }
+
+    /** The abbreviations as a lower-cased-key → expansion map, for {@link com.editora.editops.Abbrev}. */
+    public java.util.Map<String, String> abbreviationMap() {
+        java.util.Map<String, String> m = new java.util.HashMap<>();
+        for (Abbreviation a : getAbbreviations()) {
+            if (a.getAbbreviation() != null && !a.getAbbreviation().isBlank()) {
+                m.put(a.getAbbreviation().toLowerCase(java.util.Locale.ROOT), a.getExpansion());
+            }
+        }
+        return m;
     }
 
     public java.util.List<String> getToolbarLayout() {
