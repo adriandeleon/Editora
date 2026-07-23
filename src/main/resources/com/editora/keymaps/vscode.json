@@ -50,5 +50,7 @@
   "C-a": "edit.selectAll",
   "M-up": "edit.moveLineUp",
   "M-down": "edit.moveLineDown",
-  "M-S-down": "edit.duplicateLine"
+  "M-S-down": "edit.duplicateLine",
+  "M-S-right": "edit.expandSelection",
+  "M-S-left": "edit.shrinkSelection"
 }

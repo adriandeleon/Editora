@@ -28,5 +28,7 @@
   "Cmd-a": "edit.selectAll",
   "Cmd-S-d": "edit.duplicateLine",
   "M-up": "edit.moveLineUp",
-  "M-down": "edit.moveLineDown"
+  "M-down": "edit.moveLineDown",
+  "C-Cmd-S-right": "edit.expandSelection",
+  "C-Cmd-S-left": "edit.shrinkSelection"
 }

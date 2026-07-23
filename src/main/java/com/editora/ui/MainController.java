@@ -382,6 +382,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Button toolbarRestoreButton;
     /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
     private boolean markActive;
+    /** Expand/shrink-selection history (the pure stack); see {@link #expandSelection}/{@link #shrinkSelection}. */
+    private final com.editora.editops.SmartSelectStack smartSelect = new com.editora.editops.SmartSelectStack();
     /**
      * The Emacs kill ring. Per window rather than app-global: every kill is also written to the system
      * clipboard, so the most recent kill still crosses windows — only the ring's *history* is per-window.
@@ -12261,6 +12263,44 @@ public class MainController implements com.editora.mcp.McpBridge {
         area.requestFollowCaret();
     }
 
+    /**
+     * Semantic expand-selection (VS Code {@code Shift+Alt+Right}, IntelliJ {@code Ctrl+W}): grow the
+     * selection to the next larger syntactic range — word → bracket/quote → line → defun → paragraph →
+     * document — pushing each onto {@link #smartSelectStack} so {@link #shrinkSelection} can retrace it.
+     */
+    private void expandSelection() {
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        int[] next = smartSelect.expand(
+                area.getText(),
+                area.getSelection().getStart(),
+                area.getSelection().getEnd());
+        if (next == null) {
+            return; // already the whole document
+        }
+        area.selectRange(next[0], next[1]);
+        area.requestFollowCaret();
+        markActive = true;
+    }
+
+    /** Semantic shrink-selection (VS Code {@code Shift+Alt+Left}): pop back to the previous expand range. */
+    private void shrinkSelection() {
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        int[] prev = smartSelect.shrink(
+                area.getSelection().getStart(), area.getSelection().getEnd());
+        if (prev == null) {
+            return; // nothing to shrink back to
+        }
+        area.selectRange(prev[0], prev[1]);
+        area.requestFollowCaret();
+        markActive = prev[0] != prev[1];
+    }
+
     /** Emacs {@code kill-sexp} (`C-M-k`): delete the balanced expression after the caret. */
     private void killSexp() {
         emacsKill(
@@ -13789,6 +13829,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.killSexp", this::killSexp));
         registry.register(Command.of("edit.markSexp", this::markSexp));
         registry.register(Command.of("edit.markParagraph", this::markParagraph));
+        registry.register(Command.of("edit.expandSelection", this::expandSelection));
+        registry.register(Command.of("edit.shrinkSelection", this::shrinkSelection));
         registry.register(Command.of("nav.forwardSexp", () -> sexpMove(com.editora.editops.SexpNav::forward)));
         registry.register(Command.of("nav.backwardSexp", () -> sexpMove(com.editora.editops.SexpNav::backward)));
         registry.register(Command.of("nav.back", this::navBack));
