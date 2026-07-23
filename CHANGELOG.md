@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Language servers now track external file changes** — a `git checkout`/branch switch, a CLI build, or
+  an external editor touching project files is forwarded to the running language servers
+  (`workspace/didChangeWatchedFiles`), so their project models no longer go quietly stale until a
+  restart. Events come from the Project tree's filesystem watcher and the external-change reload paths,
+  coalesced so a branch switch lands as one batch. (#677)
+
 - **Rename symbol (LSP)** — `F2` (VS Code/Sublime/IntelliJ keymaps), the editor right-click menu, or
   `LSP: Rename Symbol…` in the palette renames the symbol under the caret across the whole workspace via
   the language server. The prompt comes pre-filled with the current name (the server validates the spot

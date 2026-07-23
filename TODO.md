@@ -3,6 +3,19 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP didChangeWatchedFiles** (#677) — external changes reach the servers instead of leaving their
+      project models stale until restart. Client declares `workspace.didChangeWatchedFiles` (static push,
+      no dynamic watcher registration). Sources: **(a)** the ProjectPanel filesystem watcher — the drain
+      loop now also emits typed `FsChange{path, CREATED/CHANGED/DELETED}` batches to an injected
+      `setFsChangeSink` (dir from `key.watchable()`, Editora temp names skipped, posted to FX); **(b)**
+      `reloadAllFromDiskSilently` (branch switch/pull) and the single-file external reload notify each
+      reloaded path as CHANGED — this path matters because the watcher only covers the root + expanded
+      dirs. `LspCoordinator.watchedFilesChanged` coalesces bursts (300 ms `PauseTransition`, latest kind
+      wins per path) → `LspManager.notifyWatchedFiles` routes one batch per live session filtered by the
+      pure/unit-tested `eventsUnderRoot` (path-component containment, so `/proj2` never matches `/proj`).
+      Editora's own saves also flow through the watcher — redundant beside didSave but harmless (VS Code
+      sends both). Ambient; no new command/setting. *Deferred: honoring servers' dynamic
+      `client/registerCapability` watcher globs (we send conservatively for all files under the root).*
 - [x] **LSP rename** (#676) — `prepareRename` + `textDocument/rename`, both stages. Client declares
       `prepareSupport` + `workspaceEdit.resourceOperations: ["rename"]` (create/delete stay undeclared and
       refused). Flow: prepare validates + supplies the placeholder (pure `LspManager.mapPrepare` handles

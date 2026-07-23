@@ -82,6 +82,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      *  the window can refresh things anchored to the working tree — Git status / the Commit stripe, build-tool
      *  markers, open diffs — which otherwise only re-evaluate on focus-regain / tab switch (#529). */
     private Runnable onExternalChange = () -> {};
+    /** Raw watcher events (path + kind), forwarded to LSP as didChangeWatchedFiles (#677); null = off. */
+    private volatile java.util.function.Consumer<List<FsChange>> fsChangeSink;
     /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
     private Consumer<Path> onNewFromTemplate;
     /** Injected by MainController: reveal a path in the OS file manager. Args: (path, isDirectory). */
@@ -530,16 +532,36 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 // input, created+deleted every render) doesn't spuriously rebuild the tree (#465). Otherwise we
                 // re-list from disk (individual events aren't applied) — an OVERFLOW or any real file forces it.
                 List<java.nio.file.WatchEvent<?>> events = key.pollEvents();
+                Path watchedDir = key.watchable() instanceof Path p ? p : null;
                 key.reset();
                 boolean overflow = false;
                 List<String> names = new java.util.ArrayList<>();
+                List<FsChange> changes = new java.util.ArrayList<>(); // typed, for the LSP sink (#677)
                 for (java.nio.file.WatchEvent<?> ev : events) {
                     if (ev.kind() == java.nio.file.StandardWatchEventKinds.OVERFLOW) {
                         overflow = true;
                         continue;
                     }
                     Object ctx = ev.context();
-                    names.add(ctx instanceof Path p ? p.getFileName().toString() : "");
+                    String name = ctx instanceof Path p ? p.getFileName().toString() : "";
+                    names.add(name);
+                    if (watchedDir != null && ctx instanceof Path child && !isEditoraTempName(name)) {
+                        FsKind kind = ev.kind() == java.nio.file.StandardWatchEventKinds.ENTRY_CREATE
+                                ? FsKind.CREATED
+                                : ev.kind() == java.nio.file.StandardWatchEventKinds.ENTRY_DELETE
+                                        ? FsKind.DELETED
+                                        : FsKind.CHANGED;
+                        changes.add(new FsChange(watchedDir.resolve(child), kind));
+                    }
+                }
+                var sink = fsChangeSink;
+                if (sink != null && !changes.isEmpty()) {
+                    List<FsChange> batch = List.copyOf(changes);
+                    Platform.runLater(() -> {
+                        if (!disposed) {
+                            sink.accept(batch);
+                        }
+                    });
                 }
                 if (!watchEventsWarrantRefresh(names, overflow)) {
                     continue; // only Editora's own temp files changed — no tree rebuild
@@ -776,6 +798,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Injects the status-message sink used for drag-move / multi-delete feedback. */
     public void setOnStatus(Consumer<String> onStatus) {
         this.onStatus = onStatus == null ? m -> {} : onStatus;
+    }
+
+    /** One filesystem watcher event: what happened to which path (#677). */
+    public record FsChange(Path path, FsKind kind) {}
+
+    /** The watcher event kinds forwarded to the sink. */
+    public enum FsKind {
+        CREATED,
+        CHANGED,
+        DELETED
+    }
+
+    /** Injects the raw watcher-event sink (invoked on the FX thread with each drained batch) — how external
+     *  file changes reach the language servers (#677). {@code null} disables forwarding. */
+    public void setFsChangeSink(java.util.function.Consumer<List<FsChange>> sink) {
+        this.fsChangeSink = sink;
     }
 
     /** Injects the external-change hook (see {@link #onExternalChange}); {@code null} restores the no-op. */

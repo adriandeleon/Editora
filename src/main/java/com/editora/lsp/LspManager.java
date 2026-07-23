@@ -696,6 +696,59 @@ public final class LspManager {
         });
     }
 
+    // --- Watched files (#677) ------------------------------------------------------------------
+
+    /** An external file change to forward to the language servers. */
+    public enum WatchedKind {
+        CREATED,
+        CHANGED,
+        DELETED
+    }
+
+    /** One changed file + what happened to it. */
+    public record WatchedFile(Path file, WatchedKind kind) {}
+
+    /**
+     * Forwards external file changes to every live session whose root contains them
+     * ({@code workspace/didChangeWatchedFiles}) — how a git checkout / CLI build / external editor reaches
+     * the servers' project models instead of leaving them stale until restart (#677). Callers coalesce
+     * bursts (a branch switch touches hundreds of files); one notification per session per batch.
+     */
+    public void notifyWatchedFiles(List<WatchedFile> changes) {
+        if (!enabled || changes == null || changes.isEmpty()) {
+            return;
+        }
+        for (LanguageServerSession s : sessionsByRoot.values()) {
+            List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(changes, s.root());
+            if (!events.isEmpty()) {
+                s.didChangeWatchedFiles(events);
+            }
+        }
+    }
+
+    /** Pure: the {@code FileEvent}s for the changes under {@code root} (path-component containment). */
+    static List<org.eclipse.lsp4j.FileEvent> eventsUnderRoot(List<WatchedFile> changes, Path root) {
+        Path rootNorm = root.toAbsolutePath().normalize();
+        List<org.eclipse.lsp4j.FileEvent> out = new ArrayList<>();
+        for (WatchedFile c : changes) {
+            if (c == null || c.file() == null) {
+                continue;
+            }
+            Path p = c.file().toAbsolutePath().normalize();
+            if (!p.startsWith(rootNorm)) {
+                continue;
+            }
+            var type =
+                    switch (c.kind()) {
+                        case CREATED -> org.eclipse.lsp4j.FileChangeType.Created;
+                        case CHANGED -> org.eclipse.lsp4j.FileChangeType.Changed;
+                        case DELETED -> org.eclipse.lsp4j.FileChangeType.Deleted;
+                    };
+            out.add(new org.eclipse.lsp4j.FileEvent(p.toUri().toString(), type));
+        }
+        return out;
+    }
+
     /** True if {@code file}'s server is ready and advertises rename (#676). */
     public boolean supportsRename(Path file) {
         LanguageServerSession s = sessionFor(file);
