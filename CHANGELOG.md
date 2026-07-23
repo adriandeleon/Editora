@@ -142,6 +142,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **Semantic highlighting transfers only what changed.** For servers without viewport (range) requests —
+  jdtls among them — every typing pause re-transferred the whole document's semantic tokens. When the
+  server supports token deltas, Editora now sends the previous result id and splices the returned changes
+  onto its cached copy, falling back to a full request on any mismatch. Large Java files pay for their
+  edits, not their size. (#679)
+
 - **Cheaper diagnostics bursts.** Language servers publish project-wide diagnostics in bursts (jdtls
   especially, on workspace open); matching each publish to its open tab re-resolved every tab's canonical
   path with filesystem syscalls, on the UI thread. Successful resolutions are now cached (bounded LRU,

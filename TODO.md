@@ -3,6 +3,15 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Semantic-tokens delta** (#679) — client declares `requests.full.delta`; the manager caches
+      `{resultId, data}` per document URI (cleared on close/shutdown; a crashed server's replacement
+      rejects the old id → error → fallback to full + state cleared, self-healing). The whole-document
+      branch (range-less servers like jdtls) asks `semanticTokens/full/delta` when state is held; the
+      pure/unit-tested **`SemanticTokensSplice`** applies the edits **descending by start** (they index
+      the OLD array) and refuses an out-of-range splice with null → plain full retry, so a stale delta
+      can never decode into a corrupted token array. A server answering a delta request with a fresh full
+      set (its right per spec) is handled. Range-capable servers are untouched (viewport requests already
+      bound their cost). *Deferred: `workspace/semanticTokens/refresh` (server-initiated invalidation).*
 - [x] **Canonical-path cache on the diagnostics path** (#680) — `PathKeys.canonical` now caches successful
       `toRealPath` resolutions (LRU 2048, access-ordered, synchronized) — the LSP publish path runs
       `PathKeys.key` for every open tab per publish, and jdtls bursts project-wide on open, so a cold

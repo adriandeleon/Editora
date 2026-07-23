@@ -244,6 +244,7 @@ public final class LspManager {
         }
         String uri = uri(file);
         LanguageServerSession s = sessionByDocUri.remove(uri);
+        semanticTokenState.remove(uri); // the next open starts from a full request (#679)
         rawDiagnostics.remove(uri); // open-documents-only retention (#670); the symlink-form key, if any,
         try { //                       is dropped too so a closed file can't pin its diagnostics
             rawDiagnostics.remove(file.toRealPath().toUri().toString());
@@ -1102,11 +1103,23 @@ public final class LspManager {
         return e != null && (e.isRight() || Boolean.TRUE.equals(e.getLeft()));
     }
 
+    /** The cached whole-document token state for delta requests (#679): the server's {@code resultId} +
+     *  the full data array it identifies. Keyed by document URI; dropped on close/shutdown/error. */
+    private record TokenState(String resultId, List<Integer> data) {}
+
+    private final Map<String, TokenState> semanticTokenState = new ConcurrentHashMap<>();
+
     /**
      * Requests semantic tokens over the line window {@code [startLine..endLine]} (inclusive) and delivers
      * the decoded, CSS-classed {@link com.editora.editor.SemanticToken}s to {@code cb} on the FX thread
      * (empty when unsupported / on error). The window bounds cost on large files — the caller passes the
      * visible paragraph range. Decoding uses the server's effective legend, never hardcoded indices.
+     *
+     * <p>Range-less servers (jdtls advertises {@code range=false}) take the whole-document path, which —
+     * when the server supports {@code full.delta} and we hold its previous {@code resultId} — asks for a
+     * <b>delta</b> and splices it onto the cached array ({@link SemanticTokensSplice}) instead of
+     * re-transferring every token on each 300 ms edit pulse (#679). Any error/stale delta falls back to a
+     * plain full request.
      */
     public void requestSemanticTokens(
             Path file, int startLine, int endLine, Consumer<List<com.editora.editor.SemanticToken>> cb) {
@@ -1119,22 +1132,86 @@ public final class LspManager {
         var legend = prov.getLegend();
         // Prefer a range (viewport) request to bound cost; fall back to a whole-document request for a
         // server that advertises only `full` (no range).
-        java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.SemanticTokens> fut;
         if (eitherTrue(prov.getRange())) {
             // [startLine,0) .. [endLine+1,0) covers whole lines startLine..endLine; clamp start to >= 0.
             var range = new org.eclipse.lsp4j.Range(
                     new Position(Math.max(0, startLine), 0), new Position(Math.max(0, endLine) + 1, 0));
-            fut = s.semanticTokensRange(uri(file), range);
-        } else {
-            fut = s.semanticTokensFull(uri(file));
+            s.semanticTokensRange(uri(file), range).whenComplete((tokens, error) -> {
+                List<com.editora.editor.SemanticToken> out = (error != null || tokens == null)
+                        ? List.of()
+                        : SemanticTokensDecoder.decode(
+                                tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
+                Platform.runLater(() -> cb.accept(out));
+            });
+            return;
         }
-        fut.whenComplete((tokens, error) -> {
-            List<com.editora.editor.SemanticToken> out = (error != null || tokens == null)
-                    ? List.of()
-                    : SemanticTokensDecoder.decode(
-                            tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
+        String uri = uri(file);
+        boolean deltaSupported = fullDeltaSupported(prov);
+        TokenState prev = deltaSupported ? semanticTokenState.get(uri) : null;
+        if (prev != null) {
+            s.semanticTokensFullDelta(uri, prev.resultId()).whenComplete((either, error) -> {
+                List<Integer> data = null;
+                String resultId = null;
+                if (error == null && either != null) {
+                    if (either.isLeft() && either.getLeft() != null) {
+                        data = either.getLeft().getData(); // server chose to answer with a fresh full set
+                        resultId = either.getLeft().getResultId();
+                    } else if (either.isRight() && either.getRight() != null) {
+                        data = SemanticTokensSplice.apply(
+                                prev.data(), either.getRight().getEdits());
+                        resultId = either.getRight().getResultId();
+                    }
+                }
+                if (data == null) {
+                    semanticTokenState.remove(uri); // stale/failed delta — re-request full
+                    requestSemanticTokensFull(s, file, legend, cb);
+                    return;
+                }
+                rememberTokenState(uri, resultId, data);
+                List<Integer> decoded = data;
+                List<com.editora.editor.SemanticToken> out =
+                        SemanticTokensDecoder.decode(decoded, legend.getTokenTypes(), legend.getTokenModifiers());
+                Platform.runLater(() -> cb.accept(out));
+            });
+            return;
+        }
+        requestSemanticTokensFull(s, file, legend, cb);
+    }
+
+    /** Plain whole-document request; caches {@code resultId}+data when the server supplies one (#679). */
+    private void requestSemanticTokensFull(
+            LanguageServerSession s,
+            Path file,
+            org.eclipse.lsp4j.SemanticTokensLegend legend,
+            Consumer<List<com.editora.editor.SemanticToken>> cb) {
+        String uri = uri(file);
+        s.semanticTokensFull(uri).whenComplete((tokens, error) -> {
+            if (error != null || tokens == null) {
+                Platform.runLater(() -> cb.accept(List.of()));
+                return;
+            }
+            rememberTokenState(uri, tokens.getResultId(), tokens.getData());
+            List<com.editora.editor.SemanticToken> out =
+                    SemanticTokensDecoder.decode(tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
             Platform.runLater(() -> cb.accept(out));
         });
+    }
+
+    private void rememberTokenState(String uri, String resultId, List<Integer> data) {
+        if (resultId != null && data != null) {
+            semanticTokenState.put(uri, new TokenState(resultId, List.copyOf(data)));
+        } else {
+            semanticTokenState.remove(uri); // no resultId ⇒ the server can't delta from this response
+        }
+    }
+
+    /** Pure: whether the provider's {@code full} form advertises delta support (null-safe). */
+    static boolean fullDeltaSupported(org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions prov) {
+        var full = prov == null ? null : prov.getFull();
+        return full != null
+                && full.isRight()
+                && full.getRight() != null
+                && Boolean.TRUE.equals(full.getRight().getDelta());
     }
 
     public void hover(Path file, int line, int character, Consumer<String> cb) {
@@ -1472,6 +1549,7 @@ public final class LspManager {
     public void shutdownAll() {
         sessionByDocUri.clear();
         rawDiagnostics.clear();
+        semanticTokenState.clear();
         for (LanguageServerSession s : sessionsByRoot.values()) {
             s.dispose();
             releaseJdtlsWorkspace(s);

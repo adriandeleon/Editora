@@ -376,7 +376,10 @@ final class LanguageServerSession implements LanguageClient {
         // distinguishes a parameter from a field from a type and flags deprecated/static/readonly. We
         // advertise both encodings (the decoder handles either); LspManager prefers range and falls back to
         // a full request for range-less servers (e.g. jdtls, which advertises range=false, full=true).
-        var stRequests = new org.eclipse.lsp4j.SemanticTokensClientCapabilitiesRequests(true, true); // full, range
+        // full (with delta — #679) + range: a range-less server (jdtls) otherwise re-sends the whole
+        // document's tokens on every 300 ms edit pulse; with delta it sends only the changed splice.
+        var stRequests = new org.eclipse.lsp4j.SemanticTokensClientCapabilitiesRequests(
+                new org.eclipse.lsp4j.SemanticTokensClientCapabilitiesRequestsFull(true), (Boolean) true);
         td.setSemanticTokens(new org.eclipse.lsp4j.SemanticTokensCapabilities(
                 stRequests, SEMANTIC_TOKEN_TYPES, SEMANTIC_TOKEN_MODIFIERS, java.util.List.of("relative")));
         ClientCapabilities cc = new ClientCapabilities();
@@ -880,6 +883,19 @@ final class LanguageServerSession implements LanguageClient {
                 .semanticTokensRange(
                         new org.eclipse.lsp4j.SemanticTokensRangeParams(new TextDocumentIdentifier(uri), range))
                 .exceptionally(t -> null);
+    }
+
+    /** Whole-document semantic-token <b>delta</b> ({@code semanticTokens/full/delta}) against a previous
+     *  {@code resultId} — the changed splices instead of the whole array (#679); null when not ready. */
+    CompletableFuture<
+                    org.eclipse.lsp4j.jsonrpc.messages.Either<
+                            org.eclipse.lsp4j.SemanticTokens, org.eclipse.lsp4j.SemanticTokensDelta>>
+            semanticTokensFullDelta(String uri, String previousResultId) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        var params = new org.eclipse.lsp4j.SemanticTokensDeltaParams(new TextDocumentIdentifier(uri), previousResultId);
+        return server.getTextDocumentService().semanticTokensFullDelta(params).exceptionally(t -> null);
     }
 
     /** Whole-document semantic tokens ({@code textDocument/semanticTokens/full}), for servers that don't
