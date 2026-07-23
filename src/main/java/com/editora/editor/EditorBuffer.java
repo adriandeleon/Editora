@@ -88,6 +88,17 @@ public class EditorBuffer implements TabContent {
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /** The last saved/loaded content; the buffer is dirty only when the text differs from this. */
     private String cleanText = "";
+    /**
+     * Emacs narrowing: the document text before/after the accessible region, held aside while the area
+     * itself holds only the region. Both null when the buffer is widened (the normal state).
+     */
+    private String narrowPrefix;
+
+    private String narrowSuffix;
+    /** Fired whenever narrowing turns on or off, from wherever — the UI reconciles off this, not off the
+     *  command, so a widen forced by a whole-document write cannot leave a stale indicator or a suspended
+     *  language server behind. */
+    private Runnable onNarrowChanged = () -> {};
 
     /** Orientation of an optional second, synced view of this document. */
     public enum Split {
@@ -794,8 +805,8 @@ public class EditorBuffer implements TabContent {
         // line, past the line-count heavy-file tier). The cheap getLength() check gates the full-text
         // compare so area.getText() is only built in the rare near-clean state, never while typing.
         area.plainTextChanges()
-                .subscribe(c -> dirty.set(area.getLength() != cleanText.length()
-                        || !area.getText().equals(cleanText)));
+                .subscribe(c -> dirty.set(
+                        contentLength() != cleanText.length() || !getContent().equals(cleanText)));
         // Auto-rename tag: mirror a tag-name edit onto the paired open/close tag (html/xml only —
         // the handler's first checks are two cheap boolean/string compares for every other buffer).
         area.plainTextChanges().subscribe(this::maybeMirrorTagRename);
@@ -8239,6 +8250,7 @@ public class EditorBuffer implements TabContent {
 
     /** Replaces the document content (e.g. after loading a file) and resets the dirty flag. */
     public void setContent(String content) {
+        widen(); // a fresh document supersedes any narrowing of the old one
         area.replaceText(content == null ? "" : content);
         markClean();
         recomputeRun(); // detect a runnable file on load (drives the Run glyph)
@@ -8290,8 +8302,117 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * The <b>whole document</b>, including any part hidden by narrowing. This is what every caller that
+     * means "the file" wants — save, autosave, LSP sync, diff, local history, find-in-files, the MCP
+     * bridge, the plugin API — and returning the full text here is what makes narrowing safe by
+     * construction rather than by each of them remembering to ask. Use {@link #getVisibleContent()} for
+     * the accessible portion.
+     */
     public String getContent() {
+        return narrowPrefix == null ? area.getText() : narrowPrefix + area.getText() + narrowSuffix;
+    }
+
+    // --- Narrowing -------------------------------------------------------------------------------
+
+    public boolean isNarrowed() {
+        return narrowPrefix != null;
+    }
+
+    /** Offset of the accessible region within the whole document (0 when widened). */
+    public int narrowStart() {
+        return narrowPrefix == null ? 0 : narrowPrefix.length();
+    }
+
+    /**
+     * Emacs {@code narrow-to-region}: makes only {@code [start, end)} accessible, holding the rest aside.
+     * Returns false when the request is not narrowable (an empty region, or a file large enough that
+     * swapping the text is not worth it).
+     *
+     * <p>The document text really is replaced, so anything reading {@code area.getText()} directly sees
+     * only the region — which is the point, and is why {@link #getContent()} exists to keep whole-file
+     * callers correct.
+     *
+     * <p><b>Undo history is dropped at the boundary.</b> The swap is itself an edit, and undoing across it
+     * would restore the whole document <em>into</em> the narrowed area while the hidden text is still held
+     * aside — duplicating the file. Rather than let that be reachable, both narrowing and widening clear
+     * the history; edits made while narrowed undo normally.
+     */
+    public boolean narrowTo(int start, int end) {
+        if (largeFile || hugeFile) {
+            return false;
+        }
+        // Offsets arrive in *area* coordinates (callers read them from the selection), which while
+        // already narrowed are relative to the region — so rebase them onto the document before widening,
+        // or re-narrowing would silently measure the new region from the top of the file instead.
+        int base = narrowStart();
+        if (isNarrowed()) {
+            widenInternal(); // re-narrow from the whole document: narrowing does not nest, as in Emacs
+        }
+        String full = area.getText();
+        int s = Math.max(0, Math.min(start + base, full.length()));
+        int e = Math.max(0, Math.min(end + base, full.length()));
+        if (s >= e) {
+            return false;
+        }
+        int caret = area.getCaretPosition();
+        narrowPrefix = full.substring(0, s);
+        narrowSuffix = full.substring(e);
+        area.replaceText(full.substring(s, e));
+        area.getUndoManager().forgetHistory();
+        area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
+        area.requestFollowCaret();
+        onNarrowChanged.run();
+        return true;
+    }
+
+    public void setOnNarrowChanged(Runnable callback) {
+        this.onNarrowChanged = callback == null ? () -> {} : callback;
+    }
+
+    /** Emacs {@code widen}: restores access to the whole document. No-op when not narrowed. */
+    public void widen() {
+        if (!isNarrowed()) {
+            return;
+        }
+        widenInternal();
+        onNarrowChanged.run();
+    }
+
+    private void widenInternal() {
+        String prefix = narrowPrefix;
+        String visible = area.getText();
+        String suffix = narrowSuffix;
+        int caret = area.getCaretPosition();
+        narrowPrefix = null; // cleared first: replaceText fires the dirty listener, which reads getContent()
+        narrowSuffix = null;
+        area.replaceText(prefix + visible + suffix);
+        area.getUndoManager().forgetHistory();
+        area.moveTo(Math.min(prefix.length() + caret, area.getLength()));
+        area.requestFollowCaret();
+    }
+
+    /**
+     * Replaces the entire document, widening first. Every caller that computes a replacement from
+     * {@link #getContent()} — a find-and-replace across files, a local-history restore, a diff apply, a
+     * reload from disk — must come through here or {@link #setContent}: writing whole-document text into a
+     * narrowed area would leave the held-aside text alongside it and duplicate the file.
+     */
+    public void replaceWholeDocument(String text) {
+        widen();
+        area.replaceText(text == null ? "" : text);
+    }
+
+    /** The accessible portion — the narrowed region, or the whole document when not narrowed. */
+    public String getVisibleContent() {
         return area.getText();
+    }
+
+    /** Length of {@link #getContent()} without building it — the per-keystroke dirty-check gate. */
+    private int contentLength() {
+        return narrowPrefix == null
+                ? area.getLength()
+                : narrowPrefix.length() + area.getLength() + narrowSuffix.length();
     }
 
     public BooleanProperty dirtyProperty() {
@@ -8304,7 +8425,7 @@ public class EditorBuffer implements TabContent {
 
     /** Marks the current content as the saved baseline (after load/save); clears the dirty flag. */
     public void markClean() {
-        cleanText = area.getText();
+        cleanText = getContent(); // the whole document, so narrowing never fakes a dirty flag
         dirty.set(false);
     }
 

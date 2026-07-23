@@ -5960,6 +5960,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.schedulePersistBookmarks(buffer));
         buffer.setBookmarkToggleRequest(bookmarkCoordinator::onBookmarkToggleRequest);
         buffer.setOnNotesChanged(() -> notesCoordinator.schedulePersistNotes(buffer));
+        buffer.setOnNarrowChanged(() -> afterNarrowChanged(buffer));
         buffer.setNoteMarkerClick(notesCoordinator::onNoteMarkerClick);
         buffer.setGutterBlameClick(git::onGutterBlameClick);
         todoCoordinator.applyToBuffer(buffer); // push the compiled TODO/highlight matcher (on by default)
@@ -11699,6 +11700,101 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private static final int KILL_RING_LABEL_MAX = 80;
 
+    // --- Narrowing -------------------------------------------------------------------------------
+
+    /** Emacs {@code narrow-to-region} (`C-x n n`): restrict the buffer to the selection. */
+    private void narrowToRegion() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        var sel = buffer.getFocusedArea().getSelection();
+        if (sel.getLength() == 0) {
+            setStatus(tr("status.narrow.noRegion"));
+            return;
+        }
+        applyNarrow(buffer, sel.getStart(), sel.getEnd());
+    }
+
+    /** Emacs {@code narrow-to-defun} (`C-x n d`): restrict the buffer to the enclosing function. */
+    private void narrowToDefun() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        String text = area.getText();
+        int caret = area.getCaretPosition();
+        int start = com.editora.editops.SexpNav.beginningOfDefun(text, caret);
+        int end = com.editora.editops.SexpNav.endOfDefun(text, caret);
+        if (start >= end) {
+            setStatus(tr("status.narrow.noDefun"));
+            return;
+        }
+        applyNarrow(buffer, start, end);
+    }
+
+    /** Narrow to the innermost foldable region around the caret — the fold machinery already knows it. */
+    private void narrowToFoldRegion() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        int line = area.getCurrentParagraph();
+        com.editora.editor.FoldRegions.Region best = null;
+        for (var r : buffer.getFoldManager().regions()) {
+            if (r.startLine() <= line && line <= r.endLine() && (best == null || r.startLine() > best.startLine())) {
+                best = r; // innermost containing region
+            }
+        }
+        if (best == null) {
+            setStatus(tr("status.narrow.noFoldRegion"));
+            return;
+        }
+        int start = area.getAbsolutePosition(best.startLine(), 0);
+        int end = area.getAbsolutePosition(best.endLine(), area.getParagraphLength(best.endLine()));
+        applyNarrow(buffer, start, end);
+    }
+
+    /** Emacs {@code widen} (`C-x n w`): restore access to the whole document. */
+    private void widenBuffer() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        if (!buffer.isNarrowed()) {
+            setStatus(tr("status.narrow.notNarrowed"));
+            return;
+        }
+        buffer.widen(); // the narrow-changed hook reconciles the UI
+        setStatus(tr("status.narrow.widened"));
+    }
+
+    private void applyNarrow(EditorBuffer buffer, int start, int end) {
+        if (!activeEditable() && !buffer.isViewMode()) {
+            return; // a huge read-only buffer cannot be narrowed (the text swap is the mechanism)
+        }
+        if (!buffer.narrowTo(start, end)) {
+            setStatus(tr("status.narrow.cannot"));
+            return;
+        }
+        setStatus(tr("status.narrow.narrowed"));
+    }
+
+    /**
+     * Re-derives everything whose coordinates are document-relative after the accessible region changed.
+     * The LSP document is suspended/resumed by {@code syncBuffer} (which now refuses a narrowed buffer),
+     * and the git change bars are cleared because their line numbers refer to the whole file.
+     */
+    private void afterNarrowChanged(EditorBuffer buffer) {
+        buffer.setChangeBars(null, null);
+        lspCoordinator.syncBuffer(buffer);
+        statusBar.setNarrowed(buffer.isNarrowed());
+        updateWindowTitle();
+        git.refresh();
+    }
+
     // --- Rectangles ------------------------------------------------------------------------------
 
     /**
@@ -13170,6 +13266,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.openRectangle", () -> rectangleEdit(Rectangle::open)));
         registry.register(Command.of("edit.stringRectangle", this::stringRectangle));
         registry.register(Command.of("edit.numberRectangle", this::numberRectangle));
+        registry.register(Command.of("edit.narrowToRegion", this::narrowToRegion));
+        registry.register(Command.of("edit.narrowToDefun", this::narrowToDefun));
+        registry.register(Command.of("edit.narrowToFoldRegion", this::narrowToFoldRegion));
+        registry.register(Command.of("edit.widen", this::widenBuffer));
         registry.register(Command.of("edit.undo", this::onUndo));
         registry.register(Command.of("edit.redo", this::onRedo));
         registry.register(Command.of("edit.cancel", this::cancel));

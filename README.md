@@ -116,6 +116,10 @@ Editora is built with the help of AI coding tools.
   fixups (`M-\`, `M-SPC`), delete-blank-lines (`C-x C-o`), open-line (`C-o`), kill-whole-line (`C-S-DEL`),
   zap-to-char (`M-z`), balanced-expression motion (`C-M-f`/`C-M-b`, mark/kill-sexp), defun motion
   (`C-M-a`/`C-M-e`), and mark-paragraph / mark-whole-buffer. All palette-discoverable and rebindable.
+- **Narrowing** (`C-x n …`) — restrict the buffer to the selection (`C-x n n`), the enclosing function
+  (`C-x n d`) or the fold block at the caret (`C-x n f`), and widen with `C-x n w`. Genuinely restricts the
+  buffer rather than just hiding lines, so search, replace and Select All see only the region. A status-bar
+  badge shows the state; saving still writes the whole file.
 - **Rectangles** (`C-x r …`) — the Emacs column-oriented commands: kill/copy/yank a rectangle, delete it,
   clear it to spaces, open it (shifting text right), replace each line's segment with a string, or number
   the lines down its left edge. Point and mark define the corners, so a zero-width rectangle is the classic

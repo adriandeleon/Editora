@@ -158,6 +158,12 @@ final class BookmarkCoordinator {
     }
 
     void persistBookmarks(EditorBuffer buffer) {
+        if (buffer.isNarrowed()) {
+            // While narrowed the area holds only the region, so every line number is region-relative.
+            // Persisting them would rewrite the store with positions that are wrong for the file; the
+            // in-memory marks are restored when the buffer is widened.
+            return;
+        }
         Path file = buffer.getPath();
         if (file == null) {
             return;

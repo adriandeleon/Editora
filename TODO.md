@@ -960,6 +960,10 @@ A backlog of planned features and improvements. Unordered within each section.
       open-line (`C-o`), kill-whole-line (`C-S-DEL`), zap-to-char (`M-z`), forward/backward-sexp +
       mark/kill-sexp (`C-M-f`/`C-M-b`/`C-M-SPC`/`C-M-k`), beginning/end-of-defun (`C-M-a`/`C-M-e`),
       mark-paragraph (`M-h`), mark-whole-buffer (`C-x h`), move-to-window-line (`M-r`).
+- [x] Narrowing — `C-x n n`/`C-x n d`/`C-x n f`/`C-x n w`. True narrowing (the document text really is
+      swapped), made safe by `EditorBuffer.getContent()` meaning the whole document so save/autosave/diff/
+      history/find-in-files stay correct unchanged. *LSP suspended while narrowed; marker persistence
+      suspended; undo history dropped at the boundary; narrowing is session-only and does not nest.*
 - [x] Rectangles — the `C-x r` family: kill/copy/yank/delete/clear/open, string-rectangle and
       rectangle-number-lines, over the mark-based selection, each a single undo step and remembered
       separately from the kill ring. *Character columns, so tab-indented text does not line up with the

@@ -1513,6 +1513,15 @@
     -fx-text-fill: -color-accent-fg;
 }
 
+/* Narrowing indicator: an amber pill, deliberately noticeable — while it shows, most of the file is
+   inaccessible and the buffer looks truncated. Click to widen. */
+.status-bar .status-narrowed {
+    -fx-text-fill: -color-warning-fg;
+    -fx-font-weight: bold;
+    -fx-background-color: -color-warning-subtle;
+    -fx-background-radius: 4;
+}
+
 /* MCP server segment: a green "running" pill, deliberately noticeable (a local agent endpoint is live). */
 .status-bar .status-mcp {
     -fx-text-fill: -color-success-fg;

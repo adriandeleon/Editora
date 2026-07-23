@@ -302,6 +302,9 @@ final class DebugCoordinator {
     }
 
     private void persistBreakpoints(EditorBuffer buffer) {
+        if (buffer.isNarrowed()) {
+            return; // region-relative line numbers while narrowed — see BookmarkCoordinator.persistBookmarks
+        }
         Path file = buffer.getPath();
         if (file == null) {
             return;

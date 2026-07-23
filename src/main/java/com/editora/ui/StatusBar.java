@@ -82,6 +82,8 @@ public final class StatusBar extends HBox {
     private final Label encoding = new Label("UTF-8");
     /** Shown when an {@code .editorconfig} governs the active buffer; clickable → open that file. */
     private final Label editorConfig = segment("editorConfig.openActive", tr("statusbar.tip.editorConfig"));
+
+    private final Label narrowed = segment("edit.widen", tr("statusbar.tip.narrowed"));
     /** Read-only ("View mode") indicator; shown only when the active buffer is non-editable. */
     private final Label readOnly = segment("view.toggleReadOnly", tr("statusbar.tip.readOnly"));
     /** Text-zoom percentage (clickable to reset to 100%). */
@@ -121,6 +123,13 @@ public final class StatusBar extends HBox {
         size.getStyleClass().add("status-segment");
         size.setTooltip(new Tooltip(tr("statusbar.tip.fileSize")));
         encoding.getStyleClass().add("status-segment");
+
+        // Narrowing hides part of the file, so the indicator is not optional — without it a narrowed
+        // buffer just looks like a truncated one. Clicking it widens.
+        narrowed.getStyleClass().add("status-narrowed");
+        narrowed.setText(tr("statusbar.narrowed"));
+        narrowed.setVisible(false);
+        narrowed.setManaged(false);
 
         editorConfig.getStyleClass().add("status-editorconfig");
         editorConfig.setText(tr("statusbar.editorConfig"));
@@ -196,6 +205,7 @@ public final class StatusBar extends HBox {
                         position,
                         csvField,
                         language,
+                        narrowed,
                         editorConfig,
                         indent,
                         endings,
@@ -591,6 +601,12 @@ public final class StatusBar extends HBox {
     }
 
     /** Simple UI mode: hide the git / language / tab-size / line-ending / encoding segments (size is kept). */
+    /** Shows the narrowing indicator. Deliberately visible in Simple mode too — it is not chrome. */
+    public void setNarrowed(boolean on) {
+        narrowed.setVisible(on);
+        narrowed.setManaged(on);
+    }
+
     public void setSimpleMode(boolean simpleMode) {
         if (this.simpleMode != simpleMode) {
             this.simpleMode = simpleMode;

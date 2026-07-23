@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Narrowing** (`C-x n …`) — restrict the buffer to a region and work on it alone: `C-x n n` narrows to the
+  selection, `C-x n d` to the enclosing function, `C-x n f` to the foldable block around the caret, and
+  `C-x n w` widens again. This is real narrowing, not a display filter — the rest of the file is genuinely
+  out of reach, so search, replace, macros and Select All all act on the region only. An amber **Narrowed**
+  badge in the status bar shows the state and widens on click, because a narrowed buffer otherwise just
+  looks like a truncated one. Saving always writes the whole file. Language-server support is suspended
+  while narrowed (every position would be offset), and bookmarks, notes and breakpoints stop persisting
+  until you widen; undo history is dropped at the narrowing boundary, though edits made while narrowed undo
+  normally.
+
 - **Emacs rectangle commands** (`C-x r …`) — operate on the *columns* between point and mark instead of the
   linear span: kill (`C-x r k`), copy (`C-x r M-w`), yank (`C-x r y`), delete (`C-x r d`), clear to spaces
   (`C-x r c`), open/shift-right (`C-x r o`), replace every line's segment with a string (`C-x r t`) and
