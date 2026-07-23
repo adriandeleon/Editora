@@ -6776,7 +6776,17 @@ public class SettingsWindow {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(owner);
         alert.setTitle(tr("dialog.about.title", com.editora.AppInfo.NAME));
-        alert.setHeaderText(com.editora.AppInfo.NAME + " " + com.editora.AppInfo.VERSION);
+        // For a snapshot build, append the git branch to the version string so a build made from a
+        // worktree/feature branch can be told apart from one made off master. Empty for release builds
+        // and for packaged snapshots with no git checkout.
+        String versionString = com.editora.AppInfo.VERSION;
+        if (com.editora.AppInfo.isSnapshot()) {
+            String branch = com.editora.AppInfo.gitBranch();
+            if (!branch.isBlank()) {
+                versionString += " (" + branch + ")";
+            }
+        }
+        alert.setHeaderText(com.editora.AppInfo.NAME + " " + versionString);
         var iconStream = SettingsWindow.class.getResourceAsStream("/com/editora/icons/icon-128.png");
         if (iconStream != null) {
             ImageView logo = new ImageView(new Image(iconStream));

@@ -2,6 +2,9 @@ package com.editora.ui;
 
 import java.util.List;
 
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -12,6 +15,7 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SplitPane;
+import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -73,6 +77,12 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     private final Actions actions;
     private final Label filterLabel = new Label(tr("gitlog.all"));
     private final Button showAllButton;
+    private final TextField filterField = new TextField();
+    /** Unfiltered commits; {@link #commits} shows a {@link FilteredList} view over this so filtering keeps object
+     * identity (a selected commit survives re-filtering while it still matches). */
+    private final ObservableList<Commit> allCommits = FXCollections.observableArrayList();
+
+    private final FilteredList<Commit> filteredCommits = new FilteredList<>(allCommits, c -> true);
     private final ListView<Commit> commits = new ListView<>();
     private final ListView<CommitFile> files = new ListView<>();
     private final SplitPane split = new SplitPane();
@@ -97,7 +107,21 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         toolbar.getStyleClass().add("git-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
+        // Filter row: narrows the commit list as you type (subject / author / hash / date), with a trailing
+        // clear ("✕") button. Typing here can't clash with the list's bare n/p nav — that handler is on the
+        // commit ListView, not the field.
+        filterField.setPromptText(tr("gitlog.filterPrompt"));
+        filterField.getStyleClass().add("git-log-filter");
+        filterField.textProperty().addListener((o, w, n) -> applyCommitFilter(n));
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+        Button clearFilter = ClearableField.clearButton(filterField);
+        HBox filterRow = new HBox(4, filterField, clearFilter);
+        filterRow.getStyleClass().add("project-filter-bar");
+        filterRow.setAlignment(Pos.CENTER_LEFT);
+
         commits.getStyleClass().add("git-tree");
+        commits.setItems(filteredCommits);
+        commits.setPlaceholder(placeholder);
         commits.setCellFactory(v -> new CommitCell());
         installListNav(commits);
         commits.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
@@ -130,7 +154,25 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         placeholder.getStyleClass().add("tool-window-placeholder");
         placeholder.setWrapText(true);
 
-        getChildren().setAll(toolbar, split);
+        getChildren().setAll(toolbar, filterRow, split);
+    }
+
+    /** Case-insensitive substring filter over each commit's subject, author, short/long hash and date. */
+    private void applyCommitFilter(String text) {
+        String q = text == null ? "" : text.strip().toLowerCase(java.util.Locale.ROOT);
+        if (q.isEmpty()) {
+            filteredCommits.setPredicate(c -> true);
+            return;
+        }
+        filteredCommits.setPredicate(c -> contains(c.subject(), q)
+                || contains(c.author(), q)
+                || contains(c.shortHash(), q)
+                || contains(c.hash(), q)
+                || contains(c.date(), q));
+    }
+
+    private static boolean contains(String s, String lowerQuery) {
+        return s != null && s.toLowerCase(java.util.Locale.ROOT).contains(lowerQuery);
     }
 
     /**
@@ -178,10 +220,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         showAllButton.setVisible(filtered);
         showAllButton.setManaged(filtered);
         files.getItems().clear();
-        commits.getItems().setAll(log);
-        if (log.isEmpty()) {
-            commits.setPlaceholder(placeholder);
-        }
+        // Populate the unfiltered master list; the FilteredList view re-applies the current filter automatically.
+        allCommits.setAll(log);
         // A fresh open focuses the panel before the async log arrives — complete that focus now.
         if (focusPending && selectFirstCommit()) {
             focusPending = false;

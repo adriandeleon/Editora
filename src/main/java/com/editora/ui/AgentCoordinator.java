@@ -16,8 +16,12 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
+import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
+import javafx.scene.layout.BorderPane;
+import javafx.stage.Stage;
+import javafx.stage.Window;
 
 import com.editora.agent.AcpAgentRegistry;
 import com.editora.agent.AcpClient;
@@ -60,6 +64,12 @@ final class AgentCoordinator implements AcpClient.Host {
         /** Opens the AI Agent tool window (optionally focusing the prompt input). */
         void openToolWindow(boolean focus);
 
+        /** Closes (undocks) the AI Agent tool window — used when popping the panel out into its own window. */
+        void closeToolWindow();
+
+        /** Shows/hides the AI Agent stripe button (hidden while the panel is detached into its own window). */
+        void setToolWindowAvailable(boolean available);
+
         /** Refreshes the Project tree after the agent wrote a file the editor doesn't have open. */
         void refreshProjectTree();
 
@@ -89,6 +99,10 @@ final class AgentCoordinator implements AcpClient.Host {
     });
 
     private AgentPanel panel;
+    /** Non-null while the chat panel is popped out into its own window; the {@link AgentPanel} node moves
+     *  between the docked tool window and this stage's scene (a node lives in one scene only). */
+    private Stage detachedStage;
+
     private volatile AcpClient client;
     private volatile String sessionId;
     private volatile List<AcpJson.ModelInfo> models = List.of();
@@ -126,9 +140,83 @@ final class AgentCoordinator implements AcpClient.Host {
                     this::resumeSessionPicker,
                     this::openPathCandidate);
             panel.setOnSend(this::sendPrompt);
+            panel.setOnDetach(this::toggleDetach);
             applyPanelFont();
         }
         return panel;
+    }
+
+    /** Whether the chat panel is currently popped out into its own window. */
+    boolean isDetached() {
+        return detachedStage != null;
+    }
+
+    /** The detach button toggles: dock ⇢ pop out; floating ⇢ dock (closing the window redocks via onHidden). */
+    private void toggleDetach() {
+        if (detachedStage != null) {
+            detachedStage.hide(); // → setOnHidden → redock
+        } else {
+            detach();
+        }
+    }
+
+    /**
+     * Pops the chat panel out of the tool-window stripe into its own resizable window. The <b>same</b>
+     * {@link AgentPanel} node is moved (so the live transcript survives) and the agent session — which lives
+     * in this coordinator, not the node — is untouched. The stripe is hidden while floating so the panel
+     * can't be pulled back into the dock behind the window; closing the window redocks it.
+     */
+    private void detach() {
+        if (detachedStage != null) {
+            detachedStage.toFront();
+            return;
+        }
+        AgentPanel p = panel();
+        ops.closeToolWindow(); // free the panel node from the docked slot
+        ops.setToolWindowAvailable(false); // hide the stripe while floating
+        BorderPane holder = new BorderPane(p);
+        Scene scene = new Scene(holder, 480, 640);
+        addAppStylesheets(scene);
+        Stage stage = new Stage();
+        stage.setTitle(tr("toolwindow.agent"));
+        Window owner = host.window();
+        if (owner != null) {
+            stage.initOwner(owner);
+        }
+        stage.setScene(scene);
+        stage.setOnHidden(e -> redockFromHolder(holder));
+        detachedStage = stage;
+        p.setDetached(true);
+        stage.show();
+    }
+
+    /** Moves the panel back into the dock when the floating window closes (or is hidden for a redock). */
+    private void redockFromHolder(BorderPane holder) {
+        if (detachedStage == null) {
+            return; // already redocked (reentrancy guard)
+        }
+        detachedStage = null;
+        holder.setCenter(null); // detach the panel node from the closing scene
+        if (panel != null) {
+            panel.setDetached(false);
+        }
+        // Don't re-dock into a tearing-down scene when the whole window is closing (the owned floating stage
+        // hides as part of that shutdown) — only redock while the owner window is still alive.
+        Window owner = host.window();
+        boolean redock = isEnabled() && owner != null && owner.isShowing();
+        ops.setToolWindowAvailable(redock);
+        if (redock) {
+            ops.openToolWindow(true); // re-dock (ToolWindowPanel re-parents the panel) + focus
+        }
+    }
+
+    private void addAppStylesheets(Scene scene) {
+        for (String css : new String[] {"/com/editora/styles/app.css", "/com/editora/styles/syntax.css"}) {
+            var url = getClass().getResource(css);
+            if (url != null) {
+                scene.getStylesheets().add(url.toExternalForm());
+            }
+        }
     }
 
     /** Reconciles the feature with its setting (startup + every settings apply): font + teardown when off. */
@@ -148,9 +236,16 @@ final class AgentCoordinator implements AcpClient.Host {
 
     // --- commands -----------------------------------------------------------------------------------
 
-    /** {@code tool.agent}: toggle the chat tool window. */
+    /** {@code tool.agent}: toggle the chat tool window (or bring the floating window forward while detached). */
     void toggleToolWindow() {
-        ifAgent(ops::toggleToolWindow);
+        ifAgent(() -> {
+            if (detachedStage != null) {
+                detachedStage.toFront();
+                detachedStage.requestFocus();
+            } else {
+                ops.toggleToolWindow();
+            }
+        });
     }
 
     /** {@code agent.newSession}: dispose the current conversation (killing its process tree) and start

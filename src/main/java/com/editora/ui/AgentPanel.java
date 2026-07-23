@@ -70,6 +70,9 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private final Button stopButton = new Button();
     private final Button newSessionButton = new Button();
     private final Button historyButton = new Button();
+    private final Button detachButton = new Button();
+    /** Pops the panel out into (or back from) a separate window. Set by the coordinator; no-op until then. */
+    private Runnable onDetach = () -> {};
     /** Receives the prompt text when the user sends (coordinator → agent). */
     private Consumer<String> onSend;
     /** Cancels the in-flight turn (the header ■ + the Send→Stop toggle + Esc all run this). */
@@ -112,12 +115,22 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         modelLabel.setOnMouseClicked(e -> onPickModel.run());
         modeLabel.getStyleClass().add("agent-header-label");
         modeLabel.setOnMouseClicked(e -> onPickMode.run());
+        iconButton(detachButton, Icons.detach(), "agent.detach", () -> onDetach.run());
         iconButton(historyButton, Icons.history(), "agent.history", onResumeSession);
         iconButton(newSessionButton, Icons.newFile(), "agent.newSession", onNewSession);
         iconButton(stopButton, Icons.debugStop(), "agent.stop", onStop);
         stopButton.setDisable(true);
         HBox header = new HBox(
-                8, status, agentLabel, modelLabel, modeLabel, spacer(), historyButton, newSessionButton, stopButton);
+                8,
+                status,
+                agentLabel,
+                modelLabel,
+                modeLabel,
+                spacer(),
+                detachButton,
+                historyButton,
+                newSessionButton,
+                stopButton);
         header.setAlignment(Pos.CENTER_LEFT);
 
         planBox.setManaged(false);
@@ -169,6 +182,16 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
 
     public void setOnSend(Consumer<String> onSend) {
         this.onSend = onSend;
+    }
+
+    /** Sets the detach/pop-out handler (coordinator moves this panel between the dock and a floating window). */
+    public void setOnDetach(Runnable onDetach) {
+        this.onDetach = onDetach == null ? () -> {} : onDetach;
+    }
+
+    /** Updates the detach button's tooltip to reflect the current state (docked ⇢ pop out, floating ⇢ dock). */
+    public void setDetached(boolean detached) {
+        detachButton.setTooltip(new Tooltip(tr(detached ? "agent.redock" : "agent.detach")));
     }
 
     private void send() {

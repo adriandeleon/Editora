@@ -139,4 +139,41 @@ public final class AppInfo {
             return "";
         }
     }
+
+    /** {@code null} until first computed (then cached, possibly to {@code ""} when unavailable). */
+    private static String gitBranch;
+
+    /**
+     * The current git branch of the working tree, or {@code ""} when it can't be determined (no {@code git}
+     * on PATH, not a checkout, or a detached HEAD). Read once at runtime via {@code git rev-parse}, then
+     * cached. Surfaced in About/Welcome for <b>snapshot</b> builds so a build made from a worktree/feature
+     * branch can be told apart from one made off {@code master}. Never throws.
+     */
+    public static String gitBranch() {
+        if (gitBranch == null) {
+            gitBranch = computeGitBranch();
+        }
+        return gitBranch;
+    }
+
+    private static String computeGitBranch() {
+        try {
+            Process p = new ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD")
+                    .redirectErrorStream(true)
+                    .start();
+            String out = new String(p.getInputStream().readAllBytes()).trim();
+            if (!p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return "";
+            }
+            // "HEAD" means a detached checkout (no branch); a git error line contains whitespace. Keep only a
+            // plausible single-token ref name.
+            if (p.exitValue() != 0 || out.isEmpty() || out.equals("HEAD") || out.matches(".*\\s.*")) {
+                return "";
+            }
+            return out;
+        } catch (Exception e) {
+            return "";
+        }
+    }
 }

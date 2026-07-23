@@ -89,6 +89,9 @@ public class FindReplaceBar extends HBox {
         Button replace = new Button(tr("find.replace"));
         Button replaceAll = new Button(tr("find.all"));
         Button close = new Button("✕");
+        // Trailing clear ("✕") buttons inside each text field (shown only while the field has text).
+        Button findClear = ClearableField.clearButton(findField);
+        Button replaceClear = ClearableField.clearButton(replaceField);
 
         next.setOnAction(e -> findNext());
         prev.setOnAction(e -> findPrevious());
@@ -132,11 +135,13 @@ public class FindReplaceBar extends HBox {
                 .addAll(
                         new Label(tr("find.label")),
                         findField,
+                        findClear,
                         countLabel,
                         prev,
                         next,
                         new Label(tr("find.replaceLabel")),
                         replaceField,
+                        replaceClear,
                         replace,
                         replaceAll,
                         caseSensitive,
