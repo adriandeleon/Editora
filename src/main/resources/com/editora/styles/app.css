@@ -2560,3 +2560,9 @@
     -fx-border-width: 0;
 }
 .test-runner .test-detail .content { -fx-padding: 2 4 2 4; }
+
+/* Signature help (#674): the muted "n/m" overload counter atop the popup. */
+.lsp-signature-count {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.85em;
+}

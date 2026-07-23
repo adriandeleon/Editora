@@ -3,6 +3,20 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP signature help** (#674) — `textDocument/signatureHelp`. Client declares markdown docs +
+      `labelOffsetSupport` + `activeParameterSupport`; the pure/unit-tested **`lsp/SignatureFormat`**
+      resolves the active signature + the active parameter's `[start,end)` span (label offsets win;
+      the string-label fallback is a whole-token search so param `a` can't bold the `a` in `ab`; the
+      per-signature `activeParameter` (3.16) wins over the help-level one; out-of-range → unbolded).
+      Auto-trigger: `EditorBuffer.maybeTriggerSignatureHelp` on the immediate `multiPlainChanges`
+      subscription — three field checks per edit when off, fires only for a single typed char in the
+      server's advertised trigger/retrigger set, deferred a pulse (the `maybeAutoFill` caret lesson);
+      pushed via `setLspSignatureTriggerChars` at syncBuffer + the ready event. The popup (coordinator,
+      the hover-popup card style) deliberately survives caret *column* moves — typing arguments — and
+      closes on Escape/scroll/click-away/leaving the line/a refresh that finds no signature; the
+      typing-pause didChange listener re-requests while showing, so the bold parameter tracks commas and
+      the popup self-closes after `)`. Palette `lsp.signatureHelp` (no default chord; user-bindable).
+      *Deferred: up/down cycling through overloads while open.*
 - [x] **LSP code actions / quick fixes + `workspace/applyEdit`** (#670) — the highest-value gap the Java
       LSP review found: `textDocument/codeAction` was entirely absent, locking out most of what jdtls can do
       (quick fixes, organize imports, generate members, extract/inline). Client capabilities now declare

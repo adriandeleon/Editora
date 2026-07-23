@@ -336,6 +336,13 @@ final class LanguageServerSession implements LanguageClient {
         td.setHover(new HoverCapabilities());
         td.setDefinition(new DefinitionCapabilities());
         td.setReferences(new ReferencesCapabilities());
+        // Signature help (#674): declare markdown docs + label offsets (servers send precise active-parameter
+        // ranges only when the client says it can render them) + per-signature activeParameter.
+        var sigInfo =
+                new org.eclipse.lsp4j.SignatureInformationCapabilities(java.util.List.of("markdown", "plaintext"));
+        sigInfo.setParameterInformation(new org.eclipse.lsp4j.ParameterInformationCapabilities(true));
+        sigInfo.setActiveParameterSupport(true);
+        td.setSignatureHelp(new org.eclipse.lsp4j.SignatureHelpCapabilities(sigInfo, false));
         // Code actions (#670): literal support is what makes servers return CodeAction objects (kind,
         // isPreferred, an inline edit) instead of bare Commands; resolveSupport("edit") lets a server defer
         // the expensive edit to codeAction/resolve; dataSupport lets its opaque data ride the round-trip
@@ -652,6 +659,16 @@ final class LanguageServerSession implements LanguageClient {
             out.complete(new org.eclipse.lsp4j.ApplyWorkspaceEditResponse(false));
         }
         return out;
+    }
+
+    /** Signature help ({@code textDocument/signatureHelp}) at a position → the overloads + active
+     *  parameter, or null when unavailable/failed (#674). */
+    CompletableFuture<org.eclipse.lsp4j.SignatureHelp> signatureHelp(String uri, Position pos) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        var params = new org.eclipse.lsp4j.SignatureHelpParams(new TextDocumentIdentifier(uri), pos);
+        return server.getTextDocumentService().signatureHelp(params).exceptionally(t -> null);
     }
 
     CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(String uri, Position pos) {

@@ -601,6 +601,57 @@ public final class LspManager {
         return s != null && formattingProvider(s.capabilities());
     }
 
+    /** True if {@code file}'s server is ready and advertises signature help (#674). */
+    public boolean supportsSignatureHelp(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && signatureHelpProvider(s.capabilities());
+    }
+
+    /** Pure: whether a server's capabilities include {@code signatureHelpProvider} (null-safe). */
+    static boolean signatureHelpProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        return caps != null && caps.getSignatureHelpProvider() != null;
+    }
+
+    /** The signature-help trigger characters {@code file}'s server advertised (usually {@code (} and
+     *  {@code ,}), retrigger characters included; empty when not ready / none. */
+    public java.util.Set<Character> signatureTriggerCharacters(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s == null ? java.util.Set.of() : signatureTriggerCharsOf(s.capabilities());
+    }
+
+    /** Pure extraction of signature-help trigger + retrigger characters (null-safe). */
+    static java.util.Set<Character> signatureTriggerCharsOf(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null || caps.getSignatureHelpProvider() == null) {
+            return java.util.Set.of();
+        }
+        java.util.Set<Character> out = new java.util.HashSet<>();
+        addFirstChars(out, caps.getSignatureHelpProvider().getTriggerCharacters());
+        addFirstChars(out, caps.getSignatureHelpProvider().getRetriggerCharacters());
+        return out;
+    }
+
+    private static void addFirstChars(java.util.Set<Character> out, List<String> tokens) {
+        if (tokens != null) {
+            for (String t : tokens) {
+                if (t != null && !t.isEmpty()) {
+                    out.add(t.charAt(0));
+                }
+            }
+        }
+    }
+
+    /** Requests signature help at a 0-based position; the raw lsp4j result (or null) arrives on the FX
+     *  thread — resolved for display via {@link SignatureFormat#resolve}. */
+    public void signatureHelp(Path file, int line, int character, Consumer<org.eclipse.lsp4j.SignatureHelp> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        s.signatureHelp(uri(file), new Position(line, character))
+                .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e == null ? r : null)));
+    }
+
     /** True if {@code file}'s server is ready and advertises code actions (quick fixes — #670). */
     public boolean supportsCodeActions(Path file) {
         LanguageServerSession s = sessionFor(file);
