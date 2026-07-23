@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Inlay hints (LSP)** — the language server's parameter-name and inferred-type hints, drawn as grey
+  italic annotations after each line (aggregated per line). Off by default — toggle in Settings → Code
+  Completion or with `Toggle Inlay Hints` in the palette; costs nothing while off. (#681)
+
 - **Real language-server progress** — servers that report their long-running work through the standard
   LSP progress channel (jdtls importing/indexing a project, gopls loading packages, rust-analyzer's first
   check) now drive the status-bar loading bar and show what they're doing (title + percentage) in the

@@ -204,6 +204,7 @@ public class SettingsWindow {
     private CheckBox autocompleteMermaidCheck;
     private CheckBox completionDocCheck;
     private CheckBox semanticHighlightCheck;
+    private CheckBox inlayHintsCheck;
     private CheckBox spellCheckBox;
     private ComboBox<String> spellLanguageCombo;
     /** The Personal Dictionary list on the Spell Check page; refreshed from {@code dictionary.txt} on show. */
@@ -920,6 +921,7 @@ public class SettingsWindow {
         autocompleteMermaidCheck = viewCheck(tr("settings.autocomplete.mermaid"), Settings::setAutocompleteMermaid);
         completionDocCheck = viewCheck(tr("settings.completionDoc"), Settings::setCompletionDoc);
         semanticHighlightCheck = viewCheck(tr("settings.semanticHighlight"), Settings::setSemanticHighlight);
+        inlayHintsCheck = viewCheck(tr("settings.inlayHints"), Settings::setInlayHints);
         // The per-source toggles are only meaningful while the master switch is on.
         autocompleteCheck.selectedProperty().addListener((obs, was, now) -> {
             autocompleteProseCheck.setDisable(!now);
@@ -2713,6 +2715,13 @@ public class SettingsWindow {
                 completion,
                 semanticHighlightCheck,
                 "semantic highlighting lsp tokens types parameters fields deprecated");
+        row(
+                p,
+                Category.COMPLETION,
+                completion,
+                inlayHintsCheck,
+                "inlay hints parameter names inferred types lsp annotations");
+        inlayHintsCheck.disableProperty().bind(lspCheck.selectedProperty().not());
         // Semantic highlighting comes from LSP: disable it (+ explain why) when LSP is off.
         semanticHighlightCheck
                 .disableProperty()
@@ -6050,6 +6059,7 @@ public class SettingsWindow {
             autocompleteMermaidCheck.setDisable(!settings.isAutocomplete());
             completionDocCheck.setSelected(settings.isCompletionDoc());
             semanticHighlightCheck.setSelected(settings.isSemanticHighlight());
+            inlayHintsCheck.setSelected(settings.isInlayHints());
             pdfLineNumbersCheck.setSelected(settings.isPdfLineNumbers());
             pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
             pdfPageSizeCombo.setValue(settings.getPdfPageSize());
@@ -6619,6 +6629,7 @@ public class SettingsWindow {
             autocompleteMermaidCheck.setDisable(!s.isAutocomplete());
             completionDocCheck.setSelected(s.isCompletionDoc());
             semanticHighlightCheck.setSelected(s.isSemanticHighlight());
+            inlayHintsCheck.setSelected(s.isInlayHints());
         } finally {
             loading = prev;
         }

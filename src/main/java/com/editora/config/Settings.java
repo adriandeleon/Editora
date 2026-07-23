@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 84;
+    public static final int SCHEMA_VERSION = 85;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -132,6 +132,8 @@ public class Settings {
     /** Overlay LSP semantic tokens on the syntax highlight (resolved types/params/deprecated, …); on by
      *  default but only effective when LSP is enabled and the server advertises range semantic tokens. */
     private boolean semanticHighlight = true;
+    /** LSP inlay hints (parameter names / inferred types) drawn after each line; default off (#681). */
+    private boolean inlayHints = false;
     /** Honor a project's {@code .editorconfig} (indent, EOL, charset, trim/final-newline, max line length). */
     private boolean editorConfigSupport = true;
     /** Highlight configured patterns (TODO/FIXME/…) in the editor + list them in the TODO tool window. */
@@ -1035,6 +1037,14 @@ public class Settings {
 
     public void setSemanticHighlight(boolean semanticHighlight) {
         this.semanticHighlight = semanticHighlight;
+    }
+
+    public boolean isInlayHints() {
+        return inlayHints;
+    }
+
+    public void setInlayHints(boolean inlayHints) {
+        this.inlayHints = inlayHints;
     }
 
     public boolean isEditorConfigSupport() {

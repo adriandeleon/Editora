@@ -3,6 +3,16 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP inlay hints** (#681) — `textDocument/inlayHint` over the visible window (+ the semantic-tokens
+      pad), on the same cadence (didChange debounce, scroll-settle, ready, syncBuffer). Rendering is
+      **end-of-line aggregation**: `editor/InlayHintsOverlay` (the `InlineValuesOverlay` clone — lazy,
+      coalesced, 1×1 when empty) draws each line's hints joined in (line,col) order (pure
+      `LspCoordinator.aggregateInlayHints`, unit-tested) after the line's last glyph — deliberately NOT
+      mid-line, which would overdraw following glyphs; true inline placement needs document-model segments
+      (deferred). `Settings.inlayHints` default **off** (they're divisive), schema 84→85 additive;
+      Settings → Code Completion checkbox (disabled while LSP is off) + palette `view.toggleInlayHints`;
+      `docVersion` guard drops stale responses. `inlayLabel` joins label parts. *Deferred: true inline
+      (mid-line) rendering, `inlayHint/resolve` tooltips, `workspace/inlayHint/refresh`.*
 - [x] **Semantic-tokens delta** (#679) — client declares `requests.full.delta`; the manager caches
       `{resultId, data}` per document URI (cleared on close/shutdown; a crashed server's replacement
       rejects the old id → error → fallback to full + state cleared, self-healing). The whole-document

@@ -488,6 +488,7 @@ public class EditorBuffer implements TabContent {
 
     private SearchHighlightOverlay searchOverlay; // lazily attached — see searchOverlay()
     private OccurrenceHighlightOverlay occurrenceOverlay; // lazily attached — see occurrenceOverlay() (#675)
+    private InlayHintsOverlay inlayHintsOverlay; // lazily attached — see inlayHintsOverlay() (#681)
     /** Highlights configured TODO/FIXME-style patterns (per-pattern color), behind the text. */
     private final TodoHighlightOverlay todoOverlay = new TodoHighlightOverlay(area);
     /** Injected matcher (compiled patterns) + on/off gate; null/false = no highlight. */
@@ -2205,6 +2206,14 @@ public class EditorBuffer implements TabContent {
         return occurrenceOverlay;
     }
 
+    private InlayHintsOverlay inlayHintsOverlay() {
+        if (inlayHintsOverlay == null) {
+            inlayHintsOverlay = attachLazyOverlay(new InlayHintsOverlay(area), todoOverlay);
+            inlayHintsOverlay.setFont(fontFamily, fontSize);
+        }
+        return inlayHintsOverlay;
+    }
+
     private LogHighlightOverlay logOverlay() {
         if (logOverlay == null) {
             logOverlay = attachLazyOverlay(new LogHighlightOverlay(area), whitespace);
@@ -2278,6 +2287,18 @@ public class EditorBuffer implements TabContent {
         if (occurrenceOverlay != null) {
             occurrenceOverlay.setSpans(java.util.List.of());
         }
+    }
+
+    /** Sets the per-line LSP inlay-hint annotations (0-based line → aggregated text, drawn after the
+     *  line); null/empty clears + releases the overlay texture (#681). */
+    public void setInlayHints(java.util.Map<Integer, String> hints) {
+        if (largeFile || hints == null || hints.isEmpty()) {
+            if (inlayHintsOverlay != null) {
+                inlayHintsOverlay.setHints(java.util.Map.of());
+            }
+            return;
+        }
+        inlayHintsOverlay().setHints(hints);
     }
 
     /** Injects the document-highlight request (the coordinator asks the server and pushes spans back);
@@ -5591,6 +5612,9 @@ public class EditorBuffer implements TabContent {
         }
         whitespace.setFont(family, size);
         inlineValues.setFont(family, size);
+        if (inlayHintsOverlay != null) {
+            inlayHintsOverlay.setFont(family, size);
+        }
         if (blameLines != null) {
             // The blame annotation column width is font-relative — recompute + rebuild so it stays aligned.
             blameColumnWidth = measureBlameColumnWidth(blameLines);

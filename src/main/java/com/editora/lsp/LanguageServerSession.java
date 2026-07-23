@@ -337,6 +337,7 @@ final class LanguageServerSession implements LanguageClient {
         td.setDefinition(new DefinitionCapabilities());
         td.setReferences(new ReferencesCapabilities());
         td.setDocumentHighlight(new org.eclipse.lsp4j.DocumentHighlightCapabilities()); // occurrences (#675)
+        td.setInlayHint(new org.eclipse.lsp4j.InlayHintCapabilities()); // parameter/type hints (#681)
         // Rename (#676): prepareSupport lets the server validate the position + hand us the placeholder.
         var rename = new org.eclipse.lsp4j.RenameCapabilities();
         rename.setPrepareSupport(true);
@@ -776,6 +777,19 @@ final class LanguageServerSession implements LanguageClient {
         } catch (RuntimeException ignored) {
             // best effort — an advisory notification
         }
+    }
+
+    /** Inlay hints ({@code textDocument/inlayHint}) over {@code range} — parameter names / inferred
+     *  types — or empty (#681). */
+    CompletableFuture<List<org.eclipse.lsp4j.InlayHint>> inlayHint(String uri, org.eclipse.lsp4j.Range range) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        var params = new org.eclipse.lsp4j.InlayHintParams(new TextDocumentIdentifier(uri), range);
+        return server.getTextDocumentService()
+                .inlayHint(params)
+                .<List<org.eclipse.lsp4j.InlayHint>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
     }
 
     CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(String uri, Position pos) {

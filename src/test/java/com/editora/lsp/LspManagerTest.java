@@ -241,6 +241,33 @@ class LspManagerTest {
         assertEquals(org.eclipse.lsp4j.FileChangeType.Created, events.get(1).getType());
     }
 
+    // --- Inlay hints (#681) --------------------------------------------------------------------
+
+    @Test
+    void inlayHintProviderDetectedFromEitherForm() {
+        assertFalse(LspManager.inlayHintProvider(null));
+        assertFalse(LspManager.inlayHintProvider(new ServerCapabilities()));
+        ServerCapabilities bool = new ServerCapabilities();
+        bool.setInlayHintProvider(true);
+        assertTrue(LspManager.inlayHintProvider(bool));
+        ServerCapabilities opts = new ServerCapabilities();
+        opts.setInlayHintProvider(new org.eclipse.lsp4j.InlayHintRegistrationOptions());
+        assertTrue(LspManager.inlayHintProvider(opts));
+    }
+
+    @Test
+    void inlayLabelJoinsPartsAndStrips() {
+        var plain = new org.eclipse.lsp4j.InlayHint(
+                new org.eclipse.lsp4j.Position(0, 0), org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(" x: "));
+        assertEquals("x:", LspManager.inlayLabel(plain));
+        var parts = new org.eclipse.lsp4j.InlayHint(
+                new org.eclipse.lsp4j.Position(0, 0),
+                org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(List.of(
+                        new org.eclipse.lsp4j.InlayHintLabelPart("a"),
+                        new org.eclipse.lsp4j.InlayHintLabelPart(": int"))));
+        assertEquals("a: int", LspManager.inlayLabel(parts));
+    }
+
     // --- Rename (#676) -------------------------------------------------------------------------
 
     @Test
