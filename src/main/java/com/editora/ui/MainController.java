@@ -11080,6 +11080,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
         buffer.setFillColumn(s.getFillColumn());
         buffer.setAutoFillEnabled(s.isAutoFill()); // break prose lines at the fill column as you type (prose only)
+        buffer.setAbbrevs(config.abbreviationMap(), s.isAbbrevMode()); // dictionary from abbreviations.json + mode
         applyEditorConfig(buffer); // .editorconfig overrides the global indent/EOL/ruler/charset (when on)
     }
 
@@ -12589,6 +12590,56 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Emacs {@code set-fill-column} (`C-x f`): prompt for the fill column, persist it. */
+    /** Emacs {@code expand-abbrev} ({@code C-x a e}): expand the abbreviation before the caret now. */
+    private void expandAbbrev() {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        setStatus(buffer.expandAbbrevAtCaret() ? tr("status.abbrev.expanded") : tr("status.abbrev.noExpansion"));
+    }
+
+    /**
+     * Emacs {@code add-global-abbrev} ({@code C-x a g}): define a new abbreviation. The word before the caret
+     * pre-fills the abbreviation field; prompt for the abbreviation, then its expansion, and add it.
+     */
+    private void defineAbbrev() {
+        EditorBuffer buffer = activeBuffer();
+        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
+        String seed = "";
+        if (area != null) {
+            int caret = area.getCaretPosition();
+            seed = area.getText(com.editora.editops.Abbrev.wordStart(area.getText(), caret), caret);
+        }
+        promptText(tr("dialog.defineAbbrev.title"), tr("dialog.defineAbbrev.abbrevLabel"), seed, abbrev -> {
+            if (abbrev.isBlank()) {
+                return;
+            }
+            promptText(
+                    tr("dialog.defineAbbrev.title"),
+                    tr("dialog.defineAbbrev.expansionLabel", abbrev),
+                    "",
+                    expansion -> addAbbreviation(abbrev.strip(), expansion));
+        });
+    }
+
+    /** Adds or replaces an abbreviation (case-insensitive on the key), persists, and re-applies to buffers. */
+    private void addAbbreviation(String abbrev, String expansion) {
+        java.util.List<com.editora.config.Abbreviation> list = new java.util.ArrayList<>(config.getAbbreviations());
+        list.removeIf(a -> a.getAbbreviation().equalsIgnoreCase(abbrev));
+        list.add(new com.editora.config.Abbreviation(abbrev, expansion));
+        config.setAbbreviations(list);
+        config.saveAbbreviations();
+        applyViewSettingsToAllBuffers(config.getSettings());
+        if (settingsWindow != null) {
+            settingsWindow.syncAll();
+        }
+        setStatus(tr("status.abbrev.defined", abbrev));
+    }
+
     private void setFillColumn() {
         promptText(
                 tr("dialog.fillColumn.title"), tr("dialog.fillColumn.label"), Integer.toString(fillColumn()), value -> {
@@ -13105,6 +13156,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().isAutoFill(),
                         config.getSettings()::setAutoFill,
                         () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleAbbrevMode",
+                () -> toggleSetting(
+                        "view.toggleAbbrevMode",
+                        () -> config.getSettings().isAbbrevMode(),
+                        config.getSettings()::setAbbrevMode,
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of("edit.expandAbbrev", this::expandAbbrev));
+        registry.register(Command.of("edit.defineAbbrev", this::defineAbbrev));
+        registry.register(Command.of("abbrev.manage", () -> settingsWindow.showAbbreviations(stage)));
         registry.register(Command.of(
                 "view.toggleAutoCloseTags",
                 () -> toggleSetting(

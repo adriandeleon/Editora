@@ -2,6 +2,7 @@ package com.editora.config.migration;
 
 import java.util.Map;
 
+import com.editora.config.AbbrevStore;
 import com.editora.config.AgentSessionHistory;
 import com.editora.config.BookmarkStore;
 import com.editora.config.BreakpointStore;
@@ -140,7 +141,9 @@ public enum ConfigSchema {
                     // synced config no longer double-binds a rebound command across macOS/Windows (#439).
                     Map.entry(80, (Migration) ConfigMigrations::splitKeybindingsByPlatform),
                     Map.entry(81, (Migration) ConfigMigrations::identity), // v81→82: + githubSupport/ghPath (additive)
-                    Map.entry(82, (Migration) ConfigMigrations::identity))), // v82→83: + autoFill (additive)
+                    Map.entry(82, (Migration) ConfigMigrations::identity), // v82→83: + autoFill (additive)
+                    Map.entry(83, (Migration)
+                            ConfigMigrations::identity))), // v83→84: + abbreviations/abbrevMode (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
@@ -158,6 +161,7 @@ public enum ConfigSchema {
     // v1 → v2 backfilled agentId ("claude") on every session predating multi-agent support.
     AGENT_SESSIONS(AgentSessionHistory.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::addDefaultAgentIdToSessions)),
     MACROS(MacroStore.SCHEMA_VERSION, 1, Map.of()),
+    ABBREVIATIONS(AbbrevStore.SCHEMA_VERSION, 1, Map.of()),
     /** Trusted workspace roots. Failing open to defaults (= nothing trusted) is the safe direction here. */
     TRUST(TrustStore.SCHEMA_VERSION, 1, Map.of());
 

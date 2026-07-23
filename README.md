@@ -116,6 +116,9 @@ Editora is built with the help of AI coding tools.
   fixups (`M-\`, `M-SPC`), delete-blank-lines (`C-x C-o`), open-line (`C-o`), kill-whole-line (`C-S-DEL`),
   zap-to-char (`M-z`), balanced-expression motion (`C-M-f`/`C-M-b`, mark/kill-sexp), defun motion
   (`C-M-a`/`C-M-e`), and mark-paragraph / mark-whole-buffer. All palette-discoverable and rebindable.
+- **Abbreviations** — a text-replacement dictionary: `C-x a e` expands the abbreviation before the caret,
+  *Abbrev Mode* expands automatically as you type a terminator, `C-x a g` defines a new one, and Settings →
+  Editor → Abbreviations manages the list. Typed case is carried onto the expansion.
 - **Auto-fill mode** — automatically break plain-text and Markdown lines at the fill column as you type
   (Emacs `auto-fill-mode`). Prose-only (never wraps code); wrapped lines keep the indent. Off by default;
   Settings → Editor or `view.toggleAutoFill`. Complements `M-q` (fill paragraph).

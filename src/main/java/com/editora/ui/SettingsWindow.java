@@ -99,6 +99,7 @@ public class SettingsWindow {
         TODO(tr("settings.cat.todo"), Group.EDITOR),
         SPELL_CHECK(tr("settings.cat.spellCheck"), Group.EDITOR),
         SEARCH(tr("settings.cat.search"), Group.EDITOR),
+        ABBREVIATIONS(tr("settings.cat.abbreviations"), Group.EDITOR),
         // AI (a master enable switch, then the two AI features it gates)
         AI_GENERAL(tr("settings.cat.aiGeneral"), Group.AI, true),
         AGENT(tr("settings.cat.agent"), Group.AI, true),
@@ -263,6 +264,11 @@ public class SettingsWindow {
     private Runnable refreshToolbarLists; // re-reads the effective layout when the page is shown
 
     private boolean loadingExternalTool = false;
+    private ListView<com.editora.config.Abbreviation> abbrevList;
+    private final javafx.collections.ObservableList<com.editora.config.Abbreviation> abbrevItems =
+            javafx.collections.FXCollections.observableArrayList();
+    private boolean loadingAbbrev = false;
+    private CheckBox abbrevModeCheck;
 
     /** Working copy of the saved SFTP connections, edited live by the Remote master-detail page. */
     private final javafx.collections.ObservableList<com.editora.vfs.RemoteConnection> remoteItems =
@@ -518,6 +524,11 @@ public class SettingsWindow {
     public void showSnippets(Window owner) {
         show(owner);
         sidebar.getSelectionModel().select(Category.SNIPPETS);
+    }
+
+    public void showAbbreviations(Window owner) {
+        show(owner);
+        sidebar.getSelectionModel().select(Category.ABBREVIATIONS);
     }
 
     /** Opens Settings focused on the Toolbar customization page (the {@code view.customizeToolbar} command). */
@@ -1515,6 +1526,7 @@ public class SettingsWindow {
         pages.put(Category.BUILD_TOOLS, buildToolsPage());
         pages.put(Category.WEB, webPage());
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
+        pages.put(Category.ABBREVIATIONS, abbreviationsPage());
         // Version control
         pages.put(Category.GIT, gitPage());
         pages.put(Category.GITHUB, githubPage());
@@ -3952,6 +3964,148 @@ public class SettingsWindow {
     }
 
     /** Deep-copies the persisted tools so the working list edits independently until persisted. */
+    private VBox abbreviationsPage() {
+        VBox p = page(tr("settings.cat.abbreviations"));
+        row(
+                p,
+                Category.ABBREVIATIONS,
+                null,
+                abbreviationsEditor(),
+                "abbrev abbreviation expand text replacement snippet shortcut dictionary emacs");
+        return p;
+    }
+
+    /** Master-detail editor for the user abbreviation dictionary (abbrev → expansion), plus the auto-expand toggle. */
+    private javafx.scene.Node abbreviationsEditor() {
+        reloadAbbrevs();
+
+        abbrevModeCheck = viewCheck(tr("settings.abbrevMode"), Settings::setAbbrevMode);
+        abbrevModeCheck.setSelected(config.getSettings().isAbbrevMode());
+        Label note = new Label(tr("settings.abbrev.note"));
+        note.getStyleClass().add("settings-note");
+        note.setWrapText(true);
+
+        ListView<com.editora.config.Abbreviation> list = new ListView<>(abbrevItems);
+        abbrevList = list;
+        list.setPrefSize(170, 220);
+        list.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(com.editora.config.Abbreviation a, boolean empty) {
+                super.updateItem(a, empty);
+                setText(
+                        empty || a == null || a.getAbbreviation().isBlank()
+                                ? (empty || a == null ? null : tr("settings.abbrev.unnamed"))
+                                : a.getAbbreviation());
+            }
+        });
+
+        TextField abbrev = new TextField();
+        TextField expansion = new TextField();
+        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
+        form.setHgap(8);
+        form.setVgap(6);
+        formRow(form, 0, tr("settings.abbrev.abbreviation"), abbrev);
+        formRow(form, 1, tr("settings.abbrev.expansion"), expansion);
+        form.setDisable(true);
+        HBox.setHgrow(form, Priority.ALWAYS);
+
+        Runnable commit = () -> {
+            com.editora.config.Abbreviation a = list.getSelectionModel().getSelectedItem();
+            if (a == null || loadingAbbrev) {
+                return;
+            }
+            a.setAbbreviation(abbrev.getText());
+            a.setExpansion(expansion.getText());
+            list.refresh();
+            persistAbbrevs();
+        };
+        java.util.function.Consumer<TextField> wire = tf -> {
+            tf.setOnAction(e -> commit.run());
+            tf.focusedProperty().addListener((o, was, now) -> {
+                if (!now) {
+                    commit.run();
+                }
+            });
+        };
+        wire.accept(abbrev);
+        wire.accept(expansion);
+
+        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            loadingAbbrev = true;
+            try {
+                form.setDisable(now == null);
+                abbrev.setText(now == null ? "" : now.getAbbreviation());
+                expansion.setText(now == null ? "" : now.getExpansion());
+            } finally {
+                loadingAbbrev = false;
+            }
+        });
+
+        Button add = new Button(tr("settings.abbrev.add"));
+        add.setOnAction(e -> {
+            com.editora.config.Abbreviation a = new com.editora.config.Abbreviation("", "");
+            abbrevItems.add(a);
+            persistAbbrevs();
+            list.getSelectionModel().select(a);
+            abbrev.requestFocus();
+        });
+        Button remove = new Button(tr("settings.abbrev.remove"));
+        remove.setOnAction(e -> {
+            int i = list.getSelectionModel().getSelectedIndex();
+            if (i >= 0) {
+                abbrevItems.remove(i);
+                persistAbbrevs();
+            }
+        });
+        Button save = new Button(tr("settings.save"));
+        save.disableProperty().bind(form.disabledProperty());
+        save.setOnAction(e -> commit.run());
+
+        VBox left = new VBox(6, list);
+        VBox.setVgrow(list, Priority.ALWAYS);
+        VBox right = new VBox(8, form);
+        VBox.setVgrow(form, Priority.ALWAYS);
+        HBox.setHgrow(right, Priority.ALWAYS);
+        if (!abbrevItems.isEmpty()) {
+            list.getSelectionModel().select(0);
+        }
+        HBox top = new HBox(12, left, right);
+        top.setAlignment(Pos.TOP_LEFT);
+        VBox.setVgrow(top, Priority.ALWAYS);
+        HBox buttons = new HBox(6, add, remove, spacer(), save);
+        buttons.setAlignment(Pos.CENTER_LEFT);
+        return new VBox(8, abbrevModeCheck, note, top, buttons);
+    }
+
+    private void persistAbbrevs() {
+        config.setAbbreviations(new java.util.ArrayList<>(abbrevItems));
+        config.saveAbbreviations();
+    }
+
+    private void reloadAbbrevs() {
+        var selected =
+                abbrevList == null ? null : abbrevList.getSelectionModel().getSelectedItem();
+        String selectedKey = selected == null ? null : selected.getAbbreviation();
+        abbrevItems.setAll(copyAbbrevs(config.getAbbreviations()));
+        if (abbrevList != null && selectedKey != null) {
+            for (var a : abbrevItems) {
+                if (selectedKey.equals(a.getAbbreviation())) {
+                    abbrevList.getSelectionModel().select(a);
+                    break;
+                }
+            }
+        }
+    }
+
+    private static java.util.List<com.editora.config.Abbreviation> copyAbbrevs(
+            java.util.List<com.editora.config.Abbreviation> src) {
+        java.util.List<com.editora.config.Abbreviation> out = new java.util.ArrayList<>();
+        for (com.editora.config.Abbreviation a : src) {
+            out.add(new com.editora.config.Abbreviation(a.getAbbreviation(), a.getExpansion()));
+        }
+        return out;
+    }
+
     private static java.util.List<com.editora.externaltool.ExternalTool> copyTools(
             java.util.List<com.editora.externaltool.ExternalTool> src) {
         java.util.List<com.editora.externaltool.ExternalTool> out = new java.util.ArrayList<>();
@@ -5931,6 +6085,9 @@ public class SettingsWindow {
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
             autoFillCheck.setSelected(settings.isAutoFill());
+            if (abbrevModeCheck != null) {
+                abbrevModeCheck.setSelected(settings.isAbbrevMode());
+            }
             autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
             rebuildTodoRows();
@@ -6529,6 +6686,9 @@ public class SettingsWindow {
             csvRainbowCheck.setSelected(s.isCsvRainbow());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());
             autoFillCheck.setSelected(s.isAutoFill());
+            if (abbrevModeCheck != null) {
+                abbrevModeCheck.setSelected(s.isAbbrevMode());
+            }
             autoCloseTagsCheck.setSelected(s.isAutoCloseTags());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
             rebuildTodoRows();

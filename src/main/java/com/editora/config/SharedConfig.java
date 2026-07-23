@@ -60,6 +60,8 @@ public class SharedConfig {
     private TrustStore trustStore = new TrustStore();
     /** Saved keyboard macros (app-global, not per-project), stored in {@code macros.json} — see {@link MacroStore}. */
     private MacroStore macroStore = new MacroStore();
+    /** User abbreviation dictionary (app-global), stored in {@code abbreviations.json} — see {@link AbbrevStore}. */
+    private AbbrevStore abbrevStore = new AbbrevStore();
     /** User-added spell-check words (one per line in {@code dictionary.txt}); lower-cased, shared globally. */
     private final java.util.Set<String> userDictionary = new java.util.LinkedHashSet<>();
     /** The shared projects index ({@code projects.json}) — one source of truth across all windows. */
@@ -101,6 +103,7 @@ public class SharedConfig {
         loadPlugins();
         loadTrust();
         loadMacros();
+        loadAbbreviations();
         loadUserDictionary();
     }
 
@@ -207,6 +210,10 @@ public class SharedConfig {
         return configDir.resolve(ConfigManager.MACROS_FILE_NAME);
     }
 
+    public Path getAbbreviationsFile() {
+        return configDir.resolve(ConfigManager.ABBREVIATIONS_FILE_NAME);
+    }
+
     /** The plugin install root: {@code <configDir>/plugins} (each plugin lives in its own subdirectory). */
     public Path getPluginsDir() {
         return configDir.resolve(ConfigManager.PLUGINS_DIR_NAME);
@@ -283,6 +290,45 @@ public class SharedConfig {
             ConfigWriter.writeAtomic(getMacrosFile(), json, macroStore);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write macros to " + getMacrosFile(), e);
+        }
+    }
+
+    // --- abbreviations (app-global) ---
+
+    public java.util.List<Abbreviation> getAbbreviations() {
+        return abbrevStore.abbreviations == null ? java.util.List.of() : abbrevStore.abbreviations;
+    }
+
+    public void setAbbreviations(java.util.List<Abbreviation> abbreviations) {
+        abbrevStore.abbreviations = abbreviations == null ? new java.util.ArrayList<>() : abbreviations;
+    }
+
+    /** The abbreviations as a lower-cased-key → expansion map, for {@link com.editora.editops.Abbrev}. */
+    public java.util.Map<String, String> abbreviationMap() {
+        java.util.Map<String, String> m = new java.util.HashMap<>();
+        for (Abbreviation a : getAbbreviations()) {
+            if (a.getAbbreviation() != null && !a.getAbbreviation().isBlank()) {
+                m.put(a.getAbbreviation().toLowerCase(java.util.Locale.ROOT), a.getExpansion());
+            }
+        }
+        return m;
+    }
+
+    private void loadAbbreviations() {
+        if (Files.exists(getAbbreviationsFile())) {
+            abbrevStore = ConfigMigrations.readVersioned(
+                    getAbbreviationsFile(), json, new AbbrevStore(), ConfigSchema.ABBREVIATIONS);
+        } else {
+            abbrevStore = new AbbrevStore();
+        }
+    }
+
+    public void saveAbbreviations() {
+        try {
+            Files.createDirectories(configDir);
+            ConfigWriter.writeAtomic(getAbbreviationsFile(), json, abbrevStore);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to write abbreviations to " + getAbbreviationsFile(), e);
         }
     }
 

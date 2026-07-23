@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 83;
+    public static final int SCHEMA_VERSION = 84;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -149,6 +149,7 @@ public class Settings {
     private String todoPriorityLowColor = com.editora.todo.TodoColors.priorityColor("low");
 
     private java.util.List<com.editora.externaltool.ExternalTool> externalTools = new java.util.ArrayList<>();
+    private boolean abbrevMode = false; // auto-expand abbreviations as you type on a word terminator
     /**
      * The user's customized main-toolbar layout (item ids + {@code "|"} separator tokens from {@code
      * com.editora.toolbar.ToolbarCatalog}). Empty ⇒ use {@code ToolbarCatalog.defaultLayout()}, so the
@@ -1139,6 +1140,14 @@ public class Settings {
 
     public void setExternalTools(java.util.List<com.editora.externaltool.ExternalTool> externalTools) {
         this.externalTools = externalTools;
+    }
+
+    public boolean isAbbrevMode() {
+        return abbrevMode;
+    }
+
+    public void setAbbrevMode(boolean abbrevMode) {
+        this.abbrevMode = abbrevMode;
     }
 
     public java.util.List<String> getToolbarLayout() {
