@@ -55,6 +55,13 @@ final class LspCoordinator {
         /** Opens {@code file} (if needed) and moves the caret to a 0-based LSP line/column. */
         void openAndGoto(Path file, int line0, int col0);
 
+        /** Opens (selected) a read-only in-memory buffer — no path, {@code language} highlighting — used for
+         *  a {@code jdt://} class-file's fetched source (#665). Returns the buffer (null if refused). */
+        EditorBuffer openReadOnlyDoc(String title, String content, String language);
+
+        /** Re-selects the tab holding {@code buffer}; false when that tab has been closed. */
+        boolean selectBufferTab(EditorBuffer buffer);
+
         /** Whether the active buffer is editable (formatting is a no-op on a read-only/huge buffer). */
         boolean activeEditable();
 
@@ -152,6 +159,74 @@ final class LspCoordinator {
         this.ops = ops;
         this.problemsPanel = new ProblemsPanel(ops::openAndGoto);
         this.referencesPanel = new ReferencesPanel(ops::openAndGoto);
+        lspManager.setOnSessionCrashed(this::onSessionCrashed);
+    }
+
+    /** How many on-their-own session deaths per (server, root) within {@link #CRASH_WINDOW_NANOS} are
+     *  auto-restarted before giving up (a crash-looping server must not be re-forked forever). */
+    private static final int MAX_AUTO_RESTARTS = 2;
+
+    /** The sliding window over which crashes are counted toward {@link #MAX_AUTO_RESTARTS} (5 min — wide
+     *  enough that even a 60 s initialize-timeout loop is caught, narrow enough that a one-off crash an
+     *  hour later restarts again). */
+    private static final long CRASH_WINDOW_NANOS = java.util.concurrent.TimeUnit.MINUTES.toNanos(5);
+
+    /** (serverId + root) → recent crash timestamps (nanoTime), pruned to the window on each crash. */
+    private final Map<String, java.util.ArrayDeque<Long>> recentCrashes = new java.util.HashMap<>();
+
+    /**
+     * A session died on its own — process crash or failed/timed-out handshake, never a deliberate shutdown
+     * (already on the FX thread; see {@code LspManager.setOnSessionCrashed}). Before this hook existed a
+     * crashed server stayed dead for the rest of the session: {@code syncBuffer} (which would re-open) only
+     * ran from settings-applies or {@code onBufferShown}, and a crashed buffer isn't in the deferred set —
+     * so tabbing away and back did nothing, didChange silently no-oped, and stale diagnostics lingered
+     * (#666). Now: clear the dead session's diagnostics, then route each affected buffer back through
+     * {@link #syncBufferWhenShown} — the active buffer restarts the server immediately, background buffers
+     * re-enter the deferred set and restart on first show (the same policy as startup). Capped per
+     * (server, root) so a crash-looping server isn't re-forked forever.
+     */
+    private void onSessionCrashed(String serverId, Path root) {
+        if (!ops.lspFeatureEnabled() || !serverEnabled(serverId)) {
+            return;
+        }
+        boolean restart = shouldAutoRestart(serverId + " " + root, System.nanoTime());
+        host.setStatus(tr(restart ? "status.lsp.crashed" : "status.lsp.crashLoop", serverLabel(serverId)));
+        host.forEachBuffer(b -> {
+            Path p = b.getPath();
+            if (p == null || !serverId.equals(serverIdForBuffer(b))) {
+                return;
+            }
+            if (lspManager.isManaged(p)) {
+                return; // served by a DIFFERENT still-live session of this server (another root) — untouched
+            }
+            b.setLspActive(false); // drop the dead session's squiggles/stripes immediately
+            clearDiagnostics(p); // …and its stale Problems entries (nothing will ever re-publish them)
+            if (restart) {
+                syncBufferWhenShown(b); // active → re-open (forks a fresh server) now; background → on show
+            }
+        });
+        updateStatusBar();
+    }
+
+    /** Records a crash of {@code key} at {@code nowNanos} and decides whether to auto-restart: true while the
+     *  window holds at most {@link #MAX_AUTO_RESTARTS} crashes, false once the server is crash-looping. */
+    private boolean shouldAutoRestart(String key, long nowNanos) {
+        return recordCrashAndDecide(
+                recentCrashes.computeIfAbsent(key, k -> new java.util.ArrayDeque<>()),
+                nowNanos,
+                CRASH_WINDOW_NANOS,
+                MAX_AUTO_RESTARTS);
+    }
+
+    /** Pure sliding-window decision behind {@link #shouldAutoRestart}: prunes {@code times} to the window,
+     *  records {@code nowNanos}, and allows the restart while the window holds ≤ {@code maxRestarts} crashes. */
+    static boolean recordCrashAndDecide(
+            java.util.ArrayDeque<Long> times, long nowNanos, long windowNanos, int maxRestarts) {
+        while (!times.isEmpty() && nowNanos - times.peekFirst() > windowNanos) {
+            times.removeFirst();
+        }
+        times.addLast(nowNanos);
+        return times.size() <= maxRestarts;
     }
 
     /** The Problems tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
@@ -922,9 +997,59 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.noDefinition"));
             } else {
                 LspManager.Target t = targets.get(0);
-                ops.openAndGoto(t.file(), t.line(), t.character());
+                if (t.file() != null) {
+                    ops.openAndGoto(t.file(), t.line(), t.character());
+                } else {
+                    openLibraryDefinition(b, t); // a jdt:// class-file target (JDK/dependency source) — #665
+                }
             }
         });
+    }
+
+    /**
+     * Class-file source tabs already opened from a {@code jdt://} definition, keyed by URI so a repeated
+     * {@code M-.} on the same class re-selects its tab instead of spawning another. Weak values: a closed
+     * tab's buffer is disposed and must be collectable; a stale entry just falls through to a re-fetch.
+     */
+    private final Map<String, java.lang.ref.WeakReference<EditorBuffer>> libraryBuffers = new java.util.HashMap<>();
+
+    /**
+     * Opens the source of a JDK/dependency class the server reported under a {@code jdt://} URI: fetched via
+     * jdtls's {@code java/classFileContents} into a read-only, Java-highlighted, path-less buffer (#665).
+     * Before this, such a definition was silently dropped and {@code M-.} on {@code String}/{@code List}
+     * reported "no definition". {@code anchor} is the buffer the navigation started from (it routes the
+     * request to the right session).
+     */
+    private void openLibraryDefinition(EditorBuffer anchor, LspManager.Target t) {
+        String uri = t.classFileUri();
+        var ref = libraryBuffers.get(uri);
+        EditorBuffer existing = ref == null ? null : ref.get();
+        if (existing != null && ops.selectBufferTab(existing)) {
+            gotoInBuffer(existing, t.line(), t.character());
+            return;
+        }
+        host.setStatus(tr("status.lsp.libraryLoading"));
+        lspManager.classFileContents(anchor.getPath(), uri, content -> {
+            if (content == null) {
+                host.setStatus(tr("status.lsp.libraryUnavailable"));
+                return;
+            }
+            EditorBuffer opened = ops.openReadOnlyDoc(LspManager.classFileTitle(uri), content, "java");
+            if (opened != null) {
+                libraryBuffers.put(uri, new java.lang.ref.WeakReference<>(opened));
+                gotoInBuffer(opened, t.line(), t.character());
+            }
+        });
+    }
+
+    /** Moves {@code buffer}'s caret to a 0-based line/column (clamped) and scrolls it into view. */
+    private static void gotoInBuffer(EditorBuffer buffer, int line0, int col0) {
+        CodeArea a = buffer.getFocusedArea();
+        int par = Math.max(0, Math.min(line0, a.getParagraphs().size() - 1));
+        int col = Math.max(0, Math.min(col0, a.getParagraph(par).length()));
+        a.moveTo(par, col);
+        a.requestFollowCaret();
+        a.requestFocus();
     }
 
     void findReferences() {
@@ -1045,6 +1170,11 @@ final class LspCoordinator {
         }
         int tabSize = host.settings().getTabSize();
         host.setStatus(tr("status.lsp.formatting"));
+        // Sync the latest text first (like gotoDefinition/findReferences/showHover): the didChange debounce
+        // can leave the server's copy ~300 ms behind, and formatting the STALE server text yields edits whose
+        // offsets don't line up with the document on screen (#667). Redundant when already current, but a
+        // full-text didChange is cheap next to the formatting round-trip itself.
+        lspManager.changeDocument(path, buffer.text());
         // The server computes whole-document edits (line/col based) against the text as it is NOW. If the
         // user edits during the async round-trip, those offsets no longer line up — and applyLspEdits only
         // clamps + swallows, so a stale format silently corrupts the file (every line mis-formatted/shifted).

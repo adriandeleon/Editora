@@ -110,6 +110,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Go to Definition now reaches JDK and dependency classes.** A Java definition inside a library — jdtls
+  reports it under a `jdt://` URI, not a file — was silently dropped, so `M-.` on `String`, `List`, or any
+  dependency symbol claimed "no definition". The class's source is now fetched from the server
+  (`java/classFileContents`) and opened in a read-only, Java-highlighted tab at the right line; a repeated
+  jump to the same class re-selects its tab. (#665)
+- **A crashed language server is restarted automatically.** A server that died mid-session (crash, OOM-kill,
+  failed startup handshake) previously stayed dead until an app restart or a manual *Restart Language
+  Servers* — diagnostics froze, edits stopped syncing, and nothing said why. The crash is now announced in
+  the status bar, its stale diagnostics are cleared, and the server is restarted for the affected files —
+  with a cap, so a server that keeps crashing isn't re-launched forever. A server dying during startup also
+  stops the loading bar immediately instead of spinning for a minute. (#666)
+- **Format Document formats what's on screen, not a stale copy.** The formatting request now syncs the
+  document first (like go-to-definition already did), so formatting right after typing can't produce edits
+  against a ~300 ms-old revision; and a stale whole-document edit whose position lies beyond the file is now
+  skipped rather than clamped onto the last line. (#667)
+- **Two windows on the same Java project no longer share one jdtls workspace.** Each window's jdtls now
+  claims its own `-data` workspace dir (the second claimant gets a suffixed dir), so concurrent windows can't
+  contend for the same Eclipse workspace lock/index. (#668)
+- **Language servers shut down when their last file closes.** Closing the last open file of a project root
+  now stops that root's language server after a short idle grace (3 min), instead of keeping it — a whole
+  jdtls JVM per browsed project — alive until the window closes. Reopening a file within the grace period
+  keeps the server warm. (#669)
 - **Snippet transforms are no longer discarded.** A `${1/…/…/}` occurrence was rendered as a plain mirror, so
   the bundled PowerShell `foreach-item` expanded to `foreach (users in users)` — the loop variable colliding
   with the collection — and `splat` produced `$Get-ItemParams`, which PowerShell parses as a subtraction.

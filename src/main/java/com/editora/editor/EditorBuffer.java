@@ -8327,11 +8327,6 @@ public class EditorBuffer implements TabContent {
         hideGhost();
     }
 
-    /**
-     * Applies language-server text edits (e.g. a completion's {@code additionalTextEdits} — the
-     * {@code import} line a TypeScript auto-import adds). Edits are applied bottom-to-top so earlier
-     * offsets stay valid; out-of-range positions are clamped/skipped. Inert when not editable.
-     */
     /** Whether this file's detected indentation is spaces rather than tabs — the LSP formatting hint. */
     public boolean detectInsertSpaces(int tabSize) {
         if (indentInsertSpacesOverride != null) {
@@ -8377,6 +8372,14 @@ public class EditorBuffer implements TabContent {
         applyLspEdits(LspEditShift.shift(edits, pendingCompletionShift));
     }
 
+    /**
+     * Applies language-server text edits (e.g. Format Document's whole-file edit set, or a completion's
+     * {@code additionalTextEdits} — the {@code import} line an auto-import adds). Edits apply as one undoable
+     * commit. Column positions beyond a line's length are clamped (the LSP spec's rule), but an edit whose
+     * <em>start line</em> lies entirely beyond the document is skipped, not clamped — no valid edit begins
+     * past the end of the file, so such a position means the server computed against a stale revision, and
+     * clamping it onto the last line would apply the edit at a wrong place (#667). Inert when not editable.
+     */
     public void applyLspEdits(java.util.List<LspTextEdit> edits) {
         if (edits == null || edits.isEmpty() || !isEditable()) {
             return;
@@ -8387,6 +8390,7 @@ public class EditorBuffer implements TabContent {
         // unit — a multi-line Format Document (or an auto-import's additional edits) was previously one
         // replaceText per edit, so it took many Ctrl-Z to revert (#415, the Format-Document sub-item).
         int len = a.getLength();
+        int lineCount = a.getParagraphs().size();
         java.util.List<int[]> ranges = new java.util.ArrayList<>(); // {start, end}
         java.util.List<String> texts = new java.util.ArrayList<>();
         java.util.List<LspTextEdit> asc = new java.util.ArrayList<>(edits);
@@ -8394,6 +8398,9 @@ public class EditorBuffer implements TabContent {
         int last = 0;
         for (LspTextEdit e : asc) {
             try {
+                if (e.startLine() >= lineCount) {
+                    continue; // start beyond the document — a stale edit; clamping would misplace it (#667)
+                }
                 int s = lspOffset(a, e.startLine(), e.startCol());
                 int en = lspOffset(a, e.endLine(), e.endCol());
                 int from = Math.min(s, en);

@@ -171,9 +171,12 @@ Editora is built with the help of AI coding tools.
   auto-detected on `PATH` (Java/JDT LS, TypeScript/JavaScript, Python/Pyright, Go, Rust, C/C++/clangd,
   C#, PHP, Ruby, Kotlin, Lua, Bash, XML, JSON, YAML, HTML, CSS, Dockerfile, SQL, Terraform, TOML, Typst/tinymist).
   Inline diagnostics + a Problems tool window (`M-8`) + minimap/scrollbar stripes, go-to-definition
-  (`M-.`), find references (`M-?`), hover docs (`C-c h`), LSP-backed completion, auto-imports, and
+  (`M-.` — for Java this includes JDK/dependency classes, opened as read-only library source), find
+  references (`M-?`), hover docs (`C-c h`), LSP-backed completion, auto-imports, and
   **Format Document** (whole-file reformat via the server, when it advertises formatting — palette or the
-  editor right-click menu). Off by default; per-server command + enable in *Settings → LSP*.
+  editor right-click menu). A crashed server is restarted automatically (with a crash-loop cap), and a
+  root's server shuts down a few minutes after its last file closes. Off by default; per-server command +
+  enable in *Settings → LSP*.
 - **Search** — incremental find bar (`C-s`/`C-r`) with regex, case, and whole-word toggles, a match
   count, and live highlight-all; **Find in Files** (`C-S-f`) across the project + open buffers with
   include/exclude file globs, query history, regex capture-group replace (`$1`), `.gitignore` exclusion
