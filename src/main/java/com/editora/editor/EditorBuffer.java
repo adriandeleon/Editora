@@ -2231,19 +2231,39 @@ public class EditorBuffer implements TabContent {
         refreshTodoMarks();
     }
 
+    /** Discards an in-flight background TODO scan whose result would be stale (mirrors {@link #highlightGen}). */
+    private long todoGen;
+
     /** Re-scans the buffer text and updates the highlight overlay + the scrollbar/minimap overview stripes;
-     *  inert when off / no matcher / huge file. */
+     *  inert when off / no matcher / huge file. The multi-pattern scan runs off the FX thread (a generation
+     *  counter discards a superseded result), so a large-but-under-cap file doesn't spend tens of ms scanning
+     *  on the FX thread per debounced edit pulse — mirroring how {@link #applyHighlighting} tokenizes. */
     private void refreshTodoMarks() {
+        long gen = ++todoGen; // any newer pulse (or dispose) supersedes an in-flight scan
         if (!todoEnabled || todoMatcher == null || largeFile) {
             todoOverlay.setMarks(java.util.List.of());
             todoStripe.setMarks(java.util.List.of());
             minimap.setTodoMarks(java.util.List.of());
             return;
         }
-        java.util.List<TodoMark> marks = todoMatcher.match(area.getText());
-        todoOverlay.setMarks(marks);
-        todoStripe.setMarks(marks);
-        minimap.setTodoMarks(marks);
+        TodoMatcher matcher = todoMatcher; // may be reassigned on the FX thread; capture the current one
+        String text = area.getText();
+        HIGHLIGHT_POOL.execute(() -> {
+            java.util.List<TodoMark> marks;
+            try {
+                marks = matcher.match(text);
+            } catch (RuntimeException e) {
+                return; // never let a pathological user pattern kill the scan thread
+            }
+            Platform.runLater(() -> {
+                if (gen != todoGen) {
+                    return; // a newer edit/scan superseded this pass
+                }
+                todoOverlay.setMarks(marks);
+                todoStripe.setMarks(marks);
+                minimap.setTodoMarks(marks);
+            });
+        });
     }
 
     /** Starts AceJump: the next typed character labels its visible occurrences to jump the caret. */
@@ -3833,6 +3853,9 @@ public class EditorBuffer implements TabContent {
      * letter/digit), expand the word that ended just before it. The terminator stays. Same guarded
      * {@code plainTextChanges} shape as {@link #maybeAutoFill}; the first field check short-circuits when off.
      */
+    /** Longest word an abbreviation lookup will scan back over — bounds the per-keystroke text slice below. */
+    private static final int MAX_ABBREV_LOOKBACK = 256;
+
     private void maybeExpandAbbrev(org.fxmisc.richtext.model.PlainTextChange c) {
         if (!abbrevMode || applyingAbbrev || hugeFile || !isEditable() || abbrevTable.isEmpty()) {
             return;
@@ -3853,17 +3876,23 @@ public class EditorBuffer implements TabContent {
         if (multiCaretActiveOn(a)) {
             return;
         }
-        // The terminator sits at c.getPosition(); expand the word ending there.
-        com.editora.editops.Abbrev.Edit edit =
-                com.editora.editops.Abbrev.expand(a.getText(), c.getPosition(), abbrevTable);
+        // The terminator sits at c.getPosition(); the word ending there fits in a bounded window before it, so
+        // slice just that window instead of materializing the whole document — this runs per word-terminator
+        // keystroke. expand()'s offsets are window-relative; shift them back into document coordinates.
+        int point = Math.min(c.getPosition(), a.getLength());
+        int windowStart = Math.max(0, point - MAX_ABBREV_LOOKBACK);
+        String window = a.getText(windowStart, point);
+        com.editora.editops.Abbrev.Edit edit = com.editora.editops.Abbrev.expand(window, window.length(), abbrevTable);
         if (edit == null) {
             return;
         }
+        int from = windowStart + edit.from();
+        int to = windowStart + edit.to();
         int caret = a.getCaretPosition();
-        int delta = edit.replacement().length() - (edit.to() - edit.from());
+        int delta = edit.replacement().length() - (to - from);
         applyingAbbrev = true;
         try {
-            a.replaceText(edit.from(), edit.to(), edit.replacement());
+            a.replaceText(from, to, edit.replacement());
         } finally {
             applyingAbbrev = false;
         }
@@ -3924,6 +3953,13 @@ public class EditorBuffer implements TabContent {
         javafx.application.Platform.runLater(() -> a.moveTo(Math.min(restored, a.getLength())));
     }
 
+    /**
+     * Left/right context the local tag-name pre-check needs around an edit: at least {@code MAX_NAME + 2}
+     * (the longest name plus its {@code </}) so the window reproduces {@link com.editora.editops.TagRename}'s
+     * own region decision without a false negative.
+     */
+    private static final int TAG_RENAME_LOOKBACK = com.editora.editops.TagRename.MAX_NAME + 2;
+
     private void maybeMirrorTagRename(org.fxmisc.richtext.model.PlainTextChange c) {
         if (!autoRenameTag || applyingTagRename || largeFile || hugeFile || !isEditable()) {
             return;
@@ -3937,8 +3973,21 @@ public class EditorBuffer implements TabContent {
                 || (area2 != null && area2.getUndoManager().isPerformingAction())) {
             return;
         }
-        com.editora.editops.TagRename.Mirror m = com.editora.editops.TagRename.mirror(
-                area.getText(), c.getPosition(), c.getRemoved(), c.getInserted(), html);
+        // TagRename.mirror only has work when the edit lands inside a tag name — a fully-local test that reads
+        // just a bounded neighborhood of the change. Run it on a small window first so the vast majority of
+        // keystrokes (in text, attributes, anywhere but a tag name) skip materializing the whole document — an
+        // O(n) String this runs per keystroke. Only a confirmed tag-name edit pays the full getText + lex.
+        int changePos = c.getPosition();
+        int changeEnd = changePos + c.getInserted().length();
+        int docLen = area.getLength();
+        int winStart = Math.max(0, changePos - TAG_RENAME_LOOKBACK);
+        int winEnd = Math.min(docLen, changeEnd + TAG_RENAME_LOOKBACK);
+        String window = area.getText(winStart, winEnd);
+        if (!com.editora.editops.TagRename.changeInTagName(window, changePos - winStart, changeEnd - winStart)) {
+            return;
+        }
+        com.editora.editops.TagRename.Mirror m =
+                com.editora.editops.TagRename.mirror(area.getText(), changePos, c.getRemoved(), c.getInserted(), html);
         if (m == null) {
             return;
         }
@@ -4364,6 +4413,7 @@ public class EditorBuffer implements TabContent {
         disposeMultiCaret();
         previewGen++; // discard any in-flight preview result for this (now closed) buffer
         highlightGen++; // discard any in-flight highlight result
+        todoGen++; // discard any in-flight TODO scan result
         languageGen++; // discard any in-flight deferred grammar load
     }
 
