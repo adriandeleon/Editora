@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   until you widen; undo history is dropped at the narrowing boundary, though edits made while narrowed undo
   normally.
 
+- **Snippet regex transforms** (`${1/regex/format/flags}`). A tab stop can now derive one occurrence's text
+  from another's — the VS Code `FormatString` in full: group references, the seven case modifiers
+  (`/upcase` `/downcase` `/capitalize` `/camelcase` `/pascalcase` `/snakecase` `/kebabcase`) and the four
+  conditional forms (`${1:+if}` `${1:-else}` `${1:else}` `${1:?if:else}`). The transform updates live as you
+  type into the field.
 - **Emacs rectangle commands** (`C-x r …`) — operate on the *columns* between point and mark instead of the
   linear span: kill (`C-x r k`), copy (`C-x r M-w`), yank (`C-x r y`), delete (`C-x r d`), clear to spaces
   (`C-x r c`), open/shift-right (`C-x r o`), replace every line's segment with a string (`C-x r t`) and
@@ -67,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Snippet transforms are no longer discarded.** A `${1/…/…/}` occurrence was rendered as a plain mirror, so
+  the bundled PowerShell `foreach-item` expanded to `foreach (users in users)` — the loop variable colliding
+  with the collection — and `splat` produced `$Get-ItemParams`, which PowerShell parses as a subtraction.
+  They now derive correctly (`foreach ($usersItem in $users)`, `$Get_ItemParams`).
+- **A snippet's value is no longer stolen by a leading mirror.** When a plain `$1` or a transform occurrence
+  appeared before the `${1:default}` that gives the stop its value, the default was dropped and every
+  occurrence rendered empty — `$1 and ${1:default}` expanded to ` and `. The value-defining placeholder now
+  wins wherever it sits in the body.
 - **Regex capture groups now work in the find bar's replace.** `$1` was being inserted *literally* — searching
   `(\w+)_(\w+)` and replacing with `$2-$1` put the text `$2-$1` into the buffer. The same query in Find in
   Files substituted correctly, so the two halves of search disagreed and the documentation described the

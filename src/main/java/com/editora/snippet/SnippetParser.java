@@ -1,9 +1,12 @@
 package com.editora.snippet;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Parses a TextMate/VS Code snippet body into a {@link ParsedSnippet}: the literal text to insert plus
@@ -13,14 +16,29 @@ import java.util.Map;
  * <ul>
  *   <li>tab stops {@code $1 $2 … $0} (0 = final caret);</li>
  *   <li>placeholders {@code ${1:default}} (the default may itself contain nested stops/variables);</li>
- *   <li>mirrors — a number repeated reuses the first occurrence's text and tracks it live;</li>
- *   <li>choices {@code ${1|a,b,c|}} — the first option is used as the default (a dropdown is a later
- *       enhancement);</li>
+ *   <li>mirrors — a number repeated reuses the first occurrence's value and tracks it live;</li>
+ *   <li>choices {@code ${1|a,b,c|}} — the first option is the value (a dropdown at edit time);</li>
  *   <li>variables {@code $VAR} / {@code ${VAR:default}} resolved by the supplied resolver;</li>
+ *   <li>regex transforms {@code ${1/re/fmt/flags}} — each occurrence's text is derived from the stop's
+ *       value by {@link SnippetTransform};</li>
  *   <li>escapes {@code \$ \} \\}.</li>
  * </ul>
- * Regex transforms {@code ${1/re/fmt/flags}} are parsed and ignored (treated as a plain mirror) so a
- * snippet containing one still expands rather than throwing.
+ *
+ * <h2>Two passes</h2>
+ *
+ * <p>Emission is a second pass over a first pass that resolves each stop's <em>value</em>. A single
+ * forward pass cannot be correct, because an occurrence may need a value defined later in the body: in
+ * {@code ${1/(.*)/$1Item/} in ${1:collection}} the transform occurrence is emitted before the
+ * placeholder that gives stop&nbsp;1 its value. It was previously the source of two defects — the
+ * transform was discarded (rendered as a plain mirror), and, worse, that leading non-value occurrence
+ * <em>claimed the value slot</em> so the {@code collection} default was dropped too, yielding an empty
+ * mirror (#642).
+ *
+ * <p>The value of a stop is the rendered text of its first <em>value-defining</em> occurrence — a
+ * {@code ${n:default}} or a {@code ${n|choice|}}. Plain mirrors ({@code $n}, {@code ${n}}) and transform
+ * occurrences never define a value; they display it. Variables are resolved through a per-parse memoizing
+ * wrapper so a side-effecting variable ({@code $RANDOM}, a timestamp) yields the same text in both passes
+ * and across a stop's occurrences.
  */
 public final class SnippetParser {
 
@@ -33,72 +51,108 @@ public final class SnippetParser {
     }
 
     public static ParsedSnippet parse(String body, Variables variables) {
-        StringBuilder out = new StringBuilder();
-        Map<Integer, List<int[]>> ranges = new LinkedHashMap<>();
-        Map<Integer, String> firstText = new LinkedHashMap<>();
-        Map<Integer, List<String>> choices = new LinkedHashMap<>();
-        int[] pos = {0};
-        parseSeq(body == null ? "" : body, pos, out, ranges, firstText, choices, variables, false);
+        String s = body == null ? "" : body;
+        Variables memo = memoize(variables);
+
+        // Pass 1: resolve each stop's value (rendered into a throwaway buffer).
+        Ctx pass1 = new Ctx(s, memo, true, new HashMap<>());
+        parseSeq(pass1, false);
+
+        // Pass 2: emit for real, seeded with the resolved values.
+        Ctx c = new Ctx(s, memo, false, pass1.values);
+        parseSeq(c, false);
 
         List<TabStop> stops = new ArrayList<>();
-        ranges.keySet().stream()
+        c.ranges.keySet().stream()
                 .sorted((a, b) -> Integer.compare(a == 0 ? Integer.MAX_VALUE : a, b == 0 ? Integer.MAX_VALUE : b))
-                .forEach(n -> stops.add(new TabStop(
-                        n, ranges.get(n), firstText.getOrDefault(n, ""), choices.getOrDefault(n, List.of()))));
-        return new ParsedSnippet(out.toString(), stops);
+                .forEach(n -> {
+                    List<int[]> rs = c.ranges.get(n);
+                    List<SnippetTransform> ts = c.transforms.get(n);
+                    int primary = c.primaryIndex.getOrDefault(n, firstNonTransform(ts));
+                    stops.add(new TabStop(
+                            n, rs, c.values.getOrDefault(n, ""), c.choices.getOrDefault(n, List.of()), ts, primary));
+                });
+        return new ParsedSnippet(c.out.toString(), stops);
     }
 
-    /** Scans {@code s} from {@code pos[0]}, appending literal text to {@code out}, until end or
-     *  (when {@code stopAtBrace}) an unescaped '}' (left unconsumed). */
-    private static void parseSeq(
-            String s,
-            int[] pos,
-            StringBuilder out,
-            Map<Integer, List<int[]>> ranges,
-            Map<Integer, String> firstText,
-            Map<Integer, List<String>> choices,
-            Variables vars,
-            boolean stopAtBrace) {
-        while (pos[0] < s.length()) {
-            char c = s.charAt(pos[0]);
-            if (c == '\\' && pos[0] + 1 < s.length()) {
-                char n = s.charAt(pos[0] + 1);
-                if (n == '$' || n == '}' || n == '\\') {
-                    out.append(n);
-                    pos[0] += 2;
-                    continue;
-                }
-                out.append(c);
-                pos[0]++;
-                continue;
-            }
-            if (stopAtBrace && c == '}') {
-                return;
-            }
-            if (c == '$' && tryDollar(s, pos, out, ranges, firstText, choices, vars)) {
-                continue;
-            }
-            out.append(c);
-            pos[0]++;
+    /** Everything one pass of the walk carries. Pass 1 renders into a throwaway {@code out} and only cares
+     *  about {@link #values}; pass 2 records ranges/transforms/choices. */
+    private static final class Ctx {
+        final String s;
+        final Variables vars;
+        final boolean pass1;
+        final Map<Integer, String> values; // stop number → its resolved value (shared pass1 → pass2)
+        StringBuilder out = new StringBuilder();
+        final Map<Integer, List<int[]>> ranges = new LinkedHashMap<>();
+        final Map<Integer, List<SnippetTransform>> transforms = new LinkedHashMap<>();
+        final Map<Integer, List<String>> choices = new LinkedHashMap<>();
+        final Map<Integer, Integer> primaryIndex = new HashMap<>();
+        final Set<Integer> definerSeen = new HashSet<>(); // stops whose value-defining occurrence was handled
+        int pos;
+
+        Ctx(String s, Variables vars, boolean pass1, Map<Integer, String> values) {
+            this.s = s;
+            this.vars = vars;
+            this.pass1 = pass1;
+            this.values = values;
+        }
+
+        String value(int num) {
+            return values.getOrDefault(num, "");
         }
     }
 
-    /** Tries to consume a {@code $…} construct at {@code pos[0]}; returns false (and consumes nothing)
-     *  if the '$' is just a literal. */
-    private static boolean tryDollar(
-            String s,
-            int[] pos,
-            StringBuilder out,
-            Map<Integer, List<int[]>> ranges,
-            Map<Integer, String> firstText,
-            Map<Integer, List<String>> choices,
-            Variables vars) {
-        int n = pos[0] + 1;
+    /** Resolves each variable name at most once, so a side-effecting resolver is stable across passes. */
+    private static Variables memoize(Variables inner) {
+        Map<String, String> cache = new HashMap<>();
+        return name -> {
+            if (cache.containsKey(name)) {
+                return cache.get(name);
+            }
+            String v = inner == null ? null : inner.resolve(name);
+            cache.put(name, v);
+            return v;
+        };
+    }
+
+    /** Scans from {@code c.pos}, appending literal text to {@code c.out}, until end or (when
+     *  {@code stopAtBrace}) an unescaped '}' (left unconsumed). */
+    private static void parseSeq(Ctx c, boolean stopAtBrace) {
+        String s = c.s;
+        while (c.pos < s.length()) {
+            char ch = s.charAt(c.pos);
+            if (ch == '\\' && c.pos + 1 < s.length()) {
+                char n = s.charAt(c.pos + 1);
+                if (n == '$' || n == '}' || n == '\\') {
+                    c.out.append(n);
+                    c.pos += 2;
+                    continue;
+                }
+                c.out.append(ch);
+                c.pos++;
+                continue;
+            }
+            if (stopAtBrace && ch == '}') {
+                return;
+            }
+            if (ch == '$' && tryDollar(c)) {
+                continue;
+            }
+            c.out.append(ch);
+            c.pos++;
+        }
+    }
+
+    /** Tries to consume a {@code $…} construct at {@code c.pos}; returns false (consuming nothing) if the
+     *  '$' is just a literal. */
+    private static boolean tryDollar(Ctx c) {
+        String s = c.s;
+        int n = c.pos + 1;
         if (n >= s.length()) {
             return false;
         }
-        char c = s.charAt(n);
-        if (Character.isDigit(c)) {
+        char ch = s.charAt(n);
+        if (Character.isDigit(ch)) {
             int j = n;
             while (j < s.length() && Character.isDigit(s.charAt(j))) {
                 j++;
@@ -107,21 +161,21 @@ public final class SnippetParser {
             if (num == null) {
                 return false; // an over-long number (e.g. a literal "$12345678901") → treat "$…" as text
             }
-            emitStop(num, null, out, ranges, firstText);
-            pos[0] = j;
+            emitOccurrence(c, num, null); // bare $1 → a plain mirror of the value
+            c.pos = j;
             return true;
         }
-        if (c == '{') {
-            return parseBrace(s, pos, out, ranges, firstText, choices, vars);
+        if (ch == '{') {
+            return parseBrace(c);
         }
-        if (isVarStart(c)) {
+        if (isVarStart(ch)) {
             int j = n;
             while (j < s.length() && isVarPart(s.charAt(j))) {
                 j++;
             }
-            String val = vars == null ? null : vars.resolve(s.substring(n, j));
-            out.append(val == null ? "" : val);
-            pos[0] = j;
+            String val = c.vars.resolve(s.substring(n, j));
+            c.out.append(val == null ? "" : val);
+            c.pos = j;
             return true;
         }
         return false;
@@ -137,18 +191,12 @@ public final class SnippetParser {
         }
     }
 
-    /** Parses a {@code ${…}} construct beginning at {@code pos[0]} (the '$'). */
-    private static boolean parseBrace(
-            String s,
-            int[] pos,
-            StringBuilder out,
-            Map<Integer, List<int[]>> ranges,
-            Map<Integer, String> firstText,
-            Map<Integer, List<String>> choices,
-            Variables vars) {
-        int i = pos[0] + 2; // past "${"
+    /** Parses a {@code ${…}} construct beginning at {@code c.pos} (the '$'). */
+    private static boolean parseBrace(Ctx c) {
+        String s = c.s;
+        int i = c.pos + 2; // past "${"
         if (i >= s.length()) {
-            return false; // a bare "${" at end of the body → treat it as literal text (don't crash)
+            return false; // a bare "${" at end of body → treat it as literal text (don't crash)
         }
         if (Character.isDigit(s.charAt(i))) {
             int j = i;
@@ -161,127 +209,161 @@ public final class SnippetParser {
             }
             int num = boxed;
             char sep = j < s.length() ? s.charAt(j) : '}';
-            if (sep == '}') { // ${1}
-                emitStop(num, null, out, ranges, firstText);
-                pos[0] = j + 1;
-                return true;
-            }
-            if (sep == ':') { // ${1:default}  (default may contain nested constructs)
-                pos[0] = j + 1;
-                emitStopWithDefault(num, s, pos, out, ranges, firstText, choices, vars);
-                if (pos[0] < s.length() && s.charAt(pos[0]) == '}') {
-                    pos[0]++;
+            return switch (sep) {
+                case '}' -> { // ${1}
+                    emitOccurrence(c, num, null);
+                    c.pos = j + 1;
+                    yield true;
                 }
-                return true;
-            }
-            if (sep == '|') { // ${1|a,b,c|}  -> capture options; first is the default text
-                int close = s.indexOf("|}", j + 1);
-                String options = close < 0 ? s.substring(j + 1) : s.substring(j + 1, close);
-                List<String> opts = splitChoices(options);
-                choices.put(num, opts);
-                emitStop(num, opts.isEmpty() ? "" : opts.get(0), out, ranges, firstText);
-                pos[0] = close < 0 ? s.length() : close + 2;
-                return true;
-            }
-            if (sep == '/') { // ${1/re/fmt/flags} -> ignore transform, treat as mirror
-                int close = findBraceClose(s, j);
-                emitStop(num, null, out, ranges, firstText);
-                pos[0] = close < 0 ? s.length() : close + 1;
-                return true;
-            }
-            // Unknown form: consume to closing brace and emit nothing.
-            int close = findBraceClose(s, i);
-            pos[0] = close < 0 ? s.length() : close + 1;
-            return true;
+                case ':' -> { // ${1:default}
+                    parsePlaceholder(c, num, j);
+                    yield true;
+                }
+                case '|' -> { // ${1|a,b,c|}
+                    parseChoice(c, num, j);
+                    yield true;
+                }
+                case '/' -> { // ${1/re/fmt/flags}
+                    parseTransform(c, num, j);
+                    yield true;
+                }
+                default -> { // unknown form: consume to closing brace, emit nothing
+                    int close = findBraceClose(s, i);
+                    c.pos = close < 0 ? s.length() : close + 1;
+                    yield true;
+                }
+            };
         }
         // ${VAR} or ${VAR:default}
         if (isVarStart(s.charAt(i))) {
-            int j = i;
-            while (j < s.length() && isVarPart(s.charAt(j))) {
-                j++;
-            }
-            String name = s.substring(i, j);
-            String value = vars == null ? null : vars.resolve(name);
-            if (j < s.length() && s.charAt(j) == ':') {
-                pos[0] = j + 1;
-                if (value != null) {
-                    out.append(value);
-                    int close = findBraceClose(s, j); // skip the default
-                    pos[0] = close < 0 ? s.length() : close + 1;
-                } else {
-                    parseSeq(s, pos, out, ranges, firstText, choices, vars, true); // emit the default
-                    if (pos[0] < s.length() && s.charAt(pos[0]) == '}') {
-                        pos[0]++;
-                    }
-                }
-                return true;
-            }
-            out.append(value == null ? "" : value);
-            pos[0] = (j < s.length() && s.charAt(j) == '}') ? j + 1 : j;
-            return true;
+            return parseVariable(c, i);
         }
         // Not a recognized construct: emit nothing, skip to the closing brace.
         int close = findBraceClose(s, i);
-        pos[0] = close < 0 ? s.length() : close + 1;
+        c.pos = close < 0 ? s.length() : close + 1;
         return true;
     }
 
-    /** Emits a stop's primary or mirror text and records its range. {@code defaultText} is the literal
-     *  default for a first plain occurrence ({@code null} = empty); later occurrences mirror the first. */
-    private static void emitStop(
-            int num,
-            String defaultText,
-            StringBuilder out,
-            Map<Integer, List<int[]>> ranges,
-            Map<Integer, String> firstText) {
-        int start = out.length();
-        if (firstText.containsKey(num)) {
-            out.append(firstText.get(num)); // mirror the first occurrence
+    /** {@code ${n:default}} — the first such occurrence defines the value; a later one mirrors it. */
+    private static void parsePlaceholder(Ctx c, int num, int colon) {
+        boolean definer = c.definerSeen.add(num);
+        if (definer) {
+            c.pos = colon + 1; // past ':'
+            int start = c.out.length();
+            parseSeq(c, true); // render the default (registers nested definers + values)
+            c.values.putIfAbsent(num, c.out.substring(start));
+            if (!c.pass1) {
+                record(c, num, start, c.out.length(), null);
+                markPrimary(c, num);
+            }
+            if (c.pos < c.s.length() && c.s.charAt(c.pos) == '}') {
+                c.pos++;
+            }
         } else {
-            String t = defaultText == null ? "" : defaultText;
-            out.append(t);
-            firstText.put(num, t);
+            // Mirror: skip the whole default and emit the value. Nested stops inside a repeated placeholder's
+            // default are intentionally dropped (they belong to the value-defining occurrence).
+            int close = findBraceClose(c.s, c.pos + 2);
+            emitOccurrence(c, num, null);
+            c.pos = close < 0 ? c.s.length() : close + 1;
         }
-        record(num, start, out.length(), ranges);
     }
 
-    /** Emits a {@code ${n:default}} where the default can contain nested constructs. */
-    private static void emitStopWithDefault(
-            int num,
-            String s,
-            int[] pos,
-            StringBuilder out,
-            Map<Integer, List<int[]>> ranges,
-            Map<Integer, String> firstText,
-            Map<Integer, List<String>> choices,
-            Variables vars) {
-        int start = out.length();
-        if (firstText.containsKey(num)) {
-            // Mirror: discard this default's text (into throwaway buffers) and emit the remembered text.
-            parseSeq(
-                    s,
-                    pos,
-                    new StringBuilder(),
-                    new LinkedHashMap<>(),
-                    new LinkedHashMap<>(),
-                    new LinkedHashMap<>(),
-                    vars,
-                    true);
-            out.append(firstText.get(num));
-        } else {
-            firstText.put(num, ""); // reserve so nested same-number mirrors resolve
-            parseSeq(s, pos, out, ranges, firstText, choices, vars, true);
-            firstText.put(num, out.substring(start));
+    /** {@code ${n|a,b,c|}} — captures the options; the first is the value. */
+    private static void parseChoice(Ctx c, int num, int bar) {
+        int close = c.s.indexOf("|}", bar + 1);
+        List<String> opts = splitChoices(close < 0 ? c.s.substring(bar + 1) : c.s.substring(bar + 1, close));
+        boolean definer = c.definerSeen.add(num);
+        if (definer) {
+            c.values.putIfAbsent(num, opts.isEmpty() ? "" : opts.get(0));
+            if (!c.pass1) {
+                c.choices.put(num, opts);
+            }
         }
-        record(num, start, out.length(), ranges);
+        emitOccurrence(c, num, null);
+        if (!c.pass1 && definer) {
+            markPrimary(c, num);
+        }
+        c.pos = close < 0 ? c.s.length() : close + 2;
     }
 
-    private static void record(int num, int start, int end, Map<Integer, List<int[]>> ranges) {
-        ranges.computeIfAbsent(num, k -> new ArrayList<>()).add(new int[] {start, end});
+    /** {@code ${n/re/fmt/flags}} — a transform occurrence, derived from the stop's value. */
+    private static void parseTransform(Ctx c, int num, int slash) {
+        SnippetTransform.Parsed p = SnippetTransform.parseAt(c.s, slash + 1);
+        if (p == null) {
+            // Malformed transform → fall back to the old behaviour: a plain mirror, so the snippet still
+            // expands rather than throwing.
+            int close = findBraceClose(c.s, c.pos + 2);
+            emitOccurrence(c, num, null);
+            c.pos = close < 0 ? c.s.length() : close + 1;
+            return;
+        }
+        emitOccurrence(c, num, p.transform());
+        c.pos = p.end();
     }
 
-    /** Index of the '}' that closes the brace whose '{' is at-or-after {@code from}, honoring nesting
-     *  and escapes; -1 if unbalanced. {@code from} points at the char after "${"-ish; we scan forward. */
+    /** {@code ${VAR}} / {@code ${VAR:default}} (unchanged behaviour; resolver is memoized). */
+    private static boolean parseVariable(Ctx c, int i) {
+        String s = c.s;
+        int j = i;
+        while (j < s.length() && isVarPart(s.charAt(j))) {
+            j++;
+        }
+        String name = s.substring(i, j);
+        String value = c.vars.resolve(name);
+        if (j < s.length() && s.charAt(j) == ':') {
+            c.pos = j + 1;
+            if (value != null) {
+                c.out.append(value);
+                int close = findBraceClose(s, j); // skip the default
+                c.pos = close < 0 ? s.length() : close + 1;
+            } else {
+                parseSeq(c, true); // emit the default
+                if (c.pos < s.length() && s.charAt(c.pos) == '}') {
+                    c.pos++;
+                }
+            }
+            return true;
+        }
+        c.out.append(value == null ? "" : value);
+        c.pos = (j < s.length() && s.charAt(j) == '}') ? j + 1 : j;
+        return true;
+    }
+
+    /** Appends one leaf occurrence's text (value, transformed when {@code transform != null}) and records
+     *  its range in pass 2. */
+    private static void emitOccurrence(Ctx c, int num, SnippetTransform transform) {
+        String value = c.value(num);
+        String text = transform == null ? value : transform.apply(value);
+        int start = c.out.length();
+        c.out.append(text);
+        if (!c.pass1) {
+            record(c, num, start, c.out.length(), transform);
+        }
+    }
+
+    private static void record(Ctx c, int num, int start, int end, SnippetTransform t) {
+        c.ranges.computeIfAbsent(num, k -> new ArrayList<>()).add(new int[] {start, end});
+        c.transforms.computeIfAbsent(num, k -> new ArrayList<>()).add(t);
+    }
+
+    /** Marks the range just recorded for {@code num} as the editable field (the value-defining one). */
+    private static void markPrimary(Ctx c, int num) {
+        c.primaryIndex.putIfAbsent(num, c.ranges.get(num).size() - 1);
+    }
+
+    /** First occurrence that is not a transform (the fallback editable field for a stop with no
+     *  value-defining occurrence, e.g. all-bare {@code $1}); 0 if somehow all are transforms. */
+    private static int firstNonTransform(List<SnippetTransform> ts) {
+        for (int k = 0; k < ts.size(); k++) {
+            if (ts.get(k) == null) {
+                return k;
+            }
+        }
+        return 0;
+    }
+
+    /** Index of the '}' that closes the brace whose '{' is at-or-after {@code from}, honoring nesting and
+     *  escapes; -1 if unbalanced. */
     private static int findBraceClose(String s, int from) {
         int depth = 1;
         for (int k = from; k < s.length(); k++) {

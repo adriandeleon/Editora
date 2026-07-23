@@ -95,10 +95,37 @@ class SnippetParserTest {
     }
 
     @Test
-    void transformIsIgnoredNotCrashing() {
+    void transformOccurrenceIsDerivedFromTheValue() {
         ParsedSnippet p = SnippetParser.parse("${1:x}=${1/.*/UP/}", NONE);
-        assertEquals("x=x", p.text()); // transform ignored, second occurrence mirrors "x"
-        assertEquals(2, stop(p, 1).ranges().size());
+        assertEquals("x=UP", p.text()); // the second occurrence is a transform of the value, not a mirror
+        TabStop s = stop(p, 1);
+        assertEquals(2, s.ranges().size());
+        assertEquals(0, s.primaryIndex()); // the ${1:x} placeholder is the editable field
+        assertNotNull(s.transformAt(1)); // the second occurrence carries the transform
+    }
+
+    @Test
+    void transformBeforeTheValueDefiningPlaceholderStillResolves() {
+        // the transform occurrence is emitted first, but the value comes from the later ${1:collection} (#642)
+        ParsedSnippet p = SnippetParser.parse("${1/(.*)/$1Item/} in ${1:collection}", NONE);
+        assertEquals("collectionItem in collection", p.text());
+        TabStop s = stop(p, 1);
+        assertEquals(1, s.primaryIndex()); // the editable field is the second (non-transform) occurrence
+        assertEquals("collection", s.placeholder());
+    }
+
+    @Test
+    void aLeadingBareStopNoLongerStealsTheValueSlot() {
+        // $1 emitted before ${1:default}: the default must still define the value (#642)
+        assertEquals(
+                "default and default",
+                SnippetParser.parse("$1 and ${1:default}", NONE).text());
+    }
+
+    @Test
+    void malformedTransformFallsBackToAPlainMirror() {
+        ParsedSnippet p = SnippetParser.parse("${1:x}=${1/unterminated}", NONE);
+        assertEquals("x=x", p.text());
     }
 
     @Test
