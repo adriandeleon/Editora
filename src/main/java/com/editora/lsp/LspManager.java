@@ -750,6 +750,71 @@ public final class LspManager {
         return out;
     }
 
+    /** A single inlay hint: 0-based position + the rendered label ({@code x:} for a parameter name). */
+    public record InlayHintSpan(int line, int col, String label) {}
+
+    /** True if {@code file}'s server is ready and advertises inlay hints (#681). */
+    public boolean supportsInlayHints(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && inlayHintProvider(s.capabilities());
+    }
+
+    /** Pure: whether a server's capabilities include {@code inlayHintProvider} (null-safe, either form). */
+    static boolean inlayHintProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null) {
+            return false;
+        }
+        var p = caps.getInlayHintProvider();
+        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
+    }
+
+    /** Requests inlay hints over the line window {@code [startLine..endLine]} (inclusive), delivered as
+     *  neutral spans on the FX thread — empty when unsupported/failed (#681). */
+    public void requestInlayHints(Path file, int startLine, int endLine, Consumer<List<InlayHintSpan>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        var range = new org.eclipse.lsp4j.Range(
+                new Position(Math.max(0, startLine), 0), new Position(Math.max(0, endLine) + 1, 0));
+        s.inlayHint(uri(file), range).whenComplete((hints, error) -> {
+            List<InlayHintSpan> out = new ArrayList<>();
+            if (error == null && hints != null) {
+                for (var h : hints) {
+                    if (h == null || h.getPosition() == null) {
+                        continue;
+                    }
+                    String label = inlayLabel(h);
+                    if (!label.isBlank()) {
+                        out.add(new InlayHintSpan(
+                                h.getPosition().getLine(), h.getPosition().getCharacter(), label));
+                    }
+                }
+            }
+            Platform.runLater(() -> cb.accept(out));
+        });
+    }
+
+    /** Pure: an inlay hint's display label — the plain string, or its label parts joined. */
+    static String inlayLabel(org.eclipse.lsp4j.InlayHint h) {
+        if (h.getLabel() == null) {
+            return "";
+        }
+        if (h.getLabel().isLeft()) {
+            return h.getLabel().getLeft() == null ? "" : h.getLabel().getLeft().strip();
+        }
+        StringBuilder sb = new StringBuilder();
+        if (h.getLabel().getRight() != null) {
+            for (var part : h.getLabel().getRight()) {
+                if (part != null && part.getValue() != null) {
+                    sb.append(part.getValue());
+                }
+            }
+        }
+        return sb.toString().strip();
+    }
+
     /** True if {@code file}'s server is ready and advertises rename (#676). */
     public boolean supportsRename(Path file) {
         LanguageServerSession s = sessionFor(file);

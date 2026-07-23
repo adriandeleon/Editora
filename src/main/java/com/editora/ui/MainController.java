@@ -13658,6 +13658,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().isSemanticHighlight(),
                         config.getSettings()::setSemanticHighlight,
                         lspCoordinator::applySemanticHighlight)));
+        registry.register(Command.of(
+                "view.toggleInlayHints",
+                () -> toggleSetting(
+                        "view.toggleInlayHints",
+                        () -> config.getSettings().isInlayHints(),
+                        config.getSettings()::setInlayHints,
+                        lspCoordinator::applyInlayHints)));
         registry.register(Command.of("tool.commit", () -> git.ifEnabled(() -> toolWindows.toggle(commitToolWindow))));
         // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is
         // absent / not in a repo. The ifGit wrapper disables the commands + keybindings when Git is off.

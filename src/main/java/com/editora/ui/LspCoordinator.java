@@ -606,6 +606,47 @@ final class LspCoordinator {
      * and pushes them into the buffer when the response lands — but only if it's still the active buffer
      * (a background tab's tokens would overlay nothing useful and waste an apply).
      */
+    /**
+     * Inlay hints (#681): requests the server's parameter-name/type hints over the visible window and
+     * pushes the per-line aggregate into the buffer's end-of-line overlay. Gated on the (default-off)
+     * setting + the server's capability; clears when the gate fails so a toggle-off empties the overlay.
+     * Rides the same cadence as semantic tokens (didChange debounce, scroll-settle, ready, syncBuffer).
+     */
+    void requestInlayHints(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        if (path == null
+                || !host.settings().isInlayHints()
+                || !lspManager.isManaged(path)
+                || !lspManager.supportsInlayHints(path)) {
+            buffer.setInlayHints(null);
+            return;
+        }
+        int[] window = buffer.visibleLineWindow();
+        long version = buffer.docVersion();
+        lspManager.requestInlayHints(path, window[0] - SEMANTIC_WINDOW_PAD, window[1] + SEMANTIC_WINDOW_PAD, spans -> {
+            if (buffer == host.activeBuffer() && buffer.docVersion() == version) {
+                buffer.setInlayHints(aggregateInlayHints(spans));
+            }
+        });
+    }
+
+    /** Pure: hints grouped per line in (line, col) order, labels joined — the end-of-line aggregate. */
+    static Map<Integer, String> aggregateInlayHints(List<com.editora.lsp.LspManager.InlayHintSpan> spans) {
+        List<com.editora.lsp.LspManager.InlayHintSpan> sorted = new java.util.ArrayList<>(spans);
+        sorted.sort(java.util.Comparator.comparingInt(com.editora.lsp.LspManager.InlayHintSpan::line)
+                .thenComparingInt(com.editora.lsp.LspManager.InlayHintSpan::col));
+        Map<Integer, String> out = new java.util.HashMap<>();
+        for (var s : sorted) {
+            out.merge(s.line(), s.label(), (a, b) -> a + "  " + b);
+        }
+        return out;
+    }
+
+    /** Re-applies the inlay-hints gate to every open buffer (the palette/Settings toggle's apply). */
+    void applyInlayHints() {
+        host.forEachBuffer(this::requestInlayHints); // the gate inside clears buffers when toggled off
+    }
+
     void requestSemanticTokens(EditorBuffer buffer) {
         Path path = buffer.getPath();
         if (path == null || !buffer.isSemanticActive() || !lspManager.isManaged(path)) {
@@ -707,6 +748,7 @@ final class LspCoordinator {
             if (semantic) {
                 requestSemanticTokens(buffer);
             }
+            requestInlayHints(buffer); // gated internally on the setting + capability (#681)
         } else {
             buffer.setLspActive(false);
             buffer.setLspTriggerChars(java.util.Set.of());
@@ -716,6 +758,7 @@ final class LspCoordinator {
             buffer.setLspRenameAvailable(false);
             buffer.setLspSignatureTriggerChars(java.util.Set.of());
             buffer.clearOccurrenceSpans();
+            buffer.setInlayHints(null);
             buffer.setSemanticActive(false);
             if (path != null && lspManager.isManaged(path)) {
                 lspManager.closeDocument(path);
@@ -881,6 +924,7 @@ final class LspCoordinator {
                         if (sem) {
                             requestSemanticTokens(b);
                         }
+                        requestInlayHints(b); // capabilities known now (#681)
                     }
                 });
                 requestStructureSymbols(host.activeBuffer()); // the outline can now be populated from the server
@@ -924,7 +968,10 @@ final class LspCoordinator {
             }
         });
         // Semantic tokens re-request (fired on the same debounce as didChange + on scroll-settle).
-        buffer.setSemanticTokensRequester(() -> requestSemanticTokens(buffer));
+        buffer.setSemanticTokensRequester(() -> {
+            requestSemanticTokens(buffer);
+            requestInlayHints(buffer); // same cadence: didChange debounce + scroll-settle (#681)
+        });
         buffer.setLspCompletionProvider((pos, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
                 lspManager.completion(
