@@ -180,6 +180,40 @@ class LspManagerTest {
         assertEquals(1, key.chars().filter(c -> c == 0).count(), "exactly one separator in the key");
     }
 
+    // --- Code actions (#670) -------------------------------------------------------------------
+
+    @Test
+    void codeActionProviderDetectedFromEitherForm() {
+        assertFalse(LspManager.codeActionProvider(null));
+        assertFalse(LspManager.codeActionProvider(new ServerCapabilities())); // unset
+        ServerCapabilities bool = new ServerCapabilities();
+        bool.setCodeActionProvider(true);
+        assertTrue(LspManager.codeActionProvider(bool));
+        ServerCapabilities off = new ServerCapabilities();
+        off.setCodeActionProvider(false);
+        assertFalse(LspManager.codeActionProvider(off));
+        ServerCapabilities opts = new ServerCapabilities();
+        opts.setCodeActionProvider(new org.eclipse.lsp4j.CodeActionOptions()); // options form → supported
+        assertTrue(LspManager.codeActionProvider(opts));
+    }
+
+    @Test
+    void diagnosticsOverlappingFiltersToTheRequestedRange() {
+        var inRange = new org.eclipse.lsp4j.Diagnostic(range(2, 0, 2, 10), "on the requested line");
+        var touchingEnd =
+                new org.eclipse.lsp4j.Diagnostic(range(0, 0, 2, 0), "multi-line, ends where the range starts");
+        var before = new org.eclipse.lsp4j.Diagnostic(range(0, 0, 1, 5), "entirely above");
+        var after = new org.eclipse.lsp4j.Diagnostic(range(5, 0, 6, 0), "entirely below");
+        var hits = LspManager.diagnosticsOverlapping(
+                java.util.List.of(inRange, touchingEnd, before, after), range(2, 0, 3, 0));
+        assertEquals(java.util.List.of(inRange, touchingEnd), hits);
+    }
+
+    private static org.eclipse.lsp4j.Range range(int sl, int sc, int el, int ec) {
+        return new org.eclipse.lsp4j.Range(
+                new org.eclipse.lsp4j.Position(sl, sc), new org.eclipse.lsp4j.Position(el, ec));
+    }
+
     // --- jdt:// class-file navigation (#665) ---------------------------------------------------
 
     @Test

@@ -244,6 +244,12 @@ public final class LspManager {
         }
         String uri = uri(file);
         LanguageServerSession s = sessionByDocUri.remove(uri);
+        rawDiagnostics.remove(uri); // open-documents-only retention (#670); the symlink-form key, if any,
+        try { //                       is dropped too so a closed file can't pin its diagnostics
+            rawDiagnostics.remove(file.toRealPath().toUri().toString());
+        } catch (java.io.IOException | RuntimeException ignored) {
+            // file gone/remote — nothing more to drop
+        }
         if (s != null) {
             s.didClose(uri);
             maybeScheduleEviction(s);
@@ -410,6 +416,7 @@ public final class LspManager {
         // (so the re-open guard never restarts it), every request fails into an empty result, and LSP is silently
         // dead for the rest of the session while the status bar still names the server.
         session.setOnDead(() -> dropSession(key, session));
+        session.setOnApplyEdit(this::onServerApplyEdit); // a server-side quick fix lands its edits via us (#670)
         if (claimedWorkspace != null) {
             jdtlsWorkspaceBySession.put(session, claimedWorkspace);
         }
@@ -592,6 +599,21 @@ public final class LspManager {
     public boolean supportsFormatting(Path file) {
         LanguageServerSession s = sessionFor(file);
         return s != null && formattingProvider(s.capabilities());
+    }
+
+    /** True if {@code file}'s server is ready and advertises code actions (quick fixes — #670). */
+    public boolean supportsCodeActions(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && codeActionProvider(s.capabilities());
+    }
+
+    /** Pure: whether a server's capabilities include {@code codeActionProvider} (null-safe). */
+    static boolean codeActionProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null) {
+            return false;
+        }
+        var p = caps.getCodeActionProvider();
+        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
     }
 
     /** Pure: whether a server's capabilities include {@code documentFormattingProvider} (null-safe). */
@@ -913,6 +935,168 @@ public final class LspManager {
         });
     }
 
+    // --- Code actions / quick fixes (#670) ------------------------------------------------------
+
+    /** A code action offered by the server: display fields + the opaque lsp4j payload ({@code raw}) handed
+     *  back to {@link #applyCodeAction}. {@code kind} is the LSP kind ({@code quickfix}, {@code source.…})
+     *  or empty; {@code preferred} marks the server's recommended fix (listed first). */
+    public record CodeActionItem(String title, String kind, boolean preferred, Object raw) {}
+
+    /** Last raw published diagnostics per server-reported URI (open documents only — see
+     *  {@link #onPublishDiagnostics}); the context a code-action request sends back to the server. */
+    private final Map<String, List<org.eclipse.lsp4j.Diagnostic>> rawDiagnostics = new ConcurrentHashMap<>();
+
+    /** The retained raw diagnostics for {@code file}, tolerant of the server having reported a
+     *  symlink-resolved URI ({@code /private/tmp} vs {@code /tmp} — the #470 mismatch). */
+    private List<org.eclipse.lsp4j.Diagnostic> rawDiagnosticsFor(Path file) {
+        List<org.eclipse.lsp4j.Diagnostic> hit = rawDiagnostics.get(uri(file));
+        if (hit != null) {
+            return hit;
+        }
+        try {
+            return rawDiagnostics.getOrDefault(file.toRealPath().toUri().toString(), List.of());
+        } catch (java.io.IOException | RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Requests the code actions available over {@code [startLine:startChar .. endLine:endChar]} (0-based),
+     * sending the range-overlapping known diagnostics as context, and delivers them on the FX thread —
+     * preferred actions first, disabled ones dropped.
+     */
+    public void codeActions(
+            Path file, int startLine, int startChar, int endLine, int endChar, Consumer<List<CodeActionItem>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        var range = new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
+        List<org.eclipse.lsp4j.Diagnostic> context = diagnosticsOverlapping(rawDiagnosticsFor(file), range);
+        s.codeAction(uri(file), range, context).whenComplete((result, error) -> {
+            List<CodeActionItem> items = new ArrayList<>();
+            if (error == null && result != null) {
+                for (var either : result) {
+                    if (either == null) {
+                        continue;
+                    }
+                    if (either.isLeft() && either.getLeft() != null) {
+                        var cmd = either.getLeft();
+                        items.add(new CodeActionItem(cmd.getTitle() == null ? "" : cmd.getTitle(), "", false, cmd));
+                    } else if (either.isRight() && either.getRight() != null) {
+                        var action = either.getRight();
+                        if (action.getDisabled() != null) {
+                            continue; // the server says it doesn't apply here
+                        }
+                        items.add(new CodeActionItem(
+                                action.getTitle() == null ? "" : action.getTitle(),
+                                action.getKind() == null ? "" : action.getKind(),
+                                Boolean.TRUE.equals(action.getIsPreferred()),
+                                action));
+                    }
+                }
+                items.sort((a, b) -> Boolean.compare(b.preferred(), a.preferred())); // preferred first (stable)
+            }
+            Platform.runLater(() -> cb.accept(items));
+        });
+    }
+
+    /** Pure: the diagnostics whose range overlaps {@code range} (what a code-action context should carry). */
+    static List<org.eclipse.lsp4j.Diagnostic> diagnosticsOverlapping(
+            List<org.eclipse.lsp4j.Diagnostic> all, org.eclipse.lsp4j.Range range) {
+        List<org.eclipse.lsp4j.Diagnostic> out = new ArrayList<>();
+        for (var d : all) {
+            if (d != null && d.getRange() != null && rangesOverlap(d.getRange(), range)) {
+                out.add(d);
+            }
+        }
+        return out;
+    }
+
+    private static boolean rangesOverlap(org.eclipse.lsp4j.Range a, org.eclipse.lsp4j.Range b) {
+        return comparePositions(a.getStart(), b.getEnd()) <= 0 && comparePositions(b.getStart(), a.getEnd()) <= 0;
+    }
+
+    private static int comparePositions(Position a, Position b) {
+        int byLine = Integer.compare(a.getLine(), b.getLine());
+        return byLine != 0 ? byLine : Integer.compare(a.getCharacter(), b.getCharacter());
+    }
+
+    /**
+     * Applies a picked {@link CodeActionItem#raw()}: an inline {@code edit} applies directly; an edit-less
+     * action is first resolved ({@code codeAction/resolve}); a {@code command} (bare, or riding the action)
+     * runs via {@code workspace/executeCommand} — whose server-side handler typically answers with a
+     * {@code workspace/applyEdit} back to us, which the registered apply-edit handler lands in the editor.
+     * {@code cb} gets overall success on the FX thread.
+     */
+    public void applyCodeAction(Path file, Object raw, Consumer<Boolean> cb) {
+        if (raw instanceof org.eclipse.lsp4j.Command cmd) {
+            executeCommand(file, cmd.getCommand(), cmd.getArguments(), (r, e) -> cb.accept(e == null));
+            return;
+        }
+        if (!(raw instanceof org.eclipse.lsp4j.CodeAction action)) {
+            Platform.runLater(() -> cb.accept(false));
+            return;
+        }
+        if (action.getEdit() != null) {
+            Platform.runLater(() -> finishCodeAction(file, action, action.getEdit(), cb));
+            return;
+        }
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(false));
+            return;
+        }
+        s.resolveCodeAction(action).whenComplete((resolved, error) -> {
+            org.eclipse.lsp4j.CodeAction use = error == null && resolved != null ? resolved : action;
+            Platform.runLater(() -> finishCodeAction(file, use, use.getEdit(), cb));
+        });
+    }
+
+    /** FX thread: applies {@code edit} (if any), then runs the action's trailing {@code command} (if any). */
+    private void finishCodeAction(
+            Path file,
+            org.eclipse.lsp4j.CodeAction action,
+            org.eclipse.lsp4j.WorkspaceEdit edit,
+            Consumer<Boolean> cb) {
+        boolean editOk = true;
+        if (edit != null) {
+            editOk = applyWorkspaceEditNow(edit);
+        }
+        if (action.getCommand() != null && action.getCommand().getCommand() != null) {
+            boolean editApplied = editOk;
+            executeCommand(
+                    file,
+                    action.getCommand().getCommand(),
+                    action.getCommand().getArguments(),
+                    (r, e) -> cb.accept(editApplied && e == null));
+            return;
+        }
+        // No command and no edit either ⇒ nothing was done — report failure, not a silent success.
+        cb.accept(edit != null && editOk);
+    }
+
+    /** UI-side workspace-edit applier (set by the coordinator; runs on the FX thread): applies each file's
+     *  batch through an undoable buffer, all-or-nothing. Default: refuse. */
+    private volatile java.util.function.Function<List<WorkspaceEditMapper.FileEdit>, Boolean> applyEditHandler =
+            edits -> false;
+
+    public void setApplyEditHandler(java.util.function.Function<List<WorkspaceEditMapper.FileEdit>, Boolean> handler) {
+        this.applyEditHandler = handler == null ? edits -> false : handler;
+    }
+
+    /** FX thread: maps + applies a workspace edit through the registered handler (false when unsupported). */
+    private boolean applyWorkspaceEditNow(org.eclipse.lsp4j.WorkspaceEdit edit) {
+        List<WorkspaceEditMapper.FileEdit> files = WorkspaceEditMapper.map(edit);
+        return files != null && Boolean.TRUE.equals(applyEditHandler.apply(files));
+    }
+
+    /** A server-initiated {@code workspace/applyEdit} (from any session): apply on FX, answer the server. */
+    private void onServerApplyEdit(org.eclipse.lsp4j.WorkspaceEdit edit, Consumer<Boolean> respond) {
+        Platform.runLater(() -> respond.accept(applyWorkspaceEditNow(edit)));
+    }
+
     public void references(Path file, int line, int character, Consumer<List<Target>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
@@ -1043,6 +1227,7 @@ public final class LspManager {
     /** Shuts down every running server (best-effort) and clears all routing state. */
     public void shutdownAll() {
         sessionByDocUri.clear();
+        rawDiagnostics.clear();
         for (LanguageServerSession s : sessionsByRoot.values()) {
             s.dispose();
             releaseJdtlsWorkspace(s);
@@ -1071,6 +1256,16 @@ public final class LspManager {
         Path file = uriToPath(params.getUri());
         if (file == null) {
             return;
+        }
+        // Retain the RAW lsp4j diagnostics for open documents: a code-action request must send the
+        // originals as context (their code/source/data are what a quick fix keys off — the mapped neutral
+        // LspDiagnostic loses them). Open-documents-only, so a server's project-wide publishes don't
+        // accumulate (#670).
+        if (sessionByDocUri.containsKey(params.getUri())
+                || sessionByDocUri.containsKey(file.toUri().toString())) {
+            rawDiagnostics.put(
+                    params.getUri(),
+                    params.getDiagnostics() == null ? List.of() : List.copyOf(params.getDiagnostics()));
         }
         List<LspDiagnostic> mapped = DiagnosticMapper.map(params.getDiagnostics());
         Platform.runLater(() -> onDiagnostics.accept(file, mapped));

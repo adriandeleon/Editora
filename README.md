@@ -172,7 +172,9 @@ Editora is built with the help of AI coding tools.
   C#, PHP, Ruby, Kotlin, Lua, Bash, XML, JSON, YAML, HTML, CSS, Dockerfile, SQL, Terraform, TOML, Typst/tinymist).
   Inline diagnostics + a Problems tool window (`M-8`) + minimap/scrollbar stripes, go-to-definition
   (`M-.` — for Java this includes JDK/dependency classes, opened as read-only library source), find
-  references (`M-?`), hover docs (`C-c h`), LSP-backed completion, auto-imports, and
+  references (`M-?`), hover docs (`C-c h`), LSP-backed completion, auto-imports,
+  **Code Actions / quick fixes** (`Ctrl-.` in the VS Code/Sublime/IntelliJ keymaps, or the palette /
+  right-click menu — apply the server's fixes, organize imports, refactorings), and
   **Format Document** (whole-file reformat via the server, when it advertises formatting — palette or the
   editor right-click menu). A crashed server is restarted automatically (with a crash-loop cap), and a
   root's server shuts down a few minutes after its last file closes. Off by default; per-server command +

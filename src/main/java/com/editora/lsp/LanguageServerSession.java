@@ -336,6 +336,26 @@ final class LanguageServerSession implements LanguageClient {
         td.setHover(new HoverCapabilities());
         td.setDefinition(new DefinitionCapabilities());
         td.setReferences(new ReferencesCapabilities());
+        // Code actions (#670): literal support is what makes servers return CodeAction objects (kind,
+        // isPreferred, an inline edit) instead of bare Commands; resolveSupport("edit") lets a server defer
+        // the expensive edit to codeAction/resolve; dataSupport lets its opaque data ride the round-trip
+        // (jdtls quick fixes need all three).
+        var codeAction = new org.eclipse.lsp4j.CodeActionCapabilities();
+        codeAction.setCodeActionLiteralSupport(new org.eclipse.lsp4j.CodeActionLiteralSupportCapabilities(
+                new org.eclipse.lsp4j.CodeActionKindCapabilities(java.util.List.of(
+                        "",
+                        "quickfix",
+                        "refactor",
+                        "refactor.extract",
+                        "refactor.inline",
+                        "refactor.rewrite",
+                        "source",
+                        "source.organizeImports"))));
+        codeAction.setResolveSupport(
+                new org.eclipse.lsp4j.CodeActionResolveSupportCapabilities(java.util.List.of("edit")));
+        codeAction.setDataSupport(true);
+        codeAction.setIsPreferredSupport(true);
+        td.setCodeAction(codeAction);
         // Pull diagnostics (LSP 3.17): many modern servers — vscode-html/css/json, etc. — deliver
         // diagnostics only on a textDocument/diagnostic *request* (a diagnosticProvider) instead of
         // pushing publishDiagnostics. Declaring this lets us pull them (see LspManager.pullDiagnostics).
@@ -355,6 +375,13 @@ final class LanguageServerSession implements LanguageClient {
         ws.setConfiguration(true);
         ws.setDidChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationCapabilities());
         ws.setSymbol(new org.eclipse.lsp4j.SymbolCapabilities()); // we answer workspace/symbol (Go to Symbol)
+        // We answer workspace/applyEdit (#670) — how a server-side command (a jdtls quick fix routed
+        // through executeCommand) actually lands its edits in the editor. documentChanges=true because
+        // jdtls emits the modern TextDocumentEdit[] shape when the client accepts it.
+        ws.setApplyEdit(true);
+        var wsEdit = new org.eclipse.lsp4j.WorkspaceEditCapabilities();
+        wsEdit.setDocumentChanges(true);
+        ws.setWorkspaceEdit(wsEdit);
         cc.setWorkspace(ws);
         return cc;
     }
@@ -569,6 +596,61 @@ final class LanguageServerSession implements LanguageClient {
                 out.completeExceptionally(ex);
             }
         });
+        return out;
+    }
+
+    /** Code actions ({@code textDocument/codeAction}) for {@code range}, with the client-known diagnostics
+     *  overlapping it as context (quick fixes key off them) → the actions, or empty (#670). */
+    CompletableFuture<List<Either<org.eclipse.lsp4j.Command, org.eclipse.lsp4j.CodeAction>>> codeAction(
+            String uri, org.eclipse.lsp4j.Range range, List<org.eclipse.lsp4j.Diagnostic> diagnostics) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        var context = new org.eclipse.lsp4j.CodeActionContext(diagnostics == null ? List.of() : diagnostics);
+        var params = new org.eclipse.lsp4j.CodeActionParams(new TextDocumentIdentifier(uri), range, context);
+        return server.getTextDocumentService()
+                .codeAction(params)
+                .<List<Either<org.eclipse.lsp4j.Command, org.eclipse.lsp4j.CodeAction>>>thenApply(
+                        l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
+    }
+
+    /** Resolves a code action ({@code codeAction/resolve}) to fill in its deferred {@code edit};
+     *  returns the action unchanged if the server can't resolve. */
+    CompletableFuture<org.eclipse.lsp4j.CodeAction> resolveCodeAction(org.eclipse.lsp4j.CodeAction action) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(action);
+        }
+        return server.getTextDocumentService().resolveCodeAction(action).exceptionally(t -> action);
+    }
+
+    /** Handler for a server-initiated {@code workspace/applyEdit}: {@code accept(edit, respond)} — the
+     *  handler applies (on whatever thread it marshals to) and answers via {@code respond}. Default: refuse. */
+    private volatile java.util.function.BiConsumer<org.eclipse.lsp4j.WorkspaceEdit, Consumer<Boolean>> onApplyEdit =
+            (edit, respond) -> respond.accept(false);
+
+    void setOnApplyEdit(java.util.function.BiConsumer<org.eclipse.lsp4j.WorkspaceEdit, Consumer<Boolean>> handler) {
+        this.onApplyEdit = handler == null ? (edit, respond) -> respond.accept(false) : handler;
+    }
+
+    /**
+     * {@code workspace/applyEdit} — the server asks <b>us</b> to apply a workspace edit (how a jdtls
+     * quick-fix command lands its changes). lsp4j's default implementation throws, so before this existed
+     * any server-initiated edit errored (#670). Arrives on the reader thread; the handler marshals to FX
+     * and answers the future when done.
+     */
+    @Override
+    public CompletableFuture<org.eclipse.lsp4j.ApplyWorkspaceEditResponse> applyEdit(
+            org.eclipse.lsp4j.ApplyWorkspaceEditParams params) {
+        CompletableFuture<org.eclipse.lsp4j.ApplyWorkspaceEditResponse> out = new CompletableFuture<>();
+        try {
+            onApplyEdit.accept(
+                    params == null ? null : params.getEdit(),
+                    applied -> out.complete(
+                            new org.eclipse.lsp4j.ApplyWorkspaceEditResponse(Boolean.TRUE.equals(applied))));
+        } catch (RuntimeException e) {
+            out.complete(new org.eclipse.lsp4j.ApplyWorkspaceEditResponse(false));
+        }
         return out;
     }
 

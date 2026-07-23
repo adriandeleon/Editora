@@ -20,6 +20,7 @@
   "C-b": "lsp.gotoDefinition",
   "M-f7": "lsp.findReferences",
   "C-q": "lsp.hover",
+  "C-.": "lsp.codeActions",
   "C-e": "recent.jump",
   "C-M-s": "view.settings",
   "M-1": "tool.project",

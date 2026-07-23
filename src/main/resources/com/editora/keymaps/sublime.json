@@ -25,6 +25,7 @@
   "C-r": "structure.jump",
   "C-g": "nav.goToLine",
   "f12": "lsp.gotoDefinition",
+  "C-.": "lsp.codeActions",
   "C-S-[": "view.fold",
   "C-S-]": "view.unfold",
   "C-k C-0": "view.unfoldAll",

@@ -3,6 +3,28 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP code actions / quick fixes + `workspace/applyEdit`** (#670) — the highest-value gap the Java
+      LSP review found: `textDocument/codeAction` was entirely absent, locking out most of what jdtls can do
+      (quick fixes, organize imports, generate members, extract/inline). Client capabilities now declare
+      `codeActionLiteralSupport` (without it servers return bare Commands), `resolveSupport("edit")` +
+      `dataSupport` (jdtls defers the edit to `codeAction/resolve`), and `workspace.applyEdit` +
+      `workspaceEdit.documentChanges`. `LspCoordinator.codeActions` (command `lsp.codeActions`, the
+      right-click "LSP: Code Actions" item gated on the server's capability, `C-.`/`Cmd-.` in the
+      vscode/sublime/intellij keymaps; CUA stays LSP-free, Emacs palette-only) pre-syncs the document,
+      requests actions over the caret/selection **with the retained RAW lsp4j diagnostics overlapping the
+      range as context** (`LspManager.rawDiagnostics`, open-documents-only so project-wide publishes don't
+      accumulate; the mapped neutral `LspDiagnostic` loses the code/source/data a quick fix keys off), and
+      shows a QuickOpen picker (preferred first, disabled dropped). Applying handles all three action
+      shapes: inline edit, resolve-then-edit, and command-style — `LanguageServerSession.applyEdit` now
+      implements the server→client `workspace/applyEdit` request (lsp4j's default *throws*, so any
+      server-initiated edit used to error) and routes through the pure/unit-tested **`WorkspaceEditMapper`**
+      (both wire shapes — legacy `changes` map + modern `TextDocumentEdit[]`, same-file batches merged into
+      one undo unit) into `LspCoordinator.applyWorkspaceEdits` (**all-or-nothing**: a resource
+      create/rename/delete or non-file URI refuses the whole edit — half a refactoring corrupts the
+      workspace; closed files open as background tabs so their changes are visible + undoable). Unit tests:
+      the mapper (both shapes, merge, refusals), `codeActionProvider` either-form, `diagnosticsOverlapping`.
+      *Deferred: resource operations (create/rename/delete file) in workspace edits, an inline lightbulb
+      gutter indicator, auto-"source.organizeImports" on save.*
 - [x] **Java LSP review batch** (#665–#669, from a deep review of the jdtls path) — five fixes in one branch.
       **(a) `jdt://` definitions (#665):** `uriToPath` threw on jdtls's class-file URIs and the target was
       silently dropped, so `M-.` on `String`/`List`/any dependency symbol said "no definition" — the most

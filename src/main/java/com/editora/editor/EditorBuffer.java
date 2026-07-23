@@ -588,8 +588,11 @@ public class EditorBuffer implements TabContent {
     private Runnable lspFindReferencesAction = () -> {};
     private Runnable lspHoverAction = () -> {};
     private Runnable lspFormatAction = () -> {};
+    private Runnable lspCodeActionsAction = () -> {};
     /** Whether this buffer's server advertises whole-document formatting (refreshed when it reports ready). */
     private boolean lspFormatAvailable;
+    /** Whether this buffer's server advertises code actions (quick fixes) — gates the menu item (#670). */
+    private boolean lspCodeActionsAvailable;
     /** Whether this buffer's server advertises range formatting — enables Tab to re-indent the line. */
     private boolean lspRangeFormatAvailable;
     /** Injected range-formatter (the controller wires it to the LSP manager); null = none. */
@@ -1866,6 +1869,15 @@ public class EditorBuffer implements TabContent {
             lspHoverAction.run();
         });
         List<MenuItem> items = new java.util.ArrayList<>(List.of(def, refs, hover));
+        if (lspCodeActionsAvailable) {
+            MenuItem actions = new MenuItem(tr("command.lsp.codeActions"));
+            actions.setGraphic(MenuIcons.codeAction());
+            actions.setOnAction(e -> {
+                area.moveTo(offset); // quick fixes target the right-clicked spot
+                lspCodeActionsAction.run();
+            });
+            items.add(actions);
+        }
         if (lspFormatAvailable) {
             MenuItem format = new MenuItem(tr("command.lsp.formatDocument"));
             format.setGraphic(MenuIcons.code());
@@ -3397,18 +3409,26 @@ public class EditorBuffer implements TabContent {
         todoStripe.setActive(todoEnabled && !largeFile);
     }
 
-    /** Injects the LSP actions surfaced in the right-click menu while {@link #isLspActive()} (Format is
-     *  shown only when the server advertises it — see {@link #setLspFormatAvailable}). */
-    public void setLspNavActions(Runnable gotoDefinition, Runnable findReferences, Runnable hover, Runnable format) {
+    /** Injects the LSP actions surfaced in the right-click menu while {@link #isLspActive()} (Format and
+     *  Code Actions are shown only when the server advertises them — see {@link #setLspFormatAvailable}/
+     *  {@link #setLspCodeActionsAvailable}). */
+    public void setLspNavActions(
+            Runnable gotoDefinition, Runnable findReferences, Runnable hover, Runnable format, Runnable codeActions) {
         this.lspGotoDefinitionAction = gotoDefinition == null ? () -> {} : gotoDefinition;
         this.lspFindReferencesAction = findReferences == null ? () -> {} : findReferences;
         this.lspHoverAction = hover == null ? () -> {} : hover;
         this.lspFormatAction = format == null ? () -> {} : format;
+        this.lspCodeActionsAction = codeActions == null ? () -> {} : codeActions;
     }
 
     /** Whether to offer "Format Document" in the right-click menu (the server's formatting capability). */
     public void setLspFormatAvailable(boolean available) {
         this.lspFormatAvailable = available;
+    }
+
+    /** Whether to offer "Code Actions" in the right-click menu (the server's codeAction capability, #670). */
+    public void setLspCodeActionsAvailable(boolean available) {
+        this.lspCodeActionsAvailable = available;
     }
 
     /** Async range-formatter for Tab line re-indent: requests the edits the server would apply to a line
