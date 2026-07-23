@@ -336,6 +336,7 @@ final class LanguageServerSession implements LanguageClient {
         td.setHover(new HoverCapabilities());
         td.setDefinition(new DefinitionCapabilities());
         td.setReferences(new ReferencesCapabilities());
+        td.setDocumentHighlight(new org.eclipse.lsp4j.DocumentHighlightCapabilities()); // occurrences (#675)
         // Signature help (#674): declare markdown docs + label offsets (servers send precise active-parameter
         // ranges only when the client says it can render them) + per-signature activeParameter.
         var sigInfo =
@@ -669,6 +670,16 @@ final class LanguageServerSession implements LanguageClient {
         }
         var params = new org.eclipse.lsp4j.SignatureHelpParams(new TextDocumentIdentifier(uri), pos);
         return server.getTextDocumentService().signatureHelp(params).exceptionally(t -> null);
+    }
+
+    /** Occurrences of the symbol at a position ({@code textDocument/documentHighlight}) → highlights with
+     *  their Read/Write kind, or empty (#675). */
+    CompletableFuture<List<? extends org.eclipse.lsp4j.DocumentHighlight>> documentHighlight(String uri, Position pos) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        var params = new org.eclipse.lsp4j.DocumentHighlightParams(new TextDocumentIdentifier(uri), pos);
+        return server.getTextDocumentService().documentHighlight(params).exceptionally(t -> List.of());
     }
 
     CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(String uri, Position pos) {

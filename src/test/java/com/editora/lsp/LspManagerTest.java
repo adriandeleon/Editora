@@ -195,6 +195,23 @@ class LspManagerTest {
         assertEquals(Set.of(), LspManager.signatureTriggerCharsOf(null));
     }
 
+    // --- Document highlight (#675) -------------------------------------------------------------
+
+    @Test
+    void documentHighlightProviderDetectedFromEitherForm() {
+        assertFalse(LspManager.documentHighlightProvider(null));
+        assertFalse(LspManager.documentHighlightProvider(new ServerCapabilities()));
+        ServerCapabilities bool = new ServerCapabilities();
+        bool.setDocumentHighlightProvider(true);
+        assertTrue(LspManager.documentHighlightProvider(bool));
+        ServerCapabilities off = new ServerCapabilities();
+        off.setDocumentHighlightProvider(false);
+        assertFalse(LspManager.documentHighlightProvider(off));
+        ServerCapabilities opts = new ServerCapabilities();
+        opts.setDocumentHighlightProvider(new org.eclipse.lsp4j.DocumentHighlightOptions());
+        assertTrue(LspManager.documentHighlightProvider(opts));
+    }
+
     // --- Code actions (#670) -------------------------------------------------------------------
 
     @Test

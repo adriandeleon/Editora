@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Occurrence highlighting (LSP)** — rest the caret on a symbol and every occurrence in the file gets a
+  subtle wash, with **writes** (assignments) shaded warmer than reads — the IntelliJ/VS Code idle
+  affordance, powered by the language server so it's semantic (a local `x` doesn't light up an unrelated
+  field `x`). Clears the moment the caret moves; zero cost while the caret is typing or LSP is off. (#675)
+
 - **Signature help (LSP)** — typing `(` or `,` in a call pops the server's overload list at the caret:
   the active signature with the **current parameter highlighted**, an "n/m" overload counter, and the
   signature's documentation. It follows your typing (the highlighted parameter advances as arguments are

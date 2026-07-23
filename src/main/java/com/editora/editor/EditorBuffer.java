@@ -487,6 +487,7 @@ public class EditorBuffer implements TabContent {
     private Runnable onRunnableChanged = () -> {};
 
     private SearchHighlightOverlay searchOverlay; // lazily attached — see searchOverlay()
+    private OccurrenceHighlightOverlay occurrenceOverlay; // lazily attached — see occurrenceOverlay() (#675)
     /** Highlights configured TODO/FIXME-style patterns (per-pattern color), behind the text. */
     private final TodoHighlightOverlay todoOverlay = new TodoHighlightOverlay(area);
     /** Injected matcher (compiled patterns) + on/off gate; null/false = no highlight. */
@@ -724,6 +725,7 @@ public class EditorBuffer implements TabContent {
         addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         addCompletionKeys(area); // registered last → runs first, so popup nav/accept beats Tab/Enter
         installCompletionTrigger(area);
+        installOccurrenceTrigger(area); // LSP document highlight (#675)
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
         // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
         bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
@@ -2184,6 +2186,13 @@ public class EditorBuffer implements TabContent {
         return searchOverlay;
     }
 
+    private OccurrenceHighlightOverlay occurrenceOverlay() {
+        if (occurrenceOverlay == null) {
+            occurrenceOverlay = attachLazyOverlay(new OccurrenceHighlightOverlay(area), todoOverlay);
+        }
+        return occurrenceOverlay;
+    }
+
     private LogHighlightOverlay logOverlay() {
         if (logOverlay == null) {
             logOverlay = attachLazyOverlay(new LogHighlightOverlay(area), whitespace);
@@ -2229,6 +2238,67 @@ public class EditorBuffer implements TabContent {
         if (searchOverlay != null) {
             searchOverlay.setMatches(java.util.List.of(), -1);
         }
+    }
+
+    /**
+     * Washes every occurrence of the symbol under the caret (LSP document highlight, #675) — Read vs Write
+     * shaded differently. Positions are converted to offsets against the document as it is NOW, so the
+     * caller drops a response whose {@code docVersion} moved. Empty clears + releases the overlay texture.
+     */
+    public void setOccurrenceSpans(java.util.List<OccurrenceSpan> spans) {
+        if (largeFile || spans == null || spans.isEmpty()) {
+            clearOccurrenceSpans();
+            return;
+        }
+        java.util.List<int[]> triples = new java.util.ArrayList<>(spans.size());
+        for (OccurrenceSpan s : spans) {
+            int from = lspOffset(area, s.startLine(), s.startCol());
+            int to = lspOffset(area, s.endLine(), s.endCol());
+            if (to > from) {
+                triples.add(new int[] {from, to, s.write() ? 1 : 0});
+            }
+        }
+        occurrenceOverlay().setSpans(triples);
+    }
+
+    /** Clears the occurrence wash (no symbol under the caret / LSP off / buffer deactivated). */
+    public void clearOccurrenceSpans() {
+        if (occurrenceOverlay != null) {
+            occurrenceOverlay.setSpans(java.util.List.of());
+        }
+    }
+
+    /** Injects the document-highlight request (the coordinator asks the server and pushes spans back);
+     *  null disables the caret-idle trigger entirely. */
+    public void setOccurrenceRequester(Runnable requester) {
+        this.occurrenceRequester = requester;
+    }
+
+    /** Fired ~300 ms after the caret comes to rest while LSP-active; null = feature off. */
+    private Runnable occurrenceRequester;
+
+    /** Debounces the caret-rest trigger for document highlight (#675) — one per buffer, both views. */
+    private final javafx.animation.PauseTransition occurrenceIdle =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+
+    /**
+     * Caret-idle trigger for document highlight: any caret move clears the wash at once (the old spans
+     * are for the old symbol — leaving them paints the wrong word) and re-arms the 300 ms idle timer;
+     * on rest, the injected requester asks the server. Three field checks per caret move when off.
+     */
+    private void installOccurrenceTrigger(CodeArea a) {
+        a.caretPositionProperty().addListener((o, ov, nv) -> {
+            if (occurrenceRequester == null || !lspActive || largeFile) {
+                return;
+            }
+            clearOccurrenceSpans();
+            occurrenceIdle.setOnFinished(ev -> {
+                if (occurrenceRequester != null && lspActive && a.isFocused()) {
+                    occurrenceRequester.run();
+                }
+            });
+            occurrenceIdle.playFromStart();
+        });
     }
 
     /** Enables/disables the TODO-pattern highlight for this buffer and re-scans (the controller pushes the
@@ -5447,6 +5517,7 @@ public class EditorBuffer implements TabContent {
         addAutoIndent(area2);
         addCompletionKeys(area2);
         installCompletionTrigger(area2);
+        installOccurrenceTrigger(area2); // LSP document highlight (#675)
         installImageDrop(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
             multiCaret2 = MultiCaretController.install(area2); // same multi-caret add-on in the split view

@@ -709,6 +709,7 @@ final class LspCoordinator {
             buffer.setLspRangeFormatAvailable(false);
             buffer.setLspCodeActionsAvailable(false);
             buffer.setLspSignatureTriggerChars(java.util.Set.of());
+            buffer.clearOccurrenceSpans();
             buffer.setSemanticActive(false);
             if (path != null && lspManager.isManaged(path)) {
                 lspManager.closeDocument(path);
@@ -892,6 +893,7 @@ final class LspCoordinator {
     void wireBuffer(EditorBuffer buffer) {
         // Debounced didChange sink + keep the Structure outline live as the document changes.
         buffer.setSignatureHelpRequester(() -> signatureHelp(false)); // '(' or ',' typed (#674)
+        buffer.setOccurrenceRequester(() -> requestOccurrences(buffer)); // caret at rest (#675)
         buffer.setLspChangeListener(text -> {
             if (buffer.getPath() != null) {
                 lspManager.changeDocument(buffer.getPath(), text);
@@ -1401,6 +1403,30 @@ final class LspCoordinator {
         if (signaturePopup != null) {
             signatureHelp(false);
         }
+    }
+
+    /**
+     * Document highlight (#675): asks the server for the occurrences of the symbol under the resting caret
+     * and pushes them into the buffer's occurrence overlay. Fired by the buffer's 300 ms caret-idle timer;
+     * silent (an empty result just leaves the wash cleared). The {@code docVersion} guard drops a response
+     * computed against a document that moved while the request was in flight — its offsets are meaningless.
+     */
+    private void requestOccurrences(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        if (buffer != host.activeBuffer()
+                || path == null
+                || !lspManager.isManaged(path)
+                || !lspManager.supportsDocumentHighlight(path)) {
+            buffer.clearOccurrenceSpans();
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        long version = buffer.docVersion();
+        lspManager.documentHighlights(path, area.getCurrentParagraph(), area.getCaretColumn(), spans -> {
+            if (buffer == host.activeBuffer() && buffer.docVersion() == version) {
+                buffer.setOccurrenceSpans(spans);
+            }
+        });
     }
 
     /**

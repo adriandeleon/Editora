@@ -652,6 +652,50 @@ public final class LspManager {
                 .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e == null ? r : null)));
     }
 
+    /** True if {@code file}'s server is ready and advertises document highlight (occurrences — #675). */
+    public boolean supportsDocumentHighlight(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && documentHighlightProvider(s.capabilities());
+    }
+
+    /** Pure: whether a server's capabilities include {@code documentHighlightProvider} (null-safe). */
+    static boolean documentHighlightProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null) {
+            return false;
+        }
+        var p = caps.getDocumentHighlightProvider();
+        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
+    }
+
+    /** Occurrences of the symbol at a 0-based position, mapped to neutral {@link OccurrenceSpan}s
+     *  (Write kind flagged) and delivered on the FX thread — empty when unavailable (#675). */
+    public void documentHighlights(
+            Path file, int line, int character, Consumer<List<com.editora.editor.OccurrenceSpan>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        s.documentHighlight(uri(file), new Position(line, character)).whenComplete((result, error) -> {
+            List<com.editora.editor.OccurrenceSpan> spans = new ArrayList<>();
+            if (error == null && result != null) {
+                for (var h : result) {
+                    if (h == null || h.getRange() == null) {
+                        continue;
+                    }
+                    var r = h.getRange();
+                    spans.add(new com.editora.editor.OccurrenceSpan(
+                            r.getStart().getLine(),
+                            r.getStart().getCharacter(),
+                            r.getEnd().getLine(),
+                            r.getEnd().getCharacter(),
+                            h.getKind() == org.eclipse.lsp4j.DocumentHighlightKind.Write));
+                }
+            }
+            Platform.runLater(() -> cb.accept(spans));
+        });
+    }
+
     /** True if {@code file}'s server is ready and advertises code actions (quick fixes — #670). */
     public boolean supportsCodeActions(Path file) {
         LanguageServerSession s = sessionFor(file);
