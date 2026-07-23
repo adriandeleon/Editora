@@ -960,6 +960,11 @@ A backlog of planned features and improvements. Unordered within each section.
       open-line (`C-o`), kill-whole-line (`C-S-DEL`), zap-to-char (`M-z`), forward/backward-sexp +
       mark/kill-sexp (`C-M-f`/`C-M-b`/`C-M-SPC`/`C-M-k`), beginning/end-of-defun (`C-M-a`/`C-M-e`),
       mark-paragraph (`M-h`), mark-whole-buffer (`C-x h`), move-to-window-line (`M-r`).
+- [x] Occur — `M-s o`: regexp-match the current buffer's lines in a picker, jump to a match (buffer-scoped
+      counterpart to Find in Files). *Picker, not a persistent occur-buffer with occur-edit.*
+- [x] Tabify / Untabify — `edit.tabify`/`edit.untabify`, pure `editops/TabConvert`, region or whole buffer.
+- [x] Align regexp — `edit.alignRegexp`, pure `editops/AlignRegexp`; pads to align a pattern's column.
+      *Adds spaces only (no whitespace collapse / capture-group alignment); character columns.*
 - [x] Mark ring — `C-SPC` pushes the caret onto a per-buffer ring (bounded 16, edit-tracked), `C-x C-SPC`
       (`edit.popMark`) pops back and cycles. Pure `editops/MarkRing`. *Explicit marks only — automatic
       jump-back is the separate NavigationHistory; no C-u prefix, so pop is its own command; session-only;

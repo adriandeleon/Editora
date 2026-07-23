@@ -116,6 +116,9 @@ Editora is built with the help of AI coding tools.
   fixups (`M-\`, `M-SPC`), delete-blank-lines (`C-x C-o`), open-line (`C-o`), kill-whole-line (`C-S-DEL`),
   zap-to-char (`M-z`), balanced-expression motion (`C-M-f`/`C-M-b`, mark/kill-sexp), defun motion
   (`C-M-a`/`C-M-e`), and mark-paragraph / mark-whole-buffer. All palette-discoverable and rebindable.
+- **Occur** (`M-s o`) — list all lines in the buffer matching a regexp and jump to one; **Tabify / Untabify**
+  convert a region between tab and space indentation; **Align Regexp** pads lines so a pattern lines up in a
+  column (aligning `=`/`:` blocks). All palette-discoverable.
 - **Mark ring** — `C-SPC` records the caret on a per-buffer ring; `C-x C-SPC` pops back to the most recent
   mark and cycles through older ones on repeat. Marks track their text through edits. Distinct from the
   automatic jump-history (`nav.back`/`nav.forward`).

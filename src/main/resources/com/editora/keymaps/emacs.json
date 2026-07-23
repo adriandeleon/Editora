@@ -109,6 +109,7 @@
   "M-g b": "bookmarks.jump",
   "M-g n": "notes.jump",
   "M-g j": "nav.aceJump",
+  "M-s o": "edit.occur",
   "M-g S-l": "nav.aceJumpLine",
   "M-g h": "tool.gitLog",
   "M-g p": "tool.github",

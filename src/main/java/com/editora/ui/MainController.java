@@ -12431,6 +12431,94 @@ public class MainController implements com.editora.mcp.McpBridge {
      * to the whole buffer when nothing is selected. One undoable {@code replaceText}; the
      * transformed lines are re-selected. Guarded by {@link #activeEditable()}.
      */
+    /**
+     * Emacs {@code occur} ({@code M-s o}): prompt for a regexp, then list every line of the active buffer
+     * that matches in a keyboard picker; choosing one jumps the caret to that line. A buffer-scoped
+     * counterpart to Find in Files (which is project-scoped). Matching reuses the pure
+     * {@link com.editora.search.MultiFileSearch#matchesInText}; the picker keeps its own substring filter,
+     * so you can narrow the occur list further as you would any picker.
+     */
+    private void occur() {
+        EditorBuffer buffer = activeBuffer();
+        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
+        if (area == null) {
+            return;
+        }
+        String seed = singleLineSelection(area);
+        promptText(tr("dialog.occur.title"), tr("dialog.occur.label"), seed, pattern -> {
+            if (pattern.isEmpty()) {
+                return;
+            }
+            String err = com.editora.editor.SearchMatcher.regexError(pattern);
+            if (err != null) {
+                setStatus(tr("find.badRegex", err));
+                return;
+            }
+            java.util.List<com.editora.search.LineMatch> matches = occurMatches(area.getText(), pattern);
+            if (matches.isEmpty()) {
+                setStatus(tr("status.occur.none"));
+                return;
+            }
+            QuickOpen<com.editora.search.LineMatch> picker = new QuickOpen<>(
+                    tr("dialog.occur.pickerTitle", matches.size()),
+                    tr("dialog.occur.pickerPrompt"),
+                    () -> matches,
+                    m -> m.line() + ": " + m.lineText().strip(),
+                    m -> "",
+                    m -> m.lineText().strip(), // search the line text, not the "N: " prefix
+                    m -> navigateToLine(m.line() - 1));
+            picker.setOverlayHost(overlayHost);
+            picker.show(stage);
+        });
+    }
+
+    /** The lines of {@code text} matching {@code pattern} (regex, case-insensitive) — the occur match list. */
+    java.util.List<com.editora.search.LineMatch> occurMatches(String text, String pattern) {
+        return com.editora.search.MultiFileSearch.matchesInText(
+                text, new com.editora.search.SearchQuery(pattern, false, true, false));
+    }
+
+    /** Emacs {@code untabify}: expand tabs to spaces over the selection (else the whole buffer). */
+    private void untabifyRegion() {
+        int tw = tabWidthForActive();
+        lineTransform(before -> com.editora.editops.TabConvert.untabify(before, tw));
+    }
+
+    /** Emacs {@code tabify}: convert runs of spaces back to tabs over the selection (else the buffer). */
+    private void tabifyRegion() {
+        int tw = tabWidthForActive();
+        lineTransform(before -> com.editora.editops.TabConvert.tabify(before, tw));
+    }
+
+    /** The active buffer's effective tab width, else the global setting. */
+    private int tabWidthForActive() {
+        EditorBuffer b = activeBuffer();
+        int tw = b == null ? 0 : b.getTabSize();
+        return tw > 0 ? tw : config.getSettings().getTabSize();
+    }
+
+    /** Emacs {@code align-regexp}: prompt for a regexp and pad the selection's lines to align it. */
+    private void alignRegexpRegion() {
+        if (!activeEditable()) {
+            return;
+        }
+        promptText(
+                tr("dialog.alignRegexp.title"), tr("dialog.alignRegexp.label"), "", regex -> applyAlignRegexp(regex));
+    }
+
+    /** The align-regexp apply past the prompt (the FX-test seam): validate the regexp, then pad the lines. */
+    void applyAlignRegexp(String regex) {
+        if (regex == null || regex.isEmpty()) {
+            return;
+        }
+        String err = com.editora.editor.SearchMatcher.regexError(regex);
+        if (err != null) {
+            setStatus(tr("find.badRegex", err));
+            return;
+        }
+        lineTransform(before -> com.editora.editops.AlignRegexp.align(before, regex));
+    }
+
     private void lineTransform(java.util.function.UnaryOperator<String> op) {
         if (!activeEditable()) {
             return;
@@ -13580,6 +13668,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                 "edit.removeEmptyLines", () -> lineTransform(com.editora.editops.LineTransforms::removeEmpty)));
         registry.register(Command.of(
                 "edit.trimTrailingWhitespace", () -> lineTransform(com.editora.editops.LineTransforms::trimTrailing)));
+        registry.register(Command.of("edit.tabify", this::tabifyRegion));
+        registry.register(Command.of("edit.untabify", this::untabifyRegion));
+        registry.register(Command.of("edit.alignRegexp", this::alignRegexpRegion));
+        registry.register(Command.of("edit.occur", this::occur));
         // C-a: smart line start — first press to the beginning of the line's text (first non-whitespace),
         // a second press toggles to the true line start (column 0).
         registry.register(Command.of(
