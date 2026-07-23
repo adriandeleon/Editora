@@ -4078,15 +4078,15 @@ public class SettingsWindow {
     }
 
     private void persistAbbrevs() {
-        config.getSettings().setAbbreviations(new java.util.ArrayList<>(abbrevItems));
-        apply();
+        config.setAbbreviations(new java.util.ArrayList<>(abbrevItems));
+        config.saveAbbreviations();
     }
 
     private void reloadAbbrevs() {
         var selected =
                 abbrevList == null ? null : abbrevList.getSelectionModel().getSelectedItem();
         String selectedKey = selected == null ? null : selected.getAbbreviation();
-        abbrevItems.setAll(copyAbbrevs(config.getSettings().getAbbreviations()));
+        abbrevItems.setAll(copyAbbrevs(config.getAbbreviations()));
         if (abbrevList != null && selectedKey != null) {
             for (var a : abbrevItems) {
                 if (selectedKey.equals(a.getAbbreviation())) {

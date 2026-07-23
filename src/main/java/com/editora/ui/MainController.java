@@ -11080,7 +11080,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
         buffer.setFillColumn(s.getFillColumn());
         buffer.setAutoFillEnabled(s.isAutoFill()); // break prose lines at the fill column as you type (prose only)
-        buffer.setAbbrevs(s.abbreviationMap(), s.isAbbrevMode()); // user abbreviations + auto-expand mode
+        buffer.setAbbrevs(config.abbreviationMap(), s.isAbbrevMode()); // dictionary from abbreviations.json + mode
         applyEditorConfig(buffer); // .editorconfig overrides the global indent/EOL/ruler/charset (when on)
     }
 
@@ -12628,12 +12628,11 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Adds or replaces an abbreviation (case-insensitive on the key), persists, and re-applies to buffers. */
     private void addAbbreviation(String abbrev, String expansion) {
-        java.util.List<com.editora.config.Abbreviation> list =
-                new java.util.ArrayList<>(config.getSettings().getAbbreviations());
+        java.util.List<com.editora.config.Abbreviation> list = new java.util.ArrayList<>(config.getAbbreviations());
         list.removeIf(a -> a.getAbbreviation().equalsIgnoreCase(abbrev));
         list.add(new com.editora.config.Abbreviation(abbrev, expansion));
-        config.getSettings().setAbbreviations(list);
-        requestSave();
+        config.setAbbreviations(list);
+        config.saveAbbreviations();
         applyViewSettingsToAllBuffers(config.getSettings());
         if (settingsWindow != null) {
             settingsWindow.syncAll();

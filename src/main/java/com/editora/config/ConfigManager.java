@@ -40,6 +40,7 @@ public class ConfigManager {
     static final String PLUGINS_FILE_NAME = "plugins.json";
     static final String PLUGINS_DIR_NAME = "plugins";
     static final String MACROS_FILE_NAME = "macros.json";
+    static final String ABBREVIATIONS_FILE_NAME = "abbreviations.json";
     static final String TRUST_FILE_NAME = "trusted-folders.json";
     static final String PROJECTS_DIR_NAME = "projects";
     /** Local File History lives under {@code history/}: a small {@code index.json} + {@code blobs/} bodies. */
@@ -167,6 +168,23 @@ public class ConfigManager {
     /** The shared keyboard-macro store ({@code macros.json}). */
     public MacroStore getMacroStore() {
         return shared.getMacroStore();
+    }
+
+    public java.util.List<Abbreviation> getAbbreviations() {
+        return shared.getAbbreviations();
+    }
+
+    public void setAbbreviations(java.util.List<Abbreviation> abbreviations) {
+        shared.setAbbreviations(abbreviations);
+    }
+
+    public void saveAbbreviations() {
+        shared.saveAbbreviations();
+    }
+
+    /** The abbreviations as a lower-cased-key → expansion map, for {@link com.editora.editops.Abbrev}. */
+    public java.util.Map<String, String> abbreviationMap() {
+        return shared.abbreviationMap();
     }
 
     /** Persists the saved keyboard macros. */

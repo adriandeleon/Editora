@@ -2,6 +2,7 @@ package com.editora.config.migration;
 
 import java.util.Map;
 
+import com.editora.config.AbbrevStore;
 import com.editora.config.AgentSessionHistory;
 import com.editora.config.BookmarkStore;
 import com.editora.config.BreakpointStore;
@@ -160,6 +161,7 @@ public enum ConfigSchema {
     // v1 → v2 backfilled agentId ("claude") on every session predating multi-agent support.
     AGENT_SESSIONS(AgentSessionHistory.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::addDefaultAgentIdToSessions)),
     MACROS(MacroStore.SCHEMA_VERSION, 1, Map.of()),
+    ABBREVIATIONS(AbbrevStore.SCHEMA_VERSION, 1, Map.of()),
     /** Trusted workspace roots. Failing open to defaults (= nothing trusted) is the safe direction here. */
     TRUST(TrustStore.SCHEMA_VERSION, 1, Map.of());
 

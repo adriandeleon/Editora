@@ -34,8 +34,8 @@ class AbbrevFxTest {
         fx = FxWindowFixture.create();
         registry = FxTestSupport.field(fx.controller, "registry");
         settings = fx.shared.getSettings();
-        FxTestSupport.runOnFx(() -> settings.setAbbreviations(
-                List.of(new Abbreviation("btw", "by the way"), new Abbreviation("afaik", "as far as I know"))));
+        FxTestSupport.runOnFx(() -> fx.shared.setAbbreviations(new java.util.ArrayList<>(
+                List.of(new Abbreviation("btw", "by the way"), new Abbreviation("afaik", "as far as I know")))));
     }
 
     @AfterAll
@@ -56,7 +56,7 @@ class AbbrevFxTest {
             EditorBuffer b = new EditorBuffer();
             b.setContent(content);
             FxTestSupport.call(fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, b, true);
-            b.setAbbrevs(settings.abbreviationMap(), autoExpand);
+            b.setAbbrevs(fx.shared.abbreviationMap(), autoExpand);
             b.getArea().moveTo(b.getArea().getLength());
             return b;
         });
@@ -127,10 +127,10 @@ class AbbrevFxTest {
 
     @Test
     void defineAbbreviationAddsToTheDictionaryAndPersists() throws Exception {
-        int before = FxTestSupport.callOnFx(() -> settings.getAbbreviations().size());
+        int before = FxTestSupport.callOnFx(() -> fx.shared.getAbbreviations().size());
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 fx.controller, "addAbbreviation", new Class[] {String.class, String.class}, "omw", "on my way"));
-        List<Abbreviation> after = FxTestSupport.callOnFx(() -> settings.getAbbreviations());
+        List<Abbreviation> after = FxTestSupport.callOnFx(() -> fx.shared.getAbbreviations());
         assertEquals(before + 1, after.size());
         assertTrue(after.stream()
                 .anyMatch(a ->
@@ -143,7 +143,7 @@ class AbbrevFxTest {
                 fx.controller, "addAbbreviation", new Class[] {String.class, String.class}, "ty", "thank you"));
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 fx.controller, "addAbbreviation", new Class[] {String.class, String.class}, "TY", "thanks"));
-        List<Abbreviation> after = FxTestSupport.callOnFx(() -> settings.getAbbreviations());
+        List<Abbreviation> after = FxTestSupport.callOnFx(() -> fx.shared.getAbbreviations());
         long ty = after.stream()
                 .filter(a -> a.getAbbreviation().equalsIgnoreCase("ty"))
                 .count();
