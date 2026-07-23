@@ -3,6 +3,41 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Java LSP review batch** (#665–#669, from a deep review of the jdtls path) — five fixes in one branch.
+      **(a) `jdt://` definitions (#665):** `uriToPath` threw on jdtls's class-file URIs and the target was
+      silently dropped, so `M-.` on `String`/`List`/any dependency symbol said "no definition" — the most
+      common Java navigation. Now a definition-only path keeps the URI (`Target.classFileUri`), fetches the
+      source via the raw `java/classFileContents` request (`LanguageServerSession.rawRequest` over the
+      launcher's JSON-RPC endpoint — the typed proxy can't express a custom method), and opens it in a
+      read-only Java-highlighted path-less buffer (the `openTechnicalDictionary` pattern), deduped per URI by
+      a weak-value map so a repeated jump re-selects the tab. References stay file-only (the panel is
+      file-based). **(b) crash auto-restart (#666):** a server that died mid-session was *detected*
+      (`onExit → markDead → dropSession`) but never *recovered* — `syncBuffer` only re-ran from
+      settings-applies or `onBufferShown`, and a crashed buffer isn't in the deferred set, so LSP stayed
+      silently dead until a manual restart. `dropSession` now distinguishes crash from deliberate teardown
+      (`dispose()` sets its flag before killing, so dead-but-never-disposed ⇒ crashed), notifies the
+      coordinator on FX, which clears the dead session's stale diagnostics and routes affected buffers back
+      through `syncBufferWhenShown` (active → refork now, background → on first show) — capped by a pure
+      sliding-window decision (≤2 restarts/5 min per server+root, unit-tested) so a crash-looper isn't
+      re-forked forever. `markDead` also fires `onStatus("Error")` so an instant startup death stops the
+      loading bar in ~1 s instead of the 60 s initialize timeout. **(c) Format Document staleness (#667):**
+      the one nav/format flow that didn't `changeDocument`-sync before its request (goto/refs/hover all did),
+      so formatting right after typing formatted the ~300 ms-stale server copy; plus `applyLspEdits` now
+      *skips* an edit whose start line lies beyond the document (unambiguously stale — no valid edit begins
+      past EOF) instead of clamping it onto the last line; column clamping stays (it's the LSP spec's rule).
+      **(d) multi-window jdtls `-data` (#668):** `LspManager` is per-window and the workspace dir is a pure
+      hash of the root, so two windows on one Java root forked two jdtls against one Eclipse workspace. A
+      *static* (cross-window) claim registry now hands the second claimant a `-2`-suffixed dir; claims are
+      released on every session-end path (drop/shutdownServer/shutdownAll/lost-putIfAbsent-race). In-process
+      only — a second Editora *process* can still collide (rare, pre-existing; the earlier audit's live
+      two-jdtls repro note stands — this is defensive isolation, two JVMs sharing one index is racy at best).
+      **(e) idle session eviction (#669):** `closeDocument` only removed URI routing, so browsing N roots
+      accumulated N live server JVMs until window close; a session with no open documents is now disposed
+      after a 3-min grace (timer on a shared daemon scheduler, the *decision* re-checked on the FX thread so
+      it can't race a re-open; reopening cancels it). Unit tests: claim/release + candidate naming, the
+      crash-window decision, `classFileTitle`/`rawStringResult`; FX test: beyond-document edit skipped while
+      valid edits apply. Deferred → #670 (code actions / quick fixes + `workspace/applyEdit`, the highest-value
+      missing feature).
 - [x] **Rebinding a prefix chord silently disables everything under it** (#438) — the keybinding editor's
       conflict check was `keymap.commandFor(chord)`, an **exact** match only, so recording a lone `C-x` (a
       prefix of `C-x C-s`/`C-x C-f`/`C-x C-c`/…) matched nothing → no warning → every `C-x …` binding dead

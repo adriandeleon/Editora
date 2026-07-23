@@ -103,6 +103,10 @@ final class LanguageServerSession implements LanguageClient {
     // publishes these to the FX reader (ready()) and the launcher's drain thread instead of the monitor.
     private volatile Process process;
     private volatile LanguageServer server;
+    /** The LSP4J launcher, kept for {@link #rawRequest} (custom, non-standard requests like jdtls's
+     *  {@code java/classFileContents}, which the typed {@link LanguageServer} proxy can't express). */
+    private volatile Launcher<LanguageServer> launcher;
+
     private volatile boolean initialized;
     private volatile Runnable onDead = () -> {};
     private final java.util.concurrent.atomic.AtomicBoolean deadReported =
@@ -186,6 +190,7 @@ final class LanguageServerSession implements LanguageClient {
             drainStderr(process);
             Launcher<LanguageServer> launcher = LSPLauncher.createClientLauncher(
                     this, process.getInputStream(), process.getOutputStream(), executor, c -> c);
+            this.launcher = launcher;
             server = launcher.getRemoteProxy();
             launcher.startListening();
             sendInitialize();
@@ -394,8 +399,21 @@ final class LanguageServerSession implements LanguageClient {
             synchronized (this) {
                 pending.clear();
             }
+            if (!disposed) {
+                // The server died on its own (crash, OOM-kill, instant startup death) — not a deliberate
+                // dispose(). Stop the status-bar loading bar NOW: for a process that dies before initialize
+                // resolves, the only other exit used to be the 60 s handshake timeout, so the bar spun for a
+                // minute over a corpse (#666). A null message stops the bar without writing to the echo area.
+                onStatus.accept("Error", null);
+            }
             onDead.run();
         }
+    }
+
+    /** Whether {@link #dispose()} ran — i.e. this session was torn down deliberately. A dead session that was
+     *  never disposed died on its own (crash / failed handshake), which is what the auto-restart keys on. */
+    boolean isDisposed() {
+        return disposed;
     }
 
     /** True while the session can actually serve a request — initialized AND its process still alive. */
@@ -518,6 +536,35 @@ final class LanguageServerSession implements LanguageClient {
                                 out.complete(r);
                             }
                         });
+            } catch (RuntimeException ex) {
+                out.completeExceptionally(ex);
+            }
+        });
+        return out;
+    }
+
+    /**
+     * Sends a <b>non-standard</b> request the typed {@link LanguageServer} proxy can't express — e.g. jdtls's
+     * {@code java/classFileContents} (#665) — via the launcher's raw JSON-RPC endpoint. The result is the
+     * gson-decoded payload (lsp4j has no registered response type for an unknown method, so expect a
+     * {@code JsonElement}/{@code JsonPrimitive}). Queued until {@code initialize} completes.
+     */
+    CompletableFuture<Object> rawRequest(String method, Object params) {
+        CompletableFuture<Object> out = new CompletableFuture<>();
+        whenReady(() -> {
+            Launcher<LanguageServer> l = launcher;
+            if (disposed || l == null) {
+                out.completeExceptionally(new IllegalStateException("language server not available"));
+                return;
+            }
+            try {
+                l.getRemoteEndpoint().request(method, params).whenComplete((r, e) -> {
+                    if (e != null) {
+                        out.completeExceptionally(e);
+                    } else {
+                        out.complete(r);
+                    }
+                });
             } catch (RuntimeException ex) {
                 out.completeExceptionally(ex);
             }

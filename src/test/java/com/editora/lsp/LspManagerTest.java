@@ -179,4 +179,59 @@ class LspManagerTest {
         String key = LspManager.sessionKey("json", java.nio.file.Path.of("/proj"));
         assertEquals(1, key.chars().filter(c -> c == 0).count(), "exactly one separator in the key");
     }
+
+    // --- jdt:// class-file navigation (#665) ---------------------------------------------------
+
+    @Test
+    void classFileTitleIsTheLastSegmentWithoutTheQuery() {
+        assertEquals(
+                "String.class",
+                LspManager.classFileTitle("jdt://contents/java.base/java.lang/String.class?%3Ddemo%2F%5C%2F"
+                        + "modules%5C%2Fjava.base%3D%2Fjavadoc_location%3D"));
+        assertEquals("List.class", LspManager.classFileTitle("jdt://contents/rt.jar/java.util/List.class"));
+        assertEquals("", LspManager.classFileTitle(null));
+        // No path segment at all → fall back to the whole URI rather than a blank tab title.
+        assertEquals("weird", LspManager.classFileTitle("weird"));
+    }
+
+    @Test
+    void rawStringResultAcceptsStringAndGsonStringPrimitiveOnly() {
+        assertEquals("src", LspManager.rawStringResult("src"));
+        assertEquals("src", LspManager.rawStringResult(new com.google.gson.JsonPrimitive("src")));
+        assertNull(LspManager.rawStringResult(new com.google.gson.JsonPrimitive(42)));
+        assertNull(LspManager.rawStringResult(null));
+        assertNull(LspManager.rawStringResult(List.of()));
+    }
+
+    // --- jdtls -data workspace claims (#668) ---------------------------------------------------
+
+    @Test
+    void workspaceCandidateSuffixesFromTheSecondAttempt() {
+        assertEquals("abc123", LspManager.workspaceCandidate("abc123", 1));
+        assertEquals("abc123-2", LspManager.workspaceCandidate("abc123", 2));
+        assertEquals("abc123-3", LspManager.workspaceCandidate("abc123", 3));
+    }
+
+    /** Two live claims of the same root (two windows) must get DIFFERENT dirs — sharing one Eclipse
+     *  workspace wedges the second jdtls on its {@code .metadata/.lock} (#668). */
+    @Test
+    void aSecondClaimOfTheSameRootGetsASuffixedDirAndReleaseRecycles() {
+        String base = "test-claim-" + System.nanoTime(); // unique so a parallel test can't collide
+        String first = LspManager.claimJdtlsWorkspaceName(base);
+        String second = LspManager.claimJdtlsWorkspaceName(base);
+        try {
+            assertEquals(base, first, "first claimant keeps the canonical dir (persisted index reuse)");
+            assertEquals(base + "-2", second, "second claimant is suffixed, never shared");
+        } finally {
+            LspManager.releaseJdtlsWorkspaceName(first);
+            LspManager.releaseJdtlsWorkspaceName(second);
+        }
+        // Released → the canonical dir is claimable again (a later window reuses the index).
+        String again = LspManager.claimJdtlsWorkspaceName(base);
+        try {
+            assertEquals(base, again);
+        } finally {
+            LspManager.releaseJdtlsWorkspaceName(again);
+        }
+    }
 }

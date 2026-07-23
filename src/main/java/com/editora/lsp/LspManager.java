@@ -34,12 +34,28 @@ import org.eclipse.lsp4j.Position;
  */
 public final class LspManager {
 
-    /** A resolved navigation target (definition/reference): a file + 0-based line/character. */
-    public record Target(Path file, int line, int character) {}
+    /**
+     * A resolved navigation target (definition/reference): a file + 0-based line/character. For a definition
+     * inside a JDK/dependency class — which jdtls reports under a {@code jdt://contents/...} URI, not a
+     * {@code file:} one — {@code file} is null and {@code classFileUri} carries the URI; the coordinator
+     * fetches its source via {@link #classFileContents} instead of opening a path (#665).
+     */
+    public record Target(Path file, int line, int character, String classFileUri) {
+        public Target(Path file, int line, int character) {
+            this(file, line, character, null);
+        }
+    }
+
+    /** The scheme jdtls uses for class-file (JDK/dependency) contents — a URI no filesystem can open. */
+    private static final String JDT_SCHEME = "jdt://";
 
     private final BiConsumer<Path, List<LspDiagnostic>> onDiagnostics;
     /** Server status: {@code accept(type, message)} (e.g. "ServiceReady"/"Ready"), posted to the FX thread. */
     private final BiConsumer<String, String> onStatus;
+    /** Fired (on the FX thread) when a session died on its own — crash or failed handshake, never a
+     *  deliberate dispose/shutdown — so the coordinator can clear its stale diagnostics and auto-restart
+     *  it for the affected open buffers (#666). {@code accept(serverId, root)}. */
+    private volatile BiConsumer<String, Path> onSessionCrashed = (id, root) -> {};
 
     private final ExecutorService detectExec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "lsp-detect");
@@ -202,6 +218,7 @@ public final class LspManager {
         if (session == null) {
             return;
         }
+        cancelEviction(session); // a reopened document keeps an idle session alive (#669)
         String uri = file.toUri().toString();
         sessionByDocUri.put(uri, session);
         session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId), text);
@@ -229,7 +246,84 @@ public final class LspManager {
         LanguageServerSession s = sessionByDocUri.remove(uri);
         if (s != null) {
             s.didClose(uri);
+            maybeScheduleEviction(s);
         }
+    }
+
+    // --- Idle-session eviction (#669) -----------------------------------------------------------
+
+    /**
+     * How long a session with no open documents is kept alive before being disposed. Closing the last file
+     * of a root used to leave its server running until window close — browsing Java files across N unrelated
+     * roots accumulated N live jdtls JVMs (hundreds of MB each plus Eclipse indexing). The grace period means
+     * tab churn within one project doesn't cold-restart the server (and jdtls's persisted {@code -data} index
+     * makes an eventual cold start cheap-ish).
+     */
+    static final java.time.Duration IDLE_EVICTION_GRACE = java.time.Duration.ofMinutes(3);
+
+    /** Shared timer for idle-session eviction (one daemon thread app-wide; the decision runs on FX). */
+    private static final java.util.concurrent.ScheduledExecutorService evictExec =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "lsp-evict");
+                t.setDaemon(true);
+                return t;
+            });
+
+    /** Session key → its pending idle-eviction timer (cancelled when a document reopens on that session). */
+    private final Map<String, java.util.concurrent.ScheduledFuture<?>> pendingEvictions = new ConcurrentHashMap<>();
+
+    /** The {@code sessionsByRoot} key currently holding {@code session}, or null (it was dropped). */
+    private String keyOf(LanguageServerSession session) {
+        for (var e : sessionsByRoot.entrySet()) {
+            if (e.getValue() == session) {
+                return e.getKey();
+            }
+        }
+        return null;
+    }
+
+    /** Starts the idle-eviction timer for {@code session} if it no longer serves any open document. */
+    private void maybeScheduleEviction(LanguageServerSession session) {
+        if (sessionByDocUri.containsValue(session)) {
+            return; // still serving other open documents
+        }
+        String key = keyOf(session);
+        if (key == null) {
+            return; // already dropped
+        }
+        var prev = pendingEvictions.put(
+                key,
+                evictExec.schedule(
+                        // The decision runs on the FX thread — openDocument/closeDocument are FX-thread calls,
+                        // so re-checking there means no eviction can race a concurrent re-open.
+                        () -> Platform.runLater(() -> evictIfIdle(key, session)),
+                        IDLE_EVICTION_GRACE.toMillis(),
+                        java.util.concurrent.TimeUnit.MILLISECONDS));
+        if (prev != null) {
+            prev.cancel(false);
+        }
+    }
+
+    /** Cancels a pending idle eviction for {@code session} (a document just [re]opened on it). */
+    private void cancelEviction(LanguageServerSession session) {
+        String key = keyOf(session);
+        if (key != null) {
+            var f = pendingEvictions.remove(key);
+            if (f != null) {
+                f.cancel(false);
+            }
+        }
+    }
+
+    /** FX thread: disposes {@code session} if it is still cached under {@code key} and still document-less. */
+    private void evictIfIdle(String key, LanguageServerSession session) {
+        pendingEvictions.remove(key);
+        if (sessionsByRoot.get(key) != session || sessionByDocUri.containsValue(session)) {
+            return; // replaced, already dropped, or a document reopened during the grace period
+        }
+        sessionsByRoot.remove(key, session);
+        session.dispose();
+        releaseJdtlsWorkspace(session);
     }
 
     public boolean isManaged(Path file) {
@@ -289,13 +383,19 @@ public final class LspManager {
         }
         // jdtls: give each project root its own Eclipse workspace (-data) so it never deadlocks on the shared
         // default workspace's .lock. Created on demand; jdtls reuses it across sessions (its index persists).
+        // The claim registry (static, spanning windows) suffixes the dir when another window's live session
+        // already holds it — see claimJdtlsWorkspaceName (#668).
+        String claimedWorkspace = null;
         if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && jdtlsWorkspaceBase != null) {
-            Path ws = jdtlsWorkspaceBase.resolve(LspServerRegistry.workspaceDirName(root));
+            claimedWorkspace = claimJdtlsWorkspaceName(LspServerRegistry.workspaceDirName(root));
+            Path ws = jdtlsWorkspaceBase.resolve(claimedWorkspace);
             try {
                 Files.createDirectories(ws);
                 spec = LspServerRegistry.withDataDir(spec, ws.toString());
             } catch (java.io.IOException e) {
                 // Couldn't create the workspace dir — fall back to the default (better than not starting).
+                releaseJdtlsWorkspaceName(claimedWorkspace);
+                claimedWorkspace = null;
             }
         }
         Object initOptions = initOptionsFor(serverId, debugBundles);
@@ -310,8 +410,12 @@ public final class LspManager {
         // (so the re-open guard never restarts it), every request fails into an empty result, and LSP is silently
         // dead for the rest of the session while the status bar still names the server.
         session.setOnDead(() -> dropSession(key, session));
+        if (claimedWorkspace != null) {
+            jdtlsWorkspaceBySession.put(session, claimedWorkspace);
+        }
         LanguageServerSession prev = sessionsByRoot.putIfAbsent(key, session);
         if (prev != null) {
+            releaseJdtlsWorkspace(session); // this un-started session's claim must not leak
             return prev; // another open created it first (rare) — use that one; this un-started session is dropped
         }
         // Fork + connect + initialize OFF the FX thread (#407): the process fork + PATH scan + ledger write would
@@ -326,10 +430,71 @@ public final class LspManager {
         return session;
     }
 
+    /** Sets the session-crashed callback (see {@link #onSessionCrashed}); marshaled to the FX thread. */
+    public void setOnSessionCrashed(BiConsumer<String, Path> callback) {
+        this.onSessionCrashed = callback == null ? (id, root) -> {} : callback;
+    }
+
+    /**
+     * jdtls {@code -data} dirs currently claimed by a live session in <b>any</b> window. {@code LspManager} is
+     * per-window, so two windows opening files under the same Java root would otherwise fork two jdtls against
+     * <b>one</b> Eclipse workspace — whose {@code .metadata/.lock} admits a single process, wedging the second
+     * at {@code initialize} until its 60 s timeout, and every retry the same way (#668). Static so the claim
+     * spans windows; released when the owning session drops. In-process only — a second Editora <i>process</i>
+     * can still collide (rare, pre-existing).
+     */
+    private static final java.util.Set<String> claimedJdtlsWorkspaces = ConcurrentHashMap.newKeySet();
+
+    /** This manager's session → the jdtls workspace dir name it claimed (released on drop/shutdown). */
+    private final Map<LanguageServerSession, String> jdtlsWorkspaceBySession = new ConcurrentHashMap<>();
+
+    /** Claims the first free workspace dir name for {@code baseName}: the canonical hash dir when free (so
+     *  the persisted index is reused), else {@code <base>-2}, {@code -3}, … A suffixed dir costs a second
+     *  jdtls index but unwedges the second window. Package-visible for tests. */
+    static String claimJdtlsWorkspaceName(String baseName) {
+        for (int i = 1; i <= 20; i++) {
+            String candidate = workspaceCandidate(baseName, i);
+            if (claimedJdtlsWorkspaces.add(candidate)) {
+                return candidate;
+            }
+        }
+        // 20 live same-root claims cannot happen in practice; hand out a unique last resort anyway.
+        String unique = baseName + "-x" + Long.toHexString(System.nanoTime());
+        claimedJdtlsWorkspaces.add(unique);
+        return unique;
+    }
+
+    /** The {@code attempt}-th candidate dir name for {@code baseName} (1 = the canonical name). Pure. */
+    static String workspaceCandidate(String baseName, int attempt) {
+        return attempt <= 1 ? baseName : baseName + "-" + attempt;
+    }
+
+    /** Releases a claim taken by {@link #claimJdtlsWorkspaceName}. Package-visible for tests. */
+    static void releaseJdtlsWorkspaceName(String name) {
+        if (name != null) {
+            claimedJdtlsWorkspaces.remove(name);
+        }
+    }
+
+    /** Releases the workspace claim held by {@code session}, if any. */
+    private void releaseJdtlsWorkspace(LanguageServerSession session) {
+        releaseJdtlsWorkspaceName(jdtlsWorkspaceBySession.remove(session));
+    }
+
     /** Removes a session that can no longer serve requests, so the next open starts a fresh one. */
     private void dropSession(String key, LanguageServerSession session) {
         sessionsByRoot.remove(key, session);
         sessionByDocUri.values().removeIf(s -> s == session);
+        releaseJdtlsWorkspace(session);
+        // Distinguish a crash from a deliberate teardown: dispose() sets its flag BEFORE killing the
+        // process, so a session that is dead but never disposed died on its own (process crash, failed/
+        // timed-out handshake). Only that case notifies the coordinator to auto-restart — a shutdownServer/
+        // shutdownAll/putCommand teardown, or a start() whose fork failed (dispose()d in its catch), must
+        // not re-fork in a loop (#666).
+        if (!session.isDisposed()) {
+            session.dispose(); // hygiene: stop its executor + untrack the dead process
+            Platform.runLater(() -> onSessionCrashed.accept(session.serverId(), session.root()));
+        }
     }
 
     private LanguageServerSession sessionFor(Path file) {
@@ -730,7 +895,7 @@ public final class LspManager {
                     for (Location l : result.getLeft()) {
                         var range = l.getRange(); // a non-conforming server can omit the (spec-required) range
                         if (range != null) {
-                            addTarget(targets, l.getUri(), range.getStart());
+                            addDefinitionTarget(targets, l.getUri(), range.getStart());
                         }
                     }
                 } else if (result.getRight() != null) {
@@ -739,7 +904,7 @@ public final class LspManager {
                                 ? ll.getTargetSelectionRange()
                                 : ll.getTargetRange();
                         if (range != null) {
-                            addTarget(targets, ll.getTargetUri(), range.getStart());
+                            addDefinitionTarget(targets, ll.getTargetUri(), range.getStart());
                         }
                     }
                 }
@@ -880,6 +1045,7 @@ public final class LspManager {
         sessionByDocUri.clear();
         for (LanguageServerSession s : sessionsByRoot.values()) {
             s.dispose();
+            releaseJdtlsWorkspace(s);
         }
         sessionsByRoot.clear();
     }
@@ -893,6 +1059,7 @@ public final class LspManager {
             if (e.getKey().startsWith(prefix)) {
                 sessionByDocUri.values().removeIf(s -> s == e.getValue());
                 e.getValue().dispose();
+                releaseJdtlsWorkspace(e.getValue());
                 it.remove();
             }
         }
@@ -914,6 +1081,74 @@ public final class LspManager {
         if (p != null && start != null) {
             out.add(new Target(p, start.getLine(), start.getCharacter()));
         }
+    }
+
+    /**
+     * Like {@link #addTarget}, but also keeps a {@code jdt://} class-file target (as a path-less
+     * {@link Target} carrying the URI). Definition-only: silently dropping these made {@code M-.} on
+     * {@code String}/{@code List}/any dependency symbol report "no definition" — the most common Java
+     * navigation (#665). References stay file-only (the References panel is file-based).
+     */
+    private static void addDefinitionTarget(List<Target> out, String uri, Position start) {
+        if (start == null) {
+            return;
+        }
+        Path p = uriToPath(uri);
+        if (p != null) {
+            out.add(new Target(p, start.getLine(), start.getCharacter()));
+        } else if (uri != null && uri.startsWith(JDT_SCHEME)) {
+            out.add(new Target(null, start.getLine(), start.getCharacter(), uri));
+        }
+    }
+
+    /**
+     * Fetches the source of a {@code jdt://} class-file URI via jdtls's {@code java/classFileContents}
+     * request (the attached/decompiled source of a JDK or dependency class) and delivers it on the FX
+     * thread — {@code null} when the session is gone, the request fails/times out, or the server returns
+     * nothing. {@code anchorFile} is any file managed by the jdtls session that produced the URI.
+     */
+    public void classFileContents(Path anchorFile, String jdtUri, Consumer<String> cb) {
+        LanguageServerSession s = sessionFor(anchorFile);
+        if (s == null || jdtUri == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        s.rawRequest("java/classFileContents", new org.eclipse.lsp4j.TextDocumentIdentifier(jdtUri))
+                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .whenComplete((r, e) -> {
+                    String text = e != null ? null : rawStringResult(r);
+                    Platform.runLater(() -> cb.accept(text == null || text.isBlank() ? null : text));
+                });
+    }
+
+    /** The string payload of a raw (untyped) JSON-RPC response — lsp4j decodes an unknown method's result
+     *  as a gson element, so accept both. Null for anything else. */
+    static String rawStringResult(Object r) {
+        if (r instanceof String s) {
+            return s;
+        }
+        if (r instanceof com.google.gson.JsonPrimitive p && p.isString()) {
+            return p.getAsString();
+        }
+        return null;
+    }
+
+    /**
+     * A display title for a {@code jdt://contents/...} URI — its last path segment ({@code String.class}),
+     * query dropped. Falls back to the whole URI when it has no path segment.
+     */
+    public static String classFileTitle(String jdtUri) {
+        if (jdtUri == null) {
+            return "";
+        }
+        String noQuery = jdtUri;
+        int q = noQuery.indexOf('?');
+        if (q >= 0) {
+            noQuery = noQuery.substring(0, q);
+        }
+        int slash = noQuery.lastIndexOf('/');
+        String name = slash >= 0 && slash < noQuery.length() - 1 ? noQuery.substring(slash + 1) : noQuery;
+        return name.isBlank() ? jdtUri : name;
     }
 
     private static String hoverText(Hover hover) {

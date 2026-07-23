@@ -3566,6 +3566,29 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public EditorBuffer openReadOnlyDoc(String title, String content, String language) {
+                    // The openTechnicalDictionary pattern: an in-memory, read-only, path-less buffer (#665).
+                    EditorBuffer buffer = new EditorBuffer();
+                    buffer.setDisplayName(title);
+                    buffer.setContent(content);
+                    buffer.setLanguageOverride(language);
+                    addBuffer(buffer, true);
+                    buffer.setViewMode(true); // library source is for reading, not editing
+                    return buffer;
+                }
+
+                @Override
+                public boolean selectBufferTab(EditorBuffer buffer) {
+                    for (Tab tab : tabPane.getTabs()) {
+                        if (bufferOf(tab) == buffer) {
+                            tabPane.getSelectionModel().select(tab);
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                @Override
                 public boolean activeEditable() {
                     return MainController.this.activeEditable();
                 }

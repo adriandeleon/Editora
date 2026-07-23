@@ -57,4 +57,24 @@ class LspEditsUndoFxTest {
         });
         assertEquals("world\n", content);
     }
+
+    /**
+     * #667: an edit whose <em>start line</em> lies entirely beyond the document is stale (the server computed
+     * against a longer revision) and must be <b>skipped</b> — the old clamp applied it at the last line, i.e.
+     * at a wrong place. Valid edits in the same set still apply; column clamping (the LSP spec's rule) stays.
+     */
+    @Test
+    void anEditStartingBeyondTheDocumentIsSkippedNotClamped() throws Exception {
+        String result = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("java");
+            b.setContent("a\nb\n"); // 3 paragraphs in RichTextFX (trailing empty) → lines 0..2 exist
+            b.getNode();
+            b.applyLspEdits(List.of(
+                    new LspTextEdit(0, 0, 0, 1, "A"), // valid — applies
+                    new LspTextEdit(9, 0, 9, 1, "STALE"))); // start beyond the document — skipped
+            return b.getContent();
+        });
+        assertEquals("A\nb\n", result, "the valid edit applies; the beyond-document edit is dropped");
+    }
 }
