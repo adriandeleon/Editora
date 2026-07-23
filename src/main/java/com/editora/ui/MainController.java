@@ -11700,6 +11700,228 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private static final int KILL_RING_LABEL_MAX = 80;
 
+    // --- Query replace ---------------------------------------------------------------------------
+
+    /** The interactive query-replace in progress, or null. At most one runs at a time per window. */
+    private QueryReplaceSession queryReplaceSession;
+
+    /** Emacs {@code query-replace} (`M-%`): prompt for search + replacement, then confirm each match. */
+    private void queryReplace() {
+        startQueryReplace(false);
+    }
+
+    /** Emacs {@code query-replace-regexp} (`C-M-%`): as above, the search string is a regular expression. */
+    private void queryReplaceRegexp() {
+        startQueryReplace(true);
+    }
+
+    private void startQueryReplace(boolean regex) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        if (queryReplaceSession != null) {
+            queryReplaceSession.finish(); // a fresh invocation supersedes a dangling one
+        }
+        String seed = singleLineSelection(buffer.getFocusedArea());
+        String title = tr(regex ? "dialog.queryReplaceRegexp.title" : "dialog.queryReplace.title");
+        promptText(title, tr("dialog.queryReplace.searchLabel"), seed, query -> {
+            if (query.isEmpty()) {
+                return;
+            }
+            if (regex) {
+                String err = com.editora.editor.SearchMatcher.regexError(query);
+                if (err != null) {
+                    setStatus(tr("find.badRegex", err));
+                    return;
+                }
+            }
+            promptText(title, tr("dialog.queryReplace.replaceLabel", query), "", replacement -> {
+                var spec = new com.editora.editor.QueryReplace.Spec(query, replacement, false, regex, false, false);
+                beginQueryReplace(buffer, spec);
+            });
+        });
+    }
+
+    /** Starts an interactive query-replace over {@code buffer} with a resolved spec (past the prompts). */
+    void beginQueryReplace(EditorBuffer buffer, com.editora.editor.QueryReplace.Spec spec) {
+        if (queryReplaceSession != null) {
+            queryReplaceSession.finish();
+        }
+        new QueryReplaceSession(buffer, spec).start();
+    }
+
+    /** The buffer's selection when it lies on a single line (a sensible search seed), else empty. */
+    private String singleLineSelection(CodeArea area) {
+        var sel = area.getSelection();
+        if (sel.getLength() == 0) {
+            return "";
+        }
+        String text = area.getSelectedText();
+        return text.indexOf('\n') < 0 ? text : "";
+    }
+
+    /**
+     * An in-progress interactive query-replace: highlights each match in turn and takes one keystroke per
+     * match. Modal — while active it owns the editor's keys (so a plain {@code y}/{@code n} is a command,
+     * not typed text) and tears itself down on quit or when the area loses focus (a tab switch, the
+     * palette, another window). The replacement of each match is the pure {@link
+     * com.editora.editor.QueryReplace}; this class only sequences the keystrokes and applies the edits.
+     */
+    private final class QueryReplaceSession {
+        private final EditorBuffer buffer;
+        private final CodeArea area;
+        private final com.editora.editor.QueryReplace.Spec spec;
+        private final javafx.event.EventHandler<javafx.scene.input.KeyEvent> pressed = this::onPressed;
+        private final javafx.event.EventHandler<javafx.scene.input.KeyEvent> typed = this::onTyped;
+        private final javafx.beans.value.ChangeListener<Boolean> focusLost = (obs, was, isFocused) -> {
+            if (!isFocused) {
+                finish();
+            }
+        };
+        private int from;
+        private com.editora.editor.QueryReplace.Match current;
+        private int replaced;
+        private boolean active;
+
+        QueryReplaceSession(EditorBuffer buffer, com.editora.editor.QueryReplace.Spec spec) {
+            this.buffer = buffer;
+            this.area = buffer.getFocusedArea();
+            this.spec = spec;
+            this.from = area.getCaretPosition();
+        }
+
+        void start() {
+            if (!showNext()) {
+                setStatus(tr("status.queryReplace.none"));
+                return;
+            }
+            active = true;
+            queryReplaceSession = this;
+            area.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+            area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, pressed);
+            area.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, typed);
+            area.focusedProperty().addListener(focusLost);
+        }
+
+        /** Finds the next match from {@link #from}, highlights it and prompts. False when none remain. */
+        private boolean showNext() {
+            var m = com.editora.editor.QueryReplace.next(area.getText(), from, spec);
+            if (m.isEmpty()) {
+                current = null;
+                return false;
+            }
+            current = m.get();
+            buffer.setSearchMatches(List.of(new int[] {current.start(), current.end()}), 0);
+            area.moveTo(current.start());
+            area.requestFollowCaret();
+            setStatus(tr("status.queryReplace.prompt", replaced));
+            return true;
+        }
+
+        /** Applies the current match's replacement and moves the search anchor past it. */
+        private void replaceCurrentOnly() {
+            area.replaceText(current.start(), current.end(), current.replacement());
+            replaced++;
+            from = com.editora.editor.QueryReplace.advance(
+                    current, current.replacement().length());
+        }
+
+        private void replaceCurrentAndAdvance() {
+            replaceCurrentOnly();
+            if (!showNext()) {
+                finish();
+            }
+        }
+
+        private void skip() {
+            from = com.editora.editor.QueryReplace.advance(current, current.end() - current.start());
+            if (!showNext()) {
+                finish();
+            }
+        }
+
+        /** {@code !}: replace this and every remaining match in one edit, then stop. */
+        private void replaceRest() {
+            var plan = com.editora.editor.QueryReplace.planRemaining(area.getText(), from, spec);
+            if (!plan.isEmpty()) {
+                int start = plan.get(0).start();
+                int end = plan.get(plan.size() - 1).end();
+                String text = area.getText();
+                StringBuilder sb = new StringBuilder();
+                int i = start;
+                for (var m : plan) {
+                    sb.append(text, i, m.start()).append(m.replacement());
+                    i = m.end();
+                }
+                area.replaceText(start, end, sb.toString());
+                replaced += plan.size();
+            }
+            finish();
+        }
+
+        private void onPressed(javafx.scene.input.KeyEvent e) {
+            if (!active) {
+                return;
+            }
+            e.consume();
+            javafx.scene.input.KeyCode c = e.getCode();
+            if (c == javafx.scene.input.KeyCode.BACK_SPACE || c == javafx.scene.input.KeyCode.DELETE) {
+                skip();
+            } else if (c == javafx.scene.input.KeyCode.ENTER
+                    || c == javafx.scene.input.KeyCode.ESCAPE
+                    || c == javafx.scene.input.KeyCode.Q
+                    || (c == javafx.scene.input.KeyCode.G && e.isControlDown())) {
+                finish();
+            }
+            // Every other pressed key is swallowed; the character commands arrive as KEY_TYPED.
+        }
+
+        private void onTyped(javafx.scene.input.KeyEvent e) {
+            if (!active) {
+                return;
+            }
+            e.consume();
+            String ch = e.getCharacter();
+            if (ch == null || ch.isEmpty()) {
+                return;
+            }
+            switch (ch.charAt(0)) {
+                case ' ', 'y', 'Y' -> replaceCurrentAndAdvance();
+                case 'n', 'N' -> skip();
+                case '!' -> replaceRest();
+                case '.' -> { // replace this match and stop, leaving the caret on the replacement
+                    replaceCurrentOnly();
+                    finish();
+                }
+                case 'q', 'Q' -> finish();
+                default -> {
+                    /* unknown key: wait, like Emacs */
+                }
+            }
+        }
+
+        /** Ends the session (idempotent): removes the highlight, the key filters and the key ownership. */
+        private void finish() {
+            if (!active) {
+                return;
+            }
+            active = false;
+            area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, pressed);
+            area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, typed);
+            area.focusedProperty().removeListener(focusLost);
+            area.getProperties().remove("editora.ownsKeys");
+            buffer.clearSearchMatches();
+            if (queryReplaceSession == this) {
+                queryReplaceSession = null;
+            }
+            setStatus(tr("status.queryReplace.done", replaced));
+        }
+    }
+
     // --- Narrowing -------------------------------------------------------------------------------
 
     /** Emacs {@code narrow-to-region} (`C-x n n`): restrict the buffer to the selection. */
@@ -13270,6 +13492,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.narrowToDefun", this::narrowToDefun));
         registry.register(Command.of("edit.narrowToFoldRegion", this::narrowToFoldRegion));
         registry.register(Command.of("edit.widen", this::widenBuffer));
+        registry.register(Command.of("edit.queryReplace", this::queryReplace));
+        registry.register(Command.of("edit.queryReplaceRegexp", this::queryReplaceRegexp));
         registry.register(Command.of("edit.undo", this::onUndo));
         registry.register(Command.of("edit.redo", this::onRedo));
         registry.register(Command.of("edit.cancel", this::cancel));
