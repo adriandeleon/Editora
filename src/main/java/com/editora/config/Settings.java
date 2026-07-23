@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 82;
+    public static final int SCHEMA_VERSION = 83;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -306,6 +306,8 @@ public class Settings {
     private boolean githubActionsPreview = true;
     /** Auto-rename the paired HTML/XML tag when a tag name is edited: on by default. */
     private boolean autoRenameTag = true;
+
+    private boolean autoFill = false; // Emacs auto-fill-mode: break prose lines at the fill column as you type
     /** Auto-close HTML/XML tags (typing an open tag's {@code >} inserts the closer): on by default. */
     private boolean autoCloseTags = true;
     /** MCP server (expose live editor state + the command registry to an LLM agent over a loopback
@@ -674,6 +676,14 @@ public class Settings {
 
     public void setAutoRenameTag(boolean autoRenameTag) {
         this.autoRenameTag = autoRenameTag;
+    }
+
+    public boolean isAutoFill() {
+        return autoFill;
+    }
+
+    public void setAutoFill(boolean autoFill) {
+        this.autoFill = autoFill;
     }
 
     public boolean isAutoCloseTags() {

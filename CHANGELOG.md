@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Auto-fill mode** — break plain-text and Markdown lines at the fill column automatically as you type
+  (Emacs `auto-fill-mode`), the break-as-you-type companion to `M-q` (fill paragraph). Off by default;
+  toggle it in Settings → Editor or with the palette. It's prose-only, so it never wraps code, and each
+  wrapped line keeps the paragraph's indent (and a comment/quote marker in a comment). The fill column is
+  the existing `C-x f` setting (default 70).
+
 - **The `C-u` prefix (universal) argument.** `C-u` before a command gives it a numeric argument: `C-u 5 C-n`
   moves down five lines, `C-u 3 C-k` kills three, `C-u 40 -` inserts forty dashes. A bare `C-u` is 4, `C-u
   C-u` is 16 (each repeat multiplies by four), and `C-u` followed by digits is that number; `C-g` cancels a

@@ -960,6 +960,10 @@ A backlog of planned features and improvements. Unordered within each section.
       open-line (`C-o`), kill-whole-line (`C-S-DEL`), zap-to-char (`M-z`), forward/backward-sexp +
       mark/kill-sexp (`C-M-f`/`C-M-b`/`C-M-SPC`/`C-M-k`), beginning/end-of-defun (`C-M-a`/`C-M-e`),
       mark-paragraph (`M-h`), mark-whole-buffer (`C-x h`), move-to-window-line (`M-r`).
+- [x] Auto-fill mode — break prose lines at the fill column as you type (Emacs `auto-fill-mode`). Pure
+      `editops/AutoFill`; a guarded `plainTextChanges` handler on `EditorBuffer`. *Prose-only (plaintext +
+      Markdown); single-char self-insert only (not paste/reload); not comment-aware in code (deferred with
+      the prose gate).*
 - [x] `C-u` prefix (universal) argument — `C-u`/`C-u C-u`/`C-u <digits>`/`C-u -`, repeats the next command
       (or count-aware commands read it: `C-u C-SPC` = pop-mark), and self-inserts a character N times. Pure
       `command/PrefixArg` state machine + `KeyDispatcher` wiring; bound only in the Emacs keymap.
