@@ -5,6 +5,7 @@
   "C-x C-c": "app.quit",
   "C-x C-q": "view.toggleReadOnly",
   "C-x C-x": "edit.exchangePointAndMark",
+  "C-x C-space": "edit.popMark",
   "C-space": "edit.setMark",
   "C-x v =": "diff.vsHead",
   "C-x b": "buffer.jump",

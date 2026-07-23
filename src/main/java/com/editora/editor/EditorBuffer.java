@@ -388,6 +388,8 @@ public class EditorBuffer implements TabContent {
      * caret back on the same offset). Bumped for edits made in either view (they share the document).
      */
     private long docVersion;
+    /** Per-buffer Emacs mark ring (session-only); shifted through edits by the subscription in the ctor. */
+    private final com.editora.editops.MarkRing markRing = new com.editora.editops.MarkRing();
     /**
      * The {@link #docVersion} right after we programmatically accepted a completion, so the auto-trigger
      * that the accept's own edit schedules is suppressed — but a real edit after it (which bumps the
@@ -731,6 +733,13 @@ public class EditorBuffer implements TabContent {
         // happens; both views share the document, so this one subscription covers either. One long++ per
         // edit — off the per-keystroke cost budget.
         area.plainTextChanges().subscribe(c -> docVersion++);
+        // Mark ring: shift stored offsets across every edit so a mark still points at its text after
+        // typing (one cheap pass over <=16 ints per edit; skipped when the ring is empty, the common case).
+        area.plainTextChanges()
+                .subscribe(c -> markRing.shift(
+                        c.getPosition(),
+                        c.getRemoved().length(),
+                        c.getInserted().length()));
         area.setLineHighlighterFill(lineHighlightColor);
         // Track the earliest changed line immediately (the debounced stream below drops intermediate
         // emissions, so the dirty start must be accumulated here), then re-highlight after a pause.
@@ -8139,6 +8148,23 @@ public class EditorBuffer implements TabContent {
      */
     public long docVersion() {
         return docVersion;
+    }
+
+    /** Emacs {@code C-SPC}: record {@code pos} on this buffer's mark ring so {@code popMark} can return. */
+    public void pushMark(int pos) {
+        markRing.push(pos);
+    }
+
+    /**
+     * Emacs {@code pop-to-mark}: the position to move point to (cycling), given where the caret is now, or
+     * empty when the ring holds no marks.
+     */
+    public java.util.OptionalInt popMark(int currentPoint) {
+        return markRing.pop(currentPoint);
+    }
+
+    public int markRingSize() {
+        return markRing.size();
     }
 
     /**

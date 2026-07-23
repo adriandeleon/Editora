@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Mark ring** — `C-SPC` now also records the spot on a per-buffer ring, and **`C-x C-SPC`** (pop-mark)
+  jumps the caret back to the most recent mark, cycling through older ones — and back to where you started —
+  on repeat. Marks follow their text as you edit, so returning to one lands on the right place even after
+  you've typed above it. The ring is per buffer and lives for the session; it's separate from the
+  automatic jump-history (the palette's Navigate Back / Forward), which tracks large motions on its own.
+
 - **Interactive query-replace** (`M-%`, and `C-M-%` for regexp) — the Emacs replace-with-confirmation loop:
   it stops on each match, highlights it, and waits for a keystroke — `y`/Space to replace, `n`/Backspace to
   skip, `!` to replace all the rest at once, `.` to replace this one and stop, `q`/Enter/Esc to quit. Regexp

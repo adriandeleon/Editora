@@ -11344,14 +11344,38 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Emacs {@code C-SPC}: drop the mark at the caret so subsequent movement selects from here. */
     private void setMark() {
-        CodeArea area = activeArea();
+        EditorBuffer buffer = activeBuffer();
+        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
         if (area == null) {
             return;
         }
         int caret = area.getCaretPosition();
         area.selectRange(caret, caret); // anchor = caret; ADJUST moves then extend from here
         markActive = true;
+        buffer.pushMark(caret); // record on the mark ring so pop-mark can return here later
         setStatus(tr("status.markSet"));
+    }
+
+    /**
+     * Emacs {@code pop-to-mark} ({@code C-x C-SPC}): move point to the most recent mark on this buffer's
+     * ring, cycling on repeat. The current point rotates to the back of the ring, so repeated pops walk
+     * back through every mark and return to where you started.
+     */
+    private void popMark() {
+        EditorBuffer buffer = activeBuffer();
+        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
+        if (area == null) {
+            return;
+        }
+        java.util.OptionalInt target = buffer.popMark(area.getCaretPosition());
+        if (target.isEmpty()) {
+            setStatus(tr("status.markRing.empty"));
+            return;
+        }
+        deactivateMark();
+        area.moveTo(Math.min(target.getAsInt(), area.getLength()));
+        area.requestFollowCaret();
+        setStatus(tr("status.markRing.popped", buffer.markRingSize()));
     }
 
     /** Emacs {@code C-x C-x}: move the caret to the mark (and the mark to the caret). */
@@ -13612,6 +13636,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("nav.recenter", this::recenterCaret));
         registry.register(Command.of("edit.setMark", this::setMark));
         registry.register(Command.of("edit.exchangePointAndMark", this::exchangePointAndMark));
+        registry.register(Command.of("edit.popMark", this::popMark));
         registry.register(Command.of("edit.deleteChar", () -> withArea(CodeArea::deleteNextChar)));
         registry.register(Command.of(
                 "edit.killWord",
