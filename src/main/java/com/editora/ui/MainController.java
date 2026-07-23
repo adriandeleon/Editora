@@ -3699,6 +3699,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void closeToolWindow() {
+            toolWindows.close(agentToolWindow);
+        }
+
+        @Override
+        public void setToolWindowAvailable(boolean available) {
+            toolWindows.setAvailable(agentToolWindow, available);
+        }
+
+        @Override
         public void refreshProjectTree() {
             projectPanel.refreshTree();
         }
@@ -3733,7 +3743,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void applyAgentSupport() {
         agentCoordinator.applySupport();
         if (agentToolWindow != null) {
-            toolWindows.setAvailable(agentToolWindow, agentCoordinator.isEnabled());
+            // Keep the stripe hidden while the panel is popped out into its own window (else re-opening the
+            // dock would yank the panel node out of the floating window).
+            toolWindows.setAvailable(agentToolWindow, agentCoordinator.isEnabled() && !agentCoordinator.isDetached());
         }
     }
 

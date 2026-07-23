@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Filter box in the Git Log and TODO tool windows** — type to narrow the commit list (by subject,
+  author, hash or date) or the TODO list (by keyword, tag, text or file) as you go. Both fields have the
+  same clear (`✕`) button the Project/Bookmarks filters use.
+- **Clear (`✕`) button on the Find bar and Find in Files fields** — empties a search/replace (or glob)
+  field in one click, shown only while it has text. Matches the existing filter fields elsewhere in the app.
+- **`n` / `p` navigation in the TODO window** — the plain letters now move to the next/previous row just
+  like `C-n` / `C-p` (except while the filter field has focus, where they type normally).
+- **Label an existing revision in Local File History** — right-click a revision and choose *Set Label…* to
+  name it, so you can find it later by that name (the history filter already searches labels). Clearing the
+  text removes the label. This is separate from *Put Label*, which records a new labeled snapshot.
+- **Pop the AI Agent chat out into its own window** — a button in the chat toolbar detaches the panel into
+  a separate resizable window (the live conversation is kept); closing that window docks it back.
+
 - **Abbreviations** — a simple text-replacement dictionary: define short abbreviations that expand to longer
   text. Expand the word before the caret on demand with `C-x a e`, or turn on *Abbrev Mode* to expand
   automatically as you type a space or punctuation. Define a new one with `C-x a g`, and manage the whole
@@ -153,6 +166,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command, unlike every other setting.
 
 ### Changed
+
+- **Bookmarks tool window: file-name rows are now bold**, matching the file headers in Find in Files and the
+  TODO window.
+- **About dialog shows the git branch for snapshot builds** — a build made from a worktree/feature branch
+  now reads e.g. `0.9.9-SNAPSHOT (feat/foo)`, so a test build off a branch can be told apart from one off
+  `master`. Release builds are unchanged.
 
 - **The HTTP Client is now the `.http` file's preview**, not a separate tool window. Every other rich file type
   in Editora presents itself through the shared Editor/Split/Preview view, and `.http` now does too — running a

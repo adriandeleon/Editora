@@ -436,6 +436,12 @@ final class Icons {
         return of("M4 4 H20 V7 H7 V10.5 H17 V13.5 H7 V17 H20 V20 H4 Z");
     }
 
+    /** A Material "open in new window" glyph (a frame with an out-arrow), for the detach / pop-out button. */
+    static Node detach() {
+        return of("M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7z"
+                + "M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z");
+    }
+
     static Node closeSmall() {
         // Same outline as closeTab() — used by the tool window header.
         return of("M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 "

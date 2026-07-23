@@ -121,9 +121,12 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         });
 
         queryCombo.setOnAction(e -> runSearch());
-        HBox queryRow = new HBox(6, queryCombo, caseBox, regexBox, wordBox, searchBtn);
+        // Trailing clear ("✕") buttons on each field (shown only while the field has text).
+        Button queryClear = ClearableField.clearButton(queryCombo.getEditor());
+        HBox queryRow = new HBox(6, queryCombo, queryClear, caseBox, regexBox, wordBox, searchBtn);
         queryRow.setAlignment(Pos.CENTER_LEFT);
-        HBox replaceRow = new HBox(6, replaceField, replaceBtn);
+        Button replaceClear = ClearableField.clearButton(replaceField);
+        HBox replaceRow = new HBox(6, replaceField, replaceClear, replaceBtn);
         replaceRow.setAlignment(Pos.CENTER_LEFT);
 
         includeField.setPromptText(tr("search.includePrompt"));
@@ -134,7 +137,9 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         excludeField.setOnAction(e -> runSearch());
         HBox.setHgrow(includeField, Priority.ALWAYS);
         HBox.setHgrow(excludeField, Priority.ALWAYS);
-        HBox globsRow = new HBox(6, includeField, excludeField);
+        Button includeClear = ClearableField.clearButton(includeField);
+        Button excludeClear = ClearableField.clearButton(excludeField);
+        HBox globsRow = new HBox(6, includeField, includeClear, excludeField, excludeClear);
         globsRow.setAlignment(Pos.CENTER_LEFT);
 
         summary.getStyleClass().add("search-summary");

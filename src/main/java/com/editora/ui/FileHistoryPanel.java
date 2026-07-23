@@ -57,6 +57,9 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
         /** Folder-history restore: write a revision's content back to its own path (recreating a deleted file). */
         void restoreToDisk(HistoryRevision revision);
+
+        /** Prompt for and set (or clear) a label on this existing revision, so it can be found later by name. */
+        void editLabel(HistoryRevision revision);
     }
 
     /**
@@ -445,7 +448,11 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             setTooltip(new Tooltip(timeLabel(r.timestamp()) + "\n" + reasonLabel(r.reason())
                     + (r.label() != null && !r.label().isBlank() ? "\n" + r.label() : "")));
             MenuItem restore = item(tr("history.menu.restore"), Icons.undo(), () -> actions.restore(r));
-            setContextMenu(new ContextMenu(restore));
+            String labelText = r.label() == null || r.label().isBlank()
+                    ? tr("history.menu.setLabel")
+                    : tr("history.menu.editLabel");
+            MenuItem editLabel = item(labelText, Icons.edit(), () -> actions.editLabel(r));
+            setContextMenu(new ContextMenu(restore, editLabel));
         }
     }
 

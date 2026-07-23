@@ -259,7 +259,60 @@ final class HistoryCoordinator {
             public void restoreToDisk(HistoryRevision revision) {
                 restoreRevisionToDisk(revision);
             }
+
+            @Override
+            public void editLabel(HistoryRevision revision) {
+                HistoryCoordinator.this.editLabel(revision);
+            }
         };
+    }
+
+    /**
+     * "Set/Edit Label" on an <b>existing</b> revision: prompts for a name (prefilled with the current label)
+     * and rewrites that revision's {@code label} in place so it can be found later by name. An empty answer
+     * clears the label. Distinct from {@link #putLabel()}, which records a <i>new</i> labeled snapshot.
+     */
+    void editLabel(HistoryRevision revision) {
+        if (!isEnabled() || revision == null) {
+            return;
+        }
+        String initial = revision.label() == null ? "" : revision.label();
+        host.promptText(tr("history.label.title"), tr("history.label.prompt"), initial, name -> {
+            String label = name == null ? "" : name.strip();
+            if (label.equals(initial)) {
+                return; // unchanged
+            }
+            if (!relabelRevision(revision, label)) {
+                return; // the revision was pruned away meanwhile
+            }
+            ops.saveHistory();
+            refresh();
+            host.setStatus(label.isEmpty() ? tr("status.history.labelCleared") : tr("status.history.labeled", label));
+        });
+    }
+
+    /**
+     * Replaces {@code revision} (matched by object identity) in its history bucket with a copy carrying the new
+     * {@code label}. Records are immutable, and a bucket's list may be immutable, so we swap in a fresh list.
+     * Returns false when the revision is no longer present.
+     */
+    private boolean relabelRevision(HistoryRevision revision, String label) {
+        Map<String, List<HistoryRevision>> bucket = ops.historyMap();
+        for (Map.Entry<String, List<HistoryRevision>> e : bucket.entrySet()) {
+            List<HistoryRevision> list = e.getValue();
+            for (int i = 0; i < list.size(); i++) {
+                if (list.get(i) == revision) {
+                    HistoryRevision old = list.get(i);
+                    HistoryRevision relabeled = new HistoryRevision(
+                            old.path(), old.timestamp(), old.sizeBytes(), old.sha256(), old.reason(), label);
+                    List<HistoryRevision> copy = new ArrayList<>(list);
+                    copy.set(i, relabeled);
+                    bucket.put(e.getKey(), copy);
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** Opens the Local File History tool window for the active file. */

@@ -199,6 +199,7 @@
 }
 .bookmarks-tree .bookmark-file-row {
     -fx-text-fill: -color-fg-muted;
+    -fx-font-weight: bold;
 }
 /* Project-group headers in the Bookmarks / Personal Notes trees (grouped by project). The current project's
    header reads a touch stronger; the "Show all projects" scope toggle goes accent when active. */
@@ -839,7 +840,9 @@
 .project-filter-bar {
     -fx-spacing: 2;
 }
-.project-filter-bar .project-filter-clear {
+/* Standalone so the clear button (built by ui/ClearableField) works anywhere — the Find bar, Find in
+   Files, Git Log and TODO windows reuse it outside a .project-filter-bar ancestor. */
+.project-filter-clear {
     -fx-background-color: transparent;
     -fx-background-radius: 4;
     -fx-text-fill: -color-fg-muted;
@@ -847,7 +850,7 @@
     -fx-font-size: 11px;
     -fx-cursor: hand;
 }
-.project-filter-bar .project-filter-clear:hover {
+.project-filter-clear:hover {
     -fx-background-color: -color-neutral-muted;
     -fx-text-fill: -color-fg-default;
 }

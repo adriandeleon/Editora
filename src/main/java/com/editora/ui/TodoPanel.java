@@ -9,6 +9,7 @@ import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -79,6 +80,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     private final Label summary = new Label();
     private final Label scopeLabel = new Label();
     private final ComboBox<TodoGrouping.GroupBy> groupBy = new ComboBox<>();
+    private final TextField filterField = new TextField();
     private final TreeView<Row> tree = new TreeView<>();
 
     private TodoService.Outcome lastOutcome;
@@ -136,6 +138,17 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         HBox toolbar = new HBox(6, groupLabel, groupBy, summary, refreshBtn);
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
+        // Filter row: narrows the visible TODO rows as you type (keyword / tag / description / file),
+        // with a trailing clear ("✕") button. Down/Enter move focus into / open the results.
+        filterField.setPromptText(tr("todo.filterPrompt"));
+        filterField.getStyleClass().add("todo-filter");
+        filterField.textProperty().addListener((o, w, n) -> rebuild());
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+        Button clearFilter = ClearableField.clearButton(filterField);
+        HBox filterRow = new HBox(6, filterField, clearFilter);
+        filterRow.getStyleClass().add("project-filter-bar");
+        filterRow.setAlignment(Pos.CENTER_LEFT);
+
         tree.setShowRoot(false);
         tree.setRoot(new TreeItem<>());
         tree.setCellFactory(t -> new RowCell(actions, this::reopenKeywords));
@@ -147,7 +160,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         VBox.setVgrow(tree, Priority.ALWAYS);
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
 
-        getChildren().addAll(scopeRow, toolbar, tree);
+        getChildren().addAll(scopeRow, toolbar, filterRow, tree);
     }
 
     /** Selects the "Group by" dimension. Call before {@link #setGroupByChangeHandler} to restore a saved value
@@ -184,23 +197,38 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
                 e.consume();
             }
             default -> {
-                if (!e.isControlDown()) {
+                if (e.isControlDown()) {
+                    // Emacs navigation: C-n / C-p move, C-m activates.
+                    switch (e.getCode()) {
+                        case N -> {
+                            moveSelection(1);
+                            e.consume();
+                        }
+                        case P -> {
+                            moveSelection(-1);
+                            e.consume();
+                        }
+                        case M -> {
+                            activateSelected();
+                            e.consume();
+                        }
+                        default -> {}
+                    }
                     return;
                 }
-                switch (e.getCode()) {
-                    case N -> {
-                        moveSelection(1);
-                        e.consume();
+                // Plain n / p also move — but only when the filter field isn't focused, so typing there works.
+                if (!filterField.isFocused()) {
+                    switch (e.getCode()) {
+                        case N -> {
+                            moveSelection(1);
+                            e.consume();
+                        }
+                        case P -> {
+                            moveSelection(-1);
+                            e.consume();
+                        }
+                        default -> {}
                     }
-                    case P -> {
-                        moveSelection(-1);
-                        e.consume();
-                    }
-                    case M -> {
-                        activateSelected();
-                        e.consume();
-                    }
-                    default -> {}
                 }
             }
         }
@@ -252,15 +280,37 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         return g == null ? TodoGrouping.GroupBy.FILE : g;
     }
 
+    /** Case-insensitive substring match over the row's keyword, line text and file path. Empty query = keep. */
+    private static boolean matchesFilter(Path file, TodoMatch m, String query) {
+        if (query.isEmpty()) {
+            return true;
+        }
+        if (m.patternName() != null
+                && m.patternName().toLowerCase(java.util.Locale.ROOT).contains(query)) {
+            return true;
+        }
+        if (m.lineText() != null
+                && m.lineText().toLowerCase(java.util.Locale.ROOT).contains(query)) {
+            return true;
+        }
+        return file != null
+                && file.toString().toLowerCase(java.util.Locale.ROOT).contains(query);
+    }
+
     private void rebuild() {
         TodoService.Outcome outcome = lastOutcome;
         if (outcome == null) {
             return;
         }
+        String query = filterField.getText() == null
+                ? ""
+                : filterField.getText().strip().toLowerCase(java.util.Locale.ROOT);
         List<TodoGrouping.Entry> entries = new ArrayList<>();
         for (TodoService.FileTodos fr : outcome.files()) {
             for (TodoMatch m : fr.matches()) {
-                entries.add(new TodoGrouping.Entry(fr.file(), m));
+                if (matchesFilter(fr.file(), m, query)) {
+                    entries.add(new TodoGrouping.Entry(fr.file(), m));
+                }
             }
         }
         TodoGrouping.GroupBy by = currentGroupBy();
@@ -298,7 +348,9 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     @Override
     public void focusFirstItem() {
         actions.refresh();
-        tree.requestFocus();
+        // Land on the filter field so the user can type to filter immediately; Down/Enter move into the
+        // results and n/p navigate once focus is in the tree (mirrors the other filterable tool windows).
+        filterField.requestFocus();
         if (tree.getExpandedItemCount() > 0) {
             tree.getSelectionModel().select(0);
         }
