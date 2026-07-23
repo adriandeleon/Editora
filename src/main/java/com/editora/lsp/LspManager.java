@@ -696,6 +696,103 @@ public final class LspManager {
         });
     }
 
+    /** True if {@code file}'s server is ready and advertises rename (#676). */
+    public boolean supportsRename(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && renameProvider(s.capabilities());
+    }
+
+    /** True if the server also advertises {@code prepareRename} (validate + placeholder). */
+    public boolean supportsPrepareRename(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || s.capabilities() == null) {
+            return false;
+        }
+        var p = s.capabilities().getRenameProvider();
+        return p != null
+                && p.isRight()
+                && p.getRight() != null
+                && Boolean.TRUE.equals(p.getRight().getPrepareProvider());
+    }
+
+    /** Pure: whether a server's capabilities include {@code renameProvider} (null-safe, either form). */
+    static boolean renameProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null) {
+            return false;
+        }
+        var p = caps.getRenameProvider();
+        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
+    }
+
+    /** The outcome of {@code prepareRename}: whether renaming here is possible, and the placeholder (the
+     *  current name) when the server supplied one — blank means "derive it from the document range". */
+    public record RenamePrep(
+            boolean allowed, String placeholder, int startLine, int startCol, int endLine, int endCol) {
+        static final RenamePrep REFUSED = new RenamePrep(false, "", 0, 0, 0, 0);
+    }
+
+    /** Validates a rename at a 0-based position; the result arrives on the FX thread (#676). */
+    public void prepareRename(Path file, int line, int character, Consumer<RenamePrep> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(RenamePrep.REFUSED));
+            return;
+        }
+        s.prepareRename(uri(file), new Position(line, character))
+                .whenComplete(
+                        (r, e) -> Platform.runLater(() -> cb.accept(e != null ? RenamePrep.REFUSED : mapPrepare(r))));
+    }
+
+    /** Pure: maps a {@code prepareRename} response (any of its three shapes; null = refused). */
+    static RenamePrep mapPrepare(
+            org.eclipse.lsp4j.jsonrpc.messages.Either3<
+                            org.eclipse.lsp4j.Range,
+                            org.eclipse.lsp4j.PrepareRenameResult,
+                            org.eclipse.lsp4j.PrepareRenameDefaultBehavior>
+                    r) {
+        if (r == null) {
+            return RenamePrep.REFUSED; // per spec: null/undefined ⇒ rename not valid at this position
+        }
+        if (r.isFirst() && r.getFirst() != null) {
+            var range = r.getFirst();
+            return new RenamePrep(
+                    true,
+                    "",
+                    range.getStart().getLine(),
+                    range.getStart().getCharacter(),
+                    range.getEnd().getLine(),
+                    range.getEnd().getCharacter());
+        }
+        if (r.isSecond() && r.getSecond() != null) {
+            var prep = r.getSecond();
+            var range = prep.getRange();
+            return new RenamePrep(
+                    true,
+                    prep.getPlaceholder() == null ? "" : prep.getPlaceholder(),
+                    range == null ? 0 : range.getStart().getLine(),
+                    range == null ? 0 : range.getStart().getCharacter(),
+                    range == null ? 0 : range.getEnd().getLine(),
+                    range == null ? 0 : range.getEnd().getCharacter());
+        }
+        if (r.isThird() && r.getThird() != null) {
+            return new RenamePrep(true, "", 0, 0, 0, 0); // default behavior: rename the word at the caret
+        }
+        return RenamePrep.REFUSED;
+    }
+
+    /** Renames the symbol at a 0-based position to {@code newName}; the workspace edit applies through the
+     *  registered handler and {@code cb} gets overall success on the FX thread (#676). */
+    public void rename(Path file, int line, int character, String newName, Consumer<Boolean> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(false));
+            return;
+        }
+        s.rename(uri(file), new Position(line, character), newName)
+                .whenComplete((edit, e) ->
+                        Platform.runLater(() -> cb.accept(e == null && edit != null && applyWorkspaceEditNow(edit))));
+    }
+
     /** True if {@code file}'s server is ready and advertises code actions (quick fixes — #670). */
     public boolean supportsCodeActions(Path file) {
         LanguageServerSession s = sessionFor(file);
@@ -1173,18 +1270,17 @@ public final class LspManager {
     }
 
     /** UI-side workspace-edit applier (set by the coordinator; runs on the FX thread): applies each file's
-     *  batch through an undoable buffer, all-or-nothing. Default: refuse. */
-    private volatile java.util.function.Function<List<WorkspaceEditMapper.FileEdit>, Boolean> applyEditHandler =
-            edits -> false;
+     *  batch through an undoable buffer, then the trailing file renames — all-or-nothing. Default: refuse. */
+    private volatile java.util.function.Function<WorkspaceEditMapper.Mapped, Boolean> applyEditHandler = edits -> false;
 
-    public void setApplyEditHandler(java.util.function.Function<List<WorkspaceEditMapper.FileEdit>, Boolean> handler) {
+    public void setApplyEditHandler(java.util.function.Function<WorkspaceEditMapper.Mapped, Boolean> handler) {
         this.applyEditHandler = handler == null ? edits -> false : handler;
     }
 
     /** FX thread: maps + applies a workspace edit through the registered handler (false when unsupported). */
     private boolean applyWorkspaceEditNow(org.eclipse.lsp4j.WorkspaceEdit edit) {
-        List<WorkspaceEditMapper.FileEdit> files = WorkspaceEditMapper.map(edit);
-        return files != null && Boolean.TRUE.equals(applyEditHandler.apply(files));
+        WorkspaceEditMapper.Mapped mapped = WorkspaceEditMapper.map(edit);
+        return mapped != null && Boolean.TRUE.equals(applyEditHandler.apply(mapped));
     }
 
     /** A server-initiated {@code workspace/applyEdit} (from any session): apply on FX, answer the server. */

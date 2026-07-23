@@ -26,6 +26,7 @@
   "C-g": "nav.goToLine",
   "f12": "lsp.gotoDefinition",
   "C-.": "lsp.codeActions",
+  "f2": "lsp.rename",
   "C-S-[": "view.fold",
   "C-S-]": "view.unfold",
   "C-k C-0": "view.unfoldAll",

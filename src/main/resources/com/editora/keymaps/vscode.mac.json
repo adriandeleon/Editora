@@ -39,6 +39,7 @@
   "S-f12": "lsp.findReferences",
   "Cmd-k Cmd-i": "lsp.hover",
   "Cmd-.": "lsp.codeActions",
+  "f2": "lsp.rename",
   "f5": "debug.start",
   "S-f5": "debug.stop",
   "Cmd-S-f5": "debug.restart",

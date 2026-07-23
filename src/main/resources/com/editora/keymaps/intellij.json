@@ -21,6 +21,7 @@
   "M-f7": "lsp.findReferences",
   "C-q": "lsp.hover",
   "C-.": "lsp.codeActions",
+  "f2": "lsp.rename",
   "C-e": "recent.jump",
   "C-M-s": "view.settings",
   "M-1": "tool.project",

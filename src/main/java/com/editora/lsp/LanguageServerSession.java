@@ -337,6 +337,10 @@ final class LanguageServerSession implements LanguageClient {
         td.setDefinition(new DefinitionCapabilities());
         td.setReferences(new ReferencesCapabilities());
         td.setDocumentHighlight(new org.eclipse.lsp4j.DocumentHighlightCapabilities()); // occurrences (#675)
+        // Rename (#676): prepareSupport lets the server validate the position + hand us the placeholder.
+        var rename = new org.eclipse.lsp4j.RenameCapabilities();
+        rename.setPrepareSupport(true);
+        td.setRename(rename);
         // Signature help (#674): declare markdown docs + label offsets (servers send precise active-parameter
         // ranges only when the client says it can render them) + per-signature activeParameter.
         var sigInfo =
@@ -389,6 +393,9 @@ final class LanguageServerSession implements LanguageClient {
         ws.setApplyEdit(true);
         var wsEdit = new org.eclipse.lsp4j.WorkspaceEditCapabilities();
         wsEdit.setDocumentChanges(true);
+        // Renaming a public Java class makes jdtls move the .java file too — declared so it sends the
+        // RenameFile op (create/delete stay undeclared and refused by the mapper) (#676).
+        wsEdit.setResourceOperations(java.util.List.of(org.eclipse.lsp4j.ResourceOperationKind.Rename));
         ws.setWorkspaceEdit(wsEdit);
         cc.setWorkspace(ws);
         return cc;
@@ -680,6 +687,30 @@ final class LanguageServerSession implements LanguageClient {
         }
         var params = new org.eclipse.lsp4j.DocumentHighlightParams(new TextDocumentIdentifier(uri), pos);
         return server.getTextDocumentService().documentHighlight(params).exceptionally(t -> List.of());
+    }
+
+    /** Validates a rename at a position ({@code textDocument/prepareRename}) → the symbol range and/or
+     *  placeholder, or null when renaming here is not possible (#676). */
+    CompletableFuture<
+                    org.eclipse.lsp4j.jsonrpc.messages.Either3<
+                            org.eclipse.lsp4j.Range,
+                            org.eclipse.lsp4j.PrepareRenameResult,
+                            org.eclipse.lsp4j.PrepareRenameDefaultBehavior>>
+            prepareRename(String uri, Position pos) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        var params = new org.eclipse.lsp4j.PrepareRenameParams(new TextDocumentIdentifier(uri), pos);
+        return server.getTextDocumentService().prepareRename(params).exceptionally(t -> null);
+    }
+
+    /** Renames the symbol at a position ({@code textDocument/rename}) → the workspace edit, or null (#676). */
+    CompletableFuture<org.eclipse.lsp4j.WorkspaceEdit> rename(String uri, Position pos, String newName) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        var params = new org.eclipse.lsp4j.RenameParams(new TextDocumentIdentifier(uri), pos, newName);
+        return server.getTextDocumentService().rename(params).exceptionally(t -> null);
     }
 
     CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(String uri, Position pos) {

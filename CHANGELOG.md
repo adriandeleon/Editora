@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rename symbol (LSP)** — `F2` (VS Code/Sublime/IntelliJ keymaps), the editor right-click menu, or
+  `LSP: Rename Symbol…` in the palette renames the symbol under the caret across the whole workspace via
+  the language server. The prompt comes pre-filled with the current name (the server validates the spot
+  first, so you're told up front when something can't be renamed). Renaming a public Java class also
+  **moves its `.java` file** — the tab, session state, and language server all follow to the new path.
+  Edits land as one undo step per touched file; files without an open tab open in background tabs. (#676)
+
 - **Occurrence highlighting (LSP)** — rest the caret on a symbol and every occurrence in the file gets a
   subtle wash, with **writes** (assignments) shaded warmer than reads — the IntelliJ/VS Code idle
   affordance, powered by the language server so it's semantic (a local `x` doesn't light up an unrelated

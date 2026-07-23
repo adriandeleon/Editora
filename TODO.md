@@ -3,6 +3,22 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP rename** (#676) — `prepareRename` + `textDocument/rename`, both stages. Client declares
+      `prepareSupport` + `workspaceEdit.resourceOperations: ["rename"]` (create/delete stay undeclared and
+      refused). Flow: prepare validates + supplies the placeholder (pure `LspManager.mapPrepare` handles
+      all three response shapes incl. the null = refused case; no-prepare servers fall back to the pure
+      `LspCoordinator.wordAt` identifier run), `promptText` pre-filled, then rename → the WorkspaceEdit
+      through the #670 pipeline. **`WorkspaceEditMapper.map` now returns `Mapped{edits, renames}`**:
+      `RenameFile` ops are supported when they trail the text edits (jdtls's class-rename shape); a text
+      edit *after* a rename addresses the post-rename world and refuses the whole edit; create/delete
+      still refuse; the op's `overwrite` option is honored (target-exists without it ⇒ refused up front,
+      before any edit applies). `applyWorkspaceEdits` then: text edits per buffer (one undo unit each) →
+      `Files.move` → `Ops.fileRenamed` (= `onProjectFileRenamed`: buffer/tab remap + per-file session-state
+      migration + project-tree refresh) → `closeDocument(old uri)` + `syncBufferWhenShown` so the LSP
+      document re-opens under the NEW uri — without that re-route, didChange addressed the old uri and was
+      silently dropped. `F2` in vscode/sublime/intellij (+mac) keymaps; right-click "LSP: Rename Symbol…"
+      gated on `renameProvider`. *Deferred: a rename preview (diff of affected files) before applying;
+      undo does not move the file back (text edits undo per file; the disk rename is not undoable).*
 - [x] **LSP document highlight** (#675) — `textDocument/documentHighlight`: occurrences of the symbol
       under the resting caret, Read vs Write shaded differently. Neutral `editor/OccurrenceSpan` record
       (editor stays lsp4j-free); `editor/OccurrenceHighlightOverlay` is a structural clone of

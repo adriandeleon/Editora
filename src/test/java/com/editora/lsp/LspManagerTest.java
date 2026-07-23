@@ -195,6 +195,38 @@ class LspManagerTest {
         assertEquals(Set.of(), LspManager.signatureTriggerCharsOf(null));
     }
 
+    // --- Rename (#676) -------------------------------------------------------------------------
+
+    @Test
+    void renameProviderDetectedFromEitherForm() {
+        assertFalse(LspManager.renameProvider(null));
+        assertFalse(LspManager.renameProvider(new ServerCapabilities()));
+        ServerCapabilities bool = new ServerCapabilities();
+        bool.setRenameProvider(true);
+        assertTrue(LspManager.renameProvider(bool));
+        ServerCapabilities opts = new ServerCapabilities();
+        opts.setRenameProvider(new org.eclipse.lsp4j.RenameOptions());
+        assertTrue(LspManager.renameProvider(opts));
+    }
+
+    @Test
+    void mapPrepareHandlesAllThreeShapesAndRefusal() {
+        assertFalse(LspManager.mapPrepare(null).allowed(), "null response = rename not valid here");
+        var range =
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(1, 4), new org.eclipse.lsp4j.Position(1, 9));
+        var fromRange = LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forFirst(range));
+        assertTrue(fromRange.allowed());
+        assertEquals(4, fromRange.startCol());
+        var prep = new org.eclipse.lsp4j.PrepareRenameResult(range, "oldName");
+        var fromPrep = LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forSecond(prep));
+        assertTrue(fromPrep.allowed());
+        assertEquals("oldName", fromPrep.placeholder());
+        var fromDefault = LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forThird(
+                new org.eclipse.lsp4j.PrepareRenameDefaultBehavior(true)));
+        assertTrue(fromDefault.allowed());
+        assertEquals("", fromDefault.placeholder());
+    }
+
     // --- Document highlight (#675) -------------------------------------------------------------
 
     @Test

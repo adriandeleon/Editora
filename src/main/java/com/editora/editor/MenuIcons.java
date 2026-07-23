@@ -154,6 +154,12 @@ final class MenuIcons {
         return of("M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z");
     }
 
+    /** Material "edit" (pencil) — "Rename". */
+    static Node rename() {
+        return of("M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 "
+                + "0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z");
+    }
+
     /** Material "lightbulb_outline" — "Code Actions" (quick fixes). */
     static Node codeAction() {
         return of("M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 "

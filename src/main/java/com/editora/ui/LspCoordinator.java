@@ -78,6 +78,10 @@ final class LspCoordinator {
          *  quick fix touches a file with no open tab (#670). Null when it can't be opened. */
         EditorBuffer openBackgroundBuffer(Path file);
 
+        /** A workspace edit renamed a file on disk (#676) — remap the open buffer/tab + per-file session
+         *  state (the project-tree rename hook). */
+        void fileRenamed(Path from, Path to);
+
         /** Sets (or clears, when {@code null}) the status-bar {@code LSP: <server>} segment label. */
         void setStatusBarLsp(String label);
 
@@ -693,6 +697,7 @@ final class LspCoordinator {
             buffer.setLspFormatAvailable(lspManager.supportsFormatting(path));
             buffer.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
             buffer.setLspCodeActionsAvailable(lspManager.supportsCodeActions(path));
+            buffer.setLspRenameAvailable(lspManager.supportsRename(path));
             buffer.setLspSignatureTriggerChars(lspManager.signatureTriggerCharacters(path));
             lspManager.pullDiagnostics(path);
             // Semantic highlighting: gate on the setting + the server's capability; request the initial
@@ -708,6 +713,7 @@ final class LspCoordinator {
             buffer.setLspFormatAvailable(false);
             buffer.setLspRangeFormatAvailable(false);
             buffer.setLspCodeActionsAvailable(false);
+            buffer.setLspRenameAvailable(false);
             buffer.setLspSignatureTriggerChars(java.util.Set.of());
             buffer.clearOccurrenceSpans();
             buffer.setSemanticActive(false);
@@ -856,6 +862,7 @@ final class LspCoordinator {
                         b.setLspFormatAvailable(lspManager.supportsFormatting(b.getPath()));
                         b.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(b.getPath()));
                         b.setLspCodeActionsAvailable(lspManager.supportsCodeActions(b.getPath()));
+                        b.setLspRenameAvailable(lspManager.supportsRename(b.getPath()));
                         b.setLspSignatureTriggerChars(lspManager.signatureTriggerCharacters(b.getPath()));
                         lspManager.pullDiagnostics(b.getPath());
                         // Capabilities are known now — (re)gate semantic highlighting + fetch initial tokens.
@@ -941,7 +948,12 @@ final class LspCoordinator {
             }
         });
         buffer.setLspNavActions(
-                this::gotoDefinition, this::findReferences, this::showHover, this::formatDocument, this::codeActions);
+                this::gotoDefinition,
+                this::findReferences,
+                this::showHover,
+                this::formatDocument,
+                this::codeActions,
+                this::rename);
         // Only the visible buffer starts its server now; a restored background tab waits for its first show.
         syncBufferWhenShown(buffer);
     }
@@ -1279,7 +1291,93 @@ final class LspCoordinator {
      * nothing is applied — half a refactoring corrupts the workspace. A file with no open tab opens in a
      * background tab so its change is visible and undoable.
      */
-    private boolean applyWorkspaceEdits(java.util.List<com.editora.lsp.WorkspaceEditMapper.FileEdit> files) {
+    /**
+     * Rename the symbol under the caret (#676): validate via {@code prepareRename} when the server supports
+     * it (jdtls does — it also supplies the placeholder), prompt pre-filled with the current name, then
+     * {@code textDocument/rename} — whose workspace edit (including a class rename's {@code RenameFile})
+     * applies through {@link #applyWorkspaceEdits}.
+     */
+    void rename() {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        Path path = b.getPath();
+        if (!lspManager.supportsRename(path) || !ops.activeEditable()) {
+            host.setStatus(tr("status.lsp.noRename"));
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        int line = area.getCurrentParagraph();
+        int col = area.getCaretColumn();
+        if (lspManager.supportsPrepareRename(path)) {
+            lspManager.prepareRename(path, line, col, prep -> {
+                if (!prep.allowed()) {
+                    host.setStatus(tr("status.lsp.cannotRename"));
+                    return;
+                }
+                String placeholder = !prep.placeholder().isBlank()
+                        ? prep.placeholder()
+                        : textInRange(b, prep.startLine(), prep.startCol(), prep.endLine(), prep.endCol());
+                promptAndRename(b, path, line, col, placeholder.isBlank() ? wordAtCaret(area) : placeholder);
+            });
+        } else {
+            promptAndRename(b, path, line, col, wordAtCaret(area));
+        }
+    }
+
+    private void promptAndRename(EditorBuffer b, Path path, int line, int col, String placeholder) {
+        host.promptText(tr("dialog.lsp.rename.title"), tr("dialog.lsp.rename.label"), placeholder, newName -> {
+            String name = newName == null ? "" : newName.trim();
+            if (name.isEmpty() || name.equals(placeholder)) {
+                return; // nothing to do
+            }
+            host.setStatus(tr("status.lsp.renaming"));
+            lspManager.rename(
+                    path,
+                    line,
+                    col,
+                    name,
+                    ok -> host.setStatus(tr(ok ? "status.lsp.renamed" : "status.lsp.renameFailed", name)));
+        });
+    }
+
+    /** The document text inside a 0-based LSP range (single-line expected), or "" when out of bounds. */
+    private static String textInRange(EditorBuffer b, int sl, int sc, int el, int ec) {
+        try {
+            CodeArea a = b.getFocusedArea();
+            int from = a.getAbsolutePosition(sl, sc);
+            int to = a.getAbsolutePosition(el, ec);
+            return to > from ? a.getText(from, to) : "";
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    /** The identifier run around the caret (the no-prepare fallback placeholder), or "". */
+    static String wordAt(String line, int col) {
+        if (line == null || line.isEmpty()) {
+            return "";
+        }
+        int c = Math.max(0, Math.min(col, line.length()));
+        int start = c;
+        while (start > 0 && Character.isJavaIdentifierPart(line.charAt(start - 1))) {
+            start--;
+        }
+        int end = c;
+        while (end < line.length() && Character.isJavaIdentifierPart(line.charAt(end))) {
+            end++;
+        }
+        return end > start ? line.substring(start, end) : "";
+    }
+
+    private static String wordAtCaret(CodeArea area) {
+        return wordAt(area.getParagraph(area.getCurrentParagraph()).getText(), area.getCaretColumn());
+    }
+
+    private boolean applyWorkspaceEdits(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
+        var files = mapped.edits();
         java.util.List<EditorBuffer> buffers = new java.util.ArrayList<>(files.size());
         for (var fe : files) {
             EditorBuffer buf = ops.bufferForPath(fe.file());
@@ -1291,8 +1389,42 @@ final class LspCoordinator {
             }
             buffers.add(buf);
         }
+        // Validate the renames BEFORE applying anything (all-or-nothing): a rename that would clobber an
+        // existing file (without the op's overwrite flag) refuses the whole edit up front (#676).
+        for (var r : mapped.renames()) {
+            if (!r.overwrite() && java.nio.file.Files.exists(r.to())) {
+                return false;
+            }
+        }
         for (int i = 0; i < files.size(); i++) {
             buffers.get(i).applyLspEdits(files.get(i).edits());
+        }
+        // File renames run AFTER the text edits (the mapper guarantees the edit list was emitted in that
+        // order): move on disk, remap open buffers/session state (ops), and re-route the LSP document —
+        // the buffer's didChange would otherwise address the OLD uri and be silently dropped.
+        for (var r : mapped.renames()) {
+            EditorBuffer open = ops.bufferForPath(r.from());
+            try {
+                if (r.to().getParent() != null) {
+                    java.nio.file.Files.createDirectories(r.to().getParent());
+                }
+                java.nio.file.Files.move(
+                        r.from(),
+                        r.to(),
+                        r.overwrite()
+                                ? new java.nio.file.CopyOption[] {java.nio.file.StandardCopyOption.REPLACE_EXISTING}
+                                : new java.nio.file.CopyOption[0]);
+            } catch (java.io.IOException e) {
+                return false; // text edits stay applied (undoable); the failed move is reported as failure
+            }
+            if (lspManager.isManaged(r.from())) {
+                lspManager.closeDocument(r.from()); // didClose the OLD uri before the buffer re-opens as new
+            }
+            clearDiagnostics(r.from());
+            ops.fileRenamed(r.from(), r.to()); // remaps the open buffer's path + tab + session state
+            if (open != null) {
+                syncBufferWhenShown(open); // re-open the document under its NEW uri
+            }
         }
         return true;
     }

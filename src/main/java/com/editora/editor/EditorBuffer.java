@@ -594,10 +594,13 @@ public class EditorBuffer implements TabContent {
     private Runnable lspHoverAction = () -> {};
     private Runnable lspFormatAction = () -> {};
     private Runnable lspCodeActionsAction = () -> {};
+    private Runnable lspRenameAction = () -> {};
     /** Whether this buffer's server advertises whole-document formatting (refreshed when it reports ready). */
     private boolean lspFormatAvailable;
     /** Whether this buffer's server advertises code actions (quick fixes) — gates the menu item (#670). */
     private boolean lspCodeActionsAvailable;
+    /** Whether this buffer's server advertises rename — gates the menu item (#676). */
+    private boolean lspRenameAvailable;
     /** Whether this buffer's server advertises range formatting — enables Tab to re-indent the line. */
     private boolean lspRangeFormatAvailable;
     /** Injected range-formatter (the controller wires it to the LSP manager); null = none. */
@@ -1883,6 +1886,15 @@ public class EditorBuffer implements TabContent {
                 lspCodeActionsAction.run();
             });
             items.add(actions);
+        }
+        if (lspRenameAvailable) {
+            MenuItem rename = new MenuItem(tr("command.lsp.rename"));
+            rename.setGraphic(MenuIcons.rename());
+            rename.setOnAction(e -> {
+                area.moveTo(offset); // rename the right-clicked symbol
+                lspRenameAction.run();
+            });
+            items.add(rename);
         }
         if (lspFormatAvailable) {
             MenuItem format = new MenuItem(tr("command.lsp.formatDocument"));
@@ -3498,12 +3510,18 @@ public class EditorBuffer implements TabContent {
      *  Code Actions are shown only when the server advertises them — see {@link #setLspFormatAvailable}/
      *  {@link #setLspCodeActionsAvailable}). */
     public void setLspNavActions(
-            Runnable gotoDefinition, Runnable findReferences, Runnable hover, Runnable format, Runnable codeActions) {
+            Runnable gotoDefinition,
+            Runnable findReferences,
+            Runnable hover,
+            Runnable format,
+            Runnable codeActions,
+            Runnable rename) {
         this.lspGotoDefinitionAction = gotoDefinition == null ? () -> {} : gotoDefinition;
         this.lspFindReferencesAction = findReferences == null ? () -> {} : findReferences;
         this.lspHoverAction = hover == null ? () -> {} : hover;
         this.lspFormatAction = format == null ? () -> {} : format;
         this.lspCodeActionsAction = codeActions == null ? () -> {} : codeActions;
+        this.lspRenameAction = rename == null ? () -> {} : rename;
     }
 
     /** Whether to offer "Format Document" in the right-click menu (the server's formatting capability). */
@@ -3514,6 +3532,11 @@ public class EditorBuffer implements TabContent {
     /** Whether to offer "Code Actions" in the right-click menu (the server's codeAction capability, #670). */
     public void setLspCodeActionsAvailable(boolean available) {
         this.lspCodeActionsAvailable = available;
+    }
+
+    /** Whether to offer "Rename" in the right-click menu (the server's rename capability, #676). */
+    public void setLspRenameAvailable(boolean available) {
+        this.lspRenameAvailable = available;
     }
 
     /** Async range-formatter for Tab line re-indent: requests the edits the server would apply to a line

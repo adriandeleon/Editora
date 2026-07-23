@@ -3614,6 +3614,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void fileRenamed(Path from, Path to) {
+                    onProjectFileRenamed(from, to); // remap buffer/tab + migrate per-file session state
+                    if (projectPanel != null) {
+                        projectPanel.refreshTree();
+                    }
+                }
+
+                @Override
                 public void setStatusBarLsp(String label) {
                     statusBar.setLsp(label);
                 }
@@ -13626,6 +13634,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("lsp.formatDocument", () -> ifLsp(lspCoordinator::formatDocument)));
         registry.register(Command.of("lsp.codeActions", () -> ifLsp(lspCoordinator::codeActions)));
         registry.register(Command.of("lsp.signatureHelp", () -> ifLsp(() -> lspCoordinator.signatureHelp(true))));
+        registry.register(Command.of("lsp.rename", () -> ifLsp(lspCoordinator::rename)));
         registry.register(Command.of("view.toggleLsp", this::toggleLsp));
         registry.register(Command.of(
                 "view.toggleSemanticHighlight",
