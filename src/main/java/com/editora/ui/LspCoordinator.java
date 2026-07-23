@@ -157,6 +157,9 @@ final class LspCoordinator {
     /** The currently-showing LSP hover popup (dismissable), or null. */
     private Popup hoverPopup;
 
+    /** The currently-showing signature-help popup (#674), or null. */
+    private Popup signaturePopup;
+
     LspCoordinator(CoordinatorHost host, LspManager lspManager, Ops ops) {
         this.host = host;
         this.lspManager = lspManager;
@@ -690,6 +693,7 @@ final class LspCoordinator {
             buffer.setLspFormatAvailable(lspManager.supportsFormatting(path));
             buffer.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
             buffer.setLspCodeActionsAvailable(lspManager.supportsCodeActions(path));
+            buffer.setLspSignatureTriggerChars(lspManager.signatureTriggerCharacters(path));
             lspManager.pullDiagnostics(path);
             // Semantic highlighting: gate on the setting + the server's capability; request the initial
             // viewport (a no-op until the server reports ready, then onServerStatus refreshes it).
@@ -704,6 +708,7 @@ final class LspCoordinator {
             buffer.setLspFormatAvailable(false);
             buffer.setLspRangeFormatAvailable(false);
             buffer.setLspCodeActionsAvailable(false);
+            buffer.setLspSignatureTriggerChars(java.util.Set.of());
             buffer.setSemanticActive(false);
             if (path != null && lspManager.isManaged(path)) {
                 lspManager.closeDocument(path);
@@ -850,6 +855,7 @@ final class LspCoordinator {
                         b.setLspFormatAvailable(lspManager.supportsFormatting(b.getPath()));
                         b.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(b.getPath()));
                         b.setLspCodeActionsAvailable(lspManager.supportsCodeActions(b.getPath()));
+                        b.setLspSignatureTriggerChars(lspManager.signatureTriggerCharacters(b.getPath()));
                         lspManager.pullDiagnostics(b.getPath());
                         // Capabilities are known now — (re)gate semantic highlighting + fetch initial tokens.
                         boolean sem =
@@ -885,10 +891,12 @@ final class LspCoordinator {
      *  opens+activates it if eligible. Called from {@code MainController.addBuffer}. */
     void wireBuffer(EditorBuffer buffer) {
         // Debounced didChange sink + keep the Structure outline live as the document changes.
+        buffer.setSignatureHelpRequester(() -> signatureHelp(false)); // '(' or ',' typed (#674)
         buffer.setLspChangeListener(text -> {
             if (buffer.getPath() != null) {
                 lspManager.changeDocument(buffer.getPath(), text);
                 requestStructureSymbols(buffer);
+                refreshSignatureHelpIfShowing(); // tracks the active parameter / closes after ')' (#674)
             }
         });
         // Pull-model diagnostics (fired on the same debounce as didChange; no-op for push-only servers).
@@ -1348,6 +1356,138 @@ final class LspCoordinator {
         if (hoverPopup != null) {
             hoverPopup.hide();
             hoverPopup = null;
+        }
+    }
+
+    /**
+     * Signature help (#674): the overloads + active parameter at the caret. {@code manual} is the
+     * {@code lsp.signatureHelp} command (reports when unavailable); auto-trigger — a typed {@code (} or
+     * {@code ,}, and the typing-pause refresh while the popup is up — stays silent. A response with no
+     * signatures hides the popup, which is also how it closes once the caret leaves the call.
+     */
+    void signatureHelp(boolean manual) {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null
+                || b.getPath() == null
+                || !lspManager.isManaged(b.getPath())
+                || !lspManager.supportsSignatureHelp(b.getPath())) {
+            if (manual) {
+                host.setStatus(tr("status.lsp.noSignatureHelp"));
+            }
+            return;
+        }
+        Path path = b.getPath();
+        CodeArea area = b.getFocusedArea();
+        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        lspManager.signatureHelp(path, area.getCurrentParagraph(), area.getCaretColumn(), help -> {
+            if (b != host.activeBuffer()) {
+                return;
+            }
+            var active = com.editora.lsp.SignatureFormat.resolve(help);
+            if (active == null) {
+                hideSignaturePopup(); // outside a call now — the natural close
+                if (manual) {
+                    host.setStatus(tr("status.lsp.noSignatureHelp"));
+                }
+                return;
+            }
+            showSignaturePopup(area, active);
+        });
+    }
+
+    /** Refreshes (or closes) a showing signature popup on the typing pause — called from the buffer's
+     *  debounced change listener, so the active parameter tracks the arguments as they're typed. */
+    private void refreshSignatureHelpIfShowing() {
+        if (signaturePopup != null) {
+            signatureHelp(false);
+        }
+    }
+
+    /**
+     * Shows (replacing any previous) the signature popup above/below the caret. Unlike the hover popup it
+     * deliberately survives caret <em>column</em> movement — typing arguments moves the caret constantly —
+     * and closes on Escape, scrolling, clicking elsewhere (autoHide), leaving the line, or a refresh that
+     * finds no signature.
+     */
+    private void showSignaturePopup(CodeArea area, com.editora.lsp.SignatureFormat.Active active) {
+        hideSignaturePopup();
+        String label = active.label();
+        javafx.scene.text.Text pre = new javafx.scene.text.Text(label.substring(0, active.paramStart()));
+        javafx.scene.text.Text param =
+                new javafx.scene.text.Text(label.substring(active.paramStart(), active.paramEnd()));
+        param.setStyle("-fx-font-weight: bold; -fx-underline: true");
+        javafx.scene.text.Text post = new javafx.scene.text.Text(label.substring(active.paramEnd()));
+        javafx.scene.text.TextFlow flow = new javafx.scene.text.TextFlow(pre, param, post);
+        flow.setMaxWidth(560);
+        VBox box = new VBox(4, flow);
+        if (active.total() > 1) {
+            Label count = new Label((active.index() + 1) + "/" + active.total());
+            count.getStyleClass().add("lsp-signature-count");
+            box.getChildren().add(0, count);
+        }
+        if (!active.documentation().isBlank()) {
+            try {
+                Node doc =
+                        MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(active.documentation()), null);
+                box.getChildren().add(doc);
+            } catch (RuntimeException e) {
+                Label docLabel = new Label(active.documentation());
+                docLabel.setWrapText(true);
+                box.getChildren().add(docLabel);
+            }
+        }
+        box.getStyleClass().add("lsp-hover-popup"); // same card styling as hover
+        box.setMaxWidth(560);
+        box.getStylesheets()
+                .addAll(
+                        getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
+                        getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
+
+        Popup popup = new Popup();
+        popup.setAutoHide(true);
+        popup.setConsumeAutoHidingEvents(false);
+        popup.getContent().add(box);
+        signaturePopup = popup;
+
+        int shownAtParagraph = area.getCurrentParagraph();
+        EventHandler<KeyEvent> esc = ev -> {
+            if (ev.getCode() == KeyCode.ESCAPE) {
+                hideSignaturePopup();
+                ev.consume();
+            }
+        };
+        // Leaving the LINE ends the call context; column moves within it are the normal typing flow.
+        ChangeListener<Object> caret = (o, a, bNew) -> {
+            if (area.getCurrentParagraph() != shownAtParagraph) {
+                hideSignaturePopup();
+            }
+        };
+        ChangeListener<Object> scroll = (o, a, bNew) -> hideSignaturePopup();
+        area.addEventFilter(KeyEvent.KEY_PRESSED, esc);
+        area.caretPositionProperty().addListener(caret);
+        area.estimatedScrollYProperty().addListener(scroll);
+        popup.setOnHidden(ev -> {
+            area.removeEventFilter(KeyEvent.KEY_PRESSED, esc);
+            area.caretPositionProperty().removeListener(caret);
+            area.estimatedScrollYProperty().removeListener(scroll);
+            if (signaturePopup == popup) {
+                signaturePopup = null;
+            }
+        });
+
+        var bounds = area.getCaretBounds().orElse(null);
+        if (bounds != null) {
+            popup.show(area, bounds.getMinX(), bounds.getMaxY());
+        } else {
+            popup.show(area, 0, 0);
+        }
+    }
+
+    /** Hides the signature-help popup if one is showing. */
+    private void hideSignaturePopup() {
+        if (signaturePopup != null) {
+            signaturePopup.hide();
+            signaturePopup = null;
         }
     }
 }

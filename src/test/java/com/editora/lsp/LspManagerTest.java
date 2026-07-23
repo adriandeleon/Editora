@@ -180,6 +180,21 @@ class LspManagerTest {
         assertEquals(1, key.chars().filter(c -> c == 0).count(), "exactly one separator in the key");
     }
 
+    // --- Signature help (#674) -----------------------------------------------------------------
+
+    @Test
+    void signatureHelpProviderAndTriggerCharsExtracted() {
+        assertFalse(LspManager.signatureHelpProvider(null));
+        assertFalse(LspManager.signatureHelpProvider(new ServerCapabilities()));
+        ServerCapabilities caps = new ServerCapabilities();
+        var opts = new org.eclipse.lsp4j.SignatureHelpOptions(List.of("(", ","));
+        opts.setRetriggerCharacters(List.of(")"));
+        caps.setSignatureHelpProvider(opts);
+        assertTrue(LspManager.signatureHelpProvider(caps));
+        assertEquals(Set.of('(', ',', ')'), LspManager.signatureTriggerCharsOf(caps));
+        assertEquals(Set.of(), LspManager.signatureTriggerCharsOf(null));
+    }
+
     // --- Code actions (#670) -------------------------------------------------------------------
 
     @Test

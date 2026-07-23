@@ -543,6 +543,10 @@ public class EditorBuffer implements TabContent {
             new javafx.animation.PauseTransition(javafx.util.Duration.millis(250));
     /** Completion trigger characters the server advertised (e.g. {@code .} for Java, {@code <} for HTML). */
     private java.util.Set<Character> lspTriggerChars = java.util.Set.of();
+    /** Signature-help trigger chars (usually '(' and ',') — see setLspSignatureTriggerChars (#674). */
+    private java.util.Set<Character> lspSignatureTriggerChars = java.util.Set.of();
+    /** Fired (deferred a pulse) when a signature trigger char is typed; null = disabled. */
+    private Runnable signatureHelpRequester;
 
     private javafx.scene.control.Tooltip lspTooltip;
     /** Message currently shown by {@link #lspTooltip} — skips a re-{@code show()} (flicker) on each move. */
@@ -2993,6 +2997,17 @@ public class EditorBuffer implements TabContent {
     /** Sets the completion trigger characters the server advertised (empty = none / not yet known). */
     public void setLspTriggerChars(java.util.Set<Character> chars) {
         this.lspTriggerChars = chars == null ? java.util.Set.of() : chars;
+    }
+
+    /** Sets the signature-help trigger characters the server advertised — typing one fires the injected
+     *  requester (#674). Empty = none / not yet known. */
+    public void setLspSignatureTriggerChars(java.util.Set<Character> chars) {
+        this.lspSignatureTriggerChars = chars == null ? java.util.Set.of() : chars;
+    }
+
+    /** Injects the signature-help request (the coordinator shows the popup); null disables auto-trigger. */
+    public void setSignatureHelpRequester(Runnable requester) {
+        this.signatureHelpRequester = requester;
     }
 
     /** True if this file can be run (a Java 25 compact source file, a Python script, or a shell script
@@ -7840,6 +7855,12 @@ public class EditorBuffer implements TabContent {
                 updateCompletion(a, false);
             }
         });
+        // Signature help fires IMMEDIATELY on a typed trigger char ('(' / ','), not on the 280 ms pause —
+        // the overload popup must appear as the call is opened. Guarded to three cheap checks per edit
+        // when off; the request itself is deferred a pulse so the triggering insertion's caret settles
+        // first (the maybeAutoFill lesson) — reading the caret inside the change emission sees a stale
+        // position (#674).
+        a.multiPlainChanges().subscribe(changes -> maybeTriggerSignatureHelp(a, changes));
         // AI inline completion rides a longer pause (~600 ms) so it never races the local popup/ghost;
         // each edit bumps the generation, superseding the in-flight request. Zero work while disabled.
         a.multiPlainChanges().successionEnds(Duration.ofMillis(600)).subscribe(ignored -> {
@@ -7854,6 +7875,24 @@ public class EditorBuffer implements TabContent {
             dismissCompletionIfPrefixEmpty(a); // close at once when Backspace deletes the whole typed word
         });
         a.estimatedScrollYProperty().addListener((o, ov, nv) -> hideGhost());
+    }
+
+    /** See {@code installCompletionTrigger}: fires the signature-help requester on a typed trigger char. */
+    private void maybeTriggerSignatureHelp(
+            CodeArea a, java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes) {
+        if (signatureHelpRequester == null || !lspActive || lspSignatureTriggerChars.isEmpty()) {
+            return; // the per-keystroke hot path for every non-LSP buffer: three field checks, nothing more
+        }
+        if (!a.isFocused() || changes.size() != 1) {
+            return;
+        }
+        org.fxmisc.richtext.model.PlainTextChange c = changes.get(0);
+        String inserted = c.getInserted();
+        if (inserted.length() == 1
+                && (c.getRemoved() == null || c.getRemoved().isEmpty())
+                && lspSignatureTriggerChars.contains(inserted.charAt(0))) {
+            Platform.runLater(signatureHelpRequester);
+        }
     }
 
     /**

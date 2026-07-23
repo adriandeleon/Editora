@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Signature help (LSP)** — typing `(` or `,` in a call pops the server's overload list at the caret:
+  the active signature with the **current parameter highlighted**, an "n/m" overload counter, and the
+  signature's documentation. It follows your typing (the highlighted parameter advances as arguments are
+  entered) and closes when the caret leaves the call, on Escape, or on scroll. Also on demand via
+  `LSP: Signature Help` in the palette. (#674)
+
 - **Code actions / quick fixes (LSP)** — the language server's fixes and refactorings, at last reachable:
   `LSP: Code Actions` (palette, the editor right-click menu, and `Ctrl-.`/`Cmd-.` in the VS Code, Sublime
   and IntelliJ keymaps) asks the server what it can do at the caret or selection — quick fixes for the
