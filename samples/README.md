@@ -48,6 +48,25 @@ Editor/Split/Preview toggle that renders the timeline). There is deliberately no
 - `samples/indent/blocks.py` — Enter after `:` indents; smart backspace on a blank indented line
   jumps back to the end of the previous line.
 
+## editing/ — Emacs-style editing commands (content-dependent)
+
+Fixtures for the editing commands where the *content* is the test. Set the keymap to **Emacs**.
+
+- `samples/editing/tabs.txt` — a block of tab-indented lines and a block of space-indented lines. Select
+  one, then run *Edit: Untabify Region* (tabs → spaces) or *Edit: Tabify Region* (spaces → tabs). Turn on
+  *Toggle Whitespace* to see which is which; the mixed block at the bottom checks the tab-then-spaces rule.
+- `samples/editing/align.txt` — assignment / key-value / comment blocks. Select a block and run
+  *Edit: Align Regexp* with `=`, `:` or `//`. The already-uneven block shows that it pads to the widest
+  match rather than collapsing existing whitespace (so it's idempotent).
+- `samples/editing/fill.txt` — long paragraphs for **auto-fill**. Turn on *View: Toggle Auto-Fill*, set a
+  small fill column (`C-x f`, e.g. 40), then keep typing past the margin and watch lines wrap at a word
+  boundary; the indented paragraph confirms the wrap keeps the indent. `M-q` reflows a whole paragraph.
+
+The other Emacs commands are keystroke-driven and need no special fixture — open any buffer and exercise
+them: kill ring (`C-k`/`C-y`/`M-y`), rectangles (`C-x r …`), narrowing (`C-x n n`/`C-x n w`), query-replace
+(`M-%`), the mark ring (`C-SPC`/`C-x C-SPC`), occur (`M-s o`), and the `C-u` prefix argument
+(`C-u 5 C-n`). Abbreviations need a dictionary — define one with `C-x a g`, then expand with `C-x a e`.
+
 ## markdown/ — preview, GFM, math, embedded Mermaid
 
 - `samples/markdown/gfm.md` — toggle preview (Editor/Split/Preview): bold/italic/code, a task list

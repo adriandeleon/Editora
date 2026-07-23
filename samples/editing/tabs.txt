@@ -1,0 +1,19 @@
+Two indentation styles below. Select a block, then run Edit: Untabify (tabs -> spaces)
+or Edit: Tabify (spaces -> tabs). Turn on Toggle Whitespace to see which is which.
+
+# tab-indented (Untabify turns these into spaces)
+	level one
+		level two
+			level three
+	back to one
+
+# space-indented at 4-space stops (Tabify turns the runs back into tabs)
+    level one
+        level two
+            level three
+    back to one
+
+# mixed / partial (Tabify: tabs to each stop, spaces for the remainder; a lone space stays)
+ab  x
+      y
+a b
