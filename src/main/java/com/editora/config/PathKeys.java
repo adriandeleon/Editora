@@ -15,6 +15,8 @@ import com.editora.vfs.Vfs;
  * and silently dropped diagnostics — so it's worth isolating and testing.
  *
  * <p>Touches the filesystem ({@code toRealPath}) but is otherwise dependency-light; verify with a temp dir.
+ * Holds one piece of state: the bounded canonical-path cache (#680), invalidated by the window on
+ * filesystem-shifting events.
  */
 public final class PathKeys {
 
@@ -48,17 +50,54 @@ public final class PathKeys {
         }
     }
 
+    /** Bound on the canonical-path cache (entries are a string key + a Path — a few hundred bytes each). */
+    private static final int CANONICAL_CACHE_MAX = 2048;
+
+    /**
+     * Successful {@code toRealPath} resolutions, LRU-bounded. {@code toRealPath} is a per-component stat
+     * syscall chain, and the LSP diagnostics path runs {@link #key} for <b>every open tab per publish</b> —
+     * jdtls bursts project-wide publishes on workspace open, so a cold multi-tab open paid
+     * N_publishes × N_tabs syscall chains on the FX thread (#680). Access-ordered so hot paths stay.
+     * Invalidated wholesale on rename/delete/external-change/focus-regain (see
+     * {@link #invalidateCanonicalCache}); only <em>successful</em> resolutions are cached — see below.
+     */
+    private static final Map<String, Path> CANONICAL_CACHE =
+            java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Path> eldest) {
+                    return size() > CANONICAL_CACHE_MAX;
+                }
+            });
+
     /**
      * A path for cross-source identity comparison: the real (symlink-resolved) path when it exists, else the
      * absolute-normalized form. Matching by {@code normalize()} alone misses a symlinked path that a tool
      * reports under its real URI.
+     *
+     * <p>Cached ({@link #CANONICAL_CACHE}) — but the not-exists <b>fallback is deliberately never cached</b>:
+     * a file that doesn't exist yet resolves to its normalized form, and once created (Save-As) its real
+     * form can differ (macOS {@code /tmp} → {@code /private/tmp}); a cached fallback would re-introduce the
+     * exact identity mismatch that silently dropped diagnostics (#470).
      */
     public static Path canonical(Path p) {
-        try {
-            return p.toRealPath();
-        } catch (java.io.IOException | RuntimeException e) {
-            return p.toAbsolutePath().normalize();
+        String cacheKey = p.toString();
+        Path hit = CANONICAL_CACHE.get(cacheKey);
+        if (hit != null) {
+            return hit;
         }
+        try {
+            Path real = p.toRealPath();
+            CANONICAL_CACHE.put(cacheKey, real);
+            return real;
+        } catch (java.io.IOException | RuntimeException e) {
+            return p.toAbsolutePath().normalize(); // NOT cached — see the javadoc
+        }
+    }
+
+    /** Drops every cached canonical resolution — called when the filesystem may have shifted under us
+     *  (rename/delete/external change/window focus regain). Cheap: the next lookups re-resolve + re-warm. */
+    public static void invalidateCanonicalCache() {
+        CANONICAL_CACHE.clear();
     }
 
     /**

@@ -3,6 +3,15 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Canonical-path cache on the diagnostics path** (#680) — `PathKeys.canonical` now caches successful
+      `toRealPath` resolutions (LRU 2048, access-ordered, synchronized) — the LSP publish path runs
+      `PathKeys.key` for every open tab per publish, and jdtls bursts project-wide on open, so a cold
+      multi-tab open paid N_publishes × N_tabs per-component stat chains on the FX thread. Invalidated
+      wholesale on rename/delete/project-watcher external change/window focus regain. **The not-exists
+      fallback is deliberately never cached** — a Save-As target resolves normalized pre-creation and its
+      real form can differ post-creation (macOS `/tmp`→`/private/tmp`); caching it would re-introduce the
+      #470 silent diagnostics drop (unit test pins this with a real symlink). All other `canonical()`
+      callers (notes/history keying) share the win.
 - [x] **LSP $/progress** (#683) — client declares `window.workDoneProgress`; the session implements
       `createProgress` (accept the token; lsp4j's default throws) + `notifyProgress`: a Begin routes
       `onStatus("Progress", title — message (pct%))` (pure/unit-tested `progressText`), an End routes

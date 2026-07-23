@@ -447,6 +447,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Detect files changed by another program: re-check open files whenever the window regains focus.
         stage.focusedProperty().addListener((obs, was, now) -> {
             if (Boolean.TRUE.equals(now)) {
+                // The filesystem may have shifted while we were away — drop cached canonical paths (#680).
+                com.editora.config.PathKeys.invalidateCanonicalCache();
                 checkExternalChanges();
                 git.refresh(); // another tool may have changed the repo while we were away
                 refreshBuildTools(); // a marker file (or the active file's project) may have changed while away
@@ -1831,6 +1833,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Syncs editor/session state after the Project tree renames a file on disk (old → target). */
     private void onProjectFileRenamed(Path old, Path target) {
+        com.editora.config.PathKeys.invalidateCanonicalCache(); // stale resolutions must not survive a move (#680)
         Tab tab = tabForPath(old);
         if (tab != null) {
             EditorBuffer buffer = bufferOf(tab);
@@ -1895,6 +1898,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Syncs editor/session state after the Project tree deletes a file on disk. */
     private void onProjectFileDeleted(Path path) {
+        com.editora.config.PathKeys.invalidateCanonicalCache(); // (#680)
         Tab tab = tabForPath(path);
         if (tab != null) {
             tabPane.getTabs().remove(tab); // file is gone; close without a save prompt
@@ -2160,6 +2164,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
         // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
         projectPanel.setOnExternalChange(() -> {
+            com.editora.config.PathKeys.invalidateCanonicalCache(); // files moved on disk under us (#680)
             git.refresh();
             refreshBuildTools();
             diffCoordinator.refreshOpenDiffs();

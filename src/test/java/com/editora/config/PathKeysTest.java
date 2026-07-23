@@ -143,4 +143,47 @@ class PathKeysTest {
         assertNull(PathKeys.resolveUserInput("   ", base, home));
         assertNull(PathKeys.resolveUserInput(null, base, home));
     }
+
+    // --- Canonical-path cache (#680) -----------------------------------------------------------
+
+    @Test
+    void canonicalCachesSuccessfulResolutions(@TempDir Path dir) throws Exception {
+        PathKeys.invalidateCanonicalCache();
+        Path real = Files.writeString(dir.resolve("real.txt"), "x");
+        Path first = PathKeys.canonical(real);
+        assertEquals(first, PathKeys.canonical(real), "second lookup returns the cached resolution");
+    }
+
+    /**
+     * The not-exists fallback must NEVER be cached: a Save-As target resolves normalized before it exists,
+     * and once created its real form can differ (macOS /tmp → /private/tmp). A cached fallback would
+     * re-introduce the #470 identity mismatch that silently dropped diagnostics.
+     */
+    @Test
+    void theNotExistsFallbackIsNotCached(@TempDir Path dir) throws Exception {
+        PathKeys.invalidateCanonicalCache();
+        Path realDir = Files.createDirectory(dir.resolve("realdir"));
+        Path link = dir.resolve("link");
+        try {
+            Files.createSymbolicLink(link, realDir);
+        } catch (UnsupportedOperationException | java.io.IOException e) {
+            return; // platform without symlink support — nothing to prove here
+        }
+        Path throughLink = link.resolve("file.txt");
+        // Not created yet → fallback (normalized, symlink NOT resolved).
+        Path before = PathKeys.canonical(throughLink);
+        assertEquals(throughLink.toAbsolutePath().normalize(), before);
+        // Now create it — canonical must re-resolve through the symlink, proving no stale cache entry.
+        Files.writeString(realDir.resolve("file.txt"), "x");
+        Path after = PathKeys.canonical(throughLink);
+        assertEquals(realDir.toRealPath().resolve("file.txt"), after, "created file resolves through the link");
+    }
+
+    @Test
+    void invalidateClearsTheCache(@TempDir Path dir) throws Exception {
+        Path f = Files.writeString(dir.resolve("f.txt"), "x");
+        Path cached = PathKeys.canonical(f);
+        PathKeys.invalidateCanonicalCache();
+        assertEquals(cached, PathKeys.canonical(f), "re-resolves to the same identity after a clear");
+    }
 }
