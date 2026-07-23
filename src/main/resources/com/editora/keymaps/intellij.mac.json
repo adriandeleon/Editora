@@ -20,6 +20,7 @@
   "Cmd-b": "lsp.gotoDefinition",
   "M-f7": "lsp.findReferences",
   "f1": "lsp.hover",
+  "Cmd-.": "lsp.codeActions",
   "Cmd-e": "recent.jump",
   "Cmd-,": "view.settings",
   "Cmd-1": "tool.project",

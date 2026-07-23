@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Code actions / quick fixes (LSP)** — the language server's fixes and refactorings, at last reachable:
+  `LSP: Code Actions` (palette, the editor right-click menu, and `Ctrl-.`/`Cmd-.` in the VS Code, Sublime
+  and IntelliJ keymaps) asks the server what it can do at the caret or selection — quick fixes for the
+  diagnostics there, organize imports, generate methods, extract/inline refactorings — and shows a picker
+  (the server's preferred fix first). Applying works for every action shape: an inline edit, a deferred
+  edit (resolved on demand), or a server-side command whose edits arrive via `workspace/applyEdit` — now
+  implemented, so server-initiated edits land in the editor as normal undoable edits (one undo step per
+  file; a multi-file fix opens untouched files in background tabs). (#670)
+
 - **Filter box in the Git Log and TODO tool windows** — type to narrow the commit list (by subject,
   author, hash or date) or the TODO list (by keyword, tag, text or file) as you go. Both fields have the
   same clear (`✕`) button the Project/Bookmarks filters use.

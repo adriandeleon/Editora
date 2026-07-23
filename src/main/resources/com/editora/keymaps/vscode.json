@@ -38,6 +38,7 @@
   "f12": "lsp.gotoDefinition",
   "S-f12": "lsp.findReferences",
   "C-k C-i": "lsp.hover",
+  "C-.": "lsp.codeActions",
   "f5": "debug.start",
   "S-f5": "debug.stop",
   "C-S-f5": "debug.restart",

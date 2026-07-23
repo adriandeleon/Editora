@@ -74,6 +74,10 @@ final class LspCoordinator {
         /** The open buffer for {@code file} (canonical-tab match), or {@code null} when no tab holds it. */
         EditorBuffer bufferForPath(Path file);
 
+        /** Opens {@code file} in a background (non-selected) tab and returns its buffer — how a multi-file
+         *  quick fix touches a file with no open tab (#670). Null when it can't be opened. */
+        EditorBuffer openBackgroundBuffer(Path file);
+
         /** Sets (or clears, when {@code null}) the status-bar {@code LSP: <server>} segment label. */
         void setStatusBarLsp(String label);
 
@@ -160,6 +164,7 @@ final class LspCoordinator {
         this.problemsPanel = new ProblemsPanel(ops::openAndGoto);
         this.referencesPanel = new ReferencesPanel(ops::openAndGoto);
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
+        lspManager.setApplyEditHandler(this::applyWorkspaceEdits); // server quick-fix edits land here (#670)
     }
 
     /** How many on-their-own session deaths per (server, root) within {@link #CRASH_WINDOW_NANOS} are
@@ -189,7 +194,7 @@ final class LspCoordinator {
         if (!ops.lspFeatureEnabled() || !serverEnabled(serverId)) {
             return;
         }
-        boolean restart = shouldAutoRestart(serverId + " " + root, System.nanoTime());
+        boolean restart = shouldAutoRestart(serverId + " " + root, System.nanoTime());
         host.setStatus(tr(restart ? "status.lsp.crashed" : "status.lsp.crashLoop", serverLabel(serverId)));
         host.forEachBuffer(b -> {
             Path p = b.getPath();
@@ -684,6 +689,7 @@ final class LspCoordinator {
             buffer.setLspTriggerChars(lspManager.triggerCharacters(path));
             buffer.setLspFormatAvailable(lspManager.supportsFormatting(path));
             buffer.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
+            buffer.setLspCodeActionsAvailable(lspManager.supportsCodeActions(path));
             lspManager.pullDiagnostics(path);
             // Semantic highlighting: gate on the setting + the server's capability; request the initial
             // viewport (a no-op until the server reports ready, then onServerStatus refreshes it).
@@ -697,6 +703,7 @@ final class LspCoordinator {
             buffer.setLspTriggerChars(java.util.Set.of());
             buffer.setLspFormatAvailable(false);
             buffer.setLspRangeFormatAvailable(false);
+            buffer.setLspCodeActionsAvailable(false);
             buffer.setSemanticActive(false);
             if (path != null && lspManager.isManaged(path)) {
                 lspManager.closeDocument(path);
@@ -842,6 +849,7 @@ final class LspCoordinator {
                         b.setLspTriggerChars(lspManager.triggerCharacters(b.getPath()));
                         b.setLspFormatAvailable(lspManager.supportsFormatting(b.getPath()));
                         b.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(b.getPath()));
+                        b.setLspCodeActionsAvailable(lspManager.supportsCodeActions(b.getPath()));
                         lspManager.pullDiagnostics(b.getPath());
                         // Capabilities are known now — (re)gate semantic highlighting + fetch initial tokens.
                         boolean sem =
@@ -922,7 +930,8 @@ final class LspCoordinator {
                 cb.accept(java.util.List.of());
             }
         });
-        buffer.setLspNavActions(this::gotoDefinition, this::findReferences, this::showHover, this::formatDocument);
+        buffer.setLspNavActions(
+                this::gotoDefinition, this::findReferences, this::showHover, this::formatDocument, this::codeActions);
         // Only the visible buffer starts its server now; a restored background tab waits for its first show.
         syncBufferWhenShown(buffer);
     }
@@ -1195,6 +1204,87 @@ final class LspCoordinator {
             buffer.applyLspEdits(edits);
             host.setStatus(tr("status.lsp.formatted"));
         });
+    }
+
+    /**
+     * Code actions / quick fixes at the caret or selection ({@code lsp.codeActions}, #670): asks the server
+     * (with the overlapping diagnostics as context), shows a picker — preferred actions first — and applies
+     * the pick. An action with a deferred edit is resolved first; a command-style action executes server-side
+     * and its edits come back through {@code workspace/applyEdit} (→ {@link #applyWorkspaceEdits}).
+     */
+    void codeActions() {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        Path path = b.getPath();
+        if (!lspManager.supportsCodeActions(path) || !ops.activeEditable()) {
+            host.setStatus(tr("status.lsp.noCodeActions"));
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        var sel = area.getSelection();
+        boolean hasSelection = sel.getLength() > 0;
+        var start = area.offsetToPosition(
+                hasSelection ? sel.getStart() : area.getCaretPosition(),
+                org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+        var end = hasSelection
+                ? area.offsetToPosition(sel.getEnd(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                : start;
+        lspManager.codeActions(path, start.getMajor(), start.getMinor(), end.getMajor(), end.getMinor(), items -> {
+            if (b != host.activeBuffer()) {
+                return; // switched tabs while the server was thinking
+            }
+            if (items.isEmpty()) {
+                host.setStatus(tr("status.lsp.noCodeActions"));
+                return;
+            }
+            QuickOpen<LspManager.CodeActionItem> picker = new QuickOpen<>(
+                    tr("command.lsp.codeActions"),
+                    tr("palette.setting.pick"),
+                    () -> items,
+                    LspManager.CodeActionItem::title,
+                    LspManager.CodeActionItem::kind,
+                    item -> {
+                        if (item == null) {
+                            return;
+                        }
+                        lspManager.applyCodeAction(
+                                path,
+                                item.raw(),
+                                ok -> host.setStatus(tr(
+                                        ok ? "status.lsp.codeActionApplied" : "status.lsp.codeActionFailed",
+                                        item.title())));
+                    });
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        });
+    }
+
+    /**
+     * Applies a workspace edit's per-file batches through undoable buffers (FX thread; registered as the
+     * manager's apply-edit handler — both a picked action's inline edit and a server-initiated
+     * {@code workspace/applyEdit} land here). All-or-nothing: if any touched file can't be opened editable,
+     * nothing is applied — half a refactoring corrupts the workspace. A file with no open tab opens in a
+     * background tab so its change is visible and undoable.
+     */
+    private boolean applyWorkspaceEdits(java.util.List<com.editora.lsp.WorkspaceEditMapper.FileEdit> files) {
+        java.util.List<EditorBuffer> buffers = new java.util.ArrayList<>(files.size());
+        for (var fe : files) {
+            EditorBuffer buf = ops.bufferForPath(fe.file());
+            if (buf == null) {
+                buf = ops.openBackgroundBuffer(fe.file());
+            }
+            if (buf == null || !buf.isEditable()) {
+                return false;
+            }
+            buffers.add(buf);
+        }
+        for (int i = 0; i < files.size(); i++) {
+            buffers.get(i).applyLspEdits(files.get(i).edits());
+        }
+        return true;
     }
 
     /**
