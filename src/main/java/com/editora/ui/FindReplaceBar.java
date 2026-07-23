@@ -527,6 +527,11 @@ public class FindReplaceBar extends HBox {
         List<String> replacements = new ArrayList<>();
         try {
             collectReplacements(area, text, query, spans, replacements);
+        } catch (SearchMatcher.MatchBudgetExceededException timeout) {
+            // A valid-but-pathological pattern blew the backtracking budget mid-walk — abandon the whole
+            // replace (a half-collected set would splice a corrupt document) rather than freeze the UI.
+            status.accept(tr("find.replaceTimeout"));
+            return;
         } catch (RuntimeException badReference) {
             // An invalid $-group reference — leave the buffer untouched rather than half-rewrite it.
             status.accept(tr("find.badReplacement", describe(badReference)));
@@ -579,7 +584,10 @@ public class FindReplaceBar extends HBox {
         if (p == null) {
             return;
         }
-        Matcher m = p.matcher(text);
+        // Wrap the document in the same wall-clock backtracking budget the incremental search uses, so a
+        // pathological-but-valid pattern aborts (via MatchBudgetExceededException) instead of hanging the FX
+        // thread. text.substring(...)/computeMatches below still read the raw String, so offsets are exact.
+        Matcher m = p.matcher(SearchMatcher.budgetedSequence(text));
         StringBuffer scratch = new StringBuffer();
         int lastEnd = 0;
         while (m.find()) {

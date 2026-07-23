@@ -141,6 +141,25 @@ class FindReplaceBarFxTest {
         assertFalse(h.lastStatus().isBlank(), "the failure must be reported");
     }
 
+    @Test
+    @org.junit.jupiter.api.Timeout(10)
+    void catastrophicRegexInReplaceAllAbortsInsteadOfHanging() throws Exception {
+        // (.*a){30} over 30 'a's catastrophically backtracks (~9 s unbounded on this JDK — the same case
+        // SearchMatcherTest pins for the search path). The incremental search is already time-budgeted; this
+        // pins that Replace All shares the same guard rather than freezing the FX thread — the buffer is left
+        // untouched and a timeout status is reported. The @Timeout turns a regression (an unbounded walk) into
+        // a failing test instead of a hung run.
+        String content = "a".repeat(30);
+        Harness h = harness(content);
+        FxTestSupport.runOnFx(() -> {
+            h.query("(.*a){30}", "X");
+            h.toggle("regex", true);
+            h.bar.replaceAllMatches();
+        });
+        assertEquals(content, h.content(), "a pathological pattern must not modify the buffer");
+        assertEquals(com.editora.i18n.Messages.tr("find.replaceTimeout"), h.lastStatus());
+    }
+
     // --- preserve case ---
 
     @Test

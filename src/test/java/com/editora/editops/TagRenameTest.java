@@ -4,7 +4,9 @@ import com.editora.editops.TagRename.Mirror;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TagRenameTest {
 
@@ -196,5 +198,28 @@ class TagRenameTest {
     @Test
     void namespacedXmlTagRenames() {
         assertEquals("<ns:itemx>a</ns:itemx>", type("<ns:item|>a</ns:item>", "x", 0, false));
+    }
+
+    // --- changeInTagName: the cheap local gate EditorBuffer runs before materializing the whole document ---
+
+    @Test
+    void changeInTagNameTrueInsideOpenTagName() {
+        // 'x' at index 4 sits inside the name of <divx>.
+        assertTrue(TagRename.changeInTagName("<divx>a</div>", 4, 5));
+    }
+
+    @Test
+    void changeInTagNameTrueInsideCloseTagName() {
+        assertTrue(TagRename.changeInTagName("</divx>", 5, 6));
+    }
+
+    @Test
+    void changeInTagNameFalseInTextContent() {
+        assertFalse(TagRename.changeInTagName("<div>hix</div>", 7, 8));
+    }
+
+    @Test
+    void changeInTagNameFalseInAttributeValue() {
+        assertFalse(TagRename.changeInTagName("<div id=x>", 8, 9));
     }
 }

@@ -143,6 +143,17 @@ public final class SearchMatcher {
     /** Wall-clock budget for a single regex search before it's abandoned (see {@link Deadline}). */
     static final long DEFAULT_MATCH_BUDGET_NANOS = 1_000_000_000L; // 1 s
 
+    /**
+     * Wraps {@code text} in a read-only {@link CharSequence} that aborts a backtracking regex match once the
+     * shared {@link #DEFAULT_MATCH_BUDGET_NANOS} wall-clock budget passes, throwing a
+     * {@link MatchBudgetExceededException}. Lets another synchronous FX-thread regex walk — the find bar's
+     * Replace All — share the exact guard the incremental search already uses, instead of running an unbounded
+     * {@link Matcher} that a pathological-but-valid pattern (the classic {@code (a+)+b}) can freeze the UI on.
+     */
+    public static CharSequence budgetedSequence(CharSequence text) {
+        return new Deadline(text, DEFAULT_MATCH_BUDGET_NANOS);
+    }
+
     private static List<int[]> regexMatches(String text, String query, boolean caseSensitive, boolean wholeWord) {
         return regexMatches(text, query, caseSensitive, wholeWord, DEFAULT_MATCH_BUDGET_NANOS);
     }
@@ -174,21 +185,25 @@ public final class SearchMatcher {
                 out.add(new int[] {start, end});
                 from = end > start ? end : end + 1; // advance past a zero-width match
             }
-        } catch (MatchAbortedException aborted) {
+        } catch (MatchBudgetExceededException aborted) {
             return out; // budget exceeded — partial results beat freezing the UI
         }
         return out;
     }
 
-    /** Thrown by {@link Deadline} to unwind a runaway backtracking match; caught in {@link #regexMatches}. */
-    private static final class MatchAbortedException extends RuntimeException {
-        MatchAbortedException() {
+    /**
+     * Thrown by {@link Deadline} to unwind a runaway backtracking match once its wall-clock budget passes.
+     * The incremental search catches it and keeps its partial results; the find bar's Replace All catches it
+     * and abandons the whole replace (a half-applied replacement would corrupt the buffer).
+     */
+    public static final class MatchBudgetExceededException extends RuntimeException {
+        MatchBudgetExceededException() {
             super(null, null, false, false); // no message/stacktrace — it's control flow, not an error
         }
     }
 
     /**
-     * A read-only {@link CharSequence} view of the text that throws {@link MatchAbortedException} from
+     * A read-only {@link CharSequence} view of the text that throws {@link MatchBudgetExceededException} from
      * {@code charAt} once {@code deadlineNanos} passes. The clock is only sampled every 1024th access (a bit
      * mask) so the common fast path stays a plain array read.
      */
@@ -205,7 +220,7 @@ public final class SearchMatcher {
         @Override
         public char charAt(int index) {
             if ((++ticks & 0x3FF) == 0 && System.nanoTime() > deadlineNanos) {
-                throw new MatchAbortedException();
+                throw new MatchBudgetExceededException();
             }
             return text.charAt(index);
         }

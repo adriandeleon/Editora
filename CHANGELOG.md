@@ -89,6 +89,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   search and Replace All to it automatically; single-line selections keep seeding the query as before, so the
   two never fight over the same gesture. The scope follows its content as the buffer is edited.
 
+### Performance
+
+- **Find bar's "Replace All" can no longer freeze the editor.** A valid-but-pathological regular expression
+  (catastrophic backtracking, e.g. `(a+)+b`) ran unbounded on the UI thread during Replace All and could hang
+  the whole editor with no way out — the incremental *search* was already time-budgeted, but the *replace*
+  walk was not. Replace All now shares the same wall-clock budget: it abandons a runaway pattern, leaves the
+  buffer untouched, and reports that the pattern is too slow. (#637)
+- **Auto Rename Tag no longer copies the whole document on every keystroke.** In an HTML/XML buffer, live tag
+  renaming built the entire file into a string per keystroke before deciding whether the edit even touched a
+  tag name. It now runs a cheap local check on a small window around the edit first, so only an actual
+  tag-name edit pays the full-document cost — a large HTML/XML file stays responsive while typing. (#661)
+- **TODO / keyword highlighting now scans off the UI thread.** The multi-pattern scan of the whole document
+  ran on the UI thread on each typing pause; it now runs on a background thread (discarding superseded
+  results) and applies the highlights back on the UI thread, so a large file no longer stutters while typing.
+  (#662)
+- **Abbrev expansion no longer copies the whole document on each space/punctuation keystroke.** With Abbrev
+  Mode on, expanding scanned the entire buffer for the word before the caret; it now reads only a bounded
+  window before the caret, keeping large buffers responsive. (#663)
+
 ### Fixed
 
 - **Snippet transforms are no longer discarded.** A `${1/…/…/}` occurrence was rendered as a plain mirror, so

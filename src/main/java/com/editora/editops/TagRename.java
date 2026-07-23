@@ -26,7 +26,7 @@ public final class TagRename {
     public static final int MAX_DOC = 2_000_000;
 
     /** Longest tag name considered (bounds the backward region walk). */
-    private static final int MAX_NAME = 256;
+    public static final int MAX_NAME = 256;
 
     /** HTML void elements — no close tag, treated as self-closing (shared with {@link TagAutoClose}). */
     static final Set<String> VOID_ELEMENTS = Set.of(
@@ -67,6 +67,20 @@ public final class TagRename {
         }
         boolean closing = text.charAt(nameStart - 1) == '/';
         return findPair(text, nameStart, closing, oldName, newName, html);
+    }
+
+    /**
+     * Cheap, fully-local pre-check: does the change span {@code [changeStart, changeEnd)} within {@code text}
+     * sit inside a tag name (i.e. could {@link #mirror} possibly have any work to do)? Reads only a bounded
+     * neighborhood — at most {@link #MAX_NAME} characters each side — so a caller can run it over a small
+     * window around the edit and skip materializing the whole document on the overwhelming majority of
+     * keystrokes that never touch a tag name. A window supplying at least {@code MAX_NAME + 2} characters of
+     * left context before {@code changeStart} reproduces {@link #mirror}'s own region decision exactly (a
+     * shorter window can only yield a false negative). A {@code true} result is a permission to run the full
+     * {@link #mirror}, not a guarantee it will find a pair.
+     */
+    public static boolean changeInTagName(String text, int changeStart, int changeEnd) {
+        return nameRegionAt(text, changeStart, changeEnd) != null;
     }
 
     /**
