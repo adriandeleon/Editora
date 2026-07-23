@@ -207,6 +207,23 @@ class LspManagerTest {
         assertEquals("…", LanguageServerSession.progressText(null, null, null), "no title still yields something");
     }
 
+    // --- Semantic-tokens delta (#679) ----------------------------------------------------------
+
+    @Test
+    void fullDeltaSupportDetectedOnlyFromTheOptionsFormWithDeltaTrue() {
+        assertFalse(LspManager.fullDeltaSupported(null));
+        var boolFull = stProvider(true, false, true); // full=true (boolean form) — no delta
+        assertFalse(LspManager.fullDeltaSupported(boolFull));
+        var opts = new SemanticTokensWithRegistrationOptions();
+        opts.setLegend(new SemanticTokensLegend(List.of("keyword"), List.of()));
+        var fullOpts = new org.eclipse.lsp4j.SemanticTokensServerFull(true); // delta=true
+        opts.setFull(fullOpts);
+        assertTrue(LspManager.fullDeltaSupported(opts));
+        var noDelta = new SemanticTokensWithRegistrationOptions();
+        noDelta.setFull(new org.eclipse.lsp4j.SemanticTokensServerFull(false));
+        assertFalse(LspManager.fullDeltaSupported(noDelta));
+    }
+
     // --- Watched files (#677) ------------------------------------------------------------------
 
     @Test
