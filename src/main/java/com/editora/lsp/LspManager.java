@@ -1452,12 +1452,26 @@ public final class LspManager {
     }
 
     public void definition(Path file, int line, int character, Consumer<List<Target>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            cb.accept(List.of());
+        requestDefinition(sessionFor(file), file == null ? null : uri(file), line, character, cb);
+    }
+
+    /**
+     * Definition at an explicit document URI on {@code anchorFile}'s session — how navigation chains
+     * <b>inside</b> an opened {@code jdt://} library source (#684): the library tab has no filesystem path,
+     * but jdtls resolves positions in the jdt documents it has served. {@code anchorFile} is the original
+     * workspace file the library source was reached from.
+     */
+    public void definitionAt(Path anchorFile, String documentUri, int line, int character, Consumer<List<Target>> cb) {
+        requestDefinition(sessionFor(anchorFile), documentUri, line, character, cb);
+    }
+
+    private void requestDefinition(
+            LanguageServerSession s, String documentUri, int line, int character, Consumer<List<Target>> cb) {
+        if (s == null || documentUri == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
-        s.definition(uri(file), new Position(line, character)).whenComplete((result, error) -> {
+        s.definition(documentUri, new Position(line, character)).whenComplete((result, error) -> {
             List<Target> targets = new ArrayList<>();
             if (error == null && result != null) {
                 if (result.isLeft()) {

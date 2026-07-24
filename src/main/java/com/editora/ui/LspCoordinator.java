@@ -1153,6 +1153,12 @@ final class LspCoordinator {
     }
 
     void gotoDefinition() {
+        EditorBuffer active = host.activeBuffer();
+        LibrarySource lib = active == null ? null : librarySources.get(active);
+        if (lib != null) {
+            libraryGotoDefinition(active, lib); // navigating INSIDE an opened jdt:// source (#684)
+            return;
+        }
         EditorBuffer b = activeLspBuffer();
         if (b == null) {
             return;
@@ -1167,7 +1173,7 @@ final class LspCoordinator {
                 if (t.file() != null) {
                     ops.openAndGoto(t.file(), t.line(), t.character());
                 } else {
-                    openLibraryDefinition(b, t); // a jdt:// class-file target (JDK/dependency source) — #665
+                    openLibraryDefinition(b.getPath(), t); // a jdt:// class-file target (library source) — #665
                 }
             }
         });
@@ -1180,6 +1186,12 @@ final class LspCoordinator {
      */
     private final Map<String, java.lang.ref.WeakReference<EditorBuffer>> libraryBuffers = new java.util.HashMap<>();
 
+    /** What a library-source (jdt://) tab was opened from: its own URI + the workspace file whose session
+     *  produced it — lets navigation chain from inside library code (#684). Weak keys: dies with the tab. */
+    private final Map<EditorBuffer, LibrarySource> librarySources = new java.util.WeakHashMap<>();
+
+    private record LibrarySource(String uri, Path anchor) {}
+
     /**
      * Opens the source of a JDK/dependency class the server reported under a {@code jdt://} URI: fetched via
      * jdtls's {@code java/classFileContents} into a read-only, Java-highlighted, path-less buffer (#665).
@@ -1187,7 +1199,7 @@ final class LspCoordinator {
      * reported "no definition". {@code anchor} is the buffer the navigation started from (it routes the
      * request to the right session).
      */
-    private void openLibraryDefinition(EditorBuffer anchor, LspManager.Target t) {
+    private void openLibraryDefinition(Path anchorPath, LspManager.Target t) {
         String uri = t.classFileUri();
         var ref = libraryBuffers.get(uri);
         EditorBuffer existing = ref == null ? null : ref.get();
@@ -1196,7 +1208,7 @@ final class LspCoordinator {
             return;
         }
         host.setStatus(tr("status.lsp.libraryLoading"));
-        lspManager.classFileContents(anchor.getPath(), uri, content -> {
+        lspManager.classFileContents(anchorPath, uri, content -> {
             if (content == null) {
                 host.setStatus(tr("status.lsp.libraryUnavailable"));
                 return;
@@ -1204,7 +1216,30 @@ final class LspCoordinator {
             EditorBuffer opened = ops.openReadOnlyDoc(LspManager.classFileTitle(uri), content, "java");
             if (opened != null) {
                 libraryBuffers.put(uri, new java.lang.ref.WeakReference<>(opened));
+                librarySources.put(opened, new LibrarySource(uri, anchorPath)); // chain point (#684)
                 gotoInBuffer(opened, t.line(), t.character());
+            }
+        });
+    }
+
+    /**
+     * Go-to-definition from INSIDE an opened {@code jdt://} library source (#684): the tab has no
+     * filesystem path, so the request goes out with the library document's own jdt URI on the anchor
+     * file's session — jdtls resolves positions in the jdt documents it has served. Results chain: a
+     * file target opens normally, another library target opens (or re-selects) its own read-only tab.
+     */
+    private void libraryGotoDefinition(EditorBuffer buffer, LibrarySource lib) {
+        CodeArea area = buffer.getFocusedArea();
+        lspManager.definitionAt(lib.anchor(), lib.uri(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+            if (targets.isEmpty()) {
+                host.setStatus(tr("status.lsp.noDefinition"));
+                return;
+            }
+            LspManager.Target t = targets.get(0);
+            if (t.file() != null) {
+                ops.openAndGoto(t.file(), t.line(), t.character());
+            } else {
+                openLibraryDefinition(lib.anchor(), t);
             }
         });
     }
