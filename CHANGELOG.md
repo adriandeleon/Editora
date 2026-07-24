@@ -13,8 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a real project's `main` class. **Run Main Class…** / **Debug Main Class…** (command palette) pick any main
   class in the active file's Maven or Gradle project (via the Java language server), run it in the Run
   console or debug it with breakpoints. A green ▶ also appears in the gutter next to every `public static
-  void main`, and the editor right-click menu offers *Run '…​.main()'* / *Debug '…​.main()'*. Requires the
-  Java language server + debugging to be set up (a build-tool classpath fallback for plain Run follows).
+  void main`, and the editor right-click menu offers *Run '…​.main()'* / *Debug '…​.main()'*. Debugging (and
+  the fastest, project-wide Run) uses the Java language server; when it isn't set up, plain **Run** falls back
+  to the build tool — Maven resolves the classpath (`mvn compile dependency:build-classpath`) and runs the
+  file's `main`, and Gradle delegates to its `run` task.
 
 - **Right-click Select All / Copy in the Build Output and Test Runner consoles** — copies the selection, or
   all the output when nothing is selected. Both read-only consoles share one helper.
