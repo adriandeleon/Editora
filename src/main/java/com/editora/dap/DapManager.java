@@ -47,6 +47,21 @@ public final class DapManager implements DapClient.Host {
     /** A candidate main class returned by jdtls's {@code vscode.java.resolveMainClass}. */
     public record MainClassOption(String mainClass, String projectName, String filePath) {}
 
+    /**
+     * The resolved launch inputs for a main class (from jdtls {@code resolveClasspath}/{@code
+     * resolveJavaExecutable}): the java executable and the module/class paths, or an {@code error} message
+     * when resolution failed. Reused by the non-debug Run path (which turns it into a {@code java} argv).
+     */
+    public record ResolvedLaunch(String javaExec, List<String> modulePaths, List<String> classPaths, String error) {
+        static ResolvedLaunch failed(String error) {
+            return new ResolvedLaunch(null, List.of(), List.of(), error);
+        }
+
+        public boolean ok() {
+            return error == null;
+        }
+    }
+
     /** Lets the controller present a chooser when several main classes are found (QuickOpen). */
     public interface MainClassPicker {
         void pick(List<MainClassOption> options, Consumer<MainClassOption> chosen);
@@ -407,28 +422,53 @@ public final class DapManager implements DapClient.Host {
      */
     private void resolveAndLaunch(Path file, MainClassOption opt, String cwd) {
         String proj = opt.projectName() == null ? "" : opt.projectName();
-        lsp.executeCommand(file, "vscode.java.resolveClasspath", List.of(opt.mainClass(), proj), (res, err) -> {
+        resolveLaunch(file, opt, r -> {
+            if (!r.ok()) {
+                fail(r.error());
+                return;
+            }
+            startDebugSessionAndConnect(
+                    file,
+                    LaunchConfig.launch(
+                            opt.mainClass(),
+                            proj,
+                            r.classPaths(),
+                            r.modulePaths(),
+                            r.javaExec(),
+                            cwd,
+                            programArgs,
+                            false),
+                    false);
+        });
+    }
+
+    /**
+     * Resolves {@code opt}'s classpath + java executable via jdtls (no debug session), delivering a
+     * {@link ResolvedLaunch} (with {@link ResolvedLaunch#error()} set on failure) on the FX thread. Shared by
+     * the debug launch and the non-debug Run path; {@code routingFile} must be an open, LSP-managed Java file
+     * in the same project.
+     */
+    public void resolveLaunch(Path routingFile, MainClassOption opt, Consumer<ResolvedLaunch> cb) {
+        String proj = opt.projectName() == null ? "" : opt.projectName();
+        lsp.executeCommand(routingFile, "vscode.java.resolveClasspath", List.of(opt.mainClass(), proj), (res, err) -> {
             if (err != null) {
-                fail("Could not resolve the classpath: " + msg(err));
+                cb.accept(ResolvedLaunch.failed("Could not resolve the classpath: " + msg(err)));
                 return;
             }
             List<String> modulepaths = new ArrayList<>();
             List<String> classpaths = new ArrayList<>();
             parseClasspath(res, modulepaths, classpaths);
             if (classpaths.isEmpty() && modulepaths.isEmpty()) {
-                fail("Could not resolve the classpath for " + opt.mainClass()
+                cb.accept(ResolvedLaunch.failed("Could not resolve the classpath for " + opt.mainClass()
                         + " — make sure the Java project has finished importing (watch the LSP status), "
-                        + "then try again.");
+                        + "then try again."));
                 return;
             }
-            lsp.executeCommand(file, "vscode.java.resolveJavaExecutable", List.of(opt.mainClass(), proj), (jx, e2) -> {
-                String javaExec = asString(jx);
-                startDebugSessionAndConnect(
-                        file,
-                        LaunchConfig.launch(
-                                opt.mainClass(), proj, classpaths, modulepaths, javaExec, cwd, programArgs, false),
-                        false);
-            });
+            lsp.executeCommand(
+                    routingFile,
+                    "vscode.java.resolveJavaExecutable",
+                    List.of(opt.mainClass(), proj),
+                    (jx, e2) -> cb.accept(new ResolvedLaunch(asString(jx), modulepaths, classpaths, null)));
         });
     }
 

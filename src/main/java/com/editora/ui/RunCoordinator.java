@@ -3,8 +3,12 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.run.JavaLaunchInfo;
+import com.editora.run.JavaMainClass;
+import com.editora.run.JavaRunCommand;
 import com.editora.run.ProgramArgs;
 import com.editora.run.RunService;
 import com.editora.run.StackTraceLinks;
@@ -35,6 +39,19 @@ final class RunCoordinator {
 
         /** A stack-trace location double-clicked in the console: resolve + jump (shared resolver). */
         void openLink(StackTraceLinks.Link link);
+
+        /** The nearest Maven/Gradle project root above {@code file}, or {@code null} if there is none. */
+        Path javaProjectRoot(Path file);
+
+        /** Whether a project main class can be resolved+run (jdtls + the java-debug bundle available today). */
+        boolean javaLaunchAvailable();
+
+        /** Enumerates {@code routingFile}'s project main classes (empty if none/unavailable). FX thread. */
+        void resolveJavaMainClasses(Path routingFile, Consumer<List<JavaMainClass>> cb);
+
+        /** Resolves a chosen main class's classpath + java executable ({@link JavaLaunchInfo#error()} on
+         *  failure). FX thread. */
+        void resolveJavaLaunch(Path routingFile, JavaMainClass mainClass, Consumer<JavaLaunchInfo> cb);
     }
 
     private final CoordinatorHost host;
@@ -42,9 +59,10 @@ final class RunCoordinator {
     private final RunService service = new RunService();
     private final RunPanel panel;
 
-    /** The most recent launch, for {@code run.rerun}. */
-    private Path lastRunFile;
+    /** The most recent launch, for {@code run.rerun} and the shared stack-trace link resolver. */
+    private Path lastRunDir;
 
+    private String lastRunLabel;
     private List<String> lastRunCommand;
 
     RunCoordinator(CoordinatorHost host, Ops ops) {
@@ -59,9 +77,9 @@ final class RunCoordinator {
         return panel;
     }
 
-    /** Parent dir of the most recent run file, or {@code null} — used by the shared link resolver. */
+    /** Working directory of the most recent run, or {@code null} — used by the shared link resolver. */
     Path lastRunDir() {
-        return lastRunFile != null ? lastRunFile.getParent() : null;
+        return lastRunDir;
     }
 
     void runActiveFile() {
@@ -75,7 +93,7 @@ final class RunCoordinator {
 
     /** Re-runs the most recent run (same file + argv) without touching the active tab. */
     void rerunLast() {
-        if (lastRunFile == null || lastRunCommand == null) {
+        if (lastRunCommand == null || lastRunDir == null) {
             host.setStatus(tr("status.run.noRerun"));
             return;
         }
@@ -83,7 +101,98 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.busy"));
             return;
         }
-        launchRun(lastRunFile, lastRunCommand);
+        streamRun(lastRunLabel, lastRunDir, lastRunCommand);
+    }
+
+    /**
+     * {@code run.mainClass}: run a main class in the active file's Maven/Gradle project in the Run console.
+     * Requires a Java file open in the project (to route jdtls). Resolves every project main class, lets the
+     * user pick one (when several), builds a {@code java -cp …} argv and runs it with the project root as the
+     * working directory.
+     */
+    void runMainClass() {
+        if (!ops.javaLaunchAvailable()) {
+            host.setStatus(tr("status.run.javaUnavailable"));
+            return;
+        }
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || b.getPath() == null || !host.isLocalBuffer(b) || !"java".equals(b.getLanguage())) {
+            host.setStatus(tr("status.run.needJavaFile"));
+            return;
+        }
+        if (service.isRunning()) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        Path routing = b.getPath();
+        Path root = ops.javaProjectRoot(routing);
+        if (root == null) {
+            host.setStatus(tr("status.run.noProject"));
+            return;
+        }
+        if (b.isDirty() && !ops.saveBuffer(b)) {
+            return;
+        }
+        ops.resolveJavaMainClasses(routing, list -> {
+            if (list.isEmpty()) {
+                host.setStatus(tr("status.run.noMainClass"));
+                return;
+            }
+            Consumer<JavaMainClass> go = mc -> runResolvedMainClass(routing, root, mc);
+            if (list.size() == 1) {
+                go.accept(list.get(0));
+            } else {
+                pickMainClass(list, go);
+            }
+        });
+    }
+
+    private void runResolvedMainClass(Path routing, Path root, JavaMainClass mc) {
+        if (mc == null) {
+            return;
+        }
+        ops.resolveJavaLaunch(routing, mc, info -> {
+            if (info == null || !info.ok()) {
+                host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
+                return;
+            }
+            List<String> args = ProgramArgs.tokenize(programArgsForMain(mc));
+            List<String> command = JavaRunCommand.build(
+                    info.javaExec(), info.modulePaths(), info.classPaths(), mc.fqn(), List.of(), args);
+            streamRun(shortName(mc.fqn()), root, command);
+        });
+    }
+
+    private void pickMainClass(List<JavaMainClass> options, Consumer<JavaMainClass> chosen) {
+        QuickOpen<JavaMainClass> picker = new QuickOpen<>(
+                tr("run.pickMainTitle"),
+                tr("run.pickMainPrompt"),
+                () -> options,
+                JavaMainClass::fqn,
+                mc -> mc.projectName() == null ? "" : mc.projectName(),
+                chosen);
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /** Per-main-class program args, reusing the per-file store keyed by the main class's own source file. */
+    private String programArgsForMain(JavaMainClass mc) {
+        if (mc.filePath() == null || mc.filePath().isBlank()) {
+            return "";
+        }
+        try {
+            return ops.programArgs(Path.of(mc.filePath()));
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    private static String shortName(String fqn) {
+        if (fqn == null) {
+            return "";
+        }
+        int dot = fqn.lastIndexOf('.');
+        return dot < 0 ? fqn : fqn.substring(dot + 1);
     }
 
     /**
@@ -189,12 +298,19 @@ final class RunCoordinator {
     }
 
     private void launchRun(Path path, List<String> command) {
-        lastRunFile = path;
+        streamRun(path.getFileName().toString(), path.getParent(), command);
+    }
+
+    /** Runs {@code command} in {@code workingDir} (the project root for a main class, else a file's folder),
+     *  streaming into the Run console and remembering it for {@code run.rerun}. */
+    private void streamRun(String label, Path workingDir, List<String> command) {
+        lastRunDir = workingDir;
+        lastRunLabel = label;
         lastRunCommand = command;
         ops.openToolWindow();
-        panel.started(path.getFileName().toString());
-        host.setStatus(tr("status.run.started", path.getFileName().toString()));
-        service.run(path, command, new RunService.Listener() {
+        panel.started(label);
+        host.setStatus(tr("status.run.started", label));
+        service.runInDir(workingDir, command, new RunService.Listener() {
             @Override
             public void onStart(String commandLine) {
                 panel.started(commandLine);
