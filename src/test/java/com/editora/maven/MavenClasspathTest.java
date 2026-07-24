@@ -25,6 +25,17 @@ class MavenClasspathTest {
     }
 
     @Test
+    void reactorArgvSelectsModuleAndAlsoMakes() {
+        List<String> argv = MavenClasspath.reactorArgv(Path.of("/tmp/cp.txt"), "services/api");
+        assertEquals("mvn", argv.get(0));
+        assertTrue(argv.contains("-pl"));
+        assertTrue(argv.contains("services/api"));
+        assertTrue(argv.contains("-am"));
+        assertTrue(argv.contains("dependency:build-classpath"));
+        assertTrue(argv.contains("-Dmdep.outputFile=/tmp/cp.txt"));
+    }
+
+    @Test
     void assemblePrependsTargetClasses() {
         List<String> cp = MavenClasspath.assemble("/m2/a.jar" + S + "/m2/b.jar", Path.of("/proj"));
         assertEquals(List.of(Path.of("/proj/target/classes").toString(), "/m2/a.jar", "/m2/b.jar"), cp);

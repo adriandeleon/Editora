@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Multi-module Maven Run without the language server** — running a project main class via the Maven
+  classpath fallback now resolves sibling-module dependencies in a reactor build (it runs from the reactor
+  root with `-pl <module> -am` instead of only the module), so a submodule that depends on an uninstalled
+  sibling runs correctly.
+
 ### Added
 
 - **Debug via build tool** — debug a Gradle or Spring Boot app by launching it under a suspended JVM

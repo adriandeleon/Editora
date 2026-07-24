@@ -3602,10 +3602,18 @@ public class MainController implements com.editora.mcp.McpBridge {
                         try {
                             java.nio.file.Path tmp = java.nio.file.Files.createTempFile("editora-cp", ".txt");
                             try {
+                                // Multi-module: run from the reactor root with -pl <module> -am so the sibling
+                                // modules the target depends on are built and included; else run in the module.
+                                java.nio.file.Path reactor = com.editora.maven.MavenReactor.reactorRoot(
+                                        root, d -> java.nio.file.Files.isRegularFile(d.resolve("pom.xml")));
+                                boolean multi = reactor != null && !reactor.equals(root);
+                                java.nio.file.Path cwd = multi ? reactor : root;
+                                List<String> argv = multi
+                                        ? com.editora.maven.MavenClasspath.reactorArgv(
+                                                tmp, com.editora.maven.MavenReactor.moduleSelector(reactor, root))
+                                        : com.editora.maven.MavenClasspath.argv(tmp);
                                 com.editora.process.ProcessRunner.Result r = com.editora.process.ProcessRunner.run(
-                                        root,
-                                        java.time.Duration.ofMinutes(3),
-                                        com.editora.maven.MavenClasspath.argv(tmp));
+                                        cwd, java.time.Duration.ofMinutes(3), argv);
                                 if (r.exit() == 0) {
                                     String content =
                                             java.nio.file.Files.exists(tmp) ? java.nio.file.Files.readString(tmp) : "";
