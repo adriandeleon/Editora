@@ -268,6 +268,20 @@ class LspManagerTest {
         assertEquals("a: int", LspManager.inlayLabel(parts));
     }
 
+    // --- Call / type hierarchy (#682) ----------------------------------------------------------
+
+    @Test
+    void hierarchyProvidersDetectedFromEitherForm() {
+        assertFalse(LspManager.callHierarchyProvider(null));
+        assertFalse(LspManager.typeHierarchyProvider(new ServerCapabilities()));
+        ServerCapabilities calls = new ServerCapabilities();
+        calls.setCallHierarchyProvider(true);
+        assertTrue(LspManager.callHierarchyProvider(calls));
+        ServerCapabilities types = new ServerCapabilities();
+        types.setTypeHierarchyProvider(new org.eclipse.lsp4j.TypeHierarchyRegistrationOptions());
+        assertTrue(LspManager.typeHierarchyProvider(types));
+    }
+
     // --- Rename (#676) -------------------------------------------------------------------------
 
     @Test

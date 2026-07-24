@@ -91,6 +91,9 @@ final class LspCoordinator {
         /** Opens (shows + focuses) the References tool window after a multi-result Find References. */
         void openReferencesWindow();
 
+        /** Opens (shows + focuses) the Hierarchy tool window after a call/type-hierarchy prepare (#682). */
+        void openHierarchyWindow();
+
         /** Pushes the server's document-symbol outline (or {@code null} to fall back to the heuristic). */
         void setStructureSymbols(EditorBuffer buffer, java.util.List<com.editora.lsp.SymbolNode> symbols);
 
@@ -124,6 +127,12 @@ final class LspCoordinator {
 
     private final ProblemsPanel problemsPanel;
     private final ReferencesPanel referencesPanel;
+    private final HierarchyPanel hierarchyPanel;
+
+    /** The buffer path a hierarchy was started from — routes child expansions to the right session. */
+    private Path hierarchyAnchor;
+    /** The mode of the currently shown hierarchy (drives which children request a node expansion makes). */
+    private HierarchyPanel.Mode hierarchyMode = HierarchyPanel.Mode.CALLS;
 
     /** serverId → whether that server's command was found on this machine (per-server availability). */
     private final Map<String, Boolean> serverAvailable = new java.util.HashMap<>();
@@ -170,6 +179,27 @@ final class LspCoordinator {
         this.ops = ops;
         this.problemsPanel = new ProblemsPanel(ops::openAndGoto);
         this.referencesPanel = new ReferencesPanel(ops::openAndGoto);
+        this.hierarchyPanel = new HierarchyPanel(new HierarchyPanel.Loader() {
+            @Override
+            public void children(
+                    com.editora.lsp.LspManager.HierarchyNode node,
+                    boolean primary,
+                    java.util.function.Consumer<List<com.editora.lsp.LspManager.HierarchyNode>> cb) {
+                Path anchor = hierarchyAnchor;
+                if (anchor == null) {
+                    cb.accept(List.of());
+                } else if (hierarchyMode == HierarchyPanel.Mode.CALLS) {
+                    lspManager.callHierarchyChildren(anchor, node.raw(), primary, cb);
+                } else {
+                    lspManager.typeHierarchyChildren(anchor, node.raw(), primary, cb);
+                }
+            }
+
+            @Override
+            public void open(Path file, int line, int col) {
+                ops.openAndGoto(file, line, col);
+            }
+        });
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setApplyEditHandler(this::applyWorkspaceEdits); // server quick-fix edits land here (#670)
     }
@@ -249,6 +279,56 @@ final class LspCoordinator {
     /** The References tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
     ReferencesPanel referencesPanel() {
         return referencesPanel;
+    }
+
+    /** The Hierarchy tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
+    HierarchyPanel hierarchyPanel() {
+        return hierarchyPanel;
+    }
+
+    /**
+     * Call hierarchy at the caret (#682): who calls this method (Callers, the default) / what it calls
+     * (Callees), expanded lazily one server request per node into the Hierarchy tool window.
+     */
+    void callHierarchy() {
+        showHierarchy(HierarchyPanel.Mode.CALLS);
+    }
+
+    /** Type hierarchy at the caret (#682): the type's supertypes (default) / subtypes. */
+    void typeHierarchy() {
+        showHierarchy(HierarchyPanel.Mode.TYPES);
+    }
+
+    private void showHierarchy(HierarchyPanel.Mode mode) {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        Path path = b.getPath();
+        boolean supported = mode == HierarchyPanel.Mode.CALLS
+                ? lspManager.supportsCallHierarchy(path)
+                : lspManager.supportsTypeHierarchy(path);
+        if (!supported) {
+            host.setStatus(tr("status.lsp.noHierarchy"));
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        java.util.function.Consumer<List<com.editora.lsp.LspManager.HierarchyNode>> onRoots = roots -> {
+            if (roots.isEmpty()) {
+                host.setStatus(tr("status.lsp.noHierarchy"));
+                return;
+            }
+            hierarchyAnchor = path;
+            hierarchyMode = mode;
+            hierarchyPanel.setRoots(mode, roots);
+            ops.openHierarchyWindow();
+        };
+        if (mode == HierarchyPanel.Mode.CALLS) {
+            lspManager.prepareCallHierarchy(path, area.getCurrentParagraph(), area.getCaretColumn(), onRoots);
+        } else {
+            lspManager.prepareTypeHierarchy(path, area.getCurrentParagraph(), area.getCaretColumn(), onRoots);
+        }
     }
 
     /** Live diagnostics map for the MCP bridge's {@code getDiagnostics} (read on the FX thread). */

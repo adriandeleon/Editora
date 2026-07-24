@@ -3,6 +3,19 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP call/type hierarchy** (#682) — `prepareCallHierarchy` + incoming/outgoing calls and
+      `prepareTypeHierarchy` + super/subtypes into a new **Hierarchy** tool window (`ui/HierarchyPanel`,
+      the `ReferencesPanel` model; id `hierarchy`, default-hidden, opened by the commands, availability
+      riding the same LSP-managed gate as Problems/References). **Lazy per-node expansion**: each
+      `TreeItem` holds a PENDING marker child and fetches its children on first expand — one server
+      request per node; a direction flip (Callers|Callees / Supertypes|Subtypes toggle) re-roots the tree
+      from the same anchor and drops in-flight responses from the old direction. Neutral
+      `LspManager.HierarchyNode` carries the opaque lsp4j item for expansion + a navigable position
+      (null file for a JDK type — shown, not clickable); `hierarchyAnchor` routes child requests to the
+      originating session. `StructureIcons.forKind` reused for row glyphs. Commands `lsp.callHierarchy`/
+      `lsp.typeHierarchy`/`tool.hierarchy` (palette-only; user-bindable). *Deferred: hierarchy entries in
+      the editor right-click menu, jdt:// targets opening library source from the tree (#684's machinery),
+      cycle detection beyond the server's own.*
 - [x] **LSP incremental document sync** (#678) — under `TextDocumentSyncKind.Incremental` the session now
       sends the minimal splice instead of the whole document. **Shadow-diff, not event accumulation**: a
       per-uri shadow of the text the server last received (`shadows`, invariant: always equals the server's
