@@ -395,6 +395,17 @@ public final class DapManager implements DapClient.Host {
     }
 
     private void resolveAndLaunch(Path file, MainClassOption opt) {
+        resolveAndLaunch(
+                file, opt, file.getParent() == null ? null : file.getParent().toString());
+    }
+
+    /**
+     * Resolves {@code opt}'s classpath + java executable via jdtls, then launches the debug session with the
+     * given working directory. {@code file} routes the jdtls {@code executeCommand}s (must be an open,
+     * LSP-managed document in the same project); {@code cwd} is the debuggee's working directory (the project
+     * root for a project main class, else the file's own folder).
+     */
+    private void resolveAndLaunch(Path file, MainClassOption opt, String cwd) {
         String proj = opt.projectName() == null ? "" : opt.projectName();
         lsp.executeCommand(file, "vscode.java.resolveClasspath", List.of(opt.mainClass(), proj), (res, err) -> {
             if (err != null) {
@@ -412,7 +423,6 @@ public final class DapManager implements DapClient.Host {
             }
             lsp.executeCommand(file, "vscode.java.resolveJavaExecutable", List.of(opt.mainClass(), proj), (jx, e2) -> {
                 String javaExec = asString(jx);
-                String cwd = file.getParent() == null ? null : file.getParent().toString();
                 startDebugSessionAndConnect(
                         file,
                         LaunchConfig.launch(
@@ -420,6 +430,40 @@ public final class DapManager implements DapClient.Host {
                         false);
             });
         });
+    }
+
+    /**
+     * Enumerates <b>every</b> main class in {@code routingFile}'s jdtls project (not just the file's own),
+     * for a project-level "Run/Debug Main Class…" picker. {@code routingFile} must be an open, LSP-managed
+     * Java document (jdtls's {@code executeCommand} routes by open-document URI). Delivers an empty list on
+     * any error / when debugging isn't available. Callback runs on the FX thread.
+     */
+    public void resolveMainClasses(Path routingFile, Consumer<List<MainClassOption>> cb) {
+        if (!enabled || bundlePaths.isEmpty() || routingFile == null) {
+            cb.accept(List.of());
+            return;
+        }
+        lsp.executeCommand(
+                routingFile,
+                "vscode.java.resolveMainClass",
+                List.of(),
+                (res, err) -> cb.accept(err != null ? List.of() : parseMainClasses(res)));
+    }
+
+    /**
+     * Launches a Java debug session for an explicitly chosen {@code opt} (a project main class picked by the
+     * user), with {@code cwd} as the working directory. Unlike {@link #startLaunch(Path, MainClassPicker)}
+     * this is not tied to the active file: {@code routingFile} only routes the jdtls commands (any open,
+     * LSP-managed Java file in the same project).
+     */
+    public void startLaunchMainClass(Path routingFile, MainClassOption opt, Path cwd) {
+        if (!ready(routingFile)) {
+            return;
+        }
+        restartAction = () -> startLaunchMainClass(routingFile, opt, cwd);
+        debugFile = routingFile;
+        setState(State.STARTING);
+        resolveAndLaunch(routingFile, opt, cwd == null ? null : cwd.toString());
     }
 
     /**

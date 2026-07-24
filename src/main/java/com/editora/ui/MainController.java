@@ -13733,6 +13733,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("http.openResponseInTab", httpClient::openActiveResponseInTab));
         // Debugging (DAP). Gated by the "Enable Java debugging" setting (default off).
         registry.register(Command.of("debug.start", () -> debugCoordinator.ifDebug(debugCoordinator::debugStart)));
+        registry.register(
+                Command.of("debug.mainClass", () -> debugCoordinator.ifDebug(debugCoordinator::debugMainClass)));
         registry.register(Command.of("debug.stop", () -> debugCoordinator.ifDebug(dapManager::stop)));
         registry.register(Command.of("debug.restart", () -> debugCoordinator.ifDebug(dapManager::restart)));
         registry.register(Command.of("debug.attach", () -> debugCoordinator.ifDebug(debugCoordinator::debugAttach)));

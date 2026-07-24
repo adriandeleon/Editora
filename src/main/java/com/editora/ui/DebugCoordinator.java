@@ -728,6 +728,74 @@ final class DebugCoordinator {
         withClosedBreakpoints(() -> dapManager.startLaunch(b.getPath(), language, this::pickMainClass));
     }
 
+    /**
+     * {@code debug.mainClass}: debug an arbitrary main class in the active file's Maven/Gradle project (not
+     * just the active file's own). Requires a Java file open in a Maven/Gradle project to route jdtls; jdtls
+     * enumerates every project main class, the user picks one (when several), and it launches with the project
+     * root as the working directory.
+     */
+    void debugMainClass() {
+        if (!debugEffectiveFor("java")) {
+            host.setStatus(tr("status.debug.unavailable"));
+            return;
+        }
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || b.getPath() == null || !host.isLocalBuffer(b) || !"java".equals(b.getLanguage())) {
+            host.setStatus(tr("status.debug.needJavaFile"));
+            return;
+        }
+        Path routing = b.getPath();
+        Path root = JavaProjectRoot.find(routing);
+        if (root == null) {
+            host.setStatus(tr("status.debug.noProject"));
+            return;
+        }
+        if (b.isDirty() && !ops.saveBuffer(b)) {
+            return;
+        }
+        dapManager.resolveMainClasses(routing, options -> {
+            if (options.isEmpty()) {
+                host.setStatus(tr("status.debug.noMainClass"));
+                return;
+            }
+            Consumer<DapManager.MainClassOption> launch = opt -> {
+                if (opt == null) {
+                    return;
+                }
+                ops.openToolWindow();
+                debugPanel.setSessionFile(shortName(opt.mainClass()));
+                dapManager.setProgramArgs(ProgramArgs.tokenize(programArgsForMain(opt)));
+                withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, opt, root));
+            };
+            if (options.size() == 1) {
+                launch.accept(options.get(0));
+            } else {
+                pickMainClass(options, launch);
+            }
+        });
+    }
+
+    /** Per-main-class program args, reusing the per-file store keyed by the main class's own source file. */
+    private String programArgsForMain(DapManager.MainClassOption opt) {
+        if (opt.filePath() == null || opt.filePath().isBlank()) {
+            return "";
+        }
+        try {
+            return ops.programArgs(Path.of(opt.filePath()));
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    /** The simple class name of a fully-qualified main class (for the session label). */
+    private static String shortName(String fqn) {
+        if (fqn == null) {
+            return "";
+        }
+        int dot = fqn.lastIndexOf('.');
+        return dot < 0 ? fqn : fqn.substring(dot + 1);
+    }
+
     /** Whether two paths refer to the same file (normalized absolute comparison; null-safe). */
     private static boolean samePath(Path a, Path b) {
         return PathKeys.sameNormalized(a, b);
