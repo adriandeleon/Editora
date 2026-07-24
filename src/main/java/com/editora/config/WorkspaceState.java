@@ -55,6 +55,8 @@ public class WorkspaceState {
     private List<String> debugWatches = new ArrayList<>();
     /** Program arguments per runnable file (absolute path -> raw args string), shared by Run + Debug. */
     private Map<String, String> programArgs = new LinkedHashMap<>();
+    /** Saved run/debug configurations for project main classes (this window's project). */
+    private List<RunConfiguration> runConfigurations = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
     private String httpEnvironment = "";
 
@@ -237,6 +239,14 @@ public class WorkspaceState {
 
     public List<String> getDebugWatches() {
         return debugWatches;
+    }
+
+    public List<RunConfiguration> getRunConfigurations() {
+        return runConfigurations;
+    }
+
+    public void setRunConfigurations(List<RunConfiguration> runConfigurations) {
+        this.runConfigurations = runConfigurations == null ? new ArrayList<>() : runConfigurations;
     }
 
     public Map<String, String> getProgramArgs() {

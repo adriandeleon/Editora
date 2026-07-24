@@ -9009,6 +9009,89 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.spellLanguage", langId));
     }
 
+    /** {@code run.config}: pick a saved run/debug configuration and launch it. */
+    private void runSavedConfig() {
+        if (config.getWorkspaceState().getRunConfigurations().isEmpty()) {
+            setStatus(tr("status.run.noConfigs"));
+            return;
+        }
+        QuickOpen<com.editora.config.RunConfiguration> picker = new QuickOpen<>(
+                tr("run.config.title"),
+                tr("run.config.prompt"),
+                () -> List.copyOf(config.getWorkspaceState().getRunConfigurations()),
+                com.editora.config.RunConfiguration::name,
+                c -> c.isDebug() ? tr("run.config.debugTag") : tr("run.config.runTag"),
+                cfg -> {
+                    if (cfg == null) {
+                        return;
+                    }
+                    if (cfg.isDebug()) {
+                        debugCoordinator.debugConfig(cfg);
+                    } else {
+                        runCoordinator.runConfig(cfg);
+                    }
+                });
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** {@code run.saveConfig}: save the active Java file's main class as a run configuration. */
+    private void saveRunConfig() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
+            setStatus(tr("status.run.needJavaFile"));
+            return;
+        }
+        List<com.editora.run.MainMethodScanner.MainMethod> mains =
+                com.editora.run.MainMethodScanner.scan(b.getContent());
+        if (mains.isEmpty()) {
+            setStatus(tr("status.run.noMainInFile"));
+            return;
+        }
+        String fqn = mains.get(0).fqn();
+        String simple = com.editora.test.TestSourceLocator.simpleName(fqn);
+        String args = programArgsFor(b.getPath());
+        promptText(tr("run.config.saveTitle"), tr("run.config.saveName"), simple, name -> {
+            if (name == null || name.isBlank()) {
+                return;
+            }
+            List<com.editora.config.RunConfiguration> list =
+                    new java.util.ArrayList<>(config.getWorkspaceState().getRunConfigurations());
+            list.add(new com.editora.config.RunConfiguration(name.strip(), "run", fqn, "", args, "", ""));
+            config.getWorkspaceState().setRunConfigurations(list);
+            config.save();
+            setStatus(tr("status.run.configSaved", name.strip()));
+        });
+    }
+
+    /** {@code run.deleteConfig}: pick a saved run configuration and remove it. */
+    private void deleteRunConfig() {
+        if (config.getWorkspaceState().getRunConfigurations().isEmpty()) {
+            setStatus(tr("status.run.noConfigs"));
+            return;
+        }
+        QuickOpen<com.editora.config.RunConfiguration> picker = new QuickOpen<>(
+                tr("run.config.deleteTitle"),
+                tr("run.config.prompt"),
+                () -> List.copyOf(config.getWorkspaceState().getRunConfigurations()),
+                com.editora.config.RunConfiguration::name,
+                c -> c.isDebug() ? tr("run.config.debugTag") : tr("run.config.runTag"),
+                cfg -> {
+                    if (cfg == null) {
+                        return;
+                    }
+                    List<com.editora.config.RunConfiguration> list =
+                            new java.util.ArrayList<>(config.getWorkspaceState().getRunConfigurations());
+                    list.removeIf(
+                            c -> c.name().equals(cfg.name()) && c.mainClass().equals(cfg.mainClass()));
+                    config.getWorkspaceState().setRunConfigurations(list);
+                    config.save();
+                    setStatus(tr("status.run.configDeleted", cfg.name()));
+                });
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
     /** Picker for the active keybinding theme (the same set as the Settings → Keymaps combo). */
     private void chooseKeymap() {
         QuickOpen<String> picker = new QuickOpen<>(
@@ -13811,6 +13894,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("file.run", runCoordinator::runActiveFile));
         registry.register(Command.of("file.runWithArgs", runCoordinator::runActiveFileWithArgs));
         registry.register(Command.of("run.mainClass", runCoordinator::runMainClass));
+        registry.register(Command.of("run.config", this::runSavedConfig));
+        registry.register(Command.of("run.saveConfig", this::saveRunConfig));
+        registry.register(Command.of("run.deleteConfig", this::deleteRunConfig));
         registry.register(Command.of("run.rerun", runCoordinator::rerunLast));
         registry.register(Command.of("run.stop", runCoordinator::stopRun));
         registry.register(Command.of("run.clear", runCoordinator::clearConsole));

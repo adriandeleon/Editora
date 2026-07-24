@@ -24,6 +24,7 @@ import javafx.scene.layout.Priority;
 import com.editora.config.Breakpoint;
 import com.editora.config.BreakpointStore;
 import com.editora.config.PathKeys;
+import com.editora.config.RunConfiguration;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
@@ -741,6 +742,44 @@ final class DebugCoordinator {
     /** Debugs a specific main class by fully-qualified name (the gutter ▶ / editor menu on a {@code main}). */
     void debugMainClassNamed(String fqn) {
         startMainClassDebug(fqn);
+    }
+
+    /** Debugs a saved {@link RunConfiguration} (its main class + program args; its working dir when set). VM
+     *  args aren't yet forwarded to the debug launch. */
+    void debugConfig(RunConfiguration cfg) {
+        if (!debugEffectiveFor("java")) {
+            host.setStatus(tr("status.debug.unavailable"));
+            return;
+        }
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || b.getPath() == null || !host.isLocalBuffer(b) || !"java".equals(b.getLanguage())) {
+            host.setStatus(tr("status.debug.needJavaFile"));
+            return;
+        }
+        Path routing = b.getPath();
+        Path root = JavaProjectRoot.find(routing);
+        if (root == null) {
+            host.setStatus(tr("status.debug.noProject"));
+            return;
+        }
+        if (b.isDirty() && !ops.saveBuffer(b)) {
+            return;
+        }
+        Path cwd = cfg.workingDir().isBlank() ? root : Path.of(cfg.workingDir());
+        dapManager.resolveMainClasses(routing, options -> {
+            DapManager.MainClassOption match = options.stream()
+                    .filter(o -> cfg.mainClass().equals(o.mainClass()))
+                    .findFirst()
+                    .orElse(null);
+            if (match == null) {
+                host.setStatus(tr("status.debug.noMainClass"));
+                return;
+            }
+            ops.openToolWindow();
+            debugPanel.setSessionFile(shortName(match.mainClass()));
+            dapManager.setProgramArgs(ProgramArgs.tokenize(cfg.args()));
+            withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, match, cwd));
+        });
     }
 
     private void startMainClassDebug(String targetFqn) {

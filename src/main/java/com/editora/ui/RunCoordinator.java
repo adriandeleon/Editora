@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
+import com.editora.config.RunConfiguration;
 import com.editora.editor.EditorBuffer;
 import com.editora.run.JavaLaunchInfo;
 import com.editora.run.JavaMainClass;
@@ -131,6 +132,57 @@ final class RunCoordinator {
     /** Runs a specific main class by fully-qualified name (the gutter ▶ on a {@code main} method). */
     void runMainClassNamed(String fqn) {
         startMainClassRun(fqn);
+    }
+
+    /** Runs a saved {@link RunConfiguration}: its main class with its own program/VM args + working dir. */
+    void runConfig(RunConfiguration cfg) {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || b.getPath() == null || !host.isLocalBuffer(b) || !"java".equals(b.getLanguage())) {
+            host.setStatus(tr("status.run.needJavaFile"));
+            return;
+        }
+        if (service.isRunning()) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        Path routing = b.getPath();
+        Path root = ops.javaProjectRoot(routing);
+        if (root == null) {
+            host.setStatus(tr("status.run.noProject"));
+            return;
+        }
+        if (b.isDirty() && !ops.saveBuffer(b)) {
+            return;
+        }
+        Path cwd = cfg.workingDir().isBlank() ? root : Path.of(cfg.workingDir());
+        List<String> vm = ProgramArgs.tokenize(cfg.vmArgs());
+        List<String> args = ProgramArgs.tokenize(cfg.args());
+        String label = shortName(cfg.mainClass());
+        if (ops.javaLaunchAvailable()) {
+            JavaMainClass mc = new JavaMainClass(cfg.mainClass(), cfg.projectName(), routing.toString());
+            ops.resolveJavaLaunch(routing, mc, info -> {
+                if (info == null || !info.ok()) {
+                    host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
+                    return;
+                }
+                streamRun(
+                        label,
+                        cwd,
+                        JavaRunCommand.build(
+                                info.javaExec(), info.modulePaths(), info.classPaths(), cfg.mainClass(), vm, args));
+            });
+        } else if (ops.mavenProjectAt(root)) {
+            host.setStatus(tr("status.run.resolvingClasspath"));
+            ops.resolveMavenClasspath(root, cp -> {
+                if (cp == null || cp.isEmpty()) {
+                    host.setStatus(tr("status.run.resolveFailed"));
+                    return;
+                }
+                streamRun(label, cwd, JavaRunCommand.build("", List.of(), cp, cfg.mainClass(), vm, args));
+            });
+        } else {
+            host.setStatus(tr("status.run.javaUnavailable"));
+        }
     }
 
     private void startMainClassRun(String targetFqn) {
