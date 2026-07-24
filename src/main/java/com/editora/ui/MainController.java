@@ -3575,6 +3575,65 @@ public class MainController implements com.editora.mcp.McpBridge {
                     r -> cb.accept(new com.editora.run.JavaLaunchInfo(
                             r.javaExec(), r.modulePaths(), r.classPaths(), r.error())));
         }
+
+        @Override
+        public boolean mavenProjectAt(java.nio.file.Path root) {
+            return root != null && java.nio.file.Files.isRegularFile(root.resolve("pom.xml"));
+        }
+
+        @Override
+        public boolean gradleProjectAt(java.nio.file.Path root) {
+            if (root == null) {
+                return false;
+            }
+            for (String m : List.of("build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")) {
+                if (java.nio.file.Files.isRegularFile(root.resolve(m))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public void resolveMavenClasspath(java.nio.file.Path root, java.util.function.Consumer<List<String>> cb) {
+            Thread t = new Thread(
+                    () -> {
+                        List<String> cp = null;
+                        try {
+                            java.nio.file.Path tmp = java.nio.file.Files.createTempFile("editora-cp", ".txt");
+                            try {
+                                com.editora.process.ProcessRunner.Result r = com.editora.process.ProcessRunner.run(
+                                        root,
+                                        java.time.Duration.ofMinutes(3),
+                                        com.editora.maven.MavenClasspath.argv(tmp));
+                                if (r.exit() == 0) {
+                                    String content =
+                                            java.nio.file.Files.exists(tmp) ? java.nio.file.Files.readString(tmp) : "";
+                                    cp = com.editora.maven.MavenClasspath.assemble(content, root);
+                                }
+                            } finally {
+                                java.nio.file.Files.deleteIfExists(tmp);
+                            }
+                        } catch (Exception e) {
+                            cp = null;
+                        }
+                        List<String> result = cp;
+                        Platform.runLater(() -> cb.accept(result));
+                    },
+                    "editora-maven-cp");
+            t.setDaemon(true);
+            t.start();
+        }
+
+        @Override
+        public void runGradleRunTask() {
+            for (BuildCoordinator c : buildCoordinators) {
+                if (c.tool() == BuildTool.GRADLE && c.isEnabled() && c.isDetected()) {
+                    c.runTask(List.of("run"), List.of());
+                    return;
+                }
+            }
+        }
     });
 
     /** The IntelliJ-style Test Results feature: it hooks each build coordinator (see the injection where the
@@ -4699,13 +4758,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                         && c.isDetected());
     }
 
-    /** Pushes the project main-method gutter gate to a buffer (not Simple mode + local + a JVM project + Java
-     *  run/debug available — resolution rides jdtls's java-debug bundle). */
+    /** Pushes the project main-method gutter gate to a buffer (not Simple mode + local + a detected Maven/Gradle
+     *  project). */
     private void applyMainGutter(EditorBuffer buffer) {
-        buffer.setMainGutterEnabled(!simpleModeActive()
-                && isLocalBuffer(buffer)
-                && jvmBuildDetected()
-                && debugCoordinator.debugEffectiveFor("java"));
+        // Show the ▶ for any detected Maven/Gradle project; run/debug availability (jdtls, or the mvn
+        // classpath fallback) is checked at click time so the gutter isn't hidden when only the fallback works.
+        buffer.setMainGutterEnabled(!simpleModeActive() && isLocalBuffer(buffer) && jvmBuildDetected());
     }
 
     /** Pushes the JUnit test-gutter gate to a buffer (Test Runner on + not Simple mode + local + JVM project). */

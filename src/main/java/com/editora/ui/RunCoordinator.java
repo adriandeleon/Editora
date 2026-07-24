@@ -52,6 +52,20 @@ final class RunCoordinator {
         /** Resolves a chosen main class's classpath + java executable ({@link JavaLaunchInfo#error()} on
          *  failure). FX thread. */
         void resolveJavaLaunch(Path routingFile, JavaMainClass mainClass, Consumer<JavaLaunchInfo> cb);
+
+        /** Whether {@code root} holds a Maven build file ({@code pom.xml}). */
+        boolean mavenProjectAt(Path root);
+
+        /** Whether {@code root} holds a Gradle build file ({@code build.gradle[.kts]}). */
+        boolean gradleProjectAt(Path root);
+
+        /** Resolves the Maven module's launch classpath off-thread ({@code mvn compile
+         *  dependency:build-classpath} + {@code target/classes}); delivers null/empty on failure. FX thread. */
+        void resolveMavenClasspath(Path root, Consumer<List<String>> cb);
+
+        /** Runs the Gradle {@code run} task via the build tool (streams to Build Output) — the no-jdtls Gradle
+         *  fallback, which runs the project's configured main class. */
+        void runGradleRunTask();
     }
 
     private final CoordinatorHost host;
@@ -120,10 +134,6 @@ final class RunCoordinator {
     }
 
     private void startMainClassRun(String targetFqn) {
-        if (!ops.javaLaunchAvailable()) {
-            host.setStatus(tr("status.run.javaUnavailable"));
-            return;
-        }
         EditorBuffer b = host.activeBuffer();
         if (b == null || b.getPath() == null || !host.isLocalBuffer(b) || !"java".equals(b.getLanguage())) {
             host.setStatus(tr("status.run.needJavaFile"));
@@ -142,6 +152,19 @@ final class RunCoordinator {
         if (b.isDirty() && !ops.saveBuffer(b)) {
             return;
         }
+        if (ops.javaLaunchAvailable()) {
+            runViaJdtls(routing, root, targetFqn); // fast + project-wide enumeration
+        } else if (ops.mavenProjectAt(root)) {
+            runViaMaven(b, root, targetFqn); // fallback: resolve the classpath with mvn, run `java -cp`
+        } else if (ops.gradleProjectAt(root)) {
+            ops.runGradleRunTask(); // Gradle has no clean classpath dump — delegate to the `run` task
+            host.setStatus(tr("status.run.gradleFallback"));
+        } else {
+            host.setStatus(tr("status.run.javaUnavailable"));
+        }
+    }
+
+    private void runViaJdtls(Path routing, Path root, String targetFqn) {
         ops.resolveJavaMainClasses(routing, list -> {
             if (list.isEmpty()) {
                 host.setStatus(tr("status.run.noMainClass"));
@@ -163,6 +186,61 @@ final class RunCoordinator {
                 pickMainClass(list, mc -> runResolvedMainClass(routing, root, mc));
             }
         });
+    }
+
+    /**
+     * Build-tool fallback (no jdtls): the main class comes from a source scan of the active file (jdtls's
+     * project-wide enumeration isn't available), and the classpath from {@code mvn compile
+     * dependency:build-classpath} + {@code target/classes}. File-scoped: it runs a {@code main} in the active
+     * buffer, not any project class.
+     */
+    private void runViaMaven(EditorBuffer b, Path root, String targetFqn) {
+        List<com.editora.run.MainMethodScanner.MainMethod> mains =
+                com.editora.run.MainMethodScanner.scan(b.getContent());
+        com.editora.run.MainMethodScanner.MainMethod chosen = null;
+        if (targetFqn != null) {
+            chosen = mains.stream()
+                    .filter(m -> targetFqn.equals(m.fqn()))
+                    .findFirst()
+                    .orElse(null);
+        } else if (mains.size() == 1) {
+            chosen = mains.get(0);
+        } else if (mains.size() > 1) {
+            pickMainMethod(mains, m -> resolveMavenAndRun(b, root, m));
+            return;
+        }
+        if (chosen == null) {
+            host.setStatus(tr("status.run.noMainInFile"));
+            return;
+        }
+        resolveMavenAndRun(b, root, chosen);
+    }
+
+    private void resolveMavenAndRun(EditorBuffer b, Path root, com.editora.run.MainMethodScanner.MainMethod m) {
+        host.setStatus(tr("status.run.resolvingClasspath"));
+        ops.resolveMavenClasspath(root, cp -> {
+            if (cp == null || cp.isEmpty()) {
+                host.setStatus(tr("status.run.resolveFailed"));
+                return;
+            }
+            List<String> args = ProgramArgs.tokenize(ops.programArgs(b.getPath()));
+            List<String> command = JavaRunCommand.build("", List.of(), cp, m.fqn(), List.of(), args);
+            streamRun(shortName(m.fqn()), root, command);
+        });
+    }
+
+    private void pickMainMethod(
+            List<com.editora.run.MainMethodScanner.MainMethod> options,
+            Consumer<com.editora.run.MainMethodScanner.MainMethod> chosen) {
+        QuickOpen<com.editora.run.MainMethodScanner.MainMethod> picker = new QuickOpen<>(
+                tr("run.pickMainTitle"),
+                tr("run.pickMainPrompt"),
+                () -> options,
+                com.editora.run.MainMethodScanner.MainMethod::fqn,
+                m -> "",
+                chosen);
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
     }
 
     private void runResolvedMainClass(Path routing, Path root, JavaMainClass mc) {
