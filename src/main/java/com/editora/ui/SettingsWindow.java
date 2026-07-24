@@ -114,6 +114,7 @@ public class SettingsWindow {
         BUILD_TOOLS(tr("settings.cat.buildTools"), Group.LANGUAGES_TOOLS),
         WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS, true),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
+        RUN_CONFIGS(tr("settings.cat.runConfigs"), Group.LANGUAGES_TOOLS),
         // Version control
         GIT(tr("settings.cat.git"), Group.VERSION_CONTROL, true),
         GITHUB(tr("settings.cat.github"), Group.VERSION_CONTROL, true),
@@ -255,6 +256,14 @@ public class SettingsWindow {
 
     private final javafx.collections.ObservableList<com.editora.externaltool.ExternalTool> externalToolItems =
             javafx.collections.FXCollections.observableArrayList();
+
+    /** The Run Configurations ListView + its (per-window) items, so the page can restore selection on reload. */
+    private ListView<com.editora.config.RunConfiguration> runConfigList;
+
+    private final javafx.collections.ObservableList<com.editora.config.RunConfiguration> runConfigItems =
+            javafx.collections.FXCollections.observableArrayList();
+
+    private boolean loadingRunConfig = false;
 
     // Toolbar page state: the current-toolbar token list and the not-yet-added catalog items.
     private final javafx.collections.ObservableList<String> toolbarCurrentItems =
@@ -1556,6 +1565,7 @@ public class SettingsWindow {
         pages.put(Category.BUILD_TOOLS, buildToolsPage());
         pages.put(Category.WEB, webPage());
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
+        pages.put(Category.RUN_CONFIGS, runConfigsPage());
         pages.put(Category.ABBREVIATIONS, abbreviationsPage());
         // Version control
         pages.put(Category.GIT, gitPage());
@@ -3987,6 +3997,176 @@ public class SettingsWindow {
         return new VBox(8, top, buttons);
     }
 
+    private VBox runConfigsPage() {
+        VBox p = page(tr("settings.cat.runConfigs"));
+        row(
+                p,
+                Category.RUN_CONFIGS,
+                null,
+                runConfigsEditor(),
+                "run debug configuration main class program vm args working directory launch project");
+        Label help = note(tr("settings.runConfig.help"));
+        help.setWrapText(true);
+        help.setMaxWidth(460);
+        row(p, Category.RUN_CONFIGS, null, help, "run configuration palette save delete");
+        return p;
+    }
+
+    /**
+     * Master-detail editor for the per-project saved run configurations ({@code WorkspaceState}). Records are
+     * immutable, so a commit rebuilds the {@link com.editora.config.RunConfiguration} and replaces it in the
+     * list at the selected index (unlike External Tools, which mutates a POJO in place).
+     */
+    private javafx.scene.Node runConfigsEditor() {
+        reloadRunConfigs();
+
+        ListView<com.editora.config.RunConfiguration> list = new ListView<>(runConfigItems);
+        runConfigList = list;
+        list.setPrefSize(170, 220);
+        list.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(com.editora.config.RunConfiguration c, boolean empty) {
+                super.updateItem(c, empty);
+                if (empty || c == null) {
+                    setText(null);
+                } else {
+                    String nm = c.name().isBlank() ? tr("settings.runConfig.unnamed") : c.name();
+                    setText(nm + "  (" + (c.isDebug() ? tr("run.config.debugTag") : tr("run.config.runTag")) + ")");
+                }
+            }
+        });
+
+        TextField name = new TextField();
+        ComboBox<String> kind = new ComboBox<>(javafx.collections.FXCollections.observableArrayList("run", "debug"));
+        kind.setConverter(enumConverter(k -> "debug".equals(k) ? tr("run.config.debugTag") : tr("run.config.runTag")));
+        TextField mainClass = new TextField();
+        TextField projectName = new TextField();
+        projectName.setPromptText(tr("settings.runConfig.projectNamePrompt"));
+        TextField args = new TextField();
+        TextField vmArgs = new TextField();
+        TextField workingDir = new TextField();
+        workingDir.setPromptText(tr("settings.runConfig.workingDirPrompt"));
+
+        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
+        form.setHgap(8);
+        form.setVgap(6);
+        formRow(form, 0, tr("settings.runConfig.name"), name);
+        formRow(form, 1, tr("settings.runConfig.kind"), kind);
+        formRow(form, 2, tr("settings.runConfig.mainClass"), mainClass);
+        formRow(form, 3, tr("settings.runConfig.projectName"), projectName);
+        formRow(form, 4, tr("settings.runConfig.args"), args);
+        formRow(form, 5, tr("settings.runConfig.vmArgs"), vmArgs);
+        formRow(form, 6, tr("settings.runConfig.workingDir"), workingDir);
+        form.setDisable(true);
+        HBox.setHgrow(form, Priority.ALWAYS);
+
+        Runnable commit = () -> {
+            int i = list.getSelectionModel().getSelectedIndex();
+            if (i < 0 || loadingRunConfig) {
+                return;
+            }
+            com.editora.config.RunConfiguration rebuilt = new com.editora.config.RunConfiguration(
+                    name.getText(),
+                    kind.getValue() == null ? "run" : kind.getValue(),
+                    mainClass.getText(),
+                    projectName.getText(),
+                    args.getText(),
+                    vmArgs.getText(),
+                    workingDir.getText());
+            runConfigItems.set(i, rebuilt);
+            list.refresh();
+            persistRunConfigs();
+        };
+        kind.valueProperty().addListener((o, a, b) -> commit.run());
+        java.util.function.Consumer<TextField> wire = tf -> {
+            tf.setOnAction(e -> commit.run());
+            tf.focusedProperty().addListener((o, was, now) -> {
+                if (!now) {
+                    commit.run();
+                }
+            });
+        };
+        wire.accept(name);
+        wire.accept(mainClass);
+        wire.accept(projectName);
+        wire.accept(args);
+        wire.accept(vmArgs);
+        wire.accept(workingDir);
+
+        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            loadingRunConfig = true;
+            try {
+                form.setDisable(now == null);
+                name.setText(now == null ? "" : now.name());
+                kind.setValue(now == null ? "run" : (now.isDebug() ? "debug" : "run"));
+                mainClass.setText(now == null ? "" : now.mainClass());
+                projectName.setText(now == null ? "" : now.projectName());
+                args.setText(now == null ? "" : now.args());
+                vmArgs.setText(now == null ? "" : now.vmArgs());
+                workingDir.setText(now == null ? "" : now.workingDir());
+            } finally {
+                loadingRunConfig = false;
+            }
+        });
+
+        Button add = new Button(tr("settings.runConfig.add"));
+        add.setOnAction(e -> {
+            com.editora.config.RunConfiguration c = new com.editora.config.RunConfiguration(
+                    tr("settings.runConfig.newName"), "run", "", "", "", "", "");
+            runConfigItems.add(c);
+            persistRunConfigs();
+            list.getSelectionModel().select(c);
+        });
+        Button remove = new Button(tr("settings.runConfig.remove"));
+        remove.setOnAction(e -> {
+            int i = list.getSelectionModel().getSelectedIndex();
+            if (i >= 0) {
+                runConfigItems.remove(i);
+                persistRunConfigs();
+            }
+        });
+        Button save = new Button(tr("settings.save"));
+        save.disableProperty().bind(form.disabledProperty());
+        save.setOnAction(e -> commit.run());
+
+        VBox left = new VBox(6, list);
+        VBox.setVgrow(list, Priority.ALWAYS);
+        VBox right = new VBox(8, form);
+        VBox.setVgrow(form, Priority.ALWAYS);
+        HBox.setHgrow(right, Priority.ALWAYS);
+        if (!runConfigItems.isEmpty()) {
+            list.getSelectionModel().select(0);
+        }
+        HBox top = new HBox(12, left, right);
+        top.setAlignment(Pos.TOP_LEFT);
+        VBox.setVgrow(top, Priority.ALWAYS);
+        HBox buttons = new HBox(6, add, remove, spacer(), save);
+        buttons.setAlignment(Pos.CENTER_LEFT);
+        return new VBox(8, top, buttons);
+    }
+
+    private void persistRunConfigs() {
+        config.getWorkspaceState().setRunConfigurations(new java.util.ArrayList<>(runConfigItems));
+        config.save();
+    }
+
+    /** Re-reads the live per-window run-config list into the editor, restoring the selection by name. */
+    private void reloadRunConfigs() {
+        String selectedName =
+                runConfigList == null || runConfigList.getSelectionModel().getSelectedItem() == null
+                        ? null
+                        : runConfigList.getSelectionModel().getSelectedItem().name();
+        runConfigItems.setAll(config.getWorkspaceState().getRunConfigurations());
+        if (runConfigList != null && selectedName != null) {
+            for (var c : runConfigItems) {
+                if (selectedName.equals(c.name())) {
+                    runConfigList.getSelectionModel().select(c);
+                    break;
+                }
+            }
+        }
+    }
+
     /** True when {@code newName} would give {@code tool} the command id another tool already uses. */
     private boolean slugTaken(com.editora.externaltool.ExternalTool tool, String newName) {
         String id = com.editora.externaltool.ExternalTool.commandIdFor(newName);
@@ -6042,6 +6222,7 @@ public class SettingsWindow {
         loading = true;
         try {
             reloadExternalTools(); // another window may have added/removed a tool since this page was built
+            reloadRunConfigs(); // the palette save/delete commands may have changed the list since it was built
             refreshDictionaryList(); // pick up words added elsewhere (e.g. "Add to Dictionary") since last open
             if (refreshToolbarLists != null) {
                 refreshToolbarLists.run(); // reflect any on-bar drag customization since the page was built
