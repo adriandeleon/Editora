@@ -4046,6 +4046,8 @@ public class SettingsWindow {
         TextField vmArgs = new TextField();
         TextField workingDir = new TextField();
         workingDir.setPromptText(tr("settings.runConfig.workingDirPrompt"));
+        TextField env = new TextField();
+        env.setPromptText(tr("settings.runConfig.envPrompt"));
 
         javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
         form.setHgap(8);
@@ -4057,6 +4059,7 @@ public class SettingsWindow {
         formRow(form, 4, tr("settings.runConfig.args"), args);
         formRow(form, 5, tr("settings.runConfig.vmArgs"), vmArgs);
         formRow(form, 6, tr("settings.runConfig.workingDir"), workingDir);
+        formRow(form, 7, tr("settings.runConfig.env"), env);
         form.setDisable(true);
         HBox.setHgrow(form, Priority.ALWAYS);
 
@@ -4072,7 +4075,8 @@ public class SettingsWindow {
                     projectName.getText(),
                     args.getText(),
                     vmArgs.getText(),
-                    workingDir.getText());
+                    workingDir.getText(),
+                    env.getText());
             runConfigItems.set(i, rebuilt);
             list.refresh();
             persistRunConfigs();
@@ -4092,6 +4096,7 @@ public class SettingsWindow {
         wire.accept(args);
         wire.accept(vmArgs);
         wire.accept(workingDir);
+        wire.accept(env);
 
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             loadingRunConfig = true;
@@ -4104,6 +4109,7 @@ public class SettingsWindow {
                 args.setText(now == null ? "" : now.args());
                 vmArgs.setText(now == null ? "" : now.vmArgs());
                 workingDir.setText(now == null ? "" : now.workingDir());
+                env.setText(now == null ? "" : now.env());
             } finally {
                 loadingRunConfig = false;
             }

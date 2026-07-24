@@ -341,6 +341,14 @@ public final class DapManager implements DapClient.Host {
         this.vmArgs = vmArgs == null ? "" : vmArgs;
     }
 
+    /** Environment variables for the next launch (from a saved run configuration; empty otherwise). */
+    private volatile java.util.Map<String, String> env = java.util.Map.of();
+
+    /** Sets the debuggee's environment variables; call before {@link #startLaunchMainClass}. Empty clears them. */
+    public void setEnv(java.util.Map<String, String> env) {
+        this.env = env == null ? java.util.Map.of() : java.util.Map.copyOf(env);
+    }
+
     /**
      * Launches a Java debug session for {@code file}: resolves the main class (asking {@code picker} if
      * several are found), its classpath + java executable, starts the adapter, and connects. No-op (with an
@@ -446,6 +454,7 @@ public final class DapManager implements DapClient.Host {
                             cwd,
                             programArgs,
                             vmArgs,
+                            env,
                             false),
                     false);
         });

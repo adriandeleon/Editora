@@ -141,6 +141,14 @@ public final class RunService {
      * All listener callbacks run on the FX thread.
      */
     public void runInDir(Path workingDir, List<String> argv, Listener listener) {
+        runInDir(workingDir, argv, java.util.Map.of(), listener);
+    }
+
+    /**
+     * As {@link #runInDir(Path, List, Listener)}, plus {@code env} — extra environment variables for the
+     * child (a saved run configuration's {@code KEY=VALUE} pairs), applied over the inherited environment.
+     */
+    public void runInDir(Path workingDir, List<String> argv, java.util.Map<String, String> env, Listener listener) {
         if (argv == null || argv.isEmpty() || listener == null || isRunning()) {
             return;
         }
@@ -152,6 +160,9 @@ public final class RunService {
             pb.directory(dir.toFile());
         }
         ProcessRunner.applyStandardEnv(pb);
+        if (env != null && !env.isEmpty()) {
+            pb.environment().putAll(env); // after applyStandardEnv so a config can override PATH etc.
+        }
         Process process;
         try {
             process = pb.start();
