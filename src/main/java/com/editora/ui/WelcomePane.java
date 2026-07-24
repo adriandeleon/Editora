@@ -252,6 +252,7 @@ public final class WelcomePane extends Region implements TabContent {
         if (gitEnabled.getAsBoolean()) {
             box.getChildren().add(action(Icons.git(), tr("welcome.clone"), "git.clone"));
         }
+        box.getChildren().add(action(Icons.doctor(), tr("welcome.doctor"), "view.doctor"));
         // The Command Palette is always last (it's the gateway to everything else).
         box.getChildren().add(action(Icons.palette(), tr("command.palette.show"), "palette.show"));
         return box;

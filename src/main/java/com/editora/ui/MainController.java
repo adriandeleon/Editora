@@ -420,6 +420,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private WelcomePane welcomePane;
     /** The single open Welcome tab (a non-buffer {@link TabContent} tab), or null when none is open. */
     private Tab welcomeTab;
+    /** The single open Doctor tab (external-tool health screen), or null — the {@code welcomeTab} pattern. */
+    private Tab doctorTab;
     /** Opens external URLs (the Welcome page's home-page link) in the system browser; set from {@code App}. */
     private javafx.application.HostServices hostServices;
 
@@ -1271,6 +1273,31 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
+    /**
+     * Opens (or re-selects) the single Doctor tab and (re)runs its health checks — the {@code view.doctor}
+     * command. Mirrors {@link #addWelcomeTab()}: one instance, Close-only context menu, field cleared on
+     * close. Probes run off the FX thread; rows fill in as results land.
+     */
+    private void showDoctor() {
+        if (doctorTab != null && tabPane.getTabs().contains(doctorTab)) {
+            tabPane.getSelectionModel().select(doctorTab);
+            doctorCoordinator.runChecks();
+            return;
+        }
+        Tab tab = addContentTab(doctorCoordinator.pane(), true);
+        doctorTab = tab;
+        MenuItem close = new MenuItem(tr("menu.close"));
+        close.setGraphic(Icons.closeTab());
+        close.setOnAction(e -> closeTab(tab));
+        tab.setContextMenu(new ContextMenu(close));
+        tab.setOnClosed(e -> {
+            if (doctorTab == tab) {
+                doctorTab = null;
+            }
+        });
+        doctorCoordinator.runChecks();
+    }
+
     /** Sets the {@link javafx.application.HostServices} used to open external links (from {@code App}). */
     public void setHostServices(javafx.application.HostServices hostServices) {
         this.hostServices = hostServices;
@@ -1400,6 +1427,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         mermaid.shutdown();
         diagram.shutdown();
         typst.shutdown();
+        doctorCoordinator.shutdown(); // stop any in-flight Doctor probes
         buildCoordinators.forEach(BuildCoordinator::shutdown);
         updateService.shutdown(); // stop the update-check worker
         htmlPreview.shutdown(); // stop the HTML-preview HTTP server + worker
@@ -3847,6 +3875,77 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     });
 
+    // --- Doctor (external-tool health screen, a Welcome-style tab; see doctor/ + DoctorCoordinator) ---
+
+    private final DoctorCoordinator doctorCoordinator =
+            new DoctorCoordinator(coordinatorHost, new DoctorCoordinator.Ops() {
+                @Override
+                public com.editora.mermaid.MermaidService mermaidService() {
+                    return mermaid.service();
+                }
+
+                @Override
+                public com.editora.diagram.DiagramService diagramService() {
+                    return diagram.service();
+                }
+
+                @Override
+                public com.editora.typst.TypstService typstService() {
+                    return typst.service();
+                }
+
+                @Override
+                public boolean gitFeatureEnabled() {
+                    return git.isEnabled();
+                }
+
+                @Override
+                public boolean lspFeatureEnabled() {
+                    return lspEnabled();
+                }
+
+                @Override
+                public boolean debugFeatureEnabled() {
+                    return debugCoordinator != null && debugCoordinator.debugSupportEnabled();
+                }
+
+                @Override
+                public java.util.List<String> lspServerIds() {
+                    return LspCoordinator.serverIds();
+                }
+
+                @Override
+                public boolean lspServerEnabled(String serverId) {
+                    return lspCoordinator.serverEnabled(serverId);
+                }
+
+                @Override
+                public java.util.List<String> lspServerArgv(String serverId) {
+                    return lspCoordinator.serverArgv(serverId);
+                }
+
+                @Override
+                public void installServer(String serverId, java.util.function.Consumer<Boolean> onDone) {
+                    installCoordinator.installServer(serverId, onDone);
+                }
+
+                @Override
+                public void installLang(
+                        com.editora.install.InstallCatalog.Lang lang, java.util.function.Consumer<Boolean> onDone) {
+                    installCoordinator.installSupport(lang, onDone);
+                }
+
+                @Override
+                public void installTypstCli(java.util.function.Consumer<Boolean> onDone) {
+                    installCoordinator.installTypstCli(onDone);
+                }
+
+                @Override
+                public void openSettingsFor(String settingsKey) {
+                    settingsWindow.showDoctorTarget(settingsKey, stage);
+                }
+            });
+
     // --- MCP server (loopback HTTP, exposes editor state + commands to an LLM agent) --------------
 
     private boolean mcpEnabled() {
@@ -4357,6 +4456,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         if (data instanceof WelcomePane) {
             return "welcome";
+        }
+        if (data instanceof DoctorPane) {
+            return "doctor";
         }
         return "other";
     }
@@ -13523,6 +13625,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         config.getSettings()::setUpdateCheck,
                         null)));
         registry.register(Command.of("view.welcome", this::showWelcome));
+        registry.register(Command.of("view.doctor", this::showDoctor));
         registry.register(Command.of("view.messageLog", statusBar::showMessageLog));
         registry.register(Command.of("view.debugLog", this::showDebugLog));
         registry.register(Command.of("view.openAsHex", this::openActiveAsHex));

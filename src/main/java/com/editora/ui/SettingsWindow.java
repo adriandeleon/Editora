@@ -584,6 +584,34 @@ public class SettingsWindow {
         sidebar.getSelectionModel().select(Category.WORKSPACE);
     }
 
+    /**
+     * Opens Settings focused on the page a Doctor row's "Settings…" action targets. The keys are the
+     * Doctor check catalog's stable {@code settingsKey} strings, mapped here so the private
+     * {@link Category} enum never leaks; an unknown key just opens Settings unfocused.
+     */
+    public void showDoctorTarget(String key, Window owner) {
+        show(owner);
+        Category target =
+                switch (key == null ? "" : key) {
+                    case "git" -> Category.GIT;
+                    case "github" -> Category.GITHUB;
+                    case "search" -> Category.SEARCH;
+                    case "mermaid" -> Category.MERMAID;
+                    case "diagrams" -> Category.DIAGRAMS;
+                    case "typst" -> Category.TYPST;
+                    case "lsp" -> Category.LSP;
+                    case "debug" -> Category.DEBUG;
+                    case "web" -> Category.WEB;
+                    case "ai" -> Category.AI_GENERAL;
+                    case "buildTools" -> Category.BUILD_TOOLS;
+                    case "editor" -> Category.EDITOR;
+                    default -> null;
+                };
+        if (target != null) {
+            sidebar.getSelectionModel().select(target);
+        }
+    }
+
     /** Reads/mutates the trusted-workspace-root store for the Workspace page's Trusted Folders list. */
     public interface TrustActions {
         List<String> trustedRoots();

@@ -94,6 +94,12 @@ final class Icons {
                 + "3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z");
     }
 
+    /** Medical bag with a cross (Material "medical_services") — the Doctor tool-health screen. */
+    static Node doctor() {
+        return of("M20 6h-4V4c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h16c1.1 0 "
+                + "2-.9 2-2V8c0-1.1-.9-2-2-2zm-10-2h4v2h-4V4zm6 11h-3v3h-2v-3H8v-2h3v-3h2v3h3v2z");
+    }
+
     /** Up-arrow "push" (Material arrow_upward). */
     static Node gitPush() {
         return of("M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z");
