@@ -327,10 +327,18 @@ public final class DapManager implements DapClient.Host {
     /** Program arguments for the next launch (shared with the Run feature's per-file args). */
     private volatile List<String> programArgs = List.of();
 
+    /** JVM arguments for the next launch (from a saved run configuration; "" otherwise). */
+    private volatile String vmArgs = "";
+
     /** Sets the debuggee's program arguments; call before {@link #startLaunch}. Sticky across
      *  {@link #restart()} (the restart re-runs the same launch). */
     public void setProgramArgs(List<String> args) {
         this.programArgs = args == null ? List.of() : List.copyOf(args);
+    }
+
+    /** Sets the debuggee's JVM arguments; call before {@link #startLaunchMainClass}. "" clears them. */
+    public void setVmArgs(String vmArgs) {
+        this.vmArgs = vmArgs == null ? "" : vmArgs;
     }
 
     /**
@@ -437,6 +445,7 @@ public final class DapManager implements DapClient.Host {
                             r.javaExec(),
                             cwd,
                             programArgs,
+                            vmArgs,
                             false),
                     false);
         });
@@ -534,7 +543,15 @@ public final class DapManager implements DapClient.Host {
                 Platform.runLater(() -> startDebugSessionAndConnect(
                         file,
                         LaunchConfig.launch(
-                                fqn, null, List.of(out.toString()), List.of(), javaExec, cwd, programArgs, false),
+                                fqn,
+                                null,
+                                List.of(out.toString()),
+                                List.of(),
+                                javaExec,
+                                cwd,
+                                programArgs,
+                                vmArgs,
+                                false),
                         false));
             } catch (Exception e) {
                 fail("Could not compile/launch " + fqn + ": " + msg(e));

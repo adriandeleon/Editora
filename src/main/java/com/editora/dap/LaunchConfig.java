@@ -27,12 +27,17 @@ public final class LaunchConfig {
             String javaExec,
             String cwd,
             List<String> args,
+            String vmArgs,
             boolean stopOnEntry) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", "java");
         m.put("name", "Editora (Launch)");
         m.put("request", "launch");
         m.put("mainClass", mainClass == null ? "" : mainClass);
+        if (notBlank(vmArgs)) {
+            // java-debug's vmArgs is a single string of JVM options (kept verbatim, so a quoted value survives).
+            m.put("vmArgs", vmArgs);
+        }
         if (notBlank(projectName)) {
             m.put("projectName", projectName);
         }

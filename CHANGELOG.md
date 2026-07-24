@@ -16,9 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   void main`, and the editor right-click menu offers *Run '…​.main()'* / *Debug '…​.main()'*. Debugging (and
   the fastest, project-wide Run) uses the Java language server; when it isn't set up, plain **Run** falls back
   to the build tool — Maven resolves the classpath (`mvn compile dependency:build-classpath`) and runs the
-  file's `main`, and Gradle delegates to its `run` task. **Save run configurations** (main class + program /
-  VM args + working directory) per project and re-run or debug them from the palette (*Run Configuration…* /
-  *Save Run Configuration…* / *Delete Run Configuration…*).
+  file's `main`, and Gradle delegates to its `run` task (or `bootRun` for a Spring Boot project). **Save run
+  configurations** (main class + program / VM args + working directory) per project and re-run or debug them
+  from the palette (*Run Configuration…* / *Save Run Configuration…* / *Delete Run Configuration…*); VM args
+  apply to both Run and Debug.
 
 - **Right-click Select All / Copy in the Build Output and Test Runner consoles** — copies the selection, or
   all the output when nothing is selected. Both read-only consoles share one helper.
