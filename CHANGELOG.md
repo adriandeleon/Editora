@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug via build tool** — debug a Gradle or Spring Boot app by launching it under a suspended JVM
+  (Gradle `run`/`bootRun --debug-jvm`, Maven `spring-boot:run` with a JDWP agent) and attaching the debugger
+  when it's ready. Complements *Debug Main Class* (which uses the language server) for projects where the
+  build tool is the natural way to run the app. Command: *Debug: Debug via Build Tool*.
+
 - **Settings → Run Configurations** — a master-detail editor for the saved run/debug configurations
   (name, kind, main class, module, program & VM arguments, working directory), so you can create, rename and
   edit them in place instead of only from the palette.
