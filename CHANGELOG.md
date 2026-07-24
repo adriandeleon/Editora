@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Settings → Run Configurations** — a master-detail editor for the saved run/debug configurations
+  (name, kind, main class, module, program & VM arguments, working directory), so you can create, rename and
+  edit them in place instead of only from the palette.
+
 - **Run & debug Maven/Gradle project main classes** — beyond single-file scripts, you can now run or debug
   a real project's `main` class. **Run Main Class…** / **Debug Main Class…** (command palette) pick any main
   class in the active file's Maven or Gradle project (via the Java language server), run it in the Run
