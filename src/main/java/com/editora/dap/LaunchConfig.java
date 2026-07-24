@@ -29,11 +29,30 @@ public final class LaunchConfig {
             List<String> args,
             String vmArgs,
             boolean stopOnEntry) {
+        return launch(
+                mainClass, projectName, classPaths, modulePaths, javaExec, cwd, args, vmArgs, Map.of(), stopOnEntry);
+    }
+
+    /** As above, plus {@code env} — extra environment variables for the debuggee (java-debug's {@code env} map). */
+    public static Map<String, Object> launch(
+            String mainClass,
+            String projectName,
+            List<String> classPaths,
+            List<String> modulePaths,
+            String javaExec,
+            String cwd,
+            List<String> args,
+            String vmArgs,
+            Map<String, String> env,
+            boolean stopOnEntry) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", "java");
         m.put("name", "Editora (Launch)");
         m.put("request", "launch");
         m.put("mainClass", mainClass == null ? "" : mainClass);
+        if (env != null && !env.isEmpty()) {
+            m.put("env", env);
+        }
         if (notBlank(vmArgs)) {
             // java-debug's vmArgs is a single string of JVM options (kept verbatim, so a quoted value survives).
             m.put("vmArgs", vmArgs);

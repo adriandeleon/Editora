@@ -725,7 +725,8 @@ final class DebugCoordinator {
         debugPanel.setSessionFile(b.getPath().getFileName().toString());
         // The debuggee gets the same per-file program arguments the Run feature uses.
         dapManager.setProgramArgs(ProgramArgs.tokenize(ops.programArgs(b.getPath())));
-        dapManager.setVmArgs(""); // no VM args on a plain debug (only saved run configs carry them)
+        dapManager.setVmArgs(""); // no VM args/env on a plain debug (only saved run configs carry them)
+        dapManager.setEnv(java.util.Map.of());
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
         withClosedBreakpoints(() -> dapManager.startLaunch(b.getPath(), language, this::pickMainClass));
     }
@@ -780,6 +781,7 @@ final class DebugCoordinator {
             debugPanel.setSessionFile(shortName(match.mainClass()));
             dapManager.setProgramArgs(ProgramArgs.tokenize(cfg.args()));
             dapManager.setVmArgs(cfg.vmArgs());
+            dapManager.setEnv(com.editora.run.EnvVars.parse(cfg.env()));
             withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, match, cwd));
         });
     }
@@ -815,7 +817,8 @@ final class DebugCoordinator {
                 ops.openToolWindow();
                 debugPanel.setSessionFile(shortName(opt.mainClass()));
                 dapManager.setProgramArgs(ProgramArgs.tokenize(programArgsForMain(opt)));
-                dapManager.setVmArgs(""); // the gutter/command debug carries no VM args
+                dapManager.setVmArgs(""); // the gutter/command debug carries no VM args/env
+                dapManager.setEnv(java.util.Map.of());
                 withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, opt, root));
             };
             if (targetFqn != null) {

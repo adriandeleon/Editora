@@ -78,6 +78,7 @@ final class RunCoordinator {
     /** The most recent launch, for {@code run.rerun} and the shared stack-trace link resolver. */
     private Path lastRunDir;
 
+    private java.util.Map<String, String> lastRunEnv = java.util.Map.of();
     private String lastRunLabel;
     private List<String> lastRunCommand;
 
@@ -117,7 +118,7 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.busy"));
             return;
         }
-        streamRun(lastRunLabel, lastRunDir, lastRunCommand);
+        streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv);
     }
 
     /**
@@ -158,6 +159,7 @@ final class RunCoordinator {
         Path cwd = cfg.workingDir().isBlank() ? root : Path.of(cfg.workingDir());
         List<String> vm = ProgramArgs.tokenize(cfg.vmArgs());
         List<String> args = ProgramArgs.tokenize(cfg.args());
+        java.util.Map<String, String> env = com.editora.run.EnvVars.parse(cfg.env());
         String label = shortName(cfg.mainClass());
         if (ops.javaLaunchAvailable()) {
             JavaMainClass mc = new JavaMainClass(cfg.mainClass(), cfg.projectName(), routing.toString());
@@ -170,7 +172,8 @@ final class RunCoordinator {
                         label,
                         cwd,
                         JavaRunCommand.build(
-                                info.javaExec(), info.modulePaths(), info.classPaths(), cfg.mainClass(), vm, args));
+                                info.javaExec(), info.modulePaths(), info.classPaths(), cfg.mainClass(), vm, args),
+                        env);
             });
         } else if (ops.mavenProjectAt(root)) {
             host.setStatus(tr("status.run.resolvingClasspath"));
@@ -179,7 +182,7 @@ final class RunCoordinator {
                     host.setStatus(tr("status.run.resolveFailed"));
                     return;
                 }
-                streamRun(label, cwd, JavaRunCommand.build("", List.of(), cp, cfg.mainClass(), vm, args));
+                streamRun(label, cwd, JavaRunCommand.build("", List.of(), cp, cfg.mainClass(), vm, args), env);
             });
         } else {
             host.setStatus(tr("status.run.javaUnavailable"));
@@ -453,13 +456,19 @@ final class RunCoordinator {
     /** Runs {@code command} in {@code workingDir} (the project root for a main class, else a file's folder),
      *  streaming into the Run console and remembering it for {@code run.rerun}. */
     private void streamRun(String label, Path workingDir, List<String> command) {
+        streamRun(label, workingDir, command, java.util.Map.of());
+    }
+
+    /** As above, plus {@code env} — a saved run configuration's environment variables. */
+    private void streamRun(String label, Path workingDir, List<String> command, java.util.Map<String, String> env) {
         lastRunDir = workingDir;
         lastRunLabel = label;
         lastRunCommand = command;
+        lastRunEnv = env;
         ops.openToolWindow();
         panel.started(label);
         host.setStatus(tr("status.run.started", label));
-        service.runInDir(workingDir, command, new RunService.Listener() {
+        service.runInDir(workingDir, command, env, new RunService.Listener() {
             @Override
             public void onStart(String commandLine) {
                 panel.started(commandLine);

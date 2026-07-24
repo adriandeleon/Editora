@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Environment variables in run configurations** — a saved run/debug configuration can now set environment
+  variables (`KEY=value`, quote values containing spaces). They apply to both Run and Debug, and are edited in
+  Settings → Run Configurations.
+- **Gradle `application` main class** — saving a run configuration in a Gradle project now pre-fills the main
+  class the build declares (`mainClass = '…'`, `mainClass.set("…")`, or the legacy `mainClassName`), so the
+  config matches what `gradle run` would launch instead of whichever file is open.
+
 ### Fixed
 
 - **Multi-module Maven Run without the language server** — running a project main class via the Maven

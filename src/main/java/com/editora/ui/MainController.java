@@ -9071,13 +9071,17 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.run.needJavaFile"));
             return;
         }
+        // Prefer the main class a Gradle `application` block declares — that's what `gradle run` would launch,
+        // so a config saved in such a project matches the build rather than whichever file happens to be open.
+        String declared =
+                com.editora.build.GradleApplication.mainClass(readGradleBuildFile(JavaProjectRoot.find(b.getPath())));
         List<com.editora.run.MainMethodScanner.MainMethod> mains =
                 com.editora.run.MainMethodScanner.scan(b.getContent());
-        if (mains.isEmpty()) {
+        if (declared == null && mains.isEmpty()) {
             setStatus(tr("status.run.noMainInFile"));
             return;
         }
-        String fqn = mains.get(0).fqn();
+        String fqn = declared != null ? declared : mains.get(0).fqn();
         String simple = com.editora.test.TestSourceLocator.simpleName(fqn);
         String args = programArgsFor(b.getPath());
         promptText(tr("run.config.saveTitle"), tr("run.config.saveName"), simple, name -> {

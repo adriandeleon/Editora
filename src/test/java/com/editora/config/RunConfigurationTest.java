@@ -28,9 +28,21 @@ class RunConfigurationTest {
     @Test
     void jacksonRoundTrip() throws Exception {
         ObjectMapper m = new ObjectMapper();
-        RunConfiguration c = new RunConfiguration("App", "debug", "com.app.Main", "core", "--x", "-Xmx1g", "/tmp");
+        RunConfiguration c =
+                new RunConfiguration("App", "debug", "com.app.Main", "core", "--x", "-Xmx1g", "/tmp", "FOO=bar");
         RunConfiguration back = m.readValue(m.writeValueAsString(c), RunConfiguration.class);
         assertEquals(c, back);
+        assertEquals("FOO=bar", back.env());
+    }
+
+    @Test
+    void backCompatConstructorAndOlderJsonDefaultEnvToEmpty() throws Exception {
+        // A config saved before `env` existed must still load (and the 7-arg ctor keeps old call sites working).
+        assertEquals("", new RunConfiguration("A", "run", "M", "", "", "", "").env());
+        ObjectMapper m = new ObjectMapper();
+        RunConfiguration old = m.readValue(
+                "{\"name\":\"A\",\"kind\":\"run\",\"mainClass\":\"M\",\"workingDir\":\"\"}", RunConfiguration.class);
+        assertEquals("", old.env());
     }
 
     @Test
