@@ -3,6 +3,20 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP incremental document sync** (#678) — under `TextDocumentSyncKind.Incremental` the session now
+      sends the minimal splice instead of the whole document. **Shadow-diff, not event accumulation**: a
+      per-uri shadow of the text the server last received (`shadows`, invariant: always equals the server's
+      copy after every send) is diffed against the flush's full text by the pure **`TextSyncDiff`**
+      (common-prefix/suffix scan, O(n), surrogate-pair-safe boundaries — a split pair would put half a
+      surrogate in the JSON; UTF-16 line/col via `rangeOf`) — chosen over converting RichTextFX
+      `PlainTextChange`s because ordering bugs there corrupt the server copy silently and forever; the
+      diff is immune by construction (2,000-step seeded randomized convergence test). The full-vs-delta
+      decision happens INSIDE the queued send (capabilities post-initialize; shadow read in send order);
+      an identical-content flush now skips the send entirely (the pre-request `changeDocument` syncs
+      become free); every 256th delta goes out full as a divergence safety net; didClose/didOpen reset the
+      shadow; Full/unspecified servers keep the exact previous behavior. Client alloc note: the flush
+      still materializes `getText()` once — the win is transport + server-side processing; avoiding the
+      client-side string means accumulating editor events, deferred for the correctness reason above.
 - [x] **LSP inlay hints** (#681) — `textDocument/inlayHint` over the visible window (+ the semantic-tokens
       pad), on the same cadence (didChange debounce, scroll-settle, ready, syncBuffer). Rendering is
       **end-of-line aggregation**: `editor/InlayHintsOverlay` (the `InlineValuesOverlay` clone — lazy,

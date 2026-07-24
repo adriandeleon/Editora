@@ -146,6 +146,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **Incremental document sync (LSP).** For servers that accept incremental changes (jdtls, pyright,
+  tsserver, gopls, rust-analyzer — most of them), each typing pause now sends only the changed splice of
+  the document instead of the whole text — a fraction of the transport, and the server can process the
+  change incrementally. Computed as a shadow-vs-current diff (immune to event-ordering bugs by
+  construction, pinned by a 2,000-step randomized convergence test), with a periodic full-text resync as
+  a divergence safety net; full-only servers are unchanged. (#678)
+
 - **Semantic highlighting transfers only what changed.** For servers without viewport (range) requests —
   jdtls among them — every typing pause re-transferred the whole document's semantic tokens. When the
   server supports token deltas, Editora now sends the previous result id and splices the returned changes

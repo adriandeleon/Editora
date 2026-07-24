@@ -95,6 +95,17 @@ final class LanguageServerSession implements LanguageClient {
         return t;
     });
     private final Map<String, Integer> versions = new ConcurrentHashMap<>();
+    /** Per-document shadow of the text the server last received — the diff base for incremental sync
+     *  (#678). Invariant: after every send, {@code shadows.get(uri)} equals the server's document. */
+    private final Map<String, String> shadows = new ConcurrentHashMap<>();
+    /** Incremental sends since the last full resync, per document (the divergence safety net, #678). */
+    private final Map<String, Integer> sendsSinceResync = new ConcurrentHashMap<>();
+
+    /** Every {@code RESYNC_EVERY}-th change goes out as a full-text event even under incremental sync — a
+     *  cheap safety net: if shadow and server ever diverged, every later delta would corrupt the server's
+     *  copy silently and forever; a periodic full write re-converges them (#678). */
+    private static final int RESYNC_EVERY = 256;
+
     private final List<Pending> pending = new ArrayList<>();
     private final AtomicInteger nextVersion = new AtomicInteger(1);
 
@@ -511,6 +522,7 @@ final class LanguageServerSession implements LanguageClient {
     // --- Document synchronization (full-text) ---------------------------------------------------
 
     void didOpen(String uri, String languageId, String text) {
+        shadows.put(uri, text); // the server now holds exactly this content (#678)
         versions.put(uri, 1);
         whenReady(() -> server.getTextDocumentService()
                 .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, languageId, 1, text))));
@@ -521,14 +533,57 @@ final class LanguageServerSession implements LanguageClient {
             return; // server negotiated TextDocumentSyncKind.None — it doesn't track content changes
         }
         int version = versions.merge(uri, 1, Integer::sum);
-        // Collapse: a queued didChange for this uri is superseded by this one (full-text sync, so only the
-        // latest matters) — otherwise every typing pause before initialize pins another copy of the document.
-        whenReady(
-                "didChange:" + uri,
-                () -> server.getTextDocumentService()
-                        .didChange(new DidChangeTextDocumentParams(
-                                new VersionedTextDocumentIdentifier(uri, version),
-                                List.of(new TextDocumentContentChangeEvent(text)))));
+        // Collapse: a queued didChange for this uri is superseded by this one (only the latest content
+        // matters) — otherwise every typing pause before initialize pins another copy of the document.
+        // The full-vs-incremental decision happens INSIDE the queued action (#678): capabilities are only
+        // known post-initialize, and the shadow must be read in send order.
+        whenReady("didChange:" + uri, () -> {
+            List<TextDocumentContentChangeEvent> events = changeEventsFor(uri, text);
+            if (events.isEmpty()) {
+                return; // content identical to what the server already holds — nothing to sync
+            }
+            server.getTextDocumentService()
+                    .didChange(
+                            new DidChangeTextDocumentParams(new VersionedTextDocumentIdentifier(uri, version), events));
+        });
+    }
+
+    /**
+     * The change events for syncing {@code text}: under {@code TextDocumentSyncKind.Incremental} (and with
+     * a shadow held), the minimal splice vs. the server's last-known content — a fraction of the transport
+     * and lets the server process incrementally (#678); otherwise (Full/unspecified/no shadow) the whole
+     * text, exactly the previous behavior. Every {@link #RESYNC_EVERY}-th incremental send goes out full as
+     * a divergence safety net. The shadow updates unconditionally — it must always equal what the server
+     * holds after this send.
+     */
+    private List<TextDocumentContentChangeEvent> changeEventsFor(String uri, String text) {
+        String old = shadows.put(uri, text);
+        if (old == null || changeSyncKind(capabilities) != TextDocumentSyncKind.Incremental) {
+            return List.of(new TextDocumentContentChangeEvent(text));
+        }
+        int count = sendsSinceResync.merge(uri, 1, Integer::sum);
+        if (count >= RESYNC_EVERY) {
+            sendsSinceResync.put(uri, 0);
+            return List.of(new TextDocumentContentChangeEvent(text)); // periodic full re-convergence
+        }
+        TextSyncDiff.Delta d = TextSyncDiff.diff(old, text);
+        if (d == null) {
+            return List.of(); // identical (e.g. a redundant pre-request sync) — skip the send entirely
+        }
+        var range = TextSyncDiff.rangeOf(old, d.start(), d.end());
+        return List.of(new TextDocumentContentChangeEvent(range, d.replacement()));
+    }
+
+    /** Pure: the server's declared change-sync kind, or null when unspecified (either capability form). */
+    static TextDocumentSyncKind changeSyncKind(ServerCapabilities caps) {
+        if (caps == null || caps.getTextDocumentSync() == null) {
+            return null;
+        }
+        var sync = caps.getTextDocumentSync();
+        if (sync.isLeft()) {
+            return sync.getLeft();
+        }
+        return sync.getRight() == null ? null : sync.getRight().getChange();
     }
 
     /**
@@ -538,18 +593,9 @@ final class LanguageServerSession implements LanguageClient {
      * behavior (we still send), since omitting it is rare and a missed update is worse than a wasted one.
      */
     private boolean changeSyncDisabled() {
-        if (capabilities == null) {
-            return false;
-        }
-        var sync = capabilities.getTextDocumentSync();
-        if (sync == null) {
-            return false; // unspecified → keep sending full text (existing behavior)
-        }
-        if (sync.isLeft()) {
-            return sync.getLeft() == TextDocumentSyncKind.None;
-        }
-        // Detailed options form: an explicit change == None means no change notifications are wanted.
-        return sync.getRight() != null && sync.getRight().getChange() == TextDocumentSyncKind.None;
+        // Unspecified (null kind) keeps the current full-text behavior — a missed update is worse than a
+        // wasted one; only an explicit None turns change sync off.
+        return capabilities != null && changeSyncKind(capabilities) == TextDocumentSyncKind.None;
     }
 
     void didSave(String uri) {
@@ -559,6 +605,8 @@ final class LanguageServerSession implements LanguageClient {
 
     void didClose(String uri) {
         versions.remove(uri);
+        shadows.remove(uri); // the diff base dies with the document (#678)
+        sendsSinceResync.remove(uri);
         whenReady(() -> server.getTextDocumentService()
                 .didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(uri))));
     }
