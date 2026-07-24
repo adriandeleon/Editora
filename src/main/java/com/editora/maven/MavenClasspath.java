@@ -35,6 +35,25 @@ public final class MavenClasspath {
     }
 
     /**
+     * Like {@link #argv} but for a submodule in a multi-module build, run from the reactor root:
+     * {@code -pl <moduleSelector> -am} ("also make") builds the sibling modules the target depends on, so
+     * their compiled output lands in {@code outputFile}'s classpath. {@code outputFile} must be an absolute
+     * path (the working directory is the reactor root, not the module).
+     */
+    public static List<String> reactorArgv(Path outputFile, String moduleSelector) {
+        return List.of(
+                "mvn",
+                "-q",
+                "-pl",
+                moduleSelector,
+                "-am",
+                "compile",
+                "dependency:build-classpath",
+                "-Dmdep.outputFile=" + outputFile,
+                "-Dmdep.pathSeparator=" + File.pathSeparator);
+    }
+
+    /**
      * Full launch classpath = the module's compiled output (when present) followed by the dependency
      * classpath from {@code dependencyClasspath} (a {@code File.pathSeparator}-joined string). Blank/empty
      * entries are dropped. {@code root} is the Maven module root ({@code root/target/classes}).
