@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Navigate inside library source (LSP, Java)** — Go to Definition now also works *from within* an
+  opened JDK/dependency source tab: put the caret on a symbol inside `String.class`'s source and `M-.`
+  chains onward — into another library class (opened the same way) or back into your own code. (#684)
+
 - **Call & type hierarchy (LSP)** — `LSP: Call Hierarchy` shows who calls the method under the caret (or
   what it calls — flip with the Callers/Callees toggle) in a new **Hierarchy** tool window, each level
   fetched from the language server as you expand it; `LSP: Type Hierarchy` does the same for a type's

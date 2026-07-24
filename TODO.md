@@ -3,6 +3,17 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **jdt:// chained navigation** (#684) — deferred from #665: the read-only library-source tab has no
+      filesystem path, so `M-.` inside it was dead. `LspCoordinator.librarySources` (weak-keyed) records
+      each library tab's own jdt URI + the workspace anchor file whose session produced it;
+      `gotoDefinition` branches to `libraryGotoDefinition`, which requests definition **with the jdt URI
+      as the document URI** on the anchor's session (`LspManager.definitionAt`, sharing the jdt-aware
+      target mapping via the extracted `requestDefinition`). Results chain: file targets open normally,
+      further library targets open/re-select their own tabs (each recorded as a new chain point).
+      **Device-test flag:** jdtls answering definition on a jdt document it served (without a didOpen) is
+      the live-verification item — on a server that refuses, the flow degrades to the "no definition"
+      status, nothing worse. *Deferred: hover/references inside library source; the right-click LSP menu
+      in library tabs (gated on isLspActive, which a path-less buffer deliberately isn't).*
 - [x] **LSP call/type hierarchy** (#682) — `prepareCallHierarchy` + incoming/outgoing calls and
       `prepareTypeHierarchy` + super/subtypes into a new **Hierarchy** tool window (`ui/HierarchyPanel`,
       the `ReferencesPanel` model; id `hierarchy`, default-hidden, opened by the commands, availability
