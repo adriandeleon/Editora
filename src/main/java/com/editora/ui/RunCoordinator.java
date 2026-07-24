@@ -111,6 +111,15 @@ final class RunCoordinator {
      * working directory.
      */
     void runMainClass() {
+        startMainClassRun(null);
+    }
+
+    /** Runs a specific main class by fully-qualified name (the gutter ▶ on a {@code main} method). */
+    void runMainClassNamed(String fqn) {
+        startMainClassRun(fqn);
+    }
+
+    private void startMainClassRun(String targetFqn) {
         if (!ops.javaLaunchAvailable()) {
             host.setStatus(tr("status.run.javaUnavailable"));
             return;
@@ -138,11 +147,20 @@ final class RunCoordinator {
                 host.setStatus(tr("status.run.noMainClass"));
                 return;
             }
-            Consumer<JavaMainClass> go = mc -> runResolvedMainClass(routing, root, mc);
-            if (list.size() == 1) {
-                go.accept(list.get(0));
+            if (targetFqn != null) {
+                JavaMainClass match = list.stream()
+                        .filter(mc -> targetFqn.equals(mc.fqn()))
+                        .findFirst()
+                        .orElse(null);
+                if (match == null) {
+                    host.setStatus(tr("status.run.noMainClass"));
+                    return;
+                }
+                runResolvedMainClass(routing, root, match);
+            } else if (list.size() == 1) {
+                runResolvedMainClass(routing, root, list.get(0));
             } else {
-                pickMainClass(list, go);
+                pickMainClass(list, mc -> runResolvedMainClass(routing, root, mc));
             }
         });
     }

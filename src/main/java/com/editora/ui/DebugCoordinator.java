@@ -735,6 +735,15 @@ final class DebugCoordinator {
      * root as the working directory.
      */
     void debugMainClass() {
+        startMainClassDebug(null);
+    }
+
+    /** Debugs a specific main class by fully-qualified name (the gutter ▶ / editor menu on a {@code main}). */
+    void debugMainClassNamed(String fqn) {
+        startMainClassDebug(fqn);
+    }
+
+    private void startMainClassDebug(String targetFqn) {
         if (!debugEffectiveFor("java")) {
             host.setStatus(tr("status.debug.unavailable"));
             return;
@@ -767,7 +776,17 @@ final class DebugCoordinator {
                 dapManager.setProgramArgs(ProgramArgs.tokenize(programArgsForMain(opt)));
                 withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, opt, root));
             };
-            if (options.size() == 1) {
+            if (targetFqn != null) {
+                DapManager.MainClassOption match = options.stream()
+                        .filter(o -> targetFqn.equals(o.mainClass()))
+                        .findFirst()
+                        .orElse(null);
+                if (match == null) {
+                    host.setStatus(tr("status.debug.noMainClass"));
+                    return;
+                }
+                launch.accept(match);
+            } else if (options.size() == 1) {
                 launch.accept(options.get(0));
             } else {
                 pickMainClass(options, launch);
