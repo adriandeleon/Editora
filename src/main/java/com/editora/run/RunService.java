@@ -129,13 +129,25 @@ public final class RunService {
      * (stop it first). All listener callbacks run on the FX thread.
      */
     public void run(Path file, List<String> argv, Listener listener) {
-        if (file == null || argv == null || argv.isEmpty() || listener == null || isRunning()) {
+        if (file == null) {
+            return;
+        }
+        runInDir(file.toAbsolutePath().getParent(), argv, listener);
+    }
+
+    /**
+     * Launches {@code argv} in {@code workingDir} (the project root for a project main class, else a file's
+     * folder) and streams output to {@code listener}. Refuses to start if a previous run is still alive.
+     * All listener callbacks run on the FX thread.
+     */
+    public void runInDir(Path workingDir, List<String> argv, Listener listener) {
+        if (argv == null || argv.isEmpty() || listener == null || isRunning()) {
             return;
         }
         int gen = ++generation;
         List<String> command = ProcessRunner.resolveExecutable(argv);
         ProcessBuilder pb = new ProcessBuilder(command);
-        Path dir = file.toAbsolutePath().getParent();
+        Path dir = workingDir == null ? null : workingDir.toAbsolutePath();
         if (dir != null) {
             pb.directory(dir.toFile());
         }

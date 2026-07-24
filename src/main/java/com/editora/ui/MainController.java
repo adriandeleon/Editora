@@ -3539,6 +3539,40 @@ public class MainController implements com.editora.mcp.McpBridge {
         public void openLink(com.editora.run.StackTraceLinks.Link link) {
             openRunLink(link);
         }
+
+        @Override
+        public java.nio.file.Path javaProjectRoot(java.nio.file.Path file) {
+            return JavaProjectRoot.find(file);
+        }
+
+        @Override
+        public boolean javaLaunchAvailable() {
+            // Resolving a project main class + classpath rides jdtls's java-debug bundle (the same gate as
+            // Java debugging). PR4 adds a build-tool fallback so Run works without it.
+            return debugCoordinator.debugEffectiveFor("java");
+        }
+
+        @Override
+        public void resolveJavaMainClasses(
+                java.nio.file.Path routingFile, java.util.function.Consumer<List<com.editora.run.JavaMainClass>> cb) {
+            dapManager.resolveMainClasses(
+                    routingFile,
+                    opts -> cb.accept(opts.stream()
+                            .map(o -> new com.editora.run.JavaMainClass(o.mainClass(), o.projectName(), o.filePath()))
+                            .toList()));
+        }
+
+        @Override
+        public void resolveJavaLaunch(
+                java.nio.file.Path routingFile,
+                com.editora.run.JavaMainClass mc,
+                java.util.function.Consumer<com.editora.run.JavaLaunchInfo> cb) {
+            dapManager.resolveLaunch(
+                    routingFile,
+                    new com.editora.dap.DapManager.MainClassOption(mc.fqn(), mc.projectName(), mc.filePath()),
+                    r -> cb.accept(new com.editora.run.JavaLaunchInfo(
+                            r.javaExec(), r.modulePaths(), r.classPaths(), r.error())));
+        }
     });
 
     /** The IntelliJ-style Test Results feature: it hooks each build coordinator (see the injection where the
@@ -13703,6 +13737,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).
         registry.register(Command.of("file.run", runCoordinator::runActiveFile));
         registry.register(Command.of("file.runWithArgs", runCoordinator::runActiveFileWithArgs));
+        registry.register(Command.of("run.mainClass", runCoordinator::runMainClass));
         registry.register(Command.of("run.rerun", runCoordinator::rerunLast));
         registry.register(Command.of("run.stop", runCoordinator::stopRun));
         registry.register(Command.of("run.clear", runCoordinator::clearConsole));
