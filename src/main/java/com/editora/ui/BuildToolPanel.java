@@ -76,6 +76,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         output.getStyleClass().addAll("editor-area", "run-output");
         RunPanel.installLinkClicks(output, () -> onLink);
         ConsoleNav.installShared(output);
+        ConsoleContextMenu.install(output); // right-click Select All / Copy
 
         VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(output);
         VBox.setVgrow(scrollPane, Priority.ALWAYS);
