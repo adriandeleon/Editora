@@ -136,6 +136,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         detail.setWrapText(false);
         detail.getStyleClass().addAll("editor-area", "test-detail");
         RunPanel.installLinkClicks(detail, () -> onLink);
+        ConsoleContextMenu.install(detail); // right-click Select All / Copy
 
         SplitPane split = new SplitPane(tree, new VirtualizedScrollPane<>(detail));
         split.setDividerPositions(0.5);
@@ -563,12 +564,16 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         }
 
         private static Node statusIcon(TestStatus status) {
-            return switch (status) {
-                case PASSED -> Icons.testPassed();
-                case FAILED, ERROR -> Icons.testFailed();
-                case SKIPPED -> Icons.testSkipped();
-                case RUNNING -> Icons.testRunning();
-            };
+            Node icon =
+                    switch (status) {
+                        case PASSED -> Icons.testPassed();
+                        case FAILED, ERROR -> Icons.testFailed();
+                        case SKIPPED -> Icons.testSkipped();
+                        case RUNNING -> Icons.testRunning();
+                    };
+            // Each row's status glyph is icon-only — a tooltip says what it means (Passed / Failed / …).
+            Tooltip.install(icon, new Tooltip(statusLabel(status)));
+            return icon;
         }
     }
 }

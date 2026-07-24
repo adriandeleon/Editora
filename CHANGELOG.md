@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Right-click Select All / Copy in the Build Output and Test Runner consoles** — copies the selection, or
+  all the output when nothing is selected. Both read-only consoles share one helper.
+- **Tooltips on the Test Runner's per-row status icons** — hovering a test's pass/fail/skip/running glyph
+  now says what it means. (The toolbar buttons already had tooltips.)
+
 - **Doctor — external-tool health screen** — `View: Doctor` in the palette (also on the Welcome page)
   opens a full-tab report, like `flutter doctor`, of every external CLI Editora's features rely on: Git
   and the GitHub CLI (including its sign-in state), ripgrep, the preview/diagram tools (mmdc, maid,
