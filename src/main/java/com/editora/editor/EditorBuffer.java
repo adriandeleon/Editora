@@ -477,6 +477,15 @@ public class EditorBuffer implements TabContent {
     private java.util.Map<Integer, com.editora.test.JavaTestScanner.TestTarget> testLines = java.util.Map.of();
     /** Fired with a test target when its gutter ▶ is clicked (runs one class/method via the build tool). */
     private java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> testRunHandler = t -> {};
+    /** Main-method gutter gate (a Java file in a Maven/Gradle project with run/debug available), pushed by
+     *  MainController. When on, {@code public static void main} lines get a green ▶ to run the project class. */
+    private boolean mainGutterEnabled;
+    /** 0-based line → project {@code main} entry point for the gutter ▶; empty otherwise. */
+    private java.util.Map<Integer, com.editora.run.MainMethodScanner.MainMethod> mainLines = java.util.Map.of();
+    /** Fired with a main method when its gutter ▶ is clicked (runs that project main class). */
+    private java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> mainRunHandler = m -> {};
+    /** Fired with a main method for the editor right-click "Debug Main Class" item. */
+    private java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> mainDebugHandler = m -> {};
     /** Whether this file is runnable (a Java 25 compact source file, a Python script, or — when the Bash
      *  LSP is enabled — a shell script) — drives the gutter Run glyph + the Run tool window. */
     private boolean runnable;
@@ -704,7 +713,7 @@ public class EditorBuffer implements TabContent {
         // Gutter Run glyph: reserved for a runnable file — one entry line for a script, or one per
         // request for a .http file.
         folds.setRunHooks(
-                () -> runnable,
+                () -> runnable || !mainLines.isEmpty(),
                 this::isRunGlyphLine,
                 this::onRunGlyph,
                 line -> testLines.containsKey(line) ? "test-run-marker" : null,
@@ -1764,6 +1773,21 @@ public class EditorBuffer implements TabContent {
                 run.setOnAction(ev -> runHandler.run());
                 items.add(run);
                 items.add(new SeparatorMenuItem());
+            } else {
+                // A Java class with a project main() gets Run/Debug Main Class items (green ▶ + bug icon).
+                com.editora.run.MainMethodScanner.MainMethod mainTarget = mainTargetAtCaret();
+                if (mainTarget != null) {
+                    String simple = com.editora.test.TestSourceLocator.simpleName(mainTarget.fqn());
+                    MenuItem runMain = new MenuItem(tr("editmenu.runMainClass", simple));
+                    runMain.setGraphic(FoldManager.runGlyph());
+                    runMain.setOnAction(ev -> mainRunHandler.accept(mainTarget));
+                    MenuItem debugMain = new MenuItem(tr("editmenu.debugMainClass", simple));
+                    debugMain.setGraphic(MenuIcons.debug());
+                    debugMain.setOnAction(ev -> mainDebugHandler.accept(mainTarget));
+                    items.add(runMain);
+                    items.add(debugMain);
+                    items.add(new SeparatorMenuItem());
+                }
             }
             // LSP navigation (only when this buffer is served by a language server). Move the caret to the
             // right-clicked position first so go-to-definition/references/hover target that symbol.
@@ -3196,6 +3220,41 @@ public class EditorBuffer implements TabContent {
         this.testRunHandler = handler == null ? t -> {} : handler;
     }
 
+    /** Gate for the project {@code main}-method gutter ▶ (a Java file in a Maven/Gradle project with run/debug
+     *  available); pushed by MainController. */
+    public void setMainGutterEnabled(boolean enabled) {
+        if (enabled != mainGutterEnabled) {
+            mainGutterEnabled = enabled;
+            recomputeRun();
+        }
+    }
+
+    /** Injects the handler run with a clicked {@code main}-method gutter ▶ (runs that project main class). */
+    public void setMainRunHandler(java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> handler) {
+        this.mainRunHandler = handler == null ? m -> {} : handler;
+    }
+
+    /** Injects the handler for the editor "Debug Main Class" item on a {@code main} method. */
+    public void setMainDebugHandler(java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> handler) {
+        this.mainDebugHandler = handler == null ? m -> {} : handler;
+    }
+
+    /** The project {@code main} entry point at (or nearest above) the caret, else the file's first main, else
+     *  {@code null} — backs the editor right-click Run/Debug Main Class items. */
+    public com.editora.run.MainMethodScanner.MainMethod mainTargetAtCaret() {
+        if (mainLines.isEmpty()) {
+            return null;
+        }
+        int caret = area.getCurrentParagraph();
+        com.editora.run.MainMethodScanner.MainMethod best = null;
+        for (var e : mainLines.entrySet()) {
+            if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
+                best = e.getValue();
+            }
+        }
+        return best != null ? best : mainLines.values().iterator().next();
+    }
+
     /**
      * The whole-class JUnit target for this buffer (the "Run Tests" context-menu item), or {@code null} when
      * this isn't a test file / the test gutter is off.
@@ -3233,6 +3292,9 @@ public class EditorBuffer implements TabContent {
     /** Whether {@code line} draws a Run glyph: every request line for an enabled {@code .http} buffer,
      *  else the single script entry line. */
     private boolean isRunGlyphLine(int line) {
+        if (mainLines.containsKey(line)) {
+            return true; // a project main ▶ draws independently of `runnable` (see recomputeRun)
+        }
         if (!runnable) {
             return false;
         }
@@ -3252,6 +3314,10 @@ public class EditorBuffer implements TabContent {
      *  target runner (with the clicked target's name), else the script run handler. */
     /** Hover text for a gutter Run glyph: explains what the blue JUnit ▶ runs (class vs method). */
     private String runGlyphTooltip(int line) {
+        com.editora.run.MainMethodScanner.MainMethod m = mainLines.get(line);
+        if (m != null) {
+            return tr("editmenu.runMainTooltip", com.editora.test.TestSourceLocator.simpleName(m.fqn()));
+        }
         com.editora.test.JavaTestScanner.TestTarget t = testLines.get(line);
         if (t == null) {
             return null; // the plain script/Makefile/.http ▶ keeps its untooltipped look
@@ -3263,8 +3329,11 @@ public class EditorBuffer implements TabContent {
 
     private void onRunGlyph(int line) {
         com.editora.test.JavaTestScanner.TestTarget testTarget = testLines.get(line);
+        com.editora.run.MainMethodScanner.MainMethod mainTarget = mainLines.get(line);
         if (testTarget != null) {
             testRunHandler.accept(testTarget); // a JUnit class/method ▶ (never coincides with a compact-source main)
+        } else if (mainTarget != null) {
+            mainRunHandler.accept(mainTarget); // a project main class ▶ (disjoint from test/compact-source lines)
         } else if (httpFeatureEnabled && isHttpFile()) {
             httpRunHandler.accept(line);
         } else if (isMakefile()) {
@@ -3288,10 +3357,13 @@ public class EditorBuffer implements TabContent {
         // in a JVM project with the Test Runner on). Additive — a test file also keeps any compact-source ▶.
         boolean testEligible =
                 testGutterEnabled && !largeFile && "java".equals(language) && area.getLength() <= COMPACT_SCAN_LIMIT;
-        // Only materialize the whole document when we actually scan it (compact-source / .http / test detection).
-        // Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on every
-        // 150 ms edit pulse just to discard it as run-ineligible.
-        String text = (eligible || httpEligible || testEligible) ? area.getText() : "";
+        // Project main-method gutter: a Java file in a Maven/Gradle project (gated by MainController).
+        boolean mainEligible =
+                mainGutterEnabled && !largeFile && "java".equals(language) && area.getLength() <= COMPACT_SCAN_LIMIT;
+        // Only materialize the whole document when we actually scan it (compact-source / .http / test/main
+        // detection). Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on
+        // every 150 ms edit pulse just to discard it as run-ineligible.
+        String text = (eligible || httpEligible || testEligible || mainEligible) ? area.getText() : "";
         boolean nowRunnable;
         int nowLine;
         java.util.List<Integer> nowHttpLines = java.util.List.of();
@@ -3339,21 +3411,34 @@ public class EditorBuffer implements TabContent {
             nowTestLines = tl;
             nowRunnable = nowRunnable || !tl.isEmpty();
         }
+        // Project main-method glyphs — deliberately do NOT flip `runnable` (that stays "single-file/script/test
+        // runnable", so the generic Run File / file.run never mis-launches a project class as one source file);
+        // the gutter draws these via a separate gate (see the run-slot `enabled` supplier + isRunGlyphLine).
+        java.util.Map<Integer, com.editora.run.MainMethodScanner.MainMethod> nowMainLines = java.util.Map.of();
+        if (mainEligible) {
+            java.util.Map<Integer, com.editora.run.MainMethodScanner.MainMethod> ml = new java.util.LinkedHashMap<>();
+            for (com.editora.run.MainMethodScanner.MainMethod m : com.editora.run.MainMethodScanner.scan(text)) {
+                ml.put(m.line(), m);
+            }
+            nowMainLines = ml;
+        }
         boolean changed = nowRunnable != runnable;
         boolean httpLinesChanged = !nowHttpLines.equals(httpRequestLines);
         boolean makeTargetsChanged = !nowMakeTargets.equals(makeTargets);
         boolean testLinesChanged = !nowTestLines.equals(testLines);
+        boolean mainLinesChanged = !nowMainLines.equals(mainLines);
         int oldLine = runLine;
         runnable = nowRunnable;
         runLine = nowLine;
         httpRequestLines = nowHttpLines;
         makeTargets = nowMakeTargets;
         testLines = nowTestLines;
+        mainLines = nowMainLines;
         if (changed) {
             onRunnableChanged.run();
             refreshGutter(); // the Run slot appeared/disappeared on every row — rebuild the factory
-        } else if (httpLinesChanged || makeTargetsChanged || testLinesChanged) {
-            refreshGutter(); // requests/targets/test methods added/removed — relight the glyphs on the new lines
+        } else if (httpLinesChanged || makeTargetsChanged || testLinesChanged || mainLinesChanged) {
+            refreshGutter(); // requests/targets/test/main methods added/removed — relight the glyphs
         } else if (nowLine != oldLine) {
             // The entry line moved (edits above it) — repaint just the old and new gutter rows.
             if (oldLine >= 0) {

@@ -3262,10 +3262,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                             if (buildOutputToolWindow != null) {
                                 toolWindows.setAvailable(buildOutputToolWindow, anyBuildDetected());
                             }
-                            // A JVM marker (pom/build.gradle) appearing/vanishing flips the JUnit test gutter —
-                            // re-gate every open buffer (setTestGutterEnabled no-ops on an unchanged flag).
+                            // A JVM marker (pom/build.gradle) appearing/vanishing flips the JUnit test gutter and
+                            // the project main-method gutter — re-gate every open buffer (both no-op on an
+                            // unchanged flag).
                             if (tool == BuildTool.MAVEN || tool == BuildTool.GRADLE) {
                                 coordinatorHost.forEachBuffer(MainController.this::applyTestGutter);
+                                coordinatorHost.forEachBuffer(MainController.this::applyMainGutter);
                             }
                         }
 
@@ -4695,6 +4697,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                 .anyMatch(c -> (c.tool() == BuildTool.MAVEN || c.tool() == BuildTool.GRADLE)
                         && c.isEnabled()
                         && c.isDetected());
+    }
+
+    /** Pushes the project main-method gutter gate to a buffer (not Simple mode + local + a JVM project + Java
+     *  run/debug available — resolution rides jdtls's java-debug bundle). */
+    private void applyMainGutter(EditorBuffer buffer) {
+        buffer.setMainGutterEnabled(!simpleModeActive()
+                && isLocalBuffer(buffer)
+                && jvmBuildDetected()
+                && debugCoordinator.debugEffectiveFor("java"));
     }
 
     /** Pushes the JUnit test-gutter gate to a buffer (Test Runner on + not Simple mode + local + JVM project). */
@@ -6202,6 +6213,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Makefile-run rides the same Run-feature gate as Java/Python/shell (setRunEnabled above).
         buffer.setTestRunHandler(this::runSingleTest); // JUnit class/method gutter ▶ → the build tool
         applyTestGutter(buffer); // gated by the Test Runner feature + a detected JVM (Maven/Gradle) project
+        buffer.setMainRunHandler(m -> runCoordinator.runMainClassNamed(m.fqn())); // project main() ▶ → run
+        buffer.setMainDebugHandler(m -> debugCoordinator.debugMainClassNamed(m.fqn())); // editor menu → debug
+        applyMainGutter(buffer); // gated by not-Simple + local + JVM project + Java run/debug available
         // Debugging: the breakpoint gutter gate + change/hover hooks (debuggable languages only).
         debugCoordinator.wireBuffer(buffer);
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
@@ -11435,6 +11449,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyMultiCaret();
         lspCoordinator.applySupport(); // (re)configure LSP: command/enabled change re-detects + re-gates buffers
         debugCoordinator.applySupport(); // (re)configure DAP after LSP (it layers on jdtls)
+        coordinatorHost.forEachBuffer(this::applyMainGutter); // re-gate the project main-method ▶ (needs jdtls+debug)
         applyMarkdownPreviewTheme(); // re-resolve "follow app" previews + the toggle glyph after a theme change
         // Match the console fonts + per-buffer view to the editor font/zoom (shared with the text-zoom path).
         applyFontsAndPerBufferView(settings);
