@@ -419,4 +419,33 @@ class LspManagerTest {
             LspManager.releaseJdtlsWorkspaceName(again);
         }
     }
+
+    // --- java-debug capability (#711) ------------------------------------------------------------
+
+    @Test
+    void providesJavaDebugWhenTheServerAdvertisesTheStartDebugSessionCommand() {
+        // A jdtls that ships the java-debug plugin (e.g. Homebrew's) lists its commands here — that's the
+        // only signal available when there is no locally-located plugin jar to inject.
+        ServerCapabilities caps = new ServerCapabilities();
+        caps.setExecuteCommandProvider(new org.eclipse.lsp4j.ExecuteCommandOptions(List.of(
+                "java.project.refreshDiagnostics", LspManager.JAVA_DEBUG_COMMAND, "java.edit.organizeImports")));
+        assertTrue(LspManager.providesJavaDebug(caps));
+    }
+
+    @Test
+    void doesNotProvideJavaDebugWithoutThatCommand() {
+        ServerCapabilities caps = new ServerCapabilities();
+        caps.setExecuteCommandProvider(
+                new org.eclipse.lsp4j.ExecuteCommandOptions(List.of("java.edit.organizeImports")));
+        assertFalse(LspManager.providesJavaDebug(caps));
+    }
+
+    @Test
+    void providesJavaDebugIsNullSafe() {
+        assertFalse(LspManager.providesJavaDebug(null)); // no capabilities yet (server still initializing)
+        assertFalse(LspManager.providesJavaDebug(new ServerCapabilities())); // no executeCommandProvider
+        ServerCapabilities nullCommands = new ServerCapabilities();
+        nullCommands.setExecuteCommandProvider(new org.eclipse.lsp4j.ExecuteCommandOptions());
+        assertFalse(LspManager.providesJavaDebug(nullCommands)); // provider present, command list null
+    }
 }

@@ -613,6 +613,33 @@ public final class LspManager {
         return caps != null && caps.getSignatureHelpProvider() != null;
     }
 
+    /**
+     * Whether <b>any</b> running Java server advertises the java-debug commands — true when jdtls already has
+     * the plugin (some distributions, e.g. Homebrew's jdtls, ship and auto-load it), so debugging works
+     * without Editora injecting a bundle jar of its own. See {@link #providesJavaDebug}.
+     */
+    public boolean javaDebugCommandsAvailable() {
+        String prefix = sessionKeyPrefix("java");
+        for (Map.Entry<String, LanguageServerSession> e : sessionsByRoot.entrySet()) {
+            if (e.getKey().startsWith(prefix) && providesJavaDebug(e.getValue().capabilities())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The jdtls command that starts a debug session; its presence means the java-debug plugin is loaded. */
+    public static final String JAVA_DEBUG_COMMAND = "vscode.java.startDebugSession";
+
+    /** Pure: whether {@code caps} advertises the java-debug {@code startDebugSession} command (null-safe). */
+    static boolean providesJavaDebug(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null || caps.getExecuteCommandProvider() == null) {
+            return false;
+        }
+        java.util.List<String> commands = caps.getExecuteCommandProvider().getCommands();
+        return commands != null && commands.contains(JAVA_DEBUG_COMMAND);
+    }
+
     /** The signature-help trigger characters {@code file}'s server advertised (usually {@code (} and
      *  {@code ,}), retrigger characters included; empty when not ready / none. */
     public java.util.Set<Character> signatureTriggerCharacters(Path file) {

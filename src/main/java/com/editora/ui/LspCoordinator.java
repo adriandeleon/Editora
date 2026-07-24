@@ -109,6 +109,10 @@ final class LspCoordinator {
         /** Detection finished updating — re-evaluate the active buffer's install banner. */
         void onDetectionSettled();
 
+        /** A server finished {@code initialize}: its capabilities are known, so re-check whether jdtls itself
+         *  provides the java-debug commands (some distributions bundle the plugin — #711). */
+        void onServerCapabilitiesReady();
+
         /**
          * The canonical (symlink-resolved) form of {@code file}, so every consumer of the diagnostics map keys
          * agrees. A server reports diagnostics under whatever URI it chose (some canonicalize, some echo the
@@ -1023,6 +1027,9 @@ final class LspCoordinator {
                     }
                 });
                 requestStructureSymbols(host.activeBuffer()); // the outline can now be populated from the server
+                // Capabilities are known now — a jdtls that bundles java-debug advertises its commands here,
+                // which is the only way to tell without a locally-located plugin jar (#711).
+                ops.onServerCapabilitiesReady();
             }
         }
     }

@@ -3850,6 +3850,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void onServerCapabilitiesReady() {
+                    // A jdtls that ships java-debug (e.g. Homebrew's) advertises the debug commands here —
+                    // there is no local plugin jar to locate, so this is what un-gates debugging (#711).
+                    debugCoordinator.refreshJavaDebugAvailability();
+                    maybeOfferInstall(activeBuffer()); // the install banner may no longer be warranted
+                }
+
+                @Override
                 public Path canonicalize(Path file) {
                     return canonicalPath(file);
                 }
