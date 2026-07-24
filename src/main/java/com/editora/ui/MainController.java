@@ -9113,6 +9113,80 @@ public class MainController implements com.editora.mcp.McpBridge {
         picker.show(stage);
     }
 
+    /**
+     * {@code debug.viaBuild}: debug a Maven/Gradle app by launching it under a suspended JDWP agent via the
+     * build tool, then attaching when the "Listening for transport…" banner appears. Complements jdtls's
+     * launch — the clean path for Gradle ({@code run}/{@code bootRun} {@code --debug-jvm}) and Maven Spring
+     * Boot ({@code spring-boot:run} + JDWP {@code jvmArguments}). Still needs the java-debug bundle (that's the
+     * attach adapter); plain Maven {@code main} has no uniform build-tool debug mechanism (use Debug Main Class).
+     */
+    private void debugViaBuild() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
+            setStatus(tr("status.debug.needJavaFile"));
+            return;
+        }
+        if (!debugCoordinator.debugEffectiveFor("java")) {
+            setStatus(tr("status.debug.unavailable"));
+            return;
+        }
+        java.nio.file.Path routing = b.getPath();
+        java.nio.file.Path root = JavaProjectRoot.find(routing);
+        if (root == null) {
+            setStatus(tr("status.debug.noProject"));
+            return;
+        }
+        if (b.isDirty() && !save(b)) {
+            return;
+        }
+        BuildCoordinator gradle = detectedBuildCoordinator(BuildTool.GRADLE);
+        if (gradle != null) {
+            String task = com.editora.build.SpringBoot.gradleRunTask(readGradleBuildFile(root)); // run / bootRun
+            armDebugAttach(gradle, routing);
+            setStatus(tr("status.debug.viaBuildStarting"));
+            gradle.runTask(com.editora.build.BuildDebug.gradleDebugArgs(task), List.of());
+            return;
+        }
+        BuildCoordinator maven = detectedBuildCoordinator(BuildTool.MAVEN);
+        if (maven != null
+                && com.editora.build.BuildDebug.isSpringBootMavenPom(readTextOrEmpty(root.resolve("pom.xml")))) {
+            armDebugAttach(maven, routing);
+            setStatus(tr("status.debug.viaBuildStarting"));
+            maven.runTask(com.editora.build.BuildDebug.mavenSpringBootDebugArgs(), List.of());
+            return;
+        }
+        setStatus(tr("status.debug.viaBuildUnsupported"));
+    }
+
+    /** The enabled+detected build coordinator for {@code tool}, or null. */
+    private BuildCoordinator detectedBuildCoordinator(BuildTool tool) {
+        for (BuildCoordinator c : buildCoordinators) {
+            if (c.tool() == tool && c.isEnabled() && c.isDetected()) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    /** Watches {@code c}'s next-run output for the JDWP banner, then attaches the debugger (one-shot). */
+    private void armDebugAttach(BuildCoordinator c, java.nio.file.Path routing) {
+        c.setOutputWatcher((line, stderr) -> {
+            int port = com.editora.test.TestDebug.jdwpPort(line);
+            if (port > 0) {
+                c.setOutputWatcher(null);
+                debugCoordinator.attachToPort(routing, "localhost", port);
+            }
+        });
+    }
+
+    private static String readTextOrEmpty(java.nio.file.Path f) {
+        try {
+            return java.nio.file.Files.isRegularFile(f) ? java.nio.file.Files.readString(f) : "";
+        } catch (java.io.IOException e) {
+            return "";
+        }
+    }
+
     /** Picker for the active keybinding theme (the same set as the Settings → Keymaps combo). */
     private void chooseKeymap() {
         QuickOpen<String> picker = new QuickOpen<>(
@@ -13950,6 +14024,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("debug.start", () -> debugCoordinator.ifDebug(debugCoordinator::debugStart)));
         registry.register(
                 Command.of("debug.mainClass", () -> debugCoordinator.ifDebug(debugCoordinator::debugMainClass)));
+        registry.register(Command.of("debug.viaBuild", () -> debugCoordinator.ifDebug(this::debugViaBuild)));
         registry.register(Command.of("debug.stop", () -> debugCoordinator.ifDebug(dapManager::stop)));
         registry.register(Command.of("debug.restart", () -> debugCoordinator.ifDebug(dapManager::restart)));
         registry.register(Command.of("debug.attach", () -> debugCoordinator.ifDebug(debugCoordinator::debugAttach)));

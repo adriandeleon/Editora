@@ -94,6 +94,10 @@ final class BuildCoordinator {
     /** When set, a recognized test run is forwarded here (the Test Results window); null = feature absent. */
     private TestRunHook testRunHook;
 
+    /** A one-shot per-line output observer for the next run (the "Debug via build tool" flow watches the
+     *  streamed output for the JDWP banner). Cleared when the run ends. */
+    private java.util.function.BiConsumer<String, Boolean> outputWatcher;
+
     BuildCoordinator(BuildTool tool, CoordinatorHost host, Ops ops, BuildOutputPanel sharedConsole) {
         this.tool = tool;
         this.host = host;
@@ -394,6 +398,9 @@ final class BuildCoordinator {
 
             @Override
             public void onOutput(String line, boolean stderr) {
+                if (outputWatcher != null) {
+                    outputWatcher.accept(line, stderr); // e.g. the Debug-via-build JDWP-banner watcher
+                }
                 if (claimed) {
                     testRunHook.onTestOutput(line, stderr);
                     String shown = testRunHook.consoleLine(line, stderr);
@@ -407,6 +414,7 @@ final class BuildCoordinator {
 
             @Override
             public void onExit(int code) {
+                outputWatcher = null; // the run is over; drop any JDWP watcher that never fired
                 panel.finished(BuildCoordinator.this, code);
                 tree.setRunning(false);
                 if (claimed) {
@@ -420,6 +428,7 @@ final class BuildCoordinator {
 
             @Override
             public void onError(String message) {
+                outputWatcher = null;
                 panel.failed(BuildCoordinator.this, message);
                 tree.setRunning(false);
                 if (claimed) {
@@ -428,6 +437,12 @@ final class BuildCoordinator {
                 host.setStatus(tr("status.build.failed", tool.displayName(), message));
             }
         });
+    }
+
+    /** Observes the next run's output lines (line, isStderr) until the run ends — the Debug-via-build flow
+     *  watches for the JDWP banner. Set before {@link #runTask}; auto-cleared on run completion. */
+    void setOutputWatcher(java.util.function.BiConsumer<String, Boolean> watcher) {
+        this.outputWatcher = watcher;
     }
 
     /** Injects the Test Results hook (a recognized {@code test} run is mirrored there). Null = feature absent. */
