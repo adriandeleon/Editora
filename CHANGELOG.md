@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java debugging no longer stays off when your language server already includes it** — some jdtls
+  distributions (Homebrew's, for one) ship and load the java-debug plugin themselves. Editora only looked for
+  its own copy of that plugin on disk, so it reported debugging as unavailable — which also pushed *Run Main
+  Class* onto the slower build-tool fallback. It now recognises a language server that provides the debug
+  commands, so Java Run/Debug work with no second copy to install.
+
 - **Multi-module Maven Run without the language server** — running a project main class via the Maven
   classpath fallback now resolves sibling-module dependencies in a reactor build (it runs from the reactor
   root with `-pl <module> -am` instead of only the module), so a submodule that depends on an uninstalled

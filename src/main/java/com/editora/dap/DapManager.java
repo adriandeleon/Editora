@@ -173,8 +173,25 @@ public final class DapManager implements DapClient.Host {
         return bundlePaths;
     }
 
+    /**
+     * Set when the running jdtls already advertises the java-debug commands — some distributions (e.g.
+     * Homebrew's jdtls) ship and auto-load the plugin, so there is no jar for {@link #locate()} to find and
+     * nothing to inject, yet debugging works. Pushed by the controller from the LSP capabilities (#711).
+     */
+    private volatile boolean serverProvidesJavaDebug;
+
+    /** Records whether the running Java server itself provides the debug commands (see the field doc). */
+    public void setServerProvidesJavaDebug(boolean provided) {
+        this.serverProvidesJavaDebug = provided;
+    }
+
+    /** Whether Java debugging can run: we located a bundle to inject, <b>or</b> jdtls already provides it. */
     public boolean isAdapterAvailable() {
-        return !bundlePaths.isEmpty();
+        return javaDebugUsable();
+    }
+
+    private boolean javaDebugUsable() {
+        return enabled && (!bundlePaths.isEmpty() || serverProvidesJavaDebug);
     }
 
     /** Whether a usable debug adapter is available for {@code language} (after detection). */
@@ -183,7 +200,7 @@ public final class DapManager implements DapClient.Host {
             return false;
         }
         return switch (language) {
-            case "java" -> !bundlePaths.isEmpty();
+            case "java" -> javaDebugUsable();
             case "python" -> pythonAvailable;
             case "javascript" -> jsAvailable;
             default -> false;
@@ -411,7 +428,7 @@ public final class DapManager implements DapClient.Host {
     }
 
     private boolean ready(Path file) {
-        if (!enabled || bundlePaths.isEmpty()) {
+        if (!javaDebugUsable()) {
             listener.onError("Java debugging is not available (enable it and install the java-debug plugin).");
             return false;
         }
@@ -497,7 +514,7 @@ public final class DapManager implements DapClient.Host {
      * any error / when debugging isn't available. Callback runs on the FX thread.
      */
     public void resolveMainClasses(Path routingFile, Consumer<List<MainClassOption>> cb) {
-        if (!enabled || bundlePaths.isEmpty() || routingFile == null) {
+        if (!javaDebugUsable() || routingFile == null) {
             cb.accept(List.of());
             return;
         }

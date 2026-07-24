@@ -249,6 +249,20 @@ final class DebugCoordinator {
         }
     }
 
+    /**
+     * Re-reads whether the running jdtls itself advertises the java-debug commands and re-gates. Some
+     * distributions (e.g. Homebrew's jdtls) ship and auto-load the plugin, so {@code locate()} finds no jar to
+     * inject yet debugging works — capabilities are only known once a server finishes {@code initialize}, so
+     * the controller calls this from the server-ready event (#711). Light: no bundle push, no restart.
+     */
+    void refreshJavaDebugAvailability() {
+        boolean before = dapManager.isLanguageAvailable("java");
+        dapManager.setServerProvidesJavaDebug(lspManager.javaDebugCommandsAvailable());
+        if (dapManager.isLanguageAvailable("java") != before) {
+            applyGating(); // the breakpoint gutter + Debug window just became (un)available
+        }
+    }
+
     /** Per-buffer breakpoint-gutter gate (only for debuggable languages) + Debug tool-window availability. */
     void applyGating() {
         boolean on = debugSupportEnabled();
