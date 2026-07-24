@@ -64,9 +64,10 @@ final class RunCoordinator {
          *  dependency:build-classpath} + {@code target/classes}); delivers null/empty on failure. FX thread. */
         void resolveMavenClasspath(Path root, Consumer<List<String>> cb);
 
-        /** Runs the Gradle {@code run} task via the build tool (streams to Build Output) — the no-jdtls Gradle
-         *  fallback, which runs the project's configured main class. */
-        void runGradleRunTask();
+        /** Runs the Gradle Run task via the build tool (streams to Build Output) — the no-jdtls Gradle
+         *  fallback. Runs {@code bootRun} for a Spring Boot project, else {@code run}; {@code root} locates the
+         *  build script. */
+        void runGradleRunTask(Path root);
     }
 
     private final CoordinatorHost host;
@@ -209,7 +210,7 @@ final class RunCoordinator {
         } else if (ops.mavenProjectAt(root)) {
             runViaMaven(b, root, targetFqn); // fallback: resolve the classpath with mvn, run `java -cp`
         } else if (ops.gradleProjectAt(root)) {
-            ops.runGradleRunTask(); // Gradle has no clean classpath dump — delegate to the `run` task
+            ops.runGradleRunTask(root); // Gradle has no clean classpath dump — delegate to run/bootRun
             host.setStatus(tr("status.run.gradleFallback"));
         } else {
             host.setStatus(tr("status.run.javaUnavailable"));

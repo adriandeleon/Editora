@@ -3626,15 +3626,36 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void runGradleRunTask() {
+        public void runGradleRunTask(java.nio.file.Path root) {
+            String task =
+                    com.editora.build.SpringBoot.gradleRunTask(readGradleBuildFile(root)); // bootRun for Spring Boot
             for (BuildCoordinator c : buildCoordinators) {
                 if (c.tool() == BuildTool.GRADLE && c.isEnabled() && c.isDetected()) {
-                    c.runTask(List.of("run"), List.of());
+                    c.runTask(List.of(task), List.of());
                     return;
                 }
             }
         }
     });
+
+    /** Reads the Gradle build script at {@code root} ({@code build.gradle} or {@code .kts}) for the Spring
+     *  Boot sniff, or "" when neither is readable. */
+    private static String readGradleBuildFile(java.nio.file.Path root) {
+        if (root == null) {
+            return "";
+        }
+        for (String name : List.of("build.gradle", "build.gradle.kts")) {
+            java.nio.file.Path f = root.resolve(name);
+            if (java.nio.file.Files.isRegularFile(f)) {
+                try {
+                    return java.nio.file.Files.readString(f);
+                } catch (java.io.IOException e) {
+                    return "";
+                }
+            }
+        }
+        return "";
+    }
 
     /** The IntelliJ-style Test Results feature: it hooks each build coordinator (see the injection where the
      *  tool windows are built) and builds the results tree from a recognized {@code test} run. See

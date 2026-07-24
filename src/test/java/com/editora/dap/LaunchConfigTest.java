@@ -14,7 +14,7 @@ class LaunchConfigTest {
     @Test
     void launchEmitsRequiredFieldsAndOmitsBlankOptionals() {
         Map<String, Object> m =
-                LaunchConfig.launch("com.example.Main", "", List.of(), List.of(), "", "", List.of(), false);
+                LaunchConfig.launch("com.example.Main", "", List.of(), List.of(), "", "", List.of(), "", false);
         assertEquals("java", m.get("type"));
         assertEquals("launch", m.get("request"));
         assertEquals("com.example.Main", m.get("mainClass"));
@@ -27,6 +27,14 @@ class LaunchConfigTest {
         assertFalse(m.containsKey("javaExec"));
         assertFalse(m.containsKey("cwd"));
         assertFalse(m.containsKey("args"));
+        assertFalse(m.containsKey("vmArgs"));
+    }
+
+    @Test
+    void launchEmitsVmArgsWhenProvided() {
+        Map<String, Object> m =
+                LaunchConfig.launch("M", "", List.of(), List.of(), "", "", List.of(), "-Xmx512m -Dk=v", false);
+        assertEquals("-Xmx512m -Dk=v", m.get("vmArgs")); // verbatim string, not tokenized
     }
 
     @Test
@@ -39,6 +47,7 @@ class LaunchConfigTest {
                 "/usr/bin/java",
                 "/work",
                 List.of("--flag", "x"),
+                "",
                 true);
         assertEquals("proj", m.get("projectName"));
         assertEquals(List.of("/cp/a.jar", "/cp/b.jar"), m.get("classPaths"));
@@ -55,7 +64,7 @@ class LaunchConfigTest {
         // Run passes exactly those. Joining them back on a space is lossy: main() would receive 3. The
         // collision is the proof — [hello world, second] and [hello, world, second] join to one same string.
         List<String> argv = List.of("hello world", "second");
-        Map<String, Object> m = LaunchConfig.launch("A", "", List.of(), List.of(), "", "", argv, false);
+        Map<String, Object> m = LaunchConfig.launch("A", "", List.of(), List.of(), "", "", argv, "", false);
         assertEquals(argv, m.get("args"), "the debuggee must get the same argv the Run feature passes");
 
         // The same argv reaches debugpy/node the same way (this sibling was always correct).
