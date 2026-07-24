@@ -349,6 +349,8 @@ final class LanguageServerSession implements LanguageClient {
         td.setReferences(new ReferencesCapabilities());
         td.setDocumentHighlight(new org.eclipse.lsp4j.DocumentHighlightCapabilities()); // occurrences (#675)
         td.setInlayHint(new org.eclipse.lsp4j.InlayHintCapabilities()); // parameter/type hints (#681)
+        td.setCallHierarchy(new org.eclipse.lsp4j.CallHierarchyCapabilities()); // who-calls-this (#682)
+        td.setTypeHierarchy(new org.eclipse.lsp4j.TypeHierarchyCapabilities()); // super/subtypes (#682)
         // Rename (#676): prepareSupport lets the server validate the position + hand us the placeholder.
         var rename = new org.eclipse.lsp4j.RenameCapabilities();
         rename.setPrepareSupport(true);
@@ -837,6 +839,78 @@ final class LanguageServerSession implements LanguageClient {
         return server.getTextDocumentService()
                 .inlayHint(params)
                 .<List<org.eclipse.lsp4j.InlayHint>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
+    }
+
+    /** Call-hierarchy anchor at a position ({@code textDocument/prepareCallHierarchy}) → items or empty. */
+    CompletableFuture<List<org.eclipse.lsp4j.CallHierarchyItem>> prepareCallHierarchy(String uri, Position pos) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        var params = new org.eclipse.lsp4j.CallHierarchyPrepareParams(new TextDocumentIdentifier(uri), pos);
+        return server.getTextDocumentService()
+                .prepareCallHierarchy(params)
+                .<List<org.eclipse.lsp4j.CallHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
+    }
+
+    /** Incoming calls (callers) of a call-hierarchy item (#682). */
+    CompletableFuture<List<org.eclipse.lsp4j.CallHierarchyIncomingCall>> incomingCalls(
+            org.eclipse.lsp4j.CallHierarchyItem item) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return server.getTextDocumentService()
+                .callHierarchyIncomingCalls(new org.eclipse.lsp4j.CallHierarchyIncomingCallsParams(item))
+                .<List<org.eclipse.lsp4j.CallHierarchyIncomingCall>>thenApply(
+                        l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
+    }
+
+    /** Outgoing calls (callees) of a call-hierarchy item (#682). */
+    CompletableFuture<List<org.eclipse.lsp4j.CallHierarchyOutgoingCall>> outgoingCalls(
+            org.eclipse.lsp4j.CallHierarchyItem item) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return server.getTextDocumentService()
+                .callHierarchyOutgoingCalls(new org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams(item))
+                .<List<org.eclipse.lsp4j.CallHierarchyOutgoingCall>>thenApply(
+                        l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
+    }
+
+    /** Type-hierarchy anchor at a position ({@code textDocument/prepareTypeHierarchy}) → items or empty. */
+    CompletableFuture<List<org.eclipse.lsp4j.TypeHierarchyItem>> prepareTypeHierarchy(String uri, Position pos) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        var params = new org.eclipse.lsp4j.TypeHierarchyPrepareParams(new TextDocumentIdentifier(uri), pos);
+        return server.getTextDocumentService()
+                .prepareTypeHierarchy(params)
+                .<List<org.eclipse.lsp4j.TypeHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
+    }
+
+    /** Supertypes of a type-hierarchy item (#682). */
+    CompletableFuture<List<org.eclipse.lsp4j.TypeHierarchyItem>> supertypes(org.eclipse.lsp4j.TypeHierarchyItem item) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return server.getTextDocumentService()
+                .typeHierarchySupertypes(new org.eclipse.lsp4j.TypeHierarchySupertypesParams(item))
+                .<List<org.eclipse.lsp4j.TypeHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
+    }
+
+    /** Subtypes of a type-hierarchy item (#682). */
+    CompletableFuture<List<org.eclipse.lsp4j.TypeHierarchyItem>> subtypes(org.eclipse.lsp4j.TypeHierarchyItem item) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return server.getTextDocumentService()
+                .typeHierarchySubtypes(new org.eclipse.lsp4j.TypeHierarchySubtypesParams(item))
+                .<List<org.eclipse.lsp4j.TypeHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
     }
 

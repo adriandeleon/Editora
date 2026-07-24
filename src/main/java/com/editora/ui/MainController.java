@@ -301,6 +301,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private ToolWindow problemsToolWindow;
     private ToolWindow referencesToolWindow;
+    private ToolWindow hierarchyToolWindow;
     /** Run: streams a runnable file's output; see {@link RunCoordinator}. The tool window stays here. */
     private ToolWindow runToolWindow;
     /** External Tools: the feature coordinator owns the service/panel/commands (see {@link ExternalToolCoordinator}). */
@@ -2400,6 +2401,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::find,
                 lspCoordinator.referencesPanel(),
                 "tool.references");
+        hierarchyToolWindow = new ToolWindow(
+                "hierarchy",
+                tr("toolwindow.hierarchy"),
+                ToolWindow.Side.BOTTOM,
+                Icons::structure,
+                lspCoordinator.hierarchyPanel(),
+                "tool.hierarchy");
         runToolWindow = new ToolWindow(
                 "run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM, Icons::run, runCoordinator.panel(), "tool.run");
         debugCoordinator = new DebugCoordinator(
@@ -2599,6 +2607,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(markdownLintToolWindow);
         toolWindows.register(problemsToolWindow);
         toolWindows.register(referencesToolWindow, false); // default-hidden; shown on demand by Find References
+        toolWindows.register(hierarchyToolWindow, false); // default-hidden; shown on demand by lsp.callHierarchy (#682)
         toolWindows.register(runToolWindow);
         toolWindows.setAvailable(runToolWindow, false); // shown only when the active file is a compact source
         toolWindows.register(debugToolWindow);
@@ -3642,12 +3651,22 @@ public class MainController implements com.editora.mcp.McpBridge {
                     if (referencesToolWindow != null) {
                         toolWindows.setAvailable(referencesToolWindow, available);
                     }
+                    if (hierarchyToolWindow != null) {
+                        toolWindows.setAvailable(hierarchyToolWindow, available); // same LSP-managed gate (#682)
+                    }
                 }
 
                 @Override
                 public void openReferencesWindow() {
                     if (referencesToolWindow != null) {
                         toolWindows.open(referencesToolWindow);
+                    }
+                }
+
+                @Override
+                public void openHierarchyWindow() {
+                    if (hierarchyToolWindow != null) {
+                        toolWindows.open(hierarchyToolWindow);
                     }
                 }
 
@@ -13641,6 +13660,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // LSP. Gated by the "Enable LSP" setting (default off); commands no-op with a status when off.
         registry.register(Command.of("tool.problems", () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
         registry.register(Command.of("tool.references", () -> ifLsp(() -> toolWindows.toggle(referencesToolWindow))));
+        registry.register(Command.of("tool.hierarchy", () -> ifLsp(() -> toolWindows.toggle(hierarchyToolWindow))));
         registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(lspCoordinator::gotoDefinition)));
         registry.register(Command.of("lsp.findReferences", () -> ifLsp(lspCoordinator::findReferences)));
         registry.register(Command.of("lsp.gotoSymbol", () -> ifLsp(lspCoordinator::gotoSymbolInWorkspace)));
@@ -13650,6 +13670,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("lsp.codeActions", () -> ifLsp(lspCoordinator::codeActions)));
         registry.register(Command.of("lsp.signatureHelp", () -> ifLsp(() -> lspCoordinator.signatureHelp(true))));
         registry.register(Command.of("lsp.rename", () -> ifLsp(lspCoordinator::rename)));
+        registry.register(Command.of("lsp.callHierarchy", () -> ifLsp(lspCoordinator::callHierarchy)));
+        registry.register(Command.of("lsp.typeHierarchy", () -> ifLsp(lspCoordinator::typeHierarchy)));
         registry.register(Command.of("view.toggleLsp", this::toggleLsp));
         registry.register(Command.of(
                 "view.toggleSemanticHighlight",

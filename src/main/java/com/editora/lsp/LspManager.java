@@ -815,6 +815,166 @@ public final class LspManager {
         return sb.toString().strip();
     }
 
+    // --- Call / type hierarchy (#682) ----------------------------------------------------------
+
+    /** One hierarchy row: display fields + a navigable position ({@code file} null for a non-file URI,
+     *  e.g. a JDK class) + the opaque lsp4j item ({@code raw}) used to expand its children. */
+    public record HierarchyNode(
+            String name, String detail, String kindName, Path file, int line, int col, Object raw) {}
+
+    /** True if {@code file}'s server is ready and advertises call hierarchy (#682). */
+    public boolean supportsCallHierarchy(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && callHierarchyProvider(s.capabilities());
+    }
+
+    /** True if {@code file}'s server is ready and advertises type hierarchy (#682). */
+    public boolean supportsTypeHierarchy(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && typeHierarchyProvider(s.capabilities());
+    }
+
+    /** Pure: whether a server's capabilities include {@code callHierarchyProvider} (null-safe). */
+    static boolean callHierarchyProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null) {
+            return false;
+        }
+        var p = caps.getCallHierarchyProvider();
+        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
+    }
+
+    /** Pure: whether a server's capabilities include {@code typeHierarchyProvider} (null-safe). */
+    static boolean typeHierarchyProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null) {
+            return false;
+        }
+        var p = caps.getTypeHierarchyProvider();
+        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
+    }
+
+    /** The call-hierarchy anchor item(s) at a 0-based position, delivered on the FX thread (#682). */
+    public void prepareCallHierarchy(Path file, int line, int character, Consumer<List<HierarchyNode>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        s.prepareCallHierarchy(uri(file), new Position(line, character)).whenComplete((items, e) -> {
+            List<HierarchyNode> out = new ArrayList<>();
+            if (e == null && items != null) {
+                for (var i : items) {
+                    if (i != null) {
+                        out.add(callNode(i));
+                    }
+                }
+            }
+            Platform.runLater(() -> cb.accept(out));
+        });
+    }
+
+    /** The callers ({@code incoming=true}) or callees of a call-hierarchy node's {@code raw} item. */
+    public void callHierarchyChildren(Path anchor, Object raw, boolean incoming, Consumer<List<HierarchyNode>> cb) {
+        LanguageServerSession s = sessionFor(anchor);
+        if (s == null || !(raw instanceof org.eclipse.lsp4j.CallHierarchyItem item)) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        if (incoming) {
+            s.incomingCalls(item).whenComplete((calls, e) -> {
+                List<HierarchyNode> out = new ArrayList<>();
+                if (e == null && calls != null) {
+                    for (var c : calls) {
+                        if (c != null && c.getFrom() != null) {
+                            out.add(callNode(c.getFrom()));
+                        }
+                    }
+                }
+                Platform.runLater(() -> cb.accept(out));
+            });
+        } else {
+            s.outgoingCalls(item).whenComplete((calls, e) -> {
+                List<HierarchyNode> out = new ArrayList<>();
+                if (e == null && calls != null) {
+                    for (var c : calls) {
+                        if (c != null && c.getTo() != null) {
+                            out.add(callNode(c.getTo()));
+                        }
+                    }
+                }
+                Platform.runLater(() -> cb.accept(out));
+            });
+        }
+    }
+
+    /** The type-hierarchy anchor item(s) at a 0-based position, delivered on the FX thread (#682). */
+    public void prepareTypeHierarchy(Path file, int line, int character, Consumer<List<HierarchyNode>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        s.prepareTypeHierarchy(uri(file), new Position(line, character)).whenComplete((items, e) -> {
+            List<HierarchyNode> out = new ArrayList<>();
+            if (e == null && items != null) {
+                for (var i : items) {
+                    if (i != null) {
+                        out.add(typeNode(i));
+                    }
+                }
+            }
+            Platform.runLater(() -> cb.accept(out));
+        });
+    }
+
+    /** The supertypes ({@code supertypes=true}) or subtypes of a type-hierarchy node's {@code raw} item. */
+    public void typeHierarchyChildren(Path anchor, Object raw, boolean supertypes, Consumer<List<HierarchyNode>> cb) {
+        LanguageServerSession s = sessionFor(anchor);
+        if (s == null || !(raw instanceof org.eclipse.lsp4j.TypeHierarchyItem item)) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        var fut = supertypes ? s.supertypes(item) : s.subtypes(item);
+        fut.whenComplete((items, e) -> {
+            List<HierarchyNode> out = new ArrayList<>();
+            if (e == null && items != null) {
+                for (var i : items) {
+                    if (i != null) {
+                        out.add(typeNode(i));
+                    }
+                }
+            }
+            Platform.runLater(() -> cb.accept(out));
+        });
+    }
+
+    private static HierarchyNode callNode(org.eclipse.lsp4j.CallHierarchyItem i) {
+        var pos = i.getSelectionRange() != null
+                ? i.getSelectionRange().getStart()
+                : i.getRange() != null ? i.getRange().getStart() : new Position(0, 0);
+        return new HierarchyNode(
+                i.getName() == null ? "" : i.getName(),
+                i.getDetail() == null ? "" : i.getDetail(),
+                i.getKind() == null ? "" : i.getKind().toString().toLowerCase(java.util.Locale.ROOT),
+                uriToPath(i.getUri()),
+                pos.getLine(),
+                pos.getCharacter(),
+                i);
+    }
+
+    private static HierarchyNode typeNode(org.eclipse.lsp4j.TypeHierarchyItem i) {
+        var pos = i.getSelectionRange() != null
+                ? i.getSelectionRange().getStart()
+                : i.getRange() != null ? i.getRange().getStart() : new Position(0, 0);
+        return new HierarchyNode(
+                i.getName() == null ? "" : i.getName(),
+                i.getDetail() == null ? "" : i.getDetail(),
+                i.getKind() == null ? "" : i.getKind().toString().toLowerCase(java.util.Locale.ROOT),
+                uriToPath(i.getUri()),
+                pos.getLine(),
+                pos.getCharacter(),
+                i);
+    }
+
     /** True if {@code file}'s server is ready and advertises rename (#676). */
     public boolean supportsRename(Path file) {
         LanguageServerSession s = sessionFor(file);

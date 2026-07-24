@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Call & type hierarchy (LSP)** — `LSP: Call Hierarchy` shows who calls the method under the caret (or
+  what it calls — flip with the Callers/Callees toggle) in a new **Hierarchy** tool window, each level
+  fetched from the language server as you expand it; `LSP: Type Hierarchy` does the same for a type's
+  supertypes and subtypes. Enter or double-click jumps to any entry. (#682)
+
 - **Inlay hints (LSP)** — the language server's parameter-name and inferred-type hints, drawn as grey
   italic annotations after each line (aggregated per line). Off by default — toggle in Settings → Code
   Completion or with `Toggle Inlay Hints` in the palette; costs nothing while off. (#681)
