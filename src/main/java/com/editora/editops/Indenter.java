@@ -490,4 +490,66 @@ public final class Indenter {
     private static String lineAfter(String text, int caret) {
         return text.substring(caret, lineEnd(text, caret));
     }
+
+    /**
+     * Converts the <b>leading</b> indentation of every line between tabs and spaces — VS Code's
+     * {@code editor.action.indentationToSpaces} / {@code indentationToTabs}. Only the leading whitespace run
+     * of each line is rewritten; alignment and content after the first non-whitespace char (so anything
+     * inside a string too) are left untouched, and a whitespace-only line is left exactly as-is so trailing
+     * whitespace isn't altered. Tab width is measured against tab stops. Returns {@code text} unchanged when
+     * it is null/empty. Idempotent, and each direction reverses the other on a cleanly-indented file.
+     */
+    public static String convertIndentation(String text, boolean toSpaces, int tabSize) {
+        if (text == null || text.isEmpty() || tabSize < 1) {
+            return text;
+        }
+        StringBuilder out = new StringBuilder(text.length());
+        int i = 0;
+        int n = text.length();
+        while (i < n) {
+            int lineEnd = text.indexOf('\n', i);
+            boolean lastLine = lineEnd < 0;
+            if (lastLine) {
+                lineEnd = n;
+            }
+            // Measure the leading whitespace run in tab-stop-aware columns.
+            int ws = i;
+            int col = 0;
+            while (ws < lineEnd) {
+                char c = text.charAt(ws);
+                if (c == ' ') {
+                    col++;
+                } else if (c == '\t') {
+                    col += tabSize - (col % tabSize);
+                } else {
+                    break;
+                }
+                ws++;
+            }
+            if (ws == lineEnd) {
+                out.append(text, i, lineEnd); // whitespace-only / empty line → leave verbatim
+            } else {
+                out.append(rebuildIndent(col, toSpaces, tabSize)).append(text, ws, lineEnd);
+            }
+            if (!lastLine) {
+                out.append('\n');
+            }
+            i = lineEnd + 1;
+            if (lastLine) {
+                break;
+            }
+        }
+        return out.toString();
+    }
+
+    /** {@code col} columns of indentation as all spaces, or as tabs-to-the-tab-stop plus trailing spaces. */
+    private static String rebuildIndent(int col, boolean toSpaces, int tabSize) {
+        if (col <= 0) {
+            return "";
+        }
+        if (toSpaces) {
+            return " ".repeat(col);
+        }
+        return "\t".repeat(col / tabSize) + " ".repeat(col % tabSize);
+    }
 }

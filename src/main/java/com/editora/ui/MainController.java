@@ -13205,6 +13205,32 @@ public class MainController implements com.editora.mcp.McpBridge {
         lineTransform(before -> com.editora.editops.AlignRegexp.align(before, regex));
     }
 
+    /**
+     * VS Code {@code indentationToSpaces}/{@code indentationToTabs}: rewrite the whole file's leading
+     * indentation between tabs and spaces (one undoable edit). Only leading whitespace is touched.
+     */
+    private void convertIndentation(boolean toSpaces) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        String text = area.getText();
+        String after = com.editora.editops.Indenter.convertIndentation(text, toSpaces, buffer.getTabSize());
+        if (after.equals(text)) {
+            setStatus(tr("status.indent.noChange"));
+            return;
+        }
+        int caret = area.getCaretPosition();
+        area.replaceText(after);
+        area.moveTo(Math.min(caret, area.getLength()));
+        area.requestFollowCaret();
+        setStatus(tr(toSpaces ? "status.indent.toSpaces" : "status.indent.toTabs"));
+    }
+
     private void lineTransform(java.util.function.UnaryOperator<String> op) {
         if (!activeEditable()) {
             return;
@@ -14454,6 +14480,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 "edit.trimTrailingWhitespace", () -> lineTransform(com.editora.editops.LineTransforms::trimTrailing)));
         registry.register(Command.of("edit.tabify", this::tabifyRegion));
         registry.register(Command.of("edit.untabify", this::untabifyRegion));
+        registry.register(Command.of("edit.indentationToSpaces", () -> convertIndentation(true)));
+        registry.register(Command.of("edit.indentationToTabs", () -> convertIndentation(false)));
         registry.register(Command.of("edit.alignRegexp", this::alignRegexpRegion));
         registry.register(Command.of("edit.occur", this::occur));
         // C-a: smart line start — first press to the beginning of the line's text (first non-whitespace),
