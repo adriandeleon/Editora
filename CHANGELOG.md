@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Subword navigation** — move and delete by camelCase / snake_case parts: stepping through `getUserName`
+  lands on `get` → `User` → `Name`, and acronyms split correctly (`HTMLParser` → `HTML` `Parser`). Four
+  palette commands (Go: Forward/Backward Subword, Edit: Delete Subword Forward/Backward); palette-discoverable
+  everywhere, and bind them to a key from Settings → Keymap if you want VS Code's `Ctrl+Alt+←/→`.
 - **Convert indentation** — two commands (palette: "Convert Indentation to Spaces" / "…to Tabs") rewrite the
   whole file's leading indentation between tabs and spaces. Only leading whitespace is touched — alignment,
   in-line content and string contents are left alone — and each direction reverses the other.

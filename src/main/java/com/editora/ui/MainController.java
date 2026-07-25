@@ -14507,6 +14507,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of(
                 "nav.wordBackward",
                 () -> moveAndFollow(a -> a.moveTo(prevWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
+        registry.register(Command.of(
+                "nav.subwordForward",
+                () -> moveAndFollow(
+                        a -> a.moveTo(TextNav.nextSubwordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
+        registry.register(Command.of(
+                "nav.subwordBackward",
+                () -> moveAndFollow(
+                        a -> a.moveTo(TextNav.prevSubwordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
+        registry.register(Command.of("edit.deleteSubwordForward", () -> deleteSubword(true)));
+        registry.register(Command.of("edit.deleteSubwordBackward", () -> deleteSubword(false)));
         registry.register(Command.of("nav.pageDown", () -> {
             if (!pageActivePreview(true)) {
                 moveAndFollow(a -> a.nextPage(selPolicy()));
@@ -14606,6 +14616,33 @@ public class MainController implements com.editora.mcp.McpBridge {
             return new com.editora.editops.EmacsEdits.Edit(caret, eol, "", caret);
         }
         return eol < text.length() ? new com.editora.editops.EmacsEdits.Edit(caret, caret + 1, "", caret) : null;
+    }
+
+    /**
+     * VS Code {@code deleteWordPartLeft}/{@code Right}: delete from the caret to the next/previous subword
+     * boundary as one undoable edit. Plain delete (not the kill ring), matching VS Code. Acts on the primary
+     * caret only — like the Emacs word/sexp commands, it does not fan out to multiple carets.
+     */
+    private void deleteSubword(boolean forward) {
+        if (!activeEditable()) {
+            return;
+        }
+        CodeArea area = activeArea();
+        if (area == null || area.getSelection().getLength() > 0) {
+            if (area != null && area.getSelection().getLength() > 0) {
+                area.replaceSelection(""); // a selection deletes normally
+            }
+            return;
+        }
+        int caret = area.getCaretPosition();
+        String text = area.getText();
+        int target = forward ? TextNav.nextSubwordBoundary(text, caret) : TextNav.prevSubwordBoundary(text, caret);
+        if (target == caret) {
+            return;
+        }
+        int from = Math.min(caret, target);
+        int to = Math.max(caret, target);
+        area.deleteText(from, to);
     }
 
     /** Position of the next word boundary at or after {@code from}: skip non-word chars, then word chars. */
