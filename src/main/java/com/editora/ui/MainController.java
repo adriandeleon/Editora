@@ -11742,6 +11742,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (welcomeTab != null) {
             welcomePane.setFontScale(settings.getFontZoom()); // scale Welcome text to the current zoom (#540)
         }
+        if (doctorTab != null) {
+            doctorCoordinator.pane().setFontScale(settings.getFontZoom()); // scale the Doctor tab like Welcome
+        }
         for (Tab t : tabPane.getTabs()) {
             if (t.getUserData() instanceof PrReviewPane pr) {
                 pr.setFontScale(settings.getFontZoom()); // scale the PR review tab like Welcome

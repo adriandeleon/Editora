@@ -60,4 +60,29 @@ class DoctorTabFxTest {
             fx.dispose();
         }
     }
+
+    @Test
+    void textZoomRescalesTheOpenDoctorTabLikeWelcome() throws Exception {
+        FxWindowFixture fx = FxWindowFixture.create();
+        try {
+            DoctorCoordinator doctor = FxTestSupport.field(fx.controller, "doctorCoordinator");
+            doctor.probeOverrideForTest = spec -> spec.placeholder().ok("stubbed");
+            CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+            DoctorPane pane = doctor.pane();
+
+            FxTestSupport.runOnFx(() -> registry.run("view.textZoomReset"));
+            FxTestSupport.runOnFx(() -> registry.run("view.doctor"));
+            // Opening scales to the current 100% zoom.
+            assertEquals("-fx-font-size: 1.0em;", FxTestSupport.callOnFx(pane::getStyle));
+
+            // Zooming while the tab is open must re-scale it live (the gap this fix closes).
+            FxTestSupport.runOnFx(() -> registry.run("view.textZoomIn"));
+            assertEquals("-fx-font-size: 1.1em;", FxTestSupport.callOnFx(pane::getStyle));
+
+            FxTestSupport.runOnFx(() -> registry.run("view.textZoomReset"));
+            assertEquals("-fx-font-size: 1.0em;", FxTestSupport.callOnFx(pane::getStyle));
+        } finally {
+            fx.dispose();
+        }
+    }
 }
