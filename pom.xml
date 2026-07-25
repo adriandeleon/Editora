@@ -506,6 +506,23 @@
                                         </limit>
                                     </limits>
                                 </rule>
+                                <!-- CLASS-level floors. A PACKAGE floor cannot protect these: com.editora.ui
+                                     is ~33k lines, so LspCoordinator (1k) could fall from 38% to zero and
+                                     move the package number by ~1 point. Where coverage was built
+                                     deliberately, pin the class. -->
+                                <rule>
+                                    <element>CLASS</element>
+                                    <includes>
+                                        <include>com.editora.ui.LspCoordinator</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.34</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
                                 <!-- Tier D (~0.45): com.editora.lsp. Two classes here dominate the line
                                      count and both talk to a forked subprocess, so the ceiling is lower than
                                      a pure package's — but the floor exists because this package produced

@@ -52,10 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Language-server test coverage** — the two classes that build every request Editora sends to a language
   server were reachable only through a forked subprocess, so nothing checked what actually goes on the wire.
-  They now have in-process test seams and 73 new tests covering the wire format, the capabilities we declare,
-  session lifetime (idle eviction, crash recovery, per-project workspaces) and every request/response
-  round-trip — including regressions for the four defects found in the recent audit. No behaviour change;
-  this is why the next one gets caught by the suite instead of by you.
+  They now have in-process test seams and 121 new tests covering the wire format, the capabilities we declare,
+  session lifetime (idle eviction, crash recovery, per-project workspaces), every request/response round-trip,
+  the per-buffer gating, diagnostics routing, and the rename/quick-fix path that writes and moves files —
+  including regressions for the four defects found in the recent audit. No behaviour change; this is why the
+  next one gets caught by the suite instead of by you.
 
 ### Fixed
 
