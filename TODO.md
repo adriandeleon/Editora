@@ -3,6 +3,21 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP coverage floors + the workspace-edit apply path (round 4)** — closes the LSP testing arc.
+      **`LspWorkspaceEditFxTest` (10)** covers the one LSP path that *writes and moves files on disk*: the
+      **all-or-nothing** contract, asserted by checking the untouched files afterwards rather than the
+      returned boolean (a `false` alone cannot distinguish "refused" from "half-applied, then reported
+      failure"); a rename that would **clobber an existing file** is refused *up front*, before the text
+      edits land; overwrite-when-the-server-says-so; creating a missing destination directory; and the two
+      shapes `WorkspaceEditMapper` refuses outright (create/delete resource ops, a text edit *after* a
+      rename). **Coverage floor:** a **CLASS-level** jacoco rule on `com.editora.ui.LspCoordinator` (0.34
+      against 42.0%). A *package* floor was the obvious move and would have been **useless** — `com.editora.ui`
+      is ~33k lines, so the coordinator could fall from 42% to zero and move the package number by about one
+      point. **The rule itself was verified to bite**: raising the minimum to 0.99 produces
+      `Rule violated for class com.editora.ui.LspCoordinator`, which matters because a `CLASS` include that
+      names the class wrongly silently protects nothing — the same shape as #723. Result: `LspCoordinator`
+      **38.6% → 42.0%**; `com.editora.ui` overall is 36.1% (note the FX tests carry most of it — a run that
+      excludes them reads ~3%).
 - [x] **LspCoordinator coverage (round 3)** — the last big untested piece of the LSP feature (1,004 lines,
       **25.4%**). Three FX classes, 38 tests, all mutation-verified. **`LspCoordinatorSyncFxTest` (17)** — the
       nine-term eligibility conjunction in `syncBuffer`, one test per term, because each exists for a reason

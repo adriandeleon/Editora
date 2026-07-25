@@ -1609,7 +1609,9 @@ final class LspCoordinator {
         return wordAt(area.getParagraph(area.getCurrentParagraph()).getText(), area.getCaretColumn());
     }
 
-    private boolean applyWorkspaceEdits(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
+    /** Package-private so {@code LspWorkspaceEditFxTest} can drive it: this is the only LSP path that
+     *  writes and MOVES files on disk, so its all-or-nothing refusals need direct tests. */
+    boolean applyWorkspaceEdits(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
         var files = mapped.edits();
         java.util.List<EditorBuffer> buffers = new java.util.ArrayList<>(files.size());
         for (var fe : files) {
