@@ -56,6 +56,8 @@ public class FindReplaceBar extends HBox {
     private List<int[]> matches = List.of();
     private int activeIndex = -1;
     private int searchAnchor; // caret offset when the search started — incremental jumps anchor here
+    /** Invoked on Alt+Enter in the find field to turn all matches into carets (wired by MainController). */
+    private Runnable onSelectAllMatches;
 
     /**
      * Find-in-selection scope as {@code [scopeStart, scopeEnd)}, or -1/-1 for the whole document. Kept
@@ -117,6 +119,10 @@ public class FindReplaceBar extends HBox {
         findField.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ESCAPE) {
                 hideBar();
+            } else if (e.getCode() == KeyCode.ENTER && e.isAltDown() && onSelectAllMatches != null) {
+                // Alt+Enter: turn every match into a caret (VS Code selectAllMatches).
+                onSelectAllMatches.run();
+                e.consume();
             }
         });
         // Incremental: re-search (debounced) on query or option changes.
@@ -307,6 +313,16 @@ public class FindReplaceBar extends HBox {
 
     public boolean isShown() {
         return isVisible();
+    }
+
+    /** The current match ranges for the live query (empty when nothing matches / the bar is closed). */
+    public List<int[]> currentMatches() {
+        return matches;
+    }
+
+    /** Wires the Alt+Enter "select all matches" action (turns every match into a caret). */
+    public void setOnSelectAllMatches(Runnable action) {
+        this.onSelectAllMatches = action;
     }
 
     private CodeArea area() {

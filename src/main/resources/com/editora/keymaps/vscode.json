@@ -55,5 +55,6 @@
   "M-S-down": "edit.duplicateLine",
   "M-S-right": "edit.expandSelection",
   "M-S-left": "edit.shrinkSelection",
-  "C-S-\\": "nav.matchingBracket"
+  "C-S-\\": "nav.matchingBracket",
+  "C-S-l": "edit.selectAllOccurrences"
 }
