@@ -8339,7 +8339,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.copiedLine"));
             return;
         }
-        area.copy();
+        // Copy the selection as plain text plus, when enabled, a syntax-highlighted HTML flavor; fall back
+        // to RichTextFX's own copy when there's no selection or no buffer.
+        if (b == null || !copySelectionRich(area, b, false)) {
+            area.copy();
+        }
         if (had) {
             area.deselect(); // collapse the selection once copied (leaves the caret in place)
         }
@@ -8347,6 +8351,67 @@ public class MainController implements com.editora.mcp.McpBridge {
         deactivateMark();
         refreshPasteState(); // clipboard now has content
         setStatus(tr(had ? "status.copied" : "status.nothingToCopy"));
+    }
+
+    /** VS Code cap: above this many chars the auto path skips the (potentially large) HTML flavor. */
+    private static final int COPY_HTML_CHAR_CAP = 65_536;
+
+    /**
+     * Copies {@code area}'s selection to the clipboard as plain text plus — when enabled and within the
+     * size cap, or {@code force} — a syntax-highlighted {@code text/html} flavor (VS Code
+     * {@code copyWithSyntaxHighlighting}). Returns false when there is no selection (caller falls back).
+     */
+    private boolean copySelectionRich(CodeArea area, EditorBuffer b, boolean force) {
+        String sel = area.getSelectedText();
+        if (sel.isEmpty()) {
+            return false;
+        }
+        int start = area.getSelection().getStart();
+        int end = area.getSelection().getEnd();
+        ClipboardContent cc = new ClipboardContent();
+        cc.putString(sel);
+        boolean wantHtml =
+                force || (config.getSettings().isCopyWithSyntaxHighlighting() && sel.length() <= COPY_HTML_CHAR_CAP);
+        if (wantHtml && b.hasHighlighting()) {
+            // Read the already-applied spans (FX-thread-safe); never re-tokenize on the FX thread.
+            cc.putHtml(com.editora.pdf.CodeHtml.toHtml(sel, area.getStyleSpans(start, end), b.getTabSize()));
+        }
+        Clipboard.getSystemClipboard().setContent(cc);
+        return true;
+    }
+
+    /**
+     * Forced copy-with-highlighting (VS Code's {@code clipboardCopyWithSyntaxHighlightingAction}): always
+     * attaches the HTML flavor, bypassing both the setting and the size cap. Acts on the selection, else the
+     * current line.
+     */
+    private void copyWithHighlighting() {
+        EditorBuffer b = activeBuffer();
+        CodeArea area = activeArea();
+        if (area == null || b == null) {
+            return;
+        }
+        boolean hasSel = !area.getSelectedText().isEmpty();
+        int para = area.getCurrentParagraph();
+        int start = hasSel ? area.getSelection().getStart() : area.getAbsolutePosition(para, 0);
+        int end = hasSel
+                ? area.getSelection().getEnd()
+                : start + area.getParagraph(para).length();
+        String htmlText = area.getText(start, end); // the line/selection without any trailing newline
+        // A whole-line copy includes its newline in the plain-text flavor (like copyCurrentLine); the HTML
+        // flavor uses the line itself so it doesn't render a trailing empty line.
+        String plainText = hasSel ? htmlText : htmlText + "\n";
+        ClipboardContent cc = new ClipboardContent();
+        cc.putString(plainText);
+        if (b.hasHighlighting()) {
+            // Read the already-applied spans (FX-thread-safe); never re-tokenize on the FX thread.
+            cc.putHtml(com.editora.pdf.CodeHtml.toHtml(htmlText, area.getStyleSpans(start, end), b.getTabSize()));
+        }
+        Clipboard.getSystemClipboard().setContent(cc);
+        adoptClipboardAsKill();
+        deactivateMark();
+        refreshPasteState();
+        setStatus(tr("status.copiedHighlighted"));
     }
 
     @FXML
@@ -13863,6 +13928,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleCopyLineWhenNoSelection",
                         () -> config.getSettings().isCopyLineWhenNoSelection(),
                         config.getSettings()::setCopyLineWhenNoSelection,
+                        null)));
+        registry.register(Command.of("edit.copyWithHighlighting", this::copyWithHighlighting));
+        registry.register(Command.of(
+                "view.toggleCopyWithHighlighting",
+                () -> toggleSetting(
+                        "view.toggleCopyWithHighlighting",
+                        () -> config.getSettings().isCopyWithSyntaxHighlighting(),
+                        config.getSettings()::setCopyWithSyntaxHighlighting,
                         null)));
         registry.register(
                 Command.of("edit.addCaretNextOccurrence", () -> withMultiCaret(EditorBuffer::addCaretNextOccurrence)));

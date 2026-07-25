@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Copy with syntax highlighting** — copying now also puts a colored HTML flavor on the clipboard, so
+  pasting code into Slack, an email or a document keeps its highlighting instead of arriving as a grey block.
+  On by default (Settings → Editor, and the `view.toggleCopyWithHighlighting` palette command); the colors
+  are the light GitHub-style palette, since pasted code usually lands on a light background. A forced
+  **Copy With Syntax Highlighting** command ignores both the setting and the size cap. Plain text is always
+  on the clipboard too, so pasting into a plain-text field is unchanged.
 - **Go to matching bracket** — jump the caret to the bracket paired with the one beside it, and press again
   to jump back (`Ctrl+Shift+\` in the VS Code keymap, palette-discoverable everywhere as "Go: Matching
   Bracket"). A companion **Select to Bracket** command selects everything between a bracket pair, both
