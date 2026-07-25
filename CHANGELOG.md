@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Deeper code folding** — fold by nesting level (Fold Level 1–7, like VS Code's `Ctrl+K Ctrl+1..7`), fold or
+  unfold the region at the caret **and everything nested inside it** (Fold/Unfold Recursively), and jump
+  between folds (Go to Parent / Next / Previous Fold — the target is revealed if it's hidden). Twelve new
+  palette commands; bind them to keys from Settings → Keymap.
 - **Subword navigation** — move and delete by camelCase / snake_case parts: stepping through `getUserName`
   lands on `get` → `User` → `Name`, and acronyms split correctly (`HTMLParser` → `HTML` `Parser`). Four
   palette commands (Go: Forward/Backward Subword, Edit: Delete Subword Forward/Backward); palette-discoverable

@@ -9709,6 +9709,71 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** Folds every region at the given fold level (1-based); see {@code FoldManager.foldLevel}. */
+    private void foldLevel(int level) {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.getFoldManager().foldLevel(level);
+            setStatus(tr("status.foldLevel", level));
+        }
+    }
+
+    private void foldRecursively() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.getFoldManager().foldRecursivelyAtCaret();
+        }
+    }
+
+    private void unfoldRecursively() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.getFoldManager().unfoldRecursivelyAtCaret();
+        }
+    }
+
+    /** Moves the caret to {@code target}'s header line, revealing it if it's hidden inside a fold. */
+    private void gotoFold(com.editora.editor.FoldRegions.Region target) {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        if (target == null) {
+            setStatus(tr("status.fold.noTarget"));
+            return;
+        }
+        int line = target.startLine();
+        buffer.getFoldManager().unfoldContaining(line);
+        moveAndFollow(a -> a.moveTo(line, 0));
+    }
+
+    private void gotoParentFold() {
+        EditorBuffer buffer = activeBuffer();
+        CodeArea area = activeArea();
+        if (buffer != null && area != null) {
+            gotoFold(com.editora.editor.FoldTree.parentFold(
+                    buffer.getFoldManager().regions(), area.getCurrentParagraph()));
+        }
+    }
+
+    private void gotoNextFold() {
+        EditorBuffer buffer = activeBuffer();
+        CodeArea area = activeArea();
+        if (buffer != null && area != null) {
+            gotoFold(com.editora.editor.FoldTree.nextFold(
+                    buffer.getFoldManager().regions(), area.getCurrentParagraph()));
+        }
+    }
+
+    private void gotoPreviousFold() {
+        EditorBuffer buffer = activeBuffer();
+        CodeArea area = activeArea();
+        if (buffer != null && area != null) {
+            gotoFold(com.editora.editor.FoldTree.previousFold(
+                    buffer.getFoldManager().regions(), area.getCurrentParagraph()));
+        }
+    }
+
     /** Prompts for a 1-based line number and moves the caret there (clamped to the document). */
     private void goToLine() {
         CodeArea area = activeArea();
@@ -14116,6 +14181,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("view.fold", this::foldAtCaret));
         registry.register(Command.of("view.unfold", this::unfoldAtCaret));
         registry.register(Command.of("view.toggleFold", this::toggleFoldAtCaret));
+        registry.register(Command.of("view.foldRecursively", this::foldRecursively));
+        registry.register(Command.of("view.unfoldRecursively", this::unfoldRecursively));
+        registry.register(Command.of("view.gotoParentFold", this::gotoParentFold));
+        registry.register(Command.of("view.gotoNextFold", this::gotoNextFold));
+        registry.register(Command.of("view.gotoPreviousFold", this::gotoPreviousFold));
+        for (int level = 1; level <= 7; level++) {
+            int lvl = level;
+            registry.register(Command.of("view.foldLevel" + lvl, () -> foldLevel(lvl)));
+        }
         registry.register(Command.of("nav.goToLine", this::goToLine));
         registry.register(Command.of("buffer.setLanguage", this::chooseLanguage));
         registry.register(Command.of("buffer.setTabSize", this::chooseTabSize));
