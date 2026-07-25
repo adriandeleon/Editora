@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Multi-caret movement chords** — with multiple cursors, the Emacs movement chords (`C-f`, `C-b`, `C-n`,
+  `C-p`, `C-a`, `C-e`, `M-f`, `M-b`) now move **every** caret, not just the primary one — matching how the
+  arrow keys already behaved. (Document/paragraph/sentence/page motions stay primary-only.)
+
 ### Added
 
 - **Deeper code folding** — fold by nesting level (Fold Level 1–7, like VS Code's `Ctrl+K Ctrl+1..7`), fold or

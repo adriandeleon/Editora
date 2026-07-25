@@ -4797,6 +4797,43 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    // --- Multi-caret movement fan-out (#635) ------------------------------------------------------
+    // The fork's multi-caret movement lives in its node-level InputMap, which the scene-level
+    // KeyDispatcher preempts for the Emacs chords. These expose that movement so MainController's
+    // nav.* commands can fan out to every caret when extras exist; each returns whether it handled the
+    // move (false → no extra carets, so the caller runs the normal single-caret motion). {@code select}
+    // extends the selection (= Emacs mark active), mirroring {@code selPolicy()}.
+
+    /** Moves every caret horizontally by {@code amount} chars (or words); see {@link #addCaretBelow}. */
+    public boolean multiMoveHorizontal(int amount, boolean byWord, boolean select) {
+        var m = activeManager();
+        if (m != null && m.hasExtras()) {
+            m.moveHorizontal(amount, byWord, select);
+            return true;
+        }
+        return false;
+    }
+
+    /** Moves every caret one line up ({@code down=false}) or down. */
+    public boolean multiMoveVertical(boolean down, boolean select) {
+        var m = activeManager();
+        if (m != null && m.hasExtras()) {
+            m.moveVertical(down, select);
+            return true;
+        }
+        return false;
+    }
+
+    /** Moves every caret to its line start ({@code toEnd=false}) or line end. */
+    public boolean multiMoveLineBoundary(boolean toEnd, boolean select) {
+        var m = activeManager();
+        if (m != null && m.hasExtras()) {
+            m.moveLineBoundary(toEnd, select);
+            return true;
+        }
+        return false;
+    }
+
     /** True when {@code a} currently has extra carets, so this buffer's single-caret KEY filters
      *  (auto-indent/close, snippets, completion, view paging) should stand down and let the fork's
      *  multi-caret input map handle the key for every caret. */
