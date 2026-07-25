@@ -1,11 +1,103 @@
 package com.editora.editops;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SmartSelectStackTest {
+
+    // --- the server-supplied chain (#739) -----------------------------------------------------------
+
+    /** With a chain available, expand follows the server's grammar-accurate ranges instead of the ladder. */
+    @Test
+    void aServerChainSuppliesTheNextRange() {
+        SmartSelectStack st = new SmartSelectStack();
+        List<int[]> chain = List.of(new int[] {5, 9}, new int[] {2, 14}, new int[] {0, 30});
+
+        assertArrayEquals(new int[] {5, 9}, st.expand("ignored", 6, 7, chain));
+        assertArrayEquals(new int[] {2, 14}, st.expand("ignored", 5, 9, chain));
+        assertArrayEquals(new int[] {0, 30}, st.expand("ignored", 2, 14, chain));
+    }
+
+    /**
+     * The smallest containing range wins regardless of the chain's order — a server that answers
+     * outermost-first would otherwise jump straight to the whole file on the first press.
+     */
+    @Test
+    void theSmallestContainingRangeWinsEvenIfTheChainIsReversed() {
+        SmartSelectStack st = new SmartSelectStack();
+        List<int[]> outermostFirst = List.of(new int[] {0, 30}, new int[] {2, 14}, new int[] {5, 9});
+
+        assertArrayEquals(new int[] {5, 9}, st.expand("ignored", 6, 7, outermostFirst));
+    }
+
+    /** A range equal to the live selection would be a press that visibly does nothing. */
+    @Test
+    void aChainRangeEqualToTheSelectionIsNotOffered() {
+        SmartSelectStack st = new SmartSelectStack();
+        List<int[]> chain = List.of(new int[] {5, 9}, new int[] {1, 20});
+
+        assertArrayEquals(new int[] {1, 20}, st.expand("ignored", 5, 9, chain), "skips the identical range");
+    }
+
+    /** No chain (LSP off, or the request still in flight on the first press) falls back to the local ladder. */
+    @Test
+    void anAbsentChainFallsBackToTheLocalLadder() {
+        String text = "call(a, b, c)";
+        SmartSelectStack local = new SmartSelectStack();
+        SmartSelectStack withNull = new SmartSelectStack();
+        int caret = text.indexOf('b');
+
+        assertArrayEquals(local.expand(text, caret, caret), withNull.expand(text, caret, caret, null), "null chain");
+        assertArrayEquals(
+                new SmartSelectStack().expand(text, caret, caret),
+                new SmartSelectStack().expand(text, caret, caret, List.of()),
+                "empty chain");
+    }
+
+    /** Shrink retraces what was applied, so a ladder that starts local and continues server-side still pops back. */
+    @Test
+    void shrinkRetracesALadderThatSwitchedSources() {
+        String text = "call(a, b, c)";
+        SmartSelectStack st = new SmartSelectStack();
+        int caret = text.indexOf('b');
+
+        int[] first = st.expand(text, caret, caret); // local: the word
+        int[] second = st.expand(text, first[0], first[1], List.of(new int[] {0, text.length()}));
+
+        assertArrayEquals(new int[] {0, text.length()}, second);
+        assertArrayEquals(first, st.shrink(second[0], second[1]));
+        assertArrayEquals(new int[] {caret, caret}, st.shrink(first[0], first[1]));
+    }
+
+    @Test
+    void continuesTracksWhetherTheLadderIsStillLive() {
+        String text = "call(a, b, c)";
+        SmartSelectStack st = new SmartSelectStack();
+        int caret = text.indexOf('b');
+
+        assertFalse(st.continues(caret, caret), "nothing handed out yet");
+        int[] first = st.expand(text, caret, caret);
+        assertTrue(st.continues(first[0], first[1]));
+        assertFalse(st.continues(0, 1), "the user moved the caret");
+    }
+
+    /** A malformed chain entry must not throw on the keystroke path. */
+    @Test
+    void malformedChainEntriesAreIgnored() {
+        SmartSelectStack st = new SmartSelectStack();
+        List<int[]> chain = new java.util.ArrayList<>();
+        chain.add(null);
+        chain.add(new int[] {1});
+        chain.add(new int[] {0, 10});
+
+        assertArrayEquals(new int[] {0, 10}, st.expand("ignored", 3, 4, chain));
+    }
 
     @Test
     void expandThenShrinkRetracesExactly() {

@@ -889,6 +889,7 @@ final class LspCoordinator {
             }
             buffer.setInlayHintsActive(host.settings().isInlayHints()); // decoupled from semantic (#681)
             requestInlayHints(buffer); // gated internally on the setting + capability (#681)
+            requestFoldingRanges(buffer); // #738 — a no-op until the server reports ready, then refreshed
         } else {
             buffer.setLspActive(false);
             buffer.setLspTriggerChars(java.util.Set.of());
@@ -898,6 +899,7 @@ final class LspCoordinator {
             buffer.setLspRenameAvailable(false);
             buffer.setLspImplementationAvailable(false);
             buffer.setLspTypeDefinitionAvailable(false);
+            buffer.setLspFoldingRegions(java.util.List.of()); // back to the heuristic (#738)
             buffer.setLspSignatureTriggerChars(java.util.Set.of());
             buffer.clearOccurrenceSpans();
             buffer.setInlayHintsActive(false);
@@ -1060,6 +1062,7 @@ final class LspCoordinator {
                         b.setLspRenameAvailable(lspManager.supportsRename(b.getPath()));
                         b.setLspSignatureTriggerChars(lspManager.signatureTriggerCharacters(b.getPath()));
                         lspManager.pullDiagnostics(b.getPath());
+                        requestFoldingRanges(b); // #738 — the capability is only knowable now
                         // Capabilities are known now — (re)gate semantic highlighting + fetch initial tokens.
                         boolean sem =
                                 host.settings().isSemanticHighlight() && lspManager.supportsSemanticTokens(b.getPath());
@@ -1112,6 +1115,7 @@ final class LspCoordinator {
         buffer.setLspDiagnosticsRequester(() -> {
             if (buffer.getPath() != null) {
                 lspManager.pullDiagnostics(buffer.getPath());
+                requestFoldingRanges(buffer); // #738 — rides the same debounce, no extra pulse
             }
         });
         // Semantic tokens re-request (fired on the same debounce as didChange + on scroll-settle).
@@ -1209,6 +1213,76 @@ final class LspCoordinator {
                 });
         picker.setOverlayHost(host.overlayHost());
         picker.show(host.window());
+    }
+
+    // --- folding ranges (#738) / selection ranges (#739) ---------------------------------------------
+
+    /**
+     * Asks the server for this buffer's foldable regions and installs them over the brace/indent heuristic
+     * (#738). No-op — leaving the heuristic in place — when the buffer has no path, isn't managed, or its
+     * server has no folding provider.
+     */
+    void requestFoldingRanges(EditorBuffer buffer) {
+        Path path = buffer == null ? null : buffer.getPath();
+        if (path == null || !lspManager.isManaged(path) || !lspManager.supportsFoldingRanges(path)) {
+            return;
+        }
+        long version = buffer.docVersion();
+        lspManager.foldingRanges(path, regions -> {
+            // The document may have moved while the request was out — the regions are line numbers measured
+            // against the text we sent, so applying them to a changed document folds the wrong lines. The
+            // next debounce pulse re-requests, so dropping this one costs nothing.
+            if (buffer.docVersion() == version) {
+                buffer.setLspFoldingRegions(regions);
+            }
+        });
+    }
+
+    /** The cached selection-range chain for expand-selection, valid only for the buffer + document version
+     *  it was fetched against (#739). */
+    private EditorBuffer selectionChainBuffer;
+
+    private long selectionChainVersion = -1;
+    private List<int[]> selectionChain = List.of();
+
+    /**
+     * The server's selection-range chain for {@code buffer}, or empty when none has been fetched for the
+     * document as it stands now. Expand-selection prefers it over the local {@code SmartSelect} ladder.
+     */
+    List<int[]> selectionChain(EditorBuffer buffer) {
+        boolean valid =
+                buffer != null && buffer == selectionChainBuffer && buffer.docVersion() == selectionChainVersion;
+        return valid ? selectionChain : List.of();
+    }
+
+    /**
+     * Fetches the selection-range chain anchored at a caret position, for the <em>next</em> expand press
+     * (#739).
+     *
+     * <p>Deliberately not awaited: expand-selection has to act on the keystroke that triggered it, and a
+     * server round-trip on that path is exactly what makes an editor feel laggy — a cold jdtls can take
+     * seconds. So the first press of a ladder uses the local ladder while this request is in flight, and
+     * every press after it uses the grammar-accurate chain. The cache is anchored at the ladder's origin
+     * rather than the live caret, because {@code selectRange} moves the caret to the range end on each
+     * press — re-anchoring per press would re-request per press.
+     */
+    void requestSelectionChain(EditorBuffer buffer, int line, int character) {
+        Path path = buffer == null ? null : buffer.getPath();
+        if (path == null || !lspManager.isManaged(path) || !lspManager.supportsSelectionRanges(path)) {
+            selectionChainBuffer = null;
+            selectionChain = List.of();
+            selectionChainVersion = -1;
+            return;
+        }
+        long version = buffer.docVersion();
+        lspManager.selectionRanges(path, line, character, buffer.lineStartOffsets(), chain -> {
+            if (buffer.docVersion() != version) {
+                return; // stale: the offsets were computed against text that has since changed
+            }
+            selectionChainBuffer = buffer;
+            selectionChainVersion = version;
+            selectionChain = chain;
+        });
     }
 
     /** The active buffer if it is LSP-managed, reporting + returning null otherwise. */

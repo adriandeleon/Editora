@@ -12962,10 +12962,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (area == null) {
             return;
         }
+        int start = area.getSelection().getStart();
+        int end = area.getSelection().getEnd();
+        // Starting a new ladder: re-anchor the server's selection-range chain at this caret (#739). The
+        // request is asynchronous by design — this press uses the local ladder, and every press after it
+        // uses the grammar-accurate chain, so expand never waits on a round-trip.
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null && !smartSelect.continues(start, end)) {
+            lspCoordinator.requestSelectionChain(buffer, area.getCurrentParagraph(), area.getCaretColumn());
+        }
         int[] next = smartSelect.expand(
-                area.getText(),
-                area.getSelection().getStart(),
-                area.getSelection().getEnd());
+                area.getText(), start, end, buffer == null ? null : lspCoordinator.selectionChain(buffer));
         if (next == null) {
             return; // already the whole document
         }

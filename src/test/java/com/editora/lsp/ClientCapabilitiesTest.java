@@ -106,6 +106,11 @@ class ClientCapabilitiesTest {
         assertNotNull(td.getImplementation(), "Go to Implementation (#735)");
         assertNotNull(td.getTypeDefinition(), "Go to Type Definition (#736)");
         assertNotNull(td.getDeclaration(), "Go to Declaration (#736)");
+        assertNotNull(td.getSelectionRange(), "expand/shrink selection (#739)");
+        assertNotNull(td.getFoldingRange(), "server-provided folding (#738)");
+        assertTrue(
+                Boolean.TRUE.equals(td.getFoldingRange().getLineFoldingOnly()),
+                "the gutter folds whole lines — without this a server may answer character-precise ranges (#738)");
         assertTrue(
                 Boolean.TRUE.equals(td.getRename().getPrepareSupport()),
                 "prepareRename is what validates the position and supplies the placeholder (#676)");

@@ -355,6 +355,12 @@ final class LanguageServerSession implements LanguageClient {
         td.setImplementation(new org.eclipse.lsp4j.ImplementationCapabilities());
         td.setTypeDefinition(new org.eclipse.lsp4j.TypeDefinitionCapabilities());
         td.setDeclaration(new org.eclipse.lsp4j.DeclarationCapabilities());
+        // Folding (#738): lineFoldingOnly is not optional for us — the gutter folds whole lines, and without
+        // it a server may answer with character-precise ranges we cannot render.
+        var folding = new org.eclipse.lsp4j.FoldingRangeCapabilities();
+        folding.setLineFoldingOnly(true);
+        td.setFoldingRange(folding);
+        td.setSelectionRange(new org.eclipse.lsp4j.SelectionRangeCapabilities()); // expand/shrink (#739)
         td.setDocumentHighlight(new org.eclipse.lsp4j.DocumentHighlightCapabilities()); // occurrences (#675)
         td.setInlayHint(new org.eclipse.lsp4j.InlayHintCapabilities()); // parameter/type hints (#681)
         td.setCallHierarchy(new org.eclipse.lsp4j.CallHierarchyCapabilities()); // who-calls-this (#682)
@@ -1085,6 +1091,28 @@ final class LanguageServerSession implements LanguageClient {
         }
         return server.getTextDocumentService()
                 .declaration(new org.eclipse.lsp4j.DeclarationParams(new TextDocumentIdentifier(uri), pos));
+    }
+
+    /** Foldable regions for the whole document ({@code textDocument/foldingRange}, #738); empty on error. */
+    CompletableFuture<List<org.eclipse.lsp4j.FoldingRange>> foldingRange(String uri) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return server.getTextDocumentService()
+                .foldingRange(new org.eclipse.lsp4j.FoldingRangeRequestParams(new TextDocumentIdentifier(uri)))
+                .<List<org.eclipse.lsp4j.FoldingRange>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
+    }
+
+    /** The nested selection-range chain at {@code positions} ({@code textDocument/selectionRange}, #739). */
+    CompletableFuture<List<org.eclipse.lsp4j.SelectionRange>> selectionRange(String uri, List<Position> positions) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return server.getTextDocumentService()
+                .selectionRange(new org.eclipse.lsp4j.SelectionRangeParams(new TextDocumentIdentifier(uri), positions))
+                .<List<org.eclipse.lsp4j.SelectionRange>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
     }
 
     CompletableFuture<List<? extends Location>> references(String uri, Position pos) {

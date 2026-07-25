@@ -48,6 +48,10 @@ public final class FoldManager {
 
     private final CodeArea area;
     private List<Region> regions = List.of();
+    /** Server-supplied regions ({@code textDocument/foldingRange}, #738); null while none have arrived, in
+     *  which case {@link #recompute()} falls back to the {@link FoldRegions} heuristic. */
+    private List<Region> serverRegions;
+
     private Map<Integer, Region> byStart = Map.of();
     private String language = "plaintext";
     /** Max number of lines shown in a collapsed region's hover preview. */
@@ -208,6 +212,25 @@ public final class FoldManager {
         this.onRegionsChanged = callback == null ? () -> {} : callback;
     }
 
+    /**
+     * Installs the regions a language server reported ({@code textDocument/foldingRange}, #738), or
+     * {@code null}/empty to go back to the {@link FoldRegions} heuristic — which is what happens when LSP is
+     * off, the file is remote, or the server has no folding provider.
+     *
+     * <p>Recomputes only when the region list actually changed. The request rides the same debounced
+     * document pulse as diagnostics, and a server re-reports identical regions for any edit that doesn't
+     * move a block boundary — by far the common case — so skipping the no-op keeps the gutter untouched
+     * instead of rebuilding fold graphics on every settle.
+     */
+    public void setServerRegions(List<Region> newRegions) {
+        List<Region> next = newRegions == null || newRegions.isEmpty() ? null : List.copyOf(newRegions);
+        if (java.util.Objects.equals(serverRegions, next)) {
+            return;
+        }
+        serverRegions = next;
+        recompute();
+    }
+
     /** Sets the language (see {@link LanguageRegistry}) and recomputes regions. */
     public void setLanguage(String language) {
         this.language = language;
@@ -221,7 +244,13 @@ public final class FoldManager {
      */
     public void recompute() {
         Set<Integer> oldStarts = byStart.keySet();
-        regions = FoldRegions.detect(area.getText(), language);
+        // A language server's regions win when it supplied any: it parses the grammar, so it knows the
+        // import block is one region and where a javadoc ends — neither of which brace/indent scanning can
+        // derive. An empty or absent answer falls back to the heuristic rather than leaving the file
+        // unfoldable, which also covers the window between opening a file and its server reporting ready.
+        regions = serverRegions != null && !serverRegions.isEmpty()
+                ? serverRegions
+                : FoldRegions.detect(area.getText(), language);
         Map<Integer, Region> map = new HashMap<>();
         for (Region r : regions) {
             // Keep the outermost region for a given header line (largest span wins).

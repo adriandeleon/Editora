@@ -182,7 +182,9 @@ Editora is built with the help of AI coding tools.
   **Code Actions / quick fixes** (`Ctrl-.` in the VS Code/Sublime/IntelliJ keymaps, or the palette /
   right-click menu — apply the server's fixes, organize imports, refactorings), and
   **Format Document** (whole-file reformat via the server, when it advertises formatting — palette or the
-  editor right-click menu). A crashed server is restarted automatically (with a crash-loop cap), and a
+  editor right-click menu), and **server-provided folding + expand/shrink selection** (grammar-accurate
+  where a server offers them — an import block folds as one region — falling back to the built-in
+  heuristics everywhere else). A crashed server is restarted automatically (with a crash-loop cap), and a
   root's server shuts down a few minutes after its last file closes. Off by default; per-server command +
   enable in *Settings → LSP*.
 - **Search** — incremental find bar (`C-s`/`C-r`) with regex, case, and whole-word toggles, a match

@@ -1320,6 +1320,70 @@ public final class LspManager {
         });
     }
 
+    // --- folding ranges (#738) / selection ranges (#739) ---------------------------------------------
+
+    /** Pure: whether a server's capabilities include {@code foldingRangeProvider} (null-safe). */
+    static boolean foldingRangeProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        return caps != null && eitherTrue(caps.getFoldingRangeProvider());
+    }
+
+    /** Pure: whether a server's capabilities include {@code selectionRangeProvider} (null-safe). */
+    static boolean selectionRangeProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        return caps != null && eitherTrue(caps.getSelectionRangeProvider());
+    }
+
+    /** True if {@code file}'s server is ready and advertises folding ranges (#738). */
+    public boolean supportsFoldingRanges(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && foldingRangeProvider(s.capabilities());
+    }
+
+    /** True if {@code file}'s server is ready and advertises selection ranges (#739). */
+    public boolean supportsSelectionRanges(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && selectionRangeProvider(s.capabilities());
+    }
+
+    /**
+     * Requests the document's foldable regions and delivers them on the FX thread as editor
+     * {@link com.editora.editor.FoldRegions.Region}s, ordered the way the built-in detector emits them
+     * (see {@link LspFolding#toRegions}). Empty when the server has no folding provider — the caller then
+     * keeps the heuristic regions rather than un-folding the file.
+     */
+    public void foldingRanges(Path file, Consumer<List<com.editora.editor.FoldRegions.Region>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || !foldingRangeProvider(s.capabilities())) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        s.foldingRange(uri(file)).whenComplete((ranges, error) -> {
+            List<com.editora.editor.FoldRegions.Region> regions =
+                    error == null ? LspFolding.toRegions(ranges) : List.of();
+            Platform.runLater(() -> cb.accept(regions));
+        });
+    }
+
+    /**
+     * Requests the nested selection-range chain at one position and delivers it on the FX thread as
+     * {@code [start, end]} offset pairs, innermost first (see {@link LspSelection#toOffsetChain}). Empty when
+     * the server has no provider or answers nothing, so the caller falls back to the local ladder.
+     *
+     * <p>{@code lineLengths} maps the document's lines to their lengths — the response is in LSP
+     * line/character coordinates and the caller works in offsets, and doing the conversion here keeps the
+     * editor free of {@code lsp4j}.
+     */
+    public void selectionRanges(Path file, int line, int character, int[] lineStarts, Consumer<List<int[]>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || !selectionRangeProvider(s.capabilities())) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        s.selectionRange(uri(file), List.of(new Position(line, character))).whenComplete((ranges, error) -> {
+            List<int[]> chain = error == null ? LspSelection.toOffsetChain(ranges, lineStarts) : List.of();
+            Platform.runLater(() -> cb.accept(chain));
+        });
+    }
+
     /** A project-wide symbol match ({@code workspace/symbol}): name + container + lowercased kind + location. */
     public record WorkspaceSymbolMatch(
             String name, String container, String kind, Path file, int line, int character) {}
