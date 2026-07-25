@@ -605,12 +605,18 @@ public class EditorBuffer implements TabContent {
     private Runnable lspFormatAction = () -> {};
     private Runnable lspCodeActionsAction = () -> {};
     private Runnable lspRenameAction = () -> {};
+    private Runnable lspGotoImplementationAction = () -> {};
+    private Runnable lspGotoTypeDefinitionAction = () -> {};
     /** Whether this buffer's server advertises whole-document formatting (refreshed when it reports ready). */
     private boolean lspFormatAvailable;
     /** Whether this buffer's server advertises code actions (quick fixes) — gates the menu item (#670). */
     private boolean lspCodeActionsAvailable;
     /** Whether this buffer's server advertises rename — gates the menu item (#676). */
     private boolean lspRenameAvailable;
+    /** Whether this buffer's server advertises {@code textDocument/implementation} — gates the item (#735). */
+    private boolean lspImplementationAvailable;
+    /** Whether this buffer's server advertises {@code textDocument/typeDefinition} — gates the item (#736). */
+    private boolean lspTypeDefinitionAvailable;
     /** Whether this buffer's server advertises range formatting — enables Tab to re-indent the line. */
     private boolean lspRangeFormatAvailable;
     /** Injected range-formatter (the controller wires it to the LSP manager); null = none. */
@@ -1902,7 +1908,27 @@ public class EditorBuffer implements TabContent {
             area.moveTo(offset);
             lspHoverAction.run();
         });
-        List<MenuItem> items = new java.util.ArrayList<>(List.of(def, refs, hover));
+        List<MenuItem> items = new java.util.ArrayList<>(List.of(def));
+        if (lspImplementationAvailable) {
+            MenuItem impl = new MenuItem(tr("command.lsp.gotoImplementation"));
+            impl.setGraphic(MenuIcons.gotoImplementation());
+            impl.setOnAction(e -> {
+                area.moveTo(offset);
+                lspGotoImplementationAction.run();
+            });
+            items.add(impl);
+        }
+        if (lspTypeDefinitionAvailable) {
+            MenuItem typeDef = new MenuItem(tr("command.lsp.gotoTypeDefinition"));
+            typeDef.setGraphic(MenuIcons.gotoTypeDefinition());
+            typeDef.setOnAction(e -> {
+                area.moveTo(offset);
+                lspGotoTypeDefinitionAction.run();
+            });
+            items.add(typeDef);
+        }
+        items.add(refs);
+        items.add(hover);
         if (lspCodeActionsAvailable) {
             MenuItem actions = new MenuItem(tr("command.lsp.codeActions"));
             actions.setGraphic(MenuIcons.codeAction());
@@ -3634,13 +3660,27 @@ public class EditorBuffer implements TabContent {
             Runnable hover,
             Runnable format,
             Runnable codeActions,
-            Runnable rename) {
+            Runnable rename,
+            Runnable gotoImplementation,
+            Runnable gotoTypeDefinition) {
         this.lspGotoDefinitionAction = gotoDefinition == null ? () -> {} : gotoDefinition;
         this.lspFindReferencesAction = findReferences == null ? () -> {} : findReferences;
         this.lspHoverAction = hover == null ? () -> {} : hover;
         this.lspFormatAction = format == null ? () -> {} : format;
         this.lspCodeActionsAction = codeActions == null ? () -> {} : codeActions;
         this.lspRenameAction = rename == null ? () -> {} : rename;
+        this.lspGotoImplementationAction = gotoImplementation == null ? () -> {} : gotoImplementation;
+        this.lspGotoTypeDefinitionAction = gotoTypeDefinition == null ? () -> {} : gotoTypeDefinition;
+    }
+
+    /** Whether to offer "Go to Implementation" in the right-click menu (the server's capability, #735). */
+    public void setLspImplementationAvailable(boolean available) {
+        this.lspImplementationAvailable = available;
+    }
+
+    /** Whether to offer "Go to Type Definition" in the right-click menu (the server's capability, #736). */
+    public void setLspTypeDefinitionAvailable(boolean available) {
+        this.lspTypeDefinitionAvailable = available;
     }
 
     /** Whether to offer "Format Document" in the right-click menu (the server's formatting capability). */

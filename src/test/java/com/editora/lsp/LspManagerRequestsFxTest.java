@@ -30,6 +30,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.testfx.api.FxToolkit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -154,6 +155,116 @@ class LspManagerRequestsFxTest {
 
         assertEquals(1, targets.size(), "only the file reference is usable");
         assertEquals(other, targets.get(0).file());
+    }
+
+    // --- implementation / type definition / declaration (#735, #736) ---------------------------------
+
+    /**
+     * The three navigation siblings share one response walk with definition. What a test has to pin is that
+     * each still goes out as <b>its own</b> request — routing two of them to the same server method compiles,
+     * runs, and answers plausibly, which is precisely the failure this catches.
+     */
+    @Test
+    void eachNavigationRequestGoesOutAsItsOwnMethod() throws Exception {
+        var fake = open();
+
+        List<LspManager.Target> ignoredImpl = await(cb -> manager.implementation(file, 3, 4, cb));
+        List<LspManager.Target> ignoredType = await(cb -> manager.typeDefinition(file, 5, 6, cb));
+        List<LspManager.Target> ignoredDecl = await(cb -> manager.declaration(file, 7, 8, cb));
+        assertNotNull(ignoredImpl);
+        assertNotNull(ignoredType);
+        assertNotNull(ignoredDecl);
+
+        assertEquals(1, fake.implementations.size(), "textDocument/implementation");
+        assertEquals(1, fake.typeDefinitions.size(), "textDocument/typeDefinition");
+        assertEquals(1, fake.declarations.size(), "textDocument/declaration");
+        assertTrue(fake.definitions.isEmpty(), "none of them may fall through to definition");
+        assertEquals(new Position(3, 4), fake.implementations.get(0).getPosition());
+        assertEquals(new Position(5, 6), fake.typeDefinitions.get(0).getPosition());
+        assertEquals(new Position(7, 8), fake.declarations.get(0).getPosition());
+        assertEquals(
+                file.toUri().toString(),
+                fake.implementations.get(0).getTextDocument().getUri(),
+                "the request must name the file it was asked about");
+    }
+
+    @Test
+    void implementationMapsLocationsToTargets() throws Exception {
+        var fake = open();
+        Path other = root.resolve("B.java");
+        Files.writeString(other, "class B {}");
+        fake.implementationResponse = List.of(location(other.toUri().toString(), 4, 7));
+
+        List<LspManager.Target> targets = await(cb -> manager.implementation(file, 1, 2, cb));
+
+        assertEquals(1, targets.size());
+        assertEquals(other, targets.get(0).file());
+        assertEquals(4, targets.get(0).line());
+        assertEquals(7, targets.get(0).character());
+    }
+
+    /**
+     * Unlike references, an implementation can live inside a dependency — implementing a library interface is
+     * ordinary. It shares definition's walk precisely so the {@code jdt://} target survives here too, and the
+     * coordinator can open it as read-only source rather than reporting nothing found.
+     */
+    @Test
+    void implementationKeepsAJdtClassFileTarget() throws Exception {
+        var fake = open();
+        String jdt = "jdt://contents/java.base/java.lang/Comparable.class?=demo/foo";
+        fake.implementationResponse = List.of(location(jdt, 12, 4));
+
+        List<LspManager.Target> targets = await(cb -> manager.implementation(file, 1, 2, cb));
+
+        assertEquals(1, targets.size());
+        assertNull(targets.get(0).file());
+        assertEquals(jdt, targets.get(0).classFileUri());
+    }
+
+    @Test
+    void typeDefinitionAndDeclarationMapTheirOwnResponses() throws Exception {
+        var fake = open();
+        Path other = root.resolve("B.java");
+        Files.writeString(other, "class B {}");
+        fake.typeDefinitionResponse = List.of(location(other.toUri().toString(), 1, 1));
+        fake.declarationResponse = List.of(location(other.toUri().toString(), 9, 9));
+
+        List<LspManager.Target> typeTargets = await(cb -> manager.typeDefinition(file, 0, 0, cb));
+        List<LspManager.Target> declTargets = await(cb -> manager.declaration(file, 0, 0, cb));
+
+        assertEquals(1, typeTargets.get(0).line());
+        assertEquals(9, declTargets.get(0).line());
+    }
+
+    /** A transport failure degrades to an empty list — never an exception on the FX thread. */
+    @Test
+    void theNavigationRequestsDegradeOnServerFailure() throws Exception {
+        var fake = open();
+        fake.failEverything = true;
+
+        List<LspManager.Target> impl = await(cb -> manager.implementation(file, 1, 1, cb));
+        List<LspManager.Target> type = await(cb -> manager.typeDefinition(file, 1, 1, cb));
+        List<LspManager.Target> decl = await(cb -> manager.declaration(file, 1, 1, cb));
+
+        assertTrue(impl.isEmpty());
+        assertTrue(type.isEmpty());
+        assertTrue(decl.isEmpty());
+    }
+
+    /**
+     * The capability gates decide whether the command runs at all or reports "this server doesn't support
+     * it". A server that advertises nothing must read as unsupported, not as "nothing found".
+     */
+    @Test
+    void theCapabilityGatesFollowWhatTheServerAdvertises() {
+        capabilities = new ServerCapabilities();
+        capabilities.setImplementationProvider(Either.forLeft(true));
+        capabilities.setTypeDefinitionProvider(Either.forLeft(false));
+        open();
+
+        assertTrue(manager.supportsImplementation(file));
+        assertFalse(manager.supportsTypeDefinition(file), "advertised false");
+        assertFalse(manager.supportsDeclaration(file), "not advertised at all");
     }
 
     /** A server that omits the (spec-required) range must not produce a bogus target or an exception. */

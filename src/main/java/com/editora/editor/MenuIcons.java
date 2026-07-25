@@ -154,6 +154,16 @@ final class MenuIcons {
         return of("M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z");
     }
 
+    /** Material "subdirectory_arrow_right" — "Go to Implementation" (down into the concrete override). */
+    static Node gotoImplementation() {
+        return of("M19 15l-6 6-1.42-1.42L15.17 16H4V4h2v10h9.17l-3.59-3.58L13 9z");
+    }
+
+    /** Material "category" (shapes) — "Go to Type Definition". */
+    static Node gotoTypeDefinition() {
+        return of("M12 2l-5.5 9h11zM17.5 17m-4.5 0a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0 -9 0M3 13.5h8v8H3z");
+    }
+
     /** Material "edit" (pencil) — "Rename". */
     static Node rename() {
         return of("M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 "

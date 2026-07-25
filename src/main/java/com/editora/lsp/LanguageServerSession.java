@@ -349,6 +349,12 @@ final class LanguageServerSession implements LanguageClient {
         td.setHover(new HoverCapabilities());
         td.setDefinition(new DefinitionCapabilities());
         td.setReferences(new ReferencesCapabilities());
+        // Implementation / type definition / declaration (#735, #736) — the three navigation requests
+        // beside definition. A server only advertises its provider when the client declares the
+        // capability, so dropping one of these silently removes that menu entry for every language.
+        td.setImplementation(new org.eclipse.lsp4j.ImplementationCapabilities());
+        td.setTypeDefinition(new org.eclipse.lsp4j.TypeDefinitionCapabilities());
+        td.setDeclaration(new org.eclipse.lsp4j.DeclarationCapabilities());
         td.setDocumentHighlight(new org.eclipse.lsp4j.DocumentHighlightCapabilities()); // occurrences (#675)
         td.setInlayHint(new org.eclipse.lsp4j.InlayHintCapabilities()); // parameter/type hints (#681)
         td.setCallHierarchy(new org.eclipse.lsp4j.CallHierarchyCapabilities()); // who-calls-this (#682)
@@ -1046,6 +1052,39 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
         return server.getTextDocumentService().definition(new DefinitionParams(new TextDocumentIdentifier(uri), pos));
+    }
+
+    /** Implementations of the symbol at a position ({@code textDocument/implementation}) — the concrete
+     *  overrides of an interface/abstract member, or the implementors of a type (#735). */
+    CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> implementation(
+            String uri, Position pos) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+        }
+        return server.getTextDocumentService()
+                .implementation(new org.eclipse.lsp4j.ImplementationParams(new TextDocumentIdentifier(uri), pos));
+    }
+
+    /** The declaration of the <em>type</em> of the symbol at a position ({@code textDocument/typeDefinition})
+     *  — from a variable to its type, as opposed to definition's "to the variable" (#736). */
+    CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> typeDefinition(
+            String uri, Position pos) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+        }
+        return server.getTextDocumentService()
+                .typeDefinition(new org.eclipse.lsp4j.TypeDefinitionParams(new TextDocumentIdentifier(uri), pos));
+    }
+
+    /** The declaration of the symbol at a position ({@code textDocument/declaration}); most servers alias
+     *  this to definition, but they differ for Java module directives and some forward declarations (#736). */
+    CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> declaration(
+            String uri, Position pos) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+        }
+        return server.getTextDocumentService()
+                .declaration(new org.eclipse.lsp4j.DeclarationParams(new TextDocumentIdentifier(uri), pos));
     }
 
     CompletableFuture<List<? extends Location>> references(String uri, Position pos) {
