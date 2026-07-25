@@ -3,7 +3,7 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
-- [x] **LSP audit round** (#723/#724/#725, and a correction to #715) — a read of the whole LSP surface plus
+- [x] **LSP audit round** (#723/#724/#725/#715) — a read of the whole LSP surface plus
       probes against a real jdtls 1.60. **(a) #723 — the Maven-aware `pom.xml` server could never start:**
       `applySupport`'s `configure` map was a hand-written `Map.ofEntries` of 22 entries against a 23-entry
       `SERVER_IDS`, and the omitted `maven-pom` is the one server whose registry default command is
@@ -18,13 +18,22 @@ A backlog of planned features and improvements. Unordered within each section.
       `paddedWindow`. **(c) #725 — signature help always sent `triggerKind=Invoked`:** the
       `TriggerCharacter` branch was unreachable and `isRetrigger` was hardcoded false, despite the client
       declaring `contextSupport` and collecting the trigger chars; the character and the retrigger flag are
-      now threaded through. **(d) #715 corrected:** six configurations against a real jdtls — in-range and
-      out-of-range ranges, a 4-minute poll, the preference pushed explicitly, and an A/B on
-      `initializationOptions` — all returned **0 hints**, with hover resolving the full signature on the
-      first poll as a control. So the issue's central premise (server works, client drops them) is wrong and
-      its three client-side hypotheses are unfounded; it needs a ground-truth server repro first. The probe
-      harnesses (`JdtlsInlayRangeProbeTest`, `JdtlsInlayInitOptionsProbeTest`) ship opt-in like the original.
-- [x] **LSP device-test fixes** (#667/#674/#676 follow-ups; #681 still open as #715) — five device-reported
+      now threaded through. **(d) #715 — inlay hints never rendered — root-caused and fixed:** the request
+      range ended at `Position(lineCount, 0)`, one line past a document whose last line is `lineCount - 1`,
+      and **jdtls answers an out-of-range range with an empty list rather than an error** — indistinguishable
+      from "this file has no hints", which is why it read as a client-side paint bug for so long. Measured on
+      jdtls 1.60 with the 27-line fixture: end `Position(27,0)` → **0 hints**, `Position(26,0)` → **6**
+      (`name:`, `times:`, `prefix:`, `times:`, `radius:`, `format:`). `LspManager.inclusiveLineRange` now
+      clamps the exclusive end to the true document end — `Position(lastLine, lastLineLength)` when the
+      next-line form would leave the document — so the last line is still covered in full; the same range
+      feeds semantic tokens. **The off-by-one is a trap worth naming:** an earlier pass in this same round
+      *ruled the range out* after nine server configurations all returned 0, because its "in-range control"
+      also asked for `Position(lineCount, 0)` — both sides of the comparison were out of range. What broke
+      the deadlock was running the pre-existing `JdtlsProbeTest` unchanged (it returns hints) and diffing it:
+      it used `split("\n")` where the new probes used `split("\n", -1)`. `JdtlsInlayRangeProbeTest` now pins
+      broken-vs-fixed-vs-fixed-with-over-scan (0 / 6 / 6) against a live server, and
+      `LspInclusiveLineRangeTest` covers the pure clamp.
+- [x] **LSP device-test fixes** (#667/#674/#676 follow-ups; #681's follow-up #715 fixed in the audit round above) — five device-reported
       failures, **four with root causes unreachable by reading our own code**; a standalone probe driving a
       real jdtls (`JdtlsProbeTest`, opt-in `-Dlsp.probe=true`, self-skipping) settled them.
       **(a) Format Document mangled the file:** the fork's `MultiChangeBuilder` applies replacements
@@ -48,8 +57,8 @@ A backlog of planned features and improvements. Unordered within each section.
       refuse the whole edit safely). **Verified-clean by the same round:** #678 incremental sync — a shadow
       comparison reported byte-identical server/buffer documents, killing the theory that it was corrupting
       the file; it was one step from being needlessly reverted.
-      *Deferred → #715: inlay hints still don't render. **The "jdtls demonstrably returns them" premise
-      did not survive re-testing** — see the audit entry below.*
+      *#715 root-caused and fixed in the audit round below: the request range ended one line past the end
+      of the file, which jdtls answers with an empty list rather than an error.*
 - [x] **Doctor — external-tool health screen** — `view.doctor` opens a Welcome-style tab reporting the
       health of every external CLI (git/gh/rg/mmdc/maid/dot/plantuml/typst, the enabled LSP servers, the
       3 debug adapters, run interpreters, build tools, agent CLI, installer prereqs) with fresh

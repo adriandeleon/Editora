@@ -727,7 +727,7 @@ final class LspCoordinator {
         }
         int[] window = paddedWindow(buffer.visibleLineWindow(), SEMANTIC_WINDOW_PAD, buffer.lineCount());
         long version = buffer.docVersion();
-        lspManager.requestInlayHints(path, window[0], window[1], spans -> {
+        lspManager.requestInlayHints(path, window[0], window[1], buffer.lineCount(), buffer.lastLineLength(), spans -> {
             if (buffer == host.activeBuffer() && buffer.docVersion() == version) {
                 buffer.setInlayHints(aggregateInlayHints(spans));
             }
@@ -781,11 +781,12 @@ final class LspCoordinator {
         }
         int[] window = paddedWindow(buffer.visibleLineWindow(), SEMANTIC_WINDOW_PAD, buffer.lineCount());
         long gen = buffer.semanticGen(); // capture now; the reply is dropped if the doc changes before it lands
-        lspManager.requestSemanticTokens(path, window[0], window[1], tokens -> {
-            if (buffer == host.activeBuffer()) {
-                buffer.setSemanticTokens(tokens, gen);
-            }
-        });
+        lspManager.requestSemanticTokens(
+                path, window[0], window[1], buffer.lineCount(), buffer.lastLineLength(), tokens -> {
+                    if (buffer == host.activeBuffer()) {
+                        buffer.setSemanticTokens(tokens, gen);
+                    }
+                });
     }
 
     /**

@@ -804,16 +804,49 @@ public final class LspManager {
         return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
     }
 
-    /** Requests inlay hints over the line window {@code [startLine..endLine]} (inclusive), delivered as
-     *  neutral spans on the FX thread — empty when unsupported/failed (#681). */
-    public void requestInlayHints(Path file, int startLine, int endLine, Consumer<List<InlayHintSpan>> cb) {
+    /**
+     * The LSP range covering lines {@code [startLine..endLine]} <b>inclusive</b> of a document with
+     * {@code lineCount} lines whose last line is {@code lastLineLength} characters long. Pure; unit-tested.
+     *
+     * <p>Covering line {@code endLine} means an exclusive end of {@code Position(endLine + 1, 0)} — but for
+     * the <em>last</em> line that names a line the document does not have, and <b>jdtls answers an
+     * out-of-range range with an empty list rather than an error</b>. That is the whole of #715: inlay hints
+     * silently never appeared because the padded window always reached past the end of the file, and the
+     * empty response is indistinguishable from "this file has no hints". Measured on jdtls 1.60 with a
+     * 27-line file (last line index 26): end {@code Position(27,0)} → 0 hints, {@code Position(26,0)} → 6.
+     *
+     * <p>So when {@code endLine + 1} would leave the document, the end becomes the true document end —
+     * {@code Position(lastLine, lastLineLength)} — which still covers the last line in full.
+     */
+    static org.eclipse.lsp4j.Range inclusiveLineRange(int startLine, int endLine, int lineCount, int lastLineLength) {
+        int lastLine = Math.max(0, lineCount - 1);
+        int start = Math.min(Math.max(0, startLine), lastLine);
+        int endExclusive = Math.max(start, Math.max(0, endLine)) + 1;
+        Position end = endExclusive <= lastLine
+                ? new Position(endExclusive, 0)
+                : new Position(lastLine, Math.max(0, lastLineLength));
+        return new org.eclipse.lsp4j.Range(new Position(start, 0), end);
+    }
+
+    /**
+     * Requests inlay hints over the line window {@code [startLine..endLine]} (inclusive), delivered as
+     * neutral spans on the FX thread — empty when unsupported/failed (#681). {@code lineCount} and
+     * {@code lastLineLength} describe the document so the range can be clamped to it: a range reaching past
+     * the last line makes jdtls return nothing at all (see {@link #inclusiveLineRange} — #715).
+     */
+    public void requestInlayHints(
+            Path file,
+            int startLine,
+            int endLine,
+            int lineCount,
+            int lastLineLength,
+            Consumer<List<InlayHintSpan>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
-        var range = new org.eclipse.lsp4j.Range(
-                new Position(Math.max(0, startLine), 0), new Position(Math.max(0, endLine) + 1, 0));
+        var range = inclusiveLineRange(startLine, endLine, lineCount, lastLineLength);
         s.inlayHint(uri(file), range).whenComplete((hints, error) -> {
             List<InlayHintSpan> out = new ArrayList<>();
             if (error == null && hints != null) {
@@ -1383,7 +1416,12 @@ public final class LspManager {
      * plain full request.
      */
     public void requestSemanticTokens(
-            Path file, int startLine, int endLine, Consumer<List<com.editora.editor.SemanticToken>> cb) {
+            Path file,
+            int startLine,
+            int endLine,
+            int lineCount,
+            int lastLineLength,
+            Consumer<List<com.editora.editor.SemanticToken>> cb) {
         LanguageServerSession s = sessionFor(file);
         var prov = s == null ? null : semanticTokensProvider(s.capabilities());
         if (prov == null) {
@@ -1394,9 +1432,8 @@ public final class LspManager {
         // Prefer a range (viewport) request to bound cost; fall back to a whole-document request for a
         // server that advertises only `full` (no range).
         if (eitherTrue(prov.getRange())) {
-            // [startLine,0) .. [endLine+1,0) covers whole lines startLine..endLine; clamp start to >= 0.
-            var range = new org.eclipse.lsp4j.Range(
-                    new Position(Math.max(0, startLine), 0), new Position(Math.max(0, endLine) + 1, 0));
+            // Clamped to the document — a range past the last line makes a server return nothing (#715).
+            var range = inclusiveLineRange(startLine, endLine, lineCount, lastLineLength);
             s.semanticTokensRange(uri(file), range).whenComplete((tokens, error) -> {
                 List<com.editora.editor.SemanticToken> out = (error != null || tokens == null)
                         ? List.of()
