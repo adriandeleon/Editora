@@ -48,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   class the build declares (`mainClass = '…'`, `mainClass.set("…")`, or the legacy `mainClassName`), so the
   config matches what `gradle run` would launch instead of whichever file is open.
 
+### Changed
+
+- **Language-server test coverage** — the two classes that build every request Editora sends to a language
+  server were reachable only through a forked subprocess, so nothing checked what actually goes on the wire.
+  They now have in-process test seams and 45 new tests, including regressions for the four defects found in
+  the recent audit. No behaviour change; this is why the next one gets caught by the suite instead of by you.
+
 ### Fixed
 
 - **The Maven-aware `pom.xml` language server now actually starts** — it was enabled by default, offered by

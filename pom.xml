@@ -506,6 +506,26 @@
                                         </limit>
                                     </limits>
                                 </rule>
+                                <!-- Tier D (~0.45): com.editora.lsp. Two classes here dominate the line
+                                     count and both talk to a forked subprocess, so the ceiling is lower than
+                                     a pure package's — but the floor exists because this package produced
+                                     four defects in one audit (#715/#723/#724/#725) while its pure mappers
+                                     beside them, at 90-100%, produced none. Raised from nothing to 0.45 when
+                                     the LanguageServerSession/LspManager test seams landed (package was
+                                     ~52%); ratchet it up as those two climb. -->
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.lsp</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.45</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
                                 <!-- Tier C (~0.70): good-but-not-pure packages (some service glue). -->
                                 <rule>
                                     <element>PACKAGE</element>
