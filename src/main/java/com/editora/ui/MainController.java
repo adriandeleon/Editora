@@ -13421,10 +13421,32 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Emacs-style vertical caret move (C-n/C-p) preserving the goal column; see {@link EditorBuffer#moveLine}. */
     private void moveLine(int delta) {
+        if (multiCaretMove(b -> b.multiMoveVertical(delta > 0, markActive))) {
+            return;
+        }
         EditorBuffer buffer = activeBuffer();
         if (buffer != null) {
             buffer.moveLine(delta, selPolicy());
         }
+    }
+
+    /**
+     * When the active buffer has multiple carets, runs {@code op} (a fork multi-caret movement that fans
+     * out to every caret) and follows the primary caret; returns whether it handled the move. The Emacs
+     * movement chords are resolved by the scene-level {@code KeyDispatcher} on the primary caret only, so
+     * the nav.* commands branch here to reach the fork's fan-out (#635). Each {@code op} returns false when
+     * no extra carets exist, so the caller falls through to its normal single-caret motion.
+     */
+    private boolean multiCaretMove(java.util.function.Predicate<EditorBuffer> op) {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null || !op.test(buffer)) {
+            return false;
+        }
+        CodeArea area = activeArea();
+        if (area != null) {
+            area.requestFollowCaret(); // fork moves all carets; keep the primary in view (best-effort)
+        }
+        return true;
     }
 
     /** Run a navigation action and scroll the viewport to follow the caret. */
@@ -14560,27 +14582,46 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.occur", this::occur));
         // C-a: smart line start — first press to the beginning of the line's text (first non-whitespace),
         // a second press toggles to the true line start (column 0).
-        registry.register(Command.of(
-                "nav.lineStart",
-                () -> moveAndFollow(
-                        a -> a.moveTo(TextNav.smartLineStart(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of("nav.lineEnd", () -> moveAndFollow(a -> a.lineEnd(selPolicy()))));
+        registry.register(Command.of("nav.lineStart", () -> {
+            if (multiCaretMove(b -> b.multiMoveLineBoundary(false, markActive))) {
+                return;
+            }
+            moveAndFollow(a -> a.moveTo(TextNav.smartLineStart(a.getText(), a.getCaretPosition()), selPolicy()));
+        }));
+        registry.register(Command.of("nav.lineEnd", () -> {
+            if (multiCaretMove(b -> b.multiMoveLineBoundary(true, markActive))) {
+                return;
+            }
+            moveAndFollow(a -> a.lineEnd(selPolicy()));
+        }));
         registry.register(Command.of("nav.docStart", () -> moveAndFollow(a -> a.start(selPolicy()))));
         registry.register(Command.of("nav.docEnd", () -> moveAndFollow(a -> a.end(selPolicy()))));
-        registry.register(Command.of(
-                "nav.charForward",
-                () -> moveAndFollow(a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1), selPolicy()))));
-        registry.register(Command.of(
-                "nav.charBackward",
-                () -> moveAndFollow(a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1), selPolicy()))));
+        registry.register(Command.of("nav.charForward", () -> {
+            if (multiCaretMove(b -> b.multiMoveHorizontal(1, false, markActive))) {
+                return;
+            }
+            moveAndFollow(a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1), selPolicy()));
+        }));
+        registry.register(Command.of("nav.charBackward", () -> {
+            if (multiCaretMove(b -> b.multiMoveHorizontal(-1, false, markActive))) {
+                return;
+            }
+            moveAndFollow(a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1), selPolicy()));
+        }));
         registry.register(Command.of("nav.lineDown", () -> moveLine(1)));
         registry.register(Command.of("nav.lineUp", () -> moveLine(-1)));
-        registry.register(Command.of(
-                "nav.wordForward",
-                () -> moveAndFollow(a -> a.moveTo(nextWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of(
-                "nav.wordBackward",
-                () -> moveAndFollow(a -> a.moveTo(prevWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
+        registry.register(Command.of("nav.wordForward", () -> {
+            if (multiCaretMove(b -> b.multiMoveHorizontal(1, true, markActive))) {
+                return;
+            }
+            moveAndFollow(a -> a.moveTo(nextWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()));
+        }));
+        registry.register(Command.of("nav.wordBackward", () -> {
+            if (multiCaretMove(b -> b.multiMoveHorizontal(-1, true, markActive))) {
+                return;
+            }
+            moveAndFollow(a -> a.moveTo(prevWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()));
+        }));
         registry.register(Command.of(
                 "nav.subwordForward",
                 () -> moveAndFollow(

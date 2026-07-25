@@ -527,12 +527,21 @@ add-on (a layered wellbehaved `InputMap`, gated on `MultiCaretManager.hasExtras(
 one caret). **`EditorBuffer`** installs it on `area`/`area2` via `setMultiCaretEnabled(...)` (gated by
 `Settings.multiCaret`, default on; pushed by `MainController.applyMultiCaret`), exposes
 `hasMultipleCarets()` + delegating `addCaretNextOccurrence`/`addCaretAbove`/`addCaretBelow`/`collapseCarets`
-(palette commands `edit.addCaret*`/`edit.collapseCarets`, `view.toggleMultiCaret` — **no keymap bindings**:
-gestures are mouse + Esc, native to the fork). **Select all occurrences** (`edit.selectAllOccurrences`, VS Code `selectHighlights` Ctrl+Shift+L in the vscode/sublime keymaps) places a caret at every literal, case-sensitive occurrence of the selection — or, with none, the word under the caret (pure/unit-tested `editops/SelectOccurrences.wordAt`) — via `EditorBuffer.placeOccurrenceCarets(ranges, anchorStart)`: `collapseToPrimary` then one `MultiCaretManager.addCaretWithSelection(start,end)` per match, the match containing the anchor kept primary (pure `SelectOccurrences.primaryIndex`), capped at `MAX_OCCURRENCE_CARETS`=10k. **`find.selectAllMatches`** (Alt+Enter in the find field, handled in the field’s key handler + palette) reuses the same placement over the find bar’s live `currentMatches()` (query + case/regex/whole-word toggles), then closes the bar. Both gated by `withMultiCaret` (off in Simple mode); the resulting carets inherit the movement-chord fan-out limitation above. Because Editora's area-level KEY filters (auto-indent/close,
+(palette commands `edit.addCaret*`/`edit.collapseCarets`, `view.toggleMultiCaret` — **no Emacs keymap bindings** (gestures are mouse + Esc,
+native to the fork; the `vscode` keymap does bind `C-d`/`C-M-up`/`C-M-down`)). **Select all occurrences** (`edit.selectAllOccurrences`, VS Code `selectHighlights` Ctrl+Shift+L in the vscode/sublime keymaps) places a caret at every literal, case-sensitive occurrence of the selection — or, with none, the word under the caret (pure/unit-tested `editops/SelectOccurrences.wordAt`) — via `EditorBuffer.placeOccurrenceCarets(ranges, anchorStart)`: `collapseToPrimary` then one `MultiCaretManager.addCaretWithSelection(start,end)` per match, the match containing the anchor kept primary (pure `SelectOccurrences.primaryIndex`), capped at `MAX_OCCURRENCE_CARETS`=10k. **`find.selectAllMatches`** (Alt+Enter in the find field, handled in the field’s key handler + palette) reuses the same placement over the find bar’s live `currentMatches()` (query + case/regex/whole-word toggles), then closes the bar. Both gated by `withMultiCaret` (off in Simple mode); the resulting carets inherit the movement-chord fan-out limitation above. Because Editora's area-level KEY filters (auto-indent/close,
 snippets, completion, view paging) are capture-phase *filters* that run before the fork's node InputMap,
 each one early-returns (no consume) via `multiCaretActiveOn(a)` when that area has extra carets, so editing
-fans out to all carets. *Known limitation:* Emacs movement chords (`C-f`/`C-n`/…) are resolved by the
-scene-level `KeyDispatcher` on the primary caret and don't fan out — use arrows for multi-caret movement.
+fans out to all carets. **Movement chords fan out too (#635):** the Emacs movement commands are resolved by
+the scene-level `KeyDispatcher` on the primary caret, so the fork's node-level movement InputMap never sees
+them — instead the `nav.*` command handlers branch through `MainController.multiCaretMove(op)` when the
+active buffer `hasMultipleCarets()`, calling `EditorBuffer.multiMoveHorizontal`/`multiMoveVertical`/
+`multiMoveLineBoundary` (thin wrappers over the fork's `MultiCaretManager.moveHorizontal(amount, byWord,
+select)`/`moveVertical(down, select)`/`moveLineBoundary(toEnd, select)`, each returning false when there are
+no extras so the caller falls through to its single-caret motion; `select` = `markActive`, mirroring
+`selPolicy()`). This covers `nav.charForward`/`charBackward` (`±1` char), `wordForward`/`wordBackward` (`±1`
+word), `lineUp`/`lineDown` (via `moveLine`), and `lineStart`/`lineEnd`. *Still primary-only* (the fork has no
+multi-caret API for them): `docStart`/`docEnd`, paragraph/sentence motion, page up/down, `backToIndentation`,
+and subword nav; and the fork's `moveVertical` is best-effort about scrolling out-of-view carets into view.
 To update the fork: rebuild it, copy the new `richtextfx-<version>.{jar,pom}` into `m2-repo/`, bump
 `<richtextfx.version>`. RichTextFX and its transitive deps (`reactfx`, `flowless`, `undofx`, `wellbehavedfx`)
 are **automatic modules**, which `jlink` cannot link. The `moditect-maven-plugin` in
