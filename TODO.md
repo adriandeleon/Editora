@@ -3,6 +3,30 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP test seams + protocol coverage** — the audit round below found four defects in `com.editora.lsp`;
+      measuring afterwards showed why they were invisible. `LanguageServerSession` sat at **3.2%** line
+      coverage and `LspManager` at **17%** (~1,480 lines between them), while every pure mapper beside them —
+      `DiagnosticMapper`, `TextSyncDiff`, `SemanticTokens*`, `LspPositions`, `WorkspaceEditMapper` — was at
+      **91-100%** and produced **zero** bugs. The cause was structural, not diligence: both classes were only
+      reachable through a forked subprocess, so **nothing asserted what Editora actually puts on the wire**,
+      which is exactly what #725 (an unreachable `TriggerCharacter` branch) and #715 (an off-by-one range)
+      were. Two seams fix that — `LanguageServerSession.attachForTest` (attach an in-process
+      {@code LanguageServer} as if `initialize` had completed) and `LspManager.setSessionStarterForTest`
+      (create sessions without forking), both mirroring the existing `WindowManager.buildWindowForTest`
+      convention and inert in production. On top of them, **45 new tests**: `FakeLanguageServer` (a recording
+      test double), `LanguageServerSessionProtocolTest` (15 — the wire shape: signature-help trigger kind and
+      retrigger, inlay-hint range clamping, didOpen/didChange/didSave/didClose, monotonic versions,
+      full-vs-incremental sync and the identical-resync skip, sync-kind None, the queue-until-ready collapse,
+      disposed-session silence), `ClientCapabilitiesTest` (11 — what we *declare*, where three features have
+      already died silently: #674's `dynamicRegistration`-vs-`contextSupport` ctor trap, #676's
+      all-or-nothing resource operations, #410/#445's `additionalTextEdits` resolve support), and
+      `LspManagerLifecycleFxTest` (19 — open→managed→close routing, session sharing per root, per-server
+      shutdown (the prefix-scan that once matched nothing), the command-change teardown, diagnostics dispatch
+      incl. a dropped `jdt://` URI and a silenced disposed session, null-path safety, watched-file scoping).
+      Result: `LanguageServerSession` **3.2% → 37.7%**, `LspManager` **17% → 37.5%**, package **~52%**, with a
+      new jacoco floor of 0.45 so it cannot regress. **The suite was mutation-checked**: re-introducing #725
+      and #715 in the source produced 9 failures across the new tests — they have teeth, rather than merely
+      executing the lines.
 - [x] **LSP audit round** (#723/#724/#725/#715) — a read of the whole LSP surface plus
       probes against a real jdtls 1.60. **(a) #723 — the Maven-aware `pom.xml` server could never start:**
       `applySupport`'s `configure` map was a hand-written `Map.ofEntries` of 22 entries against a 23-entry

@@ -426,6 +426,10 @@ public final class LspManager {
             releaseJdtlsWorkspace(session); // this un-started session's claim must not leak
             return prev; // another open created it first (rare) — use that one; this un-started session is dropped
         }
+        if (sessionStarterForTest != null) {
+            sessionStarterForTest.accept(session); // TEST SEAM (see the field): attach a fake, never fork
+            return session;
+        }
         // Fork + connect + initialize OFF the FX thread (#407): the process fork + PATH scan + ledger write would
         // otherwise freeze the UI for the first open of a language. The session is already cached, so the caller's
         // didOpen queues (LanguageServerSession.whenReady) until the async initialize completes; a failed start
@@ -436,6 +440,22 @@ public final class LspManager {
             }
         });
         return session;
+    }
+
+    /**
+     * TEST SEAM — when set, a newly created session is handed here <b>instead of being forked</b>, so the
+     * routing/lifecycle layer (open→managed→close, idle eviction, crash-vs-dispose, per-server shutdown,
+     * diagnostics retention) is reachable without a subprocess. Mirrors
+     * {@code LanguageServerSession.attachForTest}; null in production, so the fork path is untouched.
+     *
+     * <p>This layer sat at 17% coverage while holding the map bookkeeping that several fixes turn on — #669
+     * (evict an idle session), #666 (a crashed session must be dropped, a disposed one must not re-fork),
+     * #670 (retain raw diagnostics for open documents only). All of that was verifiable only by hand.
+     */
+    private volatile Consumer<LanguageServerSession> sessionStarterForTest;
+
+    void setSessionStarterForTest(Consumer<LanguageServerSession> starter) {
+        this.sessionStarterForTest = starter;
     }
 
     /** Sets the session-crashed callback (see {@link #onSessionCrashed}); marshaled to the FX thread. */

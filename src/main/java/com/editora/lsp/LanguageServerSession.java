@@ -333,7 +333,9 @@ final class LanguageServerSession implements LanguageClient {
             org.eclipse.lsp4j.SemanticTokenModifiers.Documentation,
             org.eclipse.lsp4j.SemanticTokenModifiers.DefaultLibrary);
 
-    private static ClientCapabilities clientCapabilities() {
+    /** Package-private for {@code ClientCapabilitiesTest}: what we declare here decides what servers will
+     *  do for us, and three separate features have died from a silent change to it (#468, #674, #676). */
+    static ClientCapabilities clientCapabilities() {
         TextDocumentClientCapabilities td = new TextDocumentClientCapabilities();
         td.setSynchronization(new SynchronizationCapabilities(false, false, true));
         td.setPublishDiagnostics(new PublishDiagnosticsCapabilities(true));
@@ -471,6 +473,33 @@ final class LanguageServerSession implements LanguageClient {
 
     boolean isInitialized() {
         return initialized;
+    }
+
+    /**
+     * TEST SEAM — attaches an in-process {@link LanguageServer} as if {@code initialize} had just completed,
+     * instead of forking a real one ({@link #start()}). Mirrors {@code WindowManager.buildWindowForTest}.
+     *
+     * <p>This exists because the two classes that build every request Editora puts on the wire —
+     * {@code LanguageServerSession} and {@link LspManager} — were only reachable through a forked subprocess,
+     * so nothing asserted <em>what we actually send</em>. That is not a hypothetical gap: #725 (the
+     * {@code TriggerCharacter} branch of {@link #signatureHelp} was unreachable, so every request claimed
+     * {@code Invoked}) and #715 (an inlay-hint range one line past the end of the document, which jdtls
+     * answers with an empty list rather than an error) both lived here and were invisible to the suite, while
+     * the pure mappers beside them — at 90-100% coverage — had none.
+     *
+     * <p>Flushes the pending queue exactly as the real handshake does, so a test can also exercise the
+     * queue-until-ready path by calling document methods before attaching.
+     */
+    void attachForTest(LanguageServer testServer, ServerCapabilities caps) {
+        this.server = testServer;
+        this.capabilities = caps;
+        List<Pending> toRun;
+        synchronized (this) {
+            initialized = true;
+            toRun = new ArrayList<>(pending);
+            pending.clear();
+        }
+        toRun.forEach(p -> p.action().run());
     }
 
     ServerCapabilities capabilities() {
