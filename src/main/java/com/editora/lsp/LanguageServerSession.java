@@ -516,6 +516,13 @@ final class LanguageServerSession implements LanguageClient {
         markDead();
     }
 
+    /** TEST SEAM — simulates the server dying on its own (a crash / OOM-kill), which in production arrives
+     *  via {@code process.onExit()}. Distinct from {@link #dispose()}: a session that died but was never
+     *  disposed is what the auto-restart keys on (#666), and that distinction had no test. */
+    void simulateServerDeathForTest() {
+        markDead();
+    }
+
     private void markDead() {
         if (deadReported.compareAndSet(false, true)) {
             initialized = false;
