@@ -105,4 +105,73 @@ class TextNavTest {
         assertEquals(5, TextNav.backwardSentence(t, 10)); // sitting at "Three." start → back to "Two."
         assertEquals(0, TextNav.backwardSentence(t, 4)); // within first sentence → 0
     }
+
+    // --- subword navigation (camelCase / snake_case) ---
+
+    /** Walks nextSubwordBoundary from 0, returning the pieces it steps over. */
+    private static java.util.List<String> forwardParts(String text) {
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        int i = 0;
+        while (i < text.length()) {
+            int next = TextNav.nextSubwordBoundary(text, i);
+            if (next <= i) {
+                break;
+            }
+            parts.add(text.substring(i, next));
+            i = next;
+        }
+        return parts;
+    }
+
+    @Test
+    void forwardSplitsCamelCase() {
+        assertEquals(java.util.List.of("get", "User", "Name"), forwardParts("getUserName"));
+    }
+
+    @Test
+    void forwardSplitsAcronyms() {
+        assertEquals(java.util.List.of("HTML", "Parser"), forwardParts("HTMLParser"));
+        assertEquals(java.util.List.of("parse", "XML", "Doc"), forwardParts("parseXMLDoc"));
+    }
+
+    @Test
+    void forwardSplitsSnakeAndKebab() {
+        // separators are skipped like whitespace and consumed at the start of the next step
+        assertEquals(java.util.List.of("foo", "_bar", "_baz"), forwardParts("foo_bar_baz"));
+        assertEquals(java.util.List.of("foo", "-bar"), forwardParts("foo-bar"));
+    }
+
+    @Test
+    void forwardSplitsLetterDigitTransitions() {
+        assertEquals(java.util.List.of("foo", "42", "bar"), forwardParts("foo42bar"));
+    }
+
+    @Test
+    void forwardSkipsWhitespaceLikeAWord() {
+        // from the end of "foo" (3), skip the space, then "bar" is one subword → 7
+        assertEquals(7, TextNav.nextSubwordBoundary("foo bar", 3));
+    }
+
+    @Test
+    void backwardMirrorsForward() {
+        String t = "getUserName";
+        assertEquals(7, TextNav.prevSubwordBoundary(t, 11)); // from end → start of "Name"
+        assertEquals(3, TextNav.prevSubwordBoundary(t, 7)); // → start of "User"
+        assertEquals(0, TextNav.prevSubwordBoundary(t, 3)); // → start of "get"
+    }
+
+    @Test
+    void backwardAcronym() {
+        assertEquals(4, TextNav.prevSubwordBoundary("HTMLParser", 10)); // → start of "Parser"
+        assertEquals(0, TextNav.prevSubwordBoundary("HTMLParser", 4)); // → start of "HTML"
+    }
+
+    @Test
+    void boundariesAtDocumentEdgesAreSafe() {
+        assertEquals(0, TextNav.nextSubwordBoundary("", 0));
+        assertEquals(0, TextNav.prevSubwordBoundary("", 0));
+        assertEquals(3, TextNav.nextSubwordBoundary("abc", 3)); // already at end
+        assertEquals(0, TextNav.prevSubwordBoundary("abc", 0));
+        assertEquals(3, TextNav.nextSubwordBoundary("abc", 9)); // out-of-range clamps
+    }
 }

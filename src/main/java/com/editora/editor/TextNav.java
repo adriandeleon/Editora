@@ -150,4 +150,67 @@ public final class TextNav {
         }
         return starts;
     }
+
+    // --- subword (camelCase / snake_case) navigation ----------------------------------------------
+
+    /**
+     * The next <b>subword</b> boundary at or after {@code caret} (VS Code {@code cursorWordPartRight}):
+     * stepping through {@code getUserName} lands on {@code get} → {@code User} → {@code Name}. Separators
+     * ({@code _}, {@code -}, whitespace, punctuation) are skipped like a plain word boundary; within a word
+     * a boundary falls at a lower/digit→upper transition (camelCase), at the last capital of an
+     * acronym before a lowercase ({@code HTMLParser} → {@code HTML|Parser}), and at a letter↔digit
+     * transition ({@code foo42} → {@code foo|42}).
+     */
+    public static int nextSubwordBoundary(String text, int caret) {
+        int n = text.length();
+        int i = Math.max(0, Math.min(caret, n));
+        while (i < n && !isSubwordChar(text.charAt(i))) {
+            i++; // skip separators / whitespace / punctuation
+        }
+        if (i >= n) {
+            return n;
+        }
+        i++; // consume at least the first char of the subword
+        while (i < n && isSubwordChar(text.charAt(i)) && !subwordBoundaryBefore(text, i)) {
+            i++;
+        }
+        return i;
+    }
+
+    /** The previous subword boundary at or before {@code caret} (VS Code {@code cursorWordPartLeft}). */
+    public static int prevSubwordBoundary(String text, int caret) {
+        int i = Math.max(0, Math.min(caret, text.length()));
+        while (i > 0 && !isSubwordChar(text.charAt(i - 1))) {
+            i--;
+        }
+        if (i == 0) {
+            return 0;
+        }
+        i--; // consume at least the char just before the caret
+        while (i > 0 && isSubwordChar(text.charAt(i - 1)) && !subwordBoundaryBefore(text, i)) {
+            i--;
+        }
+        return i;
+    }
+
+    /** Subword chars are letters and digits; {@code _}/{@code -} are separators, so they delimit subwords. */
+    private static boolean isSubwordChar(char c) {
+        return Character.isLetterOrDigit(c);
+    }
+
+    /** True when a subword boundary falls between {@code text[i-1]} and {@code text[i]} (both word chars). */
+    private static boolean subwordBoundaryBefore(String text, int i) {
+        char a = text.charAt(i - 1);
+        char b = text.charAt(i);
+        if (!Character.isUpperCase(a) && Character.isUpperCase(b)) {
+            return true; // fooBar → foo|Bar
+        }
+        if (Character.isUpperCase(a)
+                && Character.isUpperCase(b)
+                && i + 1 < text.length()
+                && Character.isLowerCase(text.charAt(i + 1))) {
+            return true; // HTMLParser → HTML|Parser (the last capital starts the next word)
+        }
+        return (Character.isLetter(a) && Character.isDigit(b)) || (Character.isDigit(a) && Character.isLetter(b));
+    }
 }

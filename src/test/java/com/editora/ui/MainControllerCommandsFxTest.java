@@ -113,6 +113,39 @@ class MainControllerCommandsFxTest {
         closeActiveTab();
     }
 
+    @Test
+    void subwordNavCommandsMoveByCamelCasePart() throws Exception {
+        EditorBuffer b = addActiveBuffer("getUserName\n");
+        CodeArea area = FxTestSupport.field(b, "area");
+
+        FxTestSupport.runOnFx(() -> area.moveTo(0));
+        run("nav.subwordForward");
+        assertEquals(3, FxTestSupport.callOnFx(area::getCaretPosition), "stops after 'get'");
+        run("nav.subwordForward");
+        assertEquals(7, FxTestSupport.callOnFx(area::getCaretPosition), "stops after 'User'");
+        run("nav.subwordBackward");
+        assertEquals(3, FxTestSupport.callOnFx(area::getCaretPosition), "back to start of 'User'");
+
+        closeActiveTab();
+    }
+
+    @Test
+    void deleteSubwordCommandsRemoveOnePart() throws Exception {
+        EditorBuffer b = addActiveBuffer("getUserName\n");
+        CodeArea area = FxTestSupport.field(b, "area");
+
+        FxTestSupport.runOnFx(() -> area.moveTo(0));
+        run("edit.deleteSubwordForward");
+        assertEquals("UserName\n", FxTestSupport.callOnFx(area::getText), "deletes the 'get' subword");
+
+        FxTestSupport.runOnFx(() -> area.moveTo(4)); // after "User"
+        run("edit.deleteSubwordBackward");
+        assertEquals("Name\n", FxTestSupport.callOnFx(area::getText), "deletes the 'User' subword before caret");
+
+        FxTestSupport.runOnFx(b::markClean); // else closeTab prompts to save the edited buffer and deadlocks
+        closeActiveTab();
+    }
+
     private void assertToggleRoundTrips(String commandId, java.util.function.BooleanSupplier getter) throws Exception {
         boolean before = getter.getAsBoolean();
         run(commandId);
