@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Select all occurrences** — place a cursor at every occurrence of the selection (or the word under the
+  caret) at once, turning them all into editable cursors (`Ctrl+Shift+L` in the VS Code and Sublime keymaps;
+  palette-discoverable everywhere). From the Find bar, **Alt+Enter** does the same for every match of the
+  current query and closes the bar. Matching is literal and case-sensitive.
 - **Copy with syntax highlighting** — copying now also puts a colored HTML flavor on the clipboard, so
   pasting code into Slack, an email or a document keeps its highlighting instead of arriving as a grey block.
   On by default (Settings → Editor, and the `view.toggleCopyWithHighlighting` palette command); the colors

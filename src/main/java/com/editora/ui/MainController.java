@@ -616,6 +616,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Tooltip on a grayed row explaining why, and naming the command that would re-enable it.
         this.palette.setDisabledReason(c -> disabledCommandReason(c.id()));
         this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
+        this.findBar.setOnSelectAllMatches(this::selectAllFindMatches);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
         this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
@@ -9085,6 +9086,33 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** VS Code {@code selectHighlights} (Ctrl+Shift+L): a caret at every occurrence of the selection/word. */
+    private void selectAllOccurrences() {
+        withMultiCaret(b -> {
+            int n = b.selectAllOccurrences();
+            setStatus(n == 0 ? tr("status.occurrences.none") : tr("status.occurrences.selected", n));
+        });
+    }
+
+    /** VS Code {@code selectAllMatches} (Alt+Enter in the find bar): a caret at every find-bar match. */
+    private void selectAllFindMatches() {
+        if (!findBar.isShown()) {
+            setStatus(tr("status.find.notOpen"));
+            return;
+        }
+        withMultiCaret(b -> {
+            java.util.List<int[]> m = new java.util.ArrayList<>(findBar.currentMatches());
+            if (m.isEmpty()) {
+                setStatus(tr("status.occurrences.none"));
+                return;
+            }
+            int anchor = activeArea() != null ? activeArea().getCaretPosition() : 0;
+            findBar.hideBar(); // returns focus to the editor before the carets are placed
+            int n = b.placeOccurrenceCarets(m, anchor);
+            setStatus(tr("status.occurrences.selected", n));
+        });
+    }
+
     /** Opens a picker to set the spell-check dictionary language for the active file (persisted per file). */
     private void chooseSpellLanguage() {
         EditorBuffer buffer = activeBuffer();
@@ -14341,6 +14369,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("find.previous", this::findPreviousMatch));
         registry.register(Command.of("find.replaceCurrent", this::findReplaceCurrentMatch));
         registry.register(Command.of("find.replaceAll", this::findReplaceAllMatches));
+        registry.register(Command.of("find.selectAllMatches", this::selectAllFindMatches));
+        registry.register(Command.of("edit.selectAllOccurrences", this::selectAllOccurrences));
         registry.register(Command.of("edit.cut", this::onCut));
         registry.register(Command.of("edit.copy", this::onCopy));
         registry.register(Command.of("edit.paste", this::onPaste));

@@ -41,5 +41,6 @@
   "M-up": "edit.moveLineUp",
   "M-down": "edit.moveLineDown",
   "M-S-right": "edit.expandSelection",
-  "M-S-left": "edit.shrinkSelection"
+  "M-S-left": "edit.shrinkSelection",
+  "C-S-l": "edit.selectAllOccurrences"
 }

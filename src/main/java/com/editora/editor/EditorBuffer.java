@@ -4715,6 +4715,68 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** Cap on carets a single "select all" places, so a common word can't create hundreds of thousands. */
+    public static final int MAX_OCCURRENCE_CARETS = 10_000;
+
+    /**
+     * Places a caret with selection at each of {@code ranges} (the one containing {@code anchorStart} stays
+     * primary), for "select all occurrences" / "select all matches". Capped at
+     * {@link #MAX_OCCURRENCE_CARETS}. Returns the number of carets placed; 0 when {@code ranges} is empty.
+     */
+    public int placeOccurrenceCarets(List<int[]> ranges, int anchorStart) {
+        if (ranges == null || ranges.isEmpty()) {
+            return 0;
+        }
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        int primaryIdx = com.editora.editops.SelectOccurrences.primaryIndex(ranges, anchorStart);
+        int[] primary = ranges.get(primaryIdx);
+        var mgr = activeManager();
+        if (mgr == null) { // multi-caret unavailable → just select the primary occurrence
+            a.selectRange(primary[0], primary[1]);
+            a.requestFollowCaret();
+            return 1;
+        }
+        mgr.collapseToPrimary();
+        a.selectRange(primary[0], primary[1]);
+        int placed = 1;
+        for (int i = 0; i < ranges.size() && placed < MAX_OCCURRENCE_CARETS; i++) {
+            if (i == primaryIdx) {
+                continue;
+            }
+            int[] r = ranges.get(i);
+            mgr.addCaretWithSelection(r[0], r[1]);
+            placed++;
+        }
+        a.requestFollowCaret();
+        return placed;
+    }
+
+    /**
+     * Selects every occurrence of the current selection (or, with none, the word under the caret) as a
+     * multi-caret selection — VS Code's {@code selectHighlights} (Ctrl+Shift+L). Case-sensitive literal
+     * matching. Returns the number of carets placed (0 when there's nothing to match).
+     */
+    public int selectAllOccurrences() {
+        CodeArea a = focusedArea != null ? focusedArea : area;
+        String text = a.getText();
+        String query;
+        int anchor;
+        String sel = a.getSelectedText();
+        if (!sel.isEmpty()) {
+            query = sel;
+            anchor = a.getSelection().getStart();
+        } else {
+            int[] w = com.editora.editops.SelectOccurrences.wordAt(text, a.getCaretPosition());
+            if (w == null) {
+                return 0;
+            }
+            query = text.substring(w[0], w[1]);
+            anchor = w[0];
+        }
+        List<int[]> matches = SearchMatcher.matches(text, query, true, false, false);
+        return placeOccurrenceCarets(matches, anchor);
+    }
+
     /** Adds a caret on the line above the (primary) caret. */
     public void addCaretAbove() {
         var m = activeManager();
