@@ -65,50 +65,50 @@ import org.eclipse.lsp4j.services.WorkspaceService;
  * <p>Responses default to empty/null — a test that cares about a response sets the matching field. Only the
  * requests Editora actually issues are implemented; the rest inherit lsp4j's defaults.
  */
-final class FakeLanguageServer implements LanguageServer, TextDocumentService, WorkspaceService {
+public final class FakeLanguageServer implements LanguageServer, TextDocumentService, WorkspaceService {
 
     // --- recorded requests -------------------------------------------------------------------------
-    final List<DidOpenTextDocumentParams> opened = new ArrayList<>();
-    final List<DidChangeTextDocumentParams> changed = new ArrayList<>();
-    final List<DidSaveTextDocumentParams> saved = new ArrayList<>();
-    final List<DidCloseTextDocumentParams> closed = new ArrayList<>();
-    final List<SignatureHelpParams> signatureHelps = new ArrayList<>();
-    final List<InlayHintParams> inlayHints = new ArrayList<>();
-    final List<SemanticTokensRangeParams> semanticRanges = new ArrayList<>();
-    final List<SemanticTokensParams> semanticFulls = new ArrayList<>();
-    final List<CompletionParams> completions = new ArrayList<>();
-    final List<HoverParams> hovers = new ArrayList<>();
-    final List<DocumentHighlightParams> highlights = new ArrayList<>();
-    final List<CodeActionParams> codeActions = new ArrayList<>();
-    final List<DocumentFormattingParams> formattings = new ArrayList<>();
-    final List<DocumentRangeFormattingParams> rangeFormattings = new ArrayList<>();
-    final List<ExecuteCommandParams> executedCommands = new ArrayList<>();
-    final List<DidChangeConfigurationParams> configurations = new ArrayList<>();
-    final List<DidChangeWatchedFilesParams> watchedFiles = new ArrayList<>();
-    final List<DefinitionParams> definitions = new ArrayList<>();
-    final List<ReferenceParams> references = new ArrayList<>();
-    final List<DocumentSymbolParams> documentSymbols = new ArrayList<>();
-    final List<WorkspaceSymbolParams> workspaceSymbols = new ArrayList<>();
-    final List<PrepareRenameParams> prepareRenames = new ArrayList<>();
-    final List<RenameParams> renames = new ArrayList<>();
+    public final List<DidOpenTextDocumentParams> opened = new ArrayList<>();
+    public final List<DidChangeTextDocumentParams> changed = new ArrayList<>();
+    public final List<DidSaveTextDocumentParams> saved = new ArrayList<>();
+    public final List<DidCloseTextDocumentParams> closed = new ArrayList<>();
+    public final List<SignatureHelpParams> signatureHelps = new ArrayList<>();
+    public final List<InlayHintParams> inlayHints = new ArrayList<>();
+    public final List<SemanticTokensRangeParams> semanticRanges = new ArrayList<>();
+    public final List<SemanticTokensParams> semanticFulls = new ArrayList<>();
+    public final List<CompletionParams> completions = new ArrayList<>();
+    public final List<HoverParams> hovers = new ArrayList<>();
+    public final List<DocumentHighlightParams> highlights = new ArrayList<>();
+    public final List<CodeActionParams> codeActions = new ArrayList<>();
+    public final List<DocumentFormattingParams> formattings = new ArrayList<>();
+    public final List<DocumentRangeFormattingParams> rangeFormattings = new ArrayList<>();
+    public final List<ExecuteCommandParams> executedCommands = new ArrayList<>();
+    public final List<DidChangeConfigurationParams> configurations = new ArrayList<>();
+    public final List<DidChangeWatchedFilesParams> watchedFiles = new ArrayList<>();
+    public final List<DefinitionParams> definitions = new ArrayList<>();
+    public final List<ReferenceParams> references = new ArrayList<>();
+    public final List<DocumentSymbolParams> documentSymbols = new ArrayList<>();
+    public final List<WorkspaceSymbolParams> workspaceSymbols = new ArrayList<>();
+    public final List<PrepareRenameParams> prepareRenames = new ArrayList<>();
+    public final List<RenameParams> renames = new ArrayList<>();
 
     // --- canned responses --------------------------------------------------------------------------
-    SignatureHelp signatureHelpResponse;
-    List<InlayHint> inlayHintResponse = List.of();
-    SemanticTokens semanticTokensResponse;
-    List<TextEdit> formattingResponse = List.of();
-    List<Location> definitionResponse = List.of();
-    List<Location> referenceResponse = List.of();
-    List<Either<SymbolInformation, DocumentSymbol>> documentSymbolResponse = List.of();
-    List<WorkspaceSymbol> workspaceSymbolResponse = List.of();
-    Either3<org.eclipse.lsp4j.Range, PrepareRenameResult, org.eclipse.lsp4j.PrepareRenameDefaultBehavior>
+    public SignatureHelp signatureHelpResponse;
+    public List<InlayHint> inlayHintResponse = List.of();
+    public SemanticTokens semanticTokensResponse;
+    public List<TextEdit> formattingResponse = List.of();
+    public List<Location> definitionResponse = List.of();
+    public List<Location> referenceResponse = List.of();
+    public List<Either<SymbolInformation, DocumentSymbol>> documentSymbolResponse = List.of();
+    public List<WorkspaceSymbol> workspaceSymbolResponse = List.of();
+    public Either3<org.eclipse.lsp4j.Range, PrepareRenameResult, org.eclipse.lsp4j.PrepareRenameDefaultBehavior>
             prepareRenameResponse;
-    WorkspaceEdit renameResponse;
+    public WorkspaceEdit renameResponse;
     /** When set, the next request of that kind completes exceptionally — the error paths must degrade, not throw. */
-    boolean failEverything;
+    public boolean failEverything;
 
     /** The last recorded element of {@code list}, or null when nothing was recorded. */
-    static <T> T last(List<T> list) {
+    public static <T> T last(List<T> list) {
         return list.isEmpty() ? null : list.get(list.size() - 1);
     }
 
