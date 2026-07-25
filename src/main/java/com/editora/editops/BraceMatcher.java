@@ -21,6 +21,42 @@ public final class BraceMatcher {
         return left != null ? left : matchFrom(text, caret, maxScan);
     }
 
+    /**
+     * The caret offset to jump to from the bracket adjacent to {@code caret} (go-to-matching-bracket), or
+     * {@code -1} when no bracket is adjacent or it is unmatched. The caret's <em>side</em> of its bracket is
+     * preserved onto the mate — the caret just after a bracket lands just after the mate — so repeated jumps
+     * toggle cleanly between the pair.
+     */
+    public static int jumpTarget(String text, int caret, int maxScan) {
+        int[] pair = match(text, caret, maxScan);
+        if (pair == null) {
+            return -1;
+        }
+        if (caret - 1 == pair[0]) {
+            return pair[1] + 1; // bracket just left of caret → land just past its mate
+        }
+        if (caret - 1 == pair[1]) {
+            return pair[0] + 1;
+        }
+        if (caret == pair[0]) {
+            return pair[1]; // bracket just right of caret → land just before its mate
+        }
+        if (caret == pair[1]) {
+            return pair[0];
+        }
+        return -1;
+    }
+
+    /**
+     * The {@code [start, end)} range to select from the bracket adjacent to {@code caret} to its mate,
+     * <b>including both brackets</b> (VS Code's {@code selectToBracket} with {@code selectBrackets: true}),
+     * or {@code null} when no bracket is adjacent.
+     */
+    public static int[] selectSpan(String text, int caret, int maxScan) {
+        int[] pair = match(text, caret, maxScan);
+        return pair == null ? null : new int[] {pair[0], pair[1] + 1};
+    }
+
     private static int[] matchFrom(String text, int pos, int maxScan) {
         if (pos < 0 || pos >= text.length()) {
             return null;
