@@ -3,6 +3,17 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Go to Implementation / Type Definition / Declaration** (#735, #736) — the three navigation requests
+      every registered server advertises and none of which Editora sent. `LspManager.requestDefinition`
+      generalized into a shared `requestLocations` walk parameterized by which session method runs, so all
+      four navigation requests normalize the `Location`/`LocationLink` response shapes and preserve a
+      `jdt://` class-file target in one place. Implementation reuses the References-window delivery (a lone
+      result jumps; a dependency-only result opens as library source); type definition and declaration reuse
+      definition's single-target path. Capability-gated per buffer (`setLspImplementationAvailable` /
+      `setLspTypeDefinitionAvailable`, pushed at `syncBuffer` + the ready event like rename/format), so an
+      unsupported server reports that precisely instead of "nothing found" and the right-click menu never
+      shows a dead entry. Wire-level tests assert each request goes out as **its own** method — routing two
+      of them to the same one compiles and answers plausibly, which is exactly the bug class #725 was.
 - [x] **LSP coverage floors + the workspace-edit apply path (round 4)** — closes the LSP testing arc.
       **`LspWorkspaceEditFxTest` (10)** covers the one LSP path that *writes and moves files on disk*: the
       **all-or-nothing** contract, asserted by checking the untouched files afterwards rather than the

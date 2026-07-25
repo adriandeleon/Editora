@@ -10,6 +10,7 @@ import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
+import org.eclipse.lsp4j.DeclarationParams;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
@@ -26,6 +27,7 @@ import org.eclipse.lsp4j.DocumentSymbolParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
+import org.eclipse.lsp4j.ImplementationParams;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InlayHint;
@@ -44,6 +46,7 @@ import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SignatureHelpParams;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.TypeDefinitionParams;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.WorkspaceSymbol;
 import org.eclipse.lsp4j.WorkspaceSymbolParams;
@@ -86,6 +89,9 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public final List<DidChangeConfigurationParams> configurations = new ArrayList<>();
     public final List<DidChangeWatchedFilesParams> watchedFiles = new ArrayList<>();
     public final List<DefinitionParams> definitions = new ArrayList<>();
+    public final List<ImplementationParams> implementations = new ArrayList<>();
+    public final List<TypeDefinitionParams> typeDefinitions = new ArrayList<>();
+    public final List<DeclarationParams> declarations = new ArrayList<>();
     public final List<ReferenceParams> references = new ArrayList<>();
     public final List<DocumentSymbolParams> documentSymbols = new ArrayList<>();
     public final List<WorkspaceSymbolParams> workspaceSymbols = new ArrayList<>();
@@ -98,6 +104,9 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public SemanticTokens semanticTokensResponse;
     public List<TextEdit> formattingResponse = List.of();
     public List<Location> definitionResponse = List.of();
+    public List<Location> implementationResponse = List.of();
+    public List<Location> typeDefinitionResponse = List.of();
+    public List<Location> declarationResponse = List.of();
     public List<Location> referenceResponse = List.of();
     public List<Either<SymbolInformation, DocumentSymbol>> documentSymbolResponse = List.of();
     public List<WorkspaceSymbol> workspaceSymbolResponse = List.of();
@@ -218,6 +227,27 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
             DefinitionParams params) {
         definitions.add(params);
         return failEverything ? failed() : CompletableFuture.completedFuture(Either.forLeft(definitionResponse));
+    }
+
+    @Override
+    public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> implementation(
+            ImplementationParams params) {
+        implementations.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(Either.forLeft(implementationResponse));
+    }
+
+    @Override
+    public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> typeDefinition(
+            TypeDefinitionParams params) {
+        typeDefinitions.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(Either.forLeft(typeDefinitionResponse));
+    }
+
+    @Override
+    public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> declaration(
+            DeclarationParams params) {
+        declarations.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(Either.forLeft(declarationResponse));
     }
 
     @Override

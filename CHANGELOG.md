@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Go to Implementation, Type Definition and Declaration** — three navigation commands beside Go to
+  Definition. **Go to Implementation** jumps from an interface or abstract member to the concrete overrides
+  (a lone one jumps straight there, several fill the References tool window, and an implementation inside a
+  dependency opens as read-only source); **Go to Type Definition** goes from a variable to the declaration of
+  its type; **Go to Declaration** rounds out the set. All three are palette-discoverable, and the first two
+  also appear in the editor's right-click menu — but only when the language server actually supports them, so
+  the menu never offers a dead entry. Works for every language whose server provides them, not just Java.
 - **Deeper code folding** — fold by nesting level (Fold Level 1–7, like VS Code's `Ctrl+K Ctrl+1..7`), fold or
   unfold the region at the caret **and everything nested inside it** (Fold/Unfold Recursively), and jump
   between folds (Go to Parent / Next / Previous Fold — the target is revealed if it's hidden). Twelve new

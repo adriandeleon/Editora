@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import javafx.beans.value.ChangeListener;
 import javafx.event.EventHandler;
@@ -875,6 +876,8 @@ final class LspCoordinator {
             buffer.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
             buffer.setLspCodeActionsAvailable(lspManager.supportsCodeActions(path));
             buffer.setLspRenameAvailable(lspManager.supportsRename(path));
+            buffer.setLspImplementationAvailable(lspManager.supportsImplementation(path)); // #735
+            buffer.setLspTypeDefinitionAvailable(lspManager.supportsTypeDefinition(path)); // #736
             buffer.setLspSignatureTriggerChars(lspManager.signatureTriggerCharacters(path));
             lspManager.pullDiagnostics(path);
             // Semantic highlighting: gate on the setting + the server's capability; request the initial
@@ -893,6 +896,8 @@ final class LspCoordinator {
             buffer.setLspRangeFormatAvailable(false);
             buffer.setLspCodeActionsAvailable(false);
             buffer.setLspRenameAvailable(false);
+            buffer.setLspImplementationAvailable(false);
+            buffer.setLspTypeDefinitionAvailable(false);
             buffer.setLspSignatureTriggerChars(java.util.Set.of());
             buffer.clearOccurrenceSpans();
             buffer.setInlayHintsActive(false);
@@ -1151,7 +1156,9 @@ final class LspCoordinator {
                 this::showHover,
                 this::formatDocument,
                 this::codeActions,
-                this::rename);
+                this::rename,
+                this::gotoImplementation,
+                this::gotoTypeDefinition);
         // Only the visible buffer starts its server now; a restored background tab waits for its first show.
         syncBufferWhenShown(buffer);
     }
@@ -1333,18 +1340,127 @@ final class LspCoordinator {
                 ops.openAndGoto(t.file(), t.line(), t.character());
                 return;
             }
-            List<String> previews = previewLines(targets, f -> {
-                EditorBuffer buffer = ops.bufferForPath(f);
-                return buffer == null ? null : buffer.getContent();
-            });
-            List<ReferencesPanel.Reference> refs = new java.util.ArrayList<>(targets.size());
-            for (int i = 0; i < targets.size(); i++) {
-                LspManager.Target t = targets.get(i);
-                refs.add(new ReferencesPanel.Reference(t.file(), t.line(), t.character(), previews.get(i)));
-            }
-            referencesPanel.setReferences(refs);
-            ops.openReferencesWindow();
+            showInReferencesWindow(targets);
         });
+    }
+
+    /**
+     * Go to Implementation ({@code lsp.gotoImplementation}, #735) — the concrete overrides of the member at
+     * the caret. Result handling mirrors {@link #findReferences}: a lone implementation jumps straight there,
+     * several fill the References tool window. Unlike references, a target can be a {@code jdt://} class file
+     * (an interface implemented inside a dependency), so those route through the library-source path.
+     */
+    void gotoImplementation() {
+        withNavRequest(
+                "status.lsp.implementationUnsupported",
+                lspManager::supportsImplementation,
+                lspManager::implementation,
+                (anchor, targets) -> {
+                    if (targets.isEmpty()) {
+                        host.setStatus(tr("status.lsp.noImplementations"));
+                        return;
+                    }
+                    if (targets.size() == 1) {
+                        openTarget(anchor, targets.get(0));
+                        return;
+                    }
+                    // The References window is keyed by file; a library target has no path, so it can only be
+                    // opened directly. Show the file-backed ones, and fall back to opening a library target
+                    // when every implementation lives inside a dependency.
+                    List<LspManager.Target> inFiles = new java.util.ArrayList<>(targets.size());
+                    for (LspManager.Target t : targets) {
+                        if (t.file() != null) {
+                            inFiles.add(t);
+                        }
+                    }
+                    if (inFiles.isEmpty()) {
+                        openTarget(anchor, targets.get(0));
+                    } else {
+                        showInReferencesWindow(inFiles);
+                    }
+                });
+    }
+
+    /** Go to Type Definition ({@code lsp.gotoTypeDefinition}, #736) — from a symbol to its type's declaration. */
+    void gotoTypeDefinition() {
+        withNavRequest(
+                "status.lsp.typeDefinitionUnsupported",
+                lspManager::supportsTypeDefinition,
+                lspManager::typeDefinition,
+                (anchor, targets) -> openFirstTarget(anchor, targets, "status.lsp.noTypeDefinition"));
+    }
+
+    /** Go to Declaration ({@code lsp.gotoDeclaration}, #736). */
+    void gotoDeclaration() {
+        withNavRequest(
+                "status.lsp.declarationUnsupported",
+                lspManager::supportsDeclaration,
+                lspManager::declaration,
+                (anchor, targets) -> openFirstTarget(anchor, targets, "status.lsp.noDeclaration"));
+    }
+
+    /** A position-to-targets request on {@link LspManager} (implementation / type definition / declaration). */
+    @FunctionalInterface
+    private interface NavRequest {
+        void run(Path file, int line, int character, Consumer<List<LspManager.Target>> cb);
+    }
+
+    /**
+     * Shared preamble for the navigation commands: resolve the managed buffer, refuse (with a precise status)
+     * when the server doesn't advertise the provider — rather than letting an empty result read as "nothing
+     * found" — sync the latest text, then run the request at the caret.
+     */
+    private void withNavRequest(
+            String unsupportedKey,
+            java.util.function.Predicate<Path> supported,
+            NavRequest request,
+            java.util.function.BiConsumer<Path, List<LspManager.Target>> onTargets) {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        Path path = b.getPath();
+        if (!supported.test(path)) {
+            host.setStatus(tr(unsupportedKey));
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        request.run(
+                path, area.getCurrentParagraph(), area.getCaretColumn(), targets -> onTargets.accept(path, targets));
+    }
+
+    /** Opens the first target, reporting {@code emptyKey} when there is none. */
+    private void openFirstTarget(Path anchor, List<LspManager.Target> targets, String emptyKey) {
+        if (targets.isEmpty()) {
+            host.setStatus(tr(emptyKey));
+            return;
+        }
+        openTarget(anchor, targets.get(0));
+    }
+
+    /** Opens a resolved target: a workspace file directly, a {@code jdt://} class file as read-only source. */
+    private void openTarget(Path anchor, LspManager.Target t) {
+        if (t.file() != null) {
+            ops.openAndGoto(t.file(), t.line(), t.character());
+        } else {
+            openLibraryDefinition(anchor, t);
+        }
+    }
+
+    /** Fills the References tool window with {@code targets} (each must have a real path) and opens it. */
+    private void showInReferencesWindow(List<LspManager.Target> targets) {
+        List<String> previews = previewLines(targets, f -> {
+            EditorBuffer buffer = ops.bufferForPath(f);
+            return buffer == null ? null : buffer.getContent();
+        });
+        List<ReferencesPanel.Reference> refs = new java.util.ArrayList<>(targets.size());
+        for (int i = 0; i < targets.size(); i++) {
+            LspManager.Target t = targets.get(i);
+            refs.add(new ReferencesPanel.Reference(t.file(), t.line(), t.character(), previews.get(i)));
+        }
+        referencesPanel.setReferences(refs);
+        ops.openReferencesWindow();
     }
 
     private static final String[] NO_LINES = new String[0];

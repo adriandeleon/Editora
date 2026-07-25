@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -23,6 +24,7 @@ import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.MarkedString;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 /**
  * UI-facing facade over the LSP layer (mirrors {@code MermaidService}): owns one
@@ -1573,13 +1575,104 @@ public final class LspManager {
         requestDefinition(sessionFor(anchorFile), documentUri, line, character, cb);
     }
 
+    /**
+     * Go to Implementation ({@code textDocument/implementation}, #735) — the concrete overrides of the
+     * member at the caret. Delivers targets on the FX thread; empty when unsupported / on error.
+     */
+    public void implementation(Path file, int line, int character, Consumer<List<Target>> cb) {
+        requestLocations(
+                sessionFor(file),
+                file == null ? null : uri(file),
+                line,
+                character,
+                LanguageServerSession::implementation,
+                cb);
+    }
+
+    /** Go to Type Definition ({@code textDocument/typeDefinition}, #736) — from a symbol to its type. */
+    public void typeDefinition(Path file, int line, int character, Consumer<List<Target>> cb) {
+        requestLocations(
+                sessionFor(file),
+                file == null ? null : uri(file),
+                line,
+                character,
+                LanguageServerSession::typeDefinition,
+                cb);
+    }
+
+    /** Go to Declaration ({@code textDocument/declaration}, #736). */
+    public void declaration(Path file, int line, int character, Consumer<List<Target>> cb) {
+        requestLocations(
+                sessionFor(file),
+                file == null ? null : uri(file),
+                line,
+                character,
+                LanguageServerSession::declaration,
+                cb);
+    }
+
+    /** True if {@code file}'s server is ready and advertises {@code implementationProvider} (#735). */
+    public boolean supportsImplementation(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && implementationProvider(s.capabilities());
+    }
+
+    /** True if {@code file}'s server is ready and advertises {@code typeDefinitionProvider} (#736). */
+    public boolean supportsTypeDefinition(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && typeDefinitionProvider(s.capabilities());
+    }
+
+    /** True if {@code file}'s server is ready and advertises {@code declarationProvider} (#736). */
+    public boolean supportsDeclaration(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && declarationProvider(s.capabilities());
+    }
+
+    /** Pure: whether a server's capabilities include {@code implementationProvider} (null-safe). */
+    static boolean implementationProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        return caps != null && eitherTrue(caps.getImplementationProvider());
+    }
+
+    /** Pure: whether a server's capabilities include {@code typeDefinitionProvider} (null-safe). */
+    static boolean typeDefinitionProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        return caps != null && eitherTrue(caps.getTypeDefinitionProvider());
+    }
+
+    /** Pure: whether a server's capabilities include {@code declarationProvider} (null-safe). */
+    static boolean declarationProvider(org.eclipse.lsp4j.ServerCapabilities caps) {
+        return caps != null && eitherTrue(caps.getDeclarationProvider());
+    }
+
+    /**
+     * One position-to-locations request. {@code definition}, {@code implementation}, {@code typeDefinition}
+     * and {@code declaration} differ only in which session method runs — all four answer in the same two
+     * shapes (a {@code Location} list or a {@code LocationLink} list), and all four can name a {@code jdt://}
+     * class file, so they share one response walk rather than four copies of it.
+     */
+    @FunctionalInterface
+    private interface LocationRequest {
+        CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> run(
+                LanguageServerSession session, String uri, Position pos);
+    }
+
     private void requestDefinition(
             LanguageServerSession s, String documentUri, int line, int character, Consumer<List<Target>> cb) {
+        requestLocations(s, documentUri, line, character, LanguageServerSession::definition, cb);
+    }
+
+    private void requestLocations(
+            LanguageServerSession s,
+            String documentUri,
+            int line,
+            int character,
+            LocationRequest request,
+            Consumer<List<Target>> cb) {
         if (s == null || documentUri == null) {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
-        s.definition(documentUri, new Position(line, character)).whenComplete((result, error) -> {
+        request.run(s, documentUri, new Position(line, character)).whenComplete((result, error) -> {
             List<Target> targets = new ArrayList<>();
             if (error == null && result != null) {
                 if (result.isLeft()) {

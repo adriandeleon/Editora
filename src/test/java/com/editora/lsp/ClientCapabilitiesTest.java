@@ -103,6 +103,9 @@ class ClientCapabilitiesTest {
         assertNotNull(td.getTypeHierarchy(), "type hierarchy (#682)");
         assertNotNull(td.getDiagnostic(), "pull diagnostics — html/css/json deliver diagnostics only this way");
         assertNotNull(td.getCodeAction(), "code actions (#670)");
+        assertNotNull(td.getImplementation(), "Go to Implementation (#735)");
+        assertNotNull(td.getTypeDefinition(), "Go to Type Definition (#736)");
+        assertNotNull(td.getDeclaration(), "Go to Declaration (#736)");
         assertTrue(
                 Boolean.TRUE.equals(td.getRename().getPrepareSupport()),
                 "prepareRename is what validates the position and supplies the placeholder (#676)");
