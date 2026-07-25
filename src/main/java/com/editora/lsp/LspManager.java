@@ -268,6 +268,15 @@ public final class LspManager {
      */
     static final java.time.Duration IDLE_EVICTION_GRACE = java.time.Duration.ofMinutes(3);
 
+    /** The grace actually used; {@link #IDLE_EVICTION_GRACE} in production, shortened by tests (3 minutes of
+     *  real waiting is not a test). */
+    private volatile java.time.Duration idleEvictionGrace = IDLE_EVICTION_GRACE;
+
+    /** TEST SEAM — shortens the idle-eviction grace so {@link #maybeScheduleEviction} can be observed. */
+    void setIdleEvictionGraceForTest(java.time.Duration grace) {
+        this.idleEvictionGrace = grace;
+    }
+
     /** Shared timer for idle-session eviction (one daemon thread app-wide; the decision runs on FX). */
     private static final java.util.concurrent.ScheduledExecutorService evictExec =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -304,7 +313,7 @@ public final class LspManager {
                         // The decision runs on the FX thread — openDocument/closeDocument are FX-thread calls,
                         // so re-checking there means no eviction can race a concurrent re-open.
                         () -> Platform.runLater(() -> evictIfIdle(key, session)),
-                        IDLE_EVICTION_GRACE.toMillis(),
+                        idleEvictionGrace.toMillis(),
                         java.util.concurrent.TimeUnit.MILLISECONDS));
         if (prev != null) {
             prev.cancel(false);
@@ -331,6 +340,12 @@ public final class LspManager {
         sessionsByRoot.remove(key, session);
         session.dispose();
         releaseJdtlsWorkspace(session);
+    }
+
+    /** TEST SEAM — whether a session is currently cached for {@code (serverId, root)}. Lets a test observe
+     *  idle eviction (#669) and crash-drop (#666) without reflecting into the session maps. */
+    boolean hasSessionForTest(String serverId, Path root) {
+        return sessionsByRoot.containsKey(sessionKey(serverId, root));
     }
 
     public boolean isManaged(Path file) {

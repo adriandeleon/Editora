@@ -3,6 +3,26 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP lifecycle + request coverage (round 2)** — extends the seams from the round below into the paths
+      that were still unasserted, each of which is a past fix that had no regression test. **`LspSessionLifecycleFxTest`
+      (11)**: idle eviction (#669) — evicts after the grace, does *not* evict while another document is open,
+      and a reopen within the grace cancels it; crash-vs-teardown (#666) — a server dying on its own is
+      dropped *and* reported while `shutdownServer`/`shutdownAll` are reported as neither, a repeated death
+      signal reports once, and a reopen after a crash forks a fresh session; the per-root jdtls `-data` claim
+      (#668) — two managers on one root get *distinct* dirs (one Eclipse workspace admits a single process),
+      a released claim recycles the canonical dir so jdtls's index survives, and a non-java server gets no
+      workspace at all. **`LspManagerRequestsFxTest` (17)**: the request/response round-trips that produce
+      everything the user sees — go-to-definition incl. the `jdt://` class-file target that must survive
+      rather than be dropped (#665), references staying file-only, formatting edits + tab-size hints,
+      semantic tokens choosing range vs full by capability (jdtls is range=false) and clamped like inlay
+      hints, inlay-hint span mapping with blank labels dropped, document/workspace symbols, prepareRename's
+      shapes — plus two contracts of the layer as a whole: **every method degrades a transport failure to an
+      empty result** rather than throwing on the FX thread, and **every callback lands on the FX thread**.
+      Two more seams (`setIdleEvictionGraceForTest`, `simulateServerDeathForTest`, `hasSessionForTest`),
+      all inert in production. Result: `LspManager` **37.5% → 55.6%**, `LanguageServerSession` **37.7% →
+      45.3%**, package **52% → 62.4%**; jacoco floor ratcheted **0.45 → 0.58**. *Worth noting: lsp4j's
+      constructors reject nulls but gson bypasses them when decoding, so the malformed-input tests build
+      their fixtures via setters — which is precisely why the production null guards exist.*
 - [x] **LSP test seams + protocol coverage** — the audit round below found four defects in `com.editora.lsp`;
       measuring afterwards showed why they were invisible. `LanguageServerSession` sat at **3.2%** line
       coverage and `LspManager` at **17%** (~1,480 lines between them), while every pure mapper beside them —

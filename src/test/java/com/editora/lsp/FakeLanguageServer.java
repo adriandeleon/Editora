@@ -10,6 +10,7 @@ import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
+import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
@@ -20,6 +21,8 @@ import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentHighlightParams;
 import org.eclipse.lsp4j.DocumentRangeFormattingParams;
+import org.eclipse.lsp4j.DocumentSymbol;
+import org.eclipse.lsp4j.DocumentSymbolParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
@@ -27,14 +30,25 @@ import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InlayHint;
 import org.eclipse.lsp4j.InlayHintParams;
+import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.LocationLink;
+import org.eclipse.lsp4j.PrepareRenameParams;
+import org.eclipse.lsp4j.PrepareRenameResult;
+import org.eclipse.lsp4j.ReferenceParams;
+import org.eclipse.lsp4j.RenameParams;
 import org.eclipse.lsp4j.SemanticTokens;
 import org.eclipse.lsp4j.SemanticTokensParams;
 import org.eclipse.lsp4j.SemanticTokensRangeParams;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SignatureHelpParams;
+import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.WorkspaceSymbol;
+import org.eclipse.lsp4j.WorkspaceSymbolParams;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.eclipse.lsp4j.jsonrpc.messages.Either3;
 import org.eclipse.lsp4j.services.LanguageServer;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
@@ -71,12 +85,27 @@ final class FakeLanguageServer implements LanguageServer, TextDocumentService, W
     final List<ExecuteCommandParams> executedCommands = new ArrayList<>();
     final List<DidChangeConfigurationParams> configurations = new ArrayList<>();
     final List<DidChangeWatchedFilesParams> watchedFiles = new ArrayList<>();
+    final List<DefinitionParams> definitions = new ArrayList<>();
+    final List<ReferenceParams> references = new ArrayList<>();
+    final List<DocumentSymbolParams> documentSymbols = new ArrayList<>();
+    final List<WorkspaceSymbolParams> workspaceSymbols = new ArrayList<>();
+    final List<PrepareRenameParams> prepareRenames = new ArrayList<>();
+    final List<RenameParams> renames = new ArrayList<>();
 
     // --- canned responses --------------------------------------------------------------------------
     SignatureHelp signatureHelpResponse;
     List<InlayHint> inlayHintResponse = List.of();
     SemanticTokens semanticTokensResponse;
     List<TextEdit> formattingResponse = List.of();
+    List<Location> definitionResponse = List.of();
+    List<Location> referenceResponse = List.of();
+    List<Either<SymbolInformation, DocumentSymbol>> documentSymbolResponse = List.of();
+    List<WorkspaceSymbol> workspaceSymbolResponse = List.of();
+    Either3<org.eclipse.lsp4j.Range, PrepareRenameResult, org.eclipse.lsp4j.PrepareRenameDefaultBehavior>
+            prepareRenameResponse;
+    WorkspaceEdit renameResponse;
+    /** When set, the next request of that kind completes exceptionally — the error paths must degrade, not throw. */
+    boolean failEverything;
 
     /** The last recorded element of {@code list}, or null when nothing was recorded. */
     static <T> T last(List<T> list) {
@@ -181,7 +210,49 @@ final class FakeLanguageServer implements LanguageServer, TextDocumentService, W
     @Override
     public CompletableFuture<List<? extends TextEdit>> formatting(DocumentFormattingParams params) {
         formattings.add(params);
-        return CompletableFuture.completedFuture(formattingResponse);
+        return failEverything ? failed() : CompletableFuture.completedFuture(formattingResponse);
+    }
+
+    @Override
+    public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
+            DefinitionParams params) {
+        definitions.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(Either.forLeft(definitionResponse));
+    }
+
+    @Override
+    public CompletableFuture<List<? extends Location>> references(ReferenceParams params) {
+        references.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(referenceResponse);
+    }
+
+    @Override
+    public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(
+            DocumentSymbolParams params) {
+        documentSymbols.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(documentSymbolResponse);
+    }
+
+    @Override
+    public CompletableFuture<
+                    Either3<
+                            org.eclipse.lsp4j.Range,
+                            PrepareRenameResult,
+                            org.eclipse.lsp4j.PrepareRenameDefaultBehavior>>
+            prepareRename(PrepareRenameParams params) {
+        prepareRenames.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(prepareRenameResponse);
+    }
+
+    @Override
+    public CompletableFuture<WorkspaceEdit> rename(RenameParams params) {
+        renames.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(renameResponse);
+    }
+
+    /** A future that completes exceptionally, as a real transport failure would. */
+    private static <T> CompletableFuture<T> failed() {
+        return CompletableFuture.failedFuture(new IllegalStateException("simulated transport failure"));
     }
 
     @Override
@@ -200,6 +271,13 @@ final class FakeLanguageServer implements LanguageServer, TextDocumentService, W
     @Override
     public void didChangeWatchedFiles(DidChangeWatchedFilesParams params) {
         watchedFiles.add(params);
+    }
+
+    @Override
+    public CompletableFuture<Either<List<? extends SymbolInformation>, List<? extends WorkspaceSymbol>>> symbol(
+            WorkspaceSymbolParams params) {
+        workspaceSymbols.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(Either.forRight(workspaceSymbolResponse));
     }
 
     @Override

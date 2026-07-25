@@ -512,7 +512,8 @@
                                      four defects in one audit (#715/#723/#724/#725) while its pure mappers
                                      beside them, at 90-100%, produced none. Raised from nothing to 0.45 when
                                      the LanguageServerSession/LspManager test seams landed (package was
-                                     ~52%); ratchet it up as those two climb. -->
+                                     ~52%), then to 0.58 when the lifecycle/request seams landed (~62%);
+                                     ratchet it up as those two climb. -->
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
@@ -522,7 +523,7 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.45</minimum>
+                                            <minimum>0.58</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
