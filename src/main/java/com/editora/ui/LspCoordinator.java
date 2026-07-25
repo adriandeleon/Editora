@@ -743,7 +743,11 @@ final class LspCoordinator {
 
     /** Re-applies the inlay-hints gate to every open buffer (the palette/Settings toggle's apply). */
     void applyInlayHints() {
-        host.forEachBuffer(this::requestInlayHints); // the gate inside clears buffers when toggled off
+        boolean on = host.settings().isInlayHints();
+        host.forEachBuffer(b -> {
+            b.setInlayHintsActive(on && b.getPath() != null && lspManager.isManaged(b.getPath()));
+            requestInlayHints(b); // the gate inside clears buffers when toggled off
+        });
     }
 
     void requestSemanticTokens(EditorBuffer buffer) {
@@ -847,6 +851,7 @@ final class LspCoordinator {
             if (semantic) {
                 requestSemanticTokens(buffer);
             }
+            buffer.setInlayHintsActive(host.settings().isInlayHints()); // decoupled from semantic (#681)
             requestInlayHints(buffer); // gated internally on the setting + capability (#681)
         } else {
             buffer.setLspActive(false);
@@ -857,6 +862,7 @@ final class LspCoordinator {
             buffer.setLspRenameAvailable(false);
             buffer.setLspSignatureTriggerChars(java.util.Set.of());
             buffer.clearOccurrenceSpans();
+            buffer.setInlayHintsActive(false);
             buffer.setInlayHints(null);
             buffer.setSemanticActive(false);
             if (path != null && lspManager.isManaged(path)) {
@@ -1023,6 +1029,7 @@ final class LspCoordinator {
                         if (sem) {
                             requestSemanticTokens(b);
                         }
+                        b.setInlayHintsActive(host.settings().isInlayHints()); // re-fire on edits (#681)
                         requestInlayHints(b); // capabilities known now (#681)
                     }
                 });
@@ -1706,7 +1713,7 @@ final class LspCoordinator {
         Path path = b.getPath();
         CodeArea area = b.getFocusedArea();
         lspManager.changeDocument(path, b.text()); // sync latest text before the request
-        lspManager.signatureHelp(path, area.getCurrentParagraph(), area.getCaretColumn(), help -> {
+        lspManager.signatureHelp(path, area.getCurrentParagraph(), area.getCaretColumn(), null, help -> {
             if (b != host.activeBuffer()) {
                 return;
             }

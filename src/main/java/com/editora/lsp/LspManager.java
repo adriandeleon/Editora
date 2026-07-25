@@ -670,13 +670,14 @@ public final class LspManager {
 
     /** Requests signature help at a 0-based position; the raw lsp4j result (or null) arrives on the FX
      *  thread — resolved for display via {@link SignatureFormat#resolve}. */
-    public void signatureHelp(Path file, int line, int character, Consumer<org.eclipse.lsp4j.SignatureHelp> cb) {
+    public void signatureHelp(
+            Path file, int line, int character, String triggerChar, Consumer<org.eclipse.lsp4j.SignatureHelp> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(null));
             return;
         }
-        s.signatureHelp(uri(file), new Position(line, character))
+        s.signatureHelp(uri(file), new Position(line, character), triggerChar)
                 .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e == null ? r : null)));
     }
 

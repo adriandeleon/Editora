@@ -361,7 +361,13 @@ final class LanguageServerSession implements LanguageClient {
                 new org.eclipse.lsp4j.SignatureInformationCapabilities(java.util.List.of("markdown", "plaintext"));
         sigInfo.setParameterInformation(new org.eclipse.lsp4j.ParameterInformationCapabilities(true));
         sigInfo.setActiveParameterSupport(true);
-        td.setSignatureHelp(new org.eclipse.lsp4j.SignatureHelpCapabilities(sigInfo, false));
+        // NOTE: the 2-arg ctor's second parameter is dynamicRegistration, NOT contextSupport — passing
+        // true there made jdtls stop advertising signatureHelpProvider statically (it registers dynamically
+        // instead, which we don't handle), so signature help died outright. Context support is its own
+        // setter (#674).
+        var sigCaps = new org.eclipse.lsp4j.SignatureHelpCapabilities(sigInfo, false);
+        sigCaps.setContextSupport(true);
+        td.setSignatureHelp(sigCaps);
         // Code actions (#670): literal support is what makes servers return CodeAction objects (kind,
         // isPreferred, an inline edit) instead of bare Commands; resolveSupport("edit") lets a server defer
         // the expensive edit to codeAction/resolve; dataSupport lets its opaque data ride the round-trip
@@ -419,9 +425,18 @@ final class LanguageServerSession implements LanguageClient {
         ws.setApplyEdit(true);
         var wsEdit = new org.eclipse.lsp4j.WorkspaceEditCapabilities();
         wsEdit.setDocumentChanges(true);
-        // Renaming a public Java class makes jdtls move the .java file too — declared so it sends the
-        // RenameFile op (create/delete stay undeclared and refused by the mapper) (#676).
-        wsEdit.setResourceOperations(java.util.List.of(org.eclipse.lsp4j.ResourceOperationKind.Rename));
+        // Renaming a public Java class makes jdtls move the .java file too — but jdtls's
+        // isResourceOperationSupported() gate is ALL-OR-NOTHING: it emits a resource operation (the
+        // RenameFile) only when the client declares Create AND Rename AND Delete. Declaring just Rename
+        // made jdtls strip the file move, so a class rename renamed the symbols but left OldName.java on
+        // disk (#676). We still only *apply* renames — a Create/Delete op refuses the whole edit in
+        // WorkspaceEditMapper (safe: nothing half-applied), which is why the far-less-common create/delete
+        // refactorings degrade to a "failed" status rather than corrupting the workspace. (jdtls's own
+        // gate mirrors VS Code / eglot, which likewise declare all three.)
+        wsEdit.setResourceOperations(java.util.List.of(
+                org.eclipse.lsp4j.ResourceOperationKind.Create,
+                org.eclipse.lsp4j.ResourceOperationKind.Rename,
+                org.eclipse.lsp4j.ResourceOperationKind.Delete));
         ws.setWorkspaceEdit(wsEdit);
         cc.setWorkspace(ws);
         return cc;
@@ -434,8 +449,19 @@ final class LanguageServerSession implements LanguageClient {
             analysis.put("autoImportCompletions", true);
             java.util.Map<String, Object> python = new java.util.HashMap<>();
             python.put("analysis", analysis);
+            // jdtls ADVERTISES signatureHelpProvider but its handler returns an empty result unless
+            // `java.signatureHelp.enabled` is set — it ships OFF (VS Code's Java extension sets it in its
+            // own defaults, which is why it "just works" there). Verified by driving a real jdtls: same
+            // position, same params — 0 signatures before this flag, both overloads after (#674). Same
+            // class of bug as #468's provideFormatter. Harmless to non-java servers (unknown section).
+            java.util.Map<String, Object> signatureHelp = new java.util.HashMap<>();
+            signatureHelp.put("enabled", true);
+            signatureHelp.put("description", true); // include the javadoc in the signature popup
+            java.util.Map<String, Object> java_ = new java.util.HashMap<>();
+            java_.put("signatureHelp", signatureHelp);
             java.util.Map<String, Object> settings = new java.util.HashMap<>();
             settings.put("python", python);
+            settings.put("java", java_);
             server.getWorkspaceService()
                     .didChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationParams(settings));
         } catch (RuntimeException e) {
@@ -772,11 +798,20 @@ final class LanguageServerSession implements LanguageClient {
 
     /** Signature help ({@code textDocument/signatureHelp}) at a position → the overloads + active
      *  parameter, or null when unavailable/failed (#674). */
-    CompletableFuture<org.eclipse.lsp4j.SignatureHelp> signatureHelp(String uri, Position pos) {
+    CompletableFuture<org.eclipse.lsp4j.SignatureHelp> signatureHelp(String uri, Position pos, String triggerChar) {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
         var params = new org.eclipse.lsp4j.SignatureHelpParams(new TextDocumentIdentifier(uri), pos);
+        var context = new org.eclipse.lsp4j.SignatureHelpContext();
+        if (triggerChar == null) {
+            context.setTriggerKind(org.eclipse.lsp4j.SignatureHelpTriggerKind.Invoked);
+        } else {
+            context.setTriggerKind(org.eclipse.lsp4j.SignatureHelpTriggerKind.TriggerCharacter);
+            context.setTriggerCharacter(triggerChar);
+        }
+        context.setIsRetrigger(false);
+        params.setContext(context);
         return server.getTextDocumentService().signatureHelp(params).exceptionally(t -> null);
     }
 
