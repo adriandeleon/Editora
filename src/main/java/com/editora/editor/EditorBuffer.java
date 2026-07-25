@@ -3147,6 +3147,30 @@ public class EditorBuffer implements TabContent {
         this.lspDiagnosticsRequester = requester;
     }
 
+    /**
+     * Installs the foldable regions a language server reported (#738), replacing the brace/indent heuristic;
+     * an empty list restores it. Keeps {@code editor} free of lsp4j — the caller maps the LSP response to
+     * {@link FoldRegions.Region} first.
+     */
+    public void setLspFoldingRegions(java.util.List<FoldRegions.Region> regions) {
+        folds.setServerRegions(regions);
+    }
+
+    /**
+     * The document offset each line starts at, for translating an LSP line/character position to an offset
+     * (#739). Index {@code i} is line {@code i}'s start; the array has one entry per paragraph.
+     */
+    public int[] lineStartOffsets() {
+        int count = area.getParagraphs().size();
+        int[] starts = new int[count];
+        int offset = 0;
+        for (int i = 0; i < count; i++) {
+            starts[i] = offset;
+            offset += area.getParagraph(i).length() + 1; // + the newline
+        }
+        return starts;
+    }
+
     /** Sets the completion trigger characters the server advertised (empty = none / not yet known). */
     public void setLspTriggerChars(java.util.Set<Character> chars) {
         this.lspTriggerChars = chars == null ? java.util.Set.of() : chars;

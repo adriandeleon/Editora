@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its type; **Go to Declaration** rounds out the set. All three are palette-discoverable, and the first two
   also appear in the editor's right-click menu — but only when the language server actually supports them, so
   the menu never offers a dead entry. Works for every language whose server provides them, not just Java.
+- **Language-server folding and selection** — where a language server is running, code folding now comes from
+  the server's own understanding of the file instead of brace/indent scanning: an import block folds as one
+  region, javadoc and block comments fold, and multi-line expressions no longer nest wrongly. Semantic
+  expand/shrink selection uses the same source, so it respects strings and comments rather than guessing at
+  brackets. Both fall back to the built-in behaviour whenever LSP is off, the file is remote, or the server
+  offers neither — nothing gets less foldable than it was.
 - **Deeper code folding** — fold by nesting level (Fold Level 1–7, like VS Code's `Ctrl+K Ctrl+1..7`), fold or
   unfold the region at the caret **and everything nested inside it** (Fold/Unfold Recursively), and jump
   between folds (Go to Parent / Next / Previous Fold — the target is revealed if it's hidden). Twelve new

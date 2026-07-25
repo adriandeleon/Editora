@@ -14,6 +14,20 @@ A backlog of planned features and improvements. Unordered within each section.
       unsupported server reports that precisely instead of "nothing found" and the right-click menu never
       shows a dead entry. Wire-level tests assert each request goes out as **its own** method — routing two
       of them to the same one compiles and answers plausibly, which is exactly the bug class #725 was.
+- [x] **LSP folding + selection ranges** (#738, #739) — the two requests that replace a heuristic rather than
+      adding a feature, so both are built as *overrides with fallback*: `FoldManager.setServerRegions` takes
+      precedence over `FoldRegions.detect` only while a server supplied regions, and `SmartSelectStack.expand`
+      gained a `serverChain` parameter it prefers over the local ladder. Empty/absent restores the built-in
+      path everywhere — LSP is off by default and most files have no server, so the fallback is the common
+      case, not the edge one (`LspFoldingFxTest` pins it in both directions). Two pure mappers: `LspFolding`
+      (drops ranges that can't fold line-wise, dedupes, and re-sorts to the detector's innermost-first
+      convention, which `foldRecursivelyAtCaret` depends on) and `LspSelection` (flattens the parent chain to
+      offsets, refusing a non-containing parent, a repeated range, and a cycle). **Expand-selection does not
+      await the server**: the request is fired when a ladder starts and cached per `(buffer, docVersion)`, so
+      the first press uses the local ladder and later presses use the grammar-accurate chain — a round-trip on
+      the keystroke path is what makes an editor feel laggy, and a cold jdtls can take seconds. The folding
+      request rides the existing debounced didChange pulse (no new per-keystroke work) and drops a response
+      whose `docVersion` moved, since its line numbers were measured against the text we sent.
 - [x] **LSP coverage floors + the workspace-edit apply path (round 4)** — closes the LSP testing arc.
       **`LspWorkspaceEditFxTest` (10)** covers the one LSP path that *writes and moves files on disk*: the
       **all-or-nothing** contract, asserted by checking the untouched files afterwards rather than the
