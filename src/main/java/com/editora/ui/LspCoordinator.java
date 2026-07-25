@@ -522,6 +522,15 @@ final class LspCoordinator {
         });
     }
 
+    /**
+     * TEST SEAM — records a server's probed availability directly, standing in for the async
+     * {@code LspManager.detect} callback. Without it a coordinator test's gating would depend on whatever
+     * language servers happen to be installed on the machine running it.
+     */
+    void setServerAvailableForTest(String serverId, boolean available) {
+        serverAvailable.put(serverId, available);
+    }
+
     /** Applies the detection-dependent gate to every open buffer (per the file's own server). */
     void applyGating() {
         host.forEachBuffer(this::syncBufferWhenShown);

@@ -3,6 +3,28 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LspCoordinator coverage (round 3)** — the last big untested piece of the LSP feature (1,004 lines,
+      **25.4%**). Three FX classes, 38 tests, all mutation-verified. **`LspCoordinatorSyncFxTest` (17)** — the
+      nine-term eligibility conjunction in `syncBuffer`, one test per term, because each exists for a reason
+      that is expensive to rediscover: a **narrowed** buffer holds only its region so every position is offset
+      and a formatting edit would corrupt the file; the large/heavy tiers keep a huge file responsive; the
+      per-server toggle and the probed-availability gate. Plus the **deferred start** — only the active buffer
+      syncs immediately, a background tab waits for first show (without it a restored session forked a server
+      per file: ~4 extra processes, ~225 MB) — and **pom.xml routing**, including the rule that an *unprobed*
+      Maven server yields no routing decision rather than attaching to plain XML first.
+      **`LspCoordinatorDiagnosticsFxTest` (10)** — open-files-only scoping (a server publishes project-wide),
+      canonical keying with a **real symlink** (#470 — plain `normalize()` dropped every diagnostic for a
+      symlink-reached file), the compact-source noise filter keeping real errors, retraction on an empty
+      publish, and #469's clear-before-shutdown. **`LspCoordinatorNavigationFxTest` (11)** — the commands
+      people actually press: go-to-definition incl. the **client half of #665** (a path-less `jdt://` target
+      must take the class-file branch, not try to open a file), find-references (one hit jumps, several open
+      the window), and Format Document incl. the **stale-reply guard** (the server computes edits against the
+      text as it was; if the user types during the round-trip the reply must be dropped, not applied
+      blind). Two more seams (`LspCoordinator.setServerAvailableForTest`, plus the test-only
+      `com.editora.lsp.LspTestHooks` bridge so a `ui` test can reach the session seam) and an `LspOpsStub`
+      mirroring `CoordinatorHostStub`. **Mutation-checked**: killing the deferred start, the canonical keying
+      and the clear-before-shutdown produced 7 failures. Result: **25.4% → 38.6%** — the remaining ~61% is
+      overlay/popup-driven (hover, code-action and hierarchy pickers), which needs an `OverlayHost` fake.
 - [x] **LSP lifecycle + request coverage (round 2)** — extends the seams from the round below into the paths
       that were still unasserted, each of which is a past fix that had no regression test. **`LspSessionLifecycleFxTest`
       (11)**: idle eviction (#669) — evicts after the grace, does *not* evict while another document is open,
