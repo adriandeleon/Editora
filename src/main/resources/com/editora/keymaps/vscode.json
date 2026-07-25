@@ -54,5 +54,6 @@
   "M-down": "edit.moveLineDown",
   "M-S-down": "edit.duplicateLine",
   "M-S-right": "edit.expandSelection",
-  "M-S-left": "edit.shrinkSelection"
+  "M-S-left": "edit.shrinkSelection",
+  "C-S-\\": "nav.matchingBracket"
 }

@@ -12727,6 +12727,42 @@ public class MainController implements com.editora.mcp.McpBridge {
         moveAndFollow(a -> a.moveTo(nav.apply(a.getText(), a.getCaretPosition()), selPolicy()));
     }
 
+    /**
+     * Go to the bracket matching the one adjacent to the caret (VS Code {@code jumpToBracket},
+     * {@code Ctrl+Shift+\}). Repeated presses toggle between the pair; a no-op when no bracket is adjacent.
+     * Uses {@code BraceMatcher}, so — like the match highlight — it doesn't exclude a bracket inside a
+     * string or comment (that needs the grammar).
+     */
+    private void jumpToMatchingBracket() {
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        int target = com.editora.editops.BraceMatcher.jumpTarget(
+                area.getText(), area.getCaretPosition(), com.editora.editops.BraceMatcher.DEFAULT_MAX_SCAN);
+        if (target < 0) {
+            return;
+        }
+        moveAndFollow(a -> a.moveTo(target, selPolicy()));
+    }
+
+    /** Select from the caret's adjacent bracket to its mate, both brackets included (VS Code
+     *  {@code selectToBracket}); a no-op when no bracket is adjacent. */
+    private void selectToBracket() {
+        CodeArea area = activeArea();
+        if (area == null) {
+            return;
+        }
+        int[] span = com.editora.editops.BraceMatcher.selectSpan(
+                area.getText(), area.getCaretPosition(), com.editora.editops.BraceMatcher.DEFAULT_MAX_SCAN);
+        if (span == null) {
+            return;
+        }
+        area.selectRange(span[0], span[1]);
+        markActive = true;
+        area.requestFollowCaret();
+    }
+
     /** Emacs {@code mark-sexp} (`C-M-SPC`): select the balanced expression after the caret. */
     private void markSexp() {
         CodeArea area = activeArea();
@@ -14416,6 +14452,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.shrinkSelection", this::shrinkSelection));
         registry.register(Command.of("nav.forwardSexp", () -> sexpMove(com.editora.editops.SexpNav::forward)));
         registry.register(Command.of("nav.backwardSexp", () -> sexpMove(com.editora.editops.SexpNav::backward)));
+        registry.register(Command.of("nav.matchingBracket", this::jumpToMatchingBracket));
+        registry.register(Command.of("edit.selectToBracket", this::selectToBracket));
         registry.register(Command.of("nav.back", this::navBack));
         registry.register(Command.of("nav.forward", this::navForward));
         registry.register(

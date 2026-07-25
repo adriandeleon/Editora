@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Go to matching bracket** — jump the caret to the bracket paired with the one beside it, and press again
+  to jump back (`Ctrl+Shift+\` in the VS Code keymap, palette-discoverable everywhere as "Go: Matching
+  Bracket"). A companion **Select to Bracket** command selects everything between a bracket pair, both
+  brackets included. Matching is text-based, so a bracket inside a string or comment can pair with the wrong
+  one — the same best-effort as the existing bracket highlight.
 - **Environment variables in run configurations** — a saved run/debug configuration can now set environment
   variables (`KEY=value`, quote values containing spaces). They apply to both Run and Debug, and are edited in
   Settings → Run Configurations.
