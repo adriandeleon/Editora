@@ -518,6 +518,98 @@ public final class FoldManager {
         }
     }
 
+    /**
+     * Folds every region at fold {@code level} (1-based, VS Code {@code editor.foldLevel1..7}): the whole
+     * document is expanded first, then each region at depth {@code level - 1} is collapsed — so shallower
+     * levels stay open and deeper regions are hidden inside the folds (revealing them when unfolded).
+     */
+    public void foldLevel(int level) {
+        int topPar = firstVisiblePar();
+        unfoldEverythingNoFire();
+        for (Region r : FoldTree.atLevel(regions, level)) {
+            area.foldParagraphs(r.startLine(), r.endLine());
+            shadeHeader(r.startLine(), true);
+        }
+        restoreViewport(topPar);
+        if (!restoring) {
+            onFoldStateChanged.run();
+        }
+    }
+
+    /** Collapses the innermost region around the caret <b>and</b> every region nested inside it. */
+    public void foldRecursivelyAtCaret() {
+        Region target = FoldTree.innermostContaining(regions, area.getCurrentParagraph());
+        if (target == null) {
+            return;
+        }
+        int topPar = firstVisiblePar();
+        // Deepest-first: each region is still visible (its parent not yet folded) when we collapse it, so
+        // the nested folds are genuinely recorded — unlike foldAll, which only truly folds the outermost.
+        List<Region> toFold = new ArrayList<>(FoldTree.descendantsOf(regions, target));
+        toFold.add(target);
+        toFold.sort((a, b) -> FoldTree.depthOf(regions, b) - FoldTree.depthOf(regions, a));
+        for (Region r : toFold) {
+            if (!isCollapsed(r.startLine())) {
+                area.foldParagraphs(r.startLine(), r.endLine());
+                shadeHeader(r.startLine(), true);
+            }
+        }
+        restoreViewport(topPar);
+        if (!restoring) {
+            onFoldStateChanged.run();
+        }
+    }
+
+    /** Expands the collapsed region around the caret <b>and</b> every region nested inside it. */
+    public void unfoldRecursivelyAtCaret() {
+        int line = area.getCurrentParagraph();
+        Region target = byStart.get(line);
+        if (target == null || !isCollapsed(target.startLine())) {
+            target = null;
+            for (Region r : regions) { // innermost collapsed region containing the caret
+                if (r.startLine() <= line
+                        && line <= r.endLine()
+                        && isCollapsed(r.startLine())
+                        && (target == null || r.startLine() > target.startLine())) {
+                    target = r;
+                }
+            }
+        }
+        if (target == null) {
+            return;
+        }
+        int topPar = firstVisiblePar();
+        // Shallowest-first: revealing the parent exposes each child header, which is then itself a visible
+        // collapsed header we can unfold (the detector lists regions innermost-first, so we must re-order).
+        Region root = target;
+        List<Region> toUnfold = new ArrayList<>(FoldTree.descendantsOf(regions, root));
+        toUnfold.add(root);
+        toUnfold.sort((a, b) -> FoldTree.depthOf(regions, a) - FoldTree.depthOf(regions, b));
+        for (Region r : toUnfold) {
+            if (isCollapsed(r.startLine())) {
+                area.unfoldParagraphs(r.startLine());
+                shadeHeader(r.startLine(), false);
+            }
+        }
+        restoreViewport(topPar);
+        if (!restoring) {
+            onFoldStateChanged.run();
+        }
+    }
+
+    /** Reveals the whole document without firing the fold-state callback (used by {@link #foldLevel}). */
+    private void unfoldEverythingNoFire() {
+        int n = area.getParagraphs().size();
+        for (int p = 0; p + 1 < n; p++) {
+            if (!area.isFolded(p) && area.isFolded(p + 1)) {
+                area.unfoldParagraphs(p);
+            }
+        }
+        for (Region r : regions) {
+            shadeHeader(r.startLine(), false);
+        }
+    }
+
     private int firstVisiblePar() {
         try {
             return area.firstVisibleParToAllParIndex();
