@@ -8971,6 +8971,17 @@ public class EditorBuffer implements TabContent {
         return symbols;
     }
 
+    /**
+     * Whether this buffer is syntax-highlighted (a grammar is loaded and it isn't in large-file mode) — the
+     * gate for attaching a highlighted-HTML clipboard flavor on copy. The copy path reads the area's
+     * <em>already-computed</em> style spans ({@code area.getStyleSpans(from, to)}) rather than re-tokenizing:
+     * tm4e grammars are not thread-safe, and tokenizing on the FX thread would race the background
+     * highlighters against the shared grammar.
+     */
+    public boolean hasHighlighting() {
+        return grammar != null && !largeFile;
+    }
+
     /** Sets a callback invoked (on the FX thread) whenever {@link #symbols()} changes. */
     public void setOnSymbolsChanged(Runnable callback) {
         this.onSymbolsChanged = callback == null ? () -> {} : callback;

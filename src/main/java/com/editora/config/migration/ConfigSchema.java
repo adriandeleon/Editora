@@ -144,7 +144,9 @@ public enum ConfigSchema {
                     Map.entry(82, (Migration) ConfigMigrations::identity), // v82→83: + autoFill (additive)
                     Map.entry(83, (Migration)
                             ConfigMigrations::identity), // v83→84: + abbreviations/abbrevMode (additive)
-                    Map.entry(84, (Migration) ConfigMigrations::identity))), // v84→85: + inlayHints (additive)
+                    Map.entry(84, (Migration) ConfigMigrations::identity), // v84→85: + inlayHints (additive)
+                    Map.entry(85, (Migration)
+                            ConfigMigrations::identity))), // v85→86: + copyWithSyntaxHighlighting (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

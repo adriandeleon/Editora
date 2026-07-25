@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 85;
+    public static final int SCHEMA_VERSION = 86;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -104,6 +104,9 @@ public class Settings {
     private boolean multiCaret = true;
     /** With no selection, Copy/Cut act on the whole current line (VS Code {@code editor.emptySelectionClipboard}). */
     private boolean copyLineWhenNoSelection = true;
+    /** Also put a syntax-highlighted HTML flavor on the clipboard when copying (VS Code
+     *  {@code editor.copyWithSyntaxHighlighting}), so a paste into Slack/a doc keeps colors. */
+    private boolean copyWithSyntaxHighlighting = true;
     /** Check GitHub for a newer release on startup (at most once/day). Contacts the GitHub API over HTTPS. */
     private boolean updateCheck = true;
     /** Epoch millis of the last background update check (throttles to once/day); 0 = never checked. */
@@ -1200,6 +1203,14 @@ public class Settings {
 
     public void setMultiCaret(boolean multiCaret) {
         this.multiCaret = multiCaret;
+    }
+
+    public boolean isCopyWithSyntaxHighlighting() {
+        return copyWithSyntaxHighlighting;
+    }
+
+    public void setCopyWithSyntaxHighlighting(boolean copyWithSyntaxHighlighting) {
+        this.copyWithSyntaxHighlighting = copyWithSyntaxHighlighting;
     }
 
     public boolean isCopyLineWhenNoSelection() {

@@ -318,6 +318,7 @@ public class SettingsWindow {
     private boolean loadingTemplate = false;
     private CheckBox multiCaretCheck;
     private CheckBox copyLineNoSelectionCheck;
+    private CheckBox copyWithHighlightingCheck;
     private CheckBox projectsCheck;
     private CheckBox gitCheck;
     private CheckBox blameCheck;
@@ -1083,6 +1084,8 @@ public class SettingsWindow {
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
         copyLineNoSelectionCheck =
                 viewCheck(tr("settings.copyLineWhenNoSelection"), Settings::setCopyLineWhenNoSelection);
+        copyWithHighlightingCheck =
+                viewCheck(tr("settings.copyWithSyntaxHighlighting"), Settings::setCopyWithSyntaxHighlighting);
 
         projectsCheck = new CheckBox(tr("settings.enableProjects"));
         projectsCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -2187,6 +2190,12 @@ public class SettingsWindow {
                 display,
                 copyLineNoSelectionCheck,
                 "copy cut whole current line empty no selection clipboard vs code");
+        row(
+                p,
+                Category.EDITOR,
+                display,
+                copyWithHighlightingCheck,
+                "copy syntax highlighting html colors paste slack document rich text vs code");
         row(p, Category.EDITOR, display, autoRenameTagCheck, "auto rename tag html xml paired close mirror vs code");
         row(p, Category.EDITOR, display, autoFillCheck, "auto fill mode break wrap prose lines fill column emacs");
         row(
@@ -6319,6 +6328,7 @@ public class SettingsWindow {
             rebuildMarkdownLintRules();
             multiCaretCheck.setSelected(settings.isMultiCaret());
             copyLineNoSelectionCheck.setSelected(settings.isCopyLineWhenNoSelection());
+            copyWithHighlightingCheck.setSelected(settings.isCopyWithSyntaxHighlighting());
             projectsCheck.setSelected(settings.isProjectSupport());
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
@@ -6922,6 +6932,7 @@ public class SettingsWindow {
             indentStyleCombo.setValue(s.getIndentStyle());
             multiCaretCheck.setSelected(s.isMultiCaret());
             copyLineNoSelectionCheck.setSelected(s.isCopyLineWhenNoSelection());
+            copyWithHighlightingCheck.setSelected(s.isCopyWithSyntaxHighlighting());
             projectsCheck.setSelected(s.isProjectSupport());
         } finally {
             loading = prev;
