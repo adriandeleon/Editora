@@ -3,6 +3,31 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP device-test fixes** (#667/#674/#676 follow-ups; #681 still open as #715) — five device-reported
+      failures, **four with root causes unreachable by reading our own code**; a standalone probe driving a
+      real jdtls (`JdtlsProbeTest`, opt-in `-Dlsp.probe=true`, self-skipping) settled them.
+      **(a) Format Document mangled the file:** the fork's `MultiChangeBuilder` applies replacements
+      *sequentially against the progressively-edited document* (already documented in CLAUDE.md), but
+      `applyLspEdits` fed it **ascending** absolute offsets computed against the ORIGINAL text — so the first
+      length-changing edit shifted every later one. Now applied **descending** (the LSP spec's own rule).
+      The pre-existing test passed only because it used same-length replacements, where order is invisible;
+      two regression tests now cover growing and shrinking edits. Shared by quick fixes + multi-file rename.
+      **(b) Signature help returned nothing:** jdtls *advertises* `signatureHelpProvider` (trigger chars
+      `(` `,`) but its handler returns empty unless `java.signatureHelp.enabled` is pushed — it ships OFF
+      (VS Code's Java extension sets it in its own defaults). Proven on a live server: same position, 0
+      signatures before the flag, both overloads after. Same class as #468's `provideFormatter`. Also fixed
+      the trigger itself: with auto-close on, `(` arrives as a 2-char `()` insert and the `length()==1`
+      guard rejected it. **And a self-inflicted one:** an attempt to add context support used
+      `SignatureHelpCapabilities(sigInfo, true)`, whose second arg is **dynamicRegistration** — that made
+      jdtls stop advertising the capability entirely (the probe caught it instantly); context support is a
+      separate setter. **(c) Class rename didn't move the file:** jdtls's `isResourceOperationSupported()`
+      is all-or-nothing — it emits a `RenameFile` only when the client declares Create AND Rename AND
+      Delete. We declared only Rename, so jdtls silently stripped the move. Verified: the probe now shows
+      `RESOURCE-OP RenameFile OldName.java → NewName.java`. We still only *apply* renames (create/delete
+      refuse the whole edit safely). **Verified-clean by the same round:** #678 incremental sync — a shadow
+      comparison reported byte-identical server/buffer documents, killing the theory that it was corrupting
+      the file; it was one step from being needlessly reverted.
+      *Deferred → #715: inlay hints still don't render although jdtls demonstrably returns them.*
 - [x] **Doctor — external-tool health screen** — `view.doctor` opens a Welcome-style tab reporting the
       health of every external CLI (git/gh/rg/mmdc/maid/dot/plantuml/typst, the enabled LSP servers, the
       3 debug adapters, run interpreters, build tools, agent CLI, installer prereqs) with fresh

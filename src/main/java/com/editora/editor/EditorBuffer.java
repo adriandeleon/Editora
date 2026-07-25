@@ -803,15 +803,15 @@ public class EditorBuffer implements TabContent {
             if (lspActive && lspDiagnosticsRequester != null) {
                 lspDiagnosticsRequester.run();
             }
-            if (semanticActive && semanticTokensRequester != null) {
-                semanticTokensRequester.run();
+            if ((semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
+                semanticTokensRequester.run(); // drives semantic tokens AND inlay hints (#681)
             }
         });
         // After scrolling settles, re-request semantic tokens for the now-visible region (debounced so a
         // drag-scroll doesn't fire a request per frame). Inert unless semantic highlighting is active.
         semanticScrollDebounce.setOnFinished(e -> {
-            if (semanticActive && semanticTokensRequester != null) {
-                semanticTokensRequester.run();
+            if ((semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
+                semanticTokensRequester.run(); // drives semantic tokens AND inlay hints (#681)
             }
         });
         // HTML live preview: debounced reload pulse for HTML buffers (only while a browser preview is open).
@@ -3426,10 +3426,19 @@ public class EditorBuffer implements TabContent {
         diagnosticStripe.setDiagnostics(java.util.List.of());
     }
 
-    /** The debounced semantic-tokens request (fired on the 300 ms didChange pulse while active); null = none. */
+    /** The debounced semantic-tokens request (fired on the 300 ms didChange pulse while active); null = none.
+     *  Also drives inlay hints (#681) — fired when {@link #inlayHintsActive} even if semantic is off. */
     public void setSemanticTokensRequester(Runnable requester) {
         this.semanticTokensRequester = requester;
     }
+
+    /** Whether inlay hints should re-request on the edit/scroll pulse — independent of semantic highlighting
+     *  (#681, which was silently coupled to {@code semanticActive} so hints never fired with it off). */
+    public void setInlayHintsActive(boolean active) {
+        this.inlayHintsActive = active;
+    }
+
+    private boolean inlayHintsActive;
 
     /** Turns LSP semantic highlighting on/off for this buffer (server supports it + feature enabled). Off in
      *  large-file mode, like the diagnostics overlay. Re-applies the highlight so the overlay appears/clears. */
@@ -8005,12 +8014,31 @@ public class EditorBuffer implements TabContent {
             return;
         }
         org.fxmisc.richtext.model.PlainTextChange c = changes.get(0);
-        String inserted = c.getInserted();
-        if (inserted.length() == 1
-                && (c.getRemoved() == null || c.getRemoved().isEmpty())
-                && lspSignatureTriggerChars.contains(inserted.charAt(0))) {
+        if (signatureTriggerTyped(c.getInserted(), c.getRemoved())) {
             Platform.runLater(signatureHelpRequester);
         }
+    }
+
+    /**
+     * Whether {@code inserted}/{@code removed} is a single typed signature-help trigger character. The
+     * subtlety: with bracket auto-close on (the default), typing {@code (} inserts {@code ()} as one 2-char
+     * change — so a bare {@code length()==1} check silently never fired for {@code (}, the primary trigger
+     * (#674, caught in device-testing). We also accept a trigger char that auto-close expanded to a pair:
+     * length 1 (auto-close off, or {@code ,}), or length 2 whose second char closes the first. A paste
+     * (longer, or a non-empty removal) never triggers.
+     */
+    private boolean signatureTriggerTyped(String inserted, String removed) {
+        if (inserted.isEmpty() || (removed != null && !removed.isEmpty())) {
+            return false;
+        }
+        if (!lspSignatureTriggerChars.contains(inserted.charAt(0))) {
+            return false;
+        }
+        return inserted.length() == 1 || (inserted.length() == 2 && isCloserChar(inserted.charAt(1)));
+    }
+
+    private static boolean isCloserChar(char ch) {
+        return ch == ')' || ch == ']' || ch == '}' || ch == '>';
     }
 
     /**
@@ -8599,8 +8627,15 @@ public class EditorBuffer implements TabContent {
             a.replaceText(ranges.get(0)[0], ranges.get(0)[1], texts.get(0));
             return;
         }
+        // Apply BOTTOM-TO-TOP. The fork's MultiChangeBuilder applies its replacements *sequentially against
+        // the progressively-edited document* (documented in CLAUDE.md), so absolute offsets computed against
+        // the ORIGINAL text are only valid while nothing before them has changed length. Feeding ascending
+        // order silently corrupted every edit after the first length-changing one — which is exactly what
+        // Format Document does (re-indent = grow/shrink), so it mangled the file. Descending order keeps
+        // every offset valid because each edit lies before the region already rewritten. (The LSP spec gives
+        // the same rule for applying a TextEdit[].) Same-length edits hid this in the original test.
         org.fxmisc.richtext.MultiChangeBuilder<?, ?, ?> builder = a.createMultiChange(ranges.size());
-        for (int i = 0; i < ranges.size(); i++) {
+        for (int i = ranges.size() - 1; i >= 0; i--) {
             builder.replaceTextAbsolutely(ranges.get(i)[0], ranges.get(i)[1], texts.get(i));
         }
         builder.commit(); // one undo unit for the whole edit set

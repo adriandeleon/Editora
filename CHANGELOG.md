@@ -205,6 +205,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Format Document no longer mangles the file.** A multi-edit format was applied top-to-bottom using
+  offsets computed against the *original* text, so the first edit that changed a line's length shifted
+  every later edit onto the wrong place — which is exactly what re-indenting does. Edits now apply
+  bottom-to-top, as the LSP spec prescribes. The same path backs quick fixes and multi-file rename, so
+  those were affected too. (#667)
+- **Signature help works with Java.** jdtls advertises the capability but ships the feature disabled;
+  Editora now enables it (`java.signatureHelp.enabled`), so typing `(` or `,` in a Java call shows the
+  overloads. Typing `(` with bracket auto-close on also triggers it correctly now — the trigger check
+  only accepted a single character, and auto-close inserts `()` as one edit. (#674)
+- **Renaming a Java class moves its file again.** jdtls only emits the file-rename operation when the
+  client declares create, rename *and* delete resource operations; Editora declared only rename, so the
+  symbol was renamed but `OldName.java` stayed behind. (#676)
+
 - **Go to Definition now reaches JDK and dependency classes.** A Java definition inside a library — jdtls
   reports it under a `jdt://` URI, not a file — was silently dropped, so `M-.` on `String`, `List`, or any
   dependency symbol claimed "no definition". The class's source is now fetched from the server
