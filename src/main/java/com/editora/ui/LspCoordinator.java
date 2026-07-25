@@ -437,31 +437,7 @@ final class LspCoordinator {
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
         lspManager.setJdtlsWorkspaceBase(ops.jdtlsWorkspaceBase());
-        lspManager.configure(
-                on,
-                Map.ofEntries(
-                        Map.entry("java", s.getJavaLspCommand()),
-                        Map.entry("typescript", s.getTypescriptLspCommand()),
-                        Map.entry("python", s.getPythonLspCommand()),
-                        Map.entry("xml", s.getXmlLspCommand()),
-                        Map.entry("json", s.getJsonLspCommand()),
-                        Map.entry("bash", s.getBashLspCommand()),
-                        Map.entry("yaml", s.getYamlLspCommand()),
-                        Map.entry("go", s.getGoLspCommand()),
-                        Map.entry("rust", s.getRustLspCommand()),
-                        Map.entry("php", s.getPhpLspCommand()),
-                        Map.entry("ruby", s.getRubyLspCommand()),
-                        Map.entry("clangd", s.getClangdLspCommand()),
-                        Map.entry("html", s.getHtmlLspCommand()),
-                        Map.entry("css", s.getCssLspCommand()),
-                        Map.entry("kotlin", s.getKotlinLspCommand()),
-                        Map.entry("lua", s.getLuaLspCommand()),
-                        Map.entry("dockerfile", s.getDockerfileLspCommand()),
-                        Map.entry("sql", s.getSqlLspCommand()),
-                        Map.entry("terraform", s.getTerraformLspCommand()),
-                        Map.entry("toml", s.getTomlLspCommand()),
-                        Map.entry("csharp", s.getCsharpLspCommand()),
-                        Map.entry("typst", s.getTypstLspCommand())));
+        lspManager.configure(on, commandsForAllServers(s));
         updateProblemsAvailability();
         // The Run affordance (compact source files) is gated by the LSP feature: toggle every buffer's
         // Run detection, then refresh the active buffer's Run tool-window availability.
@@ -495,6 +471,30 @@ final class LspCoordinator {
                 applyGating();
             });
         }
+    }
+
+    /**
+     * Every known server's configured command, keyed by server id — what {@link LspManager#configure} needs.
+     *
+     * <p><b>Derived from {@link #SERVER_IDS}, never hand-listed.</b> This used to be a literal
+     * {@code Map.ofEntries(...)} of 22 entries against a 23-entry {@code SERVER_IDS}, and the one it omitted
+     * was {@code maven-pom} — whose registry default command is deliberately blank (it is only known after
+     * install). So {@code commandFor} returned an empty argv, {@code available()} said false, and the
+     * Maven-aware {@code pom.xml} server could <em>never</em> start, while the Settings row, the in-app
+     * installer and Doctor (which all read {@code Settings} directly) reported it present and configured
+     * (#723). Building the map from the same array the detect/gating loops walk makes that drift
+     * unrepresentable; {@code LspCoordinatorServerIdsTest} pins it.
+     *
+     * <p>A {@code HashMap} rather than {@code Map.ofEntries} on purpose: it tolerates a null command from a
+     * config where the field was explicitly nulled, which {@code Map.ofEntries} would turn into an NPE
+     * escaping {@code applySupport} — i.e. LSP silently dead for the session.
+     */
+    static Map<String, String> commandsForAllServers(com.editora.config.Settings s) {
+        Map<String, String> commands = new java.util.HashMap<>();
+        for (String serverId : SERVER_IDS) {
+            commands.put(serverId, serverCommand(s, serverId));
+        }
+        return commands;
     }
 
     /** Clears the diagnostics (Problems entry + editor overlay) of every open buffer served by {@code serverId}
@@ -597,7 +597,12 @@ final class LspCoordinator {
 
     /** The configured command for a server id (blank ⇒ the server's default). */
     private String serverCommand(String serverId) {
-        var s = host.settings();
+        return serverCommand(host.settings(), serverId);
+    }
+
+    /** Pure: {@code serverId}'s configured command from {@code s} — the id→Settings-field mapping, kept
+     *  static so {@link #commandsForAllServers} (and its guard test) need no window/host (#723). */
+    static String serverCommand(com.editora.config.Settings s, String serverId) {
         return switch (serverId) {
             case "typescript" -> s.getTypescriptLspCommand();
             case "python" -> s.getPythonLspCommand();
@@ -720,13 +725,32 @@ final class LspCoordinator {
             buffer.setInlayHints(null);
             return;
         }
-        int[] window = buffer.visibleLineWindow();
+        int[] window = paddedWindow(buffer.visibleLineWindow(), SEMANTIC_WINDOW_PAD, buffer.lineCount());
         long version = buffer.docVersion();
-        lspManager.requestInlayHints(path, window[0] - SEMANTIC_WINDOW_PAD, window[1] + SEMANTIC_WINDOW_PAD, spans -> {
+        lspManager.requestInlayHints(path, window[0], window[1], spans -> {
             if (buffer == host.activeBuffer() && buffer.docVersion() == version) {
                 buffer.setInlayHints(aggregateInlayHints(spans));
             }
         });
+    }
+
+    /**
+     * Pure: the visible window grown by {@code pad} on each side and clamped to the document — {@code [0,
+     * lineCount-1]}.
+     *
+     * <p>The clamp is the point (#724). The raw {@code visible[1] + 200} names a line that does not exist for
+     * any file shorter than the viewport plus the pad — {@code LspManager} then adds another {@code +1} for
+     * the exclusive range end, so a 27-line file was asking for {@code Position(227, 0)}. jdtls tolerates it,
+     * but every response path ends in {@code .exceptionally(t -> List.of())}, so a stricter server would fail
+     * <em>silently and indistinguishably from "no results"</em>. Clamped, the end becomes exactly
+     * {@code Position(lineCount, 0)} — the document end, which is what a well-formed whole-file request
+     * looks like.
+     */
+    static int[] paddedWindow(int[] visible, int pad, int lineCount) {
+        int last = Math.max(0, lineCount - 1);
+        int start = Math.max(0, visible[0] - pad);
+        int end = Math.min(last, Math.max(visible[1], visible[0]) + pad);
+        return new int[] {Math.min(start, end), end};
     }
 
     /** Pure: hints grouped per line in (line, col) order, labels joined — the end-of-line aggregate. */
@@ -755,14 +779,13 @@ final class LspCoordinator {
         if (path == null || !buffer.isSemanticActive() || !lspManager.isManaged(path)) {
             return;
         }
-        int[] window = buffer.visibleLineWindow();
+        int[] window = paddedWindow(buffer.visibleLineWindow(), SEMANTIC_WINDOW_PAD, buffer.lineCount());
         long gen = buffer.semanticGen(); // capture now; the reply is dropped if the doc changes before it lands
-        lspManager.requestSemanticTokens(
-                path, window[0] - SEMANTIC_WINDOW_PAD, window[1] + SEMANTIC_WINDOW_PAD, tokens -> {
-                    if (buffer == host.activeBuffer()) {
-                        buffer.setSemanticTokens(tokens, gen);
-                    }
-                });
+        lspManager.requestSemanticTokens(path, window[0], window[1], tokens -> {
+            if (buffer == host.activeBuffer()) {
+                buffer.setSemanticTokens(tokens, gen);
+            }
+        });
     }
 
     /**
@@ -1061,7 +1084,7 @@ final class LspCoordinator {
      *  opens+activates it if eligible. Called from {@code MainController.addBuffer}. */
     void wireBuffer(EditorBuffer buffer) {
         // Debounced didChange sink + keep the Structure outline live as the document changes.
-        buffer.setSignatureHelpRequester(() -> signatureHelp(false)); // '(' or ',' typed (#674)
+        buffer.setSignatureHelpRequester(ch -> signatureHelp(false, ch)); // '(' or ',' typed (#674, #725)
         buffer.setOccurrenceRequester(() -> requestOccurrences(buffer)); // caret at rest (#675)
         buffer.setLspChangeListener(text -> {
             if (buffer.getPath() != null) {
@@ -1700,6 +1723,17 @@ final class LspCoordinator {
      * signatures hides the popup, which is also how it closes once the caret leaves the call.
      */
     void signatureHelp(boolean manual) {
+        signatureHelp(manual, null);
+    }
+
+    /**
+     * As {@link #signatureHelp(boolean)}, with the {@code triggerChar} that fired it ({@code null} = the
+     * explicit command or a typing-pause refresh). Passing it through is what lets the server see
+     * {@code triggerKind=TriggerCharacter} instead of a blanket {@code Invoked} (#725); {@code isRetrigger}
+     * is derived from whether a popup is already open, which servers use to keep the active overload stable
+     * while arguments are typed.
+     */
+    void signatureHelp(boolean manual, Character triggerChar) {
         EditorBuffer b = host.activeBuffer();
         if (b == null
                 || b.getPath() == null
@@ -1712,21 +1746,28 @@ final class LspCoordinator {
         }
         Path path = b.getPath();
         CodeArea area = b.getFocusedArea();
+        boolean retrigger = signaturePopup != null; // the popup is already up for this call
         lspManager.changeDocument(path, b.text()); // sync latest text before the request
-        lspManager.signatureHelp(path, area.getCurrentParagraph(), area.getCaretColumn(), null, help -> {
-            if (b != host.activeBuffer()) {
-                return;
-            }
-            var active = com.editora.lsp.SignatureFormat.resolve(help);
-            if (active == null) {
-                hideSignaturePopup(); // outside a call now — the natural close
-                if (manual) {
-                    host.setStatus(tr("status.lsp.noSignatureHelp"));
-                }
-                return;
-            }
-            showSignaturePopup(area, active);
-        });
+        lspManager.signatureHelp(
+                path,
+                area.getCurrentParagraph(),
+                area.getCaretColumn(),
+                triggerChar == null ? null : String.valueOf(triggerChar),
+                retrigger,
+                help -> {
+                    if (b != host.activeBuffer()) {
+                        return;
+                    }
+                    var active = com.editora.lsp.SignatureFormat.resolve(help);
+                    if (active == null) {
+                        hideSignaturePopup(); // outside a call now — the natural close
+                        if (manual) {
+                            host.setStatus(tr("status.lsp.noSignatureHelp"));
+                        }
+                        return;
+                    }
+                    showSignaturePopup(area, active);
+                });
     }
 
     // --- Watched files (#677) ------------------------------------------------------------------
