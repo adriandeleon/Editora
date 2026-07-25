@@ -796,21 +796,33 @@ final class LanguageServerSession implements LanguageClient {
         return out;
     }
 
-    /** Signature help ({@code textDocument/signatureHelp}) at a position → the overloads + active
-     *  parameter, or null when unavailable/failed (#674). */
-    CompletableFuture<org.eclipse.lsp4j.SignatureHelp> signatureHelp(String uri, Position pos, String triggerChar) {
+    /**
+     * Signature help ({@code textDocument/signatureHelp}) at a position → the overloads + active parameter,
+     * or null when unavailable/failed (#674).
+     *
+     * <p>{@code triggerChar} non-null ⇒ {@code triggerKind=TriggerCharacter} carrying that character; null ⇒
+     * {@code Invoked} (the explicit command) or {@code ContentChange} when this is a refresh of an already-open
+     * popup. {@code retrigger} tells the server the popup is already up, which is what lets it keep the active
+     * overload stable while arguments are typed. Both were previously hardcoded to "Invoked, not a retrigger"
+     * even on the auto-trigger path, so the {@code TriggerCharacter} branch was unreachable (#725).
+     */
+    CompletableFuture<org.eclipse.lsp4j.SignatureHelp> signatureHelp(
+            String uri, Position pos, String triggerChar, boolean retrigger) {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
         var params = new org.eclipse.lsp4j.SignatureHelpParams(new TextDocumentIdentifier(uri), pos);
         var context = new org.eclipse.lsp4j.SignatureHelpContext();
         if (triggerChar == null) {
-            context.setTriggerKind(org.eclipse.lsp4j.SignatureHelpTriggerKind.Invoked);
+            context.setTriggerKind(
+                    retrigger
+                            ? org.eclipse.lsp4j.SignatureHelpTriggerKind.ContentChange
+                            : org.eclipse.lsp4j.SignatureHelpTriggerKind.Invoked);
         } else {
             context.setTriggerKind(org.eclipse.lsp4j.SignatureHelpTriggerKind.TriggerCharacter);
             context.setTriggerCharacter(triggerChar);
         }
-        context.setIsRetrigger(false);
+        context.setIsRetrigger(retrigger);
         params.setContext(context);
         return server.getTextDocumentService().signatureHelp(params).exceptionally(t -> null);
     }

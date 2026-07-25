@@ -40,6 +40,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Maven-aware `pom.xml` language server now actually starts** — it was enabled by default, offered by
+  the in-app installer, shown as configured in Settings and reported found by Doctor, yet every `pom.xml`
+  silently fell back to the plain XML server. Its configured command was the one that never reached the LSP
+  layer, so the server looked uninstalled no matter what you did.
+
+- **Language-server requests no longer ask for lines past the end of the file** — inlay-hint and
+  semantic-token requests padded their window by 200 lines without clamping it to the document, so a short
+  file asked for a line that does not exist. Harmless with the current servers, but a stricter one would have
+  answered with an error that the editor could not tell apart from "nothing to show".
+
+- **Signature help now tells the server which character triggered it** — typing `(` or `,` was reported as a
+  plain manual invocation, and a refresh while the popup was open was not marked as a re-trigger. Servers that
+  use either to decide what to show (and to keep the highlighted overload stable while you type arguments) now
+  get the real picture.
+
 - **Java debugging no longer stays off when your language server already includes it** — some jdtls
   distributions (Homebrew's, for one) ship and load the java-debug plugin themselves. Editora only looked for
   its own copy of that plugin on disk, so it reported debugging as unavailable — which also pushed *Run Main

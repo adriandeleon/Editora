@@ -668,16 +668,24 @@ public final class LspManager {
         }
     }
 
-    /** Requests signature help at a 0-based position; the raw lsp4j result (or null) arrives on the FX
-     *  thread — resolved for display via {@link SignatureFormat#resolve}. */
+    /**
+     * Requests signature help at a 0-based position; the raw lsp4j result (or null) arrives on the FX thread
+     * — resolved for display via {@link SignatureFormat#resolve}. {@code triggerChar} is the character that
+     * fired it ({@code null} = the explicit command), {@code retrigger} that a popup is already open (#725).
+     */
     public void signatureHelp(
-            Path file, int line, int character, String triggerChar, Consumer<org.eclipse.lsp4j.SignatureHelp> cb) {
+            Path file,
+            int line,
+            int character,
+            String triggerChar,
+            boolean retrigger,
+            Consumer<org.eclipse.lsp4j.SignatureHelp> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(null));
             return;
         }
-        s.signatureHelp(uri(file), new Position(line, character), triggerChar)
+        s.signatureHelp(uri(file), new Position(line, character), triggerChar, retrigger)
                 .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e == null ? r : null)));
     }
 

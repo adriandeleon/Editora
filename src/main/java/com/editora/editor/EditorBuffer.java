@@ -557,7 +557,7 @@ public class EditorBuffer implements TabContent {
     /** Signature-help trigger chars (usually '(' and ',') — see setLspSignatureTriggerChars (#674). */
     private java.util.Set<Character> lspSignatureTriggerChars = java.util.Set.of();
     /** Fired (deferred a pulse) when a signature trigger char is typed; null = disabled. */
-    private Runnable signatureHelpRequester;
+    private java.util.function.Consumer<Character> signatureHelpRequester;
 
     private javafx.scene.control.Tooltip lspTooltip;
     /** Message currently shown by {@link #lspTooltip} — skips a re-{@code show()} (flicker) on each move. */
@@ -3132,8 +3132,12 @@ public class EditorBuffer implements TabContent {
         this.lspSignatureTriggerChars = chars == null ? java.util.Set.of() : chars;
     }
 
-    /** Injects the signature-help request (the coordinator shows the popup); null disables auto-trigger. */
-    public void setSignatureHelpRequester(Runnable requester) {
+    /**
+     * Injects the signature-help request (the coordinator shows the popup); null disables auto-trigger.
+     * The argument is the <b>trigger character just typed</b> — the server is told
+     * {@code triggerKind=TriggerCharacter} with that char rather than a blanket {@code Invoked} (#725).
+     */
+    public void setSignatureHelpRequester(java.util.function.Consumer<Character> requester) {
         this.signatureHelpRequester = requester;
     }
 
@@ -8162,7 +8166,8 @@ public class EditorBuffer implements TabContent {
         }
         org.fxmisc.richtext.model.PlainTextChange c = changes.get(0);
         if (signatureTriggerTyped(c.getInserted(), c.getRemoved())) {
-            Platform.runLater(signatureHelpRequester);
+            char trigger = c.getInserted().charAt(0); // the char, so the server sees TriggerCharacter (#725)
+            Platform.runLater(() -> signatureHelpRequester.accept(trigger));
         }
     }
 

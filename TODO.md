@@ -3,6 +3,27 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP audit round** (#723/#724/#725, and a correction to #715) — a read of the whole LSP surface plus
+      probes against a real jdtls 1.60. **(a) #723 — the Maven-aware `pom.xml` server could never start:**
+      `applySupport`'s `configure` map was a hand-written `Map.ofEntries` of 22 entries against a 23-entry
+      `SERVER_IDS`, and the omitted `maven-pom` is the one server whose registry default command is
+      deliberately blank — so `commandFor` returned an empty argv, `available()` said false, and the gate
+      never opened, while Settings, the in-app installer and Doctor all read the setting directly and
+      reported it present. The map is now **derived from `SERVER_IDS`** (`commandsForAllServers`), making the
+      drift unrepresentable; `LspCoordinatorServerIdsTest` also pins that each id reads its *own* Settings
+      field rather than falling through the switch's `default -> java`. **(b) #724 — out-of-document request
+      ranges:** the inlay-hint/semantic-token window padded by 200 without clamping, so a 27-line file asked
+      for `Position(227,0)`; every response path ends in `.exceptionally(t -> List.of())`, so a stricter
+      server would fail *silently and indistinguishably from "no results"*. Clamped via the pure
+      `paddedWindow`. **(c) #725 — signature help always sent `triggerKind=Invoked`:** the
+      `TriggerCharacter` branch was unreachable and `isRetrigger` was hardcoded false, despite the client
+      declaring `contextSupport` and collecting the trigger chars; the character and the retrigger flag are
+      now threaded through. **(d) #715 corrected:** six configurations against a real jdtls — in-range and
+      out-of-range ranges, a 4-minute poll, the preference pushed explicitly, and an A/B on
+      `initializationOptions` — all returned **0 hints**, with hover resolving the full signature on the
+      first poll as a control. So the issue's central premise (server works, client drops them) is wrong and
+      its three client-side hypotheses are unfounded; it needs a ground-truth server repro first. The probe
+      harnesses (`JdtlsInlayRangeProbeTest`, `JdtlsInlayInitOptionsProbeTest`) ship opt-in like the original.
 - [x] **LSP device-test fixes** (#667/#674/#676 follow-ups; #681 still open as #715) — five device-reported
       failures, **four with root causes unreachable by reading our own code**; a standalone probe driving a
       real jdtls (`JdtlsProbeTest`, opt-in `-Dlsp.probe=true`, self-skipping) settled them.
@@ -27,7 +48,8 @@ A backlog of planned features and improvements. Unordered within each section.
       refuse the whole edit safely). **Verified-clean by the same round:** #678 incremental sync — a shadow
       comparison reported byte-identical server/buffer documents, killing the theory that it was corrupting
       the file; it was one step from being needlessly reverted.
-      *Deferred → #715: inlay hints still don't render although jdtls demonstrably returns them.*
+      *Deferred → #715: inlay hints still don't render. **The "jdtls demonstrably returns them" premise
+      did not survive re-testing** — see the audit entry below.*
 - [x] **Doctor — external-tool health screen** — `view.doctor` opens a Welcome-style tab reporting the
       health of every external CLI (git/gh/rg/mmdc/maid/dot/plantuml/typst, the enabled LSP servers, the
       3 debug adapters, run interpreters, build tools, agent CLI, installer prereqs) with fresh
