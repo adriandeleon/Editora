@@ -6898,6 +6898,17 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
+     * The length of the document's last line, in characters. Together with {@link #lineCount} this describes
+     * the document <em>end</em>, which an LSP range request must be clamped to: a range naming a line past
+     * the end makes a server answer with an empty result rather than an error, which is indistinguishable
+     * from "nothing to report" (#715).
+     */
+    public int lastLineLength() {
+        var paragraphs = area.getParagraphs();
+        return paragraphs.isEmpty() ? 0 : paragraphs.get(paragraphs.size() - 1).length();
+    }
+
+    /**
      * Enables huge-file (read-only) mode: implies large-file mode, and makes the views non-editable
      * with no undo. Used for files the loader had to truncate; see {@link #HUGE_FILE_BYTES}.
      */

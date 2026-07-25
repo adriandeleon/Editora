@@ -49,10 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently fell back to the plain XML server. Its configured command was the one that never reached the LSP
   layer, so the server looked uninstalled no matter what you did.
 
-- **Language-server requests no longer ask for lines past the end of the file** — inlay-hint and
-  semantic-token requests padded their window by 200 lines without clamping it to the document, so a short
-  file asked for a line that does not exist. Harmless with the current servers, but a stricter one would have
-  answered with an error that the editor could not tell apart from "nothing to show".
+- **Inlay hints appear** — they never did. The request asked for a range ending one line past the end of the
+  file, and the language server answers that with an empty result rather than an error, so the editor could
+  not tell it apart from "this file has no hints". Requests are now clamped to the document. (The same
+  off-by-one applied to semantic-token range requests.)
 
 - **Signature help now tells the server which character triggered it** — typing `(` or `,` was reported as a
   plain manual invocation, and a refresh while the popup was open was not marked as a re-trigger. Servers that
