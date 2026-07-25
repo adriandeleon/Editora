@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 86;
+    public static final int SCHEMA_VERSION = 87;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -137,6 +137,10 @@ public class Settings {
     private boolean semanticHighlight = true;
     /** LSP inlay hints (parameter names / inferred types) drawn after each line; default off (#681). */
     private boolean inlayHints = false;
+    /** Re-indent the current line when a language server's trigger character is typed ({@code ;}, {@code }},
+     *  Enter). Default <b>off</b>: it acts on very common keystrokes and overlaps the local auto-indent
+     *  assists, so it is opt-in until it has proven itself in the field (#740). */
+    private boolean lspOnTypeFormatting = false;
     /** Honor a project's {@code .editorconfig} (indent, EOL, charset, trim/final-newline, max line length). */
     private boolean editorConfigSupport = true;
     /** Highlight configured patterns (TODO/FIXME/…) in the editor + list them in the TODO tool window. */
@@ -1040,6 +1044,14 @@ public class Settings {
 
     public void setSemanticHighlight(boolean semanticHighlight) {
         this.semanticHighlight = semanticHighlight;
+    }
+
+    public boolean isLspOnTypeFormatting() {
+        return lspOnTypeFormatting;
+    }
+
+    public void setLspOnTypeFormatting(boolean lspOnTypeFormatting) {
+        this.lspOnTypeFormatting = lspOnTypeFormatting;
     }
 
     public boolean isInlayHints() {

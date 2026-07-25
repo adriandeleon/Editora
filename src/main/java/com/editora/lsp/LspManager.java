@@ -1218,6 +1218,79 @@ public final class LspManager {
     }
 
     /**
+     * Pure: the characters a server formats on ({@code documentOnTypeFormattingProvider}), collected into one
+     * set — the spec splits them into a mandatory {@code firstTriggerCharacter} and an optional
+     * {@code moreTriggerCharacter} list, a distinction that matters to the server and not to us (#740).
+     * Empty when the server has no provider, which is also how the feature stays inert for those servers.
+     */
+    static java.util.Set<Character> onTypeTriggersOf(org.eclipse.lsp4j.ServerCapabilities caps) {
+        if (caps == null || caps.getDocumentOnTypeFormattingProvider() == null) {
+            return java.util.Set.of();
+        }
+        var provider = caps.getDocumentOnTypeFormattingProvider();
+        java.util.Set<Character> out = new java.util.HashSet<>();
+        String first = provider.getFirstTriggerCharacter();
+        if (first != null && !first.isEmpty()) {
+            out.add(first.charAt(0));
+        }
+        if (provider.getMoreTriggerCharacter() != null) {
+            for (String more : provider.getMoreTriggerCharacter()) {
+                if (more != null && !more.isEmpty()) {
+                    out.add(more.charAt(0));
+                }
+            }
+        }
+        return out;
+    }
+
+    /** The on-type formatting trigger characters for {@code file}'s server; empty when unsupported (#740). */
+    public java.util.Set<Character> onTypeTriggerCharacters(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s == null ? java.util.Set.of() : onTypeTriggersOf(s.capabilities());
+    }
+
+    /**
+     * On-type formatting ({@code textDocument/onTypeFormatting}, #740): the edits the server would apply
+     * having just seen {@code ch} typed at the given position. Delivered on the FX thread; empty when the
+     * server has no provider or the request fails.
+     */
+    public void onTypeFormatting(
+            Path file,
+            int line,
+            int character,
+            char ch,
+            int tabSize,
+            boolean insertSpaces,
+            Consumer<List<com.editora.editor.LspTextEdit>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || onTypeTriggersOf(s.capabilities()).isEmpty()) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        s.onTypeFormatting(
+                        uri(file),
+                        new Position(line, character),
+                        String.valueOf(ch),
+                        new org.eclipse.lsp4j.FormattingOptions(tabSize, insertSpaces))
+                .whenComplete((result, error) -> {
+                    List<com.editora.editor.LspTextEdit> edits = new ArrayList<>();
+                    if (error == null && result != null) {
+                        for (org.eclipse.lsp4j.TextEdit e : result) {
+                            if (e != null && e.getRange() != null) {
+                                edits.add(new com.editora.editor.LspTextEdit(
+                                        e.getRange().getStart().getLine(),
+                                        e.getRange().getStart().getCharacter(),
+                                        e.getRange().getEnd().getLine(),
+                                        e.getRange().getEnd().getCharacter(),
+                                        e.getNewText() == null ? "" : e.getNewText()));
+                            }
+                        }
+                    }
+                    Platform.runLater(() -> cb.accept(edits));
+                });
+    }
+
+    /**
      * Requests range formatting ({@code textDocument/rangeFormatting}) over the line range
      * {@code [startLine..endLine]} and delivers the resulting edits to {@code cb} on the FX thread (empty
      * on error / unsupported). Used by Tab to re-indent the current line to the server's convention.

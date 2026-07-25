@@ -621,6 +621,12 @@ public class EditorBuffer implements TabContent {
     private boolean lspRangeFormatAvailable;
     /** Injected range-formatter (the controller wires it to the LSP manager); null = none. */
     private LspRangeFormatter lspRangeFormatter;
+    /** Injected on-type formatter (#740); null = none. */
+    private LspOnTypeFormatter lspOnTypeFormatter;
+    /** The characters this buffer's server formats on ({@code ;}, {@code }}, {@code \n} for jdtls) — #740. */
+    private java.util.Set<Character> lspOnTypeTriggers = java.util.Set.of();
+    /** {@code Settings.lspOnTypeFormatting} — the master gate for on-type formatting (#740). */
+    private boolean onTypeFormattingEnabled;
     /** Generation guard so a stale async re-indent result can't clobber a later edit. */
     private long reindentGen;
     /** Chars of context captured before/after a note's selection (for re-anchoring). */
@@ -3169,6 +3175,26 @@ public class EditorBuffer implements TabContent {
             offset += area.getParagraph(i).length() + 1; // + the newline
         }
         return starts;
+    }
+
+    /** Async on-type formatter (#740): the edits the server would apply after {@code ch} at a position. */
+    public interface LspOnTypeFormatter {
+        void format(int line, int character, char ch, java.util.function.Consumer<java.util.List<LspTextEdit>> cb);
+    }
+
+    /** Injects the on-type formatting request (#740); null disables it. */
+    public void setLspOnTypeFormatter(LspOnTypeFormatter formatter) {
+        this.lspOnTypeFormatter = formatter;
+    }
+
+    /** The characters the server formats on (empty = none / not yet known), refreshed when it reports ready. */
+    public void setLspOnTypeTriggers(java.util.Set<Character> chars) {
+        this.lspOnTypeTriggers = chars == null ? java.util.Set.of() : chars;
+    }
+
+    /** The {@code Settings.lspOnTypeFormatting} master gate (#740), pushed by {@code applyViewSettings}. */
+    public void setOnTypeFormattingEnabled(boolean enabled) {
+        this.onTypeFormattingEnabled = enabled;
     }
 
     /** Sets the completion trigger characters the server advertised (empty = none / not yet known). */
@@ -7519,7 +7545,56 @@ public class EditorBuffer implements TabContent {
                     || a.getSelection().getLength() > 0) {
                 return;
             }
-            applyCloserDedent(a, e.getCharacter().charAt(0));
+            char typed = e.getCharacter().charAt(0);
+            applyCloserDedent(a, typed);
+            maybeOnTypeFormat(a, typed); // #740 — after the local assist, which usually already got it right
+        });
+    }
+
+    /**
+     * On-type formatting (#740): after a character the server named as a trigger ({@code ;}, {@code }},
+     * {@code \n} for jdtls), ask it how the line should be indented and adopt only that.
+     *
+     * <p><b>The local assist runs first and the server refines it.</b> That is the resolution of the
+     * conflict between this and {@link #applyCloserDedent}/{@link #applyEnter}, which already act on
+     * {@code }} and Enter: making a very common keystroke wait on a round-trip would be felt, and the local
+     * result is usually already right — in which case {@link #applyLspLineIndent} finds the indent unchanged
+     * and does nothing at all. So the two never fight; the server only corrects a disagreement.
+     *
+     * <p>Indentation only, never a full reformat — the user is mid-edit, and rewriting the line under them
+     * is the behaviour that makes on-type formatting infuriating in other editors.
+     *
+     * <p>Inert unless the setting is on, the server advertises a trigger set containing this character, and
+     * the buffer is an editable, normal-sized, single-caret LSP buffer with no snippet session. A trigger
+     * consumed by auto-close (typing {@code }} to skip over an inserted one) doesn't reach here — that path
+     * leaves the line already correct.
+     */
+    private void maybeOnTypeFormat(CodeArea a, char typed) {
+        if (!onTypeFormattingEnabled || !lspActive || lspOnTypeFormatter == null) {
+            return;
+        }
+        if (!lspOnTypeTriggers.contains(typed)) {
+            return;
+        }
+        if (!isEditable()
+                || hugeFile
+                || largeFile
+                || hasActiveSnippet()
+                || a.getSelection().getLength() > 0) {
+            return;
+        }
+        int par = a.getCurrentParagraph();
+        String line = a.getParagraph(par).getText();
+        int caret = a.getCaretPosition();
+        long gen = ++reindentGen; // shares the Tab re-indent's generation: both adjust the same line's indent
+        lspOnTypeFormatter.format(par, a.getCaretColumn(), typed, edits -> {
+            if (gen != reindentGen
+                    || a.getScene() == null
+                    || a.getCurrentParagraph() != par
+                    || !a.getParagraph(par).getText().equals(line)) {
+                return; // stale, detached, or the user kept typing and the line moved on
+            }
+            applyLspLineIndent(a, par, line, caret, edits);
         });
     }
 

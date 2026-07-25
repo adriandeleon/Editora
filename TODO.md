@@ -3,6 +3,16 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP on-type formatting** (#740) — `textDocument/onTypeFormatting` on the server's own trigger set
+      (`LspManager.onTypeTriggersOf` unions the spec's mandatory `firstTriggerCharacter` with the optional
+      `moreTriggerCharacter` list — reading only the first would leave `}` and Enter unhandled on jdtls,
+      which lists exactly those two as "more"). **The conflict with the existing local assists resolves as
+      local-first, server-refines**: `applyCloserDedent`/`applyEnter` run synchronously as before, then the
+      response goes through the *same* `applyLspLineIndent` the Tab re-indent uses, which no-ops when the
+      indent already matches — so in the common case where the local assist was right there is no visible
+      churn, and the two can never fight. Indentation only, never a line reformat. Gated by
+      `Settings.lspOnTypeFormatting` (default **off**, schema 86→87 additive) plus the server's trigger set,
+      so a server without the provider is never even asked — no per-keystroke cost for it.
 - [x] **Go to Implementation / Type Definition / Declaration** (#735, #736) — the three navigation requests
       every registered server advertises and none of which Editora sent. `LspManager.requestDefinition`
       generalized into a shared `requestLocations` walk parameterized by which session method runs, so all

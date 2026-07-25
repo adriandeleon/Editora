@@ -11725,6 +11725,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/XML/SVG gate flips
         }
         buffer.setAutoRenameTag(s.isAutoRenameTag()); // paired-tag rename mirroring (html/xml buffers only)
+        buffer.setOnTypeFormattingEnabled(s.isLspOnTypeFormatting()); // #740 (inert without an LSP trigger set)
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
         buffer.setFillColumn(s.getFillColumn());
         buffer.setAutoFillEnabled(s.isAutoFill()); // break prose lines at the fill column as you type (prose only)
@@ -14407,6 +14408,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().isSemanticHighlight(),
                         config.getSettings()::setSemanticHighlight,
                         lspCoordinator::applySemanticHighlight)));
+        registry.register(Command.of(
+                "view.toggleOnTypeFormatting",
+                () -> toggleSetting(
+                        "view.toggleOnTypeFormatting",
+                        () -> config.getSettings().isLspOnTypeFormatting(),
+                        config.getSettings()::setLspOnTypeFormatting,
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of(
                 "view.toggleInlayHints",
                 () -> toggleSetting(

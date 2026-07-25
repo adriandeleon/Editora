@@ -267,6 +267,76 @@ class LspManagerRequestsFxTest {
         assertFalse(manager.supportsDeclaration(file), "not advertised at all");
     }
 
+    // --- on-type formatting (#740) -------------------------------------------------------------------
+
+    /**
+     * The request must carry the typed character and the caret position, and the formatting options must
+     * reflect the buffer's real indent settings — a server that is told "4 spaces" when the file uses tabs
+     * answers with the wrong indent, and the result is applied silently.
+     */
+    @Test
+    void onTypeFormattingSendsTheCharacterPositionAndOptions() throws Exception {
+        var fake = open();
+        capabilitiesWithOnTypeTrigger();
+
+        List<com.editora.editor.LspTextEdit> edits =
+                await(cb -> manager.onTypeFormatting(file, 7, 3, ';', 2, false, cb));
+
+        assertNotNull(edits);
+        var sent = FakeLanguageServer.last(fake.onTypeFormattings);
+        assertNotNull(sent, "textDocument/onTypeFormatting was never sent");
+        assertEquals(";", sent.getCh());
+        assertEquals(new Position(7, 3), sent.getPosition());
+        assertEquals(2, sent.getOptions().getTabSize());
+        assertEquals(false, sent.getOptions().isInsertSpaces());
+    }
+
+    @Test
+    void onTypeFormattingMapsTheServersEdits() throws Exception {
+        var fake = open();
+        capabilitiesWithOnTypeTrigger();
+        var edit = new TextEdit(new Range(new Position(3, 0), new Position(3, 4)), "  ");
+        fake.onTypeFormattingResponse = List.of(edit);
+
+        List<com.editora.editor.LspTextEdit> mapped =
+                await(cb -> manager.onTypeFormatting(file, 3, 5, '}', 4, true, cb));
+
+        assertEquals(1, mapped.size());
+        assertEquals(3, mapped.get(0).startLine());
+        assertEquals(4, mapped.get(0).endCol());
+        assertEquals("  ", mapped.get(0).newText());
+    }
+
+    /** No provider: the request must not go out at all, so a server without it pays nothing per keystroke. */
+    @Test
+    void onTypeFormattingIsNotSentWhenTheServerHasNoProvider() throws Exception {
+        var fake = open();
+
+        List<com.editora.editor.LspTextEdit> edits =
+                await(cb -> manager.onTypeFormatting(file, 1, 1, ';', 4, true, cb));
+
+        assertTrue(edits.isEmpty());
+        assertTrue(fake.onTypeFormattings.isEmpty(), "an unsupported server must not be asked");
+    }
+
+    @Test
+    void onTypeFormattingDegradesOnServerFailure() throws Exception {
+        var fake = open();
+        capabilitiesWithOnTypeTrigger();
+        fake.failEverything = true;
+
+        List<com.editora.editor.LspTextEdit> edits =
+                await(cb -> manager.onTypeFormatting(file, 1, 1, ';', 4, true, cb));
+
+        assertTrue(edits.isEmpty());
+    }
+
+    /** Gives the already-open session a provider, the way a server does once it reports ready. */
+    private void capabilitiesWithOnTypeTrigger() {
+        capabilities.setDocumentOnTypeFormattingProvider(
+                new org.eclipse.lsp4j.DocumentOnTypeFormattingOptions(";", List.of("\n", "}")));
+    }
+
     /** A server that omits the (spec-required) range must not produce a bogus target or an exception. */
     @Test
     void aRangelessLocationIsSkipped() throws Exception {
