@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Convert indentation** — two commands (palette: "Convert Indentation to Spaces" / "…to Tabs") rewrite the
+  whole file's leading indentation between tabs and spaces. Only leading whitespace is touched — alignment,
+  in-line content and string contents are left alone — and each direction reverses the other.
 - **Select all occurrences** — place a cursor at every occurrence of the selection (or the word under the
   caret) at once, turning them all into editable cursors (`Ctrl+Shift+L` in the VS Code and Sublime keymaps;
   palette-discoverable everywhere). From the Find bar, **Alt+Enter** does the same for every match of the
