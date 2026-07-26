@@ -5794,10 +5794,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /** Reflects the active buffer's split state in the toolbar toggle buttons. */
+    /**
+     * Reflects the active buffer's split state in the toolbar toggle buttons, and disables them on a tab
+     * that can't be split at all — the Welcome/Doctor pages and the image/hex/PDF/diff viewers, none of
+     * which is an {@link EditorBuffer}, so {@link #toggleSplit} would silently do nothing there.
+     */
     private void refreshSplitButtons() {
         EditorBuffer buffer = activeBuffer();
         EditorBuffer.Split split = buffer == null ? EditorBuffer.Split.NONE : buffer.getSplit();
+        splitVerticalButton.setDisable(buffer == null);
+        splitHorizontalButton.setDisable(buffer == null);
         splitVerticalButton.pseudoClassStateChanged(OPEN, split == EditorBuffer.Split.SIDE_BY_SIDE);
         splitHorizontalButton.pseudoClassStateChanged(OPEN, split == EditorBuffer.Split.STACKED);
     }
