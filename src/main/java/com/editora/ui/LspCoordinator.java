@@ -183,7 +183,17 @@ final class LspCoordinator {
         this.host = host;
         this.lspManager = lspManager;
         this.ops = ops;
-        this.problemsPanel = new ProblemsPanel(ops::openAndGoto);
+        this.problemsPanel = new ProblemsPanel(new ProblemsPanel.Actions() {
+            @Override
+            public void open(java.nio.file.Path file, int line, int col) {
+                ops.openAndGoto(file, line, col);
+            }
+
+            @Override
+            public void setProjectWide(boolean projectWide) {
+                setProjectWideProblems(projectWide); // #743
+            }
+        });
         this.referencesPanel = new ReferencesPanel(ops::openAndGoto);
         this.hierarchyPanel = new HierarchyPanel(new HierarchyPanel.Loader() {
             @Override
@@ -371,12 +381,63 @@ final class LspCoordinator {
         // Key the map by the canonical path so it agrees with setProblemsActiveFile (given the canonical
         // active path) and clearDiagnostics (given the buffer's path) — the server may report a symlink URI.
         Path key = ops.canonicalize(file);
-        if (buffer == null || diagnostics.isEmpty()) {
-            problems.remove(key);
-        } else {
+        // Scope (#743): open-files-only by default — a server publishes project-wide, and one open file
+        // would otherwise fill the window with whole-workspace noise. Project scope keeps everything, which
+        // is the only way a workspace build's results are worth anything: with jdtls autobuild off, an error
+        // in a file you never opened is invisible until you open it.
+        boolean keep = projectWideProblems ? !diagnostics.isEmpty() : buffer != null && !diagnostics.isEmpty();
+        if (keep) {
             problems.put(key, diagnostics);
+        } else {
+            problems.remove(key);
         }
         refreshProblems();
+    }
+
+    /** Whether the Problems window shows the whole project or only open files (#743). Session state: it
+     *  follows an explicit action (a workspace build, or the panel's selector), never a tab switch. */
+    private boolean projectWideProblems;
+
+    /** Switches the Problems window's scope and re-renders (#743). Narrowing drops the closed files' entries
+     *  so the window matches what it says it is showing; a later build repopulates them. */
+    void setProjectWideProblems(boolean projectWide) {
+        if (projectWideProblems == projectWide) {
+            return;
+        }
+        projectWideProblems = projectWide;
+        if (!projectWide) {
+            problems.keySet().removeIf(p -> ops.bufferForPath(p) == null);
+        }
+        problemsPanel.setProjectWide(projectWide);
+        refreshProblems();
+    }
+
+    boolean isProjectWideProblems() {
+        return projectWideProblems;
+    }
+
+    /**
+     * Rebuilds the Java project and republishes its diagnostics ({@code java.project.refreshDiagnostics},
+     * #743) — the manual trigger that exists because Editora runs jdtls with {@code autobuild} disabled, so
+     * nothing ever recomputes diagnostics for files that aren't open.
+     *
+     * <p>Switches the Problems window to project scope first: without that the results are computed and then
+     * immediately discarded by the open-files filter, which is the whole reason this issue existed.
+     */
+    void buildWorkspace() {
+        EditorBuffer b = host.activeBuffer();
+        Path path = b == null ? null : b.getPath();
+        if (path == null || !lspManager.isManaged(path)) {
+            host.setStatus(tr("status.lsp.unavailable"));
+            return;
+        }
+        setProjectWideProblems(true);
+        ops.setLspLoading(true);
+        host.setStatus(tr("status.lsp.buildingWorkspace"));
+        lspManager.refreshProjectDiagnostics(path, ok -> {
+            ops.setLspLoading(false);
+            host.setStatus(tr(ok ? "status.lsp.buildWorkspaceDone" : "status.lsp.buildWorkspaceFailed"));
+        });
     }
 
     /** Drops {@code file}'s diagnostics (a tab closed / its LSP session ended) + refreshes the panel. */

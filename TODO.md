@@ -3,6 +3,15 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Project-wide diagnostics with autobuild off** (#743) — `java/buildWorkspace` (a custom `java/…`
+      request, not `executeCommand`) plus a **scope selector** in the Problems window. The command half was
+      trivial; the real work was the scoping decision, because `onDiagnostics` deliberately drops any file
+      with no open tab — so a workspace build would have computed results and thrown them away, which is
+      exactly the issue. `projectWideProblems` is **session state driven by explicit action** (the selector,
+      or running a build), never by a tab switch, and **open-files stays the default** so nothing gets
+      noisier for anyone who never runs a build. Narrowing back drops the closed files' entries, or the
+      window would claim a scope it isn't showing. The build request gets a 10-minute timeout — a cold full
+      build genuinely takes minutes, and timing out early would report failure while the build ran on.
 - [x] **jdtls stack-trace resolution + test-file detection** (#744, #745) — two `java.project.*` commands,
       both wired as **refinements with fallback** rather than replacements. `resolveStackTraceLocation` takes
       the **whole console line** (not the filename parsed out of it) and resolves against the real classpath,
