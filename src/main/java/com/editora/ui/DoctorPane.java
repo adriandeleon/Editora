@@ -11,7 +11,9 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -21,6 +23,7 @@ import javafx.scene.layout.VBox;
 import com.editora.doctor.DoctorCheck;
 import com.editora.doctor.DoctorStatus;
 import com.editora.doctor.DoctorSummary;
+import com.editora.doctor.DoctorText;
 import com.editora.editor.TabContent;
 
 import static com.editora.i18n.Messages.tr;
@@ -44,11 +47,23 @@ final class DoctorPane extends Region implements TabContent {
         void openSettings(String settingsKey);
     }
 
-    /** Natural content width — wide enough for name + command + version + action buttons per row. */
-    private static final double CONTENT_WIDTH = 760;
+    /** Narrowest the centered column gets before the page scrolls horizontally. */
+    private static final double CONTENT_MIN_WIDTH = 720;
+
+    /** Widest the centered column grows to on a wide window — a probed absolute path needs the room. */
+    private static final double CONTENT_MAX_WIDTH = 1040;
 
     /** Outer margin around the centered content (mirrors {@code WelcomePane}). */
     private static final double MARGIN = 48;
+
+    /** Share of the column the command token may occupy before it ellipsizes (the tool name never shrinks). */
+    private static final double COMMAND_WIDTH_SHARE = 0.42;
+
+    /** Share of the column the probed detail (version or resolved path) may occupy before it ellipsizes. */
+    private static final double DETAIL_WIDTH_SHARE = 0.58;
+
+    /** Text longer than this gets a hover tooltip, since it may be ellipsized on a narrow window. */
+    private static final int TOOLTIP_THRESHOLD = 36;
 
     private final Actions actions;
 
@@ -67,14 +82,10 @@ final class DoctorPane extends Region implements TabContent {
         content.getStyleClass().add("doctor-content");
         content.setAlignment(Pos.TOP_LEFT);
         content.setFillWidth(true);
-        content.setMinWidth(CONTENT_WIDTH);
-        content.setPrefWidth(CONTENT_WIDTH);
-        content.setMaxWidth(CONTENT_WIDTH);
-
         centerHost.getStyleClass().add("doctor-scroll-content");
         centerHost.setAlignment(Pos.TOP_CENTER);
         centerHost.setPadding(new Insets(MARGIN));
-        centerHost.setMinWidth(CONTENT_WIDTH + 2 * MARGIN);
+        applyColumnWidth(1);
 
         scroll.getStyleClass().add("doctor-scroll");
         scroll.setFitToWidth(true);
@@ -102,7 +113,20 @@ final class DoctorPane extends Region implements TabContent {
 
     /** Scales the page text to the editor text-zoom factor (the {@code WelcomePane.setFontScale} pattern). */
     void setFontScale(double zoom) {
-        setStyle("-fx-font-size: " + Math.max(0.5, zoom) + "em;");
+        double scale = Math.max(0.5, zoom);
+        setStyle("-fx-font-size: " + scale + "em;");
+        // The column is measured in pixels while the rows are text, so it has to scale with the font — else a
+        // zoomed-in page truncates its paths and a zoomed-out one strands the version column far to the right.
+        applyColumnWidth(scale);
+    }
+
+    private void applyColumnWidth(double scale) {
+        double min = CONTENT_MIN_WIDTH * scale;
+        double max = CONTENT_MAX_WIDTH * scale;
+        content.setMinWidth(min);
+        content.setPrefWidth(max);
+        content.setMaxWidth(max);
+        centerHost.setMinWidth(min + 2 * MARGIN);
     }
 
     // --- content ---
@@ -190,30 +214,40 @@ final class DoctorPane extends Region implements TabContent {
 
         Label name = new Label(c.label());
         name.getStyleClass().add("doctor-name");
+        // The tool name identifies the row, so it must never ellipsize — the two path columns below absorb
+        // all shrinking instead (an HBox otherwise shrinks every label by an equal share, crushing the name).
+        name.setMinWidth(Region.USE_PREF_SIZE);
         HBox line = new HBox(8, glyph, name);
         line.setAlignment(Pos.CENTER_LEFT);
-        if (!c.command().isEmpty()) {
-            Label command = new Label(c.command());
-            command.getStyleClass().add("doctor-command");
-            line.getChildren().add(command);
+
+        String home = System.getProperty("user.home", "");
+        String command = DoctorText.collapseHome(c.command(), home);
+        String detail = DoctorText.collapseHome(c.detail(), home);
+        if (DoctorText.detailRepeatsCommand(command, detail)) {
+            detail = ""; // a command configured as an absolute path resolves to itself
+        } else if (DoctorText.commandRepeatsDetail(command, detail)) {
+            command = ""; // "jdtls" beside "~/…/bin/jdtls" — the path already says it
+        }
+        if (!command.isEmpty()) {
+            line.getChildren().add(secondary(command, "doctor-command", COMMAND_WIDTH_SHARE));
         }
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         line.getChildren().add(spacer);
-        if (!c.detail().isEmpty()) {
-            Label detail = new Label(c.detail());
-            detail.getStyleClass().add("doctor-detail");
-            line.getChildren().add(detail);
+        if (!detail.isEmpty()) {
+            line.getChildren().add(secondary(detail, "doctor-detail", DETAIL_WIDTH_SHARE));
         }
         if (c.install() != DoctorCheck.Install.NONE && c.status() == DoctorStatus.MISSING) {
             Button install = new Button(tr("doctor.action.install"));
             install.getStyleClass().add("doctor-install");
+            install.setMinWidth(Region.USE_PREF_SIZE);
             install.setOnAction(e -> actions.install(c));
             line.getChildren().add(install);
         }
         if (!c.settingsKey().isEmpty() && c.status() != DoctorStatus.OK && c.status() != DoctorStatus.CHECKING) {
             Hyperlink settings = new Hyperlink(tr("doctor.action.settings"));
             settings.getStyleClass().add("doctor-settings-link");
+            settings.setMinWidth(Region.USE_PREF_SIZE);
             settings.setOnAction(e -> actions.openSettings(c.settingsKey()));
             line.getChildren().add(settings);
         }
@@ -228,6 +262,25 @@ final class DoctorPane extends Region implements TabContent {
             row.getChildren().add(tip);
         }
         return row;
+    }
+
+    /**
+     * A muted secondary column (the command, or the probed version/path). Capped to a share of the column so
+     * it ellipsizes itself rather than squeezing the name, from the <i>left</i> for a path so the binary name
+     * survives, with the full text on hover.
+     */
+    private Label secondary(String text, String styleClass, double widthShare) {
+        Label label = new Label(text);
+        label.getStyleClass().add(styleClass);
+        label.setMinWidth(0);
+        label.maxWidthProperty().bind(content.widthProperty().multiply(widthShare));
+        if (DoctorText.isPathLike(text)) {
+            label.setTextOverrun(OverrunStyle.LEADING_ELLIPSIS);
+        }
+        if (text.length() > TOOLTIP_THRESHOLD) {
+            label.setTooltip(new Tooltip(text));
+        }
+        return label;
     }
 
     private static String glyphFor(DoctorStatus status) {
