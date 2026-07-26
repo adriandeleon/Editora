@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Three Java commands** (palette) — **Organize Imports** sorts and prunes a file's imports directly,
+  without going through the code-action menu; **Copy Fully Qualified Name** puts the full name of the symbol
+  at the caret on the clipboard; **Reload Project Configuration** makes the language server re-read
+  `pom.xml` / `build.gradle` when a dependency change hasn't been picked up.
 - **Project-wide problems** — the Problems window gained an **Open files / Whole project** selector, and a
   new **Build Project** command (palette) recompiles the Java project and fills it. Until now problems only
   ever came from files you had open, so a compile error in a file you hadn't touched was invisible. The

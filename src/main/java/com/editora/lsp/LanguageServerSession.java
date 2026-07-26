@@ -728,7 +728,31 @@ final class LanguageServerSession implements LanguageClient {
      * gson-decoded payload (lsp4j has no registered response type for an unknown method, so expect a
      * {@code JsonElement}/{@code JsonPrimitive}). Queued until {@code initialize} completes.
      */
+    /**
+     * TEST SEAM (inert in production, like {@link #attachForTest}): intercepts the custom {@code java/…}
+     * traffic, which otherwise goes out through the launcher's raw endpoint and so is invisible to a
+     * {@link org.eclipse.lsp4j.services.LanguageServer} test double.
+     *
+     * <p>It exists because request-vs-notification is a real hazard here: jdtls declares some extensions
+     * {@code void}, and sending one of those as a request hangs until the timeout rather than failing.
+     */
+    interface RawSink {
+        CompletableFuture<Object> request(String method, Object params);
+
+        void notification(String method, Object params);
+    }
+
+    private volatile RawSink rawSinkForTest;
+
+    void setRawSinkForTest(RawSink sink) {
+        this.rawSinkForTest = sink;
+    }
+
     CompletableFuture<Object> rawRequest(String method, Object params) {
+        RawSink sink = rawSinkForTest;
+        if (sink != null) {
+            return sink.request(method, params);
+        }
         CompletableFuture<Object> out = new CompletableFuture<>();
         whenReady(() -> {
             Launcher<LanguageServer> l = launcher;
@@ -749,6 +773,32 @@ final class LanguageServerSession implements LanguageClient {
             }
         });
         return out;
+    }
+
+    /**
+     * Sends a custom <b>notification</b> (no reply expected) — the counterpart to {@link #rawRequest} for
+     * the jdtls extensions declared {@code void}, such as {@code java/projectConfigurationUpdate} (#746).
+     *
+     * <p>Sending one of those as a request instead would hang until the timeout: the server never answers a
+     * method it declares as a notification.
+     */
+    void rawNotify(String method, Object params) {
+        RawSink sink = rawSinkForTest;
+        if (sink != null) {
+            sink.notification(method, params);
+            return;
+        }
+        whenReady(() -> {
+            Launcher<LanguageServer> l = launcher;
+            if (disposed || l == null) {
+                return;
+            }
+            try {
+                l.getRemoteEndpoint().notify(method, params);
+            } catch (RuntimeException ignored) {
+                LOG.log(Level.FINE, "notification failed: " + method, ignored);
+            }
+        });
     }
 
     /** Code actions ({@code textDocument/codeAction}) for {@code range}, with the client-known diagnostics

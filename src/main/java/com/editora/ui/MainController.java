@@ -14483,6 +14483,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("lsp.hover", () -> ifLsp(lspCoordinator::showHover)));
         registry.register(Command.of("lsp.restartServers", () -> ifLsp(lspCoordinator::restartServers)));
         registry.register(Command.of("lsp.buildWorkspace", () -> ifLsp(lspCoordinator::buildWorkspace)));
+        registry.register(Command.of("lsp.organizeImports", () -> ifLsp(lspCoordinator::organizeImports)));
+        registry.register(Command.of("lsp.copyQualifiedName", () -> ifLsp(lspCoordinator::copyQualifiedName)));
+        registry.register(Command.of("lsp.reloadProject", () -> ifLsp(lspCoordinator::reloadProject)));
         registry.register(Command.of(
                 "lsp.toggleProjectProblems",
                 () -> ifLsp(() -> lspCoordinator.setProjectWideProblems(!lspCoordinator.isProjectWideProblems()))));

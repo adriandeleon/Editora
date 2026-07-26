@@ -1399,6 +1399,65 @@ final class LspCoordinator {
         return true;
     }
 
+    // --- jdtls project + editing commands (#746) -----------------------------------------------------
+
+    /** Organize the active file's imports ({@code java/organizeImports}). */
+    void organizeImports() {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        if (!ops.activeEditable()) {
+            host.setStatus(tr("status.lsp.readOnly"));
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        int lastLine = Math.max(0, area.getParagraphs().size() - 1);
+        int lastChar = area.getParagraph(lastLine).length();
+        lspManager.changeDocument(b.getPath(), b.text()); // the server organizes the text it has
+        lspManager.organizeImports(
+                b.getPath(),
+                lastLine,
+                lastChar,
+                ok -> host.setStatus(tr(ok ? "status.lsp.importsOrganized" : "status.lsp.importsUnchanged")));
+    }
+
+    /** Copies the fully qualified name of the symbol at the caret ({@code java.getFullyQualifiedName}). */
+    void copyQualifiedName() {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        lspManager.changeDocument(b.getPath(), b.text());
+        lspManager.fullyQualifiedName(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), name -> {
+            if (name == null) {
+                host.setStatus(tr("status.lsp.noQualifiedName"));
+                return;
+            }
+            var clip = new javafx.scene.input.ClipboardContent();
+            clip.putString(name);
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(clip);
+            host.setStatus(tr("status.lsp.qualifiedNameCopied", name));
+        });
+    }
+
+    /**
+     * Re-reads the project's build configuration ({@code java/projectConfigurationUpdate}).
+     *
+     * <p>{@code workspace/didChangeWatchedFiles} already tells the server when a {@code pom.xml} changes, so
+     * this is the escape hatch for when that hasn't taken — not the normal path. Fire-and-forget: it's a
+     * notification, so the only observable result is fresh diagnostics arriving.
+     */
+    void reloadProject() {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        lspManager.reloadProjectConfiguration(b.getPath());
+        host.setStatus(tr("status.lsp.projectReloading"));
+    }
+
     /** The active buffer if it is LSP-managed, reporting + returning null otherwise. */
     private EditorBuffer activeLspBuffer() {
         EditorBuffer b = host.activeBuffer();
