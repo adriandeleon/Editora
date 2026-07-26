@@ -61,7 +61,7 @@ public final class GitService {
     private volatile Boolean gitAvailable;
 
     /**
-     * Where completed, <em>user-initiated</em> git commands are reported (the Build Output "Git" tab).
+     * Where completed, <em>user-initiated</em> git commands are reported (the Output "Git" tab).
      * Volatile: installed from the FX thread, read on {@link #exec}.
      */
     private volatile CommandLog commandLog = CommandLog.none();

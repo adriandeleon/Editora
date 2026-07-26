@@ -13,7 +13,7 @@ import com.editora.process.CommandLogFormat;
 import com.editora.run.StackTraceLinks;
 
 /**
- * The shared <b>Build Output</b> tool window: a {@link TabPane} with one {@link BuildToolPanel} tab per build
+ * The shared <b>Output</b> tool window: a {@link TabPane} with one {@link BuildToolPanel} tab per build
  * tool that has run (Maven/npm/Cargo/Go/Gradle), so a polyglot repo gets a tab per active build instead of five
  * separate tool windows. Every {@code BuildCoordinator} streams here through an <em>owner</em>-routed API (the
  * owner is the coordinator): {@link #started} lazily creates the tool's tab (titled with the tool name) and
@@ -68,7 +68,7 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
      * Appends one finished command to {@code owner}'s transcript tab, creating it (titled {@code tabTitle})
      * on first use. Deliberately does <em>not</em> select the tab or open the tool window: a commit or a
      * {@code gh pr list} is a side effect of what the user is already doing, and yanking the console open —
-     * or off the build they are watching — would be the tail wagging the dog. They open Build Output when
+     * or off the build they are watching — would be the tail wagging the dog. They open Output when
      * they want to read it; the transcript is waiting.
      */
     public void logCommand(Object owner, String tabTitle, CommandLog.Entry entry) {

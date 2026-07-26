@@ -14,7 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * frames — which also feeds the failure detail + clickable frames); {@code pass}/{@code fail}/{@code skip}
  * settle it with its elapsed time. Package-level events are ignored (the suite status rolls up from its tests).
  *
- * <p>{@link #consoleLine} returns the decoded {@code Output} text so the raw Build Output console stays
+ * <p>{@link #consoleLine} returns the decoded {@code Output} text so the raw Output console stays
  * human-readable despite the {@code -json} flag; non-output events are suppressed there.
  */
 public final class GoTestJsonParser implements TestResultParser {

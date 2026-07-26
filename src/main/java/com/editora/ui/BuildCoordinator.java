@@ -45,7 +45,7 @@ final class BuildCoordinator {
         /** Opens (and focuses) this tool's tasks-tree tool window. */
         void openTasks();
 
-        /** Opens (and focuses) the shared Build Output console tool window. */
+        /** Opens (and focuses) the shared Output console tool window. */
         void openConsole();
 
         /** Shows/hides this tool's tasks-tree stripe (and re-derives the shared console's) to match detection. */
@@ -68,7 +68,7 @@ final class BuildCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private final BuildService service = new BuildService();
-    private final BuildOutputPanel panel; // the shared tabbed "Build Output" window (this tool gets its own tab)
+    private final BuildOutputPanel panel; // the shared tabbed "Output" window (this tool gets its own tab)
     private final BuildActionsTree tree;
     private final BuildActionsPopup popup;
 
@@ -102,7 +102,7 @@ final class BuildCoordinator {
         this.tool = tool;
         this.host = host;
         this.ops = ops;
-        this.panel = sharedConsole; // the shared tabbed Build Output window (owned by MainController)
+        this.panel = sharedConsole; // the shared tabbed Output window (owned by MainController)
         this.tree = new BuildActionsTree();
         this.popup = new BuildActionsPopup(new BuildActionsPopup.Labels(
                 tool.displayName(), tr("buildpopup.searchPrompt"), tr("buildpopup.hint"), tr("buildpopup.runCustom")));
@@ -376,7 +376,7 @@ final class BuildCoordinator {
 
         // A claimed test run shows the Test Results window (the hook already opened it); opening the shared
         // console too would displace it — both live on the single-window bottom stripe. The console TAB is
-        // still created + fed below (panel.started/appendOutput), so switching to Build Output shows the raw
+        // still created + fed below (panel.started/appendOutput), so switching to Output shows the raw
         // stream; it's just not fronted over the Test Results tree.
         if (!claimed) {
             ops.openConsole();

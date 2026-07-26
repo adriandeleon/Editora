@@ -57,7 +57,7 @@ public final class GitHubService {
     private volatile Availability availability;
 
     /**
-     * Where completed {@code gh} commands are reported (the Build Output "GitHub" tab). Volatile: installed
+     * Where completed {@code gh} commands are reported (the Output "GitHub" tab). Volatile: installed
      * from the FX thread, read on {@link #exec}.
      */
     private volatile CommandLog commandLog = CommandLog.none();

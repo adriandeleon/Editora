@@ -309,7 +309,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Build tools (Maven/npm/…): one IntelliJ-style tasks-tree tool window per detected tool, whose stripe
      *  appears when the tool's marker file is found (see {@link BuildCoordinator}). */
     private final Map<BuildTool, ToolWindow> buildToolWindows = new java.util.EnumMap<>(BuildTool.class);
-    /** The shared tabbed "Build Output" window — one tab per build tool that runs (Maven/npm/Cargo/Go/Gradle),
+    /** The shared tabbed "Output" window — one tab per build tool that runs (Maven/npm/Cargo/Go/Gradle),
      *  fed by every {@link BuildCoordinator}; its stripe appears when any tool's marker is detected, and it
      *  auto-opens on a run. */
     private final BuildOutputPanel buildOutputPanel = new BuildOutputPanel();
@@ -2532,7 +2532,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             BuildTool tool = c.tool();
             // The primary window: the IntelliJ-style tasks tree (its stripe appears when the marker is found).
             // Defaults to the RIGHT stripe (a better fit for a vertical task list); a window with a persisted
-            // side keeps it (currentSide reads WorkspaceState first). The shared Build Output console stays
+            // side keeps it (currentSide reads WorkspaceState first). The shared Output console stays
             // BOTTOM. (#531)
             buildToolWindows.put(
                     tool,
@@ -2544,7 +2544,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             c.tasksPanel(),
                             "tool." + tool.id()));
         }
-        // A single shared "Build Output" console for every build tool (auto-opens on a run).
+        // A single shared "Output" console for every build tool (auto-opens on a run).
         buildOutputPanel.setOnLink(this::openRunLink);
         installCommandLogs();
         buildOutputToolWindow = new ToolWindow(
@@ -3160,7 +3160,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     MainController.this.reloadGithubPanel();
                 }
 
-                // The Build Output console is owner-routed, so passing the GitHub coordinator as the owner
+                // The Output console is owner-routed, so passing the GitHub coordinator as the owner
                 // gives CI logs their own persistent "CI" tab beside the Maven/npm build tabs.
                 @Override
                 public void ciLogStarted(String header, Runnable onStop) {
@@ -3297,7 +3297,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Whether any enabled build tool currently has a detected marker file (drives the shared console stripe). */
-    // --- Git / GitHub CLI transcripts (their own Build Output tabs) ------------------------------
+    // --- Git / GitHub CLI transcripts (their own Output tabs) ------------------------------
 
     /**
      * Owner keys for the two CLI-transcript tabs. Deliberately <em>not</em> the coordinators themselves:
@@ -3309,7 +3309,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final Object ghConsoleOwner = new Object();
 
     /**
-     * Points each native-CLI service at its own Build Output tab, so the commands Editora runs on the user's
+     * Points each native-CLI service at its own Output tab, so the commands Editora runs on the user's
      * behalf are inspectable rather than invisible. The services decide <em>what</em> to report (git: the
      * user-initiated writes only, since status/diff re-run constantly); this only decides where it lands.
      * Both sinks are called on a service worker thread, hence the marshal.

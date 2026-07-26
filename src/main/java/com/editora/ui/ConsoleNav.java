@@ -13,7 +13,7 @@ import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 
 /**
- * Brings the user's configured keybindings to a read-only console {@link CodeArea} — the Build Output,
+ * Brings the user's configured keybindings to a read-only console {@link CodeArea} — the Output,
  * Run, External Tools and Debug consoles. Those panels mark themselves {@code editora.ownsKeys}, so the
  * scene-level {@link KeyDispatcher} deliberately leaves every {@code nav.*}/{@code edit.*} chord to the
  * focused panel (see {@code KeyDispatcher.isEditorContext}) — but a console had nothing to hand them to,

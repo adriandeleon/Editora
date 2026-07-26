@@ -35,7 +35,7 @@ interface TestRunHook {
     void onTestError(String message);
 
     /**
-     * What the raw Build Output console should show for {@code raw} during a claimed run — Go turns its
+     * What the raw Output console should show for {@code raw} during a claimed run — Go turns its
      * {@code -json} events back into readable text (or {@code null} to suppress a bookkeeping event). Default:
      * the line verbatim.
      */

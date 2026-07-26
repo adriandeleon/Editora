@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Git and GitHub command lines you run are now visible** — the shared output console gained a **Git**
+  and a **GitHub** tab holding a transcript of the `git` / `gh` commands Editora ran on your behalf: the
+  command, its output, and its exit code and duration. Git logs the commands you asked for (commit, push,
+  pull, checkout, stash, clone…) and deliberately not the `status`/`diff` reads it re-runs on every tab
+  switch, which would bury them. Neither steals focus: the transcript is waiting when you open the window.
+
+### Changed
+
+- **The "Build Output" tool window is now just "Output"** — it holds build tools, Git, GitHub and CI logs,
+  so the old name undersold it. Your stripe placement and any keybinding are unaffected (only the label
+  changed).
+
 ## [0.9.10] - 2026-07-26
 
 ### Added

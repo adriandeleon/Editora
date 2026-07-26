@@ -275,7 +275,7 @@ public class Settings {
      *  resolve "gradle" on PATH). */
     private String gradleCommand = "";
     /** Test Results window: intercept a build tool's {@code test} run and show an IntelliJ-style results tree
-     *  (per-test pass/fail/skip + stack traces) instead of only the raw Build Output console. On by default;
+     *  (per-test pass/fail/skip + stack traces) instead of only the raw Output console. On by default;
      *  suppressed in Simple UI mode. */
     private boolean testRunner = true;
     /** Use ripgrep to accelerate Find in Files when it's detected on PATH (default on; falls back otherwise). */

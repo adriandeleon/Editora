@@ -24,7 +24,7 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * One build tool's console — a single tab inside the shared {@link BuildOutputPanel} "Build Output" tool
+ * One build tool's console — a single tab inside the shared {@link BuildOutputPanel} "Output" tool
  * window. Streams that tool's running invocation's stdout/stderr (see {@code com.editora.build.BuildService})
  * with a header showing the run state plus Stop and Clear. {@link BuildOutputPanel} creates one of these per
  * tool that runs, so Maven/npm/Cargo/Go/Gradle each get their own tab. Modeled on {@link RunPanel} minus the
