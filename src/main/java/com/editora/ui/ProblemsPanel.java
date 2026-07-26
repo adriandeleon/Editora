@@ -10,13 +10,16 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import javafx.geometry.Insets;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.LanguageRegistry;
@@ -32,9 +35,13 @@ import static com.editora.i18n.Messages.tr;
  */
 public final class ProblemsPanel extends VBox implements ToolWindowContent {
 
-    /** Controller callback to open a file at a diagnostic position (0-based line/col). */
+    /** Controller callbacks: open a file at a diagnostic position (0-based line/col), and change the
+     *  scope between open files and the whole project (#743). */
     public interface Actions {
         void open(Path file, int line, int col);
+
+        /** The user picked a scope in the selector. Default no-op keeps older callers compiling. */
+        default void setProjectWide(boolean projectWide) {}
     }
 
     /**
@@ -49,6 +56,10 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
 
     // Cached last diagnostics + the active file, so the tree can be re-sorted (active file first) on a tab
     // switch without new diagnostics arriving. activeFile is the canonical form (matches the LSP keys).
+    private final ComboBox<String> scope = new ComboBox<>();
+    /** Guards the selector's own action handler while the controller syncs it (#743). */
+    private boolean syncingScope;
+
     private Map<Path, List<LspDiagnostic>> lastByFile = Map.of();
     private Path activeFile;
 
@@ -73,8 +84,28 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         });
         VBox.setVgrow(tree, Priority.ALWAYS);
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
-        getChildren().addAll(summary, tree);
+        // Scope selector (#743). Open-files is the default and matches the long-standing behaviour; whole-
+        // project is only useful once something has actually built the project, so it stays opt-in.
+        scope.getItems().setAll(tr("problems.scope.openFiles"), tr("problems.scope.project"));
+        scope.getSelectionModel().select(0);
+        scope.setOnAction(e -> {
+            if (!syncingScope) {
+                actions.setProjectWide(scope.getSelectionModel().getSelectedIndex() == 1);
+            }
+        });
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox header = new HBox(8, summary, spacer, scope);
+        header.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        getChildren().addAll(header, tree);
         setProblems(Map.of());
+    }
+
+    /** Reflects the current scope in the selector without firing its handler (#743). */
+    public void setProjectWide(boolean projectWide) {
+        syncingScope = true;
+        scope.getSelectionModel().select(projectWide ? 1 : 0);
+        syncingScope = false;
     }
 
     private void onKey(KeyEvent e) {

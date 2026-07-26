@@ -320,4 +320,42 @@ class LspCoordinatorDiagnosticsFxTest {
         assertTrue(problems().isEmpty(), "a disabled server's diagnostics must not be stranded (#469)");
         assertFalse(FxTestSupport.callOnFx(b::isLspActive), "and its squiggles must go too");
     }
+
+    // --- scope (#743) --------------------------------------------------------------------------------
+
+    /**
+     * Project scope is what makes a workspace build worth running: with jdtls autobuild off, an error in a
+     * file nobody has opened is invisible, and the open-files filter would discard exactly those results.
+     */
+    @Test
+    void projectScopeKeepsDiagnosticsForFilesWithNoOpenTab() throws Exception {
+        Path closed = root.resolve("Closed.java");
+
+        FxTestSupport.runOnFx(() -> coordinator.setProjectWideProblems(true));
+        publish(closed, one("boom"));
+
+        assertTrue(problems().containsKey(closed), "kept under project scope");
+    }
+
+    /** The default is unchanged: one open file must not fill the window with whole-workspace noise. */
+    @Test
+    void openFilesScopeStillDropsClosedFiles() throws Exception {
+        Path closed = root.resolve("Closed.java");
+
+        publish(closed, one("boom"));
+
+        assertFalse(problems().containsKey(closed), "dropped by default");
+    }
+
+    /** Narrowing has to drop what it can no longer justify showing, or the window lies about its scope. */
+    @Test
+    void narrowingBackToOpenFilesDropsTheClosedOnes() throws Exception {
+        Path closed = root.resolve("Closed.java");
+
+        FxTestSupport.runOnFx(() -> coordinator.setProjectWideProblems(true));
+        publish(closed, one("boom"));
+        FxTestSupport.runOnFx(() -> coordinator.setProjectWideProblems(false));
+
+        assertFalse(problems().containsKey(closed));
+    }
 }

@@ -2395,6 +2395,28 @@ public final class LspManager {
         return null;
     }
 
+    /**
+     * Rebuilds the project and republishes its diagnostics ({@code java.project.refreshDiagnostics}, #743).
+     *
+     * <p>Editora runs jdtls with {@code autobuild} disabled (see {@link #javaInitOptions}), so nothing ever
+     * recomputes diagnostics for files that aren't open — this is the manual trigger. The results arrive the
+     * usual way, as {@code publishDiagnostics} notifications, not as this command's return value.
+     *
+     * <p>Given a longer timeout than the other commands: a cold full build of a large project genuinely
+     * takes minutes, and timing out early would leave the caller reporting failure while the build ran on.
+     */
+    public void refreshProjectDiagnostics(Path file, Consumer<Boolean> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || file == null) {
+            Platform.runLater(() -> cb.accept(false));
+            return;
+        }
+        // (uri, isFullBuild) — a full build, since the point is the files we have NOT opened.
+        s.rawRequest("java/buildWorkspace", Boolean.TRUE)
+                .orTimeout(10, java.util.concurrent.TimeUnit.MINUTES)
+                .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e == null)));
+    }
+
     public void classFileContents(Path anchorFile, String jdtUri, Consumer<String> cb) {
         LanguageServerSession s = sessionFor(anchorFile);
         if (s == null || jdtUri == null) {

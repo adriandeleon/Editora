@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project-wide problems** — the Problems window gained an **Open files / Whole project** selector, and a
+  new **Build Project** command (palette) recompiles the Java project and fills it. Until now problems only
+  ever came from files you had open, so a compile error in a file you hadn't touched was invisible. The
+  default is unchanged — open files only — so nothing gets noisier unless you ask for it.
 - **Stack-trace frames into libraries** — clicking a Java stack-trace line in the Run, Test or Build console
   now asks the language server to resolve it, so a frame inside a dependency or the JDK opens its source
   instead of reporting "not found". Frames in your own code behave as before, and the previous
