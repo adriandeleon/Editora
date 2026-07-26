@@ -68,6 +68,7 @@ class LspManagerRequestsFxTest {
         manager.setSessionStarterForTest(session -> {
             FakeLanguageServer fake = new FakeLanguageServer();
             fakes.add(fake);
+            session.setRawSinkForTest(fake.rawSink()); // custom java/… traffic (#746)
             session.attachForTest(fake, capabilities);
         });
         manager.configure(true, Map.of("java", "jdtls"));
@@ -396,6 +397,70 @@ class LspManagerRequestsFxTest {
 
         String blank = this.<String>await(cb -> manager.resolveStackTraceLocation(file, "at x(A.java:1)", cb));
         assertNull(blank);
+    }
+
+    // --- jdtls editing + project commands (#746) -----------------------------------------------------
+
+    /**
+     * Organize-imports takes {@code CodeActionParams} spanning the <b>whole file</b> — signature read off
+     * the jdtls jar. Sending a caret position instead compiles and returns an empty edit, i.e. it silently
+     * does nothing.
+     */
+    @Test
+    void organizeImportsCoversTheWholeFile() throws Exception {
+        var fake = open();
+
+        Boolean applied = this.<Boolean>await(cb -> manager.organizeImports(file, 9, 4, cb));
+
+        assertEquals(Boolean.FALSE, applied, "no canned edit configured");
+        var sent = FakeLanguageServer.last(fake.rawRequests);
+        assertNotNull(sent);
+        assertEquals("java/organizeImports", sent.method());
+        var params = (org.eclipse.lsp4j.CodeActionParams) sent.params();
+        assertEquals(new Position(0, 0), params.getRange().getStart());
+        assertEquals(new Position(9, 4), params.getRange().getEnd());
+        assertEquals(file.toUri().toString(), params.getTextDocument().getUri());
+    }
+
+    @Test
+    void copyQualifiedNameSendsThePositionAndReadsTheName() throws Exception {
+        var fake = open();
+        fake.executeCommandResponse = "demo.Person.name";
+
+        String name = this.<String>await(cb -> manager.fullyQualifiedName(file, 4, 11, cb));
+
+        assertEquals("demo.Person.name", name);
+        var sent = FakeLanguageServer.last(fake.executedCommands);
+        assertNotNull(sent);
+        assertEquals("java.getFullyQualifiedName", sent.getCommand());
+    }
+
+    /** Nothing resolvable at the caret must read as null, not as an empty string pushed to the clipboard. */
+    @Test
+    void copyQualifiedNameTreatsABlankAnswerAsNothing() throws Exception {
+        var fake = open();
+        fake.executeCommandResponse = "";
+
+        assertNull(this.<String>await(cb -> manager.fullyQualifiedName(file, 0, 0, cb)));
+    }
+
+    /**
+     * {@code projectConfigurationUpdate} is declared {@code void} by jdtls, so it must go out as a
+     * <b>notification</b>. Sent as a request it would hang until the timeout — the server never replies to a
+     * method it declares as a notification.
+     */
+    @Test
+    void reloadProjectSendsANotificationNotARequest() throws Exception {
+        var fake = open();
+
+        manager.reloadProjectConfiguration(file);
+
+        assertTrue(
+                fake.rawNotifications.stream().anyMatch(n -> "java/projectConfigurationUpdate".equals(n.method())),
+                "must be a notification");
+        assertTrue(
+                fake.rawRequests.stream().noneMatch(r -> "java/projectConfigurationUpdate".equals(r.method())),
+                "a request would hang until the timeout");
     }
 
     /** A server that omits the (spec-required) range must not produce a bogus target or an exception. */

@@ -2417,6 +2417,66 @@ public final class LspManager {
                 .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e == null)));
     }
 
+    /**
+     * Organize imports for a whole file ({@code java/organizeImports}, #746) and apply the resulting edit.
+     *
+     * <p>The same operation is also reachable as the {@code source.organizeImports} code action, but only by
+     * opening the code-action picker and choosing it. This is the direct, bindable form.
+     *
+     * <p>Signature read off the jdtls jar: it takes {@code CodeActionParams} — the whole file's range, not a
+     * position — and answers a {@code WorkspaceEdit}.
+     */
+    public void organizeImports(Path file, int lastLine, int lastChar, Consumer<Boolean> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || file == null) {
+            Platform.runLater(() -> cb.accept(false));
+            return;
+        }
+        var range = new org.eclipse.lsp4j.Range(new Position(0, 0), new Position(lastLine, lastChar));
+        var params = new org.eclipse.lsp4j.CodeActionParams(
+                new org.eclipse.lsp4j.TextDocumentIdentifier(uri(file)),
+                range,
+                new org.eclipse.lsp4j.CodeActionContext(List.of()));
+        s.rawRequest("java/organizeImports", params)
+                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .whenComplete((r, e) -> {
+                    org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
+                    Platform.runLater(() -> cb.accept(edit != null && applyWorkspaceEditNow(edit)));
+                });
+    }
+
+    /**
+     * The fully qualified name of the symbol at a position ({@code java.getFullyQualifiedName}, #746) —
+     * what "Copy Reference" copies in an IDE. Null when there's no session or nothing resolves there.
+     */
+    public void fullyQualifiedName(Path file, int line, int character, Consumer<String> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || file == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        var params = new org.eclipse.lsp4j.TextDocumentPositionParams(
+                new org.eclipse.lsp4j.TextDocumentIdentifier(uri(file)), new Position(line, character));
+        executeCommand(file, "java.getFullyQualifiedName", List.of(params), (result, error) -> {
+            String name = error != null ? null : rawStringResult(result);
+            cb.accept(name == null || name.isBlank() ? null : name);
+        });
+    }
+
+    /**
+     * Re-reads the project's build configuration ({@code java/projectConfigurationUpdate}, #746) — the
+     * manual escape hatch when a {@code pom.xml} / {@code build.gradle} change hasn't been picked up.
+     *
+     * <p>A <b>notification</b>, not a request (jdtls declares it {@code void}), so there is nothing to
+     * report back and nothing to wait for; the result shows up as fresh diagnostics.
+     */
+    public void reloadProjectConfiguration(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        if (s != null && file != null) {
+            s.rawNotify("java/projectConfigurationUpdate", new org.eclipse.lsp4j.TextDocumentIdentifier(uri(file)));
+        }
+    }
+
     public void classFileContents(Path anchorFile, String jdtUri, Consumer<String> cb) {
         LanguageServerSession s = sessionFor(anchorFile);
         if (s == null || jdtUri == null) {

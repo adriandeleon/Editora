@@ -3,6 +3,16 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **jdtls organize-imports / copy-FQN / reload-project** (#746, partial) — three more of the unused
+      commands. Signatures came off the jar (`JavaProtocolExtensions`): `organizeImports(CodeActionParams)`
+      wants the **whole file's range**, not a caret position — a position compiles and returns an empty edit,
+      i.e. silently does nothing. `projectConfigurationUpdate` is declared **`void`**, so it must go out as a
+      **notification**; sent as a request it hangs until the timeout, because the server never replies to a
+      method it declares as a notification. That distinction needed a new
+      `LanguageServerSession.RawSink` test seam — the custom `java/…` traffic goes through the launcher's raw
+      endpoint, which a `LanguageServer` test double can't see, so none of it was assertable before.
+      *Still open on #746: source attachment, decompiler, JDK picker, troubleshooting-info (a Doctor row),
+      smart-semicolon and string-formatting.*
 - [x] **Project-wide diagnostics with autobuild off** (#743) — `java/buildWorkspace` (a custom `java/…`
       request, not `executeCommand`) plus a **scope selector** in the Problems window. The command half was
       trivial; the real work was the scoping decision, because `onDiagnostics` deliberately drops any file

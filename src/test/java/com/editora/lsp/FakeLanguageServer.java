@@ -122,6 +122,30 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     /** When set, the next request of that kind completes exceptionally — the error paths must degrade, not throw. */
     public boolean failEverything;
 
+    /** One custom {@code java/…} message, as it went on the wire (#746). */
+    public record Raw(String method, Object params) {}
+
+    public final List<Raw> rawRequests = new ArrayList<>();
+    public final List<Raw> rawNotifications = new ArrayList<>();
+    /** The value a raw request answers with (null unless a test sets it). */
+    public Object rawResponse;
+
+    /** Installs this fake as the session's raw sink, so custom requests/notifications are recorded. */
+    public LanguageServerSession.RawSink rawSink() {
+        return new LanguageServerSession.RawSink() {
+            @Override
+            public CompletableFuture<Object> request(String method, Object params) {
+                rawRequests.add(new Raw(method, params));
+                return failEverything ? failed() : CompletableFuture.completedFuture(rawResponse);
+            }
+
+            @Override
+            public void notification(String method, Object params) {
+                rawNotifications.add(new Raw(method, params));
+            }
+        };
+    }
+
     /** The last recorded element of {@code list}, or null when nothing was recorded. */
     public static <T> T last(List<T> list) {
         return list.isEmpty() ? null : list.get(list.size() - 1);
