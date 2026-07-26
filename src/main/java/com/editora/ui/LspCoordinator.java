@@ -19,6 +19,7 @@ import javafx.stage.Popup;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.LspDiagnostic;
 import com.editora.editor.MarkdownRenderer;
+import com.editora.lsp.JdtlsGenerate;
 import com.editora.lsp.LspManager;
 import org.fxmisc.richtext.CodeArea;
 
@@ -1298,6 +1299,45 @@ final class LspCoordinator {
         });
     }
 
+    /**
+     * Runs a jdtls source-generation prompt (#741) if {@code item} is one, and reports whether it took over.
+     *
+     * <p>These actions must <b>not</b> reach {@code applyCodeAction}: their command is a client-side
+     * {@code java.action.*Prompt}, so sending it as {@code workspace/executeCommand} fails and the user sees
+     * "code action failed". Instead we run the server's {@code java/check…} request, show the member picker,
+     * and run {@code java/generate…} with what was chosen.
+     */
+    private boolean runGeneratePrompt(Path path, LspManager.CodeActionItem item) {
+        Object params = LspManager.commandArgument(item.raw());
+        JdtlsGenerate.Kind kind = JdtlsGenerate.forCommand(LspManager.commandIdOf(item.raw()));
+        if (kind == null || params == null) {
+            return false;
+        }
+        lspManager.jdtlsGenerateCandidates(path, kind, params, candidates -> {
+            if (candidates.isEmpty()) {
+                host.setStatus(tr("status.lsp.generateNothing", item.title()));
+                return;
+            }
+            List<MultiSelectPicker.Item<JdtlsGenerate.Candidate>> rows = new java.util.ArrayList<>();
+            for (JdtlsGenerate.Candidate c : candidates) {
+                rows.add(new MultiSelectPicker.Item<>(c.label(), c.preselected(), c));
+            }
+            MultiSelectPicker.show(
+                    host.overlayHost(),
+                    item.title(),
+                    rows,
+                    chosen -> lspManager.jdtlsGenerateApply(
+                            path,
+                            kind,
+                            params,
+                            chosen,
+                            ok -> host.setStatus(tr(
+                                    ok ? "status.lsp.codeActionApplied" : "status.lsp.codeActionFailed",
+                                    item.title()))));
+        });
+        return true;
+    }
+
     /** The active buffer if it is LSP-managed, reporting + returning null otherwise. */
     private EditorBuffer activeLspBuffer() {
         EditorBuffer b = host.activeBuffer();
@@ -1707,6 +1747,9 @@ final class LspCoordinator {
                     item -> {
                         if (item == null) {
                             return;
+                        }
+                        if (runGeneratePrompt(path, item)) {
+                            return; // a jdtls generate prompt: we drive it, not the server (#741)
                         }
                         lspManager.applyCodeAction(
                                 path,

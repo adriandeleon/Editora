@@ -1658,6 +1658,22 @@
     -fx-padding: 14;
     -fx-spacing: 10;
 }
+/* Checkbox multi-select card (jdtls "pick which members to generate", #741). Reuses the palette card
+   chrome via .command-palette-style padding; only the title/hint need their own colors. */
+.multi-select-picker {
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 8;
+}
+.multi-select-picker .overlay-title {
+    -fx-font-weight: bold;
+}
+.multi-select-picker .overlay-hint {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
+
 /* A muted hint line under an overlay-form field (e.g. the go-to-line line:column reminder). */
 .overlay-note {
     -fx-text-fill: -color-fg-muted;

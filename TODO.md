@@ -13,6 +13,23 @@ A backlog of planned features and improvements. Unordered within each section.
       churn, and the two can never fight. Indentation only, never a line reformat. Gated by
       `Settings.lspOnTypeFormatting` (default **off**, schema 86→87 additive) plus the server's trigger set,
       so a server without the provider is never even asked — no per-keystroke cost for it.
+- [x] **jdtls `extendedClientCapabilities` + the generate prompts** (#741, partial — see the deferred note)
+      — a vendor extension, distinct from LSP `ClientCapabilities`, that gates much of what jdtls will offer.
+      **Measured, not assumed**: declaring them takes the code actions at a field from **9 to 16** on jdtls
+      1.60. The commands behind them are custom **`java/…` JSON-RPC requests** (`java/checkToStringStatus` →
+      `java/generateToString`, …), *not* `workspace/executeCommand` — which is why they never appear in
+      `executeCommandProvider.commands`, and why an `executeCommand` probe for them hangs. They reuse the
+      `rawRequest` seam already built for `java/classFileContents` (#665). **Each `*PromptSupport` flag is a
+      contract, not a hint**: turning one on changes that action's reply from an appliable edit into a
+      `java.action.*Prompt` command the client must drive, so a flag without a picker doesn't leave the
+      action as it was — it makes it appear and do nothing. `LspManagerTest` pins that invariant by deriving
+      the command id from each declared flag and asserting `JdtlsGenerate` can drive it. `JdtlsGenerate` is
+      deliberately **shape-agnostic**: candidates are round-tripped to the generate request *verbatim*
+      (jdtls keys them by an opaque `bindingKey`), so an unmodelled field can't be dropped. New
+      `ui/MultiSelectPicker` (checkbox card in the shared `OverlayHost`) — `QuickOpen` picks exactly one.
+      *Deferred to a follow-up: accessors (`advancedGenerateAccessorsSupport` — these work **today** with no
+      flag, so declaring it early is a regression, not a gap), delegate methods (two-level field→methods
+      payload) and extract interface (two-stage: members, then destination package).*
 - [x] **Go to Implementation / Type Definition / Declaration** (#735, #736) — the three navigation requests
       every registered server advertises and none of which Editora sent. `LspManager.requestDefinition`
       generalized into a shared `requestLocations` walk parameterized by which session method runs, so all

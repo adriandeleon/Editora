@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   auto-indent still acts first, so nothing feels slower and the server just corrects the cases it gets wrong.
   **Off by default** — enable it in Settings → Code Completion, or via the `view.toggleOnTypeFormatting`
   palette command.
+- **Java code generation** — with the Java language server running, the code-action menu (`Ctrl-.`, or the
+  editor right-click menu) now offers **Generate toString()**, **Generate hashCode() and equals()**,
+  **Generate Constructors** and **Override/Implement Methods**. Each opens a checkbox list so you choose
+  which fields or methods to include — Space toggles, Enter generates. These were previously absent
+  entirely: the server withholds them unless the editor says it can drive the picker.
 - **Go to Implementation, Type Definition and Declaration** — three navigation commands beside Go to
   Definition. **Go to Implementation** jumps from an interface or abstract member to the concrete overrides
   (a lone one jumps straight there, several fill the References tool window, and an implementation inside a

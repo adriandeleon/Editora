@@ -1841,6 +1841,30 @@ public final class LspManager {
      *  or empty; {@code preferred} marks the server's recommended fix (listed first). */
     public record CodeActionItem(String title, String kind, boolean preferred, Object raw) {}
 
+    /** The command id an opaque code-action payload carries, or null (#741). */
+    public static String commandIdOf(Object raw) {
+        org.eclipse.lsp4j.Command cmd = commandOf(raw);
+        return cmd == null ? null : cmd.getCommand();
+    }
+
+    /** The single argument a {@code java.action.*Prompt} command carries — the original
+     *  {@code CodeActionParams}, which the follow-up {@code java/…} requests are addressed with (#741). */
+    public static Object commandArgument(Object raw) {
+        org.eclipse.lsp4j.Command cmd = commandOf(raw);
+        List<Object> args = cmd == null ? null : cmd.getArguments();
+        return args == null || args.isEmpty() ? null : args.get(0);
+    }
+
+    private static org.eclipse.lsp4j.Command commandOf(Object raw) {
+        if (raw instanceof org.eclipse.lsp4j.Command cmd) {
+            return cmd;
+        }
+        if (raw instanceof org.eclipse.lsp4j.CodeAction action) {
+            return action.getCommand();
+        }
+        return null;
+    }
+
     /** Last raw published diagnostics per server-reported URI (open documents only — see
      *  {@link #onPublishDiagnostics}); the context a code-action request sends back to the server. */
     private final Map<String, List<org.eclipse.lsp4j.Diagnostic>> rawDiagnostics = new ConcurrentHashMap<>();
@@ -2059,9 +2083,53 @@ public final class LspManager {
      */
     static Map<String, Object> javaInitOptions(List<String> debugBundles) {
         Map<String, Object> autobuildOff = Map.of("java", Map.of("autobuild", Map.of("enabled", false)));
-        return debugBundles.isEmpty()
-                ? Map.of("settings", autobuildOff)
-                : Map.of("bundles", debugBundles, "settings", autobuildOff);
+        Map<String, Object> options = new java.util.HashMap<>();
+        options.put("settings", autobuildOff);
+        options.put("extendedClientCapabilities", javaExtendedClientCapabilities());
+        if (!debugBundles.isEmpty()) {
+            options.put("bundles", debugBundles);
+        }
+        return Map.copyOf(options);
+    }
+
+    /**
+     * jdtls's {@code initializationOptions.extendedClientCapabilities} (#741) — a vendor extension, distinct
+     * from the LSP {@code ClientCapabilities}, that gates a large part of what jdtls will even offer.
+     *
+     * <p><b>Measured, not assumed</b> (driving jdtls 1.60 against the same file and position): declaring these
+     * takes the code actions at a field from <b>9 to 16</b>. Without them, Generate toString / hashCode+equals
+     * / Constructors / Delegate Methods, Override-Implement Methods and Extract Interface are not returned at
+     * all — the server simply doesn't offer what it thinks the client cannot drive.
+     *
+     * <p><b>Each prompt flag is a contract, not a hint.</b> Turning one on changes that action's reply from a
+     * directly-appliable edit into a {@code java.action.*Prompt} command the client must handle. Enabling one
+     * without implementing its prompt doesn't leave the feature as it was — it <em>breaks</em> it: the action
+     * still appears and then does nothing. That is why the accessors actions (which work today without any
+     * flag) are only listed here alongside a real picker; see {@link JdtlsGenerate}.
+     *
+     * <p>{@code resolveAdditionalTextEditsSupport} is the odd one out and needs no UI: it tells jdtls to defer
+     * an auto-import's edits to {@code completionItem/resolve}, which is exactly what
+     * {@code LspCoordinator.autoImportAccept} already does. Without it jdtls computes those edits eagerly for
+     * every item in a completion list — pure waste on a per-keystroke path.
+     */
+    static Map<String, Object> javaExtendedClientCapabilities() {
+        Map<String, Object> caps = new java.util.LinkedHashMap<>();
+        // Needs no client UI.
+        caps.put("classFileContentsSupport", true); // we open jdt:// library source (#665)
+        caps.put("resolveAdditionalTextEditsSupport", true); // we resolve on accept (#410/#445)
+        caps.put("progressReportProvider", true); // we surface $/progress on the status bar (#683)
+        // Each of these is backed by a prompt in JdtlsGenerate — DO NOT enable one without its picker.
+        caps.put("generateToStringPromptSupport", true);
+        caps.put("hashCodeEqualsPromptSupport", true);
+        caps.put("generateConstructorsPromptSupport", true);
+        caps.put("overrideMethodsPromptSupport", true);
+        // Deliberately NOT declared yet — their prompts aren't built, and declaring one would replace a
+        // working action with a command nothing handles (see the contract above):
+        //   advancedGenerateAccessorsSupport   — accessors work today WITHOUT any flag; enabling this would
+        //                                        break them until the picker lands. The riskiest of the set.
+        //   generateDelegateMethodsPromptSupport — two-level payload (field → its methods), not a flat list.
+        //   extractInterfaceSupport            — two-stage: pick members, then pick a destination package.
+        return Map.copyOf(caps);
     }
 
     /**
@@ -2201,6 +2269,72 @@ public final class LspManager {
      * thread — {@code null} when the session is gone, the request fails/times out, or the server returns
      * nothing. {@code anchorFile} is any file managed by the jdtls session that produced the URI.
      */
+    /**
+     * Step 1 of a jdtls generate prompt (#741): runs the {@code java/check…} request and delivers the
+     * choosable candidates on the FX thread. Empty when the server has no session, the request fails, or the
+     * response isn't the expected shape — the caller then reports "nothing to generate" rather than opening
+     * an empty picker.
+     */
+    public void jdtlsGenerateCandidates(
+            Path file, JdtlsGenerate.Kind kind, Object actionParams, Consumer<List<JdtlsGenerate.Candidate>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || kind == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        s.rawRequest(kind.checkRequest(), actionParams)
+                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .whenComplete((r, e) -> {
+                    List<JdtlsGenerate.Candidate> found =
+                            e != null ? List.of() : JdtlsGenerate.candidates(kind, asJson(r));
+                    Platform.runLater(() -> cb.accept(found));
+                });
+    }
+
+    /**
+     * Step 2 of a jdtls generate prompt (#741): runs the {@code java/generate…} request with the user's
+     * choice and applies the {@code WorkspaceEdit} it answers with. {@code cb} reports whether anything was
+     * applied.
+     */
+    public void jdtlsGenerateApply(
+            Path file,
+            JdtlsGenerate.Kind kind,
+            Object actionParams,
+            List<JdtlsGenerate.Candidate> chosen,
+            Consumer<Boolean> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || kind == null) {
+            Platform.runLater(() -> cb.accept(false));
+            return;
+        }
+        s.rawRequest(kind.generateRequest(), JdtlsGenerate.generateParams(kind, asJson(actionParams), chosen))
+                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .whenComplete((r, e) -> {
+                    org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
+                    Platform.runLater(() -> cb.accept(edit != null && applyWorkspaceEditNow(edit)));
+                });
+    }
+
+    /** The raw result as gson, or null — the custom {@code java/…} requests answer as untyped JSON. */
+    private static com.google.gson.JsonElement asJson(Object raw) {
+        if (raw instanceof com.google.gson.JsonElement json) {
+            return json;
+        }
+        return raw == null ? null : new com.google.gson.Gson().toJsonTree(raw);
+    }
+
+    /** Decodes a {@code java/generate…} answer (an untyped {@code WorkspaceEdit}) into the typed form. */
+    private static org.eclipse.lsp4j.WorkspaceEdit asWorkspaceEdit(Object raw) {
+        try {
+            com.google.gson.JsonElement json = asJson(raw);
+            return json == null || !json.isJsonObject()
+                    ? null
+                    : new com.google.gson.Gson().fromJson(json, org.eclipse.lsp4j.WorkspaceEdit.class);
+        } catch (RuntimeException malformed) {
+            return null; // a malformed answer degrades to "nothing generated", never an exception
+        }
+    }
+
     public void classFileContents(Path anchorFile, String jdtUri, Consumer<String> cb) {
         LanguageServerSession s = sessionFor(anchorFile);
         if (s == null || jdtUri == null) {
