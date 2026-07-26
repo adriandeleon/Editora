@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 import javafx.application.Platform;
 
 import com.editora.diff.PatchParser;
+import com.editora.process.CommandLog;
 import com.editora.process.ProcessRunner;
 
 /**
@@ -54,6 +55,12 @@ public final class GitHubService {
 
     /** null = not yet probed; cached after the first {@link #detect}. */
     private volatile Availability availability;
+
+    /**
+     * Where completed {@code gh} commands are reported (the Build Output "GitHub" tab). Volatile: installed
+     * from the FX thread, read on {@link #exec}.
+     */
+    private volatile CommandLog commandLog = CommandLog.none();
 
     private final AtomicLong listGen = new AtomicLong();
 
@@ -101,7 +108,7 @@ public final class GitHubService {
             boolean auth = false;
             String version = "";
             try {
-                ProcessRunner.Result v = gh(null, QUICK, "--version");
+                ProcessRunner.Result v = ghSilent(null, QUICK, "--version");
                 found = v.ok();
                 if (found) {
                     version = firstLine(v.out());
@@ -111,7 +118,7 @@ public final class GitHubService {
             }
             if (found) {
                 try {
-                    auth = gh(null, QUICK, "auth", "status").ok();
+                    auth = ghSilent(null, QUICK, "auth", "status").ok();
                 } catch (RuntimeException ignored) {
                     // treat a failed probe as unauthenticated
                 }
@@ -334,7 +341,7 @@ public final class GitHubService {
     }
 
     private boolean hasAny(Path dir, String kind) {
-        ProcessRunner.Result r = gh(dir, NETWORK, kind, "list", "--limit", "1", "--json", "number");
+        ProcessRunner.Result r = ghSilent(dir, NETWORK, kind, "list", "--limit", "1", "--json", "number");
         if (!r.ok()) {
             return false;
         }
@@ -345,7 +352,7 @@ public final class GitHubService {
 
     /** Whether the repo has at least one workflow run (Actions enabled + something has run). */
     private boolean hasAnyRun(Path dir) {
-        ProcessRunner.Result r = gh(dir, NETWORK, "run", "list", "--limit", "1", "--json", "databaseId");
+        ProcessRunner.Result r = ghSilent(dir, NETWORK, "run", "list", "--limit", "1", "--json", "databaseId");
         return r.ok() && !RunListParser.parse(r.out()).isEmpty();
     }
 
@@ -374,7 +381,28 @@ public final class GitHubService {
         });
     }
 
+    /**
+     * Installs the sink that receives every {@code gh} command the user's actions cause. Unlike git there is
+     * no polling here, so everything is logged except the two availability probes ({@link #detect} and the
+     * tool-window {@link #hasOpenActivity} gate), which run with no user intent behind them.
+     */
+    public void setCommandLog(CommandLog log) {
+        this.commandLog = log == null ? CommandLog.none() : log;
+    }
+
+    /** Runs {@code gh} and reports it to the {@link CommandLog}. */
     private ProcessRunner.Result gh(Path dir, Duration timeout, String... args) {
+        long startNanos = System.nanoTime();
+        ProcessRunner.Result r = ghSilent(dir, timeout, args);
+        List<String> argv = new ArrayList<>(command);
+        argv.addAll(List.of(args));
+        commandLog.record(
+                new CommandLog.Entry(argv, r.exit(), r.out(), r.err(), (System.nanoTime() - startNanos) / 1_000_000L));
+        return r;
+    }
+
+    /** The raw invocation, used directly by the availability probes so they never reach the console. */
+    private ProcessRunner.Result ghSilent(Path dir, Duration timeout, String... args) {
         List<String> cmd = new ArrayList<>(command);
         for (String a : args) {
             cmd.add(a);

@@ -8,6 +8,8 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 
 import com.editora.build.OutputStyle;
+import com.editora.process.CommandLog;
+import com.editora.process.CommandLogFormat;
 import com.editora.run.StackTraceLinks;
 
 /**
@@ -18,6 +20,12 @@ import com.editora.run.StackTraceLinks;
  * selects it, and {@link #appendOutput}/{@link #finished}/{@link #failed} route to that tool's own console, so
  * two concurrent builds stream side by side into their own tabs without interleaving. Tabs persist for the
  * session (bounded — at most one per tool), so a finished build's output stays readable.
+ *
+ * <p>It is not only builds: any CLI Editora runs on the user's behalf can claim a tab through the same
+ * owner-routed API. {@link #started}/{@link #appendOutput}/{@link #finished} are the <em>streaming</em> shape
+ * (a build, a CI log), while {@link #logCommand} is the <em>transcript</em> shape for short one-shot commands
+ * — today the Git and GitHub tabs, which accumulate {@code git}/{@code gh} invocations rather than replacing
+ * the tab's contents per run.
  */
 public final class BuildOutputPanel extends TabPane implements ToolWindowContent {
 
@@ -54,6 +62,27 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
         BuildToolPanel console = consoleFor(owner, toolName);
         getSelectionModel().select(tabs.get(owner));
         console.started(header, style, onStop);
+    }
+
+    /**
+     * Appends one finished command to {@code owner}'s transcript tab, creating it (titled {@code tabTitle})
+     * on first use. Deliberately does <em>not</em> select the tab or open the tool window: a commit or a
+     * {@code gh pr list} is a side effect of what the user is already doing, and yanking the console open —
+     * or off the build they are watching — would be the tail wagging the dog. They open Build Output when
+     * they want to read it; the transcript is waiting.
+     */
+    public void logCommand(Object owner, String tabTitle, CommandLog.Entry entry) {
+        BuildToolPanel console = consoleFor(owner, tabTitle);
+        console.setLogMode(true);
+        for (CommandLogFormat.Line line : CommandLogFormat.format(entry)) {
+            console.appendStyled(line.text(), line.styleClass());
+        }
+        console.setLogStatus(CommandLogFormat.commandLine(entry.argv()));
+    }
+
+    /** Whether any tab exists yet — the tool window is worth offering only once something has run. */
+    public boolean hasTabs() {
+        return !getTabs().isEmpty();
     }
 
     public void appendOutput(Object owner, String line, boolean stderr) {

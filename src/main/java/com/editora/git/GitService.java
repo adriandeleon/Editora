@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 
 import javafx.application.Platform;
 
+import com.editora.process.CommandLog;
 import com.editora.process.ProcessRunner;
 
 /**
@@ -58,6 +59,12 @@ public final class GitService {
 
     /** null = not yet probed; cached after the first {@code git --version}. */
     private volatile Boolean gitAvailable;
+
+    /**
+     * Where completed, <em>user-initiated</em> git commands are reported (the Build Output "Git" tab).
+     * Volatile: installed from the FX thread, read on {@link #exec}.
+     */
+    private volatile CommandLog commandLog = CommandLog.none();
     /** Directory (absolute string) → repo root, or {@code null} sentinel cached as the NO_ROOT marker. */
     private final Map<String, Path> rootCache = new ConcurrentHashMap<>();
 
@@ -536,7 +543,7 @@ public final class GitService {
                 r = new ProcessRunner.Result(-1, "", "Git is not installed");
             } else {
                 Path parent = destination.toAbsolutePath().getParent();
-                r = git(
+                r = gitLogged(
                         parent,
                         NETWORK,
                         "clone",
@@ -548,6 +555,16 @@ public final class GitService {
     }
 
     // --- mutations (run a command, post the raw result for status/error reporting) ---------------
+
+    /**
+     * Installs the sink that receives every command run through this section — the ones the user actually
+     * asked for. The read paths ({@code status}/{@code diff}/{@code log}/{@code blame}/…) deliberately stay
+     * off it: they re-run on every tab switch, focus-regain and save, and would bury the commit or push the
+     * user opened the console to read.
+     */
+    public void setCommandLog(CommandLog log) {
+        this.commandLog = log == null ? CommandLog.none() : log;
+    }
 
     /** Runs an arbitrary {@code git} subcommand in {@code root}, posting the {@link ProcessRunner.Result}. */
     public void run(Path root, Consumer<ProcessRunner.Result> onResult, String... args) {
@@ -562,7 +579,7 @@ public final class GitService {
     private void run(Path root, Duration timeout, Consumer<ProcessRunner.Result> onResult, String... args) {
         exec.submit(() -> {
             ProcessRunner.Result r = gitAvailable() && root != null
-                    ? git(root, timeout, args)
+                    ? gitLogged(root, timeout, args)
                     : new ProcessRunner.Result(-1, "", "Git is not installed");
             Platform.runLater(() -> onResult.accept(r));
         });
@@ -590,6 +607,18 @@ public final class GitService {
         }
         rootCache.put(key, root == null ? NO_ROOT : root);
         return root;
+    }
+
+    /** {@link #git} plus a {@link CommandLog} report — the user-initiated commands only. */
+    private ProcessRunner.Result gitLogged(Path dir, Duration timeout, String... args) {
+        long startNanos = System.nanoTime();
+        ProcessRunner.Result r = git(dir, timeout, args);
+        List<String> argv = new ArrayList<>(args.length + 1);
+        argv.add("git");
+        argv.addAll(List.of(args));
+        commandLog.record(
+                new CommandLog.Entry(argv, r.exit(), r.out(), r.err(), (System.nanoTime() - startNanos) / 1_000_000L));
+        return r;
     }
 
     private static ProcessRunner.Result git(Path dir, Duration timeout, String... args) {

@@ -2546,6 +2546,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         // A single shared "Build Output" console for every build tool (auto-opens on a run).
         buildOutputPanel.setOnLink(this::openRunLink);
+        installCommandLogs();
         buildOutputToolWindow = new ToolWindow(
                 "buildOutput",
                 tr("toolwindow.buildOutput"),
@@ -3163,6 +3164,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // gives CI logs their own persistent "CI" tab beside the Maven/npm build tabs.
                 @Override
                 public void ciLogStarted(String header, Runnable onStop) {
+                    refreshBuildOutputAvailability(); // a repo with no build tool still gets the CI tab
                     toolWindows.open(buildOutputToolWindow);
                     buildOutputPanel.started(
                             github, tr("github.ci.tab"), header, com.editora.build.OutputStyle.ci(), onStop);
@@ -3261,10 +3263,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                             if (tasks != null) {
                                 toolWindows.setAvailable(tasks, available);
                             }
-                            // The shared console is available when *any* build tool is currently detected.
-                            if (buildOutputToolWindow != null) {
-                                toolWindows.setAvailable(buildOutputToolWindow, anyBuildDetected());
-                            }
+                            // The shared console is available when *any* build tool is currently detected
+                            // (or once a Git/GitHub command has written a transcript tab into it).
+                            refreshBuildOutputAvailability();
                             // A JVM marker (pom/build.gradle) appearing/vanishing flips the JUnit test gutter and
                             // the project main-method gutter — re-gate every open buffer (both no-op on an
                             // unchanged flag).
@@ -3296,6 +3297,46 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Whether any enabled build tool currently has a detected marker file (drives the shared console stripe). */
+    // --- Git / GitHub CLI transcripts (their own Build Output tabs) ------------------------------
+
+    /**
+     * Owner keys for the two CLI-transcript tabs. Deliberately <em>not</em> the coordinators themselves:
+     * {@code github} already owns the streaming "CI" tab, and reusing it would make a {@code gh} command
+     * wipe the CI log (and vice versa) — {@code started()} clears its console, a transcript must not be.
+     */
+    private final Object gitConsoleOwner = new Object();
+
+    private final Object ghConsoleOwner = new Object();
+
+    /**
+     * Points each native-CLI service at its own Build Output tab, so the commands Editora runs on the user's
+     * behalf are inspectable rather than invisible. The services decide <em>what</em> to report (git: the
+     * user-initiated writes only, since status/diff re-run constantly); this only decides where it lands.
+     * Both sinks are called on a service worker thread, hence the marshal.
+     */
+    private void installCommandLogs() {
+        git.service()
+                .setCommandLog(
+                        entry -> Platform.runLater(() -> logCliCommand(gitConsoleOwner, tr("console.tab.git"), entry)));
+        github.service()
+                .setCommandLog(entry ->
+                        Platform.runLater(() -> logCliCommand(ghConsoleOwner, tr("console.tab.github"), entry)));
+    }
+
+    private void logCliCommand(Object owner, String tabTitle, com.editora.process.CommandLog.Entry entry) {
+        buildOutputPanel.logCommand(owner, tabTitle, entry);
+        // The console's stripe is gated on a build tool being detected; a repo with no build file still has
+        // git, so the first logged command is what makes the window reachable there.
+        refreshBuildOutputAvailability();
+    }
+
+    /** The shared console is offered once any build tool is detected, or once anything has written to it. */
+    private void refreshBuildOutputAvailability() {
+        if (buildOutputToolWindow != null) {
+            toolWindows.setAvailable(buildOutputToolWindow, anyBuildDetected() || buildOutputPanel.hasTabs());
+        }
+    }
+
     private boolean anyBuildDetected() {
         for (BuildCoordinator c : buildCoordinators) {
             if (c.isEnabled() && c.isDetected()) {

@@ -61,6 +61,12 @@
    traceback — stands out from normal stdout. Applied via setStyleSpans, not a grammar. */
 .text.run-stderr { -fx-fill: -color-danger-fg; }
 
+/* Git/GitHub CLI transcript (com.editora.process.CommandLogFormat, shown in the Build Output
+   console's Git / GitHub tabs): the echoed "$ git push …" line and the "exit 0 · 120 ms" footer that
+   bracket each entry's output. A failed command's footer + stderr reuse .text.log-error above. */
+.text.cmd-echo   { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
+.text.cmd-footer { -fx-fill: -color-fg-muted; }
+
 /* CSV/TSV field separators (source.csv grammar): a muted tint so column boundaries stand out. */
 .text.csv-delimiter { -fx-fill: -color-fg-subtle; }
 
