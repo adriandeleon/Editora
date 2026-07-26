@@ -489,4 +489,62 @@ class LspManagerTest {
 
         assertEquals(java.util.Set.of('}'), LspManager.onTypeTriggersOf(caps));
     }
+
+    // --- jdtls extendedClientCapabilities (#741) ----------------------------------------------------
+
+    /**
+     * <b>The invariant that keeps this feature from regressing.</b> Declaring a {@code *PromptSupport} flag
+     * changes that action's reply from a directly-appliable edit into a {@code java.action.*Prompt} command —
+     * so a flag without a picker behind it doesn't leave the action as it was, it makes it appear and then do
+     * nothing. Measured on jdtls 1.60: without any flags the accessor actions work; with
+     * {@code advancedGenerateAccessorsSupport} they become prompt commands.
+     */
+    @Test
+    void everyDeclaredPromptFlagHasAPickerBehindIt() {
+        var caps = LspManager.javaExtendedClientCapabilities();
+
+        for (String key : caps.keySet()) {
+            if (!key.endsWith("PromptSupport")) {
+                continue;
+            }
+            // "generateToStringPromptSupport" -> "java.action.generateToStringPrompt"
+            String command = "java.action." + key.substring(0, key.length() - "Support".length());
+            assertNotNull(
+                    JdtlsGenerate.forCommand(command), key + " is declared but JdtlsGenerate cannot drive " + command);
+        }
+    }
+
+    /** The three flags that need no client UI — each backed by something Editora already implements. */
+    @Test
+    void theNoUiCapabilitiesAreDeclared() {
+        var caps = LspManager.javaExtendedClientCapabilities();
+
+        assertEquals(Boolean.TRUE, caps.get("classFileContentsSupport"), "we open jdt:// source (#665)");
+        assertEquals(Boolean.TRUE, caps.get("resolveAdditionalTextEditsSupport"), "we resolve on accept (#410)");
+        assertEquals(Boolean.TRUE, caps.get("progressReportProvider"), "we show $/progress (#683)");
+    }
+
+    /**
+     * Not yet drivable, so not declared. Accessors are the dangerous one: they work today <em>without</em>
+     * any flag, so declaring it early is a regression rather than a missing feature.
+     */
+    @Test
+    void theCapabilitiesWithoutAPickerAreNotDeclared() {
+        var caps = LspManager.javaExtendedClientCapabilities();
+
+        assertFalse(caps.containsKey("advancedGenerateAccessorsSupport"), "would break working accessors");
+        assertFalse(caps.containsKey("generateDelegateMethodsPromptSupport"), "two-level payload");
+        assertFalse(caps.containsKey("extractInterfaceSupport"), "two-stage flow");
+    }
+
+    /** The options object must still carry what it did before — the flags are additive to it. */
+    @Test
+    void initOptionsKeepAutobuildOffAndTheDebugBundles() {
+        var withBundle = LspManager.javaInitOptions(List.of("/tmp/java-debug.jar"));
+
+        assertNotNull(withBundle.get("settings"));
+        assertNotNull(withBundle.get("extendedClientCapabilities"));
+        assertEquals(List.of("/tmp/java-debug.jar"), withBundle.get("bundles"));
+        assertFalse(LspManager.javaInitOptions(List.of()).containsKey("bundles"), "no bundles when not debugging");
+    }
 }
