@@ -105,7 +105,14 @@ Editora is built with the help of AI coding tools.
   (Settings → Editor; "Toggle Auto Rename Tag" in the palette).
 - **Auto-close & matching brackets** — typing `([{`/quotes inserts the matching closer (type over it to
   skip, wrap a selection by typing a bracket/quote around it, Backspace clears an empty pair); the
-  bracket matching the one next to the caret is highlighted.
+  bracket matching the one next to the caret is highlighted. **Go: Matching Bracket** jumps the caret to
+  the mate (press again to jump back; `Ctrl+Shift+\` in the VSCode keymap) and **Select to Bracket**
+  selects the whole pair.
+- **Code folding** — fold chevrons in the gutter, plus **Fold Level 1–7** (collapse everything at a
+  nesting depth, like VSCode's `Ctrl+K Ctrl+1..7`), **Fold / Unfold Recursively** (the region at the caret
+  and everything nested inside it), and **Go to Parent / Next / Previous Fold** (revealing a hidden
+  target). Palette-discoverable and rebindable; collapsed regions are saved with the session, and where a
+  language server is running the regions come from the server rather than brace/indent scanning.
 - **Comment / uncomment** (`M-;`) — toggles a line comment for a single line and a block/region comment
   for a multi-line selection, using the language's comment syntax (`//`, `#`, `<!-- -->`, `/* */`, `--`, …).
 - **Fill paragraph** (`M-q`) — re-wrap a paragraph (or the selection, with "Fill Region") to a fill column
@@ -128,6 +135,13 @@ Editora is built with the help of AI coding tools.
 - **Occur** (`M-s o`) — list all lines in the buffer matching a regexp and jump to one; **Tabify / Untabify**
   convert a region between tab and space indentation; **Align Regexp** pads lines so a pattern lines up in a
   column (aligning `=`/`:` blocks). All palette-discoverable.
+- **Convert indentation** — rewrite the whole file's *leading* indentation between tabs and spaces
+  ("Convert Indentation to Spaces" / "…to Tabs"). In-line alignment and string contents are untouched, and
+  each direction reverses the other.
+- **Subword navigation** — move and delete by camelCase / snake_case parts: `getUserName` steps through
+  `get` → `User` → `Name`, and acronyms split correctly (`HTMLParser` → `HTML` `Parser`). Four palette
+  commands (forward/backward subword, delete subword forward/backward); no default chord, bind them in
+  Settings → Keymaps.
 - **Mark ring** — `C-SPC` records the caret on a per-buffer ring; `C-x C-SPC` pops back to the most recent
   mark and cycles through older ones on repeat. Marks track their text through edits. Distinct from the
   automatic jump-history (`nav.back`/`nav.forward`).
@@ -155,11 +169,20 @@ Editora is built with the help of AI coding tools.
   reverse, shuffle, remove duplicate/empty lines, trim trailing whitespace). All individual palette commands,
   or one filterable picker: "Edit: String Manipulation…" (`C-c x`).
 - **Multiple cursors & column selection** — VS Code–style multi-caret editing: add a caret at the next
-  occurrence of the selection / above / below, type or edit everywhere at once, `Esc` to collapse; plus
-  Alt-drag column/box selection. (Powered by a personal RichTextFX fork.)
+  occurrence of the selection / above / below, or **Select All Occurrences** (`Ctrl+Shift+L` in the
+  VSCode/Sublime keymaps) to put one on every occurrence of the selection (or the word at the caret) at
+  once — **Alt+Enter** in the find bar does the same for every match of the current query. Type or edit
+  everywhere at once, `Esc` to collapse; plus Alt-drag column/box selection. The Emacs movement chords
+  (`C-f`/`C-b`/`C-n`/`C-p`/`C-a`/`C-e`/`M-f`/`M-b`) move every caret like the arrow keys do; document,
+  paragraph, sentence and page motions stay on the primary caret. (Powered by a personal RichTextFX fork.)
 - **Copy/cut the current line with no selection** — VS Code's `editor.emptySelectionClipboard`: with
   nothing selected, Copy grabs the whole current line and Cut removes it (one undoable step). On by default;
   toggle in Settings → Editor or via "View: Toggle Copy Line When No Selection".
+- **Copy with syntax highlighting** — a copy also puts a colored HTML flavor on the clipboard, so code
+  pasted into Slack, an email, or a document keeps its highlighting instead of arriving as a grey block
+  (a light GitHub-style palette, since pasted code usually lands on a light background). Plain text is
+  always on the clipboard too. On by default (Settings → Editor); a forced *Copy With Syntax Highlighting*
+  command ignores both the setting and the size cap.
 - **Spell checking** — red wavy underlines on misspelled words, with right-click suggestions,
   Add-to-Dictionary, and Ignore. Source files only check comments and string literals; plaintext and
   Markdown are checked in full. Toggle via "View: Toggle Spell Check"; choose a dictionary per file
@@ -169,7 +192,9 @@ Editora is built with the help of AI coding tools.
   Hunspell).
 - **Code intelligence (LSP)** _(Beta)_ — language smarts via the Language Server Protocol, with **22 servers**
   auto-detected on `PATH` (Java/JDT LS, TypeScript/JavaScript, Python/Pyright, Go, Rust, C/C++/clangd,
-  C#, PHP, Ruby, Kotlin, Lua, Bash, XML, JSON, YAML, HTML, CSS, Dockerfile, SQL, Terraform, TOML, Typst/tinymist).
+  C#, PHP, Ruby, Kotlin, Lua, Bash, XML, JSON, YAML, HTML, CSS, Dockerfile, SQL, Terraform, TOML, Typst/tinymist),
+  plus a **Maven-aware `pom.xml` server** (JVM lemminx + lemminx-maven, routed by file name so a `pom.xml`
+  gets dependency/plugin/GAV completion while other XML keeps the fast native lemminx).
   Inline diagnostics + a Problems tool window (`M-8`) + minimap/scrollbar stripes, go-to-definition
   (`M-.` — for Java this includes JDK/dependency classes, opened as read-only library source),
   **go-to-implementation / type-definition / declaration** (the concrete overrides of an interface member,
@@ -180,11 +205,26 @@ Editora is built with the help of AI coding tools.
   class's file too), **call/type hierarchy** (who-calls-this + super/subtypes in a lazily-expanded
   tool window), LSP-backed completion, auto-imports,
   **Code Actions / quick fixes** (`Ctrl-.` in the VS Code/Sublime/IntelliJ keymaps, or the palette /
-  right-click menu — apply the server's fixes, organize imports, refactorings), and
+  right-click menu — apply the server's fixes, organize imports, refactorings), **Java code generation**
+  from that same menu (**Generate toString()**, **hashCode()/equals()**, **Constructors**, and
+  **Override/Implement Methods** — each opens a checkbox list: Space toggles, Enter generates), and
   **Format Document** (whole-file reformat via the server, when it advertises formatting — palette or the
-  editor right-click menu), and **server-provided folding + expand/shrink selection** (grammar-accurate
-  where a server offers them — an import block folds as one region — falling back to the built-in
-  heuristics everywhere else). A crashed server is restarted automatically (with a crash-loop cap), and a
+  editor right-click menu), **inlay hints** (the server's parameter-name / inferred-type annotations, drawn
+  in grey italics after each line — off by default, Settings → Code Completion), **re-indent as you type**
+  (typing `;`, `}` or Enter snaps the line to the server's own indentation convention — indentation only,
+  never a reformat; off by default, Settings → Code Completion or `view.toggleOnTypeFormatting`), and
+  **server-provided folding + expand/shrink selection** (grammar-accurate where a server offers them — an
+  import block folds as one region — falling back to the built-in heuristics everywhere else).
+  Three Java commands round it out: **Organize Imports** (direct, without the code-action menu),
+  **Copy Fully Qualified Name**, and **Reload Project Configuration** (re-read `pom.xml`/`build.gradle`
+  when a dependency change hasn't been picked up). The **Problems** window has an **Open files / Whole
+  project** selector, with a **Build Project** command that recompiles the Java project and fills it
+  (default unchanged: open files only). Long-running server work
+  (jdtls importing a project, gopls loading packages) drives the status-bar loading bar with the server's
+  own **progress** title and percentage, and external file changes (a `git checkout`, a CLI build) are
+  forwarded to the running servers so their project models don't go stale. Document sync is **incremental**
+  where the server accepts it, and semantic highlighting transfers only what changed where the server
+  supports token deltas. A crashed server is restarted automatically (with a crash-loop cap), and a
   root's server shuts down a few minutes after its last file closes. Off by default; per-server command +
   enable in *Settings → LSP*.
 - **Search** — incremental find bar (`C-s`/`C-r`) with regex, case, and whole-word toggles, a match
@@ -197,12 +237,28 @@ Editora is built with the help of AI coding tools.
 - **Run a file from a gutter ▶** — a green play glyph runs a Java 25 compact-source file
   (`java <file>`), a Python script (`python3`), or a shell script (`bash`); output streams into a Run
   tool window (`M-9`) with clickable stack traces, stdin, and per-file program arguments. Gated by the
-  LSP feature.
+  LSP feature. A clicked **Java** frame in the Run, Test or Build console is resolved by the language
+  server, so a frame inside a dependency or the JDK opens its source instead of reporting "not found"
+  (filename matching still handles anything the server can't place, and every non-Java trace).
+- **Run & debug a project's `main` class (Maven / Gradle)** — beyond single files, **Run Main Class…** /
+  **Debug Main Class…** pick any main class in the active file's Maven or Gradle project; a ▶ also appears
+  in the gutter beside every `public static void main`, and the editor right-click menu offers
+  *Run '….main()'* / *Debug '….main()'*. Debugging (and the fastest, project-wide Run) goes through the
+  Java language server; without it, Run falls back to the build tool — Maven resolves the classpath
+  (`mvn compile dependency:build-classpath`, running from the reactor root with `-pl <module> -am` in a
+  multi-module build) and Gradle delegates to `run` (or `bootRun` for Spring Boot).
+- **Run configurations** — save a named configuration per project (main class, module, program & VM
+  arguments, environment variables, working directory) and re-run or debug it from the palette; edit the
+  whole list in **Settings → Run Configurations**. In a Gradle project the main class the build declares
+  (`mainClass`, `mainClass.set(…)`, or the legacy `mainClassName`) is pre-filled.
 - **Debugging (DAP)** _(Beta)_ — a full debugger for **Java**, **Python** (debugpy), and **JavaScript/Node**
   (vscode-js-debug): breakpoints (conditional / logpoints), step / resume / pause / run-to-cursor /
   jump-to-line, call stack, variables, watches and set-value, inline values and a value-hover popup, and
-  an IntelliJ-style Debug tool window (`M-g d`). Off by default (*Settings → Debugging*); adapters are
-  user-installed (helper scripts provided).
+  an IntelliJ-style Debug tool window (`M-g d`). **Debug via Build Tool** launches a Gradle
+  (`run`/`bootRun --debug-jvm`) or Spring Boot Maven (`spring-boot:run` + a JDWP agent) app under a
+  suspended JVM and attaches when it's listening. Off by default (*Settings → Debugging*); adapters are
+  user-installed (helper scripts provided), and a `jdtls` that already bundles the java-debug plugin is
+  detected as-is.
 - **Read-only / View mode** — toggle a buffer read-only (`C-x C-q` or the palette) to view without
   editing; typing and edit commands are blocked while everything else keeps working. Files that aren't
   writable on disk open read-only automatically, and the per-file state is remembered across restarts.
