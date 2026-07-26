@@ -1395,6 +1395,15 @@ final class LspCoordinator {
      * reported "no definition". {@code anchor} is the buffer the navigation started from (it routes the
      * request to the right session).
      */
+    /**
+     * Opens a {@code jdt://} class-file URI at a line — how a stack-trace frame inside a dependency or the
+     * JDK becomes clickable (#744). Reuses the same read-only library-source tab as go-to-definition (#665),
+     * so a repeat click re-selects the existing tab rather than opening another.
+     */
+    void openLibraryFrame(Path anchorPath, String jdtUri, int line0) {
+        openLibraryDefinition(anchorPath, new LspManager.Target(null, Math.max(0, line0), 0, jdtUri));
+    }
+
     private void openLibraryDefinition(Path anchorPath, LspManager.Target t) {
         String uri = t.classFileUri();
         var ref = libraryBuffers.get(uri);

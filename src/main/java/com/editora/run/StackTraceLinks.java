@@ -11,9 +11,21 @@ import java.util.regex.Pattern;
  */
 public final class StackTraceLinks {
 
-    /** A source location found in one console line. {@code file} may be a bare name (Java) or a path;
-     *  {@code line} is 1-based as printed. */
-    public record Link(String file, int line) {}
+    /**
+     * A source location found in one console line. {@code file} may be a bare name (Java) or a path;
+     * {@code line} is 1-based as printed; {@code raw} is the console line verbatim.
+     *
+     * <p>{@code raw} exists because a language server can resolve a frame far better than this regex can —
+     * jdtls's {@code java.project.resolveStackTraceLocation} works off the real classpath and can place a
+     * frame inside a dependency or the JDK (#744) — and it wants the <em>whole line</em>, not the pieces
+     * we picked out of it.
+     */
+    public record Link(String file, int line, String raw) {
+        /** The two-arg form, for callers (and tests) that don't need the original line. */
+        public Link(String file, int line) {
+            this(file, line, null);
+        }
+    }
 
     private static final Pattern JAVA = Pattern.compile("\\(([A-Za-z0-9_$]+\\.java):(\\d+)\\)");
     private static final Pattern PYTHON = Pattern.compile("File \"([^\"]+\\.py[a-z]?)\", line (\\d+)");
@@ -29,15 +41,15 @@ public final class StackTraceLinks {
         }
         Matcher m = JAVA.matcher(line);
         if (m.find()) {
-            return new Link(m.group(1), Integer.parseInt(m.group(2)));
+            return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
         }
         m = PYTHON.matcher(line);
         if (m.find()) {
-            return new Link(m.group(1), Integer.parseInt(m.group(2)));
+            return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
         }
         m = NODE.matcher(line);
         if (m.find()) {
-            return new Link(m.group(1), Integer.parseInt(m.group(2)));
+            return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
         }
         return null;
     }

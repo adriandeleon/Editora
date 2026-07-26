@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Stack-trace frames into libraries** — clicking a Java stack-trace line in the Run, Test or Build console
+  now asks the language server to resolve it, so a frame inside a dependency or the JDK opens its source
+  instead of reporting "not found". Frames in your own code behave as before, and the previous
+  filename-matching still handles anything the server can't place (and every non-Java trace).
+- **Fewer stray test gutters** — the ▶ beside a JUnit class is now confirmed against the project's real test
+  source folders, so a class in `src/main/java` that happens to carry a `@Test`-shaped annotation no longer
+  gets one. If the server can't answer, the gutter stays as it was.
 - **Re-indent as you type** — with a language server running, typing `;`, `}` or Enter re-indents the current
   line to the server's own convention. Indentation only: it never reformats the line under you. The local
   auto-indent still acts first, so nothing feels slower and the server just corrects the cases it gets wrong.

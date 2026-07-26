@@ -337,6 +337,67 @@ class LspManagerRequestsFxTest {
                 new org.eclipse.lsp4j.DocumentOnTypeFormattingOptions(";", List.of("\n", "}")));
     }
 
+    // --- jdtls project commands (#744, #745) ---------------------------------------------------------
+
+    /**
+     * {@code isTestFile} answers <b>null</b>, not false, when it can't tell. The caller uses it only to
+     * remove the test gutter, so a false here would silently strip the gutter from every test file whenever
+     * the server is slow, absent, or errors — the scanner's answer has to survive "don't know".
+     */
+    @Test
+    void isTestFileAnswersNullWhenTheServerCannotTell() throws Exception {
+        var fake = open();
+        fake.failEverything = true;
+
+        Boolean answer = this.<Boolean>await(cb -> manager.isTestFile(file, cb));
+
+        assertNull(answer, "a failed command must not read as 'not a test'");
+    }
+
+    @Test
+    void isTestFileSendsTheFileUriAndReadsTheBoolean() throws Exception {
+        var fake = open();
+        fake.executeCommandResponse = Boolean.TRUE;
+
+        Boolean answer = this.<Boolean>await(cb -> manager.isTestFile(file, cb));
+
+        assertEquals(Boolean.TRUE, answer);
+        var sent = FakeLanguageServer.last(fake.executedCommands);
+        assertNotNull(sent);
+        assertEquals("java.project.isTestFile", sent.getCommand());
+        assertEquals(List.of(file.toUri().toString()), sent.getArguments());
+    }
+
+    /**
+     * The <em>whole console line</em> goes to the server, not the file name we parsed out of it — jdtls
+     * resolves the frame itself, which is the entire point (#744). The second argument is the project
+     * filter; empty means "search them all", since a console line doesn't say which project it came from.
+     */
+    @Test
+    void resolveStackTraceLocationSendsTheWholeLine() throws Exception {
+        var fake = open();
+        String line = "\tat demo.Person.of(Person.java:12)";
+
+        String ignored = this.<String>await(cb -> manager.resolveStackTraceLocation(file, line, cb));
+
+        var sent = FakeLanguageServer.last(fake.executedCommands);
+        assertNotNull(sent);
+        assertEquals("java.project.resolveStackTraceLocation", sent.getCommand());
+        assertEquals(line, sent.getArguments().get(0));
+        assertEquals(List.of(), sent.getArguments().get(1), "no project filter");
+        assertNull(ignored, "no canned answer configured");
+    }
+
+    /** A blank answer is "couldn't place it" and must read as null, so the caller falls back. */
+    @Test
+    void resolveStackTraceLocationTreatsABlankAnswerAsUnresolved() throws Exception {
+        var fake = open();
+        fake.executeCommandResponse = "   ";
+
+        String blank = this.<String>await(cb -> manager.resolveStackTraceLocation(file, "at x(A.java:1)", cb));
+        assertNull(blank);
+    }
+
     /** A server that omits the (spec-required) range must not produce a bogus target or an exception. */
     @Test
     void aRangelessLocationIsSkipped() throws Exception {
