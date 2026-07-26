@@ -34,7 +34,7 @@ public interface TestResultParser {
     }
 
     /**
-     * What the raw Build Output console should show for {@code raw}. Default: the line verbatim. Go returns the
+     * What the raw Output console should show for {@code raw}. Default: the line verbatim. Go returns the
      * decoded {@code output} text (so a {@code -json} run stays human-readable in the console), or {@code null}
      * to suppress a non-output event.
      */

@@ -24,7 +24,7 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * One build tool's console — a single tab inside the shared {@link BuildOutputPanel} "Build Output" tool
+ * One build tool's console — a single tab inside the shared {@link BuildOutputPanel} "Output" tool
  * window. Streams that tool's running invocation's stdout/stderr (see {@code com.editora.build.BuildService})
  * with a header showing the run state plus Stop and Clear. {@link BuildOutputPanel} creates one of these per
  * tool that runs, so Maven/npm/Cargo/Go/Gradle each get their own tab. Modeled on {@link RunPanel} minus the
@@ -99,6 +99,24 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         return r;
     }
 
+    /**
+     * Turns this tab into an append-only <b>transcript</b> of finished one-shot commands (Git/GitHub) rather
+     * than a streaming build console: there is nothing to stop, so the Stop button goes away entirely
+     * instead of sitting permanently disabled.
+     */
+    public void setLogMode(boolean logMode) {
+        stopButton.setVisible(!logMode);
+        stopButton.setManaged(!logMode);
+        if (logMode) {
+            status.setText(tr("console.log.idle"));
+        }
+    }
+
+    /** In log mode, the header line — the command most recently appended. */
+    public void setLogStatus(String text) {
+        status.setText(text);
+    }
+
     /** Resets to the idle state (no run yet / finished and cleared). */
     public void idle() {
         status.setText(tr("run.idle"));
@@ -126,11 +144,19 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
      * navigating back to the end resumes the follow.
      */
     public void appendOutput(String line, boolean stderr) {
+        appendStyled(line, style.styleClassFor(line));
+    }
+
+    /**
+     * Appends one line under a caller-chosen {@code .text.<class>} ({@code null} = default foreground), with
+     * the same follow/trim behaviour as {@link #appendOutput}. Used by the Git/GitHub command log, whose
+     * colouring comes from {@code CommandLogFormat} rather than a build tool's {@link OutputStyle}.
+     */
+    public void appendStyled(String line, String styleClass) {
         int start = output.getLength();
         int caretBefore = output.getCaretPosition();
         boolean follow = caretBefore >= start;
         output.appendText(line + "\n");
-        String styleClass = style.styleClassFor(line);
         if (styleClass != null) {
             StyleSpans<Collection<String>> spans = new StyleSpansBuilder<Collection<String>>()
                     .add(List.of(styleClass), line.length())

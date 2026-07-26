@@ -64,7 +64,7 @@ final class RunCoordinator {
          *  dependency:build-classpath} + {@code target/classes}); delivers null/empty on failure. FX thread. */
         void resolveMavenClasspath(Path root, Consumer<List<String>> cb);
 
-        /** Runs the Gradle Run task via the build tool (streams to Build Output) — the no-jdtls Gradle
+        /** Runs the Gradle Run task via the build tool (streams to Output) — the no-jdtls Gradle
          *  fallback. Runs {@code bootRun} for a Spring Boot project, else {@code run}; {@code root} locates the
          *  build script. */
         void runGradleRunTask(Path root);

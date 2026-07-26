@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Pins the build-output <b>consolidation</b>: the five build tools (Maven/npm/Cargo/Go/Gradle) share a single
- * "Build Output" console tool window instead of registering one console each. Built against a real window
+ * "Output" console tool window instead of registering one console each. Built against a real window
  * ({@link FxWindowFixture}) so it exercises {@code MainController}'s actual tool-window registration — the wiring
  * a {@code BuildCoordinator} unit test can't see.
  */
@@ -47,7 +47,7 @@ class BuildOutputWindowFxTest {
     void exactlyOneSharedBuildOutputWindowIsRegistered() throws Exception {
         List<String> ids = registeredIds();
         long consoles = ids.stream().filter("buildOutput"::equals).count();
-        assertEquals(1, consoles, "one shared Build Output console, got ids: " + ids);
+        assertEquals(1, consoles, "one shared Output console, got ids: " + ids);
     }
 
     @Test
@@ -67,7 +67,7 @@ class BuildOutputWindowFxTest {
                 .map(ToolWindow::getTitle)
                 .findFirst()
                 .orElse(null));
-        assertEquals("Build Output", title);
+        assertEquals("Output", title);
     }
 
     @Test

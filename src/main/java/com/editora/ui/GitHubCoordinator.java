@@ -78,9 +78,9 @@ final class GitHubCoordinator {
         /** Re-fetches the GitHub panel's current segment (after a rerun/cancel changes run state). */
         void reloadGitHubPanel();
 
-        // --- the shared Build Output console, on its own owner-routed "CI" tab -----------------------
+        // --- the shared Output console, on its own owner-routed "CI" tab -----------------------
 
-        /** Opens the Build Output console on the CI tab and puts it in the running state. */
+        /** Opens the Output console on the CI tab and puts it in the running state. */
         void ciLogStarted(String header, Runnable onStop);
 
         void ciLogAppend(String line);
@@ -438,13 +438,13 @@ final class GitHubCoordinator {
         }));
     }
 
-    // --- CI failure log → the shared Build Output console -----------------------------------------
+    // --- CI failure log → the shared Output console -----------------------------------------
 
     /** Bumped per log request so a superseded (or Stopped) fetch is dropped instead of painting the console. */
     private long ciLogGen;
 
     /**
-     * Dumps a failed run's log ({@code gh run view <id> --log-failed}) into the shared Build Output console's
+     * Dumps a failed run's log ({@code gh run view <id> --log-failed}) into the shared Output console's
      * CI tab, where {@code RunPanel.installLinkClicks} + {@code MainController.openRunLink} make its stack
      * frames clickable — the runner's paths resolve to local files via the pure {@code run/RunnerPaths}.
      */

@@ -74,7 +74,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
 
         void reviewPr(int number);
 
-        /** Dumps a failed run's log into the shared Build Output console. */
+        /** Dumps a failed run's log into the shared Output console. */
         void viewRunLog(long runId, String workflowName);
 
         /** Re-runs a workflow run; {@code failedOnly} re-runs just the failed jobs. */
