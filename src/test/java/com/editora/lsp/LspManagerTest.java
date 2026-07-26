@@ -448,4 +448,45 @@ class LspManagerTest {
         nullCommands.setExecuteCommandProvider(new org.eclipse.lsp4j.ExecuteCommandOptions());
         assertFalse(LspManager.providesJavaDebug(nullCommands)); // provider present, command list null
     }
+
+    // --- on-type formatting triggers (#740) ---------------------------------------------------------
+
+    /**
+     * The spec splits the trigger characters into a mandatory {@code firstTriggerCharacter} and an optional
+     * {@code moreTriggerCharacter} list. Reading only the first one — the easy mistake — would leave
+     * {@code }} and Enter unhandled on jdtls, which lists exactly those two as "more".
+     */
+    @Test
+    void onTypeTriggersCombinesTheFirstAndTheMoreCharacters() {
+        ServerCapabilities caps = new ServerCapabilities();
+        caps.setDocumentOnTypeFormattingProvider(
+                new org.eclipse.lsp4j.DocumentOnTypeFormattingOptions(";", List.of("\n", "}")));
+
+        assertEquals(java.util.Set.of(';', '\n', '}'), LspManager.onTypeTriggersOf(caps));
+    }
+
+    @Test
+    void onTypeTriggersHandlesAProviderWithNoExtraCharacters() {
+        ServerCapabilities caps = new ServerCapabilities();
+        caps.setDocumentOnTypeFormattingProvider(new org.eclipse.lsp4j.DocumentOnTypeFormattingOptions(";"));
+
+        assertEquals(java.util.Set.of(';'), LspManager.onTypeTriggersOf(caps));
+    }
+
+    /** No provider means the feature stays inert for that server — an empty set, never a null or a throw. */
+    @Test
+    void onTypeTriggersIsEmptyWithoutAProvider() {
+        assertTrue(LspManager.onTypeTriggersOf(null).isEmpty());
+        assertTrue(LspManager.onTypeTriggersOf(new ServerCapabilities()).isEmpty());
+    }
+
+    @Test
+    void onTypeTriggersIgnoresBlankEntries() {
+        ServerCapabilities caps = new ServerCapabilities();
+        var options = new org.eclipse.lsp4j.DocumentOnTypeFormattingOptions("");
+        options.setMoreTriggerCharacter(java.util.Arrays.asList(null, "", "}"));
+        caps.setDocumentOnTypeFormattingProvider(options);
+
+        assertEquals(java.util.Set.of('}'), LspManager.onTypeTriggersOf(caps));
+    }
 }

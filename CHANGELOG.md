@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Re-indent as you type** — with a language server running, typing `;`, `}` or Enter re-indents the current
+  line to the server's own convention. Indentation only: it never reformats the line under you. The local
+  auto-indent still acts first, so nothing feels slower and the server just corrects the cases it gets wrong.
+  **Off by default** — enable it in Settings → Code Completion, or via the `view.toggleOnTypeFormatting`
+  palette command.
 - **Go to Implementation, Type Definition and Declaration** — three navigation commands beside Go to
   Definition. **Go to Implementation** jumps from an interface or abstract member to the concrete overrides
   (a lone one jumps straight there, several fill the References tool window, and an implementation inside a

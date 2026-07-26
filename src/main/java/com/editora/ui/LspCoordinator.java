@@ -874,6 +874,7 @@ final class LspCoordinator {
             buffer.setLspTriggerChars(lspManager.triggerCharacters(path));
             buffer.setLspFormatAvailable(lspManager.supportsFormatting(path));
             buffer.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
+            buffer.setLspOnTypeTriggers(lspManager.onTypeTriggerCharacters(path)); // #740
             buffer.setLspCodeActionsAvailable(lspManager.supportsCodeActions(path));
             buffer.setLspRenameAvailable(lspManager.supportsRename(path));
             buffer.setLspImplementationAvailable(lspManager.supportsImplementation(path)); // #735
@@ -895,6 +896,7 @@ final class LspCoordinator {
             buffer.setLspTriggerChars(java.util.Set.of());
             buffer.setLspFormatAvailable(false);
             buffer.setLspRangeFormatAvailable(false);
+            buffer.setLspOnTypeTriggers(java.util.Set.of()); // #740
             buffer.setLspCodeActionsAvailable(false);
             buffer.setLspRenameAvailable(false);
             buffer.setLspImplementationAvailable(false);
@@ -1058,6 +1060,7 @@ final class LspCoordinator {
                         b.setLspTriggerChars(lspManager.triggerCharacters(b.getPath()));
                         b.setLspFormatAvailable(lspManager.supportsFormatting(b.getPath()));
                         b.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(b.getPath()));
+                        b.setLspOnTypeTriggers(lspManager.onTypeTriggerCharacters(b.getPath())); // #740
                         b.setLspCodeActionsAvailable(lspManager.supportsCodeActions(b.getPath()));
                         b.setLspRenameAvailable(lspManager.supportsRename(b.getPath()));
                         b.setLspSignatureTriggerChars(lspManager.signatureTriggerCharacters(b.getPath()));
@@ -1150,6 +1153,16 @@ final class LspCoordinator {
                 int tabSize = host.settings().getTabSize();
                 lspManager.rangeFormatting(
                         buffer.getPath(), sl, sc, el, ec, tabSize, buffer.detectInsertSpaces(tabSize), cb);
+            } else {
+                cb.accept(java.util.List.of());
+            }
+        });
+        // On-type formatting (#740): re-indent the line after a server-declared trigger character.
+        buffer.setLspOnTypeFormatter((line, character, ch, cb) -> {
+            if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
+                int tabSize = host.settings().getTabSize();
+                lspManager.onTypeFormatting(
+                        buffer.getPath(), line, character, ch, tabSize, buffer.detectInsertSpaces(tabSize), cb);
             } else {
                 cb.accept(java.util.List.of());
             }

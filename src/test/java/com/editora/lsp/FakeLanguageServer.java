@@ -21,6 +21,7 @@ import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentHighlightParams;
+import org.eclipse.lsp4j.DocumentOnTypeFormattingParams;
 import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.DocumentSymbolParams;
@@ -85,6 +86,7 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public final List<CodeActionParams> codeActions = new ArrayList<>();
     public final List<DocumentFormattingParams> formattings = new ArrayList<>();
     public final List<DocumentRangeFormattingParams> rangeFormattings = new ArrayList<>();
+    public final List<DocumentOnTypeFormattingParams> onTypeFormattings = new ArrayList<>();
     public final List<ExecuteCommandParams> executedCommands = new ArrayList<>();
     public final List<DidChangeConfigurationParams> configurations = new ArrayList<>();
     public final List<DidChangeWatchedFilesParams> watchedFiles = new ArrayList<>();
@@ -103,6 +105,7 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public List<InlayHint> inlayHintResponse = List.of();
     public SemanticTokens semanticTokensResponse;
     public List<TextEdit> formattingResponse = List.of();
+    public List<TextEdit> onTypeFormattingResponse = List.of();
     public List<Location> definitionResponse = List.of();
     public List<Location> implementationResponse = List.of();
     public List<Location> typeDefinitionResponse = List.of();
@@ -248,6 +251,12 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
             DeclarationParams params) {
         declarations.add(params);
         return failEverything ? failed() : CompletableFuture.completedFuture(Either.forLeft(declarationResponse));
+    }
+
+    @Override
+    public CompletableFuture<List<? extends TextEdit>> onTypeFormatting(DocumentOnTypeFormattingParams params) {
+        onTypeFormattings.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(onTypeFormattingResponse);
     }
 
     @Override

@@ -146,7 +146,8 @@ public enum ConfigSchema {
                             ConfigMigrations::identity), // v83→84: + abbreviations/abbrevMode (additive)
                     Map.entry(84, (Migration) ConfigMigrations::identity), // v84→85: + inlayHints (additive)
                     Map.entry(85, (Migration)
-                            ConfigMigrations::identity))), // v85→86: + copyWithSyntaxHighlighting (additive)
+                            ConfigMigrations::identity), // v85→86: + copyWithSyntaxHighlighting (additive)
+                    Map.entry(86, (Migration) ConfigMigrations::identity))), // v86→87: + lspOnTypeFormatting (additive)
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of()),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),

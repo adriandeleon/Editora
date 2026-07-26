@@ -1060,6 +1060,23 @@ final class LanguageServerSession implements LanguageClient {
         return server.getTextDocumentService().definition(new DefinitionParams(new TextDocumentIdentifier(uri), pos));
     }
 
+    /**
+     * On-type formatting ({@code textDocument/onTypeFormatting}, #740) — the edits the server would apply
+     * having just seen {@code ch} typed at {@code pos}. Empty when not ready or on error.
+     */
+    CompletableFuture<List<org.eclipse.lsp4j.TextEdit>> onTypeFormatting(
+            String uri, Position pos, String ch, org.eclipse.lsp4j.FormattingOptions options) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        var params =
+                new org.eclipse.lsp4j.DocumentOnTypeFormattingParams(new TextDocumentIdentifier(uri), options, pos, ch);
+        return server.getTextDocumentService()
+                .onTypeFormatting(params)
+                .<List<org.eclipse.lsp4j.TextEdit>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
+    }
+
     /** Implementations of the symbol at a position ({@code textDocument/implementation}) — the concrete
      *  overrides of an interface/abstract member, or the implementors of a type (#735). */
     CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> implementation(

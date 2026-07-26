@@ -206,6 +206,7 @@ public class SettingsWindow {
     private CheckBox completionDocCheck;
     private CheckBox semanticHighlightCheck;
     private CheckBox inlayHintsCheck;
+    private CheckBox onTypeFormattingCheck;
     private CheckBox spellCheckBox;
     private ComboBox<String> spellLanguageCombo;
     /** The Personal Dictionary list on the Spell Check page; refreshed from {@code dictionary.txt} on show. */
@@ -960,6 +961,7 @@ public class SettingsWindow {
         completionDocCheck = viewCheck(tr("settings.completionDoc"), Settings::setCompletionDoc);
         semanticHighlightCheck = viewCheck(tr("settings.semanticHighlight"), Settings::setSemanticHighlight);
         inlayHintsCheck = viewCheck(tr("settings.inlayHints"), Settings::setInlayHints);
+        onTypeFormattingCheck = viewCheck(tr("settings.onTypeFormatting"), Settings::setLspOnTypeFormatting);
         // The per-source toggles are only meaningful while the master switch is on.
         autocompleteCheck.selectedProperty().addListener((obs, was, now) -> {
             autocompleteProseCheck.setDisable(!now);
@@ -2769,6 +2771,13 @@ public class SettingsWindow {
                 inlayHintsCheck,
                 "inlay hints parameter names inferred types lsp annotations");
         inlayHintsCheck.disableProperty().bind(lspCheck.selectedProperty().not());
+        row(
+                p,
+                Category.COMPLETION,
+                completion,
+                onTypeFormattingCheck,
+                "on-type formatting reindent semicolon brace enter lsp");
+        onTypeFormattingCheck.disableProperty().bind(lspCheck.selectedProperty().not());
         // Semantic highlighting comes from LSP: disable it (+ explain why) when LSP is off.
         semanticHighlightCheck
                 .disableProperty()
@@ -6284,6 +6293,7 @@ public class SettingsWindow {
             completionDocCheck.setSelected(settings.isCompletionDoc());
             semanticHighlightCheck.setSelected(settings.isSemanticHighlight());
             inlayHintsCheck.setSelected(settings.isInlayHints());
+            onTypeFormattingCheck.setSelected(settings.isLspOnTypeFormatting());
             pdfLineNumbersCheck.setSelected(settings.isPdfLineNumbers());
             pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
             pdfPageSizeCombo.setValue(settings.getPdfPageSize());
@@ -6855,6 +6865,7 @@ public class SettingsWindow {
             completionDocCheck.setSelected(s.isCompletionDoc());
             semanticHighlightCheck.setSelected(s.isSemanticHighlight());
             inlayHintsCheck.setSelected(s.isInlayHints());
+            onTypeFormattingCheck.setSelected(s.isLspOnTypeFormatting());
         } finally {
             loading = prev;
         }
