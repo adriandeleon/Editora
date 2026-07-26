@@ -2,6 +2,9 @@ package com.editora.ui;
 
 import java.util.List;
 
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -11,10 +14,12 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -22,6 +27,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
+import com.editora.github.GitHubItemFilter;
 import com.editora.github.IssueListParser.Issue;
 import com.editora.github.PrListParser.PullRequest;
 import com.editora.github.RunListParser.RunState;
@@ -37,6 +43,10 @@ import static com.editora.i18n.Messages.tr;
  * for a PR and view-log / rerun / rerun-failed / cancel for a run, plus open-on-GitHub / copy-URL. Purely a
  * view — the controller (through {@code GitHubCoordinator}) runs {@code gh}. Registered default-hidden and
  * available only inside a GitHub repo that has open PRs/issues or workflow runs.
+ *
+ * <p>All three segments share one filter field and one keyboard flow (the {@link GitLogPanel} shape): typing
+ * narrows the visible rows via {@link GitHubItemFilter}, {@code C-n}/{@code C-p} (and bare {@code n}/{@code p},
+ * which are free — the list holds no text input) move the selection, and Enter activates.
  */
 public final class GitHubPanel extends VBox implements ToolWindowContent {
 
@@ -81,6 +91,14 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     private final ToggleButton prsToggle = new ToggleButton(tr("github.panel.prs"));
     private final ToggleButton issuesToggle = new ToggleButton(tr("github.panel.issues"));
     private final ToggleButton runsToggle = new ToggleButton(tr("github.panel.runs"));
+    private final TextField filterField = new TextField();
+    /**
+     * Unfiltered rows for the showing segment; {@link #list} renders a {@link FilteredList} view over this,
+     * so filtering keeps object identity (a selected row survives re-filtering while it still matches).
+     */
+    private final ObservableList<Object> allItems = FXCollections.observableArrayList();
+
+    private final FilteredList<Object> visibleItems = new FilteredList<>(allItems, i -> true);
     private final ListView<Object> list = new ListView<>();
     private final Label placeholder = new Label(tr("github.panel.noPrs"));
     private final VBox loading = buildLoading();
@@ -109,21 +127,15 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         }
         // A toggle group lets a selected button be re-clicked to deselect; keep exactly one selected.
         prsToggle.setOnAction(e -> {
-            prsToggle.setSelected(true);
-            placeholder.setText(tr("github.panel.noPrs"));
-            beginLoading(Mode.PRS);
+            selectSegment(Mode.PRS);
             actions.showPrs();
         });
         issuesToggle.setOnAction(e -> {
-            issuesToggle.setSelected(true);
-            placeholder.setText(tr("github.panel.noIssues"));
-            beginLoading(Mode.ISSUES);
+            selectSegment(Mode.ISSUES);
             actions.showIssues();
         });
         runsToggle.setOnAction(e -> {
-            runsToggle.setSelected(true);
-            placeholder.setText(tr("github.panel.noRuns"));
-            beginLoading(Mode.RUNS);
+            selectSegment(Mode.RUNS);
             actions.showRuns();
         });
 
@@ -135,7 +147,20 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         toolbar.getStyleClass().add("git-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
+        // Filter row: narrows the showing segment's rows as you type, with a trailing clear ("✕") button.
+        // Typing here can't clash with the list's bare n/p nav — that handler is on the ListView, not the field.
+        filterField.setPromptText(tr("github.panel.filterPrompt"));
+        filterField.getStyleClass().add("git-log-filter");
+        filterField.textProperty().addListener((o, w, n) -> applyFilter(n));
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+        Button clearFilter = ClearableField.clearButton(filterField);
+        HBox filterRow = new HBox(4, filterField, clearFilter);
+        filterRow.getStyleClass().add("project-filter-bar");
+        filterRow.setAlignment(Pos.CENTER_LEFT);
+        FilterFieldNav.install(filterField, list, this::activateSelected);
+
         list.getStyleClass().add("git-tree");
+        list.setItems(visibleItems);
         list.setCellFactory(v -> new ItemCell());
         list.setPlaceholder(placeholder);
         placeholder.getStyleClass().add("tool-window-placeholder");
@@ -151,9 +176,43 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
                 e.consume();
             }
         });
+        installListNav(list);
         VBox.setVgrow(list, Priority.ALWAYS);
 
-        getChildren().setAll(toolbar, list);
+        getChildren().setAll(toolbar, filterRow, list);
+    }
+
+    /** Applies the filter box to the showing segment's rows. */
+    private void applyFilter(String query) {
+        visibleItems.setPredicate(item -> GitHubItemFilter.matches(item, query));
+    }
+
+    /**
+     * Emacs-style {@code n}/{@code p} (bare, and with Control) move the selection — the list holds no text
+     * input, so the bare letters are free. Arrow keys keep working via the ListView's own behavior.
+     */
+    private static void installListNav(ListView<?> list) {
+        list.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
+            if (e.isAltDown() || e.isMetaDown() || e.isShiftDown()) {
+                return;
+            }
+            int delta =
+                    switch (e.getCode()) {
+                        case N -> 1;
+                        case P -> -1;
+                        default -> 0;
+                    };
+            if (delta == 0) {
+                return;
+            }
+            int size = list.getItems().size();
+            if (size > 0) {
+                int i = Math.clamp(list.getSelectionModel().getSelectedIndex() + delta, 0, size - 1);
+                list.getSelectionModel().clearAndSelect(i);
+                list.scrollTo(i);
+            }
+            e.consume();
+        });
     }
 
     private static Button iconButton(javafx.scene.Node icon, String tip, Runnable action) {
@@ -178,12 +237,37 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     }
 
     /**
+     * Switches segments: selects the toggle, resets the empty-list text, and drops any filter — a query
+     * typed against pull requests is meaningless for runs, and leaving it applied would silently hide the
+     * rows that just arrived.
+     */
+    private void selectSegment(Mode mode) {
+        switch (mode) {
+            case PRS -> {
+                prsToggle.setSelected(true);
+                placeholder.setText(tr("github.panel.noPrs"));
+            }
+            case ISSUES -> {
+                issuesToggle.setSelected(true);
+                placeholder.setText(tr("github.panel.noIssues"));
+            }
+            case RUNS -> {
+                runsToggle.setSelected(true);
+                placeholder.setText(tr("github.panel.noRuns"));
+            }
+        }
+        filterField.clear(); // also resets the predicate, via the text listener
+        beginLoading(mode);
+    }
+
+    /**
      * Clears the stale list and shows a spinner while {@code gh} runs — a {@code gh pr list} round-trip takes
-     * seconds, and leaving the previous segment's rows on screen reads as a frozen window.
+     * seconds, and leaving the previous segment's rows on screen reads as a frozen window. Keeps the filter:
+     * a plain refresh re-fetches what the user is already looking at.
      */
     private void beginLoading(Mode mode) {
         requested = mode;
-        list.getItems().clear();
+        allItems.clear();
         list.setPlaceholder(loading);
     }
 
@@ -206,9 +290,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
 
     /** Selects the Runs segment (used by the {@code github.showRuns} command). */
     public void selectRuns() {
-        runsToggle.setSelected(true);
-        placeholder.setText(tr("github.panel.noRuns"));
-        beginLoading(Mode.RUNS);
+        selectSegment(Mode.RUNS);
     }
 
     /** Shows the spinner for the segment currently selected — used by a refresh that isn't a segment switch. */
@@ -222,7 +304,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             return;
         }
         prsToggle.setSelected(true);
-        list.getItems().setAll(prs);
+        allItems.setAll(prs);
     }
 
     /** Replaces the list with issues. */
@@ -231,7 +313,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             return;
         }
         issuesToggle.setSelected(true);
-        list.getItems().setAll(issues);
+        allItems.setAll(issues);
     }
 
     /** Replaces the list with workflow runs. */
@@ -241,7 +323,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         }
         runsToggle.setSelected(true);
         placeholder.setText(tr("github.panel.noRuns"));
-        list.getItems().setAll(runs);
+        allItems.setAll(runs);
     }
 
     private void activateSelected() {
@@ -260,13 +342,17 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /**
+     * Opens with focus in the filter field — the same flow as the Project / Structure / Bookmarks / Notes
+     * windows — with row 0 pre-selected so {@code C-n}/Down/Enter act on something straight away.
+     */
     @Override
     public void focusFirstItem() {
         if (!list.getItems().isEmpty() && list.getSelectionModel().isEmpty()) {
             list.getSelectionModel().select(0);
             list.scrollTo(0);
         }
-        list.requestFocus();
+        filterField.requestFocus();
     }
 
     private final class ItemCell extends ListCell<Object> {
