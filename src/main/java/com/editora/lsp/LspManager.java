@@ -2335,6 +2335,66 @@ public final class LspManager {
         }
     }
 
+    /**
+     * Whether jdtls considers {@code file} a <em>test</em> source ({@code java.project.isTestFile}, #745).
+     *
+     * <p>Answered from the Eclipse project model — it knows which source folders are test folders — where
+     * {@code test/JavaTestScanner} can only guess syntactically from annotations. Delivers {@code null}
+     * (not {@code false}) when there's no session or the command fails, so the caller keeps its own answer
+     * rather than treating "don't know" as "not a test".
+     */
+    public void isTestFile(Path file, Consumer<Boolean> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || file == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        executeCommand(file, "java.project.isTestFile", List.of(uri(file)), (result, error) -> {
+            Boolean answer = error != null ? null : asBoolean(result);
+            cb.accept(answer);
+        });
+    }
+
+    /**
+     * Resolves one stack-trace line to the URI it points at
+     * ({@code java.project.resolveStackTraceLocation}, #744).
+     *
+     * <p>jdtls resolves it against the real classpath, so unlike the regex+filesystem walk in
+     * {@code MainController.resolveRunLinkFile} it can name a frame inside a dependency or the JDK — which
+     * comes back as a {@code jdt://} URI the class-file viewer (#665) already opens. Delivers null when
+     * there's no session, the command fails, or the server can't place the frame.
+     *
+     * @param traceLine the console line verbatim, e.g. {@code "\tat demo.Person.of(Person.java:12)"}
+     */
+    public void resolveStackTraceLocation(Path anchorFile, String traceLine, Consumer<String> cb) {
+        LanguageServerSession s = sessionFor(anchorFile);
+        if (s == null || traceLine == null || traceLine.isBlank()) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        // The second argument is the project-name filter; an empty list means "search them all", which is
+        // what we want — the console line doesn't say which project it came from.
+        executeCommand(
+                anchorFile,
+                "java.project.resolveStackTraceLocation",
+                List.of(traceLine, List.of()),
+                (result, error) -> {
+                    String uri = error != null ? null : rawStringResult(result);
+                    cb.accept(uri == null || uri.isBlank() ? null : uri);
+                });
+    }
+
+    /** A command result that is (or wraps) a boolean, else null. */
+    private static Boolean asBoolean(Object raw) {
+        if (raw instanceof Boolean b) {
+            return b;
+        }
+        if (raw instanceof com.google.gson.JsonPrimitive p && p.isBoolean()) {
+            return p.getAsBoolean();
+        }
+        return null;
+    }
+
     public void classFileContents(Path anchorFile, String jdtUri, Consumer<String> cb) {
         LanguageServerSession s = sessionFor(anchorFile);
         if (s == null || jdtUri == null) {

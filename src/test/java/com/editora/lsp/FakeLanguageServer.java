@@ -105,6 +105,9 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public List<InlayHint> inlayHintResponse = List.of();
     public SemanticTokens semanticTokensResponse;
     public List<TextEdit> formattingResponse = List.of();
+    /** The value {@code workspace/executeCommand} answers with (null unless a test sets it). */
+    public Object executeCommandResponse;
+
     public List<TextEdit> onTypeFormattingResponse = List.of();
     public List<Location> definitionResponse = List.of();
     public List<Location> implementationResponse = List.of();
@@ -322,6 +325,6 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     @Override
     public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) {
         executedCommands.add(params);
-        return CompletableFuture.completedFuture(null);
+        return failEverything ? failed() : CompletableFuture.completedFuture(executeCommandResponse);
     }
 }

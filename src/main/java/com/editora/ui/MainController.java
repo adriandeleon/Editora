@@ -4719,6 +4719,52 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  path opens directly; a bare Java file name resolves against the open tabs, then the run file's
      *  directory, then the active project root's top level. */
     private void openRunLink(com.editora.run.StackTraceLinks.Link link) {
+        // Ask the Java server first when one is running (#744): it resolves the frame against the real
+        // classpath, so it can place a frame inside a dependency or the JDK — which the local
+        // regex + filesystem walk below can never do, because there is no such file in the project.
+        Path anchor = lspStackTraceAnchor();
+        if (anchor != null && link.raw() != null) {
+            lspManager.resolveStackTraceLocation(anchor, link.raw(), uri -> {
+                if (uri == null || !openResolvedFrame(anchor, uri, link)) {
+                    openRunLinkLocally(link); // no answer, or an answer we can't open — heuristic as before
+                }
+            });
+            return;
+        }
+        openRunLinkLocally(link);
+    }
+
+    /** The file whose session answers stack-trace resolution: the active buffer if the Java server serves
+     *  it, else null (which keeps the local heuristic as the only path — e.g. a Python traceback). */
+    private Path lspStackTraceAnchor() {
+        if (!lspEnabled()) {
+            return null;
+        }
+        EditorBuffer b = activeBuffer();
+        Path path = b == null ? null : b.getPath();
+        return path != null && lspManager.isManaged(path) && "java".equals(b.getLanguage()) ? path : null;
+    }
+
+    /** Opens a server-resolved frame URI; false when it names something we can't open, so the caller falls
+     *  back. A {@code jdt://} answer is a library frame and opens as read-only class-file source (#665). */
+    private boolean openResolvedFrame(Path anchor, String uri, com.editora.run.StackTraceLinks.Link link) {
+        if (uri.startsWith("jdt:")) {
+            lspCoordinator.openLibraryFrame(anchor, uri, link.line() - 1);
+            return true;
+        }
+        try {
+            Path file = Path.of(java.net.URI.create(uri));
+            if (java.nio.file.Files.isRegularFile(file)) {
+                openAndGoto(file, link.line() - 1, 0); // console lines are 1-based
+                return true;
+            }
+        } catch (RuntimeException notAUsableUri) {
+            return false;
+        }
+        return false;
+    }
+
+    private void openRunLinkLocally(com.editora.run.StackTraceLinks.Link link) {
         Path resolved = resolveRunLinkFile(link.file());
         if (resolved == null) {
             setStatus(tr("status.run.linkNotFound", link.file()));
@@ -4808,11 +4854,53 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Pushes the JUnit test-gutter gate to a buffer (Test Runner on + not Simple mode + local + JVM project). */
     private void applyTestGutter(EditorBuffer buffer) {
-        buffer.setTestGutterEnabled(config.getSettings().isTestRunner()
+        boolean eligible = config.getSettings().isTestRunner()
                 && !simpleModeActive()
                 && isLocalBuffer(buffer)
-                && jvmBuildDetected());
+                && jvmBuildDetected();
+        buffer.setTestGutterEnabled(eligible);
+        if (eligible) {
+            refineTestGutterWithServer(buffer); // #745 — asynchronous; only ever turns the gutter OFF
+        }
     }
+
+    /**
+     * Confirms the test gutter against jdtls's project model ({@code java.project.isTestFile}, #745).
+     *
+     * <p>{@code JavaTestScanner} decides syntactically — a class carrying {@code @Test} methods — which is
+     * right nearly always but can't see source roots, so it decorates a {@code src/main/java} class that
+     * happens to carry such an annotation. The server knows which folders are test folders.
+     *
+     * <p>Deliberately a <b>refinement, not a gate</b>: the scanner's answer is applied immediately and this
+     * only ever removes the gutter, and only on a definite {@code false}. A null (no session, command
+     * failed, server still starting) leaves the scanner's answer alone, so the gutter never disappears
+     * merely because the server isn't ready. Cached per path — this runs on every tab switch.
+     */
+    private void refineTestGutterWithServer(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        if (path == null || !lspEnabled() || !lspManager.isManaged(path)) {
+            return;
+        }
+        Boolean cached = testFileByPath.get(path);
+        if (cached != null) {
+            if (!cached) {
+                buffer.setTestGutterEnabled(false);
+            }
+            return;
+        }
+        lspManager.isTestFile(path, isTest -> {
+            if (isTest == null) {
+                return; // "don't know" — keep the scanner's answer
+            }
+            testFileByPath.put(path, isTest);
+            if (!isTest && buffer.getPath() == path) {
+                buffer.setTestGutterEnabled(false);
+            }
+        });
+    }
+
+    /** jdtls's verdict on whether a path is a test source (#745); session-scoped, cleared on LSP restart. */
+    private final Map<Path, Boolean> testFileByPath = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Gutter test ▶ / {@code test.runAtCaret}: run one class/method via the detected JVM build tool. */
     private void runSingleTest(com.editora.test.JavaTestScanner.TestTarget target) {

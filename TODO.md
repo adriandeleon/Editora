@@ -3,6 +3,17 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **jdtls stack-trace resolution + test-file detection** (#744, #745) — two `java.project.*` commands,
+      both wired as **refinements with fallback** rather than replacements. `resolveStackTraceLocation` takes
+      the **whole console line** (not the filename parsed out of it) and resolves against the real classpath,
+      so a frame inside a dependency or the JDK comes back as a `jdt://` URI the class-file viewer (#665)
+      already opens — `StackTraceLinks.Link` gained a `raw` component to carry the line. Tried first only
+      when the active buffer is java-managed; anything unresolved falls through to the existing
+      `RunnerPaths`/filesystem walk, so Python and Node traces are untouched. `isTestFile` answers **null**
+      rather than false when it can't tell, and `refineTestGutterWithServer` only ever turns the gutter
+      **off** — a false-on-unknown would strip the gutter from every test file whenever the server is slow or
+      absent. Cached per path (it runs on every tab switch). Both signatures were read off the jdtls jar with
+      `javap` rather than guessed.
 - [x] **LSP on-type formatting** (#740) — `textDocument/onTypeFormatting` on the server's own trigger set
       (`LspManager.onTypeTriggersOf` unions the spec's mandatory `firstTriggerCharacter` with the optional
       `moreTriggerCharacter` list — reading only the first would leave `}` and Enter unhandled on jdtls,

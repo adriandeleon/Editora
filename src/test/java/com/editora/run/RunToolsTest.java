@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** Pure helpers behind the Run console: version parse, argv tokenizer, stack-trace links. */
@@ -61,5 +62,38 @@ class RunToolsTest {
         assertNull(StackTraceLinks.parse("total 4 (compiled in 1.2s)"));
         assertNull(StackTraceLinks.parse(""));
         assertNull(StackTraceLinks.parse(null));
+    }
+
+    /**
+     * The whole console line is kept alongside the parsed pieces: jdtls's
+     * {@code java.project.resolveStackTraceLocation} resolves a frame from the <em>line</em>, not from the
+     * file name we picked out of it, and it can place frames this regex never could — inside a dependency
+     * or the JDK (#744).
+     */
+    @Test
+    void aParsedLinkKeepsTheWholeConsoleLine() {
+        String line = "\tat demo.Person.of(Person.java:12)";
+
+        StackTraceLinks.Link link = StackTraceLinks.parse(line);
+
+        assertNotNull(link);
+        assertEquals(line, link.raw());
+        assertEquals("Person.java", link.file());
+        assertEquals(12, link.line());
+    }
+
+    @Test
+    void everyRecognizedFormatCarriesItsRawLine() {
+        String python = "  File \"/src/app.py\", line 7, in main";
+        String node = "    at run (/srv/app/index.js:44:9)";
+
+        assertEquals(python, StackTraceLinks.parse(python).raw());
+        assertEquals(node, StackTraceLinks.parse(node).raw());
+    }
+
+    /** The two-arg form still works for callers that never needed the original line. */
+    @Test
+    void theShortLinkFormLeavesTheRawLineNull() {
+        assertNull(new StackTraceLinks.Link("A.java", 3).raw());
     }
 }
