@@ -7,11 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **Multi-caret movement chords** — with multiple cursors, the Emacs movement chords (`C-f`, `C-b`, `C-n`,
-  `C-p`, `C-a`, `C-e`, `M-f`, `M-b`) now move **every** caret, not just the primary one — matching how the
-  arrow keys already behaved. (Document/paragraph/sentence/page motions stay primary-only.)
+## [0.9.10] - 2026-07-26
 
 ### Added
 
@@ -86,45 +82,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   class the build declares (`mainClass = '…'`, `mainClass.set("…")`, or the legacy `mainClassName`), so the
   config matches what `gradle run` would launch instead of whichever file is open.
 
-### Changed
-
-- **Language-server test coverage** — the two classes that build every request Editora sends to a language
-  server were reachable only through a forked subprocess, so nothing checked what actually goes on the wire.
-  They now have in-process test seams and 121 new tests covering the wire format, the capabilities we declare,
-  session lifetime (idle eviction, crash recovery, per-project workspaces), every request/response round-trip,
-  the per-buffer gating, diagnostics routing, and the rename/quick-fix path that writes and moves files —
-  including regressions for the four defects found in the recent audit. No behaviour change; this is why the
-  next one gets caught by the suite instead of by you.
-
-### Fixed
-
-- **The Maven-aware `pom.xml` language server now actually starts** — it was enabled by default, offered by
-  the in-app installer, shown as configured in Settings and reported found by Doctor, yet every `pom.xml`
-  silently fell back to the plain XML server. Its configured command was the one that never reached the LSP
-  layer, so the server looked uninstalled no matter what you did.
-
-- **Inlay hints appear** — they never did. The request asked for a range ending one line past the end of the
-  file, and the language server answers that with an empty result rather than an error, so the editor could
-  not tell it apart from "this file has no hints". Requests are now clamped to the document. (The same
-  off-by-one applied to semantic-token range requests.)
-
-- **Signature help now tells the server which character triggered it** — typing `(` or `,` was reported as a
-  plain manual invocation, and a refresh while the popup was open was not marked as a re-trigger. Servers that
-  use either to decide what to show (and to keep the highlighted overload stable while you type arguments) now
-  get the real picture.
-
-- **Java debugging no longer stays off when your language server already includes it** — some jdtls
-  distributions (Homebrew's, for one) ship and load the java-debug plugin themselves. Editora only looked for
-  its own copy of that plugin on disk, so it reported debugging as unavailable — which also pushed *Run Main
-  Class* onto the slower build-tool fallback. It now recognises a language server that provides the debug
-  commands, so Java Run/Debug work with no second copy to install.
-
-- **Multi-module Maven Run without the language server** — running a project main class via the Maven
-  classpath fallback now resolves sibling-module dependencies in a reactor build (it runs from the reactor
-  root with `-pl <module> -am` instead of only the module), so a submodule that depends on an uninstalled
-  sibling runs correctly.
-
-### Added
 
 - **Debug via build tool** — debug a Gradle or Spring Boot app by launching it under a suspended JVM
   (Gradle `run`/`bootRun --debug-jvm`, Maven `spring-boot:run` with a JDWP agent) and attaching the debugger
@@ -313,6 +270,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   search and Replace All to it automatically; single-line selections keep seeding the query as before, so the
   two never fight over the same gesture. The scope follows its content as the buffer is edited.
 
+### Changed
+
+- **Language-server test coverage** — the two classes that build every request Editora sends to a language
+  server were reachable only through a forked subprocess, so nothing checked what actually goes on the wire.
+  They now have in-process test seams and 121 new tests covering the wire format, the capabilities we declare,
+  session lifetime (idle eviction, crash recovery, per-project workspaces), every request/response round-trip,
+  the per-buffer gating, diagnostics routing, and the rename/quick-fix path that writes and moves files —
+  including regressions for the four defects found in the recent audit. No behaviour change; this is why the
+  next one gets caught by the suite instead of by you.
+
 ### Performance
 
 - **Incremental document sync (LSP).** For servers that accept incremental changes (jdtls, pyright,
@@ -353,6 +320,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window before the caret, keeping large buffers responsive. (#663)
 
 ### Fixed
+
+- **Multi-caret movement chords** — with multiple cursors, the Emacs movement chords (`C-f`, `C-b`, `C-n`,
+  `C-p`, `C-a`, `C-e`, `M-f`, `M-b`) now move **every** caret, not just the primary one — matching how the
+  arrow keys already behaved. (Document/paragraph/sentence/page motions stay primary-only.)
+
+
+- **The Maven-aware `pom.xml` language server now actually starts** — it was enabled by default, offered by
+  the in-app installer, shown as configured in Settings and reported found by Doctor, yet every `pom.xml`
+  silently fell back to the plain XML server. Its configured command was the one that never reached the LSP
+  layer, so the server looked uninstalled no matter what you did.
+
+- **Inlay hints appear** — they never did. The request asked for a range ending one line past the end of the
+  file, and the language server answers that with an empty result rather than an error, so the editor could
+  not tell it apart from "this file has no hints". Requests are now clamped to the document. (The same
+  off-by-one applied to semantic-token range requests.)
+
+- **Signature help now tells the server which character triggered it** — typing `(` or `,` was reported as a
+  plain manual invocation, and a refresh while the popup was open was not marked as a re-trigger. Servers that
+  use either to decide what to show (and to keep the highlighted overload stable while you type arguments) now
+  get the real picture.
+
+- **Java debugging no longer stays off when your language server already includes it** — some jdtls
+  distributions (Homebrew's, for one) ship and load the java-debug plugin themselves. Editora only looked for
+  its own copy of that plugin on disk, so it reported debugging as unavailable — which also pushed *Run Main
+  Class* onto the slower build-tool fallback. It now recognises a language server that provides the debug
+  commands, so Java Run/Debug work with no second copy to install.
+
+- **Multi-module Maven Run without the language server** — running a project main class via the Maven
+  classpath fallback now resolves sibling-module dependencies in a reactor build (it runs from the reactor
+  root with `-pl <module> -am` instead of only the module), so a submodule that depends on an uninstalled
+  sibling runs correctly.
+
 
 - **Format Document no longer mangles the file.** A multi-edit format was applied top-to-bottom using
   offsets computed against the *original* text, so the first edit that changed a line's length shifted
