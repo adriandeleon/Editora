@@ -20,6 +20,7 @@ import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.css.PseudoClass;
 import javafx.fxml.FXML;
+import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.SnapshotParameters;
@@ -2120,8 +2121,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                         }
                     }
                 }
-                // A pin reorder removes+re-adds the same tab; skip cleanup so it isn't forgotten.
-                if (c.wasRemoved() && !reordering) {
+                // A pin reorder removes+re-adds the same tab, and so does moving one between editor groups
+                // (EditorArea.isRelocating) — in both cases the tab is not closing, so skip the cleanup or
+                // the buffer would be disposed and its language server shut down out from under a live tab.
+                if (c.wasRemoved() && !reordering && !editorArea.isRelocating()) {
                     mru.removeAll(c.getRemoved());
                     pinned.removeAll(c.getRemoved());
                     // Release each closed buffer's daemon executor threads (markdown-preview +
@@ -5839,6 +5842,36 @@ public class MainController implements com.editora.mcp.McpBridge {
             refreshSplitButtons();
             setStatus(tr("status.editorUnsplit"));
         }
+    }
+
+    /**
+     * Moves the active tab into a new editor group beside its own, so two different files show at once.
+     * Refused with a status when there is nothing to move or only one tab in the group — moving the only
+     * tab would empty its group, collapse it, and land back where it started.
+     */
+    private void splitEditorGroup(Orientation orientation) {
+        if (editorArea.splitActive(orientation)) {
+            setStatus(tr("status.editorGroupSplit"));
+        } else {
+            setStatus(tr("status.editorGroupSplitUnavailable"));
+        }
+    }
+
+    /** Moves the active tab to the next editor group, splitting first if the area is not split yet. */
+    private void moveTabToNextGroup() {
+        setStatus(tr(editorArea.moveActiveToNextGroup() ? "status.editorGroupMoved" : "status.editorGroupNone"));
+    }
+
+    /** Moves keyboard focus to the next editor group. */
+    private void focusNextEditorGroup() {
+        if (!editorArea.focusNextGroup()) {
+            setStatus(tr("status.editorGroupNotSplit"));
+        }
+    }
+
+    /** Merges every editor group back into one. */
+    private void unsplitEditorGroups() {
+        setStatus(tr(editorArea.unsplit() ? "status.editorGroupsMerged" : "status.editorGroupNotSplit"));
     }
 
     /**
@@ -14289,6 +14322,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("view.splitVertical", this::onSplitVertical));
         registry.register(Command.of("view.splitHorizontal", this::onSplitHorizontal));
         registry.register(Command.of("view.unsplit", this::unsplit));
+        // Editor *groups* — a different axis from the two commands above, which split the active buffer into
+        // two views of the same document. These move a tab into its own group so two different files show
+        // side by side.
+        registry.register(Command.of("view.splitEditorRight", () -> splitEditorGroup(Orientation.HORIZONTAL)));
+        registry.register(Command.of("view.splitEditorDown", () -> splitEditorGroup(Orientation.VERTICAL)));
+        registry.register(Command.of("view.moveToNextGroup", this::moveTabToNextGroup));
+        registry.register(Command.of("view.focusNextGroup", this::focusNextEditorGroup));
+        registry.register(Command.of("view.unsplitEditorGroups", this::unsplitEditorGroups));
         registry.register(
                 Command.of("view.markdownEditor", () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.EDITOR)));
         registry.register(

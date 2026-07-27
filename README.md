@@ -168,6 +168,12 @@ Editora is built with the help of AI coding tools.
   selection or whole file (sort ascending/descending — numeric-aware and case-insensitive — sort by length,
   reverse, shuffle, remove duplicate/empty lines, trim trailing whitespace). All individual palette commands,
   or one filterable picker: "Edit: String Manipulation…" (`C-c x`).
+- **Editor groups (two files side by side)** — split the editor area into independent groups, each with its
+  own tabs and its own selection, so a header can sit beside its implementation. *Split Editor Group Right* /
+  *Down* move the current file into a new group, *Move File to Next Editor Group* shifts it along, *Focus
+  Next Editor Group* moves the keyboard between them, and *Merge Editor Groups* puts it all back; emptying a
+  group collapses it. Distinct from *Split Editor*, which shows two views of the **same** file — and the two
+  combine.
 - **Multiple cursors & column selection** — VS Code–style multi-caret editing: add a caret at the next
   occurrence of the selection / above / below, or **Select All Occurrences** (`Ctrl+Shift+L` in the
   VSCode/Sublime keymaps) to put one on every occurrence of the selection (or the word at the caret) at
