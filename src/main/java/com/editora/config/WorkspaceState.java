@@ -15,8 +15,13 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class WorkspaceState {
 
-    /** Current on-disk schema version of {@code workspace-state.json} / {@code projects/<id>.json}. */
-    public static final int SCHEMA_VERSION = 1;
+    /**
+     * Current on-disk schema version of {@code workspace-state.json} / {@code projects/<id>.json}.
+     *
+     * <p>v1 → v2 added the editor-group layout ({@link #getEditorLayout()} plus {@code OpenFile.group}). Both
+     * are additive with defaults that reproduce the old single-group behaviour, so the migration is identity.
+     */
+    public static final int SCHEMA_VERSION = 2;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -75,6 +80,9 @@ public class WorkspaceState {
 
     /** Files open at last exit, in tab order. */
     private List<OpenFile> openFiles = new ArrayList<>();
+
+    /** The editor-area split tree; null when unsplit (and for any session saved before groups existed). */
+    private EditorGroupLayout editorLayout;
     /** Absolute path of the tab that was active at last exit ("" if none/untitled). */
     private String activeFile = "";
 
@@ -86,18 +94,27 @@ public class WorkspaceState {
     private double windowHeight;
     private boolean windowMaximized;
 
-    /** One persisted open file: its absolute path, the caret offset to restore, and whether it was pinned. */
+    /**
+     * One persisted open file: its absolute path, the caret offset to restore, whether it was pinned, and
+     * which editor group held it.
+     */
     public static class OpenFile {
         private String path = "";
         private int caret;
         private boolean pinned;
+        private int group;
 
         public OpenFile() {}
 
         public OpenFile(String path, int caret, boolean pinned) {
+            this(path, caret, pinned, 0);
+        }
+
+        public OpenFile(String path, int caret, boolean pinned, int group) {
             this.path = path;
             this.caret = caret;
             this.pinned = pinned;
+            this.group = Math.max(0, group);
         }
 
         public String getPath() {
@@ -122,6 +139,19 @@ public class WorkspaceState {
 
         public void setPinned(boolean pinned) {
             this.pinned = pinned;
+        }
+
+        /**
+         * Which editor group holds this file, as the group's ordinal in depth-first order over
+         * {@link WorkspaceState#getEditorLayout()}. Defaults to 0, so a session written before editor groups
+         * existed — or one saved while unsplit — restores into the single group with no special case.
+         */
+        public int getGroup() {
+            return group;
+        }
+
+        public void setGroup(int group) {
+            this.group = Math.max(0, group);
         }
     }
 
@@ -307,6 +337,18 @@ public class WorkspaceState {
 
     public void setOpenFiles(List<OpenFile> openFiles) {
         this.openFiles = openFiles == null ? new ArrayList<>() : openFiles;
+    }
+
+    /**
+     * The editor area's split layout, or {@code null} when it was a single group — which is also what an
+     * older session file yields, so the unsplit case needs no migration. See {@link EditorGroupLayout}.
+     */
+    public EditorGroupLayout getEditorLayout() {
+        return editorLayout;
+    }
+
+    public void setEditorLayout(EditorGroupLayout editorLayout) {
+        this.editorLayout = editorLayout;
     }
 
     public String getActiveFile() {

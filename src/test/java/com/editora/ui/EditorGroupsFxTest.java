@@ -1,8 +1,12 @@
 package com.editora.ui;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import javafx.geometry.Orientation;
 import javafx.scene.control.Tab;
 
+import com.editora.config.EditorGroupLayout;
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -12,6 +16,7 @@ import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -192,6 +197,92 @@ class EditorGroupsFxTest {
 
         assertEquals(2, groupCount(), "two groups left");
         assertEquals(2, depth(), "the emptied branch collapsed away instead of lingering with one child");
+
+        cleanUp();
+    }
+
+    /** An unsplit area writes no layout at all, so an unsplit session file is byte-identical to before. */
+    @Test
+    void anUnsplitAreaSavesNoLayout() throws Exception {
+        addBuffer();
+        addBuffer();
+
+        assertNull(FxTestSupport.callOnFx(() -> area.snapshotLayout()), "nothing to record while unsplit");
+
+        cleanUp();
+    }
+
+    /**
+     * The round trip a restart performs: save the shape, rebuild it, put each file back in the group its
+     * saved index names, and reapply the per-group selections. Exercised at the {@code EditorArea} level so
+     * the layout format itself is under test, not just the controller's use of it.
+     */
+    @Test
+    void theSplitLayoutSurvivesASaveAndRestore() throws Exception {
+        addBuffer();
+        addBuffer();
+        FxTestSupport.runOnFx(() -> area.splitActive(Orientation.HORIZONTAL));
+        addBuffer();
+        FxTestSupport.runOnFx(() -> area.splitActive(Orientation.VERTICAL));
+
+        EditorGroupLayout saved = FxTestSupport.callOnFx(() -> area.snapshotLayout());
+        assertEquals(3, saved.leafCount(), "three groups recorded");
+        // Which group each file was in, exactly as persistSession records it on OpenFile.group.
+        List<Integer> savedGroups = new ArrayList<>();
+        for (Tab tab : FxTestSupport.callOnFx(() -> new ArrayList<>(area.tabs()))) {
+            savedGroups.add(FxTestSupport.callOnFx(() -> area.groupIndexOf(tab)));
+        }
+        List<Tab> savedTabs = FxTestSupport.callOnFx(() -> new ArrayList<>(area.tabs()));
+
+        // Rebuild from the saved shape, then refill exactly the way openInitialBuffer does.
+        FxTestSupport.runOnFx(() -> {
+            area.unsplit();
+            for (Tab tab : new ArrayList<>(area.tabs())) {
+                area.remove(tab);
+            }
+            area.restoreLayout(saved);
+            for (int i = 0; i < savedTabs.size(); i++) {
+                area.addToGroup(savedGroups.get(i), savedTabs.get(i));
+            }
+            area.applyRestoredSelection(saved);
+        });
+
+        assertEquals(3, groupCount(), "the three groups came back");
+        assertEquals(3, depth(), "and so did the nesting");
+        for (int i = 0; i < savedTabs.size(); i++) {
+            int expected = savedGroups.get(i);
+            Tab tab = savedTabs.get(i);
+            assertEquals(expected, FxTestSupport.callOnFx(() -> area.groupIndexOf(tab)), "file back in its group");
+        }
+
+        cleanUp();
+    }
+
+    /**
+     * A file saved in a session can be gone by the next launch. A group that loses every one of its files
+     * must not come back as a blank pane the user has to close by hand.
+     */
+    @Test
+    void aGroupWhoseFilesAllVanishedIsPrunedOnRestore() throws Exception {
+        addBuffer();
+        addBuffer();
+        FxTestSupport.runOnFx(() -> area.splitActive(Orientation.HORIZONTAL));
+        EditorGroupLayout saved = FxTestSupport.callOnFx(() -> area.snapshotLayout());
+        List<Tab> savedTabs = FxTestSupport.callOnFx(() -> new ArrayList<>(area.tabs()));
+
+        FxTestSupport.runOnFx(() -> {
+            area.unsplit();
+            for (Tab tab : new ArrayList<>(area.tabs())) {
+                area.remove(tab);
+            }
+            area.restoreLayout(saved);
+            area.addToGroup(0, savedTabs.get(0)); // only group 0's file still exists
+            area.pruneEmptyGroups();
+            area.applyRestoredSelection(saved);
+        });
+
+        assertEquals(1, groupCount(), "the group with no surviving files was dropped");
+        assertEquals(1, FxTestSupport.callOnFx(() -> area.size()), "and the surviving file is still open");
 
         cleanUp();
     }
