@@ -95,8 +95,17 @@ public class MainController implements com.editora.mcp.McpBridge {
     @FXML
     private BorderPane workspace;
 
+    /**
+     * FXML injection point for the editor area's tab strip. <b>Do not use directly</b> — everything goes
+     * through {@link #editorArea}, which wraps this and is the seam that lets the editor area hold several
+     * independent tab groups (#762). Retained as a field only because FXML injects here (and a handful of FX
+     * tests reflect on it by name); it is handed to {@code EditorArea} in {@link #init} and not read again.
+     */
     @FXML
     private TabPane tabPane;
+
+    /** The editor area — the single entry point for reading and mutating open tabs. See {@link EditorArea}. */
+    private EditorArea editorArea;
 
     @FXML
     private VBox topBox;
@@ -429,6 +438,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
         this.stage = stage;
+        // Wrap the FXML-injected tab strip before anything reads tabs; every later access goes through this.
+        this.editorArea = new EditorArea(tabPane);
         stage.setOnCloseRequest(e -> {
             // Save/prompt this window's dirty buffers + persist its session; cancel the close if the
             // user backs out. (No separate "Quit?" prompt — each window closes independently now.)
@@ -749,8 +760,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         this.switcher = new Switcher(
-                () -> new java.util.ArrayList<>(tabPane.getTabs()), // list files in tab order
-                () -> tabPane.getSelectionModel().getSelectedItem(),
+                () -> new java.util.ArrayList<>(editorArea.tabs()), // list files in tab order
+                () -> editorArea.selectedTab(),
                 this::activateAndFocusTab,
                 this::closeTabFromSwitcher);
         setupMruTracking();
@@ -929,12 +940,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean statusOn = Chrome.statusBar(s.isShowStatusBar(), zen);
         statusBar.setVisible(statusOn);
         statusBar.setManaged(statusOn);
-        // The tab header is collapsed via a style class (see app.css) rather than visible/managed:
-        // the TabPane skin owns the header node, so toggling a CSS class is the supported way.
-        tabPane.getStyleClass().remove("no-tab-header");
-        if (!Chrome.tabBar(s.isShowTabBar(), focus)) {
-            tabPane.getStyleClass().add("no-tab-header");
-        }
+        editorArea.setTabHeaderVisible(Chrome.tabBar(s.isShowTabBar(), focus));
         breadcrumb.setEnabled(Chrome.breadcrumb(s.isShowBreadcrumb(), focus, simple));
         // Tool stripes (UI only): hidden stripes still let tool windows open via keybinding/palette.
         toolWindows.setStripesEnabled(Chrome.toolStripes(s.isShowToolStripe(), focus, simple));
@@ -1258,8 +1264,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void addWelcomeTab() {
         welcomePane.refresh();
         welcomePane.setFontScale(config.getSettings().getFontZoom()); // match the current text zoom (#540)
-        if (welcomeTab != null && tabPane.getTabs().contains(welcomeTab)) {
-            tabPane.getSelectionModel().select(welcomeTab);
+        if (welcomeTab != null && editorArea.contains(welcomeTab)) {
+            editorArea.select(welcomeTab);
             return;
         }
         Tab tab = addContentTab(welcomePane, true);
@@ -1282,8 +1288,8 @@ public class MainController implements com.editora.mcp.McpBridge {
      * close. Probes run off the FX thread; rows fill in as results land.
      */
     private void showDoctor() {
-        if (doctorTab != null && tabPane.getTabs().contains(doctorTab)) {
-            tabPane.getSelectionModel().select(doctorTab);
+        if (doctorTab != null && editorArea.contains(doctorTab)) {
+            editorArea.select(doctorTab);
             doctorCoordinator.runChecks();
             return;
         }
@@ -1409,7 +1415,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Releases this window's resources on close: language servers, debug session, and worker threads. */
     void disposeWindow() {
         sessionClosed = true; // no further session writes from this window (see requestSave)
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 buffer.dispose();
@@ -1525,7 +1531,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Opens the Welcome tab when the strip is empty (startup with no session, or after a project swap). */
     private void showWelcomeIfNoTabs() {
-        if (tabPane.getTabs().isEmpty()) {
+        if (editorArea.isEmpty()) {
             addWelcomeTab();
         }
     }
@@ -1616,7 +1622,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         Tab existing = tabForPath(target);
         if (existing != null) {
-            tabPane.getSelectionModel().select(existing);
+            editorArea.select(existing);
             EditorBuffer existingBuffer = bufferOf(existing);
             if (existingBuffer != null) {
                 existingBuffer.getArea().requestFocus();
@@ -1851,7 +1857,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         EditorBuffer b = activeBuffer();
         if (b == null) {
             // A non-buffer tab: show an image viewer's file path; else just the app name (Welcome, etc.).
-            Path img = tabPath(tabPane.getSelectionModel().getSelectedItem());
+            Path img = tabPath(editorArea.selectedTab());
             stage.setTitle(img != null ? homeCollapsed(img.toString()) + " — " + app : app);
             return;
         }
@@ -1879,7 +1885,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // A moved/renamed *directory*: remap every open buffer whose file lived under `old` to the
             // corresponding path under `target` (e.g. drag-moving a folder in the Project tree).
             Path oldNorm = old.toAbsolutePath().normalize();
-            for (Tab t : tabPane.getTabs()) {
+            for (Tab t : editorArea.tabs()) {
                 EditorBuffer b = bufferOf(t);
                 Path p = b == null ? null : b.getPath();
                 if (p == null) {
@@ -1933,7 +1939,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         com.editora.config.PathKeys.invalidateCanonicalCache(); // (#680)
         Tab tab = tabForPath(path);
         if (tab != null) {
-            tabPane.getTabs().remove(tab); // file is gone; close without a save prompt
+            editorArea.remove(tab); // file is gone; close without a save prompt
         }
         WorkspaceState ws = config.getWorkspaceState();
         String key = path.toString();
@@ -2045,8 +2051,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void setupMruTracking() {
         // A mouse click in the editor area repositions the caret, which ends an Emacs mark session.
-        tabPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> deactivateMark());
-        tabPane.getSelectionModel().selectedItemProperty().addListener((obs, was, now) -> {
+        editorArea.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> deactivateMark());
+        editorArea.addSelectionListener((obs, was, now) -> {
             if (now != null) {
                 mru.remove(now);
                 mru.addFirst(now);
@@ -2101,12 +2107,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             historyCoordinator.refresh(); // re-gate + reload the Local File History list for the new active file
             maybeOfferInstall(activeBuffer()); // offer to install this language's LSP/DAP if it's missing
         });
-        tabPane.getTabs().addListener((ListChangeListener<Tab>) c -> {
+        editorArea.addTabsListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
                 // A tab added in the background (e.g. session restore opening many at once) starts
                 // rendering-inactive so it holds no minimap snapshot until it's first shown.
                 if (c.wasAdded()) {
-                    Tab selected = tabPane.getSelectionModel().getSelectedItem();
+                    Tab selected = editorArea.selectedTab();
                     for (Tab added : c.getAddedSubList()) {
                         EditorBuffer b = bufferOf(added);
                         if (b != null && added != selected) {
@@ -2155,7 +2161,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * hides before or after invoking this.
      */
     private void activateAndFocusTab(Tab tab) {
-        tabPane.getSelectionModel().select(tab);
+        editorArea.select(tab);
         EditorBuffer buffer = bufferOf(tab);
         if (buffer != null) {
             Platform.runLater(() -> buffer.getArea().requestFocus());
@@ -2170,11 +2176,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     private List<Tab> openTabsForSwitcher() {
         List<Tab> ordered = new ArrayList<>();
         for (Tab tab : mru) {
-            if (tabPane.getTabs().contains(tab)) {
+            if (editorArea.contains(tab)) {
                 ordered.add(tab);
             }
         }
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             if (!ordered.contains(tab)) {
                 ordered.add(tab);
             }
@@ -2183,7 +2189,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void setupToolWindows() {
-        toolWindows = new ToolWindowManager(workspace, tabPane, config, keymap);
+        toolWindows = new ToolWindowManager(workspace, editorArea.node(), config, keymap);
         projectPanel = new ProjectPanel(
                 this::openPath, this::onProjectFileRenamed, this::onProjectFileDeleted, this::isPathModified);
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
@@ -2825,7 +2831,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Reconciles LaTeX math rendering with its setting + the app theme; re-renders open previews. */
     private void applyMathSupport() {
         com.editora.editor.MathImages.configure(config.getSettings().isMathSupport(), appThemeDark());
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null && b.hasPreview()) {
                 b.refreshPreview();
@@ -2857,7 +2863,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void forEachBuffer(java.util.function.Consumer<EditorBuffer> action) {
-            for (Tab tab : tabPane.getTabs()) {
+            for (Tab tab : editorArea.tabs()) {
                 EditorBuffer b = bufferOf(tab);
                 if (b != null) {
                     action.accept(b);
@@ -3068,7 +3074,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public java.util.List<DiffViewerPane> openDiffPanes() {
                     java.util.List<DiffViewerPane> out = new java.util.ArrayList<>();
-                    for (Tab tab : tabPane.getTabs()) {
+                    for (Tab tab : editorArea.tabs()) {
                         if (tab.getUserData() instanceof DiffViewerPane dp) {
                             out.add(dp);
                         }
@@ -3078,7 +3084,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public DiffViewerPane activeDiffPane() {
-                    Tab t = tabPane.getSelectionModel().getSelectedItem();
+                    Tab t = editorArea.selectedTab();
                     return t != null && t.getUserData() instanceof DiffViewerPane dp ? dp : null;
                 }
 
@@ -3146,9 +3152,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public boolean selectTabOf(com.editora.editor.TabContent pane) {
-                    for (Tab t : tabPane.getTabs()) {
+                    for (Tab t : editorArea.tabs()) {
                         if (t.getUserData() == pane) {
-                            tabPane.getSelectionModel().select(t);
+                            editorArea.select(t);
                             return true;
                         }
                     }
@@ -3792,9 +3798,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public boolean selectBufferTab(EditorBuffer buffer) {
-                    for (Tab tab : tabPane.getTabs()) {
+                    for (Tab tab : editorArea.tabs()) {
                         if (bufferOf(tab) == buffer) {
-                            tabPane.getSelectionModel().select(tab);
+                            editorArea.select(tab);
                             return true;
                         }
                     }
@@ -4305,7 +4311,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         return mcpOnFx(() -> {
             EditorBuffer active = activeBuffer();
             java.util.List<OpenFile> out = new java.util.ArrayList<>();
-            for (Tab tab : tabPane.getTabs()) {
+            for (Tab tab : editorArea.tabs()) {
                 EditorBuffer b = bufferOf(tab);
                 if (b == null) {
                     continue;
@@ -4369,7 +4375,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 new java.util.concurrent.CompletableFuture<>();
         javafx.application.Platform.runLater(() -> {
             java.util.Map<Path, String> open = new java.util.HashMap<>();
-            for (Tab tab : tabPane.getTabs()) {
+            for (Tab tab : editorArea.tabs()) {
                 EditorBuffer b = bufferOf(tab);
                 if (b != null && b.getPath() != null) {
                     open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
@@ -4569,9 +4575,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     @Override
     public java.util.List<TabInfo> listTabs() {
         return mcpOnFx(() -> {
-            Tab active = tabPane.getSelectionModel().getSelectedItem();
+            Tab active = editorArea.selectedTab();
             java.util.List<TabInfo> out = new java.util.ArrayList<>();
-            for (Tab tab : tabPane.getTabs()) {
+            for (Tab tab : editorArea.tabs()) {
                 Path p = tabPath(tab);
                 out.add(new TabInfo(tabType(tab), bufferTitle(tab), p == null ? null : p.toString(), tab == active));
             }
@@ -4642,7 +4648,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Finds the open buffer whose file matches {@code path} (by canonical path), or null. */
     private EditorBuffer openBufferForPath(String path) {
         Path key = canonicalPath(Path.of(path));
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null && b.getPath() != null && canonicalPath(b.getPath()).equals(key)) {
                 return b;
@@ -4838,7 +4844,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 return null; // absolute, not local, and no repo-relative suffix matched
             }
             String name = p.getFileName().toString();
-            for (Tab t : tabPane.getTabs()) { // an open tab with that file name wins
+            for (Tab t : editorArea.tabs()) { // an open tab with that file name wins
                 EditorBuffer b = bufferOf(t);
                 if (b != null
                         && b.getPath() != null
@@ -5054,7 +5060,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The open buffer for {@code target} (canonical-path match), or null if not open. */
     private EditorBuffer openBufferFor(Path target) {
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null && b.getPath() != null && canonicalPath(b.getPath()).equals(canonicalPath(target))) {
                 return b;
@@ -5402,7 +5408,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Pushes the Markdown-lint enabled state to every buffer (init + each settings apply). */
     private void applyMarkdownLint() {
         boolean on = markdownLintEnabled();
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null) {
                 b.setMarkdownLintEnabled(on);
@@ -5600,7 +5606,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** After a branch switch/pull, silently reload any open buffer whose file changed on disk. */
     private void reloadAllFromDiskSilently() {
         java.util.List<Path> reloaded = new java.util.ArrayList<>();
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer == null || buffer.getPath() == null || buffer.isDirty()) {
                 continue; // never clobber unsaved edits
@@ -6230,7 +6236,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (tab == null) {
             return;
         }
-        tabPane.getSelectionModel().select(tab);
+        editorArea.select(tab);
         EditorBuffer buffer = bufferOf(tab);
         CodeArea area = buffer.getArea();
         int total = area.getParagraphs().size();
@@ -6367,7 +6373,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private EditorBuffer activeBuffer() {
-        return bufferOf(tabPane.getSelectionModel().getSelectedItem());
+        return bufferOf(editorArea.selectedTab());
     }
 
     // --- Undo History popup (the QuickOpen mirror of the Undo History tool window) ---
@@ -6539,7 +6545,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         installTabMenu(tab, buffer);
         if (select) {
-            tabPane.getSelectionModel().select(tab);
+            editorArea.select(tab);
             buffer.getArea().requestFocus();
         }
         return tab;
@@ -6575,9 +6581,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 e.consume();
             }
         });
-        tabPane.getTabs().add(tab);
+        editorArea.add(tab);
         if (select) {
-            tabPane.getSelectionModel().select(tab);
+            editorArea.select(tab);
             Platform.runLater(content.node()::requestFocus);
         }
         return tab;
@@ -6586,7 +6592,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Refreshes a tab's title (pin + dirty markers), style classes, and full-path tooltip. */
     private void updateTabMeta(Tab tab, EditorBuffer buffer) {
         // Keep the window title's file name/path + dirty marker in step (dirty flips, Save-As, rename).
-        if (tab == tabPane.getSelectionModel().getSelectedItem()) {
+        if (tab == editorArea.selectedTab()) {
             updateWindowTitle();
         }
         boolean dirty = buffer.isDirty();
@@ -6686,20 +6692,21 @@ public class MainController implements com.editora.mcp.McpBridge {
      * keeping pinned tabs grouped at the front: a drop is clamped to the dragged tab's own group.
      */
     private void reorderTab(Tab dragged, Tab target, boolean after) {
-        ObservableList<Tab> tabs = tabPane.getTabs();
         boolean draggedPinned = pinned.contains(dragged);
         reordering = true;
         try {
-            tabs.remove(dragged);
-            int idx = tabs.indexOf(target) + (after ? 1 : 0);
-            int pinnedInStrip = (int) tabs.stream().filter(pinned::contains).count();
+            editorArea.remove(dragged);
+            // Every index below is read *after* the removal, so it already accounts for the gap it left.
+            int idx = editorArea.indexOf(target) + (after ? 1 : 0);
+            int pinnedInStrip =
+                    (int) editorArea.tabs().stream().filter(pinned::contains).count();
             int lo = draggedPinned ? 0 : pinnedInStrip;
-            int hi = draggedPinned ? pinnedInStrip : tabs.size();
-            tabs.add(Math.max(lo, Math.min(idx, hi)), dragged);
+            int hi = draggedPinned ? pinnedInStrip : editorArea.size();
+            editorArea.add(Math.max(lo, Math.min(idx, hi)), dragged);
         } finally {
             reordering = false;
         }
-        tabPane.getSelectionModel().select(dragged);
+        editorArea.select(dragged);
     }
 
     private static void toggleClass(Tab tab, String styleClass, boolean on) {
@@ -6821,7 +6828,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Tab existing = tabForPath(file);
         if (existing != null) {
             // Already open — switch to its tab instead of opening a duplicate.
-            tabPane.getSelectionModel().select(existing);
+            editorArea.select(existing);
             EditorBuffer existingBuffer = bufferOf(existing);
             if (existingBuffer != null) {
                 existingBuffer.getArea().requestFocus();
@@ -6899,7 +6906,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  image/binary auto-routing (for a file mis-detected as binary, or to read a binary's raw text). No-op
      *  with a status when the active tab has no file. */
     private void openActiveAsText() {
-        Path p = tabPath(tabPane.getSelectionModel().getSelectedItem());
+        Path p = tabPath(editorArea.selectedTab());
         if (p == null) {
             setStatus(tr("status.hex.noFile"));
             return;
@@ -6964,7 +6971,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Command {@code view.openAsHex}: opens the active file's bytes in a read-only hex tab (forces hex even
      *  for a text file). No-op with a status when the active tab has no file (an untitled buffer / Welcome). */
     private void openActiveAsHex() {
-        Path p = tabPath(tabPane.getSelectionModel().getSelectedItem());
+        Path p = tabPath(editorArea.selectedTab());
         if (p == null) {
             setStatus(tr("status.hex.noFile"));
             return;
@@ -7144,12 +7151,12 @@ public class MainController implements com.editora.mcp.McpBridge {
      * alone (the in-editor copy is kept).
      */
     private void checkExternalChanges() {
-        if (checkingExternalChanges || tabPane == null) {
+        if (checkingExternalChanges || editorArea == null) {
             return;
         }
         checkingExternalChanges = true;
         try {
-            Tab tab = tabPane.getSelectionModel().getSelectedItem();
+            Tab tab = editorArea.selectedTab();
             EditorBuffer buffer = bufferOf(tab);
             if (buffer == null || buffer.getPath() == null) {
                 return;
@@ -7329,7 +7336,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Pushes the current "Edit as Administrator" availability to every open buffer's banner. */
     private void pushAdminEditAvailable() {
         boolean available = elevationAvailable();
-        for (Tab t : tabPane.getTabs()) {
+        for (Tab t : editorArea.tabs()) {
             EditorBuffer b = bufferOf(t);
             if (b != null) {
                 b.setAdminEditAvailable(available && isLocalBuffer(b));
@@ -7632,7 +7639,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Auto-saves every dirty, file-backed, writable buffer (untitled/read-only buffers are skipped). */
     private void autoSaveAllDirty() {
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null && buffer.isDirty() && buffer.getPath() != null && buffer.isEditable()) {
                 autoSaveBuffer(buffer);
@@ -7716,7 +7723,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private Tab activeTab() {
-        return tabPane.getSelectionModel().getSelectedItem();
+        return editorArea.selectedTab();
     }
 
     /**
@@ -7731,7 +7738,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Closes a single tab, confirming first if it is pinned and/or has unsaved changes. */
     private void closeTab(Tab tab) {
         if (tab != null && confirmClose(tab)) {
-            tabPane.getTabs().remove(tab);
+            editorArea.remove(tab);
         }
     }
 
@@ -7743,23 +7750,23 @@ public class MainController implements com.editora.mcp.McpBridge {
         for (Tab tab : targets) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null && !buffer.isDirty()) {
-                tabPane.getTabs().remove(tab);
+                editorArea.remove(tab);
                 continue;
             }
-            tabPane.getSelectionModel().select(tab);
+            editorArea.select(tab);
             if (buffer != null && !confirmCloseIfDirty(buffer)) {
                 return; // user cancelled — stop the batch
             }
-            tabPane.getTabs().remove(tab);
+            editorArea.remove(tab);
         }
     }
 
     /** Non-pinned tabs whose index is less than {@code pivot}'s. */
     private List<Tab> eligibleToLeft(Tab pivot) {
-        int idx = tabPane.getTabs().indexOf(pivot);
+        int idx = editorArea.indexOf(pivot);
         List<Tab> out = new ArrayList<>();
         for (int i = 0; i < idx; i++) {
-            Tab t = tabPane.getTabs().get(i);
+            Tab t = editorArea.tabAt(i);
             if (!pinned.contains(t)) {
                 out.add(t);
             }
@@ -7769,10 +7776,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Non-pinned tabs whose index is greater than {@code pivot}'s. */
     private List<Tab> eligibleToRight(Tab pivot) {
-        int idx = tabPane.getTabs().indexOf(pivot);
+        int idx = editorArea.indexOf(pivot);
         List<Tab> out = new ArrayList<>();
-        for (int i = idx + 1; i < tabPane.getTabs().size(); i++) {
-            Tab t = tabPane.getTabs().get(i);
+        for (int i = idx + 1; i < editorArea.size(); i++) {
+            Tab t = editorArea.tabAt(i);
             if (!pinned.contains(t)) {
                 out.add(t);
             }
@@ -7782,7 +7789,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void closeOtherTabs(Tab keep) {
         List<Tab> targets = new ArrayList<>();
-        for (Tab t : tabPane.getTabs()) {
+        for (Tab t : editorArea.tabs()) {
             if (t != keep && !pinned.contains(t)) {
                 targets.add(t);
             }
@@ -7792,7 +7799,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void closeAllTabs() {
         List<Tab> targets = new ArrayList<>();
-        for (Tab t : tabPane.getTabs()) {
+        for (Tab t : editorArea.tabs()) {
             if (!pinned.contains(t)) {
                 targets.add(t);
             }
@@ -7802,7 +7809,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void closeUnmodifiedTabs() {
         List<Tab> targets = new ArrayList<>();
-        for (Tab t : tabPane.getTabs()) {
+        for (Tab t : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(t);
             if (!pinned.contains(t) && (buffer == null || !buffer.isDirty())) {
                 targets.add(t);
@@ -7909,19 +7916,19 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Moves {@code tab} to {@code target} without corrupting the MRU (see the reordering guard). */
     private void moveTab(Tab tab, int target) {
-        int from = tabPane.getTabs().indexOf(tab);
+        int from = editorArea.indexOf(tab);
         if (from < 0) {
             return;
         }
         reordering = true;
         try {
-            tabPane.getTabs().remove(tab);
-            int clamped = Math.max(0, Math.min(target, tabPane.getTabs().size()));
-            tabPane.getTabs().add(clamped, tab);
+            editorArea.remove(tab);
+            int clamped = Math.max(0, Math.min(target, editorArea.size()));
+            editorArea.add(clamped, tab);
         } finally {
             reordering = false;
         }
-        tabPane.getSelectionModel().select(tab);
+        editorArea.select(tab);
     }
 
     /** Renames the buffer's file on disk and migrates path-keyed state (folds, recent files). */
@@ -8182,7 +8189,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private Tab tabFor(EditorBuffer buffer) {
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             if (tab.getUserData() == buffer) {
                 return tab;
             }
@@ -8207,7 +8214,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private Tab tabForPath(Path file) {
         String target = pathKey(file);
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             Path p = tabPath(tab); // buffer path, else an image-viewer tab's path
             if (p != null && pathKey(p).equals(target)) {
                 return tab;
@@ -8281,12 +8288,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Walks every tab and prompts to save/discard each dirty buffer, then persists this window's session.
      *  False = the user cancelled. Package-visible: the quit path drives it for every window. */
     boolean confirmCloseAllBuffers() {
-        for (Tab tab : new ArrayList<>(tabPane.getTabs())) {
+        for (Tab tab : new ArrayList<>(editorArea.tabs())) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer == null || !buffer.isDirty()) {
                 continue;
             }
-            tabPane.getSelectionModel().select(tab);
+            editorArea.select(tab);
             if (!confirmCloseIfDirty(buffer)) {
                 return false;
             }
@@ -8339,7 +8346,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         List<WorkspaceState.OpenFile> files = new ArrayList<>();
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             Path p = tabPath(tab); // buffer or image-viewer path (image tabs restore too)
             if (p != null) {
@@ -8352,7 +8359,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         WorkspaceState state = config.getWorkspaceState();
         state.setOpenFiles(files);
-        Path activePath = tabPath(tabPane.getSelectionModel().getSelectedItem());
+        Path activePath = tabPath(editorArea.selectedTab());
         state.setActiveFile(activePath != null ? com.editora.vfs.Vfs.toStorableString(activePath) : "");
         persistWindowBounds(state);
         toolWindows.persistDividers(); // capture a divider dragged but left open (close() only saves on hide)
@@ -8399,10 +8406,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void nextBuffer() {
-        int count = tabPane.getTabs().size();
+        int count = editorArea.size();
         if (count > 1) {
-            int idx = (tabPane.getSelectionModel().getSelectedIndex() + 1) % count;
-            tabPane.getSelectionModel().select(idx);
+            int idx = (editorArea.selectedIndex() + 1) % count;
+            editorArea.select(idx);
         }
     }
 
@@ -10318,7 +10325,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The tab hosting {@code buffer}, or null if not open. */
     private Tab tabForBuffer(EditorBuffer buffer) {
-        for (Tab t : tabPane.getTabs()) {
+        for (Tab t : editorArea.tabs()) {
             if (t.getUserData() == buffer) {
                 return t;
             }
@@ -10827,7 +10834,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean now = !s.isMarkdownFormatBar();
         s.setMarkdownFormatBar(now);
         requestSave();
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null) {
                 b.setFormatBarEnabled(now);
@@ -10846,7 +10853,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void applyMarkdownPreviewTheme() {
         String mode = config.getSettings().getMarkdownPreviewTheme();
         boolean appDark = appThemeDark();
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null && b.isMarkdown()) {
                 b.applyPreviewTheme(mode, appDark);
@@ -11282,7 +11289,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private Tab tabForKey(String fileKey) {
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null && b.getPath() != null && noteKey(b).equals(fileKey)) {
                 return tab;
@@ -11803,7 +11810,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Re-runs the spell pass over every open buffer in this window (after the user dictionary changed). */
     void refreshSpellAllTabs() {
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null) {
                 b.refreshSpell();
@@ -11950,7 +11957,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (!editorConfigEnabled()) {
             com.editora.editorconfig.EditorConfig.clearCache();
         }
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 applyEditorConfig(buffer);
@@ -12027,7 +12034,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         debugCoordinator.panel().setConsoleFont(settings.getFontFamily(), consoleFont);
         buildOutputPanel.setOutputFont(settings.getFontFamily(), consoleFont);
         testRunCoordinator.setOutputFont(settings.getFontFamily(), consoleFont);
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 applyViewSettings(buffer);
@@ -12041,7 +12048,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (doctorTab != null) {
             doctorCoordinator.pane().setFontScale(settings.getFontZoom()); // scale the Doctor tab like Welcome
         }
-        for (Tab t : tabPane.getTabs()) {
+        for (Tab t : editorArea.tabs()) {
             if (t.getUserData() instanceof PrReviewPane pr) {
                 pr.setFontScale(settings.getFontZoom()); // scale the PR review tab like Welcome
             }
@@ -12056,7 +12063,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Pushes the multiple-cursors / column-selection setting to every open buffer. */
     private void applyMultiCaret() {
         boolean on = multiCaretEnabled(); // effective: off in Simple UI mode
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 buffer.setMultiCaretEnabled(on);
@@ -12069,7 +12076,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Settings s = config.getSettings();
         boolean mermaidAc = mermaid.effectiveAutocomplete();
         boolean aiInline = aiCoordinator.isInlineCompletionEnabled();
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 buffer.setAutocomplete(
@@ -12101,7 +12108,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Color mmViewport = EditorThemes.minimapViewportFor(themeName);
         Color editorBg = EditorThemes.editorBackgroundFor(themeName);
         Color editorFg = EditorThemes.editorForegroundFor(themeName);
-        for (Tab tab : tabPane.getTabs()) {
+        for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
                 buffer.setLineHighlightColor(highlight);
