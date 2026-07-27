@@ -127,6 +127,75 @@ class EditorGroupsFxTest {
         cleanUp();
     }
 
+    /**
+     * The point of nesting: a horizontal split can contain a vertical one, so three groups can form an
+     * L-shape rather than three equal columns. Splitting the *second* group downward must nest inside that
+     * group's slot and leave the first column alone.
+     */
+    @Test
+    void splittingAcrossOrientationsNests() throws Exception {
+        addBuffer();
+        addBuffer();
+
+        FxTestSupport.runOnFx(() -> area.splitActive(Orientation.HORIZONTAL));
+        assertEquals(2, groupCount(), "two groups side by side");
+        assertEquals(2, depth(), "one branch above the leaves");
+
+        // A new file opens in the focused group — the new right-hand one — giving it the second tab a
+        // further split needs. (Moving the active tab on would instead send it back and collapse the group.)
+        addBuffer();
+        FxTestSupport.runOnFx(() -> area.splitActive(Orientation.VERTICAL));
+
+        assertEquals(3, groupCount(), "three groups");
+        assertEquals(3, depth(), "the vertical split nests inside the horizontal one");
+
+        cleanUp();
+    }
+
+    /**
+     * Splitting the same way twice must widen the existing branch rather than nest another inside it —
+     * otherwise repeated "split right" builds a right-leaning chain of two-way splits that is awkward to
+     * traverse, to persist, and to drag into.
+     */
+    @Test
+    void splittingTheSameWayTwiceAddsASiblingRatherThanNesting() throws Exception {
+        addBuffer();
+        addBuffer();
+
+        FxTestSupport.runOnFx(() -> area.splitActive(Orientation.HORIZONTAL));
+        addBuffer(); // opens in the newly focused group, so it has something to split off
+        FxTestSupport.runOnFx(() -> area.splitActive(Orientation.HORIZONTAL));
+
+        assertEquals(3, groupCount(), "three columns");
+        assertEquals(2, depth(), "still a single branch — no nesting for a same-orientation split");
+
+        cleanUp();
+    }
+
+    /**
+     * Emptying a nested group must not leave a one-item {@code SplitPane} behind. Such a branch is invisible
+     * but still takes part in layout, and every traversal has to keep stepping through it.
+     */
+    @Test
+    void collapsingANestedGroupRemovesTheRedundantBranch() throws Exception {
+        addBuffer();
+        addBuffer();
+
+        FxTestSupport.runOnFx(() -> area.splitActive(Orientation.HORIZONTAL));
+        addBuffer(); // opens in the newly focused group, so it has something to split off
+        FxTestSupport.runOnFx(() -> area.splitActive(Orientation.VERTICAL));
+        assertEquals(3, depth(), "nested to start with");
+
+        // Close the file in the innermost group: its group goes, and so must the branch that held it.
+        Tab innermost = FxTestSupport.callOnFx(() -> area.selectedTab());
+        FxTestSupport.runOnFx(() -> area.remove(innermost));
+
+        assertEquals(2, groupCount(), "two groups left");
+        assertEquals(2, depth(), "the emptied branch collapsed away instead of lingering with one child");
+
+        cleanUp();
+    }
+
     @Test
     void unsplitMergesEveryGroupBackIntoOne() throws Exception {
         Tab first = addBuffer();
@@ -146,6 +215,11 @@ class EditorGroupsFxTest {
 
     private int groupCount() throws Exception {
         return FxTestSupport.callOnFx(() -> area.groupCount());
+    }
+
+    /** How deeply the group tree nests — 1 unsplit, 2 after one split, 3 once a split nests inside another. */
+    private int depth() throws Exception {
+        return FxTestSupport.callOnFx(() -> area.depth());
     }
 
     private long previewGen(EditorBuffer buffer) throws Exception {

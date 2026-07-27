@@ -16,23 +16,31 @@ import javafx.scene.Node;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.layout.StackPane;
 
 /**
  * The editor area: the region of the window that holds open file tabs, as a single component that
  * {@link MainController} talks to instead of reaching into a {@link TabPane} directly.
  *
  * <p>The area holds one or more <b>groups</b>, each an independent strip of tabs with its own selection, so
- * two different files can be on screen at once (#762) — what every desktop IDE calls splitting the editor.
- * Groups sit side by side in a single {@link SplitPane}, so the whole area shares one orientation: "split
- * right" lays them out horizontally, "split down" vertically. That is deliberately flatter than IntelliJ's or
- * Eclipse's arbitrarily nested editor areas; a flat list covers the overwhelmingly common two- or three-group
- * case without a recursive tree to persist, focus and collapse correctly. Nesting can come later behind this
- * same API.
+ * two different files can be on screen at once (#762). Groups form a <b>tree</b>: a leaf is a group, and a
+ * branch is a {@link SplitPane} with an orientation and two or more children, each itself a leaf or a branch.
+ * So a horizontal split can contain a vertical one, as in IntelliJ, Eclipse and Visual Studio.
+ *
+ * <p>Two rules keep that tree from degenerating, and both matter as much as the nesting itself:
+ *
+ * <ul>
+ *   <li>Splitting a group <b>along the orientation its parent already uses</b> adds a sibling rather than a
+ *       nested branch, so splitting right three times yields three columns instead of a right-leaning chain
+ *       of two-way splits.
+ *   <li>A branch left with a single child is <b>replaced by that child</b>. Without this, closing files
+ *       leaves invisible one-item {@code SplitPane}s that still take part in layout and that every later
+ *       traversal has to step through.
+ * </ul>
  *
  * <p><b>Exactly one group is focused</b>, and it is the one the rest of the UI means by "the active buffer":
  * {@link #selectedTab()} reads it, {@link #add} appends to it, and {@link #activeTabProperty()} fires both
- * when its selection changes and when focus moves to another group, since either changes which buffer the
- * window is looking at.
+ * when its selection changes and when focus moves to another group.
  *
  * <p>Two invariants keep callers honest:
  *
@@ -40,21 +48,25 @@ import javafx.scene.control.TabPane;
  *   <li>{@link #tabs()} is <b>unmodifiable</b>. Every structural change goes through {@link #add}/
  *       {@link #remove} and so is visible in this file. While there is a single group it is also a live view
  *       of that group's list and costs no allocation, which matters because it is read on the tab-switch and
- *       window-focus paths; once split it is a snapshot, taken in visual order.
- *   <li>Nothing exposes the underlying {@code TabPane}s. {@link #node()} hands out the area's root for layout.
+ *       window-focus paths; once split it is a snapshot in visual order.
+ *   <li>Nothing exposes the underlying panes. {@link #node()} hands out a stable container for layout, whose
+ *       identity never changes even as the tree beneath it is rebuilt.
  * </ul>
  *
  * <p>Not thread-safe: like the rest of the UI layer this is FX-thread-only.
  */
 final class EditorArea {
 
-    /** Holds the groups side by side. One group means a single item and no visible divider. */
-    private final SplitPane root = new SplitPane();
+    /** Stable wrapper handed to the layout, so the tree beneath can be rebuilt without re-parenting the area. */
+    private final StackPane container = new StackPane();
 
-    /** Groups in visual order (left→right, or top→bottom). Never empty. */
-    private final List<TabPane> groups = new ArrayList<>();
+    /** Root of the group tree: a {@link TabPane} while unsplit, otherwise a {@link SplitPane}. */
+    private Node tree;
 
-    /** The group whose selection the rest of the UI means by "the active tab". Always in {@link #groups}. */
+    /** Group 0 — the FXML-injected pane. Kept identifiable so {@link #unsplit()} always merges back into it. */
+    private final TabPane primary;
+
+    /** The group whose selection the rest of the UI means by "the active tab". Always a leaf of the tree. */
     private TabPane focused;
 
     /**
@@ -65,8 +77,8 @@ final class EditorArea {
     private final ObjectProperty<Tab> activeTab = new SimpleObjectProperty<>();
 
     /**
-     * Cached read-only view of group 0's tabs, used while unsplit. {@code unmodifiableList} wraps the live
-     * list rather than copying, so one wrapper built once stays correct.
+     * Cached read-only view of the primary group's tabs, used while unsplit. {@code unmodifiableList} wraps
+     * the live list rather than copying, so one wrapper built once stays correct.
      */
     private final List<Tab> singleGroupView;
 
@@ -75,7 +87,7 @@ final class EditorArea {
 
     private final List<FilterRegistration<?>> filters = new ArrayList<>();
 
-    /** True while this class is relocating a tab between groups — see {@link #isRelocating()}. */
+    /** True while this class is restructuring the tree — see {@link #isRelocating()}. */
     private boolean relocating;
 
     private boolean tabHeaderVisible = true;
@@ -87,35 +99,89 @@ final class EditorArea {
     }
 
     EditorArea(TabPane initial) {
+        this.primary = initial;
         this.singleGroupView = Collections.unmodifiableList(initial.getTabs());
-        root.setOrientation(Orientation.HORIZONTAL);
-        root.getStyleClass().add("editor-area");
-        adopt(initial);
+        container.getStyleClass().add("editor-area");
+        wire(initial);
+        tree = initial;
+        container.getChildren().setAll(initial);
         focused = initial;
         activeTab.set(initial.getSelectionModel().getSelectedItem());
     }
 
-    // --- structure -------------------------------------------------------------------------------------
+    // --- the group tree --------------------------------------------------------------------------------
 
-    /** The area's root node, for layout (handed to {@link ToolWindowManager} as the split-pane centre). */
+    /** The area's root node, for layout. Stable for the lifetime of the area. */
     Node node() {
-        return root;
+        return container;
+    }
+
+    /** Every group in visual order: depth-first, so left-to-right and top-to-bottom as drawn. */
+    private List<TabPane> orderedGroups() {
+        List<TabPane> out = new ArrayList<>();
+        collect(tree, out);
+        return out;
+    }
+
+    private static void collect(Node node, List<TabPane> out) {
+        if (node instanceof TabPane leaf) {
+            out.add(leaf);
+        } else if (node instanceof SplitPane branch) {
+            for (Node child : branch.getItems()) {
+                collect(child, out);
+            }
+        }
+    }
+
+    /** The branch directly holding {@code child}, or {@code null} when {@code child} is the tree root. */
+    private SplitPane parentOf(Node child) {
+        return findParent(tree, child);
+    }
+
+    private static SplitPane findParent(Node node, Node child) {
+        if (!(node instanceof SplitPane branch)) {
+            return null;
+        }
+        if (branch.getItems().contains(child)) {
+            return branch;
+        }
+        for (Node sub : branch.getItems()) {
+            SplitPane found = findParent(sub, child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     /** How many groups the area currently holds (1 when unsplit). */
     int groupCount() {
-        return groups.size();
+        return orderedGroups().size();
     }
 
     /** Whether the area is showing more than one group. */
     boolean isSplit() {
-        return groups.size() > 1;
+        return groupCount() > 1;
     }
 
-    /** Adds {@code group} to the area, wiring the listeners and filters every group must carry. */
-    private void adopt(TabPane group) {
-        groups.add(group);
-        root.getItems().add(group);
+    /** How deeply the group tree nests: 1 while unsplit, 2 after one split, more once splits nest. */
+    int depth() {
+        return depthOf(tree);
+    }
+
+    private static int depthOf(Node node) {
+        if (!(node instanceof SplitPane branch)) {
+            return 1;
+        }
+        int deepest = 0;
+        for (Node child : branch.getItems()) {
+            deepest = Math.max(deepest, depthOf(child));
+        }
+        return deepest + 1;
+    }
+
+    /** Wires the listeners and filters every group must carry. Does not place it in the tree. */
+    private void wire(TabPane group) {
         group.getStyleClass().add("editor-group");
         applyTabHeader(group);
         for (ListChangeListener<? super Tab> l : tabsListeners) {
@@ -127,13 +193,12 @@ final class EditorArea {
         // Whichever group holds keyboard focus is the active one. focusWithin covers the deeply nested
         // editor controls, where a plain focused listener on the TabPane never fires.
         //
-        // Ignored while relocating, and that is not an optimisation. Adding a tab to a pane makes the skin
+        // Ignored while restructuring, and that is not an optimisation. Adding a tab to a pane makes the skin
         // reparent its content, which fires focusWithin *from inside the list mutation*; publishing a new
-        // active tab there runs the controller's selection listener, which calls
-        // EditorBuffer.setRenderingActive -> Minimap.renderContent -> Node.snapshot(), and a snapshot forces
-        // a full CSS/layout/peer sync of a scene graph that is still half-updated. The pulse then dies on
-        // "validation of PGGroup children failed". A relocation sets the focused group explicitly once the
-        // mutation has finished, so nothing is lost by sitting these out.
+        // active tab there runs the controller's selection listener into EditorBuffer.setRenderingActive ->
+        // Minimap.renderContent -> Node.snapshot(), and a snapshot forces a full CSS/layout/peer sync of a
+        // scene graph that is still half-updated, killing the pulse with "validation of PGGroup children
+        // failed". Restructuring sets the focused group explicitly once it has finished.
         group.focusWithinProperty().addListener((obs, was, now) -> {
             if (now && !relocating) {
                 setFocusedGroup(group);
@@ -148,7 +213,7 @@ final class EditorArea {
 
     /** Makes {@code group} the focused one, republishing its selection as the active tab. */
     private void setFocusedGroup(TabPane group) {
-        if (group == focused || !groups.contains(group)) {
+        if (group == focused) {
             return;
         }
         focused = group;
@@ -157,7 +222,7 @@ final class EditorArea {
 
     /** The group holding {@code tab}, or {@code null} if it is not open. */
     private TabPane ownerOf(Tab tab) {
-        for (TabPane g : groups) {
+        for (TabPane g : orderedGroups()) {
             if (g.getTabs().contains(tab)) {
                 return g;
             }
@@ -172,7 +237,8 @@ final class EditorArea {
      * of the only group while unsplit, a snapshot once split.
      */
     List<Tab> tabs() {
-        if (groups.size() == 1) {
+        List<TabPane> groups = orderedGroups();
+        if (groups.size() == 1 && groups.get(0) == primary) {
             return singleGroupView;
         }
         List<Tab> all = new ArrayList<>();
@@ -194,7 +260,7 @@ final class EditorArea {
 
     /** Whether the area holds no tabs at all, in any group. */
     boolean isEmpty() {
-        for (TabPane g : groups) {
+        for (TabPane g : orderedGroups()) {
             if (!g.getTabs().isEmpty()) {
                 return false;
             }
@@ -205,7 +271,7 @@ final class EditorArea {
     /** The total number of open tabs across all groups. */
     int size() {
         int n = 0;
-        for (TabPane g : groups) {
+        for (TabPane g : orderedGroups()) {
             n += g.getTabs().size();
         }
         return n;
@@ -228,9 +294,10 @@ final class EditorArea {
     }
 
     /**
-     * True while a tab is being moved between groups. Such a move reaches listeners as a remove followed by
-     * an add, which is indistinguishable from a close followed by an open — so the close-cleanup path (buffer
-     * disposal, language-server shutdown) must sit this out, exactly as it already does for a pin reorder.
+     * True while this class is moving a tab between groups or restructuring the tree. Such a move reaches
+     * listeners as a remove followed by an add, which is indistinguishable from a close followed by an open —
+     * so the close-cleanup path (buffer disposal, language-server shutdown) must sit it out, exactly as it
+     * already does for a pin reorder.
      */
     boolean isRelocating() {
         return relocating;
@@ -258,19 +325,51 @@ final class EditorArea {
             return;
         }
         owner.getTabs().remove(tab);
-        if (owner.getTabs().isEmpty() && groups.size() > 1) {
+        if (owner.getTabs().isEmpty() && groupCount() > 1) {
             discard(owner);
         }
     }
 
-    /** Removes an emptied group, moving focus to a neighbour. */
+    /** Removes an emptied group from the tree, collapsing any branch it leaves with a single child. */
     private void discard(TabPane group) {
-        int idx = groups.indexOf(group);
-        groups.remove(group);
-        root.getItems().remove(group);
+        int idx = orderedGroups().indexOf(group);
+        SplitPane parent = parentOf(group);
+        if (parent == null) {
+            return; // the only group: never remove the last one
+        }
+        relocating = true;
+        try {
+            parent.getItems().remove(group);
+            collapseIfRedundant(parent);
+        } finally {
+            relocating = false;
+        }
         if (focused == group) {
-            focused = groups.get(Math.min(idx, groups.size() - 1));
+            List<TabPane> after = orderedGroups();
+            focused = after.get(Math.min(idx, after.size() - 1));
             activeTab.set(focused.getSelectionModel().getSelectedItem());
+        }
+    }
+
+    /**
+     * Replaces a branch reduced to one child with that child. A one-item {@code SplitPane} is invisible but
+     * not inert: it still takes part in layout, and every traversal has to step through it. Substituting
+     * keeps the grandparent's child count unchanged, so this can never cascade.
+     */
+    private void collapseIfRedundant(SplitPane branch) {
+        if (branch.getItems().size() != 1) {
+            return;
+        }
+        Node only = branch.getItems().get(0);
+        SplitPane grandparent = parentOf(branch);
+        branch.getItems().remove(only);
+        if (grandparent == null) {
+            tree = only;
+            container.getChildren().setAll(only);
+        } else {
+            int at = grandparent.getItems().indexOf(branch);
+            grandparent.getItems().remove(branch);
+            grandparent.getItems().add(at, only);
         }
     }
 
@@ -294,7 +393,8 @@ final class EditorArea {
 
     /**
      * Moves the focused group's selected tab into a new group beside it, laid out per {@code orientation},
-     * and focuses that new group — the IDE "split right" / "split down" gesture.
+     * and focuses that new group — the IDE "split right" / "split down" gesture. The new group takes the
+     * focused one's place in the tree, so a horizontal split can contain a vertical one.
      *
      * <p>Refuses when the focused group holds only that one tab: the move would empty the group, collapse it,
      * and leave the layout exactly as it started, having merely flickered.
@@ -306,26 +406,61 @@ final class EditorArea {
         if (tab == null || focused.getTabs().size() < 2) {
             return false;
         }
-        root.setOrientation(orientation);
-        TabPane group = newGroup();
-        relocate(tab, group);
+        TabPane fresh = new TabPane();
+        fresh.setTabClosingPolicy(primary.getTabClosingPolicy());
+        wire(fresh);
+        insertBeside(focused, fresh, orientation);
+        relocate(tab, fresh);
         return true;
     }
 
     /**
-     * Moves the focused group's selected tab to the next group round-robin, creating a second group if the
-     * area is not split yet. Returns whether anything moved.
+     * Places {@code fresh} immediately after {@code leaf} in the tree, splitting along {@code orientation}.
+     *
+     * <p>When the leaf's own parent already splits that way, {@code fresh} becomes a plain sibling instead of
+     * a nested branch — so splitting right three times gives three columns rather than a right-leaning chain
+     * of two-way splits, which is both what users expect and far cheaper to traverse and to persist.
+     */
+    private void insertBeside(TabPane leaf, TabPane fresh, Orientation orientation) {
+        SplitPane parent = parentOf(leaf);
+        relocating = true;
+        try {
+            if (parent != null && parent.getOrientation() == orientation) {
+                parent.getItems().add(parent.getItems().indexOf(leaf) + 1, fresh);
+                return;
+            }
+            SplitPane branch = new SplitPane();
+            branch.setOrientation(orientation);
+            if (parent == null) {
+                container.getChildren().remove(leaf); // single-parent the leaf before the branch adopts it
+                branch.getItems().addAll(leaf, fresh);
+                tree = branch;
+                container.getChildren().setAll(branch);
+            } else {
+                int at = parent.getItems().indexOf(leaf);
+                parent.getItems().remove(leaf);
+                branch.getItems().addAll(leaf, fresh);
+                parent.getItems().add(at, branch);
+            }
+        } finally {
+            relocating = false;
+        }
+    }
+
+    /**
+     * Moves the focused group's selected tab to the next group in visual order, wrapping round, and creating
+     * a second group if the area is not split yet. Returns whether anything moved.
      */
     boolean moveActiveToNextGroup() {
         Tab tab = selectedTab();
         if (tab == null) {
             return false;
         }
+        List<TabPane> groups = orderedGroups();
         if (groups.size() == 1) {
-            return splitActive(root.getOrientation());
+            return splitActive(Orientation.HORIZONTAL);
         }
-        int next = (groups.indexOf(focused) + 1) % groups.size();
-        relocate(tab, groups.get(next));
+        relocate(tab, groups.get((groups.indexOf(focused) + 1) % groups.size()));
         return true;
     }
 
@@ -342,7 +477,7 @@ final class EditorArea {
             relocating = false;
         }
         // Collapse an emptied source only after the move, so the tab is never briefly homeless.
-        if (owner != null && owner.getTabs().isEmpty() && groups.size() > 1) {
+        if (owner != null && owner.getTabs().isEmpty() && groupCount() > 1) {
             discard(owner);
         }
         setFocusedGroup(target);
@@ -352,15 +487,9 @@ final class EditorArea {
 
     /**
      * Removes {@code tab} from {@code owner} in a way that is safe to follow immediately with an add to
-     * another group.
-     *
-     * <p>A {@code TabPane}'s skin parents the selected tab's content node, and it only lets go of it when it
-     * processes the removal — which happens on the next layout pass, not on the list mutation. Adding the tab
-     * to a second pane in the same frame therefore gives one node two parents, and the scene-graph sync
-     * fails the next pulse with {@code AssertionError: validation of PGGroup children failed} (an assertion,
-     * so it is invisible with assertions disabled and a hard crash with them on — which is how the FX suite
-     * runs). Detaching the content first, and restoring it after the move, keeps the node single-parented
-     * throughout.
+     * another group. A {@code TabPane}'s skin parents the selected tab's content node and only lets go on the
+     * next layout pass, so adding to a second pane in the same frame would briefly give one node two parents.
+     * Detaching the content first, and restoring it after, keeps it single-parented throughout.
      */
     private void detach(Tab tab, TabPane owner) {
         Node content = tab.getContent();
@@ -369,34 +498,33 @@ final class EditorArea {
         tab.setContent(content);
     }
 
-    /** Appends a fresh, empty group to the area. */
-    private TabPane newGroup() {
-        TabPane group = new TabPane();
-        group.setTabClosingPolicy(groups.get(0).getTabClosingPolicy());
-        adopt(group);
-        return group;
-    }
-
     /**
-     * Merges every group back into the first one, preserving visual order, and leaves the area unsplit.
+     * Merges every group back into the primary one, preserving visual order, and leaves the area unsplit.
      * Returns whether anything changed.
      */
     boolean unsplit() {
+        List<TabPane> groups = orderedGroups();
         if (groups.size() == 1) {
             return false;
         }
         Tab active = selectedTab();
-        TabPane primary = groups.get(0);
         relocating = true;
         try {
-            for (TabPane g : new ArrayList<>(groups.subList(1, groups.size()))) {
+            for (TabPane g : groups) {
+                if (g == primary) {
+                    continue;
+                }
                 for (Tab tab : new ArrayList<>(g.getTabs())) {
-                    detach(tab, g); // see detach: never let a tab's content have two parents in one frame
+                    detach(tab, g);
                     primary.getTabs().add(tab);
                 }
-                groups.remove(g);
-                root.getItems().remove(g);
             }
+            SplitPane parent = parentOf(primary);
+            if (parent != null) {
+                parent.getItems().remove(primary);
+            }
+            tree = primary;
+            container.getChildren().setAll(primary);
         } finally {
             relocating = false;
         }
@@ -408,8 +536,9 @@ final class EditorArea {
         return true;
     }
 
-    /** Moves focus to the next group round-robin. Returns whether the area is split enough to matter. */
+    /** Moves focus to the next group in visual order. Returns whether the area is split enough to matter. */
     boolean focusNextGroup() {
+        List<TabPane> groups = orderedGroups();
         if (groups.size() < 2) {
             return false;
         }
@@ -431,7 +560,7 @@ final class EditorArea {
      */
     void setTabHeaderVisible(boolean visible) {
         tabHeaderVisible = visible;
-        for (TabPane g : groups) {
+        for (TabPane g : orderedGroups()) {
             applyTabHeader(g);
         }
     }
@@ -456,7 +585,7 @@ final class EditorArea {
     /** Observes tabs opening and closing anywhere in the area, including in groups created later. */
     void addTabsListener(ListChangeListener<? super Tab> listener) {
         tabsListeners.add(listener);
-        for (TabPane g : groups) {
+        for (TabPane g : orderedGroups()) {
             g.getTabs().addListener(listener);
         }
     }
@@ -465,7 +594,7 @@ final class EditorArea {
     <T extends Event> void addEventFilter(EventType<T> type, EventHandler<? super T> handler) {
         FilterRegistration<T> reg = new FilterRegistration<>(type, handler);
         filters.add(reg);
-        for (TabPane g : groups) {
+        for (TabPane g : orderedGroups()) {
             reg.applyTo(g);
         }
     }

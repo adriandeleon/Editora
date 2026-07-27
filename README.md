@@ -172,7 +172,9 @@ Editora is built with the help of AI coding tools.
   own tabs and its own selection, so a header can sit beside its implementation. *Split Editor Group Right* /
   *Down* move the current file into a new group, *Move File to Next Editor Group* shifts it along, *Focus
   Next Editor Group* moves the keyboard between them, and *Merge Editor Groups* puts it all back; emptying a
-  group collapses it. Distinct from *Split Editor*, which shows two views of the **same** file — and the two
+  group collapses it. Splits **nest** — a side-by-side pair can hold a stacked pair, for an L-shaped layout —
+  while splitting the same direction twice widens the existing row into three columns instead of building a
+  lopsided chain. Distinct from *Split Editor*, which shows two views of the **same** file — and the two
   combine.
 - **Multiple cursors & column selection** — VS Code–style multi-caret editing: add a caret at the next
   occurrence of the selection / above / below, or **Select All Occurrences** (`Ctrl+Shift+L` in the
