@@ -201,6 +201,35 @@ class EditorGroupsFxTest {
         cleanUp();
     }
 
+    /**
+     * Closing the last file with the tab's own ✕ must collapse the group too.
+     *
+     * <p>A distinct path from {@link #closingTheLastTabInAGroupCollapsesThatGroup}, and it needs its own test
+     * because the ✕ never reaches {@code EditorArea.remove}: {@code Tab.onCloseRequest} fires and then
+     * <em>JavaFX itself</em> removes the tab from the pane, so the group empties without this class being
+     * told. Stale empty groups accumulated as a result — found by reading a real session file that had
+     * recorded five groups for two open files, not by any test, because the existing one drove the command
+     * path (the API I had written) rather than the one a user actually takes.
+     *
+     * <p>Removing straight from the pane's tab list is exactly what the close button does.
+     */
+    @Test
+    void closingATabWithItsCloseButtonAlsoCollapsesTheGroup() throws Exception {
+        addBuffer();
+        Tab moved = addBuffer();
+        FxTestSupport.runOnFx(() -> area.splitActive(Orientation.HORIZONTAL));
+        assertEquals(2, groupCount(), "split first");
+
+        // Bypass EditorArea entirely, as the ✕ does.
+        FxTestSupport.runOnFx(() -> moved.getTabPane().getTabs().remove(moved));
+        FxTestSupport.runOnFx(() -> {}); // let the deferred collapse run on the next pulse
+
+        assertEquals(1, groupCount(), "the emptied group collapsed even though remove() was never called");
+        assertEquals(1, FxTestSupport.callOnFx(() -> area.size()), "the other file is untouched");
+
+        cleanUp();
+    }
+
     /** An unsplit area writes no layout at all, so an unsplit session file is byte-identical to before. */
     @Test
     void anUnsplitAreaSavesNoLayout() throws Exception {

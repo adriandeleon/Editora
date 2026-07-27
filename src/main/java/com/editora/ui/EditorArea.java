@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.function.Supplier;
 
+import javafx.application.Platform;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.value.ChangeListener;
@@ -231,6 +232,28 @@ final class EditorArea {
             if (group == focused) {
                 activeTab.set(now);
             }
+        });
+        // Catch-all collapse. remove() discards an emptied group directly, but not every close goes through
+        // it: clicking a tab's close button fires Tab.onCloseRequest and then *JavaFX itself* removes the tab
+        // from the pane, so the group empties without this class being told. Watching the list covers every
+        // path — button, command, or programmatic — instead of only the ones routed through remove().
+        //
+        // Deferred, because this fires *during* the list change: discarding here would restructure the scene
+        // graph from inside a mutation, the hazard documented on the focusWithin listener above. By the next
+        // pulse the change has settled; the group is re-checked then, so a discard that already happened
+        // (remove()'s own synchronous one) is a no-op rather than a double removal.
+        group.getTabs().addListener((ListChangeListener<Tab>) c -> {
+            if (relocating || !group.getTabs().isEmpty() || groupCount() < 2) {
+                return;
+            }
+            Platform.runLater(() -> {
+                if (!relocating
+                        && group.getTabs().isEmpty()
+                        && groupCount() > 1
+                        && orderedGroups().contains(group)) {
+                    discard(group);
+                }
+            });
         });
         // Dropping a tab onto the group body: middle moves it here, an edge splits this group that way.
         group.setOnDragOver(e -> onDragOverGroup(group, e));
