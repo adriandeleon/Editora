@@ -2192,6 +2192,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void setupToolWindows() {
+        editorArea.setDraggedTabSource(() -> draggedTab); // drops onto a group body move/split it
         toolWindows = new ToolWindowManager(workspace, editorArea.node(), config, keymap);
         projectPanel = new ProjectPanel(
                 this::openPath, this::onProjectFileRenamed, this::onProjectFileDeleted, this::isPathModified);
@@ -6004,8 +6005,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             runPendingStartupAction(true); // synchronous: its tab must exist before any restored tab
         }
         int selectIndex = cliIndex >= 0 ? cliIndex : (hasStartupWork ? -1 : activeIndex);
+        // Rebuild the split shape *before* opening anything, so each file can be inserted straight into its
+        // group rather than opened into one group and moved afterwards.
+        com.editora.config.EditorGroupLayout layout = state.getEditorLayout();
+        editorArea.restoreLayout(layout);
         for (int i = 0; i < files.size(); i++) {
             WorkspaceState.OpenFile f = files.get(i);
+            editorArea.setRestoreTargetGroup(layout == null ? -1 : f.getGroup());
             Path p = com.editora.vfs.Vfs.parseStorable(f.getPath()); // non-null: the filter above kept only readable
             boolean active = i == selectIndex;
             // A raster image restores into the read-only image viewer (a null buffer placeholder keeps the
@@ -6045,6 +6051,19 @@ public class MainController implements com.editora.mcp.McpBridge {
                 updateTabMeta(tab, buffer);
             }
             buffers.add(buffer);
+        }
+        editorArea.setRestoreTargetGroup(-1);
+        if (layout != null) {
+            // A saved file can be gone from disk; a group that loses every file would otherwise come back as
+            // a blank pane the user has to close by hand.
+            editorArea.pruneEmptyGroups();
+            editorArea.applyRestoredSelection(layout);
+            Tab active = selectIndex >= 0 && selectIndex < editorArea.size()
+                    ? editorArea.tabs().get(selectIndex)
+                    : null;
+            if (active != null) {
+                editorArea.select(active); // re-assert the active file after the per-group selections
+            }
         }
         // Fill order: the selected file first (the CLI target when there is one, else the session's active
         // file), then the rest in tab order.
@@ -8387,11 +8406,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // Vfs.toStorableString keeps a remote file's sftp:// URI — a bare path would be reopened as a
                 // *local* file on restart (a same-named local file could silently open in its place).
                 files.add(new WorkspaceState.OpenFile(
-                        com.editora.vfs.Vfs.toStorableString(p), caret, pinned.contains(tab)));
+                        com.editora.vfs.Vfs.toStorableString(p),
+                        caret,
+                        pinned.contains(tab),
+                        editorArea.groupIndexOf(tab)));
             }
         }
         WorkspaceState state = config.getWorkspaceState();
         state.setOpenFiles(files);
+        state.setEditorLayout(editorArea.snapshotLayout()); // null while unsplit, so an unsplit window writes none
         Path activePath = tabPath(editorArea.selectedTab());
         state.setActiveFile(activePath != null ? com.editora.vfs.Vfs.toStorableString(activePath) : "");
         persistWindowBounds(state);

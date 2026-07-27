@@ -3,7 +3,9 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Supplier;
 
+import javafx.application.Platform;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.value.ChangeListener;
@@ -16,7 +18,12 @@ import javafx.scene.Node;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.input.DragEvent;
+import javafx.scene.input.TransferMode;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+
+import com.editora.config.EditorGroupLayout;
 
 /**
  * The editor area: the region of the window that holds open file tabs, as a single component that
@@ -90,6 +97,19 @@ final class EditorArea {
     /** True while this class is restructuring the tree — see {@link #isRelocating()}. */
     private boolean relocating;
 
+    /** What the controller is currently dragging, if anything. See {@link #setDraggedTabSource}. */
+    private Supplier<Tab> draggedTab;
+
+    /** While >= 0, {@link #add(Tab)} routes to this group index instead of the focused one (session restore). */
+    private int restoreTargetGroup = -1;
+
+    /**
+     * Translucent overlay showing where a dragged tab would land. Unmanaged and mouse-transparent so it can
+     * be positioned freely over any group without taking part in layout or swallowing the drag events it is
+     * drawn in response to.
+     */
+    private final Region dropIndicator = new Region();
+
     private boolean tabHeaderVisible = true;
 
     private record FilterRegistration<T extends Event>(EventType<T> type, EventHandler<? super T> handler) {
@@ -102,9 +122,13 @@ final class EditorArea {
         this.primary = initial;
         this.singleGroupView = Collections.unmodifiableList(initial.getTabs());
         container.getStyleClass().add("editor-area");
+        dropIndicator.getStyleClass().add("editor-drop-indicator");
+        dropIndicator.setManaged(false);
+        dropIndicator.setMouseTransparent(true);
+        dropIndicator.setVisible(false);
         wire(initial);
         tree = initial;
-        container.getChildren().setAll(initial);
+        container.getChildren().setAll(initial, dropIndicator);
         focused = initial;
         activeTab.set(initial.getSelectionModel().getSelectedItem());
     }
@@ -209,6 +233,36 @@ final class EditorArea {
                 activeTab.set(now);
             }
         });
+        // Catch-all collapse. remove() discards an emptied group directly, but not every close goes through
+        // it: clicking a tab's close button fires Tab.onCloseRequest and then *JavaFX itself* removes the tab
+        // from the pane, so the group empties without this class being told. Watching the list covers every
+        // path — button, command, or programmatic — instead of only the ones routed through remove().
+        //
+        // Deferred, because this fires *during* the list change: discarding here would restructure the scene
+        // graph from inside a mutation, the hazard documented on the focusWithin listener above. By the next
+        // pulse the change has settled; the group is re-checked then, so a discard that already happened
+        // (remove()'s own synchronous one) is a no-op rather than a double removal.
+        group.getTabs().addListener((ListChangeListener<Tab>) c -> {
+            if (relocating || !group.getTabs().isEmpty() || groupCount() < 2) {
+                return;
+            }
+            Platform.runLater(() -> {
+                if (!relocating
+                        && group.getTabs().isEmpty()
+                        && groupCount() > 1
+                        && orderedGroups().contains(group)) {
+                    discard(group);
+                }
+            });
+        });
+        // Dropping a tab onto the group body: middle moves it here, an edge splits this group that way.
+        group.setOnDragOver(e -> onDragOverGroup(group, e));
+        group.setOnDragExited(e -> hideDropIndicator());
+        group.setOnDragDropped(e -> {
+            boolean moved = onDropOnGroup(group, e);
+            e.setDropCompleted(moved);
+            e.consume();
+        });
     }
 
     /** Makes {@code group} the focused one, republishing its selection as the active tab. */
@@ -305,9 +359,26 @@ final class EditorArea {
 
     // --- mutation --------------------------------------------------------------------------------------
 
-    /** Appends {@code tab} to the focused group. */
+    /**
+     * Appends {@code tab} to the focused group — or, during a session restore, to the group named by
+     * {@link #setRestoreTargetGroup}. Routing at insert time rather than moving the tab afterwards matters:
+     * every move is a remove-then-add that the rest of the UI has to be told to ignore, and doing that once
+     * per restored file is both slower and more to get wrong.
+     */
     void add(Tab tab) {
+        if (restoreTargetGroup >= 0) {
+            addToGroup(restoreTargetGroup, tab);
+            return;
+        }
         focused.getTabs().add(tab);
+    }
+
+    /**
+     * Directs subsequent {@link #add(Tab)} calls to the group at this depth-first index; {@code -1} restores
+     * the normal "append to the focused group" behaviour. Only used while restoring a session.
+     */
+    void setRestoreTargetGroup(int index) {
+        this.restoreTargetGroup = index;
     }
 
     /** Inserts {@code tab} at {@code index} of the focused group (used by pin/drag reordering). */
@@ -365,7 +436,7 @@ final class EditorArea {
         branch.getItems().remove(only);
         if (grandparent == null) {
             tree = only;
-            container.getChildren().setAll(only);
+            container.getChildren().setAll(only, dropIndicator);
         } else {
             int at = grandparent.getItems().indexOf(branch);
             grandparent.getItems().remove(branch);
@@ -422,24 +493,28 @@ final class EditorArea {
      * of two-way splits, which is both what users expect and far cheaper to traverse and to persist.
      */
     private void insertBeside(TabPane leaf, TabPane fresh, Orientation orientation) {
+        insertBeside(leaf, fresh, orientation, true);
+    }
+
+    private void insertBeside(TabPane leaf, TabPane fresh, Orientation orientation, boolean after) {
         SplitPane parent = parentOf(leaf);
         relocating = true;
         try {
             if (parent != null && parent.getOrientation() == orientation) {
-                parent.getItems().add(parent.getItems().indexOf(leaf) + 1, fresh);
+                parent.getItems().add(parent.getItems().indexOf(leaf) + (after ? 1 : 0), fresh);
                 return;
             }
             SplitPane branch = new SplitPane();
             branch.setOrientation(orientation);
             if (parent == null) {
                 container.getChildren().remove(leaf); // single-parent the leaf before the branch adopts it
-                branch.getItems().addAll(leaf, fresh);
+                branch.getItems().setAll(after ? List.of(leaf, fresh) : List.of(fresh, leaf));
                 tree = branch;
-                container.getChildren().setAll(branch);
+                container.getChildren().setAll(branch, dropIndicator);
             } else {
                 int at = parent.getItems().indexOf(leaf);
                 parent.getItems().remove(leaf);
-                branch.getItems().addAll(leaf, fresh);
+                branch.getItems().setAll(after ? List.of(leaf, fresh) : List.of(fresh, leaf));
                 parent.getItems().add(at, branch);
             }
         } finally {
@@ -524,7 +599,7 @@ final class EditorArea {
                 parent.getItems().remove(primary);
             }
             tree = primary;
-            container.getChildren().setAll(primary);
+            container.getChildren().setAll(primary, dropIndicator);
         } finally {
             relocating = false;
         }
@@ -549,6 +624,227 @@ final class EditorArea {
             tab.getContent().requestFocus();
         }
         return true;
+    }
+
+    // --- saved layout ----------------------------------------------------------------------------------
+
+    /** The index of the group holding {@code tab} in depth-first order, or {@code -1} if it is not open. */
+    int groupIndexOf(Tab tab) {
+        TabPane owner = ownerOf(tab);
+        return owner == null ? -1 : orderedGroups().indexOf(owner);
+    }
+
+    /**
+     * The current split shape, for the session file — {@code null} while unsplit, so an unsplit window writes
+     * nothing and an older reader is unaffected. Leaves carry only their selected-tab index; which files sit
+     * in which group is recorded per file, so the two halves cannot disagree (see {@link EditorGroupLayout}).
+     */
+    EditorGroupLayout snapshotLayout() {
+        return isSplit() ? describe(tree) : null;
+    }
+
+    private static EditorGroupLayout describe(Node node) {
+        if (node instanceof TabPane leaf) {
+            return EditorGroupLayout.leaf(leaf.getSelectionModel().getSelectedIndex());
+        }
+        SplitPane branch = (SplitPane) node;
+        List<EditorGroupLayout> children = new ArrayList<>();
+        for (Node child : branch.getItems()) {
+            children.add(describe(child));
+        }
+        return EditorGroupLayout.branch(branch.getOrientation().name(), children);
+    }
+
+    /**
+     * Rebuilds the split shape to match {@code layout}, leaving every group empty and ready for
+     * {@link #addToGroup}. A null or single-leaf layout collapses the area to one group.
+     *
+     * <p>Restoring the shape <em>before</em> any file is opened is what lets the session fill straight into
+     * the right groups; building it afterwards would mean moving every tab a second time, and each move is a
+     * remove-then-add that the rest of the UI has to be told to ignore.
+     */
+    void restoreLayout(EditorGroupLayout layout) {
+        unsplit();
+        if (layout == null || layout.leafCount() < 2) {
+            return;
+        }
+        relocating = true;
+        try {
+            container.getChildren().remove(primary);
+            Node rebuilt = rebuild(layout, new java.util.ArrayDeque<>(List.of(primary)));
+            tree = rebuilt;
+            container.getChildren().setAll(rebuilt, dropIndicator);
+        } finally {
+            relocating = false;
+        }
+        focused = primary;
+    }
+
+    /** Materialises {@code node}, reusing the primary pane for the first leaf so its identity is preserved. */
+    private Node rebuild(EditorGroupLayout node, java.util.Deque<TabPane> reusable) {
+        if (node.isLeaf()) {
+            TabPane leaf = reusable.poll();
+            if (leaf == null) {
+                leaf = new TabPane();
+                leaf.setTabClosingPolicy(primary.getTabClosingPolicy());
+                wire(leaf);
+            }
+            return leaf;
+        }
+        SplitPane branch = new SplitPane();
+        branch.setOrientation("VERTICAL".equals(node.getOrientation()) ? Orientation.VERTICAL : Orientation.HORIZONTAL);
+        for (EditorGroupLayout child : node.getChildren()) {
+            branch.getItems().add(rebuild(child, reusable));
+        }
+        return branch;
+    }
+
+    /** Appends {@code tab} to the group at depth-first index {@code index}, clamped into range. */
+    void addToGroup(int index, Tab tab) {
+        List<TabPane> groups = orderedGroups();
+        groups.get(Math.max(0, Math.min(index, groups.size() - 1))).getTabs().add(tab);
+    }
+
+    /**
+     * Applies each leaf's saved selected-tab index. Called once the session's files are in place; indices
+     * are clamped, since a file in the layout may no longer exist on disk. Deliberately leaves focus alone —
+     * the caller re-selects the session's active file afterwards, and that is what decides the focused group.
+     */
+    void applyRestoredSelection(EditorGroupLayout layout) {
+        List<TabPane> groups = orderedGroups();
+        List<EditorGroupLayout> leaves = new ArrayList<>();
+        if (layout != null) {
+            collectLeaves(layout, leaves);
+        }
+        for (int i = 0; i < groups.size() && i < leaves.size(); i++) {
+            TabPane group = groups.get(i);
+            if (!group.getTabs().isEmpty()) {
+                int at = Math.max(
+                        0, Math.min(leaves.get(i).getSelected(), group.getTabs().size() - 1));
+                group.getSelectionModel().select(at);
+            }
+        }
+    }
+
+    private static void collectLeaves(EditorGroupLayout node, List<EditorGroupLayout> out) {
+        if (node.isLeaf()) {
+            out.add(node);
+            return;
+        }
+        for (EditorGroupLayout child : node.getChildren()) {
+            collectLeaves(child, out);
+        }
+    }
+
+    /**
+     * Drops any group left empty by a restore. A saved file can be gone from disk, and a group whose every
+     * file vanished would otherwise come back as a permanently blank pane the user has to close by hand.
+     */
+    void pruneEmptyGroups() {
+        for (TabPane group : orderedGroups()) {
+            if (group.getTabs().isEmpty() && groupCount() > 1) {
+                discard(group);
+            }
+        }
+    }
+
+    // --- drag and drop ---------------------------------------------------------------------------------
+
+    /**
+     * Supplies the tab currently being dragged, if any. Owned by the controller, which starts the drag from
+     * the tab header; the area only needs to know what is in flight when a drop lands on a group.
+     */
+    void setDraggedTabSource(Supplier<Tab> source) {
+        this.draggedTab = source;
+    }
+
+    /**
+     * Handles a drag hovering over {@code group}: shows where the tab would land and accepts the transfer.
+     * Dropping into the middle moves the tab into that group; dropping near an edge splits the group and puts
+     * the tab on that side.
+     */
+    private void onDragOverGroup(TabPane group, DragEvent e) {
+        Tab dragged = draggedTab == null ? null : draggedTab.get();
+        if (dragged == null) {
+            return;
+        }
+        DropZone zone = DropZone.of(e.getX(), e.getY(), group.getWidth(), group.getHeight());
+        if (!isMeaningful(dragged, group, zone)) {
+            hideDropIndicator();
+            return;
+        }
+        e.acceptTransferModes(TransferMode.MOVE);
+        showDropIndicator(group, zone);
+        e.consume();
+    }
+
+    /**
+     * Whether the drop would actually change anything. Dropping a tab into the middle of the group it already
+     * lives in is a no-op, and splitting a group off its only tab would empty that group, collapse it, and
+     * land back where it started — so neither should light up a target.
+     */
+    private boolean isMeaningful(Tab dragged, TabPane group, DropZone zone) {
+        boolean sameGroup = group.getTabs().contains(dragged);
+        if (!zone.isSplit()) {
+            return !sameGroup;
+        }
+        return !(sameGroup && group.getTabs().size() < 2);
+    }
+
+    /** Performs a drop on {@code group}. Returns whether anything moved. */
+    private boolean onDropOnGroup(TabPane group, DragEvent e) {
+        hideDropIndicator();
+        Tab dragged = draggedTab == null ? null : draggedTab.get();
+        if (dragged == null) {
+            return false;
+        }
+        DropZone zone = DropZone.of(e.getX(), e.getY(), group.getWidth(), group.getHeight());
+        if (!isMeaningful(dragged, group, zone)) {
+            return false;
+        }
+        if (!zone.isSplit()) {
+            relocate(dragged, group);
+            return true;
+        }
+        TabPane fresh = new TabPane();
+        fresh.setTabClosingPolicy(primary.getTabClosingPolicy());
+        wire(fresh);
+        boolean horizontal = zone == DropZone.LEFT || zone == DropZone.RIGHT;
+        boolean after = zone == DropZone.RIGHT || zone == DropZone.BOTTOM;
+        insertBeside(group, fresh, horizontal ? Orientation.HORIZONTAL : Orientation.VERTICAL, after);
+        relocate(dragged, fresh);
+        return true;
+    }
+
+    /** Highlights the region the dragged tab would occupy: the whole group, or the half it would split off. */
+    private void showDropIndicator(TabPane group, DropZone zone) {
+        javafx.geometry.Bounds b = container.sceneToLocal(group.localToScene(group.getBoundsInLocal()));
+        double x = b.getMinX();
+        double y = b.getMinY();
+        double w = b.getWidth();
+        double h = b.getHeight();
+        switch (zone) {
+            case LEFT -> w /= 2;
+            case RIGHT -> {
+                x += w / 2;
+                w /= 2;
+            }
+            case TOP -> h /= 2;
+            case BOTTOM -> {
+                y += h / 2;
+                h /= 2;
+            }
+            case CENTER -> {
+                /* the whole group */
+            }
+        }
+        dropIndicator.setVisible(true);
+        dropIndicator.resizeRelocate(x, y, w, h);
+        dropIndicator.toFront();
+    }
+
+    private void hideDropIndicator() {
+        dropIndicator.setVisible(false);
     }
 
     // --- chrome + observation --------------------------------------------------------------------------

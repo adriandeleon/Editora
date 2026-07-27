@@ -17,8 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it, so you never end up staring at an empty pane. All five are in the command palette and bindable.
   Splits **nest**, so a side-by-side pair can hold a stacked pair and you can build an L-shaped layout —
   while splitting the same direction twice widens the existing row instead, giving you three columns rather
-  than a lopsided chain. This is distinct from the existing **Split Editor** commands, which show two views
-  of the *same* file — those still work exactly as before, and the two can be combined.
+  than a lopsided chain. **Drag a tab onto another group** to move it there, or onto a group's edge to split
+  that group and drop the file on that side — a translucent highlight shows where it will land. **Your split
+  layout is saved with the session**, so the arrangement you left comes back on the next launch (a file
+  that has since disappeared no longer leaves a blank pane behind). This is distinct from the existing
+  **Split Editor** commands, which show two views of the *same* file — those still work exactly as before,
+  and the two can be combined.
 - **The Git and GitHub command lines you run are now visible** — the shared output console gained a **Git**
   and a **GitHub** tab holding a transcript of the `git` / `gh` commands Editora ran on your behalf: the
   command, its output, and its exit code and duration. Git logs the commands you asked for (commit, push,
