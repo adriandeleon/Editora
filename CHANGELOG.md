@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Two files on screen at once** — the editor area can now be split into independent **editor groups**, each
+  with its own tabs and its own selection, so you can put a header beside its implementation or a test beside
+  what it tests. **Split Editor Group Right** and **Split Editor Group Down** move the current file into a new
+  group, **Move File to Next Editor Group** shifts it along, **Focus Next Editor Group** moves the keyboard
+  between them, and **Merge Editor Groups** puts everything back. Closing the last file in a group collapses
+  it, so you never end up staring at an empty pane. All five are in the command palette and bindable.
+  This is distinct from the existing **Split Editor** commands, which show two views of the *same* file —
+  those still work exactly as before, and the two can be combined.
 - **The Git and GitHub command lines you run are now visible** — the shared output console gained a **Git**
   and a **GitHub** tab holding a transcript of the `git` / `gh` commands Editora ran on your behalf: the
   command, its output, and its exit code and duration. Git logs the commands you asked for (commit, push,
