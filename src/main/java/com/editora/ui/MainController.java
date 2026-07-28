@@ -8414,7 +8414,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         WorkspaceState state = config.getWorkspaceState();
         state.setOpenFiles(files);
-        state.setEditorLayout(editorArea.snapshotLayout()); // null while unsplit, so an unsplit window writes none
+        // Same predicate the loop above filters on, so the saved selection index counts the same tabs.
+        state.setEditorLayout(editorArea.snapshotLayout(t -> tabPath(t) != null));
         Path activePath = tabPath(editorArea.selectedTab());
         state.setActiveFile(activePath != null ? com.editora.vfs.Vfs.toStorableString(activePath) : "");
         persistWindowBounds(state);

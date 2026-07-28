@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import javafx.application.Platform;
@@ -639,20 +640,51 @@ final class EditorArea {
      * nothing and an older reader is unaffected. Leaves carry only their selected-tab index; which files sit
      * in which group is recorded per file, so the two halves cannot disagree (see {@link EditorGroupLayout}).
      */
-    EditorGroupLayout snapshotLayout() {
-        return isSplit() ? describe(tree) : null;
+    EditorGroupLayout snapshotLayout(Predicate<Tab> persisted) {
+        return isSplit() ? describe(tree, persisted) : null;
     }
 
-    private static EditorGroupLayout describe(Node node) {
+    private static EditorGroupLayout describe(Node node, Predicate<Tab> persisted) {
         if (node instanceof TabPane leaf) {
-            return EditorGroupLayout.leaf(leaf.getSelectionModel().getSelectedIndex());
+            return EditorGroupLayout.leaf(persistedIndexOfSelection(leaf, persisted));
         }
         SplitPane branch = (SplitPane) node;
         List<EditorGroupLayout> children = new ArrayList<>();
         for (Node child : branch.getItems()) {
-            children.add(describe(child));
+            children.add(describe(child, persisted));
         }
         return EditorGroupLayout.branch(branch.getOrientation().name(), children);
+    }
+
+    /**
+     * The selected tab's index <em>among the tabs that will actually be written to the session</em>, which is
+     * not the same as its index in the group.
+     *
+     * <p>Not every open tab is persisted — the Welcome tab and an unsaved buffer have no path, so the session
+     * skips them — but they still occupy a slot in the group. Recording the live index would therefore save a
+     * number in one coordinate system and restore it in another: a group of {@code [Welcome, a.c, b.c]} with
+     * {@code b.c} selected would save index 2 and, on restore into a two-tab group, select {@code a.c}. The
+     * clamp hides it whenever the number lands out of range, which is why the symptom is intermittent and
+     * looks like "sometimes the wrong file is focused" rather than an obvious break.
+     *
+     * <p>Counting only persisted tabs puts the index in the same space restore fills the group in. A selected
+     * tab that is not itself persisted lands on the next one that is, which is the closest thing to right.
+     */
+    private static int persistedIndexOfSelection(TabPane leaf, Predicate<Tab> persisted) {
+        Tab selected = leaf.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            return 0;
+        }
+        int index = 0;
+        for (Tab tab : leaf.getTabs()) {
+            if (tab == selected) {
+                break;
+            }
+            if (persisted.test(tab)) {
+                index++;
+            }
+        }
+        return index;
     }
 
     /**
