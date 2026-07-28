@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A menu bar** — File / Edit / Find / View / Navigate / Code / Run / VCS / Tools / Window / Help, so the
+  things Editora can do are *browsable* rather than only findable by name in the command palette. Each entry
+  shows its current keybinding and updates when you switch keymaps; a command whose feature is switched off
+  appears greyed rather than vanishing, so the menu stays a stable map. On macOS it sits in the system menu
+  bar. Hide it from Settings → Interface or the palette (**View: Toggle Menu Bar**); it is hidden
+  automatically in Zen, Expert and Simple modes. The palette is still the complete index — the menu is a
+  curated subset of the ~470 commands.
+
 - **Two files on screen at once** — the editor area can now be split into independent **editor groups**, each
   with its own tabs and its own selection, so you can put a header beside its implementation or a test beside
   what it tests. **Split Editor Group Right** and **Split Editor Group Down** move the current file into a new

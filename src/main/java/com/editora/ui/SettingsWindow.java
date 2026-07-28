@@ -216,6 +216,7 @@ public class SettingsWindow {
     /** "Enable technical dictionary" checkbox (Settings.technicalDictionary). */
     private CheckBox techDictEnableCheck;
 
+    private CheckBox menuBarCheck;
     private CheckBox toolbarCheck;
     private CheckBox statusBarCheck;
     private CheckBox tabBarCheck;
@@ -1055,6 +1056,7 @@ public class SettingsWindow {
             apply();
         });
 
+        menuBarCheck = viewCheck(tr("settings.showMenuBar"), Settings::setShowMenuBar);
         toolbarCheck = viewCheck(tr("settings.showToolbar"), Settings::setShowToolbar);
         statusBarCheck = viewCheck(tr("settings.showStatusBar"), Settings::setShowStatusBar);
         tabBarCheck = viewCheck(tr("settings.showTabBar"), Settings::setShowTabBar);
@@ -2629,6 +2631,7 @@ public class SettingsWindow {
     private VBox interfacePage() {
         VBox p = page(tr("settings.cat.interface"));
         Label chrome = section(p, tr("settings.section.chrome"));
+        row(p, Category.INTERFACE, chrome, menuBarCheck, "menu bar menubar chrome");
         row(p, Category.INTERFACE, chrome, toolbarCheck, "toolbar buttons chrome");
         row(p, Category.INTERFACE, chrome, statusBarCheck, "status bar chrome");
         row(p, Category.INTERFACE, chrome, tabBarCheck, "tab bar tabs chrome");
@@ -6302,6 +6305,7 @@ public class SettingsWindow {
             techDictEnableCheck.setSelected(settings.isTechnicalDictionary());
             spellLanguageCombo.setValue(settings.getSpellLanguage());
             spellLanguageCombo.setDisable(!settings.isSpellCheck());
+            menuBarCheck.setSelected(settings.isShowMenuBar());
             toolbarCheck.setSelected(settings.isShowToolbar());
             statusBarCheck.setSelected(settings.isShowStatusBar());
             tabBarCheck.setSelected(settings.isShowTabBar());
@@ -6744,6 +6748,7 @@ public class SettingsWindow {
         boolean prev = loading;
         loading = true;
         try {
+            menuBarCheck.setSelected(config.getSettings().isShowMenuBar());
             toolbarCheck.setSelected(config.getSettings().isShowToolbar());
         } finally {
             loading = prev;
@@ -6907,6 +6912,7 @@ public class SettingsWindow {
             spellCheckBox.setSelected(s.isSpellCheck());
             spellLanguageCombo.setValue(s.getSpellLanguage());
             spellLanguageCombo.setDisable(!s.isSpellCheck());
+            menuBarCheck.setSelected(s.isShowMenuBar());
             toolbarCheck.setSelected(s.isShowToolbar());
             statusBarCheck.setSelected(s.isShowStatusBar());
             tabBarCheck.setSelected(s.isShowTabBar());

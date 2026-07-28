@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 87;
+    public static final int SCHEMA_VERSION = 88;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -172,6 +172,7 @@ public class Settings {
     /** Render LaTeX math ({@code $…$} / {@code $$…$$}) in the Markdown preview/PDF. On by default. */
     private boolean mathSupport = true;
 
+    private boolean showMenuBar = true;
     private boolean showToolbar = true;
     private boolean showStatusBar = true;
     private boolean showTabBar = true;
@@ -1255,6 +1256,14 @@ public class Settings {
 
     public void setDismissedUpdateVersion(String dismissedUpdateVersion) {
         this.dismissedUpdateVersion = dismissedUpdateVersion == null ? "" : dismissedUpdateVersion;
+    }
+
+    public boolean isShowMenuBar() {
+        return showMenuBar;
+    }
+
+    public void setShowMenuBar(boolean showMenuBar) {
+        this.showMenuBar = showMenuBar;
     }
 
     public boolean isShowToolbar() {
