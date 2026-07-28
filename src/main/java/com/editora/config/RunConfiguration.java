@@ -15,6 +15,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * make target. It is orthogonal to {@code kind}, which says whether to run or debug. Absent from an older
  * entry it defaults to {@code java}, so every configuration saved before types existed keeps working.
  *
+ * <p>{@code beforeLaunch} is an optional command line run first — a build, a codegen step — in the same
+ * working directory; a non-zero exit aborts the launch, so a stale binary is never run by accident.
+ *
  * <p>Persisted per window in {@code WorkspaceState.runConfigurations}. Jackson
  * round-trips this record; the compact constructor defaults every field so an older/partial entry loads.
  */
@@ -29,7 +32,8 @@ public record RunConfiguration(
         String args,
         String vmArgs,
         String workingDir,
-        String env) {
+        String env,
+        String beforeLaunch) {
 
     /** Prefix of the synthetic per-configuration commands, so stale ones can be found and dropped. */
     public static final String COMMAND_PREFIX = "run.config.";
@@ -46,6 +50,7 @@ public record RunConfiguration(
         vmArgs = vmArgs == null ? "" : vmArgs;
         workingDir = workingDir == null ? "" : workingDir;
         env = env == null ? "" : env;
+        beforeLaunch = beforeLaunch == null ? "" : beforeLaunch;
     }
 
     /** Back-compat constructor for callers that don't set environment variables ({@code env} = {@code ""}). */
@@ -70,7 +75,7 @@ public record RunConfiguration(
             String vmArgs,
             String workingDir,
             String env) {
-        this(name, kind, "java", "", mainClass, projectName, args, vmArgs, workingDir, env);
+        this(name, kind, "java", "", mainClass, projectName, args, vmArgs, workingDir, env, "");
     }
 
     /** The id of the synthetic command that launches this configuration ({@code run.config.<slug>}). */

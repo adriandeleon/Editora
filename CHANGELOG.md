@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run configurations gain a before-launch step, and can be shared with your team** — a configuration can
+  name a command to run first (a build, a codegen step); a non-zero exit aborts the launch, so a stale binary
+  is never run by accident. And **Export Configurations to Project** writes them to
+  `.editora/run-configurations.json` inside the project, where they can be committed; **Import** merges them
+  back by name, so importing twice doesn't duplicate and a colleague's edit updates rather than doubles.
+
 - **A run-configuration selector in the toolbar** — pick a saved configuration and hit Run or Debug, with
   Stop beside them; the choice is remembered across restarts. Each configuration also becomes a real command,
   so it appears in the command palette by name and can be given its own keyboard shortcut, the same way saved
