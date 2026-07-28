@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rename now shows you what it will change** — a rename that reaches beyond the current file lists every
+  affected file first, with its change count and where it moves to, and you can untick any file before
+  applying. A rename confined to the file you're looking at applies straight away as before: it's on screen
+  and one undo away, so there'd be nothing to confirm.
+
 - **Run configurations gain a before-launch step, and can be shared with your team** — a configuration can
   name a command to run first (a build, a codegen step); a non-zero exit aborts the launch, so a stale binary
   is never run by accident. And **Export Configurations to Project** writes them to

@@ -3835,6 +3835,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final LspCoordinator lspCoordinator =
             new LspCoordinator(coordinatorHost, lspManager, new LspCoordinator.Ops() {
                 @Override
+                public String homeCollapsed(String absolutePath) {
+                    return MainController.homeCollapsed(absolutePath);
+                }
+
+                @Override
                 public void openAndGoto(Path file, int line0, int col0) {
                     MainController.this.openAndGoto(file, line0, col0);
                 }

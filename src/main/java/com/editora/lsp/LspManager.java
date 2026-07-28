@@ -1167,6 +1167,24 @@ public final class LspManager {
 
     /** Renames the symbol at a 0-based position to {@code newName}; the workspace edit applies through the
      *  registered handler and {@code cb} gets overall success on the FX thread (#676). */
+    /**
+     * Asks the server what a rename would change, <b>without applying it</b>, so the caller can preview and
+     * filter first (#768). Delivers null when the server refuses or the edit contains an operation the mapper
+     * will not perform.
+     */
+    public void previewRename(
+            Path file, int line, int character, String newName, Consumer<WorkspaceEditMapper.Mapped> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        s.rename(uri(file), new Position(line, character), newName).whenComplete((edit, e) -> {
+            WorkspaceEditMapper.Mapped mapped = e != null || edit == null ? null : WorkspaceEditMapper.map(edit);
+            Platform.runLater(() -> cb.accept(mapped));
+        });
+    }
+
     public void rename(Path file, int line, int character, String newName, Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
