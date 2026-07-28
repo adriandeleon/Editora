@@ -27,6 +27,14 @@ final class Chrome {
     //     {@code focusMode} = Zen OR Expert. The exceptions are {@link #statusBar} and {@link #lineNumbers},
     //     which Zen hides but Expert deliberately KEEPS, so those two stay keyed on the real {@code zen}. ---
 
+    /**
+     * The menu bar follows the toolbar's rule — the user's preference, suppressed by a focus mode — but is
+     * also dropped in Simple UI mode, whose whole point is a minimal surface.
+     */
+    static boolean menuBar(boolean showMenuBar, boolean focusMode, boolean simpleMode) {
+        return showMenuBar && !focusMode && !simpleMode;
+    }
+
     static boolean toolbar(boolean showToolbar, boolean focusMode) {
         return showToolbar && !focusMode;
     }

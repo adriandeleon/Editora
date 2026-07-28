@@ -108,6 +108,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The editor area — the single entry point for reading and mutating open tabs. See {@link EditorArea}. */
     private EditorArea editorArea;
 
+    /** The window's menu bar — a browsable map over the command registry (#763). */
+    private MainMenuBar menuBar;
+
     @FXML
     private VBox topBox;
 
@@ -942,6 +945,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         statusBar.setVisible(statusOn);
         statusBar.setManaged(statusOn);
         editorArea.setTabHeaderVisible(Chrome.tabBar(s.isShowTabBar(), focus));
+        if (menuBar != null) {
+            boolean menuOn = Chrome.menuBar(s.isShowMenuBar(), focus, simple);
+            menuBar.node().setVisible(menuOn);
+            menuBar.node().setManaged(menuOn);
+            menuBar.refresh(); // features and keybindings may have moved since the last apply
+        }
         breadcrumb.setEnabled(Chrome.breadcrumb(s.isShowBreadcrumb(), focus, simple));
         // Tool stripes (UI only): hidden stripes still let tool windows open via keybinding/palette.
         toolWindows.setStripesEnabled(Chrome.toolStripes(s.isShowToolStripe(), focus, simple));
@@ -2193,6 +2202,13 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void setupToolWindows() {
         editorArea.setDraggedTabSource(() -> draggedTab); // drops onto a group body move/split it
+        // The menu bar sits above the toolbar. Built from the registry, so it needs no per-command wiring.
+        menuBar = new MainMenuBar(registry, this::invertBindings, this::paletteGates, this::paletteContext, id -> {
+            if (registry.get(id).isPresent()) {
+                registry.run(id);
+            }
+        });
+        topBox.getChildren().add(0, menuBar.node());
         toolWindows = new ToolWindowManager(workspace, editorArea.node(), config, keymap);
         projectPanel = new ProjectPanel(
                 this::openPath, this::onProjectFileRenamed, this::onProjectFileDeleted, this::isPathModified);
@@ -14342,6 +14358,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         }));
         registry.register(Command.of("snippets.editUser", this::editUserSnippets));
         registry.register(Command.of("snippets.manage", () -> settingsWindow.showSnippets(stage)));
+        registry.register(Command.of(
+                "view.toggleMenuBar",
+                () -> toggleSetting(
+                        "view.toggleMenuBar",
+                        () -> config.getSettings().isShowMenuBar(),
+                        config.getSettings()::setShowMenuBar,
+                        this::applyChromeVisibility)));
         registry.register(Command.of("view.splitVertical", this::onSplitVertical));
         registry.register(Command.of("view.splitHorizontal", this::onSplitHorizontal));
         registry.register(Command.of("view.unsplit", this::unsplit));

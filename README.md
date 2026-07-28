@@ -168,6 +168,10 @@ Editora is built with the help of AI coding tools.
   selection or whole file (sort ascending/descending — numeric-aware and case-insensitive — sort by length,
   reverse, shuffle, remove duplicate/empty lines, trim trailing whitespace). All individual palette commands,
   or one filterable picker: "Edit: String Manipulation…" (`C-c x`).
+- **Menu bar** — the conventional File / Edit / Find / View / Navigate / Code / Run / VCS / Tools / Window /
+  Help layout, built over the same command registry the palette uses, so every entry shows its live
+  keybinding and greys out when its feature is off. Native system menu bar on macOS; hidden in Zen, Expert
+  and Simple modes, and toggleable from Settings → Interface.
 - **Editor groups (two files side by side)** — split the editor area into independent groups, each with its
   own tabs and its own selection, so a header can sit beside its implementation. *Split Editor Group Right* /
   *Down* move the current file into a new group, *Move File to Next Editor Group* shifts it along, *Focus

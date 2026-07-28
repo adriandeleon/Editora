@@ -147,7 +147,8 @@ public enum ConfigSchema {
                     Map.entry(84, (Migration) ConfigMigrations::identity), // v84→85: + inlayHints (additive)
                     Map.entry(85, (Migration)
                             ConfigMigrations::identity), // v85→86: + copyWithSyntaxHighlighting (additive)
-                    Map.entry(86, (Migration) ConfigMigrations::identity))), // v86→87: + lspOnTypeFormatting (additive)
+                    Map.entry(86, (Migration) ConfigMigrations::identity), // v86→87: + lspOnTypeFormatting (additive)
+                    Map.entry(87, (Migration) ConfigMigrations::identity))), // v87→88: + showMenuBar (additive)
     // v1 → v2 added the editor-group layout + OpenFile.group. Both default to the old single-group
     // behaviour, so the step is identity.
     WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
