@@ -31,6 +31,9 @@ public record RunConfiguration(
         String workingDir,
         String env) {
 
+    /** Prefix of the synthetic per-configuration commands, so stale ones can be found and dropped. */
+    public static final String COMMAND_PREFIX = "run.config.";
+
     public RunConfiguration {
         name = name == null ? "" : name;
         kind = kind == null ? "run" : kind;
@@ -68,6 +71,28 @@ public record RunConfiguration(
             String workingDir,
             String env) {
         this(name, kind, "java", "", mainClass, projectName, args, vmArgs, workingDir, env);
+    }
+
+    /** The id of the synthetic command that launches this configuration ({@code run.config.<slug>}). */
+    public static String commandIdFor(String name) {
+        return COMMAND_PREFIX + slug(name);
+    }
+
+    /**
+     * A command-id-safe slug of a configuration name.
+     *
+     * <p>Its own rather than shared with {@code MacroService.slug}, whose empty-name fallback is the literal
+     * {@code "macro"} — reusing it would give a configuration named only of punctuation the id
+     * {@code run.config.macro}. Same shape as {@code ExternalTool.commandIdFor}, which carries its own for the
+     * same reason.
+     */
+    public static String slug(String name) {
+        String s = (name == null ? "" : name)
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("(^-|-$)", "");
+        return s.isEmpty() ? "unnamed" : s;
     }
 
     /** Whether this launches a Java main class (the jdtls path) rather than a script or make target. */

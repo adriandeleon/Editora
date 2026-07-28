@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A run-configuration selector in the toolbar** — pick a saved configuration and hit Run or Debug, with
+  Stop beside them; the choice is remembered across restarts. Each configuration also becomes a real command,
+  so it appears in the command palette by name and can be given its own keyboard shortcut, the same way saved
+  macros and external tools already work.
+
 ### Changed
 
 - **Quick fixes now appear at the caret** — the code-action list used to open as a card centred near the top

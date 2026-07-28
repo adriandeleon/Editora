@@ -111,6 +111,30 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The window's menu bar — a browsable map over the command registry (#763). */
     private MainMenuBar menuBar;
 
+    /**
+     * True while {@link #refreshRunConfigs()} is repopulating the selector, so its value listener can tell a
+     * programmatic reset from a user's choice.
+     *
+     * <p>Without this the listener persisted on every repopulation — including the one during {@code init},
+     * which runs <em>before</em> {@code setWindowContext} points the config at this window's session file. It
+     * therefore wrote the default, empty workspace state over the saved one and wiped the open-file list.
+     * Caught by {@code NoSessionStartupFxTest}, which exists for exactly that class of clobber.
+     */
+    private boolean populatingRunConfigs;
+
+    /** Toolbar run-configuration selector + its Run/Debug/Stop buttons (#765). */
+    @FXML
+    private javafx.scene.control.ComboBox<com.editora.config.RunConfiguration> runConfigCombo;
+
+    @FXML
+    private Button runConfigRunButton;
+
+    @FXML
+    private Button runConfigDebugButton;
+
+    @FXML
+    private Button runConfigStopButton;
+
     @FXML
     private VBox topBox;
 
@@ -771,6 +795,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupMruTracking();
         registerCommands();
         setupToolbar();
+        refreshRunConfigs(); // populate the selector + register run.config.<slug> for the saved set
         setupRecentFiles();
         setupJumpPickers();
         setupProjects();
@@ -1066,13 +1091,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         // applyProjectSupport so its later pass doesn't re-show them). The Open icon is deliberately
         // KEPT so opening a file stays one click away in Simple mode.
         for (Button b : new Button[] {
-            newFromTemplateButton, clearRecentButton, findInFilesButton, splitVerticalButton, splitHorizontalButton
+            newFromTemplateButton,
+            clearRecentButton,
+            findInFilesButton,
+            splitVerticalButton,
+            splitHorizontalButton,
+            runConfigRunButton,
+            runConfigDebugButton,
+            runConfigStopButton
         }) {
             b.setVisible(!simple);
             b.setManaged(!simple);
         }
         recentButton.setVisible(!simple);
         recentButton.setManaged(!simple);
+        runConfigCombo.setVisible(!simple);
+        runConfigCombo.setManaged(!simple);
         // Each build-tool button's visibility otherwise follows marker-file detection (BuildCoordinator), not
         // this unconditional show/hide — re-derive it from the cached detection now that isEnabled() (which
         // folds in !simpleModeActive()) may have changed, rather than forcing it shown.
@@ -1392,6 +1426,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         maybeOfferInstall(activeBuffer()); // the install-prompts toggle / a feature gate may have changed
         applyAdminSaveSupport(); // the admin-save toggle may have flipped
+        refreshRunConfigs(); // the Settings page edits the same list this selector shows
     }
 
     /**
@@ -5660,6 +5695,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupButton(splitVerticalButton, Icons.splitVertical(), tr("tooltip.splitVertical"), "view.splitVertical");
         setupButton(
                 splitHorizontalButton, Icons.splitHorizontal(), tr("tooltip.splitHorizontal"), "view.splitHorizontal");
+        setupButton(runConfigRunButton, Icons.run(), tr("tooltip.runConfigRun"), null);
+        setupButton(runConfigDebugButton, Icons.debug(), tr("tooltip.runConfigDebug"), null);
+        setupButton(runConfigStopButton, Icons.stopSquare(), tr("tooltip.runConfigStop"), null);
+        setupRunConfigCombo();
         setupButton(paletteButton, Icons.palette(), tr("tooltip.palette"), "palette.show");
         setupButton(closeTabButton, Icons.closeTab(), tr("tooltip.closeTab"), "buffer.close");
         setupButton(simpleModeButton, Icons.simpleMode(), tr("tooltip.simpleMode"), "view.toggleSimpleMode");
@@ -9382,6 +9421,137 @@ public class MainController implements com.editora.mcp.McpBridge {
         picker.show(stage);
     }
 
+    /** Renders the selector's rows by name (with a run/debug tag) and remembers the choice across restarts. */
+    private void setupRunConfigCombo() {
+        runConfigCombo.getStyleClass().add("run-config-combo");
+        runConfigCombo.setPromptText(tr("toolbar.runConfig.none"));
+        runConfigCombo.setConverter(new javafx.util.StringConverter<>() {
+            @Override
+            public String toString(com.editora.config.RunConfiguration cfg) {
+                if (cfg == null) {
+                    return "";
+                }
+                String tag = cfg.isDebug() ? tr("run.config.debugTag") : tr("run.config.runTag");
+                return cfg.name() + "  ·  " + tag;
+            }
+
+            @Override
+            public com.editora.config.RunConfiguration fromString(String s) {
+                return null; // not editable
+            }
+        });
+        runConfigCombo.valueProperty().addListener((o, was, now) -> {
+            if (populatingRunConfigs) {
+                updateRunConfigButtons(); // a rebuild, not a choice: reflect it but persist nothing
+                return;
+            }
+            config.getWorkspaceState().setSelectedRunConfig(now == null ? "" : now.name());
+            requestSave();
+            updateRunConfigButtons();
+        });
+    }
+
+    /**
+     * Rebuilds the toolbar selector from the saved configurations and re-registers one synthetic
+     * {@code run.config.<slug>} command per configuration, so each is palette-visible and can be given a
+     * keybinding — the same shape macros ({@code macro.run.*}) and external tools already use.
+     *
+     * <p>Called after any change to the list: the save/delete commands, and every settings apply (the
+     * Settings page edits the same list).
+     */
+    private void refreshRunConfigs() {
+        List<com.editora.config.RunConfiguration> configs =
+                List.copyOf(config.getWorkspaceState().getRunConfigurations());
+
+        // Drop stale synthetic commands before re-registering, or a renamed configuration would leave its old
+        // id behind in the palette pointing at something that no longer exists.
+        List<String> stale = new ArrayList<>();
+        for (Command c : registry.all()) {
+            if (c.id().startsWith(com.editora.config.RunConfiguration.COMMAND_PREFIX)) {
+                stale.add(c.id());
+            }
+        }
+        stale.forEach(registry::remove);
+        for (com.editora.config.RunConfiguration cfg : configs) {
+            registry.register(Command.of(
+                    com.editora.config.RunConfiguration.commandIdFor(cfg.name()),
+                    cfg.name(),
+                    () -> launchRunConfig(cfg)));
+        }
+
+        if (runConfigCombo == null) {
+            return;
+        }
+        com.editora.config.RunConfiguration previous = runConfigCombo.getValue();
+        populatingRunConfigs = true;
+        try {
+            repopulate(configs, previous);
+        } finally {
+            populatingRunConfigs = false;
+        }
+        updateRunConfigButtons();
+    }
+
+    /** Replaces the selector's items, re-selecting the previous choice by name. */
+    private void repopulate(
+            List<com.editora.config.RunConfiguration> configs, com.editora.config.RunConfiguration previous) {
+        runConfigCombo.getItems().setAll(configs);
+        // Re-select by name: the list is rebuilt from the store on every refresh, so the old instance is not
+        // the same object even when the configuration is unchanged.
+        com.editora.config.RunConfiguration reselect = null;
+        String wanted =
+                previous != null ? previous.name() : config.getWorkspaceState().getSelectedRunConfig();
+        for (com.editora.config.RunConfiguration cfg : configs) {
+            if (cfg.name().equals(wanted)) {
+                reselect = cfg;
+                break;
+            }
+        }
+        runConfigCombo.setValue(reselect != null ? reselect : (configs.isEmpty() ? null : configs.get(0)));
+    }
+
+    /** Enables the toolbar Run/Debug buttons only when a configuration is selected; Stop only while running. */
+    private void updateRunConfigButtons() {
+        boolean hasSelection = runConfigCombo != null && runConfigCombo.getValue() != null;
+        if (runConfigRunButton != null) {
+            runConfigRunButton.setDisable(!hasSelection);
+            runConfigDebugButton.setDisable(!hasSelection);
+            runConfigStopButton.setDisable(!runCoordinator.isRunning());
+        }
+    }
+
+    /** Launches {@code cfg} by its own kind — the selector's Run button honours a debug configuration. */
+    private void launchRunConfig(com.editora.config.RunConfiguration cfg) {
+        if (cfg == null) {
+            return;
+        }
+        if (cfg.isDebug()) {
+            debugCoordinator.debugConfig(cfg);
+        } else {
+            runCoordinator.runConfig(cfg);
+        }
+    }
+
+    @FXML
+    private void onRunSelectedConfig() {
+        launchRunConfig(runConfigCombo == null ? null : runConfigCombo.getValue());
+    }
+
+    /** Debug regardless of the configuration's own kind — the Debug button is an explicit override. */
+    @FXML
+    private void onDebugSelectedConfig() {
+        com.editora.config.RunConfiguration cfg = runConfigCombo == null ? null : runConfigCombo.getValue();
+        if (cfg != null) {
+            debugCoordinator.debugConfig(cfg);
+        }
+    }
+
+    @FXML
+    private void onStopRun() {
+        runCoordinator.stopRun();
+        updateRunConfigButtons();
+    }
+
     /** {@code run.saveConfig}: save the active Java file's main class as a run configuration. */
     private void saveRunConfig() {
         EditorBuffer b = activeBuffer();
@@ -9411,6 +9581,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             list.add(new com.editora.config.RunConfiguration(name.strip(), "run", fqn, "", args, "", ""));
             config.getWorkspaceState().setRunConfigurations(list);
             config.save();
+            refreshRunConfigs();
             setStatus(tr("status.run.configSaved", name.strip()));
         });
     }
@@ -9437,6 +9608,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             c -> c.name().equals(cfg.name()) && c.mainClass().equals(cfg.mainClass()));
                     config.getWorkspaceState().setRunConfigurations(list);
                     config.save();
+                    refreshRunConfigs();
                     setStatus(tr("status.run.configDeleted", cfg.name()));
                 });
         picker.setOverlayHost(overlayHost);

@@ -23,8 +23,10 @@ public class WorkspaceState {
      *
      * <p>v2 → v3 added {@code type}/{@code target} to {@link RunConfiguration}; {@code type} defaults to
      * {@code java}, which is what every pre-existing configuration was, so this is identity too.
+     *
+     * <p>v3 → v4 added {@code selectedRunConfig} (the toolbar selection); blank by default, identity.
      */
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -65,6 +67,9 @@ public class WorkspaceState {
     private Map<String, String> programArgs = new LinkedHashMap<>();
     /** Saved run/debug configurations for project main classes (this window's project). */
     private List<RunConfiguration> runConfigurations = new ArrayList<>();
+
+    /** Name of the configuration selected in the toolbar, so the choice survives a restart. */
+    private String selectedRunConfig = "";
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
     private String httpEnvironment = "";
 
@@ -280,6 +285,14 @@ public class WorkspaceState {
 
     public void setRunConfigurations(List<RunConfiguration> runConfigurations) {
         this.runConfigurations = runConfigurations == null ? new ArrayList<>() : runConfigurations;
+    }
+
+    public String getSelectedRunConfig() {
+        return selectedRunConfig;
+    }
+
+    public void setSelectedRunConfig(String selectedRunConfig) {
+        this.selectedRunConfig = selectedRunConfig == null ? "" : selectedRunConfig;
     }
 
     public Map<String, String> getProgramArgs() {

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.MenuButton?>
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.TabPane?>
@@ -38,6 +39,11 @@
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="splitVerticalButton" onAction="#onSplitVertical"/>
                         <Button fx:id="splitHorizontalButton" onAction="#onSplitHorizontal"/>
+                        <Separator orientation="VERTICAL"/>
+                        <ComboBox fx:id="runConfigCombo"/>
+                        <Button fx:id="runConfigRunButton" onAction="#onRunSelectedConfig"/>
+                        <Button fx:id="runConfigDebugButton" onAction="#onDebugSelectedConfig"/>
+                        <Button fx:id="runConfigStopButton" onAction="#onStopRun"/>
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="paletteButton" onAction="#onPalette"/>
                         <Separator orientation="VERTICAL"/>
