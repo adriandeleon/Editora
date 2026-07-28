@@ -1867,29 +1867,48 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.noCodeActions"));
                 return;
             }
-            QuickOpen<LspManager.CodeActionItem> picker = new QuickOpen<>(
-                    tr("command.lsp.codeActions"),
-                    tr("palette.setting.pick"),
-                    () -> items,
-                    LspManager.CodeActionItem::title,
-                    LspManager.CodeActionItem::kind,
-                    item -> {
-                        if (item == null) {
-                            return;
-                        }
-                        if (runGeneratePrompt(path, item)) {
-                            return; // a jdtls generate prompt: we drive it, not the server (#741)
-                        }
-                        lspManager.applyCodeAction(
-                                path,
-                                item.raw(),
-                                ok -> host.setStatus(tr(
-                                        ok ? "status.lsp.codeActionApplied" : "status.lsp.codeActionFailed",
-                                        item.title())));
-                    });
-            picker.setOverlayHost(host.overlayHost());
-            picker.show(host.window());
+            // Anchored at the caret rather than a centred overlay card (#767): this acts on the symbol under
+            // the cursor, which is where the user is looking. The editor keeps focus, so the caret stays
+            // visible at the spot the fix will land while the list is open.
+            b.showCodeActions(
+                    items.stream()
+                            .map(i -> new com.editora.editor.CodeAction(i.title(), i.kind(), i.preferred(), i.raw()))
+                            .toList(),
+                    chosen -> applyChosenAction(path, items, chosen));
         });
+    }
+
+    /**
+     * Applies the action the user picked from the caret popup.
+     *
+     * <p>The popup deals in the neutral {@link com.editora.editor.CodeAction} — {@code editor} must not see
+     * lsp4j — so the server's own object rides across as an opaque token and is matched back by identity
+     * here. The lists are a handful of entries, so a scan is cheaper than building a map.
+     */
+    private void applyChosenAction(
+            Path path, List<LspManager.CodeActionItem> items, com.editora.editor.CodeAction chosen) {
+        if (chosen == null) {
+            return;
+        }
+        LspManager.CodeActionItem item = null;
+        for (LspManager.CodeActionItem candidate : items) {
+            if (candidate.raw() == chosen.token()) {
+                item = candidate;
+                break;
+            }
+        }
+        if (item == null) {
+            return;
+        }
+        if (runGeneratePrompt(path, item)) {
+            return; // a jdtls generate prompt: we drive it, not the server (#741)
+        }
+        LspManager.CodeActionItem applied = item;
+        lspManager.applyCodeAction(
+                path,
+                applied.raw(),
+                ok -> host.setStatus(
+                        tr(ok ? "status.lsp.codeActionApplied" : "status.lsp.codeActionFailed", applied.title())));
     }
 
     /**

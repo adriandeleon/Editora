@@ -374,6 +374,11 @@ public class EditorBuffer implements TabContent {
     /** The view the completion popup is currently driven by (for click-accept routing). */
     private CodeArea completionArea;
 
+    /** The quick-fix list, anchored at the caret (#767). Lazily built, like the completion popup. */
+    private CodeActionPopup codeActionPopup;
+    /** The area the quick-fix list belongs to, so its key ownership can be released on hide. */
+    private CodeArea codeActionArea;
+
     /** The IntelliJ-style documentation side-popup (lazily created) + its lazy resolver/state. */
     private CompletionDocPopup docPopup;
 
@@ -8215,6 +8220,61 @@ public class EditorBuffer implements TabContent {
      * snippet or inserting a newline); ↑/↓ move; Esc closes; caret-moving keys dismiss. With the popup
      * closed it does nothing, so normal Tab/Enter behavior is unaffected.
      */
+    /** True while the caret-anchored quick-fix list is up. */
+    public boolean codeActionsShowing() {
+        return codeActionPopup != null && codeActionPopup.isShowing();
+    }
+
+    /**
+     * Shows {@code actions} at the caret and calls {@code onAccept} with the chosen one.
+     *
+     * <p>Focus stays in the editor — the popup is focus-less and this buffer's key filter drives it — which
+     * is why the caret keeps blinking where the fix will land while the list is open.
+     */
+    public void showCodeActions(List<CodeAction> actions, java.util.function.Consumer<CodeAction> onAccept) {
+        CodeArea a = getFocusedArea();
+        if (a == null || actions == null || actions.isEmpty()) {
+            return;
+        }
+        Bounds caretScreen = a.getCharacterBoundsOnScreen(a.getCaretPosition(), a.getCaretPosition())
+                .orElse(null);
+        if (caretScreen == null) {
+            return;
+        }
+        hideCompletion(); // the two lists are both caret-anchored; never stack them
+        if (codeActionPopup == null) {
+            codeActionPopup = new CodeActionPopup();
+            // However the popup ends up hidden, the key ownership goes back with it.
+            codeActionPopup.setOnHidden(this::releaseCodeActionKeys);
+        }
+        codeActionPopup.setOnAccept(action -> {
+            hideCodeActions();
+            if (action != null && onAccept != null) {
+                onAccept.accept(action);
+            }
+        });
+        codeActionArea = a;
+        // Own the editor-context chords so C-n/C-p reach the list rather than moving the caret.
+        a.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        codeActionPopup.show(a.getScene().getWindow(), caretScreen, actions);
+    }
+
+    /** Dismisses the quick-fix list and returns the editor chords to the dispatcher. */
+    public void hideCodeActions() {
+        if (codeActionPopup != null) {
+            codeActionPopup.hide();
+        }
+        releaseCodeActionKeys();
+    }
+
+    /** Hands the editor-context chords back. Idempotent, since it runs from both hide paths. */
+    private void releaseCodeActionKeys() {
+        if (codeActionArea != null) {
+            codeActionArea.getProperties().remove("editora.ownsKeys");
+            codeActionArea = null;
+        }
+    }
+
     private void addCompletionKeys(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
@@ -8237,6 +8297,53 @@ public class EditorBuffer implements TabContent {
                         e.consume();
                     }
                     default -> {} // typing/Backspace/arrows fall through
+                }
+                return;
+            }
+            // Quick-fix list first: it and the completion popup are both caret-anchored and never coexist
+            // (showCodeActions hides completion), so whichever is up owns the keys.
+            if (codeActionsShowing()) {
+                boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown();
+                switch (e.getCode()) {
+                    case DOWN -> {
+                        codeActionPopup.moveDown();
+                        e.consume();
+                    }
+                    case UP -> {
+                        codeActionPopup.moveUp();
+                        e.consume();
+                    }
+                    case ENTER -> {
+                        codeActionPopup.accept();
+                        e.consume();
+                    }
+                    case ESCAPE -> {
+                        hideCodeActions();
+                        e.consume();
+                    }
+                    case N -> {
+                        if (ctrl) {
+                            codeActionPopup.moveDown();
+                            e.consume();
+                        }
+                    }
+                    case P -> {
+                        if (ctrl) {
+                            codeActionPopup.moveUp();
+                            e.consume();
+                        }
+                    }
+                    case G -> {
+                        if (ctrl) { // C-g cancels, as everywhere else in the editor
+                            hideCodeActions();
+                            e.consume();
+                        }
+                    }
+                    default -> {
+                        // Anything else dismisses: the list is about the caret's current position, and a
+                        // keystroke that moves or edits invalidates it.
+                        hideCodeActions();
+                    }
                 }
                 return;
             }
@@ -8713,7 +8820,11 @@ public class EditorBuffer implements TabContent {
                     || docVersion != version
                     || a.getScene() == null
                     || a.getCaretPosition() != caret
-                    || hasActiveSnippet()) {
+                    || hasActiveSnippet()
+                    // A completion request already in flight when the quick-fix list opened must not land on
+                    // top of it: both are caret-anchored and both claim the editor's chords, so the late
+                    // arrival would steal the keys from a list the user is looking at (#767).
+                    || codeActionsShowing()) {
                 return;
             }
             // Order LSP items by the server's relevance (preselect, then sortText) — IntelliJ-style —
