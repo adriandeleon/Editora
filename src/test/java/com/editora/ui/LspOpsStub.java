@@ -17,6 +17,11 @@ import com.editora.lsp.SymbolNode;
 class LspOpsStub implements LspCoordinator.Ops {
 
     @Override
+    public String homeCollapsed(String absolutePath) {
+        return absolutePath;
+    }
+
+    @Override
     public void openAndGoto(Path file, int line0, int col0) {}
 
     @Override

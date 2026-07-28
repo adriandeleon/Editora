@@ -57,6 +57,9 @@ final class LspCoordinator {
         /** Opens {@code file} (if needed) and moves the caret to a 0-based LSP line/column. */
         void openAndGoto(Path file, int line0, int col0);
 
+        /** A path with the home directory shown as {@code ~}, for preview labels. */
+        String homeCollapsed(String absolutePath);
+
         /** Opens (selected) a read-only in-memory buffer — no path, {@code language} highlighting — used for
          *  a {@code jdt://} class-file's fetched source (#665). Returns the buffer (null if refused). */
         EditorBuffer openReadOnlyDoc(String title, String content, String language);
@@ -1961,13 +1964,54 @@ final class LspCoordinator {
                 return; // nothing to do
             }
             host.setStatus(tr("status.lsp.renaming"));
-            lspManager.rename(
-                    path,
-                    line,
-                    col,
-                    name,
-                    ok -> host.setStatus(tr(ok ? "status.lsp.renamed" : "status.lsp.renameFailed", name)));
+            lspManager.previewRename(path, line, col, name, mapped -> {
+                if (mapped == null) {
+                    host.setStatus(tr("status.lsp.renameFailed", name));
+                    return;
+                }
+                if (!com.editora.lsp.RenamePreview.worthPreviewing(mapped)) {
+                    // Confined to this file: visible on screen and one undo away, so a confirmation step here
+                    // would be friction with nothing to confirm.
+                    applyRename(mapped, name);
+                    return;
+                }
+                previewThenApply(mapped, name);
+            });
         });
+    }
+
+    /**
+     * Shows which files a rename would change and applies only the ones left ticked.
+     *
+     * <p>A rename edits files the user cannot see, and every desktop IDE treats showing them first as what
+     * makes refactoring trustworthy. Reuses {@link MultiSelectPicker} — the same checkbox card the jdtls
+     * generators use — rather than a bespoke preview pane; a per-file choice is what the filtering can
+     * honour safely, and a per-hunk one would need the diff viewer and a much larger change.
+     */
+    private void previewThenApply(com.editora.lsp.WorkspaceEditMapper.Mapped mapped, String name) {
+        java.util.List<MultiSelectPicker.Item<java.nio.file.Path>> rows = new java.util.ArrayList<>();
+        for (com.editora.lsp.RenamePreview.FileChange change : com.editora.lsp.RenamePreview.summarise(mapped)) {
+            String label = ops.homeCollapsed(change.file().toString());
+            if (change.edits() > 0) {
+                label += "  ·  " + tr("lsp.rename.editCount", change.edits());
+            }
+            if (change.renamedTo() != null) {
+                label += "  ·  " + tr("lsp.rename.movesTo", change.renamedTo().getFileName());
+            }
+            rows.add(new MultiSelectPicker.Item<>(label, true, change.file()));
+        }
+        MultiSelectPicker.show(
+                host.overlayHost(),
+                tr("lsp.rename.previewTitle", name, com.editora.lsp.RenamePreview.totalEdits(mapped), rows.size()),
+                rows,
+                keep -> applyRename(
+                        com.editora.lsp.RenamePreview.filter(mapped, new java.util.LinkedHashSet<>(keep)), name));
+    }
+
+    /** Applies a (possibly filtered) rename edit and reports the outcome. */
+    private void applyRename(com.editora.lsp.WorkspaceEditMapper.Mapped mapped, String name) {
+        boolean ok = applyWorkspaceEdits(mapped);
+        host.setStatus(tr(ok ? "status.lsp.renamed" : "status.lsp.renameFailed", name));
     }
 
     /** The document text inside a 0-based LSP range (single-line expected), or "" when out of bounds. */
