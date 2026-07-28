@@ -4074,6 +4074,8 @@ public class SettingsWindow {
         workingDir.setPromptText(tr("settings.runConfig.workingDirPrompt"));
         TextField env = new TextField();
         env.setPromptText(tr("settings.runConfig.envPrompt"));
+        TextField beforeLaunch = new TextField();
+        beforeLaunch.setPromptText(tr("settings.runConfig.beforeLaunchPrompt"));
 
         javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
         form.setHgap(8);
@@ -4088,6 +4090,7 @@ public class SettingsWindow {
         formRow(form, 7, tr("settings.runConfig.vmArgs"), vmArgs);
         formRow(form, 8, tr("settings.runConfig.workingDir"), workingDir);
         formRow(form, 9, tr("settings.runConfig.env"), env);
+        formRow(form, 10, tr("settings.runConfig.beforeLaunch"), beforeLaunch);
         form.setDisable(true);
         HBox.setHgrow(form, Priority.ALWAYS);
 
@@ -4106,7 +4109,8 @@ public class SettingsWindow {
                     args.getText(),
                     vmArgs.getText(),
                     workingDir.getText(),
-                    env.getText());
+                    env.getText(),
+                    beforeLaunch.getText());
             runConfigItems.set(i, rebuilt);
             list.refresh();
             persistRunConfigs();
@@ -4143,6 +4147,7 @@ public class SettingsWindow {
                 vmArgs.setText(now == null ? "" : now.vmArgs());
                 workingDir.setText(now == null ? "" : now.workingDir());
                 env.setText(now == null ? "" : now.env());
+                beforeLaunch.setText(now == null ? "" : now.beforeLaunch());
             } finally {
                 loadingRunConfig = false;
             }

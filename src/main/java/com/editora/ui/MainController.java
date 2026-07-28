@@ -9586,6 +9586,67 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
+    /** This window's project root, or null when it has no project open. */
+    private Path activeProjectRoot() {
+        Project active = projects == null ? null : projects.active();
+        return active == null ? null : Path.of(active.root());
+    }
+
+    /**
+     * {@code run.exportConfigs}: writes this window's run configurations into the project, so they can be
+     * committed and shared. Needs a project — there is nowhere else they would belong.
+     */
+    private void exportRunConfigs() {
+        Path root = activeProjectRoot();
+        if (root == null) {
+            setStatus(tr("status.run.configsNeedProject"));
+            return;
+        }
+        List<com.editora.config.RunConfiguration> configs =
+                config.getWorkspaceState().getRunConfigurations();
+        if (configs.isEmpty()) {
+            setStatus(tr("status.run.noConfigs"));
+            return;
+        }
+        try {
+            com.editora.config.SharedRunConfigs.save(new com.fasterxml.jackson.databind.ObjectMapper(), root, configs);
+            setStatus(tr(
+                    "status.run.configsExported",
+                    configs.size(),
+                    homeCollapsed(
+                            com.editora.config.SharedRunConfigs.fileFor(root).toString())));
+        } catch (java.io.IOException e) {
+            setStatus(tr("status.run.configsExportFailed", e.getMessage()));
+        }
+    }
+
+    /**
+     * {@code run.importConfigs}: merges the project's shared configurations into this window's, matching by
+     * name so importing twice does not duplicate and a colleague's edit updates rather than doubles.
+     */
+    private void importRunConfigs() {
+        Path root = activeProjectRoot();
+        if (root == null) {
+            setStatus(tr("status.run.configsNeedProject"));
+            return;
+        }
+        List<com.editora.config.RunConfiguration> incoming =
+                com.editora.config.SharedRunConfigs.load(new com.fasterxml.jackson.databind.ObjectMapper(), root);
+        if (incoming.isEmpty()) {
+            setStatus(tr(
+                    "status.run.noSharedConfigs",
+                    homeCollapsed(
+                            com.editora.config.SharedRunConfigs.fileFor(root).toString())));
+            return;
+        }
+        List<com.editora.config.RunConfiguration> merged = com.editora.config.SharedRunConfigs.merge(
+                config.getWorkspaceState().getRunConfigurations(), incoming);
+        config.getWorkspaceState().setRunConfigurations(merged);
+        config.save();
+        refreshRunConfigs();
+        setStatus(tr("status.run.configsImported", incoming.size()));
+    }
+
     /** {@code run.deleteConfig}: pick a saved run configuration and remove it. */
     private void deleteRunConfig() {
         if (config.getWorkspaceState().getRunConfigurations().isEmpty()) {
@@ -14724,6 +14785,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("run.config", this::runSavedConfig));
         registry.register(Command.of("run.saveConfig", this::saveRunConfig));
         registry.register(Command.of("run.deleteConfig", this::deleteRunConfig));
+        registry.register(Command.of("run.exportConfigs", this::exportRunConfigs));
+        registry.register(Command.of("run.importConfigs", this::importRunConfigs));
         registry.register(Command.of("run.rerun", runCoordinator::rerunLast));
         registry.register(Command.of("run.stop", runCoordinator::stopRun));
         registry.register(Command.of("run.clear", runCoordinator::clearConsole));

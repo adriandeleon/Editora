@@ -205,6 +205,9 @@ final class RunCoordinator {
         return null;
     }
 
+    /** A before-launch step is usually a build, so it gets a generous ceiling rather than a quick-probe one. */
+    private static final java.time.Duration BEFORE_LAUNCH_TIMEOUT = java.time.Duration.ofMinutes(10);
+
     /** Whether a program is currently running, so the toolbar Stop button can reflect it. */
     boolean isRunning() {
         return service.isRunning();
@@ -216,10 +219,80 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.busy"));
             return;
         }
-        if (!cfg.isJava()) {
-            runScriptConfig(cfg);
+        // A before-launch step gates everything after it: if the build fails there is nothing worth running,
+        // and launching the previous binary anyway is the failure mode this exists to prevent.
+        withBeforeLaunch(cfg, () -> {
+            if (!cfg.isJava()) {
+                runScriptConfig(cfg);
+            } else {
+                runJavaConfig(cfg);
+            }
+        });
+    }
+
+    /**
+     * Runs {@code cfg}'s before-launch command, if it has one, then {@code then} — or reports the failure and
+     * runs nothing.
+     *
+     * <p>The command runs <b>off the FX thread</b> (it is a build; it can take minutes) and {@code then} is
+     * marshalled back on, so everything after it keeps the single-threaded UI assumption the rest of this
+     * class is written against. With no before-launch step this is a straight call, not a thread hop, so the
+     * common case is unchanged.
+     */
+    private void withBeforeLaunch(RunConfiguration cfg, Runnable then) {
+        String command = cfg.beforeLaunch();
+        if (command == null || command.isBlank()) {
+            then.run();
             return;
         }
+        List<String> argv = ProgramArgs.tokenize(command);
+        if (argv.isEmpty()) {
+            then.run();
+            return;
+        }
+        Path cwd = beforeLaunchDir(cfg);
+        host.setStatus(tr("status.run.beforeLaunch", cfg.name()));
+        Thread worker = new Thread(
+                () -> {
+                    com.editora.process.ProcessRunner.Result r =
+                            com.editora.process.ProcessRunner.run(cwd, BEFORE_LAUNCH_TIMEOUT, argv);
+                    javafx.application.Platform.runLater(() -> {
+                        if (r.ok()) {
+                            then.run();
+                        } else {
+                            // Surface the tool's own output: "before-launch failed" alone tells the user
+                            // nothing about which step or why.
+                            host.setStatus(tr("status.run.beforeLaunchFailed", cfg.name(), firstLine(r)));
+                        }
+                    });
+                },
+                "run-before-launch");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /** Where a before-launch command runs: the configuration's working directory, else the project root. */
+    private Path beforeLaunchDir(RunConfiguration cfg) {
+        if (!cfg.workingDir().isBlank()) {
+            return Path.of(cfg.workingDir());
+        }
+        Path routing = routingFor(host, cfg);
+        Path root = routing == null ? null : ops.javaProjectRoot(routing);
+        return root != null ? root : Path.of(System.getProperty("user.dir"));
+    }
+
+    /** The most useful single line of a failed command's output — stderr if it said anything, else stdout. */
+    private static String firstLine(com.editora.process.ProcessRunner.Result r) {
+        String text = r.err() == null || r.err().isBlank() ? r.out() : r.err();
+        if (text == null || text.isBlank()) {
+            return "exit " + r.exit();
+        }
+        String[] lines = text.strip().split("\\R");
+        return lines[lines.length - 1]; // the last line: a build tool's summary, not its banner
+    }
+
+    /** The Java half of {@link #runConfig}, after any before-launch step has succeeded. */
+    private void runJavaConfig(RunConfiguration cfg) {
         // A named configuration is independent of whatever is on screen: any open Java file in its project
         // can route the classpath resolution, so this no longer refuses just because the active tab is a
         // README. Null means no Java file is open at all, which is the only genuinely unresolvable case.
