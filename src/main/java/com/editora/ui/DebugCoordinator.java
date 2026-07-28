@@ -763,6 +763,12 @@ final class DebugCoordinator {
     /** Debugs a saved {@link RunConfiguration} (its main class + program args; its working dir when set). VM
      *  args aren't yet forwarded to the debug launch. */
     void debugConfig(RunConfiguration cfg) {
+        if (!cfg.isJava()) {
+            // Script types run but do not debug yet. Say so plainly: falling through would resolve a Java
+            // main class that a Python configuration does not have and report a confusing Java error.
+            host.setStatus(tr("status.debug.configTypeUnsupported", cfg.type()));
+            return;
+        }
         if (!debugEffectiveFor("java")) {
             host.setStatus(tr("status.debug.unavailable"));
             return;

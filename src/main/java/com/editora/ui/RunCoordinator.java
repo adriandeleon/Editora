@@ -13,6 +13,7 @@ import com.editora.run.JavaRunCommand;
 import com.editora.run.ProgramArgs;
 import com.editora.run.RunConfigRouting;
 import com.editora.run.RunService;
+import com.editora.run.ScriptRunCommand;
 import com.editora.run.StackTraceLinks;
 
 import static com.editora.i18n.Messages.tr;
@@ -162,10 +163,56 @@ final class RunCoordinator {
         return RunConfigRouting.pick(open, activeJava, cfg.workingDir());
     }
 
+    /**
+     * Runs a non-Java configuration — a Python or shell script, or a make target.
+     *
+     * <p>Needs no project, no language server and no open Java file: the whole launch is an interpreter and a
+     * path (see {@link ScriptRunCommand}). The working directory is the configuration's own when set, else the
+     * script's folder, which is what makes a script's relative paths resolve the way they do from a terminal.
+     */
+    private void runScriptConfig(RunConfiguration cfg) {
+        List<String> argv = ScriptRunCommand.build(cfg.type(), cfg.target(), ProgramArgs.tokenize(cfg.args()));
+        if (argv.isEmpty()) {
+            host.setStatus(tr(
+                    ScriptRunCommand.needsTarget(cfg.type())
+                            ? "status.run.configNeedsTarget"
+                            : "status.run.configBadType",
+                    cfg.name()));
+            return;
+        }
+        Path cwd = workingDirFor(cfg);
+        if (cwd == null) {
+            host.setStatus(tr("status.run.configNeedsWorkingDir", cfg.name()));
+            return;
+        }
+        streamRun(cfg.name(), cwd, argv, com.editora.run.EnvVars.parse(cfg.env()));
+    }
+
+    /**
+     * Where a script configuration runs: its own working directory when set, else the target script's folder.
+     * Null when neither is known — a make target with no working directory, which has nothing to run against.
+     */
+    private static Path workingDirFor(RunConfiguration cfg) {
+        if (!cfg.workingDir().isBlank()) {
+            return Path.of(cfg.workingDir());
+        }
+        if (!cfg.target().isBlank()) {
+            Path parent = Path.of(cfg.target()).toAbsolutePath().getParent();
+            if (parent != null) {
+                return parent;
+            }
+        }
+        return null;
+    }
+
     /** Runs a saved {@link RunConfiguration}: its main class with its own program/VM args + working dir. */
     void runConfig(RunConfiguration cfg) {
         if (service.isRunning()) {
             host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        if (!cfg.isJava()) {
+            runScriptConfig(cfg);
             return;
         }
         // A named configuration is independent of whatever is on screen: any open Java file in its project

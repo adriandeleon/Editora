@@ -20,8 +20,11 @@ public class WorkspaceState {
      *
      * <p>v1 → v2 added the editor-group layout ({@link #getEditorLayout()} plus {@code OpenFile.group}). Both
      * are additive with defaults that reproduce the old single-group behaviour, so the migration is identity.
+     *
+     * <p>v2 → v3 added {@code type}/{@code target} to {@link RunConfiguration}; {@code type} defaults to
+     * {@code java}, which is what every pre-existing configuration was, so this is identity too.
      */
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 3;
 
     private int schemaVersion = SCHEMA_VERSION;
 
