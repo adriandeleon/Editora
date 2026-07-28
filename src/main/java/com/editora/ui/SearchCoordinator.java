@@ -176,13 +176,25 @@ final class SearchCoordinator {
         host.setStatus(tr("search.searching"));
         List<String> include = Globs.split(includeGlobs);
         List<String> exclude = Globs.split(excludeGlobs);
+        // Registered so a sweep over a large tree reads as running work rather than going quiet (#770).
+        AutoCloseable task = host.startBackgroundTask(tr("search.searching"));
         service.search(query, root, open, include, exclude, outcome -> {
+            closeQuietly(task);
             panel.setResults(outcome);
             host.setStatus(
                     outcome.totalMatches() == 0
                             ? tr("search.none")
                             : tr("search.summary", outcome.totalMatches(), outcome.fileCount()));
         });
+    }
+
+    /** Closes a background-task handle; a bookkeeping slip must never break the callback around it. */
+    private static void closeQuietly(AutoCloseable task) {
+        try {
+            task.close();
+        } catch (Exception ignored) {
+            // The handle only removes a map entry — nothing here is worth failing a search over.
+        }
     }
 
     /**

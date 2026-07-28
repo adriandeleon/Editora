@@ -40,6 +40,14 @@ interface CoordinatorHost {
     /** Reports a failure: coloured in the echo line and flagged unread until the message log is opened. */
     void setError(String message);
 
+    /**
+     * Registers long-running work so the status bar can show it; close the handle when the work ends.
+     *
+     * <p>Close it on <em>every</em> exit including failure — an operation that errors without closing leaves
+     * the indicator claiming work that stopped long ago, which is worse than showing nothing at all.
+     */
+    AutoCloseable startBackgroundTask(String label);
+
     long fileSize(Path file);
 
     String bufferBaseName(EditorBuffer buffer);

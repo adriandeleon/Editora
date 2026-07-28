@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Long-running work now says it's running** — a find-in-files sweep over a big tree used to announce itself
+  once and then go quiet, which looks identical to a hang. The status bar now shows what's in progress with a
+  spinner, and a count when several things run at once; it disappears entirely when nothing is happening.
+
 - **Failures no longer slip past you** — the status bar shows one message at a time and the next one replaces
   it, so an error that appeared while you were typing used to vanish without trace. Errors are now shown in
   red, recorded as errors in the message log, and leave a small count beside the status line that stays until

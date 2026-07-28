@@ -51,6 +51,11 @@ class CoordinatorHostStub implements CoordinatorHost {
     }
 
     @Override
+    public AutoCloseable startBackgroundTask(String label) {
+        return () -> {};
+    }
+
+    @Override
     public long fileSize(Path file) {
         return 0;
     }
