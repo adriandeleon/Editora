@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Quick fixes now appear at the caret** — the code-action list used to open as a card centred near the top
+  of the window, the same surface used for picking a project. It now drops just below the cursor, where you
+  are actually looking, with the server's preferred fix preselected so Enter usually does the right thing.
+  Arrow keys or `C-n`/`C-p` move, Enter applies, Escape or `C-g` dismisses, and the caret stays visible on
+  the spot the fix will land.
+
 ### Added
 
 - **A menu bar** — File / Edit / Find / View / Navigate / Code / Run / VCS / Tools / Window / Help, so the
