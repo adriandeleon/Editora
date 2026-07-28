@@ -91,8 +91,10 @@ public class WindowManager {
     private void notifyConfigWriteError(Path file) {
         Holder h = focusedHolder();
         if (h != null && h.controller() != null) {
+            // A lost config write is exactly the failure that used to vanish: it happens in the background,
+            // and the next routine status message replaced it a moment later (#418, #770).
             h.controller()
-                    .setStatus(com.editora.i18n.Messages.tr(
+                    .setError(com.editora.i18n.Messages.tr(
                             "status.config.saveFailed", file.getFileName().toString()));
         }
     }

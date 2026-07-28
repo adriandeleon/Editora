@@ -2942,6 +2942,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void setError(String message) {
+            MainController.this.setError(message);
+        }
+
+        @Override
         public long fileSize(Path file) {
             return MainController.this.fileSize(file);
         }
@@ -6484,6 +6489,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         statusBar.setMessage(message);
     }
 
+    /**
+     * Reports a failure: the echo shows it in the danger colour and it stays flagged as unread until the user
+     * opens the message log.
+     *
+     * <p>Ordinary {@link #setStatus} messages replace one another and are then gone, which is right for
+     * "Saved" and wrong for "could not save" — a background failure landing while someone is typing is
+     * overwritten a moment later with nothing left to notice.
+     */
+    public void setError(String message) {
+        statusBar.setMessage(message, MessageLog.Severity.ERROR);
+    }
+
     private EditorBuffer activeBuffer() {
         return bufferOf(editorArea.selectedTab());
     }
@@ -9621,7 +9638,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     homeCollapsed(
                             com.editora.config.SharedRunConfigs.fileFor(root).toString())));
         } catch (java.io.IOException e) {
-            setStatus(tr("status.run.configsExportFailed", e.getMessage()));
+            setError(tr("status.run.configsExportFailed", e.getMessage()));
         }
     }
 

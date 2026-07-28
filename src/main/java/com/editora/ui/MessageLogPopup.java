@@ -88,6 +88,14 @@ public final class MessageLogPopup {
                 time.setText(
                         TIME_FMT.format(Instant.ofEpochMilli(item.epochMillis()).atZone(ZoneId.systemDefault())));
                 msg.setText(item.text());
+                // Severity on the message, not the row: the time indicator stays muted so the colour marks
+                // what went wrong rather than washing the whole line.
+                msg.getStyleClass().removeAll("message-log-warn", "message-log-error");
+                if (item.severity() == MessageLog.Severity.ERROR) {
+                    msg.getStyleClass().add("message-log-error");
+                } else if (item.severity() == MessageLog.Severity.WARN) {
+                    msg.getStyleClass().add("message-log-warn");
+                }
                 setGraphic(box);
             }
         });

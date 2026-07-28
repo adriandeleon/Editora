@@ -1334,6 +1334,30 @@
     -fx-border-width: 0 2 0 0;
 }
 
+/* Message severity. The echo line shows one message and is replaced by the next, so an error needs to be
+   distinguishable at a glance — and the unread-error badge keeps a marker up after the echo has moved on,
+   which is what stops a failure vanishing unnoticed. Semantic colors, so both track the theme. */
+.status-message.status-echo-error {
+    -fx-text-fill: -color-danger-fg;
+}
+.status-message.status-echo-warn {
+    -fx-text-fill: -color-warning-fg;
+}
+.status-unread-errors {
+    -fx-background-color: -color-danger-emphasis;
+    -fx-text-fill: -color-fg-emphasis;
+    -fx-background-radius: 8;
+    -fx-padding: 0 6 0 6;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+}
+.message-log-error {
+    -fx-text-fill: -color-danger-fg;
+}
+.message-log-warn {
+    -fx-text-fill: -color-warning-fg;
+}
+
 /* Dragging a tab onto an editor group's body: a translucent accent wash over the region the tab would
    occupy — the whole group when dropping into it, or the half it would split off at an edge. Semantic
    colors, so it tracks the theme. Mouse-transparent and unmanaged (set in EditorArea) so it can be drawn
