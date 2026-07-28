@@ -151,7 +151,7 @@ public enum ConfigSchema {
                     Map.entry(87, (Migration) ConfigMigrations::identity))), // v87→88: + showMenuBar (additive)
     // v1 → v2 added the editor-group layout + OpenFile.group. Both default to the old single-group
     // behaviour, so the step is identity.
-    WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
+    WORKSPACE(WorkspaceState.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity)),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.

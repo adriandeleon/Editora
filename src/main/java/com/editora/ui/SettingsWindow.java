@@ -4060,6 +4060,11 @@ public class SettingsWindow {
         TextField name = new TextField();
         ComboBox<String> kind = new ComboBox<>(javafx.collections.FXCollections.observableArrayList("run", "debug"));
         kind.setConverter(enumConverter(k -> "debug".equals(k) ? tr("run.config.debugTag") : tr("run.config.runTag")));
+        ComboBox<String> type =
+                new ComboBox<>(javafx.collections.FXCollections.observableArrayList("java", "python", "shell", "make"));
+        type.setConverter(enumConverter(t -> tr("settings.runConfig.type." + t)));
+        TextField target = new TextField();
+        target.setPromptText(tr("settings.runConfig.targetPrompt"));
         TextField mainClass = new TextField();
         TextField projectName = new TextField();
         projectName.setPromptText(tr("settings.runConfig.projectNamePrompt"));
@@ -4075,12 +4080,14 @@ public class SettingsWindow {
         form.setVgap(6);
         formRow(form, 0, tr("settings.runConfig.name"), name);
         formRow(form, 1, tr("settings.runConfig.kind"), kind);
-        formRow(form, 2, tr("settings.runConfig.mainClass"), mainClass);
-        formRow(form, 3, tr("settings.runConfig.projectName"), projectName);
-        formRow(form, 4, tr("settings.runConfig.args"), args);
-        formRow(form, 5, tr("settings.runConfig.vmArgs"), vmArgs);
-        formRow(form, 6, tr("settings.runConfig.workingDir"), workingDir);
-        formRow(form, 7, tr("settings.runConfig.env"), env);
+        formRow(form, 2, tr("settings.runConfig.type"), type);
+        formRow(form, 3, tr("settings.runConfig.target"), target);
+        formRow(form, 4, tr("settings.runConfig.mainClass"), mainClass);
+        formRow(form, 5, tr("settings.runConfig.projectName"), projectName);
+        formRow(form, 6, tr("settings.runConfig.args"), args);
+        formRow(form, 7, tr("settings.runConfig.vmArgs"), vmArgs);
+        formRow(form, 8, tr("settings.runConfig.workingDir"), workingDir);
+        formRow(form, 9, tr("settings.runConfig.env"), env);
         form.setDisable(true);
         HBox.setHgrow(form, Priority.ALWAYS);
 
@@ -4092,6 +4099,8 @@ public class SettingsWindow {
             com.editora.config.RunConfiguration rebuilt = new com.editora.config.RunConfiguration(
                     name.getText(),
                     kind.getValue() == null ? "run" : kind.getValue(),
+                    type.getValue() == null ? "java" : type.getValue(),
+                    target.getText(),
                     mainClass.getText(),
                     projectName.getText(),
                     args.getText(),
@@ -4103,6 +4112,7 @@ public class SettingsWindow {
             persistRunConfigs();
         };
         kind.valueProperty().addListener((o, a, b) -> commit.run());
+        type.valueProperty().addListener((o, a, b) -> commit.run());
         java.util.function.Consumer<TextField> wire = tf -> {
             tf.setOnAction(e -> commit.run());
             tf.focusedProperty().addListener((o, was, now) -> {
@@ -4125,6 +4135,8 @@ public class SettingsWindow {
                 form.setDisable(now == null);
                 name.setText(now == null ? "" : now.name());
                 kind.setValue(now == null ? "run" : (now.isDebug() ? "debug" : "run"));
+                type.setValue(now == null ? "java" : now.type());
+                target.setText(now == null ? "" : now.target());
                 mainClass.setText(now == null ? "" : now.mainClass());
                 projectName.setText(now == null ? "" : now.projectName());
                 args.setText(now == null ? "" : now.args());

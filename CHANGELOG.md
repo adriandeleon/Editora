@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are actually looking, with the server's preferred fix preselected so Enter usually does the right thing.
   Arrow keys or `C-n`/`C-p` move, Enter applies, Escape or `C-g` dismisses, and the caret stays visible on
   the spot the fix will land.
+- **Run configurations are no longer Java-only, and no longer care which tab is in front** — a saved
+  configuration can now launch a **Python script, a shell script or a make target** as well as a Java main
+  class, chosen with a Type field in Settings → Run Configurations. Script configurations need no project and
+  no language server at all. Separately, running a saved configuration used to refuse unless a Java file
+  happened to be the active tab — so saving one for your app and then opening a README broke it. Any open
+  Java file in the project now serves, and it only complains when there genuinely isn't one. Debugging
+  remains Java-only, and now says so instead of reporting a confusing Java error.
 
 ### Added
 
