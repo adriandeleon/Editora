@@ -230,13 +230,75 @@ class EditorGroupsFxTest {
         cleanUp();
     }
 
+    /**
+     * The saved selection index must count only the tabs the session will actually write, not every tab in
+     * the group.
+     *
+     * <p>Editora does not persist a tab with no path — the Welcome tab, an unsaved buffer — but such a tab
+     * still occupies a slot. Recording the live index saved a number in one coordinate system and restored it
+     * in another: a group of {@code [unsaved, a, b]} with {@code b} selected saved index 2 and, restoring into
+     * a two-tab group, selected {@code a}. Found in a real session file, where a one-file group had recorded
+     * {@code selected: 1}; the restore clamp masked it that time, which is why the symptom would have surfaced
+     * as "sometimes focuses the wrong file" rather than an obvious break.
+     */
+    @Test
+    void theSavedSelectionCountsOnlyPersistedTabs() throws Exception {
+        Tab unsaved = addBuffer(); // no path — exactly what persistSession skips
+        Tab first = addBuffer();
+        Tab second = addBuffer();
+        FxTestSupport.runOnFx(() -> {
+            // Force all three into one group beside another, so the layout is split and gets recorded.
+            area.splitActive(Orientation.HORIZONTAL);
+            area.unsplit();
+        });
+        addBuffer();
+        FxTestSupport.runOnFx(() -> area.splitActive(Orientation.HORIZONTAL));
+        FxTestSupport.runOnFx(() -> {
+            area.select(second); // the last of the three in group 0
+        });
+
+        // Persist as the session does: skip the path-less tab.
+        EditorGroupLayout saved = FxTestSupport.callOnFx(() -> area.snapshotLayout(t -> t != unsaved));
+        List<EditorGroupLayout> leaves = new ArrayList<>();
+        collectLeaves(saved, leaves);
+
+        int groupOfSecond = FxTestSupport.callOnFx(() -> area.groupIndexOf(second));
+        int liveIndex = FxTestSupport.callOnFx(() -> {
+            for (Tab t : area.tabs()) {
+                if (t == second) {
+                    return area.indexOf(t);
+                }
+            }
+            return -1;
+        });
+        int savedIndex = leaves.get(groupOfSecond).getSelected();
+
+        assertTrue(
+                liveIndex > savedIndex,
+                "the live index counts the unsaved tab, the saved one must not" + " (live=" + liveIndex + ", saved="
+                        + savedIndex + ")");
+        assertEquals(liveIndex - 1, savedIndex, "exactly one skipped tab sits before the selection");
+
+        cleanUp();
+    }
+
+    private static void collectLeaves(EditorGroupLayout node, List<EditorGroupLayout> out) {
+        if (node.isLeaf()) {
+            out.add(node);
+            return;
+        }
+        for (EditorGroupLayout child : node.getChildren()) {
+            collectLeaves(child, out);
+        }
+    }
+
     /** An unsplit area writes no layout at all, so an unsplit session file is byte-identical to before. */
     @Test
     void anUnsplitAreaSavesNoLayout() throws Exception {
         addBuffer();
         addBuffer();
 
-        assertNull(FxTestSupport.callOnFx(() -> area.snapshotLayout()), "nothing to record while unsplit");
+        assertNull(FxTestSupport.callOnFx(() -> area.snapshotLayout(t -> true)), "nothing to record while unsplit");
 
         cleanUp();
     }
@@ -254,7 +316,7 @@ class EditorGroupsFxTest {
         addBuffer();
         FxTestSupport.runOnFx(() -> area.splitActive(Orientation.VERTICAL));
 
-        EditorGroupLayout saved = FxTestSupport.callOnFx(() -> area.snapshotLayout());
+        EditorGroupLayout saved = FxTestSupport.callOnFx(() -> area.snapshotLayout(t -> true));
         assertEquals(3, saved.leafCount(), "three groups recorded");
         // Which group each file was in, exactly as persistSession records it on OpenFile.group.
         List<Integer> savedGroups = new ArrayList<>();
@@ -296,7 +358,7 @@ class EditorGroupsFxTest {
         addBuffer();
         addBuffer();
         FxTestSupport.runOnFx(() -> area.splitActive(Orientation.HORIZONTAL));
-        EditorGroupLayout saved = FxTestSupport.callOnFx(() -> area.snapshotLayout());
+        EditorGroupLayout saved = FxTestSupport.callOnFx(() -> area.snapshotLayout(t -> true));
         List<Tab> savedTabs = FxTestSupport.callOnFx(() -> new ArrayList<>(area.tabs()));
 
         FxTestSupport.runOnFx(() -> {
