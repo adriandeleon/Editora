@@ -11,6 +11,7 @@ import com.editora.run.JavaLaunchInfo;
 import com.editora.run.JavaMainClass;
 import com.editora.run.JavaRunCommand;
 import com.editora.run.ProgramArgs;
+import com.editora.run.RunConfigRouting;
 import com.editora.run.RunService;
 import com.editora.run.StackTraceLinks;
 
@@ -136,25 +137,53 @@ final class RunCoordinator {
         startMainClassRun(fqn);
     }
 
+    /**
+     * The file a saved configuration should be resolved against — see {@link RunConfigRouting}.
+     *
+     * <p>Shared with {@link DebugCoordinator}, because a configuration's {@code kind} decides which of the two
+     * launches it, and both need to agree on which project it belongs to.
+     *
+     * @return null when no Java file is open anywhere, the one case neither can resolve
+     */
+    static Path routingFor(CoordinatorHost host, RunConfiguration cfg) {
+        List<Path> open = new java.util.ArrayList<>();
+        host.forEachBuffer(b -> {
+            if (b.getPath() != null && host.isLocalBuffer(b) && "java".equals(b.getLanguage())) {
+                open.add(b.getPath());
+            }
+        });
+        EditorBuffer active = host.activeBuffer();
+        Path activeJava = active != null
+                        && active.getPath() != null
+                        && host.isLocalBuffer(active)
+                        && "java".equals(active.getLanguage())
+                ? active.getPath()
+                : null;
+        return RunConfigRouting.pick(open, activeJava, cfg.workingDir());
+    }
+
     /** Runs a saved {@link RunConfiguration}: its main class with its own program/VM args + working dir. */
     void runConfig(RunConfiguration cfg) {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null || !host.isLocalBuffer(b) || !"java".equals(b.getLanguage())) {
-            host.setStatus(tr("status.run.needJavaFile"));
-            return;
-        }
         if (service.isRunning()) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
-        Path routing = b.getPath();
+        // A named configuration is independent of whatever is on screen: any open Java file in its project
+        // can route the classpath resolution, so this no longer refuses just because the active tab is a
+        // README. Null means no Java file is open at all, which is the only genuinely unresolvable case.
+        Path routing = routingFor(host, cfg);
+        if (routing == null) {
+            host.setStatus(tr("status.run.configNeedsJavaFile"));
+            return;
+        }
         Path root = ops.javaProjectRoot(routing);
         if (root == null) {
             host.setStatus(tr("status.run.noProject"));
             return;
         }
-        if (b.isDirty() && !ops.saveBuffer(b)) {
-            return;
+        EditorBuffer b = host.activeBuffer();
+        if (b != null && b.isDirty() && host.isLocalBuffer(b) && !ops.saveBuffer(b)) {
+            return; // save whatever the user was editing before launching, as before
         }
         Path cwd = cfg.workingDir().isBlank() ? root : Path.of(cfg.workingDir());
         List<String> vm = ProgramArgs.tokenize(cfg.vmArgs());

@@ -767,19 +767,21 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.unavailable"));
             return;
         }
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null || !host.isLocalBuffer(b) || !"java".equals(b.getLanguage())) {
-            host.setStatus(tr("status.debug.needJavaFile"));
+        // Same reasoning as RunCoordinator.runConfig: a named configuration must not depend on which tab is
+        // in front, only on a Java file being open somewhere in its project.
+        Path routing = RunCoordinator.routingFor(host, cfg);
+        if (routing == null) {
+            host.setStatus(tr("status.run.configNeedsJavaFile"));
             return;
         }
-        Path routing = b.getPath();
         Path root = JavaProjectRoot.find(routing);
         if (root == null) {
             host.setStatus(tr("status.debug.noProject"));
             return;
         }
-        if (b.isDirty() && !ops.saveBuffer(b)) {
-            return;
+        EditorBuffer b = host.activeBuffer();
+        if (b != null && b.isDirty() && host.isLocalBuffer(b) && !ops.saveBuffer(b)) {
+            return; // save whatever the user was editing before launching, as before
         }
         Path cwd = cfg.workingDir().isBlank() ? root : Path.of(cfg.workingDir());
         dapManager.resolveMainClasses(routing, options -> {
