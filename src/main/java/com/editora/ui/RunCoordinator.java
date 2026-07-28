@@ -205,6 +205,11 @@ final class RunCoordinator {
         return null;
     }
 
+    /** Whether a program is currently running, so the toolbar Stop button can reflect it. */
+    boolean isRunning() {
+        return service.isRunning();
+    }
+
     /** Runs a saved {@link RunConfiguration}: its main class with its own program/VM args + working dir. */
     void runConfig(RunConfiguration cfg) {
         if (service.isRunning()) {
