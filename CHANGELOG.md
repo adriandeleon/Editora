@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-project settings you can commit** — a project can carry `.editora/settings.toml` saying which
+  language server to run and whether to run it, overriding your global preferences for anyone who opens that
+  project. The case it's for: one repository needs a JDK 17 server and another a JDK 25 one, and you no
+  longer have to remember to flip a global preference between them. **Project: Edit Project Settings…**
+  creates the file with a commented example. Only toolchain settings can be overridden — appearance, keymap
+  and fonts stay personal, because checking out a repository shouldn't rearrange somebody's editor.
+
 - **New Project From Template** — scaffold a whole project and open it in its own window, rather than
   pointing Editora at a folder you made yourself. Pick a multi-file template, fill in its variables, choose
   where it goes, and the new folder is registered as a project and opened. Ships with a **Python Project**

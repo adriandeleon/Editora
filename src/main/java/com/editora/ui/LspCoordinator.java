@@ -642,6 +642,11 @@ final class LspCoordinator {
 
     /** Whether a server's own enable toggle is on (under the global LSP enable). */
     boolean serverEnabled(String serverId) {
+        return projectSettings().enabledFor(serverId, globalServerEnabled(serverId));
+    }
+
+    /** The global (non-project) enable for {@code serverId}. */
+    private boolean globalServerEnabled(String serverId) {
         var s = host.settings();
         return switch (serverId) {
             case "typescript" -> s.isTypescriptLspEnabled();
@@ -671,8 +676,41 @@ final class LspCoordinator {
     }
 
     /** The configured command for a server id (blank ⇒ the server's default). */
+    /** Shared "no overrides" instance, so a window with no project allocates nothing per read. */
+    private static final com.editora.config.ProjectSettings EMPTY_PROJECT_SETTINGS =
+            new com.editora.config.ProjectSettings();
+
+    private Path projectSettingsRoot;
+    private com.editora.config.ProjectSettings projectSettingsCache = EMPTY_PROJECT_SETTINGS;
+
     private String serverCommand(String serverId) {
-        return serverCommand(host.settings(), serverId);
+        return projectSettings().commandFor(serverId, serverCommand(host.settings(), serverId));
+    }
+
+    /**
+     * This window's project overrides, from the committed {@code .editora/settings.toml} (#771).
+     *
+     * <p>Cached per project root because these are read on every gating pass, and a settings apply re-runs
+     * gating for every open buffer — re-reading a file each time would be disk I/O on the FX thread for a
+     * value that changes only when someone edits it. {@link #reloadProjectSettings()} drops the cache.
+     */
+    private com.editora.config.ProjectSettings projectSettings() {
+        Path root = ops.lspProjectRoot();
+        if (root == null) {
+            return EMPTY_PROJECT_SETTINGS;
+        }
+        if (!root.equals(projectSettingsRoot)) {
+            projectSettingsRoot = root;
+            projectSettingsCache = com.editora.config.ProjectSettings.load(
+                    new com.fasterxml.jackson.dataformat.toml.TomlMapper(), root);
+        }
+        return projectSettingsCache;
+    }
+
+    /** Forgets the cached project overrides, so the next read picks up an edited file. */
+    void reloadProjectSettings() {
+        projectSettingsRoot = null;
+        projectSettingsCache = EMPTY_PROJECT_SETTINGS;
     }
 
     /** Pure: {@code serverId}'s configured command from {@code s} — the id→Settings-field mapping, kept
