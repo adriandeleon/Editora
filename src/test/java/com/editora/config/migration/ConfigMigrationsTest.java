@@ -178,6 +178,49 @@ class ConfigMigrationsTest {
         assertEquals(0, out.get("keybindings").size());
     }
 
+    /**
+     * The whole point of the step: the default change alone reaches nobody who has ever run Editora, because
+     * Jackson stores every modelled field and theirs says false.
+     */
+    @Test
+    void enableProjectSupportTurnsItOnForAnExistingInstall() throws Exception {
+        JsonNode in = mapper.readTree("{\"projectSupport\":false,\"tabSize\":4}");
+        ObjectNode out = (ObjectNode) ConfigMigrations.enableProjectSupport(in);
+        assertTrue(out.get("projectSupport").asBoolean());
+        assertEquals(4, out.get("tabSize").asInt(), "unrelated settings untouched");
+    }
+
+    @Test
+    void enableProjectSupportLeavesAnAlreadyEnabledConfigAlone() throws Exception {
+        JsonNode in = mapper.readTree("{\"projectSupport\":true}");
+        ObjectNode out = (ObjectNode) ConfigMigrations.enableProjectSupport(in);
+        assertTrue(out.get("projectSupport").asBoolean());
+    }
+
+    /**
+     * The step is registered and actually runs — a migration nobody wired into {@code ConfigSchema} would
+     * pass its own unit test and change nothing on disk.
+     */
+    @Test
+    void upgradingASettingsFileFromV88TurnsProjectsOn() throws Exception {
+        JsonNode stored = mapper.readTree("{\"schemaVersion\":88,\"projectSupport\":false,\"tabSize\":4}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, stored, mapper);
+        assertTrue(out.get("projectSupport").asBoolean(), "existing installs get Projects");
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt(),
+                "and are stamped to the current schema");
+        assertEquals(4, out.get("tabSize").asInt());
+    }
+
+    /** Absent means the field never existed in that file; the POJO default (now true) supplies it. */
+    @Test
+    void enableProjectSupportDoesNotInventTheFieldWhenItIsAbsent() throws Exception {
+        JsonNode in = mapper.readTree("{\"tabSize\":2}");
+        ObjectNode out = (ObjectNode) ConfigMigrations.enableProjectSupport(in);
+        assertFalse(out.has("projectSupport"));
+    }
+
     @Test
     void splitAiApiKeyMovesTheKeyOffAnOpenAiActiveConfig() throws Exception {
         JsonNode in = mapper.readTree("{\"aiProvider\":\"openai\",\"aiApiKey\":\"sk-openrouter\"}");

@@ -47,7 +47,7 @@ Editora is built with the help of AI coding tools.
 - **Keyboard file finder** (`C-x C-f`) — Emacs `find-file`-style path popup with prefix
   autocomplete; type/`Tab` to complete, Enter to descend folders or open (or create) a file. The
   Open toolbar icon still uses the native OS dialog.
-- **Projects** (off by default; enable in Settings) — VSCode single-folder-workspace style: a root
+- **Projects** (on by default; disable in Settings) — VSCode single-folder-workspace style: a root
   folder + its own saved session (open files, layout, folds), shown as a filterable file tree in the
   Project tool window with a project switcher in the toolbar. Open (`C-x C-p`)/switch (`C-x p`)/close
   via the palette or toolbar; switching restores that project's files and layout. With no project open, the

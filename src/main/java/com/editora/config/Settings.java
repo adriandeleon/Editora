@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 88;
+    public static final int SCHEMA_VERSION = 89;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -188,8 +188,14 @@ public class Settings {
     private String autoSave = "off";
 
     private int autoSaveDelayMillis = 1000;
-    /** Projects feature: off by default — hides all project UI/commands until enabled. */
-    private boolean projectSupport = false;
+    /**
+     * Projects feature: <b>on</b>. Off would hide all project UI/commands until enabled.
+     *
+     * <p>It shipped opt-in, which turned out to be the wrong default: most of what Editora has grown since —
+     * the project tree, per-project bookmarks and notes, find-in-files scope, run configurations, per-project
+     * settings — is anchored to a project, and a user who never found the checkbox never met any of it.
+     */
+    private boolean projectSupport = true;
     /** Show hidden (dot) files and folders in the Project tool window's tree + filter search. Off by default. */
     private boolean projectShowHidden = false;
     /** Git integration: on by default — the status-bar VCS segment, Commit tool window, gutter change bars,
