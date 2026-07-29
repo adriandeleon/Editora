@@ -484,6 +484,14 @@ public final class DapManager implements DapClient.Host {
      * in the same project.
      */
     public void resolveLaunch(Path routingFile, MainClassOption opt, Consumer<ResolvedLaunch> cb) {
+        // The chokepoint guard, so no future caller can reproduce the class of bug: jdtls builds an Eclipse
+        // SearchPattern from the main class, and createPattern("") returns null, surfacing as an internal
+        // NPE from its search engine instead of anything actionable. Callers check first and say something
+        // useful; this makes the unchecked path fail cleanly rather than incomprehensibly.
+        if (opt.mainClass() == null || opt.mainClass().isBlank()) {
+            cb.accept(ResolvedLaunch.failed("No main class to run — set one on the run configuration."));
+            return;
+        }
         String proj = opt.projectName() == null ? "" : opt.projectName();
         lsp.executeCommand(routingFile, "vscode.java.resolveClasspath", List.of(opt.mainClass(), proj), (res, err) -> {
             if (err != null) {
