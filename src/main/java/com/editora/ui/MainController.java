@@ -1434,6 +1434,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         maybeOfferInstall(activeBuffer()); // the install-prompts toggle / a feature gate may have changed
         applyAdminSaveSupport(); // the admin-save toggle may have flipped
         refreshRunConfigs(); // the Settings page edits the same list this selector shows
+        lspCoordinator.reloadProjectSettings(); // pick up an edited .editora/settings.toml
     }
 
     /**
@@ -11361,6 +11362,32 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
+     * {@code project.editSettings}: opens this project's committed {@code .editora/settings.toml}, seeding a
+     * commented example when it doesn't exist yet.
+     *
+     * <p>Seeded rather than created empty because the file's whole value is being discoverable and editable
+     * by hand — an empty buffer tells nobody which keys exist.
+     */
+    private void editProjectSettings() {
+        Path root = activeProjectRoot();
+        if (root == null) {
+            setError(tr("status.project.settingsNeedProject"));
+            return;
+        }
+        Path file = com.editora.config.ProjectSettings.fileFor(root);
+        try {
+            if (!java.nio.file.Files.exists(file)) {
+                java.nio.file.Files.createDirectories(file.getParent());
+                java.nio.file.Files.writeString(file, tr("project.settings.template"));
+            }
+            openPath(file);
+            lspCoordinator.reloadProjectSettings(); // an edit here should take effect without a restart
+        } catch (java.io.IOException e) {
+            setError(tr("status.project.settingsFailed", e.getMessage()));
+        }
+    }
+
+    /**
      * {@code project.newFromTemplate}: scaffolds a new project from a multi-file template and opens it.
      *
      * <p>Reuses the ordinary template flow — the picker, the variable wizard and its target-folder field
@@ -14632,6 +14659,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("template.new", () -> newFromTemplate(null)));
         registry.register(Command.of("template.newInFolder", () -> newFromTemplate(defaultNewDir())));
         registry.register(Command.of("project.newFromTemplate", this::newProjectFromTemplate));
+        registry.register(Command.of("project.editSettings", this::editProjectSettings));
         registry.register(Command.of("template.reload", () -> {
             templates.reload();
             setStatus(tr("status.templatesReloaded"));
