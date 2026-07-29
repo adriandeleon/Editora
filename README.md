@@ -263,7 +263,10 @@ Editora is built with the help of AI coding tools.
 - **Run configurations** — save a named configuration per project (main class, module, program & VM
   arguments, environment variables, working directory) and re-run or debug it from the palette; edit the
   whole list in **Settings → Run Configurations**. In a Gradle project the main class the build declares
-  (`mainClass`, `mainClass.set(…)`, or the legacy `mainClassName`) is pre-filled.
+  (`mainClass`, `mainClass.set(…)`, or the legacy `mainClassName`) is pre-filled. The toolbar selector shows
+  where something is launchable — a Maven/Gradle/npm/Cargo/Go build file inside the open project, or a
+  makefile at its root, or any detected build when no project is open — and whenever you have a
+  configuration saved.
 - **Debugging (DAP)** _(Beta)_ — a full debugger for **Java**, **Python** (debugpy), and **JavaScript/Node**
   (vscode-js-debug): breakpoints (conditional / logpoints), step / resume / pause / run-to-cursor /
   jump-to-line, call stack, variables, watches and set-value, inline values and a value-hover popup, and
