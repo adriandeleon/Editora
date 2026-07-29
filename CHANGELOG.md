@@ -113,6 +113,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so the old name undersold it. Your stripe placement and any keybinding are unaffected (only the label
   changed).
 
+### Changed
+
+- **Adding a run configuration starts from the file you are looking at.** Settings → Run Configurations →
+  **Add** used to create a wholly blank entry called "New Configuration". It now prefills the main class from
+  the active Java file (or the one your Gradle build declares), names the configuration after that class, and
+  puts the cursor in the field that still needs you — the main class when there was nothing to suggest, the
+  name otherwise. Adding twice from the same file gets you "App" and "App (2)" rather than two entries with
+  the same name, which previously collided into a single palette command.
+
 ### Fixed
 
 - **A run configuration with no main class now says so**, instead of reporting a Java language server stack

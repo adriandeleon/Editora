@@ -4038,6 +4038,20 @@ public class SettingsWindow {
      * immutable, so a commit rebuilds the {@link com.editora.config.RunConfiguration} and replaces it in the
      * list at the selected index (unlike External Tools, which mutates a POJO in place).
      */
+    /** Supplies the main class a newly added run configuration should start from; see {@link #setRunConfigSuggestion}. */
+    private java.util.function.Supplier<String> runConfigSuggestion;
+
+    /**
+     * Injects what Add should prefill a new run configuration with — the active Java file's main class, or
+     * null when there is none.
+     *
+     * <p>A supplier rather than a value: the Settings window outlives any one tab, so the suggestion has to
+     * be read when Add is clicked, not when the page was built.
+     */
+    public void setRunConfigSuggestion(java.util.function.Supplier<String> suggestion) {
+        this.runConfigSuggestion = suggestion;
+    }
+
     private javafx.scene.Node runConfigsEditor() {
         reloadRunConfigs();
 
@@ -4155,11 +4169,22 @@ public class SettingsWindow {
 
         Button add = new Button(tr("settings.runConfig.add"));
         add.setOnAction(e -> {
-            com.editora.config.RunConfiguration c = new com.editora.config.RunConfiguration(
-                    tr("settings.runConfig.newName"), "run", "", "", "", "", "");
+            // Start from the active Java file rather than wholly blank: a blank Java configuration is
+            // unrunnable, and running one before you fill the main class in used to report a language-server
+            // stack trace (#795). Null when nothing is open to suggest from — then it is blank as before.
+            String suggested = runConfigSuggestion == null ? null : runConfigSuggestion.get();
+            List<String> taken = new ArrayList<>();
+            for (com.editora.config.RunConfiguration existing : runConfigItems) {
+                taken.add(existing.name());
+            }
+            com.editora.config.RunConfiguration c = com.editora.run.RunConfigDefaults.newConfiguration(
+                    suggested, taken, tr("settings.runConfig.newName"));
             runConfigItems.add(c);
             persistRunConfigs();
             list.getSelectionModel().select(c);
+            // Land on the field that still needs attention: the main class when there was nothing to suggest,
+            // otherwise the name, which is the only part left as a guess.
+            javafx.application.Platform.runLater(() -> (suggested == null ? mainClass : name).requestFocus());
         });
         Button remove = new Button(tr("settings.runConfig.remove"));
         remove.setOnAction(e -> {
