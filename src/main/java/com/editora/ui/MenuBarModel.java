@@ -41,6 +41,7 @@ final class MenuBarModel {
                         List.of(
                                 "file.new",
                                 "template.new",
+                                "project.newFromTemplate",
                                 "file.open",
                                 "project.open",
                                 SEPARATOR,
