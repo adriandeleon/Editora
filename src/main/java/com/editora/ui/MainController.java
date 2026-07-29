@@ -726,6 +726,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 });
         this.settingsWindow.setInstallServerActions(installCoordinator::installServer); // per-LSP-server Install
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
+        // Read on each Add click, not now: the Settings window outlives whichever tab is in front.
+        this.settingsWindow.setRunConfigSuggestion(this::suggestedMainClass);
         this.settingsWindow.setTemplateRegistry(templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
         this.settingsWindow.setTrustActions(new SettingsWindow.TrustActions() {
@@ -9676,23 +9678,41 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** {@code run.saveConfig}: save the active Java file's main class as a run configuration. */
+    /**
+     * The main class a new run configuration should start from: the one the active Java file's project
+     * declares, else the first {@code main} in that file. Null when there is nothing to suggest.
+     *
+     * <p>Shared by {@code run.saveConfig} and Settings → Run Configurations → Add, so the two cannot disagree
+     * about what "the obvious main class here" is.
+     */
+    String suggestedMainClass() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
+            return null;
+        }
+        // Prefer the main class a Gradle `application` block declares — that's what `gradle run` would launch,
+        // so a config saved in such a project matches the build rather than whichever file happens to be open.
+        String declared =
+                com.editora.build.GradleApplication.mainClass(readGradleBuildFile(JavaProjectRoot.find(b.getPath())));
+        if (declared != null) {
+            return declared;
+        }
+        List<com.editora.run.MainMethodScanner.MainMethod> mains =
+                com.editora.run.MainMethodScanner.scan(b.getContent());
+        return mains.isEmpty() ? null : mains.get(0).fqn();
+    }
+
     private void saveRunConfig() {
         EditorBuffer b = activeBuffer();
         if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
             setStatus(tr("status.run.needJavaFile"));
             return;
         }
-        // Prefer the main class a Gradle `application` block declares — that's what `gradle run` would launch,
-        // so a config saved in such a project matches the build rather than whichever file happens to be open.
-        String declared =
-                com.editora.build.GradleApplication.mainClass(readGradleBuildFile(JavaProjectRoot.find(b.getPath())));
-        List<com.editora.run.MainMethodScanner.MainMethod> mains =
-                com.editora.run.MainMethodScanner.scan(b.getContent());
-        if (declared == null && mains.isEmpty()) {
+        String fqn = suggestedMainClass();
+        if (fqn == null) {
             setStatus(tr("status.run.noMainInFile"));
             return;
         }
-        String fqn = declared != null ? declared : mains.get(0).fqn();
         String simple = com.editora.test.TestSourceLocator.simpleName(fqn);
         String args = programArgsFor(b.getPath());
         promptText(tr("run.config.saveTitle"), tr("run.config.saveName"), simple, name -> {
