@@ -45,6 +45,38 @@ class RunConfigurationTest {
         assertEquals("", old.env());
     }
 
+    /**
+     * The exact shape Settings → Run Configurations → <b>Add</b> creates. It is a Java configuration (the
+     * type defaults to java) with a blank main class, so it was one click away from sending an empty search
+     * string to jdtls and getting an internal NPE back.
+     */
+    @Test
+    void aFreshlyAddedConfigurationIsMissingItsMainClass() {
+        RunConfiguration added = new RunConfiguration("New configuration", "run", "", "", "", "", "");
+        assertEquals("java", added.type(), "Add creates a Java configuration");
+        assertTrue(added.missingMainClass());
+    }
+
+    @Test
+    void aFilledInJavaConfigurationIsNotMissingItsMainClass() {
+        assertFalse(new RunConfiguration("A", "run", "com.example.App", "", "", "", "").missingMainClass());
+    }
+
+    /** Whitespace is not a main class — jdtls builds its search pattern from it just the same. */
+    @Test
+    void aWhitespaceOnlyMainClassCountsAsMissing() {
+        assertTrue(new RunConfiguration("A", "run", "   ", "", "", "", "").missingMainClass());
+    }
+
+    /** Script types have no main class by design; their own missing-target check covers them. */
+    @Test
+    void scriptConfigurationsAreNeverMissingAMainClass() {
+        for (String type : new String[] {"python", "shell", "make"}) {
+            RunConfiguration script = new RunConfiguration("S", "run", type, "app.py", "", "", "", "", "", "", "");
+            assertFalse(script.missingMainClass(), type);
+        }
+    }
+
     @Test
     void jacksonToleratesMissingFields() throws Exception {
         ObjectMapper m = new ObjectMapper();

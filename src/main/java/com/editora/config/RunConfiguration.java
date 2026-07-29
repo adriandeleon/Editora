@@ -106,6 +106,24 @@ public record RunConfiguration(
         return "java".equals(type);
     }
 
+    /**
+     * Whether this is a Java configuration with no main class filled in — not launchable, and above all not
+     * a question worth asking jdtls.
+     *
+     * <p>jdtls turns the main class into an Eclipse {@code SearchPattern}, and {@code createPattern("")}
+     * returns null, so an empty one comes back as an internal NPE from deep inside its search engine
+     * ({@code Cannot invoke "SearchPattern.findIndexMatches(…)" because "pattern" is null}) rather than
+     * anything a user could act on. Settings → Run Configurations → <b>Add</b> creates exactly this shape —
+     * a Java configuration whose fields are all blank — so it is one click away, not a corner case.
+     *
+     * <p>The script types already refuse a missing target with a clear message ({@code
+     * ScriptRunCommand.needsTarget}); this is the Java half of the same check.
+     */
+    @JsonIgnore
+    public boolean missingMainClass() {
+        return isJava() && mainClass.isBlank();
+    }
+
     @JsonIgnore
     public boolean isDebug() {
         return "debug".equalsIgnoreCase(kind);

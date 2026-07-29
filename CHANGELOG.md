@@ -113,6 +113,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so the old name undersold it. Your stripe placement and any keybinding are unaffected (only the label
   changed).
 
+### Fixed
+
+- **A run configuration with no main class now says so**, instead of reporting a Java language server stack
+  trace. Adding a configuration in Settings creates an empty one, and running it before filling in the main
+  class sent an empty search to the language server, which answered with an internal `SearchPattern … is
+  null` error. It now tells you which configuration is missing its main class — the same thing the script
+  configurations have always done about a missing script.
+
 ## [0.9.10] - 2026-07-26
 
 ### Added

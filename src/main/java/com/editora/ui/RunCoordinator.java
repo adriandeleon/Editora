@@ -293,6 +293,12 @@ final class RunCoordinator {
 
     /** The Java half of {@link #runConfig}, after any before-launch step has succeeded. */
     private void runJavaConfig(RunConfiguration cfg) {
+        // Mirrors runScriptConfig's missing-target check. Without it the blank main class reaches jdtls and
+        // comes back as an internal NPE from its search engine — see RunConfiguration.missingMainClass.
+        if (cfg.missingMainClass()) {
+            host.setStatus(tr("status.run.configNeedsMainClass", cfg.name()));
+            return;
+        }
         // A named configuration is independent of whatever is on screen: any open Java file in its project
         // can route the classpath resolution, so this no longer refuses just because the active tab is a
         // README. Null means no Java file is open at all, which is the only genuinely unresolvable case.

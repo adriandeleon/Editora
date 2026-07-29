@@ -769,6 +769,11 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.configTypeUnsupported", cfg.type()));
             return;
         }
+        // Same guard as the Run path: a blank main class is an internal NPE from jdtls, not an error.
+        if (cfg.missingMainClass()) {
+            host.setStatus(tr("status.run.configNeedsMainClass", cfg.name()));
+            return;
+        }
         if (!debugEffectiveFor("java")) {
             host.setStatus(tr("status.debug.unavailable"));
             return;
