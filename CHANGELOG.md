@@ -49,6 +49,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The run-configuration toolbar group only appears where it applies** — the selector and its Run / Debug /
+  Stop buttons used to sit on every toolbar, so a project of Markdown notes carried a dropdown that could
+  never fill. They now show when you are somewhere you could actually launch: with a project open, a Maven,
+  Gradle, npm, Cargo or Go build file *inside* it or a makefile at its root — a sibling checkout's build file
+  from a directory above no longer counts. With no project open, any detected build does. Anything you have
+  already saved keeps the group visible regardless: a run configuration only needs a `main` method, so a
+  plain Java folder can hold one, and hiding the only UI that reaches it would be worse than the empty
+  dropdown. The palette commands are unchanged and still work anywhere.
+
 - **Quick fixes now appear at the caret** — the code-action list used to open as a card centred near the top
   of the window, the same surface used for picking a project. It now drops just below the cursor, where you
   are actually looking, with the server's preferred fix preselected so Enter usually does the right thing.

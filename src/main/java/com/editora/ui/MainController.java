@@ -115,6 +115,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     private MainMenuBar menuBar;
 
     /**
+     * /** Project root the makefile probe last ran for, so it runs once per root rather than per refresh. */
+    private Path makefileProbedRoot;
+
+    private boolean makefileAtProjectRoot;
+
+    /**
      * True while {@link #refreshRunConfigs()} is repopulating the selector, so its value listener can tell a
      * programmatic reset from a user's choice.
      *
@@ -1101,22 +1107,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         // applyProjectSupport so its later pass doesn't re-show them). The Open icon is deliberately
         // KEPT so opening a file stays one click away in Simple mode.
         for (Button b : new Button[] {
-            newFromTemplateButton,
-            clearRecentButton,
-            findInFilesButton,
-            splitVerticalButton,
-            splitHorizontalButton,
-            runConfigRunButton,
-            runConfigDebugButton,
-            runConfigStopButton
+            newFromTemplateButton, clearRecentButton, findInFilesButton, splitVerticalButton, splitHorizontalButton
         }) {
             b.setVisible(!simple);
             b.setManaged(!simple);
         }
         recentButton.setVisible(!simple);
         recentButton.setManaged(!simple);
-        runConfigCombo.setVisible(!simple);
-        runConfigCombo.setManaged(!simple);
+        // The run-config group has its own rule (project + launchable), which already folds in Simple mode.
+        refreshRunConfigToolbar();
         // Each build-tool button's visibility otherwise follows marker-file detection (BuildCoordinator), not
         // this unconditional show/hide — re-derive it from the cached detection now that isEnabled() (which
         // folds in !simpleModeActive()) may have changed, rather than forcing it shown.
@@ -1387,6 +1386,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (project != null && projectsEnabled() && projectToolWindow != null) {
             toolWindows.open(projectToolWindow, false);
         }
+        // This window now knows its project, which is half of what gates the run-config group; the other
+        // half (marker detection) re-runs on the tab-selection and focus-regain paths.
+        refreshRunConfigToolbar();
     }
 
     /**
@@ -3349,6 +3351,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                             // The shared console is available when *any* build tool is currently detected
                             // (or once a Git/GitHub command has written a transcript tab into it).
                             refreshBuildOutputAvailability();
+                            // Detection is what decides whether the project is launchable at all.
+                            refreshRunConfigToolbar();
                             // A JVM marker (pom/build.gradle) appearing/vanishing flips the JUnit test gutter and
                             // the project main-method gutter — re-gate every open buffer (both no-op on an
                             // unchanged flag).
@@ -9540,6 +9544,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             populatingRunConfigs = false;
         }
         updateRunConfigButtons();
+        refreshRunConfigToolbar(); // saved configurations keep the group visible even in a plain folder
     }
 
     /** Replaces the selector's items, re-selecting the previous choice by name. */
@@ -9558,6 +9563,74 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }
         runConfigCombo.setValue(reselect != null ? reselect : (configs.isEmpty() ? null : configs.get(0)));
+    }
+
+    /**
+     * Shows or hides the toolbar's whole run-configuration group per {@link com.editora.run.RunConfigToolbar#visible}.
+     *
+     * <p>Re-run whenever any of its inputs can have moved: a build tool detected or lost (the
+     * {@code BuildCoordinator.Ops} hook), the configuration list edited, the project switched, and every
+     * chrome pass (which is also every toolbar rebuild, so a customized layout keeps the rule).
+     */
+    private void refreshRunConfigToolbar() {
+        if (runConfigCombo == null) {
+            return; // called before the FXML is injected
+        }
+        boolean show = com.editora.run.RunConfigToolbar.visible(
+                simpleModeActive(),
+                isLaunchableContext(),
+                config.getWorkspaceState().getRunConfigurations().size());
+        for (Node n : new Node[] {runConfigCombo, runConfigRunButton, runConfigDebugButton, runConfigStopButton}) {
+            if (n != null) {
+                n.setVisible(show);
+                n.setManaged(show);
+            }
+        }
+        // Hiding the group orphans the separators around it; the pass is self-correcting, so re-running it
+        // when applySimpleMode is about to as well costs one cheap walk of the toolbar.
+        collapseToolbarSeparators();
+    }
+
+    /**
+     * Whether this window's project root holds a makefile, cached per root.
+     *
+     * <p>The probe is a stat, but the visibility refresh runs on the tab-switch/focus/save cadence and the
+     * root changes far more rarely than that — and an SFTP root would make it a network round trip, hence the
+     * locality guard.
+     */
+    private boolean projectHasMakefile() {
+        Path root = windowProjectRoot();
+        if (root == null) {
+            makefileProbedRoot = null;
+            return false;
+        }
+        if (!root.equals(makefileProbedRoot)) {
+            makefileProbedRoot = root;
+            makefileAtProjectRoot =
+                    com.editora.vfs.Vfs.isLocal(root) && com.editora.run.RunConfigToolbar.hasMakefile(root);
+        }
+        return makefileAtProjectRoot;
+    }
+
+    /**
+     * Whether this window is pointed at something launchable — see
+     * {@link com.editora.run.RunConfigToolbar#launchable}.
+     *
+     * <p>Each build tool is asked separately rather than folding them through {@link #anyBuildDetected()},
+     * because with a project open <em>where</em> the marker was found decides the answer, not merely that one
+     * was.
+     */
+    private boolean isLaunchableContext() {
+        Path project = windowProjectRoot();
+        boolean makefile = projectHasMakefile();
+        for (BuildCoordinator c : buildCoordinators) {
+            Path marker = c.isEnabled() ? c.markerRoot() : null;
+            if (com.editora.run.RunConfigToolbar.launchable(project, marker, makefile)) {
+                return true;
+            }
+        }
+        // No tool detected anything; a makefile at the project root still makes it launchable.
+        return com.editora.run.RunConfigToolbar.launchable(project, null, makefile);
     }
 
     /** Enables the toolbar Run/Debug buttons only when a configuration is selected; Stop only while running. */
@@ -9634,6 +9707,17 @@ public class MainController implements com.editora.mcp.McpBridge {
             refreshRunConfigs();
             setStatus(tr("status.run.configSaved", name.strip()));
         });
+    }
+
+    /**
+     * This <em>window's</em> project root, or null when it has no project open.
+     *
+     * <p>Not {@link #activeProjectRoot()}, which reads the {@code ProjectManager}'s active project — that is
+     * the last-focused window's, so an unfocused window would gate its toolbar on somebody else's project.
+     * Every coordinator's {@code Ops.projectRoot()} reads {@code windowProject} for the same reason.
+     */
+    private Path windowProjectRoot() {
+        return (windowProject != null && projectsEnabled()) ? Path.of(windowProject.root()) : null;
     }
 
     /** This window's project root, or null when it has no project open. */

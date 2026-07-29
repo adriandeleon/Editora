@@ -153,6 +153,11 @@ final class BuildCoordinator {
         return markerRoot != null;
     }
 
+    /** Where the detected marker file lives, or null when none was found. */
+    Path markerRoot() {
+        return markerRoot;
+    }
+
     /** A short label for the detected project (artifactId/package name), or {@code null} when absent/malformed. */
     String detectedLabel() {
         return detectedLabel;

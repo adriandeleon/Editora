@@ -103,14 +103,15 @@ class RunConfigToolbarFxTest {
     }
 
     /**
-     * The controls must actually be in the toolbar and visible — not merely injected.
+     * The controls must actually be in the toolbar — not merely injected.
      *
      * <p>Added after a report that the selector was nowhere on screen. Everything else here passes with the
      * fields injected and wired, which is exactly the state that would still show nothing if the controls
-     * never made it into the toolbar's items or were hidden by chrome handling.
+     * never made it into the toolbar's items. Membership is unconditional; whether they are <em>shown</em> is
+     * the separate gate below.
      */
     @Test
-    void theControlsAreInTheToolbarAndVisible() throws Exception {
+    void theControlsAreInTheToolbar() throws Exception {
         javafx.scene.control.ToolBar bar = FxTestSupport.field(fx.controller, "toolBar");
         ComboBox<RunConfiguration> combo = combo();
         javafx.scene.control.Button run = FxTestSupport.field(fx.controller, "runConfigRunButton");
@@ -119,10 +120,88 @@ class RunConfigToolbarFxTest {
                 FxTestSupport.callOnFx(() -> bar.getItems().contains(combo)),
                 "the selector is one of the toolbar's items");
         assertTrue(FxTestSupport.callOnFx(() -> bar.getItems().contains(run)), "and so is the Run button");
+    }
+
+    /**
+     * The reported case: a window with no project and nothing saved shows no run-configuration group at all,
+     * rather than a dropdown that can never fill (#792).
+     *
+     * <p>Asserted on {@code managed} as well as {@code visible} — an invisible but managed control still
+     * holds its slot, which would leave the gap and the orphaned separators this is meant to remove.
+     */
+    @Test
+    void theGroupIsHiddenWithNoProjectAndNoConfigurations() throws Exception {
+        setConfigs(List.of());
+
+        ComboBox<RunConfiguration> combo = combo();
+        javafx.scene.control.Button run = FxTestSupport.field(fx.controller, "runConfigRunButton");
+        assertFalse(FxTestSupport.callOnFx(combo::isVisible), "selector hidden");
+        assertFalse(FxTestSupport.callOnFx(combo::isManaged), "and takes no layout space");
+        assertFalse(FxTestSupport.callOnFx(run::isVisible), "Run hidden");
+        assertFalse(FxTestSupport.callOnFx(run::isManaged), "Run takes no layout space");
+    }
+
+    /**
+     * Saving a configuration brings the group back even in a plain folder — otherwise the gate would strand
+     * it, with no UI left that reaches it.
+     */
+    @Test
+    void aSavedConfigurationBringsTheGroupBack() throws Exception {
+        setConfigs(List.of(java("Server")));
+
+        ComboBox<RunConfiguration> combo = combo();
+        javafx.scene.control.Button run = FxTestSupport.field(fx.controller, "runConfigRunButton");
         assertTrue(FxTestSupport.callOnFx(combo::isVisible), "selector visible");
         assertTrue(FxTestSupport.callOnFx(combo::isManaged), "selector managed (takes layout space)");
         assertTrue(FxTestSupport.callOnFx(run::isVisible), "Run visible");
         assertTrue(FxTestSupport.callOnFx(run::isManaged), "Run managed");
+
+        setConfigs(List.of());
+        assertFalse(FxTestSupport.callOnFx(combo::isVisible), "and goes away again when the last one is deleted");
+    }
+
+    /**
+     * The positive half, end to end through the controller: a project whose root holds a makefile is
+     * launchable, so the group comes back with nothing saved.
+     *
+     * <p>Make is used rather than a {@code pom.xml} deliberately — build-tool detection is asynchronous (a
+     * daemon thread plus a {@code Platform.runLater}), and a test that raced it would be the flaky kind. The
+     * makefile probe is synchronous, and it exercises the same {@code projectOpen} plumbing.
+     */
+    @Test
+    void aMakefileProjectShowsTheGroup(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        setConfigs(List.of());
+        ComboBox<RunConfiguration> combo = combo();
+        assertFalse(FxTestSupport.callOnFx(combo::isVisible), "hidden to begin with");
+
+        java.nio.file.Files.writeString(dir.resolve("Makefile"), "all:\n\techo hi\n");
+        try {
+            setProjectsEnabled(true);
+            setProject(new com.editora.config.Project("t", "t", dir.toString()));
+            assertTrue(FxTestSupport.callOnFx(combo::isVisible), "a makefile makes the project launchable");
+        } finally {
+            setProject(null);
+            setProjectsEnabled(false);
+        }
+        assertFalse(FxTestSupport.callOnFx(combo::isVisible), "and it goes away with the project");
+    }
+
+    /** Projects are opt-in (off by default), and a window can only have one while the feature is on. */
+    private void setProjectsEnabled(boolean on) throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            com.editora.config.ConfigManager cfg = FxTestSupport.field(fx.controller, "config");
+            cfg.getSettings().setProjectSupport(on);
+        });
+    }
+
+    /** Points the window at a project (or none), the way {@code WindowManager} does when it builds one. */
+    private void setProject(com.editora.config.Project project) throws Exception {
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                fx.controller,
+                "setWindowContext",
+                new Class[] {WindowManager.class, com.editora.config.Project.class},
+                null,
+                project));
     }
 
     @Test
