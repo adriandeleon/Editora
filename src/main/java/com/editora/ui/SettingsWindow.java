@@ -597,6 +597,28 @@ public class SettingsWindow {
     }
 
     /**
+     * Opens Settings on the Run Configurations page with {@code selectName} selected in its list.
+     *
+     * <p>Selecting the configuration matters more than reaching the page: the toolbar dropdown's "Edit
+     * Configurations…" is asked to edit <em>this</em> one, and landing on a list you then have to search
+     * would only be half the action. A null or unknown name opens the page with whatever was selected before.
+     */
+    public void showRunConfigs(String selectName, Window owner) {
+        show(owner);
+        sidebar.getSelectionModel().select(Category.RUN_CONFIGS);
+        if (selectName == null || selectName.isBlank() || runConfigList == null) {
+            return;
+        }
+        for (var c : runConfigItems) {
+            if (selectName.equals(c.name())) {
+                runConfigList.getSelectionModel().select(c);
+                runConfigList.scrollTo(c);
+                return;
+            }
+        }
+    }
+
+    /**
      * Opens Settings focused on the page a Doctor row's "Settings…" action targets. The keys are the
      * Doctor check catalog's stable {@code settingsKey} strings, mapped here so the private
      * {@link Category} enum never leaks; an unknown key just opens Settings unfocused.
