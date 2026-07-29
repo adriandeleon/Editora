@@ -105,6 +105,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     @FXML
     private TabPane tabPane;
 
+    /** Long-running background work, surfaced in the status bar so a slow operation isn't mistaken for a hang. */
+    private final BackgroundTasks backgroundTasks = new BackgroundTasks();
+
     /** The editor area — the single entry point for reading and mutating open tabs. See {@link EditorArea}. */
     private EditorArea editorArea;
 
@@ -792,6 +795,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> editorArea.selectedTab(),
                 this::activateAndFocusTab,
                 this::closeTabFromSwitcher);
+        backgroundTasks.addListener(() -> {
+            BackgroundTasks.Task t = backgroundTasks.current();
+            statusBar.setBackgroundTasks(t == null ? null : t.label(), backgroundTasks.count());
+        });
         setupMruTracking();
         registerCommands();
         setupToolbar();
@@ -2944,6 +2951,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void setError(String message) {
             MainController.this.setError(message);
+        }
+
+        @Override
+        public AutoCloseable startBackgroundTask(String label) {
+            BackgroundTasks.Handle h = backgroundTasks.start(label);
+            return h::done;
         }
 
         @Override

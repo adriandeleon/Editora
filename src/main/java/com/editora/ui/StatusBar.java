@@ -46,6 +46,14 @@ public final class StatusBar extends HBox {
      */
     private final Label unreadErrors = new Label();
 
+    /**
+     * What background work is running, so an operation that takes a minute is distinguishable from a hang.
+     * Hidden entirely when idle — a permanently-present empty segment would be chrome that earns nothing.
+     */
+    private final Label backgroundTasks = new Label();
+
+    private final ProgressBar backgroundProgress = new ProgressBar(0);
+
     private final MessageLogPopup messageLogPopup = new MessageLogPopup();
     /** Git branch + ahead/behind; clickable to switch branches. Hidden outside a Git repo. */
     private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
@@ -131,6 +139,9 @@ public final class StatusBar extends HBox {
         unreadErrors.setOnMouseClicked(e -> registry.run("view.messageLog"));
         unreadErrors.setVisible(false);
         unreadErrors.setManaged(false);
+        backgroundTasks.getStyleClass().add("status-segment");
+        backgroundProgress.setPrefWidth(60);
+        setBackgroundTasks(null, 0);
         size.getStyleClass().add("status-segment");
         size.setTooltip(new Tooltip(tr("statusbar.tip.fileSize")));
         encoding.getStyleClass().add("status-segment");
@@ -202,6 +213,8 @@ public final class StatusBar extends HBox {
                         echo,
                         unreadErrors,
                         spacer,
+                        backgroundProgress,
+                        backgroundTasks,
                         update,
                         macroRec,
                         remote,
@@ -301,6 +314,24 @@ public final class StatusBar extends HBox {
         unreadErrors.setText(unread == 0 ? "" : String.valueOf(unread));
         unreadErrors.setVisible(unread > 0);
         unreadErrors.setManaged(unread > 0);
+    }
+
+    /**
+     * Shows the running background work: the oldest task's label, plus a count when others queue behind it.
+     * Null or zero hides both the label and its bar.
+     *
+     * <p>The bar is indeterminate only while something runs. An indeterminate {@code ProgressBar} drives an
+     * animation timeline that keeps pulsing the scene, so leaving one spinning when idle would burn repaints
+     * for nothing — the same reason the LSP bar sits at a fixed value when it has nothing to say.
+     */
+    public void setBackgroundTasks(String label, int count) {
+        boolean busy = count > 0 && label != null && !label.isBlank();
+        backgroundTasks.setText(busy ? (count > 1 ? label + "  (" + count + ")" : label) : "");
+        backgroundTasks.setVisible(busy);
+        backgroundTasks.setManaged(busy);
+        backgroundProgress.setProgress(busy ? ProgressBar.INDETERMINATE_PROGRESS : 0);
+        backgroundProgress.setVisible(busy);
+        backgroundProgress.setManaged(busy);
     }
 
     /** Clears the unread-error marker — the user has opened the log and had a chance to see them. */
