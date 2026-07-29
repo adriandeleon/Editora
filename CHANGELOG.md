@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Failures no longer slip past you** — the status bar shows one message at a time and the next one replaces
+  it, so an error that appeared while you were typing used to vanish without trace. Errors are now shown in
+  red, recorded as errors in the message log, and leave a small count beside the status line that stays until
+  you open the log. Warnings are marked too, without the count.
+
 - **Rename now shows you what it will change** — a rename that reaches beyond the current file lists every
   affected file first, with its change count and where it moves to, and you can untick any file before
   applying. A rename confined to the file you're looking at applies straight away as before: it's on screen

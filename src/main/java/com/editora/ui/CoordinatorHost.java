@@ -37,6 +37,9 @@ interface CoordinatorHost {
 
     void setStatus(String message);
 
+    /** Reports a failure: coloured in the echo line and flagged unread until the message log is opened. */
+    void setError(String message);
+
     long fileSize(Path file);
 
     String bufferBaseName(EditorBuffer buffer);

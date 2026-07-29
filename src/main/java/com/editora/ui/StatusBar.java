@@ -40,6 +40,12 @@ public final class StatusBar extends HBox {
     /** In-memory, session-only history of echo messages, shown by clicking the echo area. */
     private final MessageLog messageLog = new MessageLog();
 
+    /**
+     * Count of errors recorded since the log was last opened. Stays up after the echo has moved on, so a
+     * failure the user was not looking at leaves something behind that says so.
+     */
+    private final Label unreadErrors = new Label();
+
     private final MessageLogPopup messageLogPopup = new MessageLogPopup();
     /** Git branch + ahead/behind; clickable to switch branches. Hidden outside a Git repo. */
     private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
@@ -120,6 +126,11 @@ public final class StatusBar extends HBox {
         echo.getStyleClass().addAll("status-message", "status-segment-clickable");
         echo.setTooltip(new Tooltip(tr("statusbar.tip.messageLog")));
         echo.setOnMouseClicked(e -> registry.run("view.messageLog"));
+        unreadErrors.getStyleClass().addAll("status-unread-errors", "status-segment-clickable");
+        unreadErrors.setTooltip(new Tooltip(tr("statusbar.tip.unreadErrors")));
+        unreadErrors.setOnMouseClicked(e -> registry.run("view.messageLog"));
+        unreadErrors.setVisible(false);
+        unreadErrors.setManaged(false);
         size.getStyleClass().add("status-segment");
         size.setTooltip(new Tooltip(tr("statusbar.tip.fileSize")));
         encoding.getStyleClass().add("status-segment");
@@ -189,6 +200,7 @@ public final class StatusBar extends HBox {
         getChildren()
                 .addAll(
                         echo,
+                        unreadErrors,
                         spacer,
                         update,
                         macroRec,
@@ -260,8 +272,41 @@ public final class StatusBar extends HBox {
      *  message — e.g. a compiler error dump — would grow the whole status bar); the full text goes to the
      *  message log, whose rows wrap and are copyable. */
     public void setMessage(String message) {
+        setMessage(message, MessageLog.Severity.INFO);
+    }
+
+    /**
+     * Shows {@code message} in the echo line and records it with {@code severity}.
+     *
+     * <p>The echo shows one message and is replaced by the next, so an error that lands while the user is
+     * mid-keystroke is overwritten moments later. Colouring it is half the answer; the other half is
+     * {@link #refreshUnreadErrors()}, which keeps a marker up until someone opens the log — so a failure can
+     * never disappear entirely unnoticed without the echo line being hijacked to hold it.
+     */
+    public void setMessage(String message, MessageLog.Severity severity) {
         echo.setText(echoLine(message));
-        messageLog.add(message); // full text; no-ops for null/blank (a blank clears the echo)
+        echo.getStyleClass().removeAll("status-echo-warn", "status-echo-error");
+        if (severity == MessageLog.Severity.ERROR) {
+            echo.getStyleClass().add("status-echo-error");
+        } else if (severity == MessageLog.Severity.WARN) {
+            echo.getStyleClass().add("status-echo-warn");
+        }
+        messageLog.add(message, severity, System.currentTimeMillis()); // no-ops for null/blank
+        refreshUnreadErrors();
+    }
+
+    /** Shows or hides the unread-error marker beside the echo line. */
+    private void refreshUnreadErrors() {
+        int unread = messageLog.unreadErrors();
+        unreadErrors.setText(unread == 0 ? "" : String.valueOf(unread));
+        unreadErrors.setVisible(unread > 0);
+        unreadErrors.setManaged(unread > 0);
+    }
+
+    /** Clears the unread-error marker — the user has opened the log and had a chance to see them. */
+    public void markMessagesRead() {
+        messageLog.markRead();
+        refreshUnreadErrors();
     }
 
     /** Maximum characters shown in the echo line; longer messages are truncated with an ellipsis. */
@@ -295,6 +340,7 @@ public final class StatusBar extends HBox {
         Window owner = getScene() == null ? null : getScene().getWindow();
         if (owner != null) {
             messageLogPopup.toggle(owner, echo, messageLog);
+            markMessagesRead(); // opening the log is the user having had a chance to see them
         }
     }
 

@@ -46,6 +46,11 @@ class CoordinatorHostStub implements CoordinatorHost {
     public void setStatus(String message) {}
 
     @Override
+    public void setError(String message) {
+        setStatus(message);
+    }
+
+    @Override
     public long fileSize(Path file) {
         return 0;
     }
