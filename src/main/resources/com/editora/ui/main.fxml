@@ -37,13 +37,16 @@
                         <Button fx:id="findButton" onAction="#onFind"/>
                         <Button fx:id="findInFilesButton" onAction="#onFindInFiles"/>
                         <Separator orientation="VERTICAL"/>
-                        <Button fx:id="splitVerticalButton" onAction="#onSplitVertical"/>
-                        <Button fx:id="splitHorizontalButton" onAction="#onSplitHorizontal"/>
-                        <Separator orientation="VERTICAL"/>
+                        <!-- The run-configuration widgets are declared here only so FXML creates and injects
+                             them; their position on the bar comes from ToolbarCatalog's layout, like every
+                             other customizable item. -->
                         <ComboBox fx:id="runConfigCombo"/>
                         <Button fx:id="runConfigRunButton" onAction="#onRunSelectedConfig"/>
                         <Button fx:id="runConfigDebugButton" onAction="#onDebugSelectedConfig"/>
                         <Button fx:id="runConfigStopButton" onAction="#onStopRun"/>
+                        <Separator orientation="VERTICAL"/>
+                        <Button fx:id="splitVerticalButton" onAction="#onSplitVertical"/>
+                        <Button fx:id="splitHorizontalButton" onAction="#onSplitHorizontal"/>
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="paletteButton" onAction="#onPalette"/>
                         <Separator orientation="VERTICAL"/>

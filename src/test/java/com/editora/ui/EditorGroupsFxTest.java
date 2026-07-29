@@ -292,6 +292,38 @@ class EditorGroupsFxTest {
         }
     }
 
+    /**
+     * Tab titles must not inherit the editor's monospace font.
+     *
+     * <p>The editor area's container originally carried the {@code editor-area} style class — the class for
+     * the editor <em>text surface</em>, which pins JetBrains Mono at 14px. Every tab header sits inside that
+     * container, so all of them silently rendered in the editor font. Nothing failed, nothing logged; it was
+     * only visible by looking at the window, which is why it shipped.
+     */
+    @Test
+    void tabTitlesDoNotInheritTheEditorFont() throws Exception {
+        Tab tab = addBuffer();
+
+        String family = FxTestSupport.callOnFx(() -> {
+            javafx.scene.Node graphic = tab.getGraphic();
+            graphic.applyCss();
+            for (javafx.scene.Node n : ((javafx.scene.layout.HBox) graphic).getChildren()) {
+                if (n instanceof javafx.scene.control.Label label
+                        && label.getStyleClass().contains("tab-title")) {
+                    return label.getFont().getFamily();
+                }
+            }
+            return null;
+        });
+
+        org.junit.jupiter.api.Assertions.assertNotNull(family, "the tab header has a .tab-title label");
+        assertFalse(
+                family.contains("JetBrains Mono"),
+                "tab titles must use the UI font, not the editor's monospace — was: " + family);
+
+        cleanUp();
+    }
+
     /** An unsplit area writes no layout at all, so an unsplit session file is byte-identical to before. */
     @Test
     void anUnsplitAreaSavesNoLayout() throws Exception {

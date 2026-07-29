@@ -125,6 +125,9 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private boolean populatingRunConfigs;
 
+    /** Width of the toolbar's run-configuration selector — see {@code setupRunConfigCombo}. */
+    private static final double RUN_CONFIG_COMBO_WIDTH = 150;
+
     /** Toolbar run-configuration selector + its Run/Debug/Stop buttons (#765). */
     @FXML
     private javafx.scene.control.ComboBox<com.editora.config.RunConfiguration> runConfigCombo;
@@ -5841,6 +5844,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             m.put("palette.show", paletteButton);
             m.put("view.toggleSimpleMode", simpleModeButton);
             m.put("view.settings", settingsButton);
+            m.put("toolbar.runConfig", runConfigCombo);
+            m.put("toolbar.runConfig.run", runConfigRunButton);
+            m.put("toolbar.runConfig.debug", runConfigDebugButton);
+            m.put("toolbar.runConfig.stop", runConfigStopButton);
             toolbarBaseWidgets = m;
         }
         return toolbarBaseWidgets;
@@ -9461,6 +9468,13 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void setupRunConfigCombo() {
         runConfigCombo.getStyleClass().add("run-config-combo");
         runConfigCombo.setPromptText(tr("toolbar.runConfig.none"));
+        // Bounded, because the toolbar is saturated: JavaFX pushes what does not fit into the ">>" overflow
+        // popup, and an unbounded ComboBox sized to its widest configuration name would evict several
+        // buttons — or itself. A fixed, modest width keeps the whole run group on the bar at normal window
+        // sizes; long names still show in full in the dropdown.
+        runConfigCombo.setPrefWidth(RUN_CONFIG_COMBO_WIDTH);
+        runConfigCombo.setMinWidth(RUN_CONFIG_COMBO_WIDTH);
+        runConfigCombo.setMaxWidth(RUN_CONFIG_COMBO_WIDTH);
         runConfigCombo.setConverter(new javafx.util.StringConverter<>() {
             @Override
             public String toString(com.editora.config.RunConfiguration cfg) {

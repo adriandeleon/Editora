@@ -52,12 +52,27 @@ class ToolbarCatalogTest {
         assertEquals(items.size(), new HashSet<>(items).size());
     }
 
+    /**
+     * A command-less item is a special widget the coordinator has to map to an existing node. Declaring one
+     * without listing it here is invisible: the rebuild silently leaves it out and the control never appears
+     * — which is exactly how the run-configuration selector went missing from the toolbar.
+     */
     @Test
-    void recentIsTheOnlyCommandlessItem() {
+    void everyCommandlessItemIsADeclaredSpecialWidget() {
         for (ToolbarCatalog.Item it : ToolbarCatalog.items()) {
             if (it.commandId() == null) {
-                assertEquals("toolbar.recent", it.id());
+                assertTrue(
+                        ToolbarCatalog.SPECIAL_WIDGET_IDS.contains(it.id()),
+                        it.id() + " has no command and is not declared in SPECIAL_WIDGET_IDS, so the toolbar"
+                                + " rebuild would drop it");
             }
+        }
+    }
+
+    @Test
+    void everyDeclaredSpecialWidgetIsACatalogItem() {
+        for (String id : ToolbarCatalog.SPECIAL_WIDGET_IDS) {
+            assertTrue(ToolbarCatalog.isKnownId(id), id + " is declared special but is not a catalog item");
         }
     }
 }
