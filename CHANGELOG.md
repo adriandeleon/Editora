@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **New Project From Template** — scaffold a whole project and open it in its own window, rather than
+  pointing Editora at a folder you made yourself. Pick a multi-file template, fill in its variables, choose
+  where it goes, and the new folder is registered as a project and opened. Ships with a **Python Project**
+  template (package layout, a test, `pyproject.toml`, README and `.gitignore`); your own multi-file
+  templates appear in the same picker.
+
 - **Long-running work now says it's running** — a find-in-files sweep over a big tree used to announce itself
   once and then go quiet, which looks identical to a hang. The status bar now shows what's in progress with a
   spinner, and a count when several things run at once; it disappears entirely when nothing is happening.

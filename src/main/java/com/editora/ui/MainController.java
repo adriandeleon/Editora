@@ -11325,7 +11325,23 @@ public class MainController implements com.editora.mcp.McpBridge {
      * non-null = write the file(s) into that folder and open the primary one.
      */
     private void newFromTemplate(java.nio.file.Path targetDir) {
-        List<com.editora.template.Template> all = templates.all();
+        newFromTemplate(targetDir, t -> true, null);
+    }
+
+    /**
+     * As above, but restricted to templates matching {@code filter} and calling {@code onCreated} with the
+     * folder that received the files.
+     *
+     * <p>The hook is what "New Project" needs: the generation, the variable wizard and the target-folder
+     * field are all already right for scaffolding a tree — the only thing missing was registering the result
+     * as a project afterwards, so that is threaded through rather than duplicating the flow.
+     */
+    private void newFromTemplate(
+            java.nio.file.Path targetDir,
+            java.util.function.Predicate<com.editora.template.Template> filter,
+            java.util.function.Consumer<java.nio.file.Path> onCreated) {
+        List<com.editora.template.Template> all =
+                templates.all().stream().filter(filter).toList();
         if (all.isEmpty()) {
             setStatus(tr("status.noTemplates"));
             return;
@@ -11336,7 +11352,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> new ArrayList<>(all),
                 com.editora.template.Template::name,
                 com.editora.template.Template::description,
-                t -> beginTemplate(t, targetDir));
+                t -> beginTemplate(t, targetDir, onCreated));
         // Wider than the default picker + a taller minimum: template descriptions are long, so the
         // default 620px clipped them (and showed a horizontal scrollbar).
         picker.setPreferredSize(820, 8);
@@ -11344,8 +11360,33 @@ public class MainController implements com.editora.mcp.McpBridge {
         picker.show(stage);
     }
 
+    /**
+     * {@code project.newFromTemplate}: scaffolds a new project from a multi-file template and opens it.
+     *
+     * <p>Reuses the ordinary template flow — the picker, the variable wizard and its target-folder field
+     * already do the generation correctly — and only adds what was actually missing: registering the folder
+     * as a project and opening its window. Restricted to multi-file templates because a project is a tree; a
+     * single-file template produces a lone file, which is what {@code template.new} is already for.
+     */
+    private void newProjectFromTemplate() {
+        if (!projectsEnabled()) {
+            return; // the palette already hides project.* when the feature is off
+        }
+        newFromTemplate(defaultNewDir(), com.editora.template.Template::isMultiFile, dir -> {
+            Project project = projects.createOrGet(dir.getFileName().toString(), dir);
+            projects.save();
+            setStatus(tr("status.project.createdFromTemplate", project.name()));
+            if (windowManager != null) {
+                windowManager.openOrFocus(project);
+            }
+        });
+    }
+
     /** Discovers the template's unknown variables; prompts for them via a wizard, else applies directly. */
-    private void beginTemplate(com.editora.template.Template t, java.nio.file.Path targetDir) {
+    private void beginTemplate(
+            com.editora.template.Template t,
+            java.nio.file.Path targetDir,
+            java.util.function.Consumer<java.nio.file.Path> onCreated) {
         List<com.editora.template.TemplateEngine.TemplateVar> vars;
         if (t.isMultiFile()) {
             List<String> texts = new ArrayList<>();
@@ -11364,7 +11405,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // creates an untitled scratch buffer immediately — no wizard. A multi-file template always writes to
         // disk, so it goes through the wizard (to offer the target folder) even with no variables.
         if (vars.isEmpty() && targetDir == null && !t.isMultiFile()) {
-            applyTemplate(t, null, java.util.Map.of());
+            applyTemplate(t, null, java.util.Map.of(), onCreated);
             return;
         }
 
@@ -11420,7 +11461,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     java.nio.file.Path base = targetDir != null ? targetDir : defaultNewDir();
                     java.nio.file.Path dir = com.editora.config.PathKeys.resolveUserInput(
                             folderField.getText(), base, System.getProperty("user.home"));
-                    applyTemplate(t, dir, answers);
+                    applyTemplate(t, dir, answers, onCreated);
                 },
                 null,
                 false);
@@ -11442,7 +11483,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Renders {@code t} with {@code answers} and creates the file(s) (untitled buffer or written to disk). */
     private void applyTemplate(
-            com.editora.template.Template t, java.nio.file.Path targetDir, java.util.Map<String, String> answers) {
+            com.editora.template.Template t,
+            java.nio.file.Path targetDir,
+            java.util.Map<String, String> answers,
+            java.util.function.Consumer<java.nio.file.Path> onCreated) {
         Settings s = config.getSettings();
         String author = s.getAuthorName();
         String projectName = activeProjectName();
@@ -11451,7 +11495,14 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         if (t.isMultiFile()) {
             applyMultiFileTemplate(
-                    t, targetDir != null ? targetDir : defaultNewDir(), answers, author, projectName, packageName, now);
+                    t,
+                    targetDir != null ? targetDir : defaultNewDir(),
+                    answers,
+                    author,
+                    projectName,
+                    packageName,
+                    now,
+                    onCreated);
             return;
         }
         // Resolve the file name first (so the body's ${fileName}/${baseName}/${extension} are correct).
@@ -11506,7 +11557,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             String author,
             String projectName,
             String packageName,
-            java.time.LocalDateTime now) {
+            java.time.LocalDateTime now,
+            java.util.function.Consumer<java.nio.file.Path> onCreated) {
         com.editora.template.TemplateVariableResolver vars = new com.editora.template.TemplateVariableResolver(
                 answers, author, projectName, packageName, "", dir.toString(), "", now);
         java.nio.file.Path primary = null;
@@ -11529,6 +11581,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 projectPanel.refreshTree();
             }
             setStatus(tr("status.templateCreated", primary.getFileName().toString()));
+            if (onCreated != null) {
+                onCreated.accept(dir); // only after at least one file landed — an empty folder is not a project
+            }
         }
     }
 
@@ -14576,6 +14631,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.collapseCarets", () -> withMultiCaret(EditorBuffer::collapseCarets)));
         registry.register(Command.of("template.new", () -> newFromTemplate(null)));
         registry.register(Command.of("template.newInFolder", () -> newFromTemplate(defaultNewDir())));
+        registry.register(Command.of("project.newFromTemplate", this::newProjectFromTemplate));
         registry.register(Command.of("template.reload", () -> {
             templates.reload();
             setStatus(tr("status.templatesReloaded"));

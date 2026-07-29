@@ -1,0 +1,78 @@
+{
+  "name": "Python Project",
+  "description": "A Python package with a main module, a test, a pyproject.toml and a README (multi-file)",
+  "language": "python",
+  "files": [
+    {
+      "path": "pyproject.toml",
+      "body": [
+        "[project]",
+        "name = \"${packageName:app}\"",
+        "version = \"0.1.0\"",
+        "description = \"${description:A Python project}\"",
+        "requires-python = \">=3.11\"",
+        "dependencies = []",
+        "",
+        "[build-system]",
+        "requires = [\"setuptools>=68\"]",
+        "build-backend = \"setuptools.build_meta\""
+      ]
+    },
+    {
+      "path": "src/${packageName:app}/__init__.py",
+      "body": ["\"\"\"${description:A Python project}.\"\"\"", "", "__version__ = \"0.1.0\""]
+    },
+    {
+      "path": "src/${packageName:app}/main.py",
+      "body": [
+        "\"\"\"Entry point for ${packageName:app}.\"\"\"",
+        "",
+        "",
+        "def main() -> None:",
+        "    ${cursor}print(\"Hello from ${packageName:app}\")",
+        "",
+        "",
+        "if __name__ == \"__main__\":",
+        "    main()"
+      ]
+    },
+    {
+      "path": "tests/test_main.py",
+      "body": [
+        "from ${packageName:app} import __version__",
+        "",
+        "",
+        "def test_version() -> None:",
+        "    assert __version__ == \"0.1.0\""
+      ]
+    },
+    {
+      "path": "README.md",
+      "body": [
+        "# ${packageName:app}",
+        "",
+        "${description:A Python project}",
+        "",
+        "## Run",
+        "",
+        "```bash",
+        "python -m ${packageName:app}.main",
+        "```",
+        "",
+        "## Test",
+        "",
+        "```bash",
+        "pytest",
+        "```",
+        "",
+        "---",
+        "",
+        "Created by ${author} on ${date}."
+      ]
+    },
+    {
+      "path": ".gitignore",
+      "body": ["__pycache__/", "*.py[cod]", ".venv/", "dist/", "build/", "*.egg-info/", ".pytest_cache/"]
+    }
+  ]
+}
