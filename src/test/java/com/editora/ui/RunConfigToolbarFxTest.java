@@ -170,6 +170,10 @@ class RunConfigToolbarFxTest {
      */
     @Test
     void aMakefileProjectShowsTheGroup(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        boolean projectsWereEnabled = FxTestSupport.callOnFx(() -> {
+            com.editora.config.ConfigManager cfg = FxTestSupport.field(fx.controller, "config");
+            return cfg.getSettings().isProjectSupport();
+        });
         setConfigs(List.of());
         ComboBox<RunConfiguration> combo = combo();
         assertFalse(FxTestSupport.callOnFx(combo::isVisible), "hidden to begin with");
@@ -181,12 +185,15 @@ class RunConfigToolbarFxTest {
             assertTrue(FxTestSupport.callOnFx(combo::isVisible), "a makefile makes the project launchable");
         } finally {
             setProject(null);
-            setProjectsEnabled(false);
+            setProjectsEnabled(projectsWereEnabled);
         }
         assertFalse(FxTestSupport.callOnFx(combo::isVisible), "and it goes away with the project");
     }
 
-    /** Projects are opt-in (off by default), and a window can only have one while the feature is on. */
+    /**
+     * A window can only have a project while the feature is on. Captured and restored rather than forced to a
+     * literal, so flipping the shipped default does not silently leave the shared fixture on the wrong one.
+     */
     private void setProjectsEnabled(boolean on) throws Exception {
         FxTestSupport.runOnFx(() -> {
             com.editora.config.ConfigManager cfg = FxTestSupport.field(fx.controller, "config");

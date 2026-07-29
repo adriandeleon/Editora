@@ -274,6 +274,29 @@ public final class ConfigMigrations {
         return o;
     }
 
+    /**
+     * v88 → v89: turns the Projects feature on for existing installs.
+     *
+     * <p>Changing the field's default only reaches a fresh config dir. Jackson writes every modelled field on
+     * save, so anyone who has ever run Editora has {@code projectSupport = false} stored explicitly and would
+     * keep it forever.
+     *
+     * <p><b>This cannot tell "never enabled it" from "deliberately turned it off"</b> — the stored file looks
+     * identical either way — so it turns the feature on for both. That is the intent: Projects went from
+     * opt-in to on, and one checkbox turns it back off. It only writes when the stored value is {@code false},
+     * so a config already carrying {@code true} is untouched.
+     */
+    static JsonNode enableProjectSupport(JsonNode input) {
+        if (!(input instanceof ObjectNode o)) {
+            return input;
+        }
+        JsonNode current = o.get("projectSupport");
+        if (current != null && current.isBoolean() && !current.asBoolean()) {
+            o.put("projectSupport", true);
+        }
+        return o;
+    }
+
     static JsonNode splitAiApiKeyByProvider(JsonNode input) {
         if (!(input instanceof ObjectNode o)) {
             return input;

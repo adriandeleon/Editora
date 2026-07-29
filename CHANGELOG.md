@@ -49,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Projects are on by default.** The feature shipped opt-in, behind a checkbox most people never found —
+  and much of what Editora has grown since is anchored to a project: the file tree, per-project bookmarks and
+  notes, find-in-files scope, run configurations, per-project settings. Existing installs are switched on
+  when their settings are upgraded, including installs that had turned it off, since a saved setting cannot
+  say which of the two it was. Settings → Workspace turns it back off.
+
 - **The run-configuration toolbar group only appears where it applies** — the selector and its Run / Debug /
   Stop buttons used to sit on every toolbar, so a project of Markdown notes carried a dropdown that could
   never fill. They now show when you are somewhere you could actually launch: with a project open, a Maven,
