@@ -1362,7 +1362,7 @@
    occupy — the whole group when dropping into it, or the half it would split off at an edge. Semantic
    colors, so it tracks the theme. Mouse-transparent and unmanaged (set in EditorArea) so it can be drawn
    anywhere over the area without joining the layout or swallowing the drag it is responding to. */
-.editor-area .editor-drop-indicator {
+.editor-area-root .editor-drop-indicator {
     -fx-background-color: -color-accent-emphasis;
     -fx-opacity: 0.22;
     -fx-border-color: -color-accent-emphasis;

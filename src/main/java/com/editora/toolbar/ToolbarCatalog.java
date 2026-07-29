@@ -23,6 +23,21 @@ public final class ToolbarCatalog {
     /** Layout token that renders a vertical toolbar separator (as opposed to an item {@link #id()}). */
     public static final String SEPARATOR = "|";
 
+    /**
+     * Items with no {@code commandId}: widgets the coordinator must map to an existing {@code @FXML} node
+     * (see {@code MainController.toolbarBaseWidgets}) rather than build as a generic command button.
+     *
+     * <p>Declared explicitly because forgetting the mapping is invisible — the item is simply left out when
+     * the toolbar is rebuilt, and the control never appears. That happened with the run-configuration
+     * selector, which was declared in the FXML but never registered here, so every rebuild dropped it.
+     */
+    public static final java.util.Set<String> SPECIAL_WIDGET_IDS = java.util.Set.of(
+            "toolbar.recent",
+            "toolbar.runConfig",
+            "toolbar.runConfig.run",
+            "toolbar.runConfig.debug",
+            "toolbar.runConfig.stop");
+
     /** A customizable toolbar item. {@code commandId} is null for a non-command widget (the Recent button). */
     public record Item(String id, String iconKey, String commandId) {}
 
@@ -55,6 +70,13 @@ public final class ToolbarCatalog {
         add("palette.show", "palette", "palette.show");
         add("view.toggleSimpleMode", "simpleMode", "view.toggleSimpleMode");
         add("view.settings", "settings", "view.settings");
+        // Run configurations: special widgets, like the Recent MenuButton — the selector is a ComboBox and
+        // the three buttons act on whatever it has selected rather than dispatching a fixed command, so the
+        // coordinator maps all four to their existing @FXML fields.
+        add("toolbar.runConfig", "run", null);
+        add("toolbar.runConfig.run", "run", null);
+        add("toolbar.runConfig.debug", "debug", null);
+        add("toolbar.runConfig.stop", "stopSquare", null);
 
         // --- Extra command-backed icons (addable, not on the default toolbar) ---
         add("git.commit", "git", "git.commit");
@@ -108,6 +130,11 @@ public final class ToolbarCatalog {
         l.add(SEPARATOR);
         l.add("find.show");
         l.add("search.inFiles");
+        l.add(SEPARATOR);
+        l.add("toolbar.runConfig");
+        l.add("toolbar.runConfig.run");
+        l.add("toolbar.runConfig.debug");
+        l.add("toolbar.runConfig.stop");
         l.add(SEPARATOR);
         l.add("view.splitVertical");
         l.add("view.splitHorizontal");

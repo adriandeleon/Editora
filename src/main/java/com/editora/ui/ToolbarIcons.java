@@ -36,6 +36,8 @@ final class ToolbarIcons {
             case "git" -> Icons.git();
             case "gitLog" -> Icons.gitLog();
             case "run" -> Icons.run();
+            case "debug" -> Icons.debug();
+            case "stopSquare" -> Icons.stopSquare();
             case "problems" -> Icons.problems();
             case "todo" -> Icons.todo();
             case "bookmark" -> Icons.bookmark();

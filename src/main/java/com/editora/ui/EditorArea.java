@@ -122,7 +122,10 @@ final class EditorArea {
     EditorArea(TabPane initial) {
         this.primary = initial;
         this.singleGroupView = Collections.unmodifiableList(initial.getTabs());
-        container.getStyleClass().add("editor-area");
+        // NOT "editor-area": that class is the editor *text surface*, and it pins JetBrains Mono at 14px
+        // (see app.css). Putting it on the container made every tab header inside inherit the editor's
+        // monospace font instead of the UI font — the tab titles rendered wrong app-wide.
+        container.getStyleClass().add("editor-area-root");
         dropIndicator.getStyleClass().add("editor-drop-indicator");
         dropIndicator.setManaged(false);
         dropIndicator.setMouseTransparent(true);

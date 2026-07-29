@@ -61,6 +61,70 @@ class RunConfigToolbarFxTest {
         return new RunConfiguration(name, "run", "com.example.App", "", "", "", "");
     }
 
+    /**
+     * Every catalog item the toolbar can show must resolve to a real node.
+     *
+     * <p>The gap this closes: a special widget declared in {@code ToolbarCatalog} but never mapped in
+     * {@code MainController.toolbarBaseWidgets} is silently dropped when the toolbar is rebuilt from the
+     * saved layout — no error, no log, the control simply is not there. That is how the run-configuration
+     * selector went missing despite being declared in the FXML, injected, wired and covered by the other
+     * tests here.
+     */
+    @Test
+    void everySpecialToolbarWidgetIsMappedToANode() throws Exception {
+        java.util.Map<String, javafx.scene.Node> pool = widgetPool();
+        for (String id : com.editora.toolbar.ToolbarCatalog.SPECIAL_WIDGET_IDS) {
+            assertTrue(pool.containsKey(id), id + " is in the catalog but has no widget, so a rebuild drops it");
+            org.junit.jupiter.api.Assertions.assertNotNull(pool.get(id), id + " maps to a null node");
+        }
+    }
+
+    /**
+     * Every item in the shipped default layout resolves too — the default is what a first-run user sees, so
+     * a stale id there is a hole in the toolbar nobody configured.
+     */
+    @Test
+    void everyDefaultLayoutItemResolves() throws Exception {
+        java.util.Map<String, javafx.scene.Node> pool = widgetPool();
+        for (String id : com.editora.toolbar.ToolbarCatalog.defaultLayout()) {
+            if (!com.editora.toolbar.ToolbarCatalog.isKnownId(id)) {
+                continue; // a separator token
+            }
+            var item = com.editora.toolbar.ToolbarCatalog.item(id);
+            boolean resolvable = item.commandId() != null || pool.get(id) != null;
+            assertTrue(resolvable, id + " is on the default toolbar but resolves to neither a command nor a widget");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private java.util.Map<String, javafx.scene.Node> widgetPool() throws Exception {
+        return FxTestSupport.callOnFx(() -> (java.util.Map<String, javafx.scene.Node>)
+                FxTestSupport.call(fx.controller, "toolbarBaseWidgets", new Class[] {}));
+    }
+
+    /**
+     * The controls must actually be in the toolbar and visible — not merely injected.
+     *
+     * <p>Added after a report that the selector was nowhere on screen. Everything else here passes with the
+     * fields injected and wired, which is exactly the state that would still show nothing if the controls
+     * never made it into the toolbar's items or were hidden by chrome handling.
+     */
+    @Test
+    void theControlsAreInTheToolbarAndVisible() throws Exception {
+        javafx.scene.control.ToolBar bar = FxTestSupport.field(fx.controller, "toolBar");
+        ComboBox<RunConfiguration> combo = combo();
+        javafx.scene.control.Button run = FxTestSupport.field(fx.controller, "runConfigRunButton");
+
+        assertTrue(
+                FxTestSupport.callOnFx(() -> bar.getItems().contains(combo)),
+                "the selector is one of the toolbar's items");
+        assertTrue(FxTestSupport.callOnFx(() -> bar.getItems().contains(run)), "and so is the Run button");
+        assertTrue(FxTestSupport.callOnFx(combo::isVisible), "selector visible");
+        assertTrue(FxTestSupport.callOnFx(combo::isManaged), "selector managed (takes layout space)");
+        assertTrue(FxTestSupport.callOnFx(run::isVisible), "Run visible");
+        assertTrue(FxTestSupport.callOnFx(run::isManaged), "Run managed");
+    }
+
     @Test
     void theSelectorListsTheSavedConfigurations() throws Exception {
         setConfigs(List.of(java("Server"), java("Client")));
