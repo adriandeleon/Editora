@@ -115,9 +115,41 @@ public class MainController implements com.editora.mcp.McpBridge {
     private MainMenuBar menuBar;
 
     /**
-     * /** Project root the makefile probe last ran for, so it runs once per root rather than per refresh. */
+     * The dropdown's trailing "Edit Configurations…" row.
+     *
+     * <p>A sentinel item rather than a fifth toolbar button: the dropdown is where you already are when you
+     * want to change the thing you just picked, and it is where every IDE puts this. Compared by
+     * <b>identity</b>, never by name — a real configuration a user happens to name "Edit Configurations…"
+     * must still behave like a configuration.
+     *
+     * <p>It is not a selectable value. Choosing it reverts the selection and opens Settings, so
+     * {@code runConfigCombo.getValue()} is never the sentinel by the time anything reads it.
+     */
+    private static final com.editora.config.RunConfiguration EDIT_CONFIGS_ROW =
+            new com.editora.config.RunConfiguration("", "run", "", "", "", "", "");
+
+    /** True while the value listener is reverting a click on {@link #EDIT_CONFIGS_ROW}, so it ignores itself. */
+    private boolean revertingRunConfigRow;
+
+    /**
+     * What choosing {@link #EDIT_CONFIGS_ROW} does. Always {@link #editRunConfigs()} in production.
+     *
+     * <p>A seam (the {@code *ForTest} shape used by {@code LanguageServerSession.attachForTest} and
+     * {@code DoctorCoordinator.probeOverrideForTest}) so a test can exercise the revert — the part with a
+     * failure mode — without opening the whole Settings window, which builds every page and made the test
+     * time out under the full suite while passing alone.
+     */
+    private Runnable runConfigEditAction = this::editRunConfigs;
+
+    /** Replaces what the dropdown's edit row does. Tests only. */
+    void setRunConfigEditActionForTest(Runnable action) {
+        this.runConfigEditAction = action == null ? this::editRunConfigs : action;
+    }
+
+    /** Project root the makefile probe last ran for, so it runs once per root rather than per refresh. */
     private Path makefileProbedRoot;
 
+    /** Whether {@link #makefileProbedRoot} holds a makefile — the cached answer for that root. */
     private boolean makefileAtProjectRoot;
 
     /**
@@ -9487,6 +9519,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 if (cfg == null) {
                     return "";
                 }
+                if (cfg == EDIT_CONFIGS_ROW) {
+                    return tr("toolbar.runConfig.edit");
+                }
                 String tag = cfg.isDebug() ? tr("run.config.debugTag") : tr("run.config.runTag");
                 return cfg.name() + "  ·  " + tag;
             }
@@ -9497,8 +9532,23 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         runConfigCombo.valueProperty().addListener((o, was, now) -> {
+            if (revertingRunConfigRow) {
+                return; // our own revert below, not a choice
+            }
             if (populatingRunConfigs) {
                 updateRunConfigButtons(); // a rebuild, not a choice: reflect it but persist nothing
+                return;
+            }
+            if (now == EDIT_CONFIGS_ROW) {
+                // Put the real selection back first, so nothing downstream — the Run buttons, the persisted
+                // selectedRunConfig, a launch — ever sees the sentinel as the chosen configuration.
+                revertingRunConfigRow = true;
+                try {
+                    runConfigCombo.setValue(was == EDIT_CONFIGS_ROW ? null : was);
+                } finally {
+                    revertingRunConfigRow = false;
+                }
+                runConfigEditAction.run();
                 return;
             }
             config.getWorkspaceState().setSelectedRunConfig(now == null ? "" : now.name());
@@ -9553,11 +9603,16 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void repopulate(
             List<com.editora.config.RunConfiguration> configs, com.editora.config.RunConfiguration previous) {
         runConfigCombo.getItems().setAll(configs);
+        // Always offered, including with no configurations at all — with none it is how you make the first.
+        runConfigCombo.getItems().add(EDIT_CONFIGS_ROW);
         // Re-select by name: the list is rebuilt from the store on every refresh, so the old instance is not
-        // the same object even when the configuration is unchanged.
+        // the same object even when the configuration is unchanged. Searches `configs`, not the combo's items,
+        // so the sentinel can never be re-selected — it has a blank name and would otherwise match an unnamed
+        // configuration.
         com.editora.config.RunConfiguration reselect = null;
-        String wanted =
-                previous != null ? previous.name() : config.getWorkspaceState().getSelectedRunConfig();
+        String wanted = previous != null && previous != EDIT_CONFIGS_ROW
+                ? previous.name()
+                : config.getWorkspaceState().getSelectedRunConfig();
         for (com.editora.config.RunConfiguration cfg : configs) {
             if (cfg.name().equals(wanted)) {
                 reselect = cfg;
@@ -9643,6 +9698,18 @@ public class MainController implements com.editora.mcp.McpBridge {
             runConfigDebugButton.setDisable(!hasSelection);
             runConfigStopButton.setDisable(!runCoordinator.isRunning());
         }
+    }
+
+    /**
+     * Opens Settings → Run Configurations on the configuration the dropdown currently has selected.
+     *
+     * <p>Reached from the dropdown's "Edit Configurations…" row and the {@code run.editConfigs} command. With
+     * nothing selected it opens the page, which is also how you create the first configuration.
+     */
+    private void editRunConfigs() {
+        com.editora.config.RunConfiguration selected = runConfigCombo == null ? null : runConfigCombo.getValue();
+        String name = selected == null || selected == EDIT_CONFIGS_ROW ? null : selected.name();
+        settingsWindow.showRunConfigs(name, stage);
     }
 
     /** Launches {@code cfg} by its own kind — the selector's Run button honours a debug configuration. */
@@ -15022,6 +15089,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("run.config", this::runSavedConfig));
         registry.register(Command.of("run.saveConfig", this::saveRunConfig));
         registry.register(Command.of("run.deleteConfig", this::deleteRunConfig));
+        registry.register(Command.of("run.editConfigs", this::editRunConfigs));
         registry.register(Command.of("run.exportConfigs", this::exportRunConfigs));
         registry.register(Command.of("run.importConfigs", this::importRunConfigs));
         registry.register(Command.of("run.rerun", runCoordinator::rerunLast));

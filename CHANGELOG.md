@@ -115,6 +115,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Edit a run configuration from the toolbar dropdown.** The dropdown now ends with **Edit
+  Configurations…**, which opens Settings on the Run Configurations page with the configuration you had
+  selected already picked out — so changing the thing you just chose no longer means navigating there and
+  finding it again. It is offered even with nothing saved, which is one way to create your first. Also
+  available from the palette as **Run: Edit Run Configurations…**.
+
 - **Adding a run configuration starts from the file you are looking at.** Settings → Run Configurations →
   **Add** used to create a wholly blank entry called "New Configuration". It now prefills the main class from
   the active Java file (or the one your Gradle build declares), names the configuration after that class, and

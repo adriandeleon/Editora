@@ -14,6 +14,8 @@ import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -216,10 +218,89 @@ class RunConfigToolbarFxTest {
         setConfigs(List.of(java("Server"), java("Client")));
 
         ComboBox<RunConfiguration> combo = combo();
-        assertEquals(2, FxTestSupport.callOnFx(() -> combo.getItems().size()), "both are listed");
+        // Both configurations plus the trailing "Edit Configurations…" row.
+        assertEquals(3, FxTestSupport.callOnFx(() -> combo.getItems().size()), "both are listed");
         assertEquals("Server", FxTestSupport.callOnFx(() -> combo.getValue().name()), "the first is selected");
 
         setConfigs(List.of());
+    }
+
+    /** The edit row is always offered — with no configurations it is how you create the first one. */
+    @Test
+    void theEditRowIsAlwaysTheLastItem() throws Exception {
+        ComboBox<RunConfiguration> combo = combo();
+
+        setConfigs(List.of());
+        assertEquals(1, FxTestSupport.callOnFx(() -> combo.getItems().size()), "offered with none saved");
+        assertSame(editRow(), FxTestSupport.callOnFx(() -> combo.getItems().get(0)));
+
+        setConfigs(List.of(java("Server")));
+        assertSame(
+                editRow(),
+                FxTestSupport.callOnFx(
+                        () -> combo.getItems().get(combo.getItems().size() - 1)),
+                "and stays last");
+
+        setConfigs(List.of());
+    }
+
+    /**
+     * Choosing the edit row must not become the selection.
+     *
+     * <p>It is an action in a list of values, so the failure to guard against is it sticking: the Run buttons
+     * would act on it, and it would be persisted as the window's chosen configuration and restored next
+     * launch.
+     */
+    @Test
+    void choosingTheEditRowRevertsTheSelectionAndPersistsNothing() throws Exception {
+        setConfigs(List.of(java("Server"), java("Client")));
+        ComboBox<RunConfiguration> combo = combo();
+        FxTestSupport.runOnFx(() -> combo.setValue(combo.getItems().get(1))); // Client
+        assertEquals("Client", FxTestSupport.callOnFx(() -> combo.getValue().name()));
+
+        // Substitute the action: opening the real Settings window builds every page, which timed out under
+        // the full suite. The revert is the part with a failure mode; that it fires is asserted below.
+        java.util.concurrent.atomic.AtomicInteger opened = new java.util.concurrent.atomic.AtomicInteger();
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                fx.controller, "setRunConfigEditActionForTest", new Class[] {Runnable.class}, (Runnable)
+                        opened::incrementAndGet));
+        try {
+            RunConfiguration row = editRow(); // hoisted: runOnFx takes a Runnable, which cannot throw
+            FxTestSupport.runOnFx(() -> combo.setValue(row));
+            assertEquals(1, opened.get(), "and the edit action fired exactly once");
+        } finally {
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    fx.controller, "setRunConfigEditActionForTest", new Class[] {Runnable.class}, (Runnable) null));
+        }
+
+        assertEquals("Client", FxTestSupport.callOnFx(() -> combo.getValue().name()), "selection put back");
+        assertEquals(
+                "Client",
+                FxTestSupport.callOnFx(() -> {
+                    com.editora.config.ConfigManager cfg = FxTestSupport.field(fx.controller, "config");
+                    return cfg.getWorkspaceState().getSelectedRunConfig();
+                }),
+                "and the sentinel was never persisted as the choice");
+
+        setConfigs(List.of());
+    }
+
+    /** The sentinel is compared by identity, so a configuration named like it stays a configuration. */
+    @Test
+    void aConfigurationNamedLikeTheEditRowIsStillAConfiguration() throws Exception {
+        String label = com.editora.i18n.Messages.tr("toolbar.runConfig.edit");
+        setConfigs(List.of(java(label)));
+
+        ComboBox<RunConfiguration> combo = combo();
+        assertEquals(label, FxTestSupport.callOnFx(() -> combo.getValue().name()), "selected as a normal value");
+        assertNotSame(editRow(), FxTestSupport.callOnFx(combo::getValue));
+
+        setConfigs(List.of());
+    }
+
+    /** The controller's sentinel instance. {@code Field.get} ignores the target for a static field. */
+    private RunConfiguration editRow() throws Exception {
+        return FxTestSupport.field(fx.controller, "EDIT_CONFIGS_ROW");
     }
 
     /** Each configuration becomes a real command, so it shows in the palette and can take a keybinding. */
