@@ -132,18 +132,26 @@ public class MainController implements com.editora.mcp.McpBridge {
     private boolean revertingRunConfigRow;
 
     /**
-     * What choosing {@link #EDIT_CONFIGS_ROW} does. Always {@link #editRunConfigs()} in production.
+     * Opens the Run Configurations page on a named configuration (null ⇒ whatever was selected there).
+     *
+     * <p>The single indirection for all three routes to that page — the dropdown's
+     * {@link #EDIT_CONFIGS_ROW}, and the Run and Debug guards that take you to a configuration too
+     * incomplete to launch. Always {@link #openRunConfigEditor} in production.
      *
      * <p>A seam (the {@code *ForTest} shape used by {@code LanguageServerSession.attachForTest} and
-     * {@code DoctorCoordinator.probeOverrideForTest}) so a test can exercise the revert — the part with a
-     * failure mode — without opening the whole Settings window, which builds every page and made the test
-     * time out under the full suite while passing alone.
+     * {@code DoctorCoordinator.probeOverrideForTest}) because opening the real Settings window builds every
+     * page: tests that drove it passed alone and timed out under the full suite. Measured, not assumed —
+     * both times.
      */
-    private Runnable runConfigEditAction = this::editRunConfigs;
+    private java.util.function.Consumer<String> runConfigEditor = this::openRunConfigEditor;
 
-    /** Replaces what the dropdown's edit row does. Tests only. */
-    void setRunConfigEditActionForTest(Runnable action) {
-        this.runConfigEditAction = action == null ? this::editRunConfigs : action;
+    /** Replaces where the Run Configurations page is opened. Tests only. */
+    void setRunConfigEditorForTest(java.util.function.Consumer<String> editor) {
+        this.runConfigEditor = editor == null ? this::openRunConfigEditor : editor;
+    }
+
+    private void openRunConfigEditor(String name) {
+        settingsWindow.showRunConfigs(name, stage);
     }
 
     /** Project root the makefile probe last ran for, so it runs once per root rather than per refresh. */
@@ -2557,6 +2565,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public void editConfiguration(String name) {
+                        runConfigEditor.accept(name);
+                    }
+
+                    @Override
                     public void toggleToolWindow() {
                         toolWindows.toggle(debugToolWindow);
                     }
@@ -3684,6 +3697,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void openToolWindow() {
             toolWindows.open(runToolWindow);
+        }
+
+        @Override
+        public void editConfiguration(String name) {
+            runConfigEditor.accept(name);
         }
 
         @Override
@@ -9548,7 +9566,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 } finally {
                     revertingRunConfigRow = false;
                 }
-                runConfigEditAction.run();
+                editRunConfigs();
                 return;
             }
             config.getWorkspaceState().setSelectedRunConfig(now == null ? "" : now.name());
@@ -9709,7 +9727,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void editRunConfigs() {
         com.editora.config.RunConfiguration selected = runConfigCombo == null ? null : runConfigCombo.getValue();
         String name = selected == null || selected == EDIT_CONFIGS_ROW ? null : selected.name();
-        settingsWindow.showRunConfigs(name, stage);
+        runConfigEditor.accept(name);
     }
 
     /** Launches {@code cfg} by its own kind — the selector's Run button honours a debug configuration. */

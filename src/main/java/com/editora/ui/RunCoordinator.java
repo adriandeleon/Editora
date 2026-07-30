@@ -31,6 +31,12 @@ final class RunCoordinator {
     interface Ops {
         void openToolWindow();
 
+        /**
+         * Opens the Run Configurations page on {@code name}, so a configuration that cannot run takes you to
+         * where you fix it rather than only saying what is wrong.
+         */
+        void editConfiguration(String name);
+
         /** Saves {@code buffer} (dirty → write, untitled → Save-As); {@code false} if cancelled/failed. */
         boolean saveBuffer(EditorBuffer buffer);
 
@@ -173,11 +179,12 @@ final class RunCoordinator {
     private void runScriptConfig(RunConfiguration cfg) {
         List<String> argv = ScriptRunCommand.build(cfg.type(), cfg.target(), ProgramArgs.tokenize(cfg.args()));
         if (argv.isEmpty()) {
-            host.setStatus(tr(
-                    ScriptRunCommand.needsTarget(cfg.type())
-                            ? "status.run.configNeedsTarget"
-                            : "status.run.configBadType",
-                    cfg.name()));
+            if (ScriptRunCommand.needsTarget(cfg.type())) {
+                reportIncomplete(cfg, "status.run.configNeedsTarget");
+            } else {
+                // An unknown type is not something the form can put right by being opened at it.
+                host.setStatus(tr("status.run.configBadType", cfg.name()));
+            }
             return;
         }
         Path cwd = workingDirFor(cfg);
@@ -186,6 +193,22 @@ final class RunCoordinator {
             return;
         }
         streamRun(cfg.name(), cwd, argv, com.editora.run.EnvVars.parse(cfg.env()));
+    }
+
+    /**
+     * Reports that {@code cfg} is missing something it needs, and opens its form so it can be filled in.
+     *
+     * <p>Naming the problem is only half the action: the status line said which configuration was incomplete
+     * and left you to go and find it. Pressing Run is a request to run it, so taking you to the field that
+     * would make it run is the natural answer — and it is what every IDE does here.
+     */
+    private void reportIncomplete(RunConfiguration cfg) {
+        reportIncomplete(cfg, "status.run.configNeedsMainClass");
+    }
+
+    private void reportIncomplete(RunConfiguration cfg, String messageKey) {
+        host.setStatus(tr(messageKey, cfg.name()));
+        ops.editConfiguration(cfg.name());
     }
 
     /**
@@ -296,7 +319,7 @@ final class RunCoordinator {
         // Mirrors runScriptConfig's missing-target check. Without it the blank main class reaches jdtls and
         // comes back as an internal NPE from its search engine — see RunConfiguration.missingMainClass.
         if (cfg.missingMainClass()) {
-            host.setStatus(tr("status.run.configNeedsMainClass", cfg.name()));
+            reportIncomplete(cfg);
             return;
         }
         // A named configuration is independent of whatever is on screen: any open Java file in its project
