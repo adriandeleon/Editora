@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -42,6 +43,35 @@ class BlankMainClassGuardFxTest {
         return new RunConfiguration("New configuration", "run", "", "", "", "", "");
     }
 
+    /** Configurations the guard took us to, in order. */
+    private final java.util.List<String> openedInEditor = new java.util.ArrayList<>();
+
+    /**
+     * Substitutes where the Run Configurations page opens.
+     *
+     * <p>Opening the real Settings window builds every page: driving it from a test passes alone and times
+     * out under the full suite (measured, twice). This keeps the assertion on <em>which</em> configuration we
+     * are taken to, which is the part that matters.
+     */
+    @org.junit.jupiter.api.BeforeEach
+    void captureEditorOpens() throws Exception {
+        openedInEditor.clear();
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                fx.controller,
+                "setRunConfigEditorForTest",
+                new Class[] {java.util.function.Consumer.class},
+                (java.util.function.Consumer<String>) openedInEditor::add));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void restoreEditor() throws Exception {
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                fx.controller,
+                "setRunConfigEditorForTest",
+                new Class[] {java.util.function.Consumer.class},
+                (java.util.function.Consumer<String>) null));
+    }
+
     private String runAndReadStatus(RunConfiguration cfg) throws Exception {
         return FxTestSupport.callOnFx(() -> {
             RunCoordinator run = FxTestSupport.field(fx.controller, "runCoordinator");
@@ -62,6 +92,9 @@ class BlankMainClassGuardFxTest {
         // search string is reaching jdtls again.
         assertFalse(status.contains("SearchPattern"), "no jdtls internals leak through");
         assertFalse(status.contains("Cannot invoke"), "no raw NPE message leaks through");
+        // Naming the problem is half the action; the other half is landing on the field that fixes it.
+        assertEquals(
+                java.util.List.of("New configuration"), openedInEditor, "and takes us to that configuration's form");
     }
 
     /** The debug half takes the same path and must refuse identically, not resolve a class that is not there. */
@@ -77,5 +110,17 @@ class BlankMainClassGuardFxTest {
 
         assertTrue(status.toLowerCase().contains("main class"), "says what is missing, got: " + status);
         assertFalse(status.contains("SearchPattern"), "no jdtls internals leak through");
+        assertEquals(
+                java.util.List.of("New configuration"), openedInEditor, "and takes us to that configuration's form");
+    }
+
+    /** A script configuration missing its script gets the same treatment — the guard that already existed. */
+    @Test
+    void aScriptConfigurationWithNoScriptAlsoOpensItsForm() throws Exception {
+        RunConfiguration script = new RunConfiguration("Deploy", "run", "shell", "", "", "", "", "", "", "", "");
+        String status = runAndReadStatus(script);
+
+        assertTrue(status.contains("Deploy"), "names the configuration, got: " + status);
+        assertEquals(java.util.List.of("Deploy"), openedInEditor);
     }
 }

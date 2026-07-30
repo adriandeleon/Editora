@@ -58,6 +58,9 @@ final class DebugCoordinator {
     interface Ops {
         void openToolWindow();
 
+        /** Opens the Run Configurations page on {@code name} — see {@code RunCoordinator.Ops}. */
+        void editConfiguration(String name);
+
         void toggleToolWindow();
 
         void setToolWindowAvailable(boolean available);
@@ -772,6 +775,7 @@ final class DebugCoordinator {
         // Same guard as the Run path: a blank main class is an internal NPE from jdtls, not an error.
         if (cfg.missingMainClass()) {
             host.setStatus(tr("status.run.configNeedsMainClass", cfg.name()));
+            ops.editConfiguration(cfg.name()); // take them to the field that would make it run
             return;
         }
         if (!debugEffectiveFor("java")) {

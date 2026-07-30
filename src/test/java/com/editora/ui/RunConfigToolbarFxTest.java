@@ -260,17 +260,23 @@ class RunConfigToolbarFxTest {
 
         // Substitute the action: opening the real Settings window builds every page, which timed out under
         // the full suite. The revert is the part with a failure mode; that it fires is asserted below.
-        java.util.concurrent.atomic.AtomicInteger opened = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.List<String> opened = new java.util.ArrayList<>();
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
-                fx.controller, "setRunConfigEditActionForTest", new Class[] {Runnable.class}, (Runnable)
-                        opened::incrementAndGet));
+                fx.controller,
+                "setRunConfigEditorForTest",
+                new Class[] {java.util.function.Consumer.class},
+                (java.util.function.Consumer<String>) opened::add));
         try {
             RunConfiguration row = editRow(); // hoisted: runOnFx takes a Runnable, which cannot throw
             FxTestSupport.runOnFx(() -> combo.setValue(row));
-            assertEquals(1, opened.get(), "and the edit action fired exactly once");
+            assertEquals(
+                    List.of("Client"), opened, "fired once, on the configuration that was selected — not the sentinel");
         } finally {
             FxTestSupport.runOnFx(() -> FxTestSupport.call(
-                    fx.controller, "setRunConfigEditActionForTest", new Class[] {Runnable.class}, (Runnable) null));
+                    fx.controller,
+                    "setRunConfigEditorForTest",
+                    new Class[] {java.util.function.Consumer.class},
+                    (java.util.function.Consumer<String>) null));
         }
 
         assertEquals("Client", FxTestSupport.callOnFx(() -> combo.getValue().name()), "selection put back");

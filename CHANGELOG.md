@@ -115,6 +115,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Running an incomplete run configuration takes you to it.** It used to say which configuration was missing
+  its main class (or its script) and leave you to go and find it. Pressing Run is a request to run it, so it
+  now opens that configuration's form with the field you need to fill in — the same thing the toolbar
+  dropdown's new **Edit Configurations…** does, from the other direction.
+
 - **Edit a run configuration from the toolbar dropdown.** The dropdown now ends with **Edit
   Configurations…**, which opens Settings on the Run Configurations page with the configuration you had
   selected already picked out — so changing the thing you just chose no longer means navigating there and
