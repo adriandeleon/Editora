@@ -75,16 +75,35 @@ class BracketColorsFxTest {
 
     /**
      * Highlighting is debounced and applied from a background pass, so poll rather than assume it has
-     * landed. Returns once the first brace carries a depth class, or gives up.
+     * landed. Returns as soon as the first brace carries a depth class.
+     *
+     * <p>The deadline is generous because the pass is queued behind a shared, per-grammar-serialized
+     * highlight pool whose width scales with core count — two threads on a CI runner against four here — so
+     * a deadline tuned to a developer machine reports a scheduling delay as a broken feature.
+     *
+     * <p>On timeout it reports whether <em>any</em> character carries a style at all. That is the difference
+     * between "this feature's overlay is broken" and "the highlight pipeline underneath it never applied",
+     * which the bare timeout could not distinguish — and only one of those is this change's fault.
      */
     private static void awaitColored(EditorBuffer b, int probe) throws Exception {
-        for (int i = 0; i < 200; i++) {
+        for (int i = 0; i < 600; i++) {
             if (depthAt(b, probe) >= 0) {
                 return;
             }
-            Thread.sleep(25);
+            Thread.sleep(50);
         }
-        throw new AssertionError("bracket colours never reached the document (waited 5s)");
+        String diagnosis = FxTestSupport.callOnFx(() -> {
+            CodeArea area = FxTestSupport.field(b, "area");
+            int styled = 0;
+            for (int i = 0; i < area.getLength(); i++) {
+                if (!area.getStyleOfChar(i).isEmpty()) {
+                    styled++;
+                }
+            }
+            return "hasHighlighting=" + b.hasHighlighting() + " length=" + area.getLength() + " styledChars=" + styled
+                    + " styleAtProbe=" + area.getStyleOfChar(probe);
+        });
+        throw new AssertionError("bracket colours never reached the document after 30s — " + diagnosis);
     }
 
     @Test
@@ -148,8 +167,8 @@ class BracketColorsFxTest {
         awaitColored(b, classBrace);
 
         FxTestSupport.runOnFx(() -> b.setBracketColorsEnabled(false));
-        for (int i = 0; i < 200 && depthAt(b, classBrace) >= 0; i++) {
-            Thread.sleep(25);
+        for (int i = 0; i < 600 && depthAt(b, classBrace) >= 0; i++) {
+            Thread.sleep(50);
         }
         assertEquals(-1, depthAt(b, classBrace), "disabling re-highlights the buffer without depth classes");
     }
@@ -170,8 +189,8 @@ class BracketColorsFxTest {
         });
 
         int outerParen = SRC.indexOf("(1 + (2))") + 1; // shifted by the inserted char
-        for (int i = 0; i < 200 && depthAt(b, outerParen) != 3; i++) {
-            Thread.sleep(25);
+        for (int i = 0; i < 600 && depthAt(b, outerParen) != 3; i++) {
+            Thread.sleep(50);
         }
         assertEquals(3, depthAt(b, outerParen), "the added level pushed everything below it one deeper");
     }
