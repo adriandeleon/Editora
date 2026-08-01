@@ -26,7 +26,7 @@ public class WorkspaceState {
      *
      * <p>v3 → v4 added {@code selectedRunConfig} (the toolbar selection); blank by default, identity.
      */
-    public static final int SCHEMA_VERSION = 4;
+    public static final int SCHEMA_VERSION = 5;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -53,6 +53,10 @@ public class WorkspaceState {
     private List<String> toolWindowOrder = new ArrayList<>();
     /** Persisted collapsed fold regions: absolute file path -> header line indices (0-based). */
     private Map<String, List<Integer>> foldedRegions = new LinkedHashMap<>();
+
+    /** Per-file manual fold ranges as flattened {@code [s1, e1, s2, e2, …]} line pairs (see
+     *  {@code editor/ManualFolds}); additive in schema v5, absent = none. */
+    private Map<String, List<Integer>> manualFoldRegions = new LinkedHashMap<>();
     /** Persisted Markdown view mode per file: absolute path -> "EDITOR"|"SPLIT"|"PREVIEW". */
     private Map<String, String> markdownViewModes = new LinkedHashMap<>();
     /** Persisted Markwhen preview renderer per file: absolute path -> "TIMELINE"|"CALENDAR". */
@@ -241,6 +245,14 @@ public class WorkspaceState {
 
     public void setFoldedRegions(Map<String, List<Integer>> foldedRegions) {
         this.foldedRegions = foldedRegions == null ? new LinkedHashMap<>() : foldedRegions;
+    }
+
+    public Map<String, List<Integer>> getManualFoldRegions() {
+        return manualFoldRegions;
+    }
+
+    public void setManualFoldRegions(Map<String, List<Integer>> manualFoldRegions) {
+        this.manualFoldRegions = manualFoldRegions == null ? new LinkedHashMap<>() : manualFoldRegions;
     }
 
     public Map<String, String> getMarkdownViewModes() {

@@ -5,6 +5,7 @@ import java.util.List;
 import com.editora.editor.FoldRegions.Region;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -100,5 +101,101 @@ class FoldRegionsTest {
         String md = "text\n```\ncode line\nmore code\n```\n";
         List<Region> regions = FoldRegions.detect(md, "markdown");
         assertTrue(hasRegion(regions, 1, 4), "fenced code block");
+    }
+
+    // --- Block comments (#727) ---
+
+    @Test
+    void multiLineBlockCommentsFold() {
+        String java = "int a;\n/*\n * doc\n */\nint b;\n";
+        assertTrue(hasRegion(FoldRegions.blockComments(java, "java"), 1, 3), "the /* */ span folds");
+    }
+
+    @Test
+    void singleLineBlockCommentsDoNotFold() {
+        assertTrue(FoldRegions.blockComments("/* one line */\n", "java").isEmpty());
+    }
+
+    @Test
+    void commentMarkersInsideStringsAreNotComments() {
+        String java = "String s = \"/*\";\nint a;\nString e = \"*/\";\n";
+        assertTrue(FoldRegions.blockComments(java, "java").isEmpty(), "quoted /* */ is content");
+    }
+
+    @Test
+    void xmlCommentsFold() {
+        String xml = "<a>\n<!-- one\n two -->\n</a>\n";
+        assertTrue(hasRegion(FoldRegions.blockComments(xml, "xml"), 1, 2));
+        assertTrue(FoldRegions.blockComments("<a><!-- inline --></a>\n", "xml").isEmpty());
+    }
+
+    @Test
+    void blockCommentsNeedALanguageWithThem() {
+        assertTrue(FoldRegions.blockComments("/*\nx\n*/\n", "python").isEmpty());
+        assertTrue(FoldRegions.blockComments(null, "java").isEmpty());
+        assertTrue(FoldRegions.blockComments("/*\nx\n*/\n", null).isEmpty());
+    }
+
+    // --- #region markers (#727) ---
+
+    @Test
+    void markerFamiliesPairUp() {
+        // Every comment style's spelling, each on its own pair of lines.
+        assertTrue(hasRegion(FoldRegions.markers("//#region a\nx\n//#endregion\n", "typescript"), 0, 2), "//#region");
+        assertTrue(hasRegion(FoldRegions.markers("//region a\nx\n//endregion\n", "java"), 0, 2), "//region");
+        assertTrue(hasRegion(FoldRegions.markers("#region a\nx\n#endregion\n", "csharp"), 0, 2), "#region");
+        assertTrue(hasRegion(FoldRegions.markers("# region a\nx\n# endregion\n", "python"), 0, 2), "# region");
+        assertTrue(
+                hasRegion(FoldRegions.markers("#pragma region a\nx\n#pragma endregion\n", "c"), 0, 2),
+                "#pragma region");
+        assertTrue(
+                hasRegion(FoldRegions.markers("<!-- #region a -->\nx\n<!-- #endregion -->\n", "html"), 0, 2),
+                "<!-- #region -->");
+        assertTrue(hasRegion(FoldRegions.markers("--region a\nx\n--endregion\n", "sql"), 0, 2), "--region");
+    }
+
+    @Test
+    void markersNestByStack() {
+        String src = "//#region outer\n//#region inner\nx\n//#endregion\n//#endregion\n";
+        List<Region> m = FoldRegions.markers(src, "typescript");
+        assertTrue(hasRegion(m, 1, 3), "inner pairs with the nearer end");
+        assertTrue(hasRegion(m, 0, 4), "outer pairs with the farther end");
+    }
+
+    @Test
+    void unmatchedMarkersAreIgnored() {
+        assertTrue(FoldRegions.markers("//#region only\nx\n", "typescript").isEmpty());
+        assertTrue(FoldRegions.markers("x\n//#endregion only\n", "typescript").isEmpty());
+    }
+
+    @Test
+    void markersAreExcludedWhereTheyCollideOrSurprise() {
+        // "# region" is a legal Markdown heading named "region" — the marker reading must lose there.
+        assertTrue(FoldRegions.markers("# region\nx\n# endregion\n", "markdown").isEmpty());
+        assertTrue(
+                FoldRegions.markers("# region\nx\n# endregion\n", "plaintext").isEmpty());
+    }
+
+    @Test
+    void indentedMarkersStillMatch() {
+        assertTrue(hasRegion(FoldRegions.markers("    //#region a\nx\n    //#endregion\n", "java"), 0, 2));
+    }
+
+    // --- canonical order (#727: several detectors merge) ---
+
+    @Test
+    void canonicalOrderIsInnermostFirstAndDeduped() {
+        // Inner closes on the same line as outer → inner (later start) first; duplicates collapse.
+        List<Region> merged = List.of(new Region(0, 5), new Region(2, 5), new Region(0, 5), new Region(1, 3));
+        assertEquals(List.of(new Region(1, 3), new Region(2, 5), new Region(0, 5)), FoldRegions.canonicalOrder(merged));
+    }
+
+    @Test
+    void bracesNaturalOrderIsAlreadyCanonical() {
+        // The convention canonicalOrder makes explicit is what braces() has always emitted —
+        // foldRecursivelyAtCaret depends on it, so the two must agree.
+        String java = "class A {\n  void m() {\n    x();\n  }\n}\n";
+        List<Region> natural = FoldRegions.detect(java, "java");
+        assertEquals(FoldRegions.canonicalOrder(natural), natural);
     }
 }
