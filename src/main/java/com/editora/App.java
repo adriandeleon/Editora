@@ -395,28 +395,108 @@ public class App extends Application {
         return null;
     }
 
+    /** Editora's own two-token options — the token after one of these is its value, never a file. */
+    private static final java.util.Set<String> VALUE_OPTIONS = java.util.Set.of("--config-dir", "--project");
+
+    /** Editora's own options that consume no separate value token (the bare forms of the optional-value ones
+     *  included: {@code --new-file} / {@code --single-window} mean "blank" / "no project" on their own). */
+    private static final java.util.Set<String> KNOWN_FLAGS = java.util.Set.of(
+            "--dev",
+            "--zen",
+            "--expert",
+            "--simple",
+            "--no-session",
+            "--new-file",
+            "--single-window",
+            "--version",
+            "-V",
+            "--help",
+            "-h");
+
+    /** Prefixes of Editora's own single-token {@code --option=value} spellings. */
+    private static final java.util.List<String> KNOWN_PREFIXES =
+            java.util.List.of("--config-dir=", "--project=", "--new-file=", "--single-window=");
+
+    /** Whether {@code a} is an option Editora itself defines (any spelling). Anything else starting with a
+     *  dash is foreign — a JVM/launcher flag whose arity we cannot know. */
+    static boolean isEditoraOption(String a) {
+        if (a == null) {
+            return false;
+        }
+        if (VALUE_OPTIONS.contains(a) || KNOWN_FLAGS.contains(a)) {
+            return true;
+        }
+        for (String p : KNOWN_PREFIXES) {
+            if (a.startsWith(p)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Positional file arguments (parsed for an optional {@code :LINE[:COLUMN]} suffix), skipping option
      * flags and the value tokens consumed by {@code --config-dir} / {@code --project}.
+     *
+     * <p>The rule is <b>not</b> "anything that doesn't start with a dash is a file". A two-token flag Editora
+     * doesn't define — {@code --add-exports javafx.graphics/com.sun.glass.ui=com.editora}, any JVM flag that
+     * leaks into the program arguments — has a <em>value</em> that starts with no dash, so it used to be
+     * resolved against the working directory and opened, surfacing as a bogus {@code Failed to open:} for a
+     * path the user never typed (#791). So a token directly after a <b>foreign</b> option is admitted only if
+     * it exists on disk. A token after one of <em>our</em> flags, or after no flag at all, is admitted
+     * regardless — {@code editora typo.txt} must still report that the file is missing rather than silently
+     * do nothing, which is why a blanket must-exist rule (the obvious fix) is the wrong one.
+     *
+     * <p>Deliberately keyed on Editora's own option set rather than a list of JVM flags to skip: that list
+     * would go stale the way {@code commandsForAllServers} did (#723), whereas this one we own — and if it
+     * <em>does</em> drift, the cost is one missing-file message, not a broken feature.
+     *
+     * <p>No {@code --} end-of-options separator: eleven independent scanners parse these arguments, so only
+     * this one would honour it and {@code editora -- --zen} would open a file <em>and</em> enter Zen mode. It
+     * would only ever matter for a not-yet-existing file sitting directly after a foreign flag, since a file
+     * that is really there already wins.
      */
     static java.util.List<com.editora.ui.MainController.OpenTarget> fileTargets(java.util.List<String> args) {
+        return fileTargets(args, java.nio.file.Files::exists);
+    }
+
+    /** {@link #fileTargets(java.util.List)} with the on-disk check injected, so the decision stays pure and
+     *  unit-testable (the {@code PathKeys.findKeyByIdentity} idiom). */
+    static java.util.List<com.editora.ui.MainController.OpenTarget> fileTargets(
+            java.util.List<String> args, java.util.function.Predicate<java.nio.file.Path> exists) {
         java.util.List<com.editora.ui.MainController.OpenTarget> out = new java.util.ArrayList<>();
         if (args == null) {
             return out;
         }
+        boolean afterForeignOption = false;
         for (int i = 0; i < args.size(); i++) {
             String a = args.get(i);
             if (a == null || a.isEmpty()) {
                 continue;
             }
-            if (a.equals("--config-dir") || a.equals("--project")) {
+            if (VALUE_OPTIONS.contains(a)) {
                 i++; // skip the value token
+                afterForeignOption = false;
                 continue;
             }
             if (a.startsWith("-")) {
-                continue; // any other option (incl. --xxx=yyy, --zen, --expert, --version, --help)
+                afterForeignOption = !isEditoraOption(a);
+                continue;
             }
-            out.add(parseTarget(a));
+            com.editora.ui.MainController.OpenTarget target;
+            try {
+                target = parseTarget(a);
+            } catch (java.nio.file.InvalidPathException e) {
+                // A leaked flag value need not be representable as a path at all (illegal characters on
+                // Windows). Skipping beats propagating out of start() and failing the launch outright.
+                afterForeignOption = false;
+                continue;
+            }
+            boolean leakedValue = afterForeignOption && !exists.test(target.file());
+            afterForeignOption = false;
+            if (!leakedValue) {
+                out.add(target);
+            }
         }
         return out;
     }
