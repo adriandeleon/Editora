@@ -471,8 +471,18 @@ final class LanguageServerSession implements LanguageClient {
             java.util.Map<String, Object> signatureHelp = new java.util.HashMap<>();
             signatureHelp.put("enabled", true);
             signatureHelp.put("description", true); // include the javadoc in the signature popup
+            // Same shape of gate for smart-semicolon detection (#746): jdtls advertises
+            // java.edit.smartSemicolonDetection unconditionally, but its handler answers null until this
+            // preference is set — verified against a real jdtls (null for every argument shape before,
+            // the target position after). Editora then gates the *behaviour* on its own setting, so
+            // enabling the server-side capability here costs nothing when the feature is off.
+            java.util.Map<String, Object> smartSemicolon = new java.util.HashMap<>();
+            smartSemicolon.put("enabled", true);
+            java.util.Map<String, Object> edit = new java.util.HashMap<>();
+            edit.put("smartSemicolonDetection", smartSemicolon);
             java.util.Map<String, Object> java_ = new java.util.HashMap<>();
             java_.put("signatureHelp", signatureHelp);
+            java_.put("edit", edit);
             java.util.Map<String, Object> settings = new java.util.HashMap<>();
             settings.put("python", python);
             settings.put("java", java_);

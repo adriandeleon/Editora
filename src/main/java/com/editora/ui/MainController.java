@@ -12577,6 +12577,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAutoRenameTag(s.isAutoRenameTag()); // paired-tag rename mirroring (html/xml buffers only)
         buffer.setOnTypeFormattingEnabled(s.isLspOnTypeFormatting()); // #740 (inert without an LSP trigger set)
         buffer.setLspPasteImportsEnabled(s.isLspPasteImports()); // #742 (inert without a jdtls session)
+        buffer.setSmartSemicolonEnabled(s.isLspSmartSemicolon()); // #746 (inert without a jdtls session)
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
         buffer.setFillColumn(s.getFillColumn());
         buffer.setAutoFillEnabled(s.isAutoFill()); // break prose lines at the fill column as you type (prose only)
@@ -15313,6 +15314,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.togglePasteImports",
                         () -> config.getSettings().isLspPasteImports(),
                         config.getSettings()::setLspPasteImports,
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
+        registry.register(Command.of(
+                "view.toggleSmartSemicolon",
+                () -> toggleSetting(
+                        "view.toggleSmartSemicolon",
+                        () -> config.getSettings().isLspSmartSemicolon(),
+                        config.getSettings()::setLspSmartSemicolon,
                         () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of(
                 "view.toggleInlayHints",

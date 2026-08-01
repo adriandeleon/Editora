@@ -1278,6 +1278,14 @@ final class LspCoordinator {
                         applied -> {});
             }
         });
+        // Smart-semicolon detection (#746): where does a ';' typed here belong?
+        buffer.setLspSmartSemicolonRequester((line, character, cb) -> {
+            if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
+                lspManager.smartSemicolonPosition(buffer.getPath(), line, character, cb);
+            } else {
+                cb.accept(null);
+            }
+        });
         // On-type formatting (#740): re-indent the line after a server-declared trigger character.
         buffer.setLspOnTypeFormatter((line, character, ch, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {

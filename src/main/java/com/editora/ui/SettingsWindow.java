@@ -208,6 +208,7 @@ public class SettingsWindow {
     private CheckBox inlayHintsCheck;
     private CheckBox onTypeFormattingCheck;
     private CheckBox pasteImportsCheck;
+    private CheckBox smartSemicolonCheck;
     private CheckBox spellCheckBox;
     private ComboBox<String> spellLanguageCombo;
     /** The Personal Dictionary list on the Spell Check page; refreshed from {@code dictionary.txt} on show. */
@@ -988,6 +989,7 @@ public class SettingsWindow {
         inlayHintsCheck = viewCheck(tr("settings.inlayHints"), Settings::setInlayHints);
         onTypeFormattingCheck = viewCheck(tr("settings.onTypeFormatting"), Settings::setLspOnTypeFormatting);
         pasteImportsCheck = viewCheck(tr("settings.lspPasteImports"), Settings::setLspPasteImports);
+        smartSemicolonCheck = viewCheck(tr("settings.lspSmartSemicolon"), Settings::setLspSmartSemicolon);
         // The per-source toggles are only meaningful while the master switch is on.
         autocompleteCheck.selectedProperty().addListener((obs, was, now) -> {
             autocompleteProseCheck.setDisable(!now);
@@ -2813,6 +2815,12 @@ public class SettingsWindow {
                 onTypeFormattingCheck,
                 "on-type formatting reindent semicolon brace enter lsp");
         row(p, Category.COMPLETION, completion, pasteImportsCheck, "paste import auto imports java jdtls clipboard");
+        row(
+                p,
+                Category.COMPLETION,
+                completion,
+                smartSemicolonCheck,
+                "smart semicolon detection statement end java jdtls");
         onTypeFormattingCheck.disableProperty().bind(lspCheck.selectedProperty().not());
         // Semantic highlighting comes from LSP: disable it (+ explain why) when LSP is off.
         semanticHighlightCheck
@@ -6373,6 +6381,7 @@ public class SettingsWindow {
             inlayHintsCheck.setSelected(settings.isInlayHints());
             onTypeFormattingCheck.setSelected(settings.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(settings.isLspPasteImports());
+            smartSemicolonCheck.setSelected(settings.isLspSmartSemicolon());
             pdfLineNumbersCheck.setSelected(settings.isPdfLineNumbers());
             pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
             pdfPageSizeCombo.setValue(settings.getPdfPageSize());
@@ -6949,6 +6958,7 @@ public class SettingsWindow {
             inlayHintsCheck.setSelected(s.isInlayHints());
             onTypeFormattingCheck.setSelected(s.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(s.isLspPasteImports());
+            smartSemicolonCheck.setSelected(s.isLspSmartSemicolon());
         } finally {
             loading = prev;
         }
