@@ -2424,6 +2424,9 @@ public class EditorBuffer implements TabContent {
      *  counter discards a superseded result), so a large-but-under-cap file doesn't spend tens of ms scanning
      *  on the FX thread per debounced edit pulse — mirroring how {@link #applyHighlighting} tokenizes. */
     private void refreshTodoMarks() {
+        if (disposed) {
+            return; // see the disposed field
+        }
         long gen = ++todoGen; // any newer pulse (or dispose) supersedes an in-flight scan
         if (!todoEnabled || todoMatcher == null || largeFile) {
             todoOverlay.setMarks(java.util.List.of());
@@ -4771,6 +4774,7 @@ public class EditorBuffer implements TabContent {
      * it on GC; we drop the preview one eagerly too. Idempotent. Once disposed the buffer must not be reused.
      */
     public void dispose() {
+        disposed = true; // reject any LATER dispatch (see below) — the gen bumps only cover in-flight work
         unsubscribePreview();
         disposeMultiCaret();
         previewGen++; // discard any in-flight preview result for this (now closed) buffer
@@ -4778,6 +4782,18 @@ public class EditorBuffer implements TabContent {
         todoGen++; // discard any in-flight TODO scan result
         languageGen++; // discard any in-flight deferred grammar load
     }
+
+    /**
+     * Set on {@link #dispose()}; {@link #applyHighlighting()} and the TODO scan refuse to dispatch once
+     * true. The gen bumps above only invalidate work already in flight — the still-subscribed debounced
+     * edit pulse fires once more ~300 ms after the last change, and before this flag it would re-dispatch
+     * a fresh full tokenize of the closed buffer whose generation was then CURRENT, so nothing cancelled
+     * it. For a large file that ghost pass held the shared per-grammar monitor for however long the whole
+     * document takes (minutes on a slow machine), starving every open buffer of the same language — found
+     * as a CI-only suite wedge, but it is an app defect too: closing a big tab right after an edit did
+     * exactly this.
+     */
+    private volatile boolean disposed;
 
     // --- Multiple cursors + column/box selection (RichTextFX fork) -------------------------------
 
@@ -9421,6 +9437,9 @@ public class EditorBuffer implements TabContent {
     }
 
     private void applyHighlighting() {
+        if (disposed) {
+            return; // a closed buffer must not dispatch new passes (see the disposed field)
+        }
         if (largeFile) {
             // Large-file mode: leave the document as plain text and drop any structure symbols/state.
             lineStates.clear();
