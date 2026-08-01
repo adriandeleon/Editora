@@ -1,10 +1,13 @@
 package com.editora;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.Predicate;
 
 import com.editora.ui.MainController.OpenTarget;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -108,6 +111,107 @@ class AppArgsTest {
     void fileTargetsSkipsEqualsFormOptions() {
         List<OpenTarget> targets = App.fileTargets(List.of("--config-dir=/cfg", "--project=/repo", "x.md"));
         assertEquals(List.of(new OpenTarget(Path.of("x.md"), 0, 0)), targets);
+    }
+
+    // --- #791: a foreign two-token flag's value must not be opened as a file --------------------------
+
+    /** Nothing exists on disk — the strictest setting for the "is this a leaked flag value?" decision. */
+    private static final Predicate<Path> NOTHING_EXISTS = p -> false;
+
+    @Test
+    void foreignTwoTokenFlagValueIsNotAFileTarget() {
+        // The reported case: --add-exports' value doesn't start with a dash, so it used to be resolved
+        // against the working directory and opened ("Failed to open: <cwd>/javafx.graphics/...=com.editora").
+        assertEquals(
+                List.of(),
+                App.fileTargets(
+                        List.of("--add-exports", "javafx.graphics/com.sun.glass.ui=com.editora"), NOTHING_EXISTS));
+        assertEquals(
+                List.of(), App.fileTargets(List.of("--add-opens", "java.base/java.lang=ALL-UNNAMED"), NOTHING_EXISTS));
+        assertEquals(List.of(), App.fileTargets(List.of("-p", "/some/module/path"), NOTHING_EXISTS));
+    }
+
+    @Test
+    void aRealFileAfterAForeignFlagIsStillOpened() {
+        // Existence is what distinguishes a leaked value from a genuine argument, so a file that is really
+        // there wins even in the ambiguous position.
+        assertEquals(
+                List.of(new OpenTarget(Path.of("a.txt"), 0, 0)),
+                App.fileTargets(List.of("--add-exports", "a.txt"), p -> true));
+    }
+
+    @Test
+    void aMissingFileTheUserTypedIsStillATargetSoItReportsAsMissing() {
+        // The whole point of not using a blanket must-exist rule: `editora typo.txt` has to keep reaching
+        // openPath, which is what produces "Failed to open: typo.txt". Silently dropping it would be worse
+        // than the bug being fixed.
+        assertEquals(
+                List.of(new OpenTarget(Path.of("typo.txt"), 0, 0)),
+                App.fileTargets(List.of("typo.txt"), NOTHING_EXISTS));
+        // ...including after one of Editora's own flags, whose arity we know.
+        assertEquals(
+                List.of(new OpenTarget(Path.of("typo.txt"), 0, 0)),
+                App.fileTargets(List.of("--zen", "typo.txt"), NOTHING_EXISTS));
+        assertEquals(
+                List.of(new OpenTarget(Path.of("typo.txt"), 0, 0)),
+                App.fileTargets(List.of("--new-file", "typo.txt"), NOTHING_EXISTS));
+        // ...and after a value option, where the value is consumed and the file follows.
+        assertEquals(
+                List.of(new OpenTarget(Path.of("typo.txt"), 0, 0)),
+                App.fileTargets(List.of("--project", "/repo", "typo.txt"), NOTHING_EXISTS));
+    }
+
+    @Test
+    void onlyTheTokenDirectlyAfterAForeignFlagIsSuspect() {
+        // The suspicion must not carry past the value it belongs to, or one stray JVM flag would swallow
+        // every later argument.
+        assertEquals(
+                List.of(new OpenTarget(Path.of("b.txt"), 0, 0)),
+                App.fileTargets(List.of("--add-exports", "m/p=x", "b.txt"), NOTHING_EXISTS));
+    }
+
+    @Test
+    void theReportedArgvThroughTheOriginalSignature() {
+        // Exactly the argv from #791, through the one-arg overload that existed before the fix, so this
+        // fails against the old "anything without a leading dash is a file" rule rather than only against
+        // the injected-predicate helper added alongside it.
+        assertEquals(
+                List.of(), App.fileTargets(List.of("--add-exports", "javafx.graphics/com.sun.glass.ui=com.editora")));
+    }
+
+    @Test
+    void anUnrepresentablePathIsSkippedRatherThanFailingTheLaunch() {
+        // A leaked value need not be a legal path at all; parseTarget's Path.of would otherwise throw
+        // InvalidPathException straight out of App.start and the app would not come up.
+        String nul = "bad\0name"; // a NUL is illegal in a path on every supported OS
+        assertEquals(List.of(), App.fileTargets(List.of("--add-exports", nul), NOTHING_EXISTS));
+        assertEquals(List.of(), App.fileTargets(List.of(nul), NOTHING_EXISTS));
+    }
+
+    @Test
+    void editoraOwnsItsOptionSpellings() {
+        assertTrue(App.isEditoraOption("--zen"));
+        assertTrue(App.isEditoraOption("--no-session"));
+        assertTrue(App.isEditoraOption("--new-file"));
+        assertTrue(App.isEditoraOption("--new-file=foo.txt"));
+        assertTrue(App.isEditoraOption("--config-dir"));
+        assertTrue(App.isEditoraOption("--config-dir=/cfg"));
+        assertTrue(App.isEditoraOption("--single-window=MyProj"));
+        assertTrue(App.isEditoraOption("-V"));
+        assertFalse(App.isEditoraOption("--add-exports"));
+        assertFalse(App.isEditoraOption("-p"));
+        assertFalse(App.isEditoraOption(null));
+    }
+
+    @Test
+    void theDefaultOverloadChecksTheRealFilesystem(@TempDir Path dir) throws Exception {
+        // Proves the injected predicate is wired to Files::exists, not merely that the pure decision is right.
+        Path real = dir.resolve("real.txt");
+        Files.writeString(real, "x");
+        Path missing = dir.resolve("missing.txt");
+
+        assertEquals(List.of(new OpenTarget(real, 0, 0)), App.fileTargets(List.of("--add-exports", real.toString())));
+        assertEquals(List.of(), App.fileTargets(List.of("--add-exports", missing.toString())));
     }
 
     @Test
