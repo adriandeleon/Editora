@@ -100,8 +100,18 @@ class BracketColorsFxTest {
                     styled++;
                 }
             }
+            // These separate the remaining candidates, which the style counts alone cannot:
+            //   lineStates empty while highlightGen > 0 → passes dispatched but none ever applied
+            //   lineStates non-empty                    → a pass applied but produced no styles
+            //   bracketColors false                     → the per-buffer flag never took
+            java.util.List<?> states = FxTestSupport.field(b, "lineStates");
+            java.util.List<?> depths = FxTestSupport.field(b, "lineDepths");
             return "hasHighlighting=" + b.hasHighlighting() + " length=" + area.getLength() + " styledChars=" + styled
-                    + " styleAtProbe=" + area.getStyleOfChar(probe);
+                    + " styleAtProbe=" + area.getStyleOfChar(probe) + " bracketColors="
+                    + FxTestSupport.field(b, "bracketColors") + " highlightGen="
+                    + FxTestSupport.field(b, "highlightGen") + " dirtyFromLine="
+                    + FxTestSupport.field(b, "dirtyFromLine") + " lineStates=" + states.size() + " lineDepths="
+                    + depths.size();
         });
         throw new AssertionError("bracket colours never reached the document after 30s — " + diagnosis);
     }
