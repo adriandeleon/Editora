@@ -2341,6 +2341,49 @@ public final class LspManager {
         return raw == null ? null : new com.google.gson.Gson().toJsonTree(raw);
     }
 
+    /**
+     * Auto-import for pasted code (#742): asks jdtls's {@code java.edit.handlePasteEvent} what the text
+     * pasted at {@code [start..end]} (post-paste coordinates) needs, and applies the answered
+     * {@code additionalEdit} — the import insertion — through the normal workspace-edit path. Gated on
+     * the server actually advertising the command ({@link JdtlsPaste#supportsPasteEvent}), so a non-jdtls
+     * java setup (or any other language's server) never even sends the request.
+     *
+     * <p>{@code stillValid} is consulted on the FX thread immediately before applying: the round trip is
+     * asynchronous and the edit was computed against the post-paste document, so if the user typed in the
+     * meantime the answer is dropped rather than applied against text it wasn't computed for (the
+     * {@code docVersion} idiom — the caller supplies the check because only it can see the buffer).
+     * {@code cb} reports whether an edit was applied.
+     */
+    public void handlePasteEvent(
+            Path file,
+            int startLine,
+            int startChar,
+            int endLine,
+            int endChar,
+            String pastedText,
+            int tabSize,
+            boolean insertSpaces,
+            java.util.function.BooleanSupplier stillValid,
+            Consumer<Boolean> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || !JdtlsPaste.supportsPasteEvent(s.capabilities())) {
+            Platform.runLater(() -> cb.accept(false));
+            return;
+        }
+        // The params go over the wire as a STRINGIFIED json — an object argument deserializes to null
+        // server-side (established empirically; see JdtlsPaste).
+        String params = JdtlsPaste.paramsJson(
+                uri(file), startLine, startChar, endLine, endChar, pastedText, tabSize, insertSpaces);
+        s.executeCommand(JdtlsPaste.COMMAND, List.of(params))
+                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .whenComplete((r, e) -> {
+                    org.eclipse.lsp4j.WorkspaceEdit edit =
+                            e != null ? null : asWorkspaceEdit(JdtlsPaste.additionalEdit(asJson(r)));
+                    Platform.runLater(
+                            () -> cb.accept(edit != null && stillValid.getAsBoolean() && applyWorkspaceEditNow(edit)));
+                });
+    }
+
     /** Decodes a {@code java/generate…} answer (an untyped {@code WorkspaceEdit}) into the typed form. */
     private static org.eclipse.lsp4j.WorkspaceEdit asWorkspaceEdit(Object raw) {
         try {

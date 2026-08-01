@@ -1260,6 +1260,24 @@ final class LspCoordinator {
                 cb.accept(java.util.List.of());
             }
         });
+        // Paste auto-import (#742): ask jdtls what the pasted code needs; only jdtls advertises the
+        // command, so any other server (or language) drops out inside handlePasteEvent's capability gate.
+        buffer.setLspPasteImportsRequester((sl, sc, el, ec, text, stillValid) -> {
+            if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
+                int tabSize = host.settings().getTabSize();
+                lspManager.handlePasteEvent(
+                        buffer.getPath(),
+                        sl,
+                        sc,
+                        el,
+                        ec,
+                        text,
+                        tabSize,
+                        buffer.detectInsertSpaces(tabSize),
+                        stillValid,
+                        applied -> {});
+            }
+        });
         // On-type formatting (#740): re-indent the line after a server-declared trigger character.
         buffer.setLspOnTypeFormatter((line, character, ch, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
