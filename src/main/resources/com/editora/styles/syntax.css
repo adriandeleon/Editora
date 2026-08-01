@@ -110,6 +110,27 @@
    Compound `.text.<class>` like the token rules (no descendant combinator → keeps the style cache). */
 .text.brace-match { -rtfx-background-color: rgba(128,128,128,0.4); }
 
+/* Bracket-pair colorization: each () [] {} tinted by nesting depth (BracketColors, computed in Java —
+   TextMate cannot count nesting). Six slots, matching VS Code's editorBracketHighlight.foreground1..6;
+   its default palette colors only the first three (4-6 are fully transparent), so 3-5 repeat 0-2 here and
+   the visible cycle is three. Override 3-5 in an editor theme for a true six-deep cycle.
+
+   Fixed hues rather than the semantic -color-* vars used by .text.log-* / .text.diff-*: the point is three
+   MUTUALLY distinguishable colors, which semantic slots cannot guarantee across all the bundled themes
+   (and -color-success-fg would collide with the string token color in most of them). These follow the
+   Rainbow-CSV convention above — well-separated hues that read on light and dark alike.
+
+   A colored bracket carries ONLY this class (BracketColors overlays by replacement, not union), so the
+   fill is decided here rather than by whatever an editor theme says about punctuation. */
+.text.bracket-depth-0 { -fx-fill: #ca8a04; }
+.text.bracket-depth-1 { -fx-fill: #9333ea; }
+.text.bracket-depth-2 { -fx-fill: #2563eb; }
+.text.bracket-depth-3 { -fx-fill: #ca8a04; }
+.text.bracket-depth-4 { -fx-fill: #9333ea; }
+.text.bracket-depth-5 { -fx-fill: #2563eb; }
+/* A closer with nothing open (VS Code's unexpectedBracket). Semantic — red reads the same in every theme. */
+.text.bracket-unmatched { -fx-fill: -color-danger-fg; }
+
 /* ---------------------------------------------------------------------------------------------------
    Markdown-preview code-block token colors follow the preview's INDEPENDENT light/dark theme.
 

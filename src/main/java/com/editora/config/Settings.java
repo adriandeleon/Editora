@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 89;
+    public static final int SCHEMA_VERSION = 90;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -305,6 +305,8 @@ public class Settings {
     private boolean csvPreview = true;
     /** Rainbow per-column coloring in the editor for {@code .csv}/{@code .tsv} files: on by default. */
     private boolean csvRainbow = true;
+    /** Tint each bracket by nesting depth (VS Code's bracket-pair colorization): on by default, as there. */
+    private boolean bracketColors = true;
     /** Structured-data preview (JSON/YAML/TOML tree + OpenAPI/Swagger docs) in the 3-mode view: on by default. */
     private boolean structuredPreview = true;
     /** Rendered image preview for .svg files in the 3-mode view: on by default (JSVG, no external tool). */
@@ -685,6 +687,14 @@ public class Settings {
 
     public void setCsvRainbow(boolean csvRainbow) {
         this.csvRainbow = csvRainbow;
+    }
+
+    public boolean isBracketColors() {
+        return bracketColors;
+    }
+
+    public void setBracketColors(boolean bracketColors) {
+        this.bracketColors = bracketColors;
     }
 
     public boolean isAutoRenameTag() {

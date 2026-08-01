@@ -12480,6 +12480,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
         buffer.setAiActionsEnabled(aiCoordinator.isActionsAvailable()); // floating selection Explain/Rewrite bar
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
+        buffer.setBracketColorsEnabled(s.isBracketColors()); // bracket-pair colorization (rides the highlight)
         buffer.setStructuredPreviewEnabled(s.isStructuredPreview()); // JSON/YAML/TOML tree + OpenAPI docs preview
         buffer.setSvgPreviewEnabled(s.isSvgPreview()); // rendered image preview for .svg files
         buffer.setTypstPreviewEnabled(s.isTypstSupport()); // multi-page rendered preview for .typ documents
@@ -14685,6 +14686,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                             applyViewSettingsToAllBuffers(config.getSettings());
                             settingsWindow.syncAll();
                         })));
+        registry.register(Command.of(
+                "view.toggleBracketColors",
+                () -> toggleSetting(
+                        "view.toggleBracketColors",
+                        () -> config.getSettings().isBracketColors(),
+                        config.getSettings()::setBracketColors,
+                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
         registry.register(Command.of(
                 "view.toggleCsvRainbow",
                 () -> toggleSetting(

@@ -38,12 +38,44 @@ class LargeFileOpenPerfFxTest {
             buf.setContent(text);
             long s = System.nanoTime();
             buf.setLanguageOverride("java"); // first fold recompute over the whole document
-            return (System.nanoTime() - s) / 1_000_000;
+            long elapsed = (System.nanoTime() - s) / 1_000_000;
+            // setLanguageOverride also dispatched a full 16k-line background tokenize. Dispose so its
+            // per-line cancel check fires: left running, that pass holds the shared java grammar monitor
+            // for however long 16k lines take this machine — on a slow CI runner, minutes — and every
+            // later java highlight in the suite queues behind it. That leak is what wedged the first test
+            // to ever *wait* for a highlight (BracketColorsFxTest) while nothing here appeared to fail.
+            buf.dispose();
+            return elapsed;
         });
 
         System.out.println("setLanguageOverride on " + (text.length() / 1024) + " KB fold-heavy buffer: " + ms + " ms");
         // Pre-fix this was multiple seconds (one recreateParagraphGraphic per fold header). The visible-only
         // fix makes it a few ms; a generous bound catches a regression to O(folds) graphic recreation.
         assertTrue(ms < 2000, "setLanguageOverride took " + ms + " ms (expected < 2000 ms — fold-graphic regression?)");
+    }
+
+    @org.junit.jupiter.api.Test
+    void aDisposedBufferDoesNotRedispatchHighlightingFromTheDebounce() throws Exception {
+        // The subtler half of the leak this class caused: dispose() bumps the generations, which kills the
+        // IN-FLIGHT pass — but the still-subscribed debounced edit pulse fires once more after the last
+        // change, and used to dispatch a FRESH full tokenize whose generation was then current, so nothing
+        // cancelled it. On this class's 16k-line buffer that ghost pass held the shared java grammar
+        // monitor for minutes on a slow runner, wedging every later java highlight in the suite — and in
+        // the app, closing a big tab right after an edit did the same. The mechanism is size-independent,
+        // so a small buffer pins it fast.
+        EditorBuffer buf = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setContent("class D { int x; }\n");
+            b.setLanguageOverride("java");
+            b.dispose();
+            return b;
+        });
+        long genAfterDispose = FxTestSupport.callOnFx(() -> FxTestSupport.<Long>field(buf, "highlightGen"));
+        // Outlive the ~300 ms debounce with margin; applyHighlighting bumps highlightGen at dispatch, so
+        // an unchanged gen is exactly "no new pass was dispatched".
+        Thread.sleep(900);
+        long genLater = FxTestSupport.callOnFx(() -> FxTestSupport.<Long>field(buf, "highlightGen"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                genAfterDispose, genLater, "the debounce pulse re-dispatched highlighting on a disposed buffer");
     }
 }

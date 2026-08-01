@@ -667,13 +667,18 @@ public class EditorBuffer implements TabContent {
     private boolean spellTechnicalEnabled = true; // honor the technical dictionary (Settings.technicalDictionary)
     private java.util.function.Consumer<String> onAddToDictionary = w -> {};
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
-    private long highlightGen;
+    /** Volatile: bumped on the FX thread, read per line by the background tokenize's cancel check. */
+    private volatile long highlightGen;
     /** Bumped on every language/grammar change (FX thread only); drops a stale deferred grammar load. */
     private long languageGen;
     /** Per-line grammar end-states from the last tokenization (FX-thread confined), so an edit can
      *  re-highlight only from the changed line forward instead of the whole document. */
     private final java.util.ArrayList<org.eclipse.tm4e.core.grammar.IStateStack> lineStates =
             new java.util.ArrayList<>();
+    /** Bracket nesting depth at the end of each line, from the same tokenization (FX-thread confined).
+     *  Kept exactly in step with {@link #lineStates} — cleared and spliced at the same points — so an
+     *  incremental pass can start colouring at the edited line without rescanning the prefix. */
+    private final java.util.ArrayList<Integer> lineDepths = new java.util.ArrayList<>();
     /** Earliest line changed since the last highlight (0 = re-highlight the whole document). */
     private int dirtyFromLine;
     /** Named definitions from the last tokenization (FX-thread confined); drives the Structure view. */
@@ -2419,6 +2424,9 @@ public class EditorBuffer implements TabContent {
      *  counter discards a superseded result), so a large-but-under-cap file doesn't spend tens of ms scanning
      *  on the FX thread per debounced edit pulse — mirroring how {@link #applyHighlighting} tokenizes. */
     private void refreshTodoMarks() {
+        if (disposed) {
+            return; // see the disposed field
+        }
         long gen = ++todoGen; // any newer pulse (or dispose) supersedes an in-flight scan
         if (!todoEnabled || todoMatcher == null || largeFile) {
             todoOverlay.setMarks(java.util.List.of());
@@ -4360,6 +4368,21 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** Tint each bracket by nesting depth (see {@link BracketColors}). */
+    private boolean bracketColors;
+
+    /**
+     * Enables/disables bracket-pair colorization. Re-highlights the whole buffer on a change: the colours
+     * ride the token spans, so an incremental pass would leave the untouched prefix coloured as it was.
+     */
+    public void setBracketColorsEnabled(boolean on) {
+        if (on != bracketColors) {
+            bracketColors = on;
+            invalidateHighlighting();
+            applyHighlighting();
+        }
+    }
+
     /** Whether a level/regex filter is currently narrowing the visible lines. */
     public boolean isLogFiltered() {
         return logFiltered;
@@ -4751,6 +4774,7 @@ public class EditorBuffer implements TabContent {
      * it on GC; we drop the preview one eagerly too. Idempotent. Once disposed the buffer must not be reused.
      */
     public void dispose() {
+        disposed = true; // reject any LATER dispatch (see below) — the gen bumps only cover in-flight work
         unsubscribePreview();
         disposeMultiCaret();
         previewGen++; // discard any in-flight preview result for this (now closed) buffer
@@ -4758,6 +4782,18 @@ public class EditorBuffer implements TabContent {
         todoGen++; // discard any in-flight TODO scan result
         languageGen++; // discard any in-flight deferred grammar load
     }
+
+    /**
+     * Set on {@link #dispose()}; {@link #applyHighlighting()} and the TODO scan refuse to dispatch once
+     * true. The gen bumps above only invalidate work already in flight — the still-subscribed debounced
+     * edit pulse fires once more ~300 ms after the last change, and before this flag it would re-dispatch
+     * a fresh full tokenize of the closed buffer whose generation was then CURRENT, so nothing cancelled
+     * it. For a large file that ghost pass held the shared per-grammar monitor for however long the whole
+     * document takes (minutes on a slow machine), starving every open buffer of the same language — found
+     * as a CI-only suite wedge, but it is an app defect too: closing a big tab right after an edit did
+     * exactly this.
+     */
+    private volatile boolean disposed;
 
     // --- Multiple cursors + column/box selection (RichTextFX fork) -------------------------------
 
@@ -9357,12 +9393,14 @@ public class EditorBuffer implements TabContent {
     private void invalidateHighlighting() {
         dirtyFromLine = 0;
         lineStates.clear();
+        lineDepths.clear();
     }
 
     /** Applies per-column rainbow CSV coloring over the whole document (a cheap O(n) FX-thread pass — no
      *  grammar state, so no incremental machinery; runs on the same debounced highlight pulse). */
     private void applyCsvRainbow() {
         lineStates.clear();
+        lineDepths.clear();
         if (!symbols.isEmpty()) {
             symbols = List.of();
             onSymbolsChanged.run();
@@ -9399,9 +9437,13 @@ public class EditorBuffer implements TabContent {
     }
 
     private void applyHighlighting() {
+        if (disposed) {
+            return; // a closed buffer must not dispatch new passes (see the disposed field)
+        }
         if (largeFile) {
             // Large-file mode: leave the document as plain text and drop any structure symbols/state.
             lineStates.clear();
+            lineDepths.clear();
             if (!symbols.isEmpty()) {
                 symbols = List.of();
                 onSymbolsChanged.run();
@@ -9424,6 +9466,7 @@ public class EditorBuffer implements TabContent {
                                 .create());
             }
             lineStates.clear();
+            lineDepths.clear();
             if (!symbols.isEmpty()) {
                 symbols = List.of();
                 onSymbolsChanged.run();
@@ -9437,10 +9480,18 @@ public class EditorBuffer implements TabContent {
         // their range exactly.
         // The start line is only valid if we have its predecessor's end-state; otherwise re-do all.
         int from = dirtyFromLine;
-        if (from > 0 && (from - 1 >= lineStates.size() || lineStates.get(from - 1) == null)) {
+        boolean colorBrackets = bracketColors;
+        // The carried depth has to be usable too, or the pass would start colouring from a depth
+        // belonging to a different line. Only demanded while the feature is on — otherwise lineDepths is
+        // deliberately empty and requiring it would force a full re-tokenize on every pulse.
+        if (from > 0
+                && (from - 1 >= lineStates.size()
+                        || lineStates.get(from - 1) == null
+                        || (colorBrackets && from - 1 >= lineDepths.size()))) {
             from = 0;
         }
         var startState = from == 0 ? null : lineStates.get(from - 1);
+        int startDepth = from == 0 || !colorBrackets ? 0 : lineDepths.get(from - 1);
         String text = area.getText();
         IGrammar g = grammar;
         int fromLine = from;
@@ -9449,13 +9500,23 @@ public class EditorBuffer implements TabContent {
         HIGHLIGHT_POOL.execute(() -> {
             TextMateHighlighter.IncrementalAnalysis a;
             try {
-                a = TextMateHighlighter.analyzeFrom(text, g, fromLine, startState);
+                // The cancel check lets a superseded pass stop at the next line instead of finishing a
+                // doomed multi-MB tokenize while holding the shared grammar monitor (see analyzeFrom).
+                a = TextMateHighlighter.analyzeFrom(text, g, fromLine, startState, () -> gen != highlightGen);
             } catch (Exception | LinkageError e) {
                 return; // never let a grammar/engine fault kill the highlighter thread
             }
             if (a == null || a.spans() == null) {
                 return;
             }
+            // Bracket depth rides this same background pass, over the same captured text: one extra O(n)
+            // character scan next to a tokenize that already cost far more, and the string/comment spans
+            // it needs have just been produced. Doing it on the FX thread instead would put an O(range)
+            // loop on the apply path.
+            BracketColors.Analysis brackets = colorBrackets
+                    ? BracketColors.analyze(
+                            text, a.fromOffset(), startDepth, BracketColors.skipRanges(a.spans()), BracketColors.COLORS)
+                    : null;
             Platform.runLater(() -> {
                 if (gen != highlightGen) {
                     return; // a newer edit superseded this pass
@@ -9473,6 +9534,14 @@ public class EditorBuffer implements TabContent {
                         spans = spans.overlay(sem, (lex, s) -> s.isEmpty() ? lex : s);
                     }
                 }
+                // Bracket colours go on last so they win on the bracket characters, and REPLACE rather
+                // than union — see BracketColors.buildSpans for why unioning loses under every theme.
+                if (brackets != null) {
+                    StyleSpans<Collection<String>> bc = BracketColors.buildSpans(spans.length(), brackets.marks());
+                    if (bc != null) {
+                        spans = spans.overlay(bc, (lex, b) -> b.isEmpty() ? lex : b);
+                    }
+                }
                 setStyleSpansPreservingScroll(a.fromOffset(), spans);
                 scheduleBraceMatch(); // re-apply the match highlight the spans just overwrote
                 // Replace per-line end-states from fromLine onward (the prefix is unchanged).
@@ -9480,6 +9549,16 @@ public class EditorBuffer implements TabContent {
                     lineStates.remove(lineStates.size() - 1);
                 }
                 lineStates.addAll(a.endStates());
+                // The carried depths splice in lockstep with the end-states, or the next incremental
+                // pass would start colouring from a depth belonging to a different line.
+                if (brackets == null) {
+                    lineDepths.clear(); // feature off: drop stale depths so re-enabling re-scans in full
+                } else {
+                    while (lineDepths.size() > fromLine) {
+                        lineDepths.remove(lineDepths.size() - 1);
+                    }
+                    lineDepths.addAll(brackets.lineEndDepths());
+                }
                 // Symbols: keep those before fromLine (unchanged), append the freshly tokenized ones.
                 List<TextMateHighlighter.Symbol> merged = new java.util.ArrayList<>();
                 for (TextMateHighlighter.Symbol s : symbols) {
