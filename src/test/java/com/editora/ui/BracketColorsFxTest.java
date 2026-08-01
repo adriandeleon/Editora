@@ -39,9 +39,61 @@ class BracketColorsFxTest {
             + "    String s = \"(\";\n"
             + "}\n";
 
+    /** Uncaught FX-thread exceptions, collected so a throw inside a runLater apply is not invisible. */
+    private static final java.util.List<Throwable> fxUncaught =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
     @BeforeAll
     void setUp() throws Exception {
         FxTestSupport.bootToolkit();
+        // The highlight apply runs inside Platform.runLater; if it throws (e.g. a bad overlay), the
+        // exception goes to the FX thread's uncaught handler and the symptom is indistinguishable from
+        // "the pass never ran". Chain a collector in front of whatever handler is installed.
+        FxTestSupport.runOnFx(() -> {
+            Thread fx = Thread.currentThread();
+            Thread.UncaughtExceptionHandler prev = fx.getUncaughtExceptionHandler();
+            fx.setUncaughtExceptionHandler((t, e) -> {
+                fxUncaught.add(e);
+                if (prev != null) {
+                    prev.uncaughtException(t, e);
+                }
+            });
+        });
+    }
+
+    /**
+     * The threads that could explain a highlight pass never applying: the shared {@code editor-highlighter}
+     * pool (are its workers idle, or stuck — and where?), plus any other thread currently inside
+     * com.editora/tm4e code (a holder of the shared grammar monitor would show up here).
+     */
+    private static String interestingThreads() {
+        StringBuilder sb = new StringBuilder();
+        for (var entry : Thread.getAllStackTraces().entrySet()) {
+            Thread t = entry.getKey();
+            StackTraceElement[] stack = entry.getValue();
+            boolean pool = t.getName().startsWith("editor-highlighter");
+            boolean inOurCode = false;
+            for (StackTraceElement f : stack) {
+                String cn = f.getClassName();
+                if (cn.startsWith("com.editora") || cn.startsWith("org.eclipse.tm4e") || cn.startsWith("org.joni")) {
+                    inOurCode = true;
+                    break;
+                }
+            }
+            if (!pool && !inOurCode) {
+                continue;
+            }
+            sb.append("\n  ")
+                    .append(t.getName())
+                    .append(" [")
+                    .append(t.getState())
+                    .append("]");
+            int limit = Math.min(stack.length, 12);
+            for (int i = 0; i < limit; i++) {
+                sb.append("\n    at ").append(stack[i]);
+            }
+        }
+        return sb.length() == 0 ? "\n  (no highlighter/editora/tm4e threads found)" : sb.toString();
     }
 
     private EditorBuffer javaBuffer() throws Exception {
@@ -113,7 +165,12 @@ class BracketColorsFxTest {
                     + FxTestSupport.field(b, "dirtyFromLine") + " lineStates=" + states.size() + " lineDepths="
                     + depths.size();
         });
-        throw new AssertionError("bracket colours never reached the document after 30s — " + diagnosis);
+        // highlightGen>0 with lineStates=0 means passes were handed to the pool and none ever applied.
+        // The thread dump says whether the pool's workers are stuck (and on what — the shared grammar
+        // monitor is the prime suspect: CLAUDE.md records a full-suite-only deadlock on it before), or
+        // idle (⇒ the task threw and was swallowed, or the apply threw — see fxUncaught).
+        throw new AssertionError("bracket colours never reached the document after 30s — " + diagnosis + "\nfxUncaught="
+                + fxUncaught + "\nthreads:" + interestingThreads());
     }
 
     @Test
