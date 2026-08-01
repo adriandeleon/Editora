@@ -169,8 +169,46 @@ class BracketColorsFxTest {
         // The thread dump says whether the pool's workers are stuck (and on what — the shared grammar
         // monitor is the prime suspect: CLAUDE.md records a full-suite-only deadlock on it before), or
         // idle (⇒ the task threw and was swallowed, or the apply threw — see fxUncaught).
-        throw new AssertionError("bracket colours never reached the document after 30s — " + diagnosis + "\nfxUncaught="
-                + fxUncaught + "\nthreads:" + interestingThreads());
+        throw new AssertionError("bracket colours never reached the document after 30s — " + diagnosis
+                + "\ndirectTokenize=" + directTokenize() + "\nfxUncaught=" + fxUncaught + "\nthreads:"
+                + interestingThreads());
+    }
+
+    /**
+     * Makes, from a fresh thread, exactly the call the pool task makes. The pool task wraps it in a silent
+     * {@code catch (Exception | LinkageError)}, so if the workers turn out idle with nothing applied, this
+     * is the only way to see what the tokenize actually does in this environment — succeed, throw, or block
+     * (a bounded join, so a hang is reported rather than hanging the diagnosis).
+     */
+    private static String directTokenize() {
+        java.util.concurrent.atomic.AtomicReference<String> out = new java.util.concurrent.atomic.AtomicReference<>();
+        Thread t = new Thread(
+                () -> {
+                    try {
+                        var g = com.editora.editor.GrammarRegistry.shared().forLanguageName("java");
+                        if (g == null) {
+                            out.set("grammar=null");
+                            return;
+                        }
+                        var a = com.editora.editor.TextMateHighlighter.analyzeFrom(SRC, g, 0, null);
+                        out.set(
+                                a == null
+                                        ? "analysis=null"
+                                        : "ok spansLength=" + a.spans().length() + " endStates="
+                                                + a.endStates().size());
+                    } catch (Throwable e) {
+                        out.set("threw " + e);
+                    }
+                },
+                "bracket-colors-direct-tokenize");
+        t.setDaemon(true);
+        t.start();
+        try {
+            t.join(10_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return out.get() != null ? out.get() : "hung >10s (blocked on the shared grammar monitor?)";
     }
 
     @Test

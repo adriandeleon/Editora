@@ -38,7 +38,14 @@ class LargeFileOpenPerfFxTest {
             buf.setContent(text);
             long s = System.nanoTime();
             buf.setLanguageOverride("java"); // first fold recompute over the whole document
-            return (System.nanoTime() - s) / 1_000_000;
+            long elapsed = (System.nanoTime() - s) / 1_000_000;
+            // setLanguageOverride also dispatched a full 16k-line background tokenize. Dispose so its
+            // per-line cancel check fires: left running, that pass holds the shared java grammar monitor
+            // for however long 16k lines take this machine — on a slow CI runner, minutes — and every
+            // later java highlight in the suite queues behind it. That leak is what wedged the first test
+            // to ever *wait* for a highlight (BracketColorsFxTest) while nothing here appeared to fail.
+            buf.dispose();
+            return elapsed;
         });
 
         System.out.println("setLanguageOverride on " + (text.length() / 1024) + " KB fold-heavy buffer: " + ms + " ms");

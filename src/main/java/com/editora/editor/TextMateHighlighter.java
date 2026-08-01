@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.eclipse.tm4e.core.grammar.IStateStack;
@@ -77,6 +78,21 @@ public final class TextMateHighlighter {
      * null grammar/text.
      */
     public static IncrementalAnalysis analyzeFrom(String text, IGrammar grammar, int fromLine, IStateStack startState) {
+        return analyzeFrom(text, grammar, fromLine, startState, () -> false);
+    }
+
+    /**
+     * {@link #analyzeFrom(String, IGrammar, int, IStateStack)} with a cooperative cancellation check,
+     * consulted between lines: when {@code cancelled} reports true the pass returns {@code null} and — the
+     * point — <b>releases the shared grammar monitor</b>. Without it a superseded pass runs to completion
+     * however large the document: a 16k-line buffer whose highlight was dispatched and then invalidated
+     * (an edit, a language switch, a closed tab) kept tokenizing for minutes on a slow machine while every
+     * other buffer of the same language sat blocked behind the per-grammar lock (see the suite wedge this
+     * fixed: a perf test's leaked pass serialized all java highlighting on CI). The check is one volatile
+     * read per line — noise next to {@code tokenizeLine}.
+     */
+    public static IncrementalAnalysis analyzeFrom(
+            String text, IGrammar grammar, int fromLine, IStateStack startState, BooleanSupplier cancelled) {
         if (text == null || grammar == null) {
             return null;
         }
@@ -86,12 +102,12 @@ public final class TextMateHighlighter {
         // and throw — silently dropping one file's highlighting. Serialize per grammar instance:
         // same-grammar passes run sequentially; different grammars still run in parallel.
         synchronized (grammar) {
-            return analyzeFromLocked(text, grammar, fromLine, startState);
+            return analyzeFromLocked(text, grammar, fromLine, startState, cancelled);
         }
     }
 
     private static IncrementalAnalysis analyzeFromLocked(
-            String text, IGrammar grammar, int fromLine, IStateStack startState) {
+            String text, IGrammar grammar, int fromLine, IStateStack startState, BooleanSupplier cancelled) {
         // Adjacent runs with the same style are merged before they reach the builder: we collapse
         // many TextMate scopes onto a few coarse classes, so a single line yields long stretches of
         // identical (or empty) styling. RichTextFX materializes one Text node per span, so emitting
@@ -105,6 +121,9 @@ public final class TextMateHighlighter {
         int length = text.length();
         int lineIndex = fromLine;
         while (true) {
+            if (cancelled.getAsBoolean()) {
+                return null; // superseded — stop tokenizing and release the grammar monitor promptly
+            }
             int newline = text.indexOf('\n', pos);
             int lineEnd = newline < 0 ? length : newline;
             String line = text.substring(pos, lineEnd);

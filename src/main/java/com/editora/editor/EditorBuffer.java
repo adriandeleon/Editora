@@ -667,7 +667,8 @@ public class EditorBuffer implements TabContent {
     private boolean spellTechnicalEnabled = true; // honor the technical dictionary (Settings.technicalDictionary)
     private java.util.function.Consumer<String> onAddToDictionary = w -> {};
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
-    private long highlightGen;
+    /** Volatile: bumped on the FX thread, read per line by the background tokenize's cancel check. */
+    private volatile long highlightGen;
     /** Bumped on every language/grammar change (FX thread only); drops a stale deferred grammar load. */
     private long languageGen;
     /** Per-line grammar end-states from the last tokenization (FX-thread confined), so an edit can
@@ -9480,7 +9481,9 @@ public class EditorBuffer implements TabContent {
         HIGHLIGHT_POOL.execute(() -> {
             TextMateHighlighter.IncrementalAnalysis a;
             try {
-                a = TextMateHighlighter.analyzeFrom(text, g, fromLine, startState);
+                // The cancel check lets a superseded pass stop at the next line instead of finishing a
+                // doomed multi-MB tokenize while holding the shared grammar monitor (see analyzeFrom).
+                a = TextMateHighlighter.analyzeFrom(text, g, fromLine, startState, () -> gen != highlightGen);
             } catch (Exception | LinkageError e) {
                 return; // never let a grammar/engine fault kill the highlighter thread
             }

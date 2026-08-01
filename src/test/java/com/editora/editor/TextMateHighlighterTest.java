@@ -208,6 +208,29 @@ class TextMateHighlighterTest {
     }
 
     @Test
+    void aCancelledPassStopsAndReturnsNullInsteadOfFinishing() {
+        // The cancel check is what lets a superseded pass release the shared grammar monitor at the next
+        // line instead of tokenizing a huge document to completion (the CI suite wedge: a leaked 16k-line
+        // pass serialized every later java highlight behind the per-grammar lock).
+        IGrammar java = GrammarRegistry.shared().forFileName("Foo.java");
+        assertNotNull(java);
+        String text = "class A {\n".repeat(200) + "}\n".repeat(200);
+
+        java.util.concurrent.atomic.AtomicInteger checks = new java.util.concurrent.atomic.AtomicInteger();
+        // Cancel after a couple of lines: the pass must give up rather than deliver a result.
+        TextMateHighlighter.IncrementalAnalysis a =
+                TextMateHighlighter.analyzeFrom(text, java, 0, null, () -> checks.incrementAndGet() > 2);
+        assertNull(a, "a cancelled pass returns null (never a partial analysis)");
+        assertTrue(checks.get() <= 4, "cancellation is honoured within a line of being requested");
+
+        // Never cancelled → identical behaviour to the 4-arg form.
+        TextMateHighlighter.IncrementalAnalysis full =
+                TextMateHighlighter.analyzeFrom(text, java, 0, null, () -> false);
+        assertNotNull(full);
+        assertEquals(text.length(), full.spans().length());
+    }
+
+    @Test
     void unknownExtensionHasNoGrammar() {
         assertNull(GrammarRegistry.shared().forFileName("notes.txt"));
         assertNull(GrammarRegistry.shared().forFileName(null));
