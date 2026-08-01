@@ -241,6 +241,7 @@ public class SettingsWindow {
     private CheckBox dockerfilePreviewCheck;
     private CheckBox githubActionsPreviewCheck;
     private CheckBox csvRainbowCheck;
+    private CheckBox bracketColorsCheck;
     private CheckBox autoRenameTagCheck;
     private CheckBox autoFillCheck;
     private CheckBox autoCloseTagsCheck;
@@ -1103,6 +1104,7 @@ public class SettingsWindow {
         dockerfilePreviewCheck = viewCheck(tr("settings.dockerfilePreview"), Settings::setDockerfilePreview);
         githubActionsPreviewCheck = viewCheck(tr("settings.githubActionsPreview"), Settings::setGithubActionsPreview);
         csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
+        bracketColorsCheck = viewCheck(tr("settings.bracketColors"), Settings::setBracketColors);
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
         autoFillCheck = viewCheck(tr("settings.autoFill"), Settings::setAutoFill);
         autoCloseTagsCheck = viewCheck(tr("settings.autoCloseTags"), Settings::setAutoCloseTags);
@@ -2201,6 +2203,12 @@ public class SettingsWindow {
         row(p, Category.EDITOR, display, lineHighlightCheck, "highlight current line caret");
         row(p, Category.EDITOR, display, lineNumbersCheck, "line numbers gutter");
         row(p, Category.EDITOR, display, minimapCheck, "minimap overview");
+        row(
+                p,
+                Category.EDITOR,
+                display,
+                bracketColorsCheck,
+                "bracket pair colorization colors nesting depth rainbow brackets parentheses braces vs code");
         row(p, Category.EDITOR, display, wordWrapCheck, "word wrap soft wrap long lines");
         row(p, Category.EDITOR, display, whitespaceCheck, "hidden characters whitespace spaces tabs eol");
         row(p, Category.EDITOR, display, noteIndicatorsCheck, "personal notes gutter marker highlight indicators");
@@ -6395,6 +6403,7 @@ public class SettingsWindow {
             dockerfilePreviewCheck.setSelected(settings.isDockerfilePreview());
             githubActionsPreviewCheck.setSelected(settings.isGithubActionsPreview());
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
+            bracketColorsCheck.setSelected(settings.isBracketColors());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
             autoFillCheck.setSelected(settings.isAutoFill());
             if (abbrevModeCheck != null) {
@@ -7001,6 +7010,7 @@ public class SettingsWindow {
             dockerfilePreviewCheck.setSelected(s.isDockerfilePreview());
             githubActionsPreviewCheck.setSelected(s.isGithubActionsPreview());
             csvRainbowCheck.setSelected(s.isCsvRainbow());
+            bracketColorsCheck.setSelected(s.isBracketColors());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());
             autoFillCheck.setSelected(s.isAutoFill());
             if (abbrevModeCheck != null) {

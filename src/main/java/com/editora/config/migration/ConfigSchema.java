@@ -151,7 +151,8 @@ public enum ConfigSchema {
                     Map.entry(87, (Migration) ConfigMigrations::identity), // v87→88: + showMenuBar (additive)
                     // v88→89: Projects went from opt-in to on. NOT identity — the default change alone reaches
                     // only a fresh config dir, since every existing settings.toml stores the old false.
-                    Map.entry(88, (Migration) ConfigMigrations::enableProjectSupport))),
+                    Map.entry(88, (Migration) ConfigMigrations::enableProjectSupport),
+                    Map.entry(89, (Migration) ConfigMigrations::identity))), // v89→90: + bracketColors (additive)
     // v1 → v2 added the editor-group layout + OpenFile.group. Both default to the old single-group
     // behaviour, so the step is identity.
     // v1→v2 editor-group layout, v2→v3 RunConfiguration type/target, v3→v4 selectedRunConfig — all additive
