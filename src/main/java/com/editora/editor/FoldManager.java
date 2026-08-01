@@ -136,7 +136,72 @@ public final class FoldManager {
     public FoldManager(CodeArea area) {
         this.area = area;
         area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> recompute());
+        // Manual regions are anchored to nothing, so they shift through every edit immediately (the
+        // BookmarkManager pattern) — the debounced recompute above re-detects, it cannot re-anchor.
+        // The empty-list early-out keeps this a single field check per keystroke for every buffer
+        // without manual folds, i.e. almost all of them.
+        area.plainTextChanges().subscribe(ch -> {
+            if (manualRegions.isEmpty()) {
+                return;
+            }
+            int startLine = area.offsetToPosition(
+                            ch.getPosition(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                    .getMajor();
+            manualRegions = ManualFolds.shift(
+                    manualRegions,
+                    startLine,
+                    ManualFolds.lineBreaks(ch.getRemoved()),
+                    ManualFolds.lineBreaks(ch.getInserted()));
+        });
         installHoverPreview();
+    }
+
+    /** User-defined fold ranges with no syntactic basis (see {@link ManualFolds}); merged into
+     *  {@link #regions} by {@link #recompute}. */
+    private List<Region> manualRegions = List.of();
+
+    /**
+     * Adds a manual fold range (already-present or degenerate spans are ignored) and folds it. Returns
+     * whether it was added.
+     */
+    public boolean addManualFold(Region r) {
+        if (r == null || r.endLine() <= r.startLine() || manualRegions.contains(r)) {
+            return false;
+        }
+        List<Region> next = new ArrayList<>(manualRegions);
+        next.add(r);
+        manualRegions = next;
+        recompute(); // the new header needs its chevron before fold() records the collapse
+        fold(r);
+        return true;
+    }
+
+    /** Removes every manual fold range, unfolding any that are collapsed. Returns how many were removed. */
+    public int removeManualFolds() {
+        List<Region> removed = manualRegions;
+        if (removed.isEmpty()) {
+            return 0;
+        }
+        for (Region r : removed) {
+            if (isCollapsed(r.startLine())) {
+                unfold(r.startLine());
+            }
+        }
+        manualRegions = List.of();
+        recompute();
+        return removed.size();
+    }
+
+    /** The manual fold ranges, for persistence (see {@code MainController.persistFolds}). */
+    public List<Region> manualRegions() {
+        return manualRegions;
+    }
+
+    /** Installs restored manual fold ranges (session restore); folding state arrives separately via
+     *  {@link #applyCollapsedStartLines}, which needs the merged regions in place first. */
+    public void setManualRegions(List<Region> restored) {
+        manualRegions = restored == null || restored.isEmpty() ? List.of() : List.copyOf(restored);
+        recompute();
     }
 
     /**
@@ -248,9 +313,23 @@ public final class FoldManager {
         // import block is one region and where a javadoc ends — neither of which brace/indent scanning can
         // derive. An empty or absent answer falls back to the heuristic rather than leaving the file
         // unfoldable, which also covers the window between opening a file and its server reporting ready.
-        regions = serverRegions != null && !serverRegions.isEmpty()
-                ? serverRegions
-                : FoldRegions.detect(area.getText(), language);
+        String text = area.getText();
+        List<Region> base =
+                serverRegions != null && !serverRegions.isEmpty() ? serverRegions : FoldRegions.detect(text, language);
+        // Block comments, #region markers, and the user's manual ranges are ADDITIVE regardless of where
+        // the base came from — a server's answer replaces the structural heuristic, not these. A server
+        // that also reports comment regions (LSP folding kinds) just dedups in canonicalOrder.
+        List<Region> comments = FoldRegions.blockComments(text, language);
+        List<Region> markerRegions = FoldRegions.markers(text, language);
+        if (comments.isEmpty() && markerRegions.isEmpty() && manualRegions.isEmpty()) {
+            regions = base;
+        } else {
+            List<Region> merged = new ArrayList<>(base);
+            merged.addAll(comments);
+            merged.addAll(markerRegions);
+            merged.addAll(manualRegions);
+            regions = FoldRegions.canonicalOrder(merged);
+        }
         Map<Integer, Region> map = new HashMap<>();
         for (Region r : regions) {
             // Keep the outermost region for a given header line (largest span wins).
@@ -489,6 +568,129 @@ public final class FoldManager {
         if (!restoring) {
             onFoldStateChanged.run();
         }
+    }
+
+    /**
+     * Folds everything except the regions containing {@code line} (VS Code's {@code foldAllExcept}):
+     * the top-level regions that don't contain it, plus — inside each ancestor kept open — that
+     * ancestor's direct children that don't contain it. Deliberately not "every non-containing region
+     * recursively": folding the top-most excluded region already hides its interior, and recording
+     * thousands of nested collapses in a big file bloats the persisted fold state for no visible change.
+     */
+    public void foldAllExcept(int line) {
+        int topPar = firstVisiblePar();
+        for (Region r : regions) {
+            if (r.startLine() <= line && line <= r.endLine()) {
+                continue; // an ancestor of the caret — stays open
+            }
+            Region parent = FoldTree.parentFold(regions, r.startLine());
+            // Fold r only if every ancestor it has contains the line (i.e. r is a top-most excluded
+            // region); an excluded ancestor will be folded itself and hides r anyway.
+            boolean topMostExcluded = true;
+            while (parent != null) {
+                if (!(parent.startLine() <= line && line <= parent.endLine())) {
+                    topMostExcluded = false;
+                    break;
+                }
+                parent = FoldTree.parentFold(regions, parent.startLine());
+            }
+            if (topMostExcluded && !isCollapsed(r.startLine())) {
+                area.foldParagraphs(r.startLine(), r.endLine());
+                shadeHeader(r.startLine(), true);
+            }
+        }
+        restoreViewport(topPar);
+        if (!restoring) {
+            onFoldStateChanged.run();
+        }
+    }
+
+    /**
+     * Unfolds every collapsed region except those containing {@code line} (VS Code's
+     * {@code unfoldAllExcept} — the header line counts as contained, which is where the caret sits on a
+     * collapsed fold, so "except the fold I'm on" reads naturally).
+     */
+    public void unfoldAllExcept(int line) {
+        int topPar = firstVisiblePar();
+        boolean changed = false;
+        for (Integer s : collapsedStartLines()) {
+            // collapsedStartLines also reports regions merely HIDDEN inside a folded ancestor (that is
+            // what lets nested fold state persist). Unfolding such a phantom header would rip the
+            // ancestor open instead — only a fold whose own header line is visible is really "a fold on
+            // screen" this command should touch.
+            if (area.isFolded(s)) {
+                continue;
+            }
+            Region r = byStart.get(s);
+            if (r != null && r.startLine() <= line && line <= r.endLine()) {
+                continue;
+            }
+            area.unfoldParagraphs(s);
+            shadeHeader(s, false);
+            changed = true;
+        }
+        restoreViewport(topPar);
+        if (changed && !restoring) {
+            onFoldStateChanged.run();
+        }
+    }
+
+    /** {@link #foldAllExcept(int)} at the caret's line. */
+    public void foldAllExceptCaret() {
+        foldAllExcept(area.getCurrentParagraph());
+    }
+
+    /** {@link #unfoldAllExcept(int)} at the caret's line. */
+    public void unfoldAllExceptCaret() {
+        unfoldAllExcept(area.getCurrentParagraph());
+    }
+
+    /** Folds every multi-line block comment (VS Code's {@code foldAllBlockComments}). Returns the count. */
+    public int foldAllBlockComments() {
+        return foldExactly(FoldRegions.blockComments(area.getText(), language));
+    }
+
+    /** Folds every {@code #region} marker region (VS Code's {@code foldAllMarkerRegions}). Returns the count. */
+    public int foldAllMarkerRegions() {
+        return foldExactly(FoldRegions.markers(area.getText(), language));
+    }
+
+    /** Unfolds every {@code #region} marker region ({@code unfoldAllMarkerRegions}). Returns the count. */
+    public int unfoldAllMarkerRegions() {
+        int topPar = firstVisiblePar();
+        int n = 0;
+        for (Region r : FoldRegions.markers(area.getText(), language)) {
+            // Same phantom-header guard as unfoldAllExcept: a marker region hidden inside a folded
+            // ancestor reads as collapsed, and unfolding it would rip the ancestor open.
+            if (isCollapsed(r.startLine()) && !area.isFolded(r.startLine())) {
+                area.unfoldParagraphs(r.startLine());
+                shadeHeader(r.startLine(), false);
+                n++;
+            }
+        }
+        restoreViewport(topPar);
+        if (n > 0 && !restoring) {
+            onFoldStateChanged.run();
+        }
+        return n;
+    }
+
+    /** Folds exactly the given regions (a kind-specific detector's output), skipping collapsed ones. */
+    private int foldExactly(List<Region> toFold) {
+        int topPar = firstVisiblePar();
+        int n = 0;
+        for (Region r : toFold) {
+            if (!isCollapsed(r.startLine())) {
+                area.foldParagraphs(r.startLine(), r.endLine());
+                shadeHeader(r.startLine(), true);
+                n++;
+            }
+        }
+        restoreViewport(topPar);
+        if (n > 0 && !restoring) {
+            onFoldStateChanged.run();
+        }
+        return n;
     }
 
     /** Collapses the innermost expanded foldable region around the caret; no-op if none applies. */

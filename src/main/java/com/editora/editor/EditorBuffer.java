@@ -4368,6 +4368,36 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * Creates a manual fold range from the focused view's selection (VS Code's
+     * {@code createFoldingRangeFromSelection}) and collapses it. A selection ending at column 0 does not
+     * include that line (the {@code LineTransforms.lineBounds} convention). Returns false when the
+     * selection spans fewer than two lines — there is nothing to fold into the header.
+     */
+    public boolean createManualFoldFromSelection() {
+        CodeArea a = focusedArea;
+        var sel = a.getSelection();
+        if (sel.getLength() == 0) {
+            return false;
+        }
+        int startLine = a.offsetToPosition(sel.getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
+        var endPos = a.offsetToPosition(sel.getEnd(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
+        int endLine = endPos.getMajor();
+        if (endPos.getMinor() == 0 && endLine > startLine) {
+            endLine--; // a selection merely touching the next line's column 0 doesn't include it
+        }
+        if (endLine <= startLine) {
+            return false;
+        }
+        return folds.addManualFold(new FoldRegions.Region(startLine, endLine));
+    }
+
+    /** Removes every manual fold range (see {@link FoldManager#removeManualFolds}); returns the count. */
+    public int removeManualFolds() {
+        return folds.removeManualFolds();
+    }
+
     /** Tint each bracket by nesting depth (see {@link BracketColors}). */
     private boolean bracketColors;
 

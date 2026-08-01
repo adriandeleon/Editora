@@ -79,6 +79,178 @@ public final class FoldRegions {
         };
     }
 
+    /** Languages whose block comments are {@code /* *}{@code /} — the same set {@link #detect} braces-folds. */
+    private static final java.util.Set<String> SLASH_STAR_LANGUAGES = java.util.Set.of(
+            "java",
+            "json",
+            "c",
+            "cpp",
+            "rust",
+            "go",
+            "kotlin",
+            "groovy",
+            "csharp",
+            "css",
+            "php",
+            "terraform",
+            "caddyfile",
+            "proto",
+            "graphql",
+            "javascript",
+            "typescript",
+            "javascriptreact",
+            "typescriptreact",
+            "typst",
+            "dot");
+
+    /**
+     * Multi-line block comments as foldable regions (VS Code's {@code foldAllBlockComments}):
+     * {@code /* *}{@code /} spans for the brace languages, {@code <!-- -->} for xml/html. A separate pass
+     * rather than part of {@link #detect}'s scanners so {@code FoldManager} can also fold <em>exactly
+     * these</em> on command — a {@link Region} carries no kind, so the kind lives in which detector
+     * produced it. Pure; unit-tested.
+     */
+    public static List<Region> blockComments(String text, String language) {
+        if (text == null || text.isEmpty() || language == null) {
+            return List.of();
+        }
+        if ("xml".equals(language) || "html".equals(language)) {
+            return xmlComments(text);
+        }
+        if (!SLASH_STAR_LANGUAGES.contains(language)) {
+            return List.of();
+        }
+        // The same string/comment state walk as braces(), recording block-comment spans instead of
+        // delimiter pairs (sharing one parameterized walker would cost more clarity than two loops).
+        List<Region> out = new ArrayList<>();
+        int line = 0;
+        int n = text.length();
+        boolean inLineComment = false;
+        int blockStartLine = -1;
+        char stringQuote = 0;
+        for (int i = 0; i < n; i++) {
+            char c = text.charAt(i);
+            if (c == '\n') {
+                line++;
+                inLineComment = false;
+                continue;
+            }
+            if (inLineComment) {
+                continue;
+            }
+            if (blockStartLine >= 0) {
+                if (c == '*' && i + 1 < n && text.charAt(i + 1) == '/') {
+                    if (line > blockStartLine) {
+                        out.add(new Region(blockStartLine, line));
+                    }
+                    blockStartLine = -1;
+                    i++;
+                }
+                continue;
+            }
+            if (stringQuote != 0) {
+                if (c == '\\') {
+                    i++;
+                } else if (c == stringQuote) {
+                    stringQuote = 0;
+                }
+                continue;
+            }
+            if (c == '/' && i + 1 < n && text.charAt(i + 1) == '/') {
+                inLineComment = true;
+                i++;
+            } else if (c == '/' && i + 1 < n && text.charAt(i + 1) == '*') {
+                blockStartLine = line;
+                i++;
+            } else if (c == '"' || c == '\'') {
+                stringQuote = c;
+            }
+        }
+        return out;
+    }
+
+    /** Multi-line {@code <!-- -->} comments in xml/html, via the same tokenizer {@link #xml} uses. */
+    private static List<Region> xmlComments(String text) {
+        List<Region> out = new ArrayList<>();
+        int[] newlines = newlineOffsets(text);
+        Matcher m = XML_TOKEN.matcher(text);
+        while (m.find()) {
+            if (m.group(2) != null || !text.startsWith("<!--", m.start())) {
+                continue; // a tag, or a CDATA/PI/doctype token
+            }
+            int start = lineOf(newlines, m.start());
+            int end = lineOf(newlines, m.end() - 1);
+            if (end > start) {
+                out.add(new Region(start, end));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * One marker family per comment style, matched against the <b>trimmed</b> line so indentation never
+     * matters: {@code //#region} (VS Code JS/TS), {@code //region} (IntelliJ Java), {@code #region}
+     * (C#, and Python/YAML/shell comments), {@code #pragma region} (C/C++), {@code <!-- #region -->}
+     * (XML/HTML), {@code --region} (Lua/SQL). Case-insensitive; an optional label may follow.
+     */
+    private static final Pattern MARKER_START = Pattern.compile(
+            "^(?://\\s*#?region\\b|#\\s?region\\b|#pragma\\s+region\\b|<!--\\s*#region\\b|--\\s*#?region\\b).*",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern MARKER_END = Pattern.compile(
+            "^(?://\\s*#?endregion\\b|#\\s?endregion\\b|#pragma\\s+endregion\\b|<!--\\s*#endregion\\b"
+                    + "|--\\s*#?endregion\\b).*",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * {@code #region}/{@code #endregion} marker regions (VS Code's {@code foldAllMarkerRegions}). Markers
+     * nest (a stack pairs them); an unmatched start or end is ignored. <b>Not</b> detected in markdown or
+     * markwhen — a {@code # region} heading is indistinguishable from the C#/Python marker spelling — nor
+     * plaintext, where prose starting a line with "#region" suddenly growing a fold chevron would read as
+     * a bug. Pure; unit-tested.
+     */
+    public static List<Region> markers(String text, String language) {
+        if (text == null || text.isEmpty() || language == null) {
+            return List.of();
+        }
+        if ("markdown".equals(language)
+                || "markwhen".equals(language)
+                || LanguageRegistry.plaintext().equals(language)) {
+            return List.of();
+        }
+        List<Region> out = new ArrayList<>();
+        Deque<Integer> stack = new ArrayDeque<>();
+        String[] lines = text.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String t = lines[i].trim();
+            if (MARKER_START.matcher(t).matches()) {
+                stack.push(i);
+            } else if (MARKER_END.matcher(t).matches() && !stack.isEmpty()) {
+                int start = stack.pop();
+                if (i > start) {
+                    out.add(new Region(start, i));
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The detector emission convention, made explicit for callers merging lists from several detectors:
+     * <b>innermost-first</b> — end line ascending, then start line descending, so of two regions closing
+     * on the same line the inner (later-starting) one comes first. {@code FoldManager.foldRecursivelyAtCaret}
+     * collapses deepest-first and depends on it (the same convention {@code LspFolding} re-sorts server
+     * answers into). Also dedups.
+     */
+    public static List<Region> canonicalOrder(List<Region> regions) {
+        return regions.stream()
+                .distinct()
+                .sorted(java.util.Comparator.comparingInt(Region::endLine)
+                        .thenComparing(java.util.Comparator.comparingInt(Region::startLine)
+                                .reversed()))
+                .toList();
+    }
+
     // --- Brace/bracket matching (java, json, ...) ---
 
     private static List<Region> braces(String text) {

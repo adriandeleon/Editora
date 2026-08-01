@@ -10405,6 +10405,66 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** Creates a manual fold range from the selection and collapses it (VS Code parity). */
+    private void createFoldFromSelection() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        if (buffer.createManualFoldFromSelection()) {
+            persistFolds(buffer);
+            setStatus(tr("status.fold.manualCreated"));
+        } else {
+            setStatus(tr("status.fold.manualNeedsSelection"));
+        }
+    }
+
+    /** Removes every manual fold range in the active buffer. */
+    private void removeManualFolds() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        int n = buffer.removeManualFolds();
+        persistFolds(buffer);
+        setStatus(tr("status.fold.manualRemoved", n));
+    }
+
+    private void foldAllExcept() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.getFoldManager().foldAllExceptCaret();
+        }
+    }
+
+    private void unfoldAllExcept() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            buffer.getFoldManager().unfoldAllExceptCaret();
+        }
+    }
+
+    private void foldAllBlockComments() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            setStatus(tr("status.fold.comments", buffer.getFoldManager().foldAllBlockComments()));
+        }
+    }
+
+    private void foldAllMarkerRegions() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            setStatus(tr("status.fold.markers", buffer.getFoldManager().foldAllMarkerRegions()));
+        }
+    }
+
+    private void unfoldAllMarkerRegions() {
+        EditorBuffer buffer = activeBuffer();
+        if (buffer != null) {
+            setStatus(tr("status.fold.markersUnfolded", buffer.getFoldManager().unfoldAllMarkerRegions()));
+        }
+    }
+
     private void foldRecursively() {
         EditorBuffer buffer = activeBuffer();
         if (buffer != null) {
@@ -10799,7 +10859,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
-    /** Persists the buffer's collapsed fold regions, keyed by its file path. */
+    /** Persists the buffer's collapsed fold regions + manual fold ranges, keyed by its file path. */
     private void persistFolds(EditorBuffer buffer) {
         Path file = buffer.getPath();
         if (file == null) {
@@ -10812,14 +10872,28 @@ public class MainController implements com.editora.mcp.McpBridge {
         } else {
             map.put(file.toString(), lines);
         }
+        List<Integer> manual =
+                com.editora.editor.ManualFolds.toFlat(buffer.getFoldManager().manualRegions());
+        var manualMap = config.getWorkspaceState().getManualFoldRegions();
+        if (manual.isEmpty()) {
+            manualMap.remove(file.toString());
+        } else {
+            manualMap.put(file.toString(), manual);
+        }
         requestSave();
     }
 
-    /** Re-applies a file's saved collapsed fold regions after it is opened. */
+    /** Re-applies a file's saved manual fold ranges + collapsed fold regions after it is opened. */
     private void restoreFolds(EditorBuffer buffer) {
         Path file = buffer.getPath();
         if (file == null) {
             return;
+        }
+        // Manual ranges FIRST: a collapsed manual region's header must be in the merged region set
+        // before applyCollapsedStartLines can re-fold it.
+        List<Integer> manual = config.getWorkspaceState().getManualFoldRegions().get(file.toString());
+        if (manual != null && !manual.isEmpty()) {
+            buffer.getFoldManager().setManualRegions(com.editora.editor.ManualFolds.fromFlat(manual));
         }
         List<Integer> saved = config.getWorkspaceState().getFoldedRegions().get(file.toString());
         buffer.getFoldManager().applyCollapsedStartLines(saved);
@@ -15013,6 +15087,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             int lvl = level;
             registry.register(Command.of("view.foldLevel" + lvl, () -> foldLevel(lvl)));
         }
+        registry.register(Command.of("view.createFoldFromSelection", this::createFoldFromSelection));
+        registry.register(Command.of("view.removeManualFolds", this::removeManualFolds));
+        registry.register(Command.of("view.foldAllExcept", this::foldAllExcept));
+        registry.register(Command.of("view.unfoldAllExcept", this::unfoldAllExcept));
+        registry.register(Command.of("view.foldAllBlockComments", this::foldAllBlockComments));
+        registry.register(Command.of("view.foldAllMarkerRegions", this::foldAllMarkerRegions));
+        registry.register(Command.of("view.unfoldAllMarkerRegions", this::unfoldAllMarkerRegions));
         registry.register(Command.of("nav.goToLine", this::goToLine));
         registry.register(Command.of("buffer.setLanguage", this::chooseLanguage));
         registry.register(Command.of("buffer.setTabSize", this::chooseTabSize));
