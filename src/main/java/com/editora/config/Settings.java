@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 90;
+    public static final int SCHEMA_VERSION = 91;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -141,6 +141,8 @@ public class Settings {
      *  Enter). Default <b>off</b>: it acts on very common keystrokes and overlaps the local auto-indent
      *  assists, so it is opt-in until it has proven itself in the field (#740). */
     private boolean lspOnTypeFormatting = false;
+    /** Auto-import for pasted code via jdtls's paste event (#742): on by default, as in VS Code. */
+    private boolean lspPasteImports = true;
     /** Honor a project's {@code .editorconfig} (indent, EOL, charset, trim/final-newline, max line length). */
     private boolean editorConfigSupport = true;
     /** Highlight configured patterns (TODO/FIXME/…) in the editor + list them in the TODO tool window. */
@@ -1065,6 +1067,14 @@ public class Settings {
 
     public boolean isLspOnTypeFormatting() {
         return lspOnTypeFormatting;
+    }
+
+    public boolean isLspPasteImports() {
+        return lspPasteImports;
+    }
+
+    public void setLspPasteImports(boolean lspPasteImports) {
+        this.lspPasteImports = lspPasteImports;
     }
 
     public void setLspOnTypeFormatting(boolean lspOnTypeFormatting) {

@@ -3761,6 +3761,66 @@ public class EditorBuffer implements TabContent {
         this.lspRenameAvailable = available;
     }
 
+    /** Requests jdtls's paste auto-import for the freshly pasted range (#742); controller-wired. The
+     *  positions are line/character pairs of the post-paste span; {@code stillValid} must be consulted
+     *  before applying the async answer. Keeps {@code editor} free of lsp4j. */
+    public interface LspPasteImportsRequester {
+        void request(
+                int startLine,
+                int startChar,
+                int endLine,
+                int endChar,
+                String pastedText,
+                java.util.function.BooleanSupplier stillValid);
+    }
+
+    private LspPasteImportsRequester lspPasteImportsRequester;
+    /** Master gate for paste auto-import ({@code Settings.lspPasteImports}), pushed from the controller. */
+    private boolean lspPasteImportsEnabled = true;
+
+    public void setLspPasteImportsRequester(LspPasteImportsRequester requester) {
+        this.lspPasteImportsRequester = requester;
+    }
+
+    public void setLspPasteImportsEnabled(boolean enabled) {
+        this.lspPasteImportsEnabled = enabled;
+    }
+
+    /**
+     * After a paste inserted {@code [start..end)} (absolute offsets), asks the language server for the
+     * imports the pasted code needs (#742). No-op unless the feature is on, a requester is wired, the
+     * buffer is an editable, non-narrowed LSP buffer (a narrowed buffer's coordinates are region-relative
+     * — the same reason LSP sync is suspended there), and the span is non-empty.
+     *
+     * <p>The pending didChange is flushed FIRST ({@link #sendLspChange}) so the server computes against
+     * the post-paste document — JSON-RPC preserves order, the {@code requestLspCompletion} idiom. The
+     * {@code stillValid} supplier the requester must consult before applying is a {@link #docVersion}
+     * check: an answer that arrives after the user kept typing is dropped, never applied to text it
+     * wasn't computed for.
+     */
+    public void requestLspPasteImports(int start, int end) {
+        if (!lspPasteImportsEnabled
+                || lspPasteImportsRequester == null
+                || !lspActive
+                || isNarrowed()
+                || !isEditable()
+                || end <= start
+                || end > area.getLength()) {
+            return;
+        }
+        sendLspChange();
+        long version = docVersion;
+        var s = area.offsetToPosition(start, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+        var e = area.offsetToPosition(end, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
+        lspPasteImportsRequester.request(
+                s.getMajor(),
+                s.getMinor(),
+                e.getMajor(),
+                e.getMinor(),
+                area.getText(start, end),
+                () -> docVersion == version);
+    }
+
     /** Async range-formatter for Tab line re-indent: requests the edits the server would apply to a line
      *  range and delivers them on the FX thread. Keeps {@code editor} free of lsp4j. */
     public interface LspRangeFormatter {

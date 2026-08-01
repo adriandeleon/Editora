@@ -207,6 +207,7 @@ public class SettingsWindow {
     private CheckBox semanticHighlightCheck;
     private CheckBox inlayHintsCheck;
     private CheckBox onTypeFormattingCheck;
+    private CheckBox pasteImportsCheck;
     private CheckBox spellCheckBox;
     private ComboBox<String> spellLanguageCombo;
     /** The Personal Dictionary list on the Spell Check page; refreshed from {@code dictionary.txt} on show. */
@@ -986,6 +987,7 @@ public class SettingsWindow {
         semanticHighlightCheck = viewCheck(tr("settings.semanticHighlight"), Settings::setSemanticHighlight);
         inlayHintsCheck = viewCheck(tr("settings.inlayHints"), Settings::setInlayHints);
         onTypeFormattingCheck = viewCheck(tr("settings.onTypeFormatting"), Settings::setLspOnTypeFormatting);
+        pasteImportsCheck = viewCheck(tr("settings.lspPasteImports"), Settings::setLspPasteImports);
         // The per-source toggles are only meaningful while the master switch is on.
         autocompleteCheck.selectedProperty().addListener((obs, was, now) -> {
             autocompleteProseCheck.setDisable(!now);
@@ -2810,6 +2812,7 @@ public class SettingsWindow {
                 completion,
                 onTypeFormattingCheck,
                 "on-type formatting reindent semicolon brace enter lsp");
+        row(p, Category.COMPLETION, completion, pasteImportsCheck, "paste import auto imports java jdtls clipboard");
         onTypeFormattingCheck.disableProperty().bind(lspCheck.selectedProperty().not());
         // Semantic highlighting comes from LSP: disable it (+ explain why) when LSP is off.
         semanticHighlightCheck
@@ -6369,6 +6372,7 @@ public class SettingsWindow {
             semanticHighlightCheck.setSelected(settings.isSemanticHighlight());
             inlayHintsCheck.setSelected(settings.isInlayHints());
             onTypeFormattingCheck.setSelected(settings.isLspOnTypeFormatting());
+            pasteImportsCheck.setSelected(settings.isLspPasteImports());
             pdfLineNumbersCheck.setSelected(settings.isPdfLineNumbers());
             pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
             pdfPageSizeCombo.setValue(settings.getPdfPageSize());
@@ -6944,6 +6948,7 @@ public class SettingsWindow {
             semanticHighlightCheck.setSelected(s.isSemanticHighlight());
             inlayHintsCheck.setSelected(s.isInlayHints());
             onTypeFormattingCheck.setSelected(s.isLspOnTypeFormatting());
+            pasteImportsCheck.setSelected(s.isLspPasteImports());
         } finally {
             loading = prev;
         }
