@@ -59,6 +59,109 @@ class JdtlsPasteProbeTest {
         public void logMessage(MessageParams p) {}
     }
 
+    /**
+     * The two siblings #746 lists as pairing with the paste path. Round two, narrowed by round one:
+     * stringFormatting reads TWO arguments (arg0 a String, arg1 an object — arg0-as-object threw a
+     * cast error and a lone arg threw index-1-out-of-bounds), and smartSemicolonDetection accepted every
+     * shape but answered null, which in vscode-java means its preference is off by default.
+     */
+    private static void probeSiblings(LanguageServer server, String uri, String original) throws Exception {
+        String text = "package demo;\n\npublic class App {\n    public static void main(String[] args) {\n"
+                + "        String s = \"hello\";\n        int n = compute(1, 2)\n    }\n"
+                + "    static int compute(int a, int b) { return a + b; }\n}\n";
+        server.getTextDocumentService()
+                .didChange(new DidChangeTextDocumentParams(
+                        new VersionedTextDocumentIdentifier(uri, 3),
+                        List.of(new TextDocumentContentChangeEvent(text))));
+        Thread.sleep(3_000);
+
+        // Turn on both features' preferences the way vscode-java does, then re-ask.
+        java.util.Map<String, Object> javaCfg = new java.util.HashMap<>();
+        javaCfg.put(
+                "edit",
+                java.util.Map.of(
+                        "smartSemicolonDetection",
+                        java.util.Map.of("enabled", true),
+                        "validateAllOpenBuffersOnChanges",
+                        false));
+        server.getWorkspaceService()
+                .didChangeConfiguration(new DidChangeConfigurationParams(java.util.Map.of("java", javaCfg)));
+        Thread.sleep(3_000);
+
+        com.google.gson.JsonObject pos = new com.google.gson.JsonObject();
+        pos.addProperty("line", 5);
+        pos.addProperty("character", 28); // just after the '2', before the ')'
+        com.google.gson.JsonObject semi = new com.google.gson.JsonObject();
+        semi.addProperty("uri", uri);
+        semi.add("position", pos);
+        tryShapes(
+                server,
+                "java.edit.smartSemicolonDetection",
+                List.of(List.of(semi.toString()), List.of(uri, pos.toString()), List.of(uri, pos)));
+
+        // stringFormatting: arg0 String, arg1 object. Try the plausible splits of (uri, text, position).
+        com.google.gson.JsonObject spos = new com.google.gson.JsonObject();
+        spos.addProperty("line", 4);
+        spos.addProperty("character", 26); // between the quotes of "hello"
+        com.google.gson.JsonObject fmt2 = new com.google.gson.JsonObject();
+        fmt2.addProperty("tabSize", 4);
+        fmt2.addProperty("insertSpaces", true);
+        String pasted = "line one\nline \"two\"\n";
+
+        com.google.gson.JsonObject payload = new com.google.gson.JsonObject();
+        payload.addProperty("text", pasted);
+        payload.add("position", spos);
+        payload.add("formattingOptions", fmt2);
+
+        com.google.gson.JsonObject withRange = new com.google.gson.JsonObject();
+        com.google.gson.JsonObject r2 = new com.google.gson.JsonObject();
+        r2.add("start", spos);
+        r2.add("end", spos);
+        withRange.add("range", r2);
+        withRange.addProperty("text", pasted);
+
+        // line 4 is `        String s = "hello";` — the quotes are at 19 and 25, so 22 is really inside.
+        com.google.gson.JsonObject inLiteral = new com.google.gson.JsonObject();
+        inLiteral.addProperty("line", 4);
+        inLiteral.addProperty("character", 22);
+        com.google.gson.JsonObject inLiteralRange = new com.google.gson.JsonObject();
+        com.google.gson.JsonObject lr = new com.google.gson.JsonObject();
+        lr.add("start", inLiteral);
+        lr.add("end", inLiteral);
+        inLiteralRange.add("range", lr);
+        inLiteralRange.addProperty("uri", uri);
+
+        com.google.gson.JsonObject uriAndPos = new com.google.gson.JsonObject();
+        uriAndPos.addProperty("uri", uri);
+        uriAndPos.add("position", inLiteral);
+
+        tryShapes(
+                server,
+                "java.edit.stringFormatting",
+                List.of(
+                        List.of(pasted, inLiteral, "4"),
+                        List.of(pasted, uriAndPos, "4"),
+                        List.of(pasted, inLiteral, "0"),
+                        List.of(uri, inLiteral, "4")));
+    }
+
+    /** Sends {@code command} once per candidate argument list, printing what each answers. */
+    private static void tryShapes(LanguageServer server, String command, List<List<Object>> shapes) {
+        System.out.println("\n########## " + command + " ##########");
+        for (int i = 0; i < shapes.size(); i++) {
+            System.out.println("--- shape " + i + ": " + shapes.get(i));
+            try {
+                Object r = server.getWorkspaceService()
+                        .executeCommand(new ExecuteCommandParams(command, shapes.get(i)))
+                        .get(30, TimeUnit.SECONDS);
+                System.out.println("RESULT[" + i + "] ("
+                        + (r == null ? "null" : r.getClass().getSimpleName()) + "): " + r);
+            } catch (Exception e) {
+                System.out.println("THREW[" + i + "]: " + String.valueOf(e).replace('\n', ' '));
+            }
+        }
+    }
+
     @Test
     void probePasteEvent() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: pass -Dlsp.probe=true");
@@ -160,6 +263,8 @@ class JdtlsPasteProbeTest {
                     System.out.println("THREW: " + String.valueOf(e).replace('\n', ' '));
                 }
             }
+
+            probeSiblings(server, uri, original);
 
             server.shutdown().get(20, TimeUnit.SECONDS);
             server.exit();

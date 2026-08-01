@@ -2384,6 +2384,30 @@ public final class LspManager {
                 });
     }
 
+    /**
+     * Smart-semicolon detection (#746): asks jdtls where a {@code ;} typed at {@code (line, character)}
+     * belongs — normally the end of the enclosing statement. Delivers the answered {@code {line, char}} on
+     * the FX thread, or {@code null} when the server has nothing to say (already at the statement end, or
+     * not a jdtls session). Gated on the command being advertised, so no other language pays a request.
+     *
+     * <p>The document must be in the state the caret refers to — i.e. <b>before</b> the semicolon is typed —
+     * which is why the caller flushes its pending didChange first.
+     */
+    public void smartSemicolonPosition(Path file, int line, int character, Consumer<int[]> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || !JdtlsSmartSemicolon.supported(s.capabilities())) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        String params = JdtlsSmartSemicolon.paramsJson(uri(file), line, character);
+        s.executeCommand(JdtlsSmartSemicolon.COMMAND, List.of(params))
+                .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                .whenComplete((r, e) -> {
+                    int[] at = e != null ? null : JdtlsSmartSemicolon.answeredPosition(asJson(r));
+                    Platform.runLater(() -> cb.accept(at));
+                });
+    }
+
     /** Decodes a {@code java/generate…} answer (an untyped {@code WorkspaceEdit}) into the typed form. */
     private static org.eclipse.lsp4j.WorkspaceEdit asWorkspaceEdit(Object raw) {
         try {

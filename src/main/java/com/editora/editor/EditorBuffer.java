@@ -7677,9 +7677,91 @@ public class EditorBuffer implements TabContent {
                 return;
             }
             char typed = e.getCharacter().charAt(0);
+            // Fires while the caret is still where the user typed and the document has no ';' yet — the
+            // state the server's answer is expressed in. Never consumes, so the char inserts as normal.
+            maybeSmartSemicolon(a, typed); // #746
             applyCloserDedent(a, typed);
             maybeOnTypeFormat(a, typed); // #740 — after the local assist, which usually already got it right
         });
+    }
+
+    /** Async smart-semicolon lookup; delivers the target {@code {line, character}} or null on the FX thread. */
+    public interface LspSmartSemicolonRequester {
+        void request(int line, int character, java.util.function.Consumer<int[]> callback);
+    }
+
+    private LspSmartSemicolonRequester smartSemicolonRequester;
+    /** {@code Settings.lspSmartSemicolon} — OFF by default, as in VS Code. */
+    private boolean smartSemicolonEnabled;
+
+    private long smartSemicolonGen;
+
+    public void setLspSmartSemicolonRequester(LspSmartSemicolonRequester requester) {
+        this.smartSemicolonRequester = requester;
+    }
+
+    public void setSmartSemicolonEnabled(boolean enabled) {
+        this.smartSemicolonEnabled = enabled;
+    }
+
+    /**
+     * Smart-semicolon detection (#746): a {@code ;} typed part-way through an expression belongs at the end
+     * of the statement — {@code compute(1, 2|)} should become {@code compute(1, 2);|}.
+     *
+     * <p><b>Type first, correct after</b> — the semicolon is never held back waiting for the server. Making
+     * a keystroke wait on a round trip is exactly the latency the performance rules forbid, and a slow or
+     * cold server would let the character land after whatever was typed next. So the {@code ;} inserts
+     * normally and the answer, if it disagrees, moves it — as a single ranged {@code replaceText}, hence one
+     * undo step rather than a delete plus an insert.
+     *
+     * <p>The consequence, stated rather than hidden: if the user types straight through (a very common
+     * {@code ;}-then-Enter), {@link #docVersion} has moved by more than the semicolon and the correction is
+     * <b>dropped</b>. That is deliberate — the alternative is rewriting text the user has already moved past
+     * — and it leaves the semicolon exactly where it would have been with the feature off, never worse.
+     */
+    private void maybeSmartSemicolon(CodeArea a, char typed) {
+        if (typed != ';' || !smartSemicolonEnabled || !lspActive || smartSemicolonRequester == null) {
+            return;
+        }
+        if (!isEditable() || hugeFile || largeFile || isNarrowed() || hasActiveSnippet()) {
+            return;
+        }
+        int typedAt = a.getCaretPosition();
+        int line = a.getCurrentParagraph();
+        int column = a.getCaretColumn();
+        long version = docVersion;
+        long gen = ++smartSemicolonGen;
+        sendLspChange(); // the position refers to the pre-';' text, so the server must have exactly that
+        smartSemicolonRequester.request(line, column, target -> {
+            // docVersion bumps once per change, so "+1" is precisely "only the semicolon landed since".
+            if (gen != smartSemicolonGen || target == null || a.getScene() == null || docVersion != version + 1) {
+                return;
+            }
+            moveTypedSemicolon(a, typedAt, line, column, target);
+        });
+    }
+
+    /**
+     * Moves the just-typed semicolon from {@code typedAt} to the server's target, which is expressed in
+     * <b>pre-insert</b> coordinates — so a target on the same line has to be shifted past the semicolon
+     * that now sits before it, while a target on a later line needs no adjustment (its columns are
+     * untouched and its absolute offset already includes the inserted character).
+     */
+    private void moveTypedSemicolon(CodeArea a, int typedAt, int typedLine, int typedColumn, int[] target) {
+        int targetPost;
+        try {
+            targetPost = target[0] == typedLine && target[1] >= typedColumn
+                    ? a.getAbsolutePosition(target[0], target[1] + 1)
+                    : a.getAbsolutePosition(target[0], target[1]);
+        } catch (RuntimeException outOfRange) {
+            return; // a target the document can no longer address
+        }
+        if (targetPost <= typedAt + 1 || targetPost > a.getLength()) {
+            return; // already where it was typed (the ordinary answer), or past the end
+        }
+        // Rewrite [typedAt, targetPost) as "the text after the semicolon, then the semicolon" — one edit,
+        // so one Ctrl-Z puts it back where it was typed.
+        a.replaceText(typedAt, targetPost, a.getText(typedAt + 1, targetPost) + ";");
     }
 
     /**

@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 91;
+    public static final int SCHEMA_VERSION = 92;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -143,6 +143,8 @@ public class Settings {
     private boolean lspOnTypeFormatting = false;
     /** Auto-import for pasted code via jdtls's paste event (#742): on by default, as in VS Code. */
     private boolean lspPasteImports = true;
+    /** Smart-semicolon detection (#746): OFF by default, as in VS Code — it moves a typed character. */
+    private boolean lspSmartSemicolon;
     /** Honor a project's {@code .editorconfig} (indent, EOL, charset, trim/final-newline, max line length). */
     private boolean editorConfigSupport = true;
     /** Highlight configured patterns (TODO/FIXME/…) in the editor + list them in the TODO tool window. */
@@ -1075,6 +1077,14 @@ public class Settings {
 
     public void setLspPasteImports(boolean lspPasteImports) {
         this.lspPasteImports = lspPasteImports;
+    }
+
+    public boolean isLspSmartSemicolon() {
+        return lspSmartSemicolon;
+    }
+
+    public void setLspSmartSemicolon(boolean lspSmartSemicolon) {
+        this.lspSmartSemicolon = lspSmartSemicolon;
     }
 
     public void setLspOnTypeFormatting(boolean lspOnTypeFormatting) {
