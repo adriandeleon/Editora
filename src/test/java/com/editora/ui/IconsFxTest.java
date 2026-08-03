@@ -39,6 +39,49 @@ class IconsFxTest {
         assertRenders("gradle", Icons::gradle);
     }
 
+    /**
+     * The UI Kit line glyphs are generated: the kit authors them as {@code <symbol>}s mixing
+     * {@code <path>}, {@code <circle>} and {@code <rect>}, and JavaFX takes only path data — so circles
+     * and rounded rects were rewritten as arc commands. A malformed arc is precisely what this parser
+     * swallows silently, leaving an invisible icon, so every converted glyph is asserted here.
+     */
+    @Test
+    void everyKitLineGlyphRendersANonEmptyShape() throws Exception {
+        assertRenders("fileSheet", Icons::fileSheet);
+        assertRenders("newFile", Icons::newFile);
+        assertRenders("newFolder", Icons::newFolder);
+        assertRenders("project", Icons::project);
+        assertRenders("closeTab", Icons::closeTab);
+        assertRenders("save", Icons::save);
+        assertRenders("recent", Icons::recent); // circle → arc
+        assertRenders("undo", Icons::undo);
+        assertRenders("redo", Icons::redo);
+        assertRenders("cut", Icons::cut); // two circles → arcs
+        assertRenders("copy", Icons::copy); // rounded rect → arcs
+        assertRenders("paste", Icons::paste); // two rounded rects
+        assertRenders("find", Icons::find);
+        assertRenders("findInFiles", Icons::findInFiles);
+        assertRenders("run", Icons::run);
+        assertRenders("debug", Icons::debug);
+        assertRenders("stopSquare", Icons::stopSquare);
+        assertRenders("splitVertical", Icons::splitVertical);
+        assertRenders("splitHorizontal", Icons::splitHorizontal);
+        assertRenders("terminal", Icons::terminal);
+        assertRenders("simpleMode", Icons::simpleMode);
+        assertRenders("settings", Icons::settings);
+        assertRenders("about", Icons::about);
+        assertRenders("quit", Icons::quit);
+        assertRenders("structure", Icons::structure);
+        assertRenders("bookmark", Icons::bookmark);
+        assertRenders("git", Icons::git);
+        assertRenders("notes", Icons::notes);
+        assertRenders("htmlPreview", Icons::htmlPreview);
+        assertRenders("warning", Icons::warning);
+        assertRenders("check", Icons::check);
+        assertRenders("pin", Icons::pin);
+        assertRenders("gitLog", Icons::gitLog); // three circles → arcs
+    }
+
     private static void assertRenders(String name, Supplier<Node> glyph) throws Exception {
         Bounds b = FxTestSupport.callOnFx(() -> {
             Node node = glyph.get();

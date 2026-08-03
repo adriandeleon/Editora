@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 92;
+    public static final int SCHEMA_VERSION = 93;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -57,9 +57,13 @@ public class Settings {
      *  is intentionally NOT shown in the Settings window; effective size = round(fontSize * fontZoom). */
     private double fontZoom = 1.0;
 
-    private String theme = "Primer Light";
+    /** App (AtlantaFX) theme. First-run default is the "Caret & Ink" flagship — see {@code Themes.DEFAULT}
+     *  (kept as a literal here so config stays free of a {@code ui} dependency). An existing install keeps
+     *  whatever is already in {@code settings.toml}: Jackson persists every modeled field, so only a fresh
+     *  config dir picks up a changed default. */
+    private String theme = "Editora Light";
     /** Editor color theme (syntax + surface). Follows {@link #theme} until the user picks one. */
-    private String editorTheme = "Primer Light";
+    private String editorTheme = "Editora Light";
     /** True once the user explicitly picks an editor theme; stops it auto-following the app theme. */
     private boolean editorThemeUserSet;
 
@@ -213,6 +217,8 @@ public class Settings {
     private boolean githubSupport = true;
     /** Path/command for the GitHub CLI; blank = resolve {@code gh} on PATH. */
     private String ghPath = "";
+    /** git command/path override; blank = the {@code git} found on the (augmented) PATH. */
+    private String gitPath = "";
     /** Inline git blame: off by default — when Git is on, paints a GitLens-style annotation
      *  ("author, N days ago • summary") after the caret line. */
     private boolean gitBlameInline = false;
@@ -1404,6 +1410,14 @@ public class Settings {
 
     public void setGhPath(String ghPath) {
         this.ghPath = ghPath == null ? "" : ghPath;
+    }
+
+    public String getGitPath() {
+        return gitPath;
+    }
+
+    public void setGitPath(String gitPath) {
+        this.gitPath = gitPath == null ? "" : gitPath;
     }
 
     public boolean isGitBlameInline() {

@@ -1962,7 +1962,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         Path p = b.getPath();
-        String file = p != null ? homeCollapsed(p.toString()) : b.getDisplayName();
+        // getDisplayName() is null for a plain untitled buffer (it's only set by --new-file=name /
+        // templates), and concatenating that rendered a literal "null — … — Editora" title. Fall back to
+        // the buffer's tab title ("untitled"), so the title bar always agrees with the tab.
+        String file = p != null
+                ? homeCollapsed(p.toString())
+                : b.getDisplayName() != null ? b.getDisplayName() : b.getTitle();
         // The OS title bar renders plain text only (no color/italic/weight, so the tab's amber-italic
         // dirty styling can't be mirrored here) — use a prominent leading "●" as the unsaved marker so
         // the modified state is visible even in Zen mode, where the tab strip is hidden.
@@ -5781,6 +5786,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupButton(runConfigRunButton, Icons.run(), tr("tooltip.runConfigRun"), null);
         setupButton(runConfigDebugButton, Icons.debug(), tr("tooltip.runConfigDebug"), null);
         setupButton(runConfigStopButton, Icons.stopSquare(), tr("tooltip.runConfigStop"), null);
+        // The kit's one splash of state colour in the toolbar: green play / accent bug / red stop.
+        runConfigRunButton.getStyleClass().add("run-config-play");
+        runConfigDebugButton.getStyleClass().add("run-config-bug");
+        runConfigStopButton.getStyleClass().add("run-config-stop");
         setupRunConfigCombo();
         setupButton(paletteButton, Icons.palette(), tr("tooltip.palette"), "palette.show");
         setupButton(closeTabButton, Icons.closeTab(), tr("tooltip.closeTab"), "buffer.close");
@@ -14516,6 +14525,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().isGitSupport(),
                         v -> config.getSettings().setGitSupport(v),
                         git::applySupport)));
+        registry.register(Command.of(
+                "git.setCommand",
+                () -> promptStringSetting(
+                        "git.setCommand",
+                        () -> config.getSettings().getGitPath(),
+                        v -> config.getSettings().setGitPath(v),
+                        () -> {
+                            git.applySupport(); // pushes the command + re-probes availability
+                            git.refresh();
+                        })));
         registry.register(Command.of(
                 "view.toggleMermaid",
                 () -> toggleSetting(

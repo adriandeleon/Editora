@@ -173,6 +173,8 @@ public class ToolWindowManager {
         hide.setOnAction(e -> setVisible(tw, false));
         button.setContextMenu(new ContextMenu(hide));
         enableReorderDrag(tw, button);
+        // A retitle (the Project window's "Current Folder" swap) must reach a labeled bottom button.
+        tw.titleProperty().addListener((o, was, now) -> applyStripeLabel(tw, button));
         stripeButtons.put(tw, button);
         if (shouldShowButton(tw)) {
             addButtonOrdered(tw, button);
@@ -638,6 +640,7 @@ public class ToolWindowManager {
 
     /** Adds the button to its current side's stripe at the position dictated by the order list. */
     private void addButtonOrdered(ToolWindow tw, Button button) {
+        applyStripeLabel(tw, button);
         Pane stripe = stripeFor(currentSide(tw));
         int rank = orderIndex(tw);
         int insert = 0;
@@ -648,6 +651,17 @@ public class ToolWindowManager {
             }
         }
         stripe.getChildren().add(insert, button);
+    }
+
+    /**
+     * Bottom-stripe buttons carry their title beside the icon (UI Kit: the bottom rail reads
+     * "Problems  Run  Output  Git Log …"); the vertical rails stay icon-only — a rotated or truncated
+     * label on a 30px rail helps nobody. Every placement funnels through {@link #addButtonOrdered}
+     * (register, availability re-add, visibility re-add, side move), so a window dragged between sides
+     * gains/loses its label automatically.
+     */
+    private void applyStripeLabel(ToolWindow tw, Button button) {
+        button.setText(currentSide(tw) == ToolWindow.Side.BOTTOM ? tw.getTitle() : "");
     }
 
     /** Re-sorts the buttons already in a stripe to match the order list. */

@@ -15,19 +15,30 @@ import atlantafx.base.theme.Theme;
 /** Catalog of AtlantaFX themes available in the Settings window. */
 public final class Themes {
 
-    public static final String DEFAULT = "Primer Light";
+    /**
+     * First-run default: the "Caret & Ink" flagship theme (UI Kit v1). Existing installs keep the
+     * theme already written into {@code settings.toml} — Jackson persists every modeled field, so
+     * only a fresh config dir picks this up. It is also the fallback for an unrecognized theme name.
+     */
+    public static final String DEFAULT = "Editora Light";
 
     /**
      * Community themes vendored from the MIT-licensed
      * <a href="https://github.com/dlsc-software-consulting-gmbh/atlantafx-themes">dlsc atlantafx-themes</a>
      * collection: display name -> {css base name (under {@code styles/atlantafx-themes/}), dark flag,
-     * base background hex (the theme's {@code -color-bg-default})}. All are served by the single
-     * {@code adaptive} editor theme (see {@link EditorThemes}), whose syntax palette is expressed in the
-     * theme's own {@code -color-*} variables. The GitHub colorblind/tritanopia variants are deliberately
+     * base background hex (the theme's {@code -color-bg-default})}. The community ones are all served by
+     * the single {@code adaptive} editor theme (see {@link EditorThemes}), whose syntax palette is expressed
+     * in the theme's own {@code -color-*} variables; the flagship Editora pair below is authored here and
+     * carries its own editor stylesheets. The GitHub colorblind/tritanopia variants are deliberately
      * omitted — their point is carefully distinguishable token colors that the adaptive palette can't
      * honor, and {@code github-light-default} duplicates Primer Light.
      */
     static final Map<String, String[]> BUNDLED = Map.ofEntries(
+            // The flagship "Caret & Ink" pair (UI Kit v1) — authored here, not vendored: the palette is
+            // derived from branding/editora-icon.svg. Unlike the community themes it pairs with its own
+            // editor theme rather than the shared adaptive one (see EditorThemes).
+            Map.entry("Editora Light", new String[] {"editora-light", "false", "#ffffff"}),
+            Map.entry("Editora Dark", new String[] {"editora-dark", "true", "#1b1e2a"}),
             Map.entry("Army Light", new String[] {"army-light", "false", "#e8eccc"}),
             Map.entry("Army Dark", new String[] {"army-dark", "true", "#1c2214"}),
             Map.entry("Autumn", new String[] {"autumn", "true", "#304c64"}),
@@ -49,6 +60,8 @@ public final class Themes {
             Map.entry("Yacht", new String[] {"yacht", "false", "#f2f0ef"}));
 
     public static final List<String> NAMES = List.of(
+            "Editora Light",
+            "Editora Dark",
             "Primer Light",
             "Primer Dark",
             "Nord Light",
@@ -94,7 +107,7 @@ public final class Themes {
         return out;
     }
 
-    /** Theme instance for a display name, falling back to Primer Light for unknowns. */
+    /** Theme instance for a display name, falling back to {@link #DEFAULT} for unknowns. */
     public static Theme themeFor(String name) {
         String key = name == null ? "" : name;
         String[] bundled = BUNDLED.get(key);
@@ -107,13 +120,25 @@ public final class Themes {
             return new BundledTheme(key, user.stylesheetUrl(), user.dark()); // stylesheetUrl is a file: URL
         }
         return switch (key) {
+            case "Primer Light" -> new PrimerLight();
             case "Primer Dark" -> new PrimerDark();
             case "Nord Light" -> new NordLight();
             case "Nord Dark" -> new NordDark();
             case "Cupertino Light" -> new CupertinoLight();
             case "Cupertino Dark" -> new CupertinoDark();
             case "Dracula" -> new Dracula();
-            default -> new PrimerLight();
+            // Unknown name → DEFAULT, which lives in BUNDLED. Resolve it directly rather than
+            // recursing, so a DEFAULT that ever falls out of BUNDLED degrades to Primer Light
+            // instead of looping.
+            default -> {
+                String[] fallback = BUNDLED.get(DEFAULT);
+                yield fallback == null
+                        ? new PrimerLight()
+                        : new BundledTheme(
+                                DEFAULT,
+                                "/com/editora/styles/atlantafx-themes/" + fallback[0] + ".css",
+                                "true".equals(fallback[1]));
+            }
         };
     }
 

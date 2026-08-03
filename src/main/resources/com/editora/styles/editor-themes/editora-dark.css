@@ -1,0 +1,71 @@
+/* Editor theme: Editora Dark ("Caret & Ink"). Overrides app.css + syntax.css defaults.
+
+   Deliberately NOT the shared `adaptive.css`: the UI Kit pins this theme's token palette to
+   the Primer syntax colors (a proven, high-contrast code palette) rather than deriving them
+   from the control theme's semantic roles, which would recolor strings green and numbers teal.
+   The *surfaces* here are Caret & Ink — Ink-navy ground, teal accents, periwinkle keyboard.
+   See syntax.css for why token rules use the compound `.text.<class>` selector. */
+
+.editor-area { -fx-background-color: #171a24; }
+.editor-area .text { -fx-fill: #e8eaf3; }
+.editor-area .caret { -fx-stroke: #43dec5; }
+.editor-area .selection { -fx-fill: #43dec526; }
+.column-ruler { -fx-stroke: #2a2e3f; }
+
+.minimap { -fx-background-color: #141722; -fx-border-color: #2a2e3f; }
+
+.editor-area .lineno { -fx-background-color: #141722; -fx-text-fill: #6c7288; }
+.editor-area .fold-header-line { -fx-background-color: #232736; }
+.editor-area .fold-gutter { -fx-background-color: #141722; }
+.editor-area .fold-gutter .lineno { -fx-background-color: transparent; }
+.editor-area .fold-chevron { -fx-text-fill: #6c7288; }
+.editor-area .fold-chevron:hover { -fx-text-fill: #43dec5; }
+
+.text.keyword    { -fx-fill: #ff7b72; -fx-font-weight: bold; }
+.text.string     { -fx-fill: #a5d6ff; }
+.text.regexp     { -fx-fill: #a5d6ff; -fx-font-style: italic; }
+.text.escape     { -fx-fill: #7ee787; }
+.text.comment    { -fx-fill: #8b949e; -fx-font-style: italic; }
+.text.number     { -fx-fill: #79c0ff; }
+.text.constant   { -fx-fill: #79c0ff; }
+.text.annotation { -fx-fill: #ffa657; }
+.text.type       { -fx-fill: #ffa657; }
+.text.function   { -fx-fill: #d2a8ff; }
+.text.variable   { -fx-fill: #e8eaf3; }
+.text.operator   { -fx-fill: #ff7b72; }
+.text.property   { -fx-fill: #79c0ff; }
+.text.punct      { -fx-fill: #9ba1b5; }
+.text.tag        { -fx-fill: #7ee787; }
+.text.attribute  { -fx-fill: #79c0ff; }
+.text.invalid    { -fx-fill: #12141d; -rtfx-background-color: #ee7a6e; }
+
+.text.heading    { -fx-fill: #43dec5; -fx-font-weight: bold; }
+.text.code       { -fx-fill: #a5d6ff; }
+.text.link       { -fx-fill: #43dec5; -fx-underline: true; }
+.text.bold       { -fx-fill: #e8eaf3; -fx-font-weight: bold; }
+.text.italic     { -fx-fill: #e8eaf3; -fx-font-style: italic; }
+
+/* LSP semantic tokens — mirror this theme's lexical token colors (overlaid on TextMate). */
+.text.sem-parameter { -fx-fill: #e8eaf3; -fx-font-style: italic; }
+.text.sem-variable  { -fx-fill: #e8eaf3; }
+.text.sem-property  { -fx-fill: #79c0ff; }
+.text.sem-function  { -fx-fill: #d2a8ff; }
+.text.sem-type      { -fx-fill: #ffa657; }
+.text.sem-macro     { -fx-fill: #ffa657; }
+.text.sem-constant  { -fx-fill: #79c0ff; }
+.text.sem-deprecated { -fx-fill: #6c7288; -fx-strikethrough: true; }
+
+/* Theme-owned looked-up colours: this theme's exact editor background (the active tab is filled
+   with it, so the tab and the editor read as one surface), and the kit's exact dark periwinkle,
+   replacing app.css's both-grounds compromise. */
+.root { -editor-surface: #171a24; -state-sel: rgba(67, 222, 197, 0.15); -state-key: #9aa2d4; -state-key-bg: rgba(154, 162, 212, 0.16); }
+
+/* Brace match — periwinkle, the kit's one reserved keyboard hue. */
+.text.brace-match { -rtfx-background-color: #9aa2d444; }
+
+/* Project tree: folder accent + muted file, matching this theme. */
+.project-tree { -project-folder-color: #43dec5; -project-file-color: #9ba1b5; }
+
+/* Gutter markers — amber "not durable yet", red for a note. */
+.editor-area .fold-gutter .bookmark-marker { -fx-fill: #e3a93c; }
+.editor-area .fold-gutter .note-marker { -fx-fill: #ee7a6e; }

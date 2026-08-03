@@ -5,10 +5,22 @@ import javafx.scene.Node;
 import javafx.scene.shape.SVGPath;
 
 /**
- * Toolbar icons as Material Design 24dp single-path glyphs, returned wrapped in a {@link Group}
- * and scaled down. The Group's layout bounds reflect the scaled size, so buttons sized to their
- * graphic also shrink. Color is controlled via the {@code toolbar-icon} style class on the inner
- * {@link SVGPath} (see app.css).
+ * Toolbar icons, returned wrapped in a {@link Group} and scaled down. The Group's layout bounds reflect
+ * the scaled size, so buttons sized to their graphic also shrink.
+ *
+ * <p>Two families, mid-migration to the UI Kit:
+ *
+ * <ul>
+ *   <li>{@link #line} — the kit's 16-unit outline glyphs, <b>stroked</b> and coloured through the
+ *       {@code icon-line} style class. The chrome the kit actually draws (toolbar, tool stripe, tabs)
+ *       uses these.
+ *   <li>{@link #of} — the older Material Design 24dp single-path glyphs, <b>filled</b> and coloured
+ *       through {@code toolbar-icon}. Still used everywhere the kit specifies no glyph (file-type icons,
+ *       context menus, build-tool and browser brand marks).
+ * </ul>
+ *
+ * <p>The two are not interchangeable: one is coloured by {@code -fx-fill} and the other by
+ * {@code -fx-stroke}, so a glyph moving between families needs its CSS moved too (see app.css).
  *
  * <p>Each call returns a fresh node — a JavaFX node can only have one parent.
  */
@@ -18,6 +30,27 @@ final class Icons {
     private static final double ICON_SCALE = 0.8;
 
     private Icons() {}
+
+    /** Scale for a kit line glyph: its 16-unit box rendered at the same visual size as a 24dp Material one. */
+    private static final double LINE_SCALE = ICON_SCALE * 24.0 / 16.0;
+
+    /**
+     * A UI Kit line glyph (16-unit box, stroked not filled) — see {@code .icon-line} in app.css.
+     *
+     * <p>Deliberately <em>not</em> tagged {@code toolbar-icon}: that class is Editora's fill-based
+     * coloring convention ({@code -fx-fill} in ~49 rules), and an outline glyph must be stroked with the
+     * color and filled with nothing. Wearing both classes would let any {@code X .toolbar-icon} rule
+     * (higher specificity than a bare {@code .icon-line}) paint the outline solid. The contexts a line
+     * glyph actually appears in carry their own {@code -fx-stroke} rules instead.
+     */
+    static Node line(String content) {
+        SVGPath svg = new SVGPath();
+        svg.setContent(content);
+        svg.getStyleClass().add("icon-line");
+        svg.setScaleX(LINE_SCALE);
+        svg.setScaleY(LINE_SCALE);
+        return new Group(svg);
+    }
 
     static Node of(String content) {
         return of(content, (String[]) null);
@@ -37,13 +70,12 @@ final class Icons {
     }
 
     static Node newFile() {
-        return of("M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z");
+        return line("M4 1.5h5l3 3v10H4zM9 1.5v3h3M8 7.2v3.6M6.2 9h3.6");
     }
 
-    /** A folder-with-plus glyph (Material "create_new_folder") for the "New Folder" action. */
+    /** A folder-with-plus glyph for the "New Folder" action. */
     static Node newFolder() {
-        return of("M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 "
-                + "8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z");
+        return line("M1.5 3.5h4.2l1.5 2h7.3v7H1.5zM8 7.7v3M6.5 9.2h3");
     }
 
     /** A robot glyph (MDI "robot") for the AI Agent chat tool window. */
@@ -57,7 +89,8 @@ final class Icons {
 
     /** A minimal square-frame glyph for the Simple-UI-mode toggle. */
     static Node simpleMode() {
-        return of("M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z");
+        return line(
+                "M5.0 3.0h6.0a2.0 2.0 0 0 1 2.0 2.0v6.0a2.0 2.0 0 0 1 -2.0 2.0h-6.0a2.0 2.0 0 0 1 -2.0 -2.0v-6.0a2.0 2.0 0 0 1 2.0 -2.0z");
     }
 
     /** A cloud glyph marking a remote (SFTP) file/tab. */
@@ -66,12 +99,9 @@ final class Icons {
                 + "3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z");
     }
 
-    /** Source-control branch glyph (Material "account_tree"/fork) for the Git tool window stripe. */
+    /** Source-control branch glyph for the Git tool window stripe. */
     static Node git() {
-        return of("M17 6c0-1.66-1.34-3-3-3s-3 1.34-3 3c0 1.3.84 2.4 2 2.82V11c0 1.1-.9 2-2 2H8.82C8.4 "
-                + "11.84 7.3 11 6 11c-1.66 0-3 1.34-3 3s1.34 3 3 3c1.3 0 2.4-.84 2.82-2H11c2.21 0 4-1.79 "
-                + "4-4V8.82C16.16 8.4 17 7.3 17 6zM6 15c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 "
-                + "1zm8-8c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z");
+        return line("M5.4 8.0a2.6 2.6 0 1 0 5.2 0a2.6 2.6 0 1 0 -5.2 0M8 1.5v4M8 10.5v4");
     }
 
     /** The GitHub "octocat" mark (Simple Icons, CC0) — the GitHub tool window stripe. */
@@ -118,11 +148,10 @@ final class Icons {
         return of("M12,2 L13,11 L22,12 L13,13 L12,22 L11,13 L2,12 L11,11 Z");
     }
 
-    /** Clock-with-arrow "history" glyph (Material "history") for the Git Log tool window. */
+    /** Clock-with-arrow "history" glyph for the Git Log tool window. */
     static Node gitLog() {
-        return of("M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 "
-                + "7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 "
-                + "9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z");
+        return line(
+                "M2.7 4.0a1.8 1.8 0 1 0 3.6 0a1.8 1.8 0 1 0 -3.6 0M2.7 12.0a1.8 1.8 0 1 0 3.6 0a1.8 1.8 0 1 0 -3.6 0M9.7 8.0a1.8 1.8 0 1 0 3.6 0a1.8 1.8 0 1 0 -3.6 0M4.5 5.8v4.4M6.3 4H9a2.5 2.5 0 0 1 2.5 2.5");
     }
 
     /** Clock-face "schedule" glyph (Material) for the Local File History tool window — distinct from the
@@ -158,8 +187,7 @@ final class Icons {
     }
 
     static Node save() {
-        return of("M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 "
-                + "0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z");
+        return line("M2.5 2.5h9l2 2v9h-11zM5 2.5v3.5h5V2.5M5 13.5V9.5h6v4");
     }
 
     static Node saveAs() {
@@ -168,27 +196,21 @@ final class Icons {
     }
 
     static Node undo() {
-        return of("M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 "
-                + "3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z");
+        return line("M6 3.2L3.2 6 6 8.8M3.2 6h6.3a3.7 3.7 0 0 1 0 7.4H7");
     }
 
     static Node redo() {
-        return of("M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 "
-                + "4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z");
+        return line("M10 3.2L12.8 6 10 8.8M12.8 6H6.5a3.7 3.7 0 0 0 0 7.4H9");
     }
 
     static Node cut() {
-        return of("M9.64 7.64c.23-.5.36-1.05.36-1.64 0-2.21-1.79-4-4-4S2 3.79 2 6s1.79 4 4 4c.59 0 "
-                + "1.14-.13 1.64-.36L10 12l-2.36 2.36C7.14 14.13 6.59 14 6 14c-2.21 0-4 1.79-4 4s1.79 "
-                + "4 4 4 4-1.79 4-4c0-.59-.13-1.14-.36-1.64L12 14l7 7h3v-1L9.64 7.64zM6 8c-1.1 "
-                + "0-2-.89-2-2s.9-2 2-2 2 .89 2 2-.9 2-2 2zm0 12c-1.1 0-2-.89-2-2s.9-2 2-2 2 .89 2 "
-                + "2-.9 2-2 2zm6-7.5c-.28 0-.5-.22-.5-.5s.22-.5.5-.5.5.22.5.5-.22.5-.5.5zM19 3l-6 6 2 "
-                + "2 7-7V3z");
+        return line(
+                "M2.5000000000000004 11.6a1.9 1.9 0 1 0 3.8 0a1.9 1.9 0 1 0 -3.8 0M9.7 11.6a1.9 1.9 0 1 0 3.8 0a1.9 1.9 0 1 0 -3.8 0M5.8 10.2L12.6 2.4M10.2 10.2L3.4 2.4");
     }
 
     static Node copy() {
-        return of("M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 "
-                + "0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z");
+        return line(
+                "M7.0 5.5h5.0a1.5 1.5 0 0 1 1.5 1.5v5.0a1.5 1.5 0 0 1 -1.5 1.5h-5.0a1.5 1.5 0 0 1 -1.5 -1.5v-5.0a1.5 1.5 0 0 1 1.5 -1.5zM3 10.5V3.6A1.1 1.1 0 0 1 4.1 2.5H11");
     }
 
     /** Material "select_all". */
@@ -200,22 +222,17 @@ final class Icons {
     }
 
     static Node paste() {
-        return of("M19 2h-4.18C14.4.84 13.3 0 12 0c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 "
-                + "2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 "
-                + ".45-1 1-1zm7 18H5V4h2v3h10V4h2v16z");
+        return line(
+                "M5.0 3.0h6.0a1.5 1.5 0 0 1 1.5 1.5v8.0a1.5 1.5 0 0 1 -1.5 1.5h-6.0a1.5 1.5 0 0 1 -1.5 -1.5v-8.0a1.5 1.5 0 0 1 1.5 -1.5zM7.0 1.6h2.0a1.0 1.0 0 0 1 1.0 1.0v0.7999999999999998a1.0 1.0 0 0 1 -1.0 1.0h-2.0a1.0 1.0 0 0 1 -1.0 -1.0v-0.7999999999999998a1.0 1.0 0 0 1 1.0 -1.0z");
     }
 
     static Node find() {
-        return of("M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 "
-                + "9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 "
-                + "0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z");
+        return line("M2.5999999999999996 7.0a4.4 4.4 0 1 0 8.8 0a4.4 4.4 0 1 0 -8.8 0M10.4 10.4L14 14");
     }
 
     static Node findInFiles() {
-        return of("M20 19.59V8l-6-6H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c.45 0 .85-.15 "
-                + "1.19-.4l-4.43-4.43c-.8.52-1.74.83-2.76.83-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 "
-                + "5c0 1.02-.31 1.96-.83 2.75L20 19.59zM9 13c0 1.66 1.34 3 3 3s3-1.34 3-3-1.34-3-3-3-3 "
-                + "1.34-3 3z");
+        return line(
+                "M4.6 6.6a4.0 4.0 0 1 0 8.0 0a4.0 4.0 0 1 0 -8.0 0M11.7 9.7L14.5 12.5M1.5 4.5h3M1.5 7.5h2M1.5 10.5h3.5");
     }
 
     static Node tools() {
@@ -228,14 +245,15 @@ final class Icons {
         return of("M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z");
     }
 
-    /** Run: a play triangle (Material "play_arrow") for running a compact source file. */
+    /** Run: a play triangle for running a compact source file. */
     static Node run() {
-        return of("M8 5v14l11-7z");
+        return line("M5.2 3.4v9.2l7.4-4.6z");
     }
 
-    /** Filled square (Material "stop") — stop a running build/task in the build-tool tree toolbar. */
+    /** Filled square — stop a running build/task in the build-tool tree toolbar. */
     static Node stopSquare() {
-        return of("M6 6h12v12H6z");
+        return line(
+                "M5.2 4.0h5.6a1.2 1.2 0 0 1 1.2 1.2v5.6a1.2 1.2 0 0 1 -1.2 1.2h-5.6a1.2 1.2 0 0 1 -1.2 -1.2v-5.6a1.2 1.2 0 0 1 1.2 -1.2z");
     }
 
     /** Test Results: Material Design "test-tube" (beaker) — the test-runner tool window. */
@@ -284,11 +302,8 @@ final class Icons {
 
     /** Debug: Material "bug_report" — for the Debug tool window + status segment. */
     static Node debug() {
-        return of(
-                "M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 "
-                        + "5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05"
-                        + ".33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 "
-                        + "5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z");
+        return line(
+                "M4.2 9.0a3.8 3.8 0 1 0 7.6 0a3.8 3.8 0 1 0 -7.6 0M8 5.2V3.4M4.8 6.4L3.3 4.9M11.2 6.4l1.5-1.5M4.2 9H2M14 9h-2.2M4.8 11.6l-1.5 1.5M11.2 11.6l1.5 1.5");
     }
 
     /** Debug "stop" — a filled square (Material "stop"). */
@@ -328,8 +343,7 @@ final class Icons {
     }
 
     static Node closeTab() {
-        return of("M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 "
-                + "19 17.59 13.41 12z");
+        return line("M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6");
     }
 
     /**
@@ -373,20 +387,13 @@ final class Icons {
 
     /** Material "terminal" — open a terminal at a folder. */
     static Node terminal() {
-        return of("M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8h16v10z"
-                + "M18 17h-6v-2h6v2zM7.5 17l-1.41-1.41L8.67 13l-2.59-2.59L7.5 9l4 4-4 4z");
+        return line(
+                "M3.3 2.5h9.4a1.8 1.8 0 0 1 1.8 1.8v7.4a1.8 1.8 0 0 1 -1.8 1.8h-9.4a1.8 1.8 0 0 1 -1.8 -1.8v-7.4a1.8 1.8 0 0 1 1.8 -1.8zM4.3 6l2.4 2-2.4 2M8.6 10.5h3.2");
     }
 
     static Node settings() {
-        return of("M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41."
-                + "12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-"
-                + "2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-"
-                + "1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-."
-                + "05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22."
-                + "37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 ."
-                + "44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-"
-                + "3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 "
-                + "3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z");
+        return line(
+                "M5.2 8.0a2.8 2.8 0 1 0 5.6 0a2.8 2.8 0 1 0 -5.6 0M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4");
     }
 
     static Node trash() {
@@ -394,21 +401,15 @@ final class Icons {
     }
 
     static Node recent() {
-        // Material "history" — a clock with a counter-clockwise arrow for recent files.
-        return of("M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 "
-                + "7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 "
-                + "0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z");
+        return line("M2.0 8.0a6.0 6.0 0 1 0 12.0 0a6.0 6.0 0 1 0 -12.0 0M8 4.6V8l2.4 1.5");
     }
 
     static Node quit() {
-        return of("M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 "
-                + "7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 "
-                + "4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z");
+        return line("M8 1.8V7M4.6 3.9a5.6 5.6 0 1 0 6.8 0");
     }
 
     static Node project() {
-        // Material "account_tree" — a tree-like icon for the Project tool window.
-        return of("M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3z");
+        return line("M1.5 3.5h4.2l1.5 2h7.3v7H1.5z");
     }
 
     static Node openFolder() {
@@ -418,18 +419,15 @@ final class Icons {
     }
 
     static Node bookmark() {
-        return of("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z");
+        return line("M4.5 2h7v12L8 10.6 4.5 14z");
     }
 
     static Node notes() {
-        // Material "comment" — a speech bubble, used for the Personal Notes tool window.
-        return of("M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z");
+        return line("M3 2.5h10v8l-3 3H3zM10 13.5v-3h3");
     }
 
     static Node structure() {
-        // Material "device_hub" — a node/tree graph, used for the Structure tool window.
-        return of("M17 16l-4-4V8.82C14.16 8.4 15 7.3 15 6c0-1.66-1.34-3-3-3S9 4.34 9 6c0 1.3.84 "
-                + "2.4 2 2.82V12l-4 4H3v5h5v-3.05l4-4.2 4 4.2V21h5v-5h-4z");
+        return line("M3 4h10M5.5 8h7.5M8 12h5");
     }
 
     /** A filled "Z" glyph (top + bottom bars joined by a diagonal), for the Zen-mode exit button. */
@@ -455,8 +453,7 @@ final class Icons {
     }
 
     static Node fileSheet() {
-        return of("M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v"
-                + "-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z");
+        return line("M4 1.5h5l3 3v10H4zM9 1.5v3h3");
     }
 
     /** Diff/compare glyph (Material "compare_arrows") — diff viewer tab + the vs-HEAD command. */
@@ -500,27 +497,25 @@ final class Icons {
     }
 
     static Node warning() {
-        return of("M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z");
+        return line("M8 2.2L14.6 13.4H1.4zM8 6.8v3M8 11.6v.2");
     }
 
     static Node splitVertical() {
-        // Two panes side by side (a vertical divider) — the "split side by side" action.
-        return of("M4 5h6v14H4V5zm10 0h6v14h-6V5z");
+        return line(
+                "M3.5 3.0h9.0a1.5 1.5 0 0 1 1.5 1.5v7.0a1.5 1.5 0 0 1 -1.5 1.5h-9.0a1.5 1.5 0 0 1 -1.5 -1.5v-7.0a1.5 1.5 0 0 1 1.5 -1.5zM8 3v10");
     }
 
     static Node splitHorizontal() {
-        // Two panes stacked (a horizontal divider) — the "split stacked" action.
-        return of("M5 4h14v6H5V4zm0 10h14v6H5v-6z");
+        return line(
+                "M3.5 3.0h9.0a1.5 1.5 0 0 1 1.5 1.5v7.0a1.5 1.5 0 0 1 -1.5 1.5h-9.0a1.5 1.5 0 0 1 -1.5 -1.5v-7.0a1.5 1.5 0 0 1 1.5 -1.5zM2 8h12");
     }
 
     static Node pin() {
-        // Material "push_pin" — a thumbtack, used to mark pinned tabs.
-        return of("M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z");
+        return line("M9.5 2l4.5 4.5-2.6.6-2.5 2.5.3 3.4-2.7-2.7L3 14M6.5 7.3L4 4.8l3-.5z");
     }
 
     static Node about() {
-        return of("M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 "
-                + "2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z");
+        return line("M1.7000000000000002 8.0a6.3 6.3 0 1 0 12.6 0a6.3 6.3 0 1 0 -12.6 0M8 7.4V11M8 5.1v.2");
     }
 
     /** Markdown view: Editor only (Material "subject" — text lines). */
@@ -542,10 +537,7 @@ final class Icons {
 
     /** Material "public" (globe) — the HTML Live Preview "open in browser" control. */
     static Node htmlPreview() {
-        return of("M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-"
-                + "3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-"
-                + "1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 "
-                + "5 7.41 0 2.08-.8 3.97-2.1 5.39z");
+        return line("M1.7999999999999998 8.0a6.2 6.2 0 1 0 12.4 0a6.2 6.2 0 1 0 -12.4 0M1.8 8h12.4");
     }
 
     /** A compass (Material "explore") — Safari. */
@@ -699,7 +691,7 @@ final class Icons {
 
     /** Material "check" / done — "Resolve" note context-menu item. */
     static Node check() {
-        return of("M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z");
+        return line("M3 8.6l3.2 3.2L13 4.6");
     }
 
     /** Material "remove" (minus) — "Unstage" git context-menu item. */

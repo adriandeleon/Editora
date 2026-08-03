@@ -19,9 +19,11 @@ import static com.editora.i18n.Messages.tr;
 public class MarkdownViewToggle extends HBox {
 
     private final EditorBuffer buffer;
-    private final ToggleButton editor = segment(Icons.previewEditor(), tr("markdown.editor"));
-    private final ToggleButton split = segment(Icons.previewSplit(), tr("markdown.split"));
-    private final ToggleButton preview = segment(Icons.previewOnly(), tr("markdown.preview"));
+    // Text segments, not icons — the kit's view toggle reads "Editor | Split | Preview", which needs no
+    // tooltip round-trip to decode. Split gets a short label; its tooltip keeps the full phrase.
+    private final ToggleButton editor = segment(tr("markdown.editor"), tr("markdown.editor"));
+    private final ToggleButton split = segment(tr("markdown.split.short"), tr("markdown.split"));
+    private final ToggleButton preview = segment(tr("markdown.preview"), tr("markdown.preview"));
     private boolean syncing;
 
     public MarkdownViewToggle(EditorBuffer buffer) {
@@ -67,9 +69,8 @@ public class MarkdownViewToggle extends HBox {
         }
     }
 
-    private static ToggleButton segment(javafx.scene.Node icon, String tooltip) {
-        ToggleButton b = new ToggleButton();
-        b.setGraphic(icon);
+    private static ToggleButton segment(String label, String tooltip) {
+        ToggleButton b = new ToggleButton(label);
         b.getStyleClass().addAll("md-viewmode-segment", "flat");
         b.setTooltip(new Tooltip(tooltip));
         b.setFocusTraversable(false);

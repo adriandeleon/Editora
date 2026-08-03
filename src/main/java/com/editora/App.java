@@ -103,12 +103,10 @@ public class App extends Application {
         // caret movement + basic editing without threading it through their constructors (see TextInputKeymap).
         com.editora.command.TextInputKeymap.setShared(keymap);
 
-        // Experiment: on macOS, render the UI chrome in the native system font (San Francisco) instead of
-        // AtlantaFX's Inter — across every window. A listener on the live window list covers windows
-        // opened later (so each project window picks it up). See installMacSystemFont.
-        if (isMac()) {
-            installMacSystemFont();
-        }
+        // Render the UI chrome in Inter on every platform (UI Kit v1). A listener on the live window
+        // list covers windows opened later, so each project window, dialog and popup picks it up.
+        // See installUiFont.
+        installUiFont();
 
         // WindowManager builds each window (reusing the primary stage for the first) and, with projects
         // enabled, restores every window that was open at last quit. CLI targets go to the first window.
@@ -136,33 +134,28 @@ public class App extends Application {
         }
     }
 
-    /** True when running on macOS (used to opt the UI chrome into the native system font). */
+    /** True when running on macOS (Finder "Open With" delivers files via an Apple Event, not argv). */
     private static boolean isMac() {
         return System.getProperty("os.name", "")
                 .toLowerCase(java.util.Locale.ROOT)
                 .contains("mac");
     }
 
-    /**
-     * The macOS UI-font override stylesheet (the {@code .root} system-font rule). It maps San Francisco
-     * via the logical {@code "System"} family — the named {@code .AppleSystemUIFont} / {@code SF Pro}
-     * families aren't in {@link javafx.scene.text.Font#getFamilies()}.
-     */
+    /** The UI-chrome font stylesheet (the {@code .root} Inter rule). See {@code styles/ui-font.css}. */
     private static final String UI_FONT_CSS =
-            App.class.getResource("styles/ui-system-font.css").toExternalForm();
+            App.class.getResource("styles/ui-font.css").toExternalForm();
 
     /**
-     * macOS only: render every window's UI chrome in the native system font instead of AtlantaFX's Inter.
-     * Dialogs and popups (alerts, the Settings window, the command palette, context menus, tooltips) each
-     * live in their own scene that doesn't share {@code app.css}, so the override is added as a small
-     * author-level <em>scene</em> stylesheet on each window's scene. A scene stylesheet overrides the
-     * AtlantaFX user-agent stylesheet and — unlike an inline style on the root — is re-applied cleanly
-     * when the theme is switched at runtime ({@code setUserAgentStylesheet}), which is exactly how
-     * {@code app.css} already behaves. The editor surface keeps its own monospace font because
-     * {@code .editor-area} sets {@code -fx-font-family} explicitly. A listener on the live window list
-     * covers windows opened later.
+     * Render every window's UI chrome in Inter (UI Kit v1). Dialogs and popups (alerts, the Settings
+     * window, the command palette, context menus, tooltips) each live in their own scene that doesn't
+     * share {@code app.css}, so the rule is added as a small author-level <em>scene</em> stylesheet on
+     * each window's scene. A scene stylesheet overrides the AtlantaFX user-agent stylesheet and — unlike
+     * an inline style on the root — is re-applied cleanly when the theme is switched at runtime
+     * ({@code setUserAgentStylesheet}), which is exactly how {@code app.css} already behaves. The editor
+     * surface keeps its own monospace font because {@code .editor-area} sets {@code -fx-font-family}
+     * explicitly. A listener on the live window list covers windows opened later.
      */
-    private static void installMacSystemFont() {
+    private static void installUiFont() {
         javafx.stage.Window.getWindows().addListener((javafx.collections.ListChangeListener<javafx.stage.Window>)
                 change -> {
                     while (change.next()) {

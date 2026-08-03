@@ -14,6 +14,10 @@ import javafx.scene.paint.Color;
  * <p>Theme names mirror the AtlantaFX theme names so an AtlantaFX selection has a natural matching
  * editor theme ({@link #defaultFor}); the user can still pick a different editor theme.
  *
+ * <p>The flagship {@code Editora Light}/{@code Editora Dark} pair ("Caret & Ink", UI Kit v1) carries its
+ * own stylesheets, because its syntax palette is pinned to the Primer token colors rather than derived
+ * from the control theme's semantic roles.
+ *
  * <p>The bundled AtlantaFX community themes (Blue/Navy/Army, the seasonal set, Blacky, News, Yacht,
  * …) all share the single {@code adaptive} override stylesheet, whose syntax palette is expressed in
  * each theme's own {@code -color-*} variables. Only the code-driven colors below (which JavaFX CSS
@@ -23,9 +27,15 @@ import javafx.scene.paint.Color;
  */
 public final class EditorThemes {
 
-    public static final String DEFAULT = "Primer Light";
+    /** First-run default, mirroring {@link Themes#DEFAULT}; also the fallback for an unknown name. */
+    public static final String DEFAULT = "Editora Light";
+
+    /** The one theme with no override stylesheet — its colors <em>are</em> the app.css/syntax.css defaults. */
+    static final String BARE = "Primer Light";
 
     public static final List<String> NAMES = List.of(
+            "Editora Light",
+            "Editora Dark",
             "Primer Light",
             "Primer Dark",
             "Nord Light",
@@ -55,8 +65,13 @@ public final class EditorThemes {
             "Winter Dark",
             "Yacht");
 
-    /** Theme name -> override stylesheet base name; Primer Light is the default (no override). */
+    /** Theme name -> override stylesheet base name; {@link #BARE} has none (it is the app.css default). */
     private static final Map<String, String> CSS = Map.ofEntries(
+            // The flagship pair gets its own stylesheets rather than the shared `adaptive` one: the UI
+            // Kit pins their syntax palette to the Primer token colors, which the adaptive mapping
+            // (keyword→danger, string→success, number→accent) can't express.
+            Map.entry("Editora Light", "editora-light"),
+            Map.entry("Editora Dark", "editora-dark"),
             Map.entry("Primer Dark", "primer-dark"),
             Map.entry("Nord Light", "nord-light"),
             Map.entry("Nord Dark", "nord-dark"),
@@ -87,6 +102,8 @@ public final class EditorThemes {
 
     /** Theme name -> editor background color (mirrors {@code .editor-area} in each theme's CSS). */
     private static final Map<String, String> EDITOR_BG = Map.ofEntries(
+            Map.entry("Editora Light", "#ffffff"),
+            Map.entry("Editora Dark", "#171a24"),
             Map.entry("Primer Light", "#ffffff"),
             Map.entry("Primer Dark", "#0d1117"),
             Map.entry("Nord Light", "#eceff4"),
@@ -118,6 +135,8 @@ public final class EditorThemes {
 
     /** Theme name -> editor foreground/text color (mirrors {@code .editor-area .text}). */
     private static final Map<String, String> EDITOR_FG = Map.ofEntries(
+            Map.entry("Editora Light", "#1b1e2a"),
+            Map.entry("Editora Dark", "#e8eaf3"),
             Map.entry("Primer Light", "#24292f"),
             Map.entry("Primer Dark", "#c9d1d9"),
             Map.entry("Nord Light", "#2e3440"),
@@ -149,6 +168,8 @@ public final class EditorThemes {
 
     /** Theme name -> current-line highlight color (RichTextFX sets this in code, not via CSS). */
     private static final Map<String, String> LINE_HIGHLIGHT = Map.ofEntries(
+            Map.entry("Editora Light", "#f0f8f7"),
+            Map.entry("Editora Dark", "#1a282f"),
             Map.entry("Primer Light", "#dfe7f0"),
             Map.entry("Primer Dark", "#161b22"),
             Map.entry("Nord Light", "#e5e9f0"),
@@ -181,6 +202,8 @@ public final class EditorThemes {
     /** Theme name -> minimap block color (the minimap is canvas-drawn, not CSS). Dark themes use a
      *  brighter block than the gutter text so the overview stays legible on a dark background. */
     private static final Map<String, String> MINIMAP_TEXT = Map.ofEntries(
+            Map.entry("Editora Light", "#575d6e"),
+            Map.entry("Editora Dark", "#9ba1b5"),
             Map.entry("Primer Light", "#9aa5b1"),
             Map.entry("Primer Dark", "#9da7b3"),
             Map.entry("Nord Light", "#9aa3b2"),
@@ -213,6 +236,8 @@ public final class EditorThemes {
     /** Theme name -> minimap viewport-overlay color (8-digit hex incl. alpha). Dark themes use a
      *  stronger alpha so the visible-range box reads against the dark background. */
     private static final Map<String, String> MINIMAP_VIEWPORT = Map.ofEntries(
+            Map.entry("Editora Light", "#0e857724"),
+            Map.entry("Editora Dark", "#43dec540"),
             Map.entry("Primer Light", "#0969da24"),
             Map.entry("Primer Dark", "#58a6ff40"),
             Map.entry("Nord Light", "#5e81ac29"),
@@ -278,8 +303,8 @@ public final class EditorThemes {
     }
 
     /**
-     * External-form URL of the override stylesheet for {@code name}, or {@code null} for the default
-     * theme (whose colors already live in {@code app.css} / {@code syntax.css}). User AtlantaFX themes use
+     * External-form URL of the override stylesheet for {@code name}, or {@code null} for {@link #BARE}
+     * (whose colors already live in {@code app.css} / {@code syntax.css}). User AtlantaFX themes use
      * the shared {@code adaptive.css}; user editor-override themes use their own file.
      */
     public static String stylesheetFor(String name) {

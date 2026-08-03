@@ -2,6 +2,71 @@
    Standard controls (toolbar, buttons, text fields, list view) are themed by AtlantaFX;
    the rules below cover the RichTextFX editor, which AtlantaFX does not style. */
 
+/* ============================================================================
+   State language (UI Kit v1) — one vocabulary, every surface.
+
+   The same state must wear the same color in a tab, a status segment, a tree row,
+   a picker and a Settings row, so each meaning is named once here and referenced
+   everywhere else. Meanings, not decorations:
+
+     amber   "not durable yet"  — unsaved, read-only, narrowed, a snapshot build
+     red     broken             — errors, breakpoints, recording
+     green   verified           — found, added, passing, running
+     accent  the app is offering something — updates, links, current branch
+     olive   untracked          } git-only hues, kept distinct from the four above
+     violet  renamed            }
+     key     the keyboard       — chord chips and brace matching, and nothing else
+
+   These are JavaFX looked-up colors (the `-project-folder-color` idiom): defining them
+   on `.root` here lets any editor theme override the whole vocabulary in one place.
+   The first six chain to the active theme's semantic roles, so they track the theme
+   for free. Periwinkle has no AtlantaFX role — it is a brand hue — so it is a literal;
+   the flagship dark theme overrides it (editor-themes/editora-dark.css). */
+.root {
+    -state-amber: -color-warning-fg;
+    -state-amber-bg: -color-warning-subtle;
+    -state-amber-hover: -color-warning-muted;
+    -state-red: -color-danger-fg;
+    -state-red-bg: -color-danger-subtle;
+    -state-red-hover: -color-danger-muted;
+    -state-green: -color-success-fg;
+    -state-green-bg: -color-success-subtle;
+    -state-green-hover: -color-success-muted;
+    -state-accent: -color-accent-fg;
+    -state-accent-bg: -color-accent-subtle;
+    -state-accent-hover: -color-accent-muted;
+    -state-olive: #6e7b25;
+    -state-violet: #8250df;
+    /* The kit's periwinkle is a pair (#5c66ae light / #9aa2d4 dark), but this default has to serve
+       every theme, light and dark, from one value — so it is a mid tone that keeps usable contrast
+       on both a white and a near-black ground. The flagship themes override it with the exact pair
+       (editor-themes/editora-{light,dark}.css); any theme can do the same. */
+    -state-key: #7078c0;
+    -state-key-bg: rgba(112, 120, 192, 0.15);
+    /* Selection wash for overlay rows (kit --sel, a ~13% accent tint). The default chains to the
+       theme's accent-subtle; the flagship editor themes override it with the kit's exact rgba. */
+    -state-sel: -color-accent-subtle;
+    /* The editor's own background, exposed to chrome that must match it exactly (the active tab).
+       Editor themes set .editor-area's background directly, which no other rule can read — so each
+       one also restates it here. Defaults to the panel surface for themes that don't. */
+    -editor-surface: -color-bg-default;
+}
+
+/* A status pill: a tinted, rounded chip that says "this state is worth noticing".
+   Shape only — the four color variants below carry the meaning. Applied alongside the
+   segment's own class, which is what the Java code adds. */
+.state-pill {
+    -fx-font-weight: bold;
+    -fx-background-radius: 999;
+    -fx-padding: 1 8 1 8;
+}
+
+/* Keybinding chord chip — periwinkle wherever a binding is shown, so "what do I press"
+   is always the same color and is never confused with an accent link or a state. */
+.chord-chip {
+    -fx-text-fill: -state-key;
+}
+
 .editor-area {
     -fx-background-color: #ffffff;
     -fx-font-family: "JetBrains Mono", "monospace";
@@ -214,7 +279,7 @@
     -fx-text-fill: -color-accent-emphasis;
 }
 .scope-toggle:selected {
-    -fx-background-color: -color-accent-muted;
+    -fx-background-color: -state-accent-hover;
 }
 .scope-toggle:selected .toolbar-icon {
     -fx-fill: -color-accent-fg;
@@ -721,24 +786,26 @@
     -fx-background: #0d1117;
 }
 
-/* The floating Editor/Split/Preview control, top-right of a Markdown editor. */
+/* The floating Editor/Split/Preview control, top-right of a Markdown editor — the kit's viewtoggle:
+   text segments on a small rounded card, the active one washed in the selection tint. */
 .md-viewmode-toggle {
-    -fx-background-color: -color-bg-subtle;
-    -fx-border-color: -color-border-default;
-    -fx-border-radius: 4;
-    -fx-background-radius: 4;
-    -fx-padding: 1;
-    -fx-spacing: 0;
+    -fx-background-color: -color-bg-overlay;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 2;
+    -fx-spacing: 2;
     -fx-opacity: 0.92;
 }
 .md-viewmode-segment {
-    -fx-padding: 2 5 2 5;
-    -fx-background-radius: 3;
+    -fx-padding: 3 9 3 9;
+    -fx-background-radius: 6;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
 }
-.md-viewmode-segment .toolbar-icon { -fx-fill: -color-fg-muted; }
-.md-viewmode-segment:hover .toolbar-icon { -fx-fill: -color-fg-default; }
-.md-viewmode-segment:selected { -fx-background-color: -color-accent-subtle; }
-.md-viewmode-segment:selected .toolbar-icon { -fx-fill: -color-accent-fg; }
+.md-viewmode-segment:hover { -fx-text-fill: -color-fg-default; }
+.md-viewmode-segment:selected { -fx-background-color: -state-sel; -fx-text-fill: -color-accent-fg; }
 
 /* HTML Live Preview: the floating "open in browser" globe, top-right of an HTML editor. */
 .html-preview-toggle {
@@ -869,8 +936,8 @@
     -fx-background-radius: 3;
 }
 /* Open file with unsaved changes — mirrors the dirty-tab treatment (amber italic + "• " prefix). */
-.project-tree .modified-file { -fx-text-fill: #bf8700; -fx-font-style: italic; }
-.project-tree .modified-file .toolbar-icon { -fx-fill: #bf8700; }
+.project-tree .modified-file { -fx-text-fill: -state-amber; -fx-font-style: italic; }
+.project-tree .modified-file .toolbar-icon { -fx-fill: -state-amber; }
 /* Git working-tree status colors (IntelliJ-style): added = green, modified = blue, deleted = gray +
    renamed = violet, untracked = olive; a folder with changed descendants is tinted blue. Shared by the
    Project tree (file coloring + status letter) AND the Commit tool window (.git-tree), so the two match.
@@ -879,10 +946,10 @@
 .project-tree .git-status-modified .toolbar-icon, .git-tree .git-status-modified .toolbar-icon { -fx-fill: -color-accent-fg; }
 .project-tree .git-status-added, .git-tree .git-status-added { -fx-text-fill: -color-success-fg; }
 .project-tree .git-status-added .toolbar-icon, .git-tree .git-status-added .toolbar-icon { -fx-fill: -color-success-fg; }
-.project-tree .git-status-untracked, .git-tree .git-status-untracked { -fx-text-fill: #8a7f16; }
-.project-tree .git-status-untracked .toolbar-icon, .git-tree .git-status-untracked .toolbar-icon { -fx-fill: #8a7f16; }
-.project-tree .git-status-renamed, .git-tree .git-status-renamed { -fx-text-fill: #9a5cd0; }
-.project-tree .git-status-renamed .toolbar-icon, .git-tree .git-status-renamed .toolbar-icon { -fx-fill: #9a5cd0; }
+.project-tree .git-status-untracked, .git-tree .git-status-untracked { -fx-text-fill: -state-olive; }
+.project-tree .git-status-untracked .toolbar-icon, .git-tree .git-status-untracked .toolbar-icon { -fx-fill: -state-olive; }
+.project-tree .git-status-renamed, .git-tree .git-status-renamed { -fx-text-fill: -state-violet; }
+.project-tree .git-status-renamed .toolbar-icon, .git-tree .git-status-renamed .toolbar-icon { -fx-fill: -state-violet; }
 .project-tree .git-status-deleted, .git-tree .git-status-deleted { -fx-text-fill: -color-fg-muted; }
 .project-tree .git-status-deleted .toolbar-icon, .git-tree .git-status-deleted .toolbar-icon { -fx-fill: -color-fg-muted; }
 .project-tree .git-status-dir-changed { -fx-text-fill: -color-accent-fg; }
@@ -960,10 +1027,10 @@
 .pr-review-file-row.git-status-deleted .pr-review-file-status,
 .pr-review-file-row.git-status-deleted .toolbar-icon { -fx-text-fill: -color-fg-muted; -fx-fill: -color-fg-muted; }
 .pr-review-file-row.git-status-renamed .pr-review-file-status,
-.pr-review-file-row.git-status-renamed .toolbar-icon { -fx-text-fill: #9a5cd0; -fx-fill: #9a5cd0; }
+.pr-review-file-row.git-status-renamed .toolbar-icon { -fx-text-fill: -state-violet; -fx-fill: -state-violet; }
 /* Unsaved/dirty buffer name in the pickers (Open Files palette + Switcher) — mirrors the dirty-tab
    treatment (amber italic) so every surface that lists open files reads consistently. */
-.dirty-name { -fx-text-fill: #bf8700; -fx-font-style: italic; }
+.dirty-name { -fx-text-fill: -state-amber; -fx-font-style: italic; }
 
 /* IntelliJ-style tool window stripes + panels. */
 .tool-stripe {
@@ -973,8 +1040,8 @@
 }
 
 .tool-stripe-vertical {
-    -fx-pref-width: 32;
-    -fx-padding: 4 0 4 0;
+    -fx-pref-width: 30;
+    -fx-padding: 8 0 8 0;
 }
 
 .tool-stripe-horizontal {
@@ -987,9 +1054,10 @@
 .tool-stripe-bottom { -fx-border-width: 1 0 0 0; }
 
 .tool-stripe-button {
-    -fx-padding: 6;
+    -fx-padding: 5;
     -fx-min-width: 24;
     -fx-min-height: 24;
+    -fx-background-radius: 6;
 }
 
 .tool-stripe-button .toolbar-icon {
@@ -998,6 +1066,21 @@
 
 .tool-stripe-button:hover .toolbar-icon {
     -fx-fill: -color-fg-default;
+}
+
+/* Bottom-stripe buttons carry a label beside the icon (see ToolWindowManager.applyStripeLabel). */
+.tool-stripe-horizontal .tool-stripe-button {
+    -fx-font-size: 11px;
+    -fx-graphic-text-gap: 5;
+    -fx-padding: 3 8 3 8;
+    -fx-text-fill: -color-fg-muted;
+}
+.tool-stripe-horizontal .tool-stripe-button:hover {
+    -fx-text-fill: -color-fg-default;
+}
+.tool-stripe-horizontal .tool-stripe-button:open {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
 }
 
 .tool-stripe-button:open {
@@ -1011,7 +1094,7 @@
 /* Stronger highlight when the tool window holds keyboard focus (IntelliJ-style "active"), distinct from
    the subtle merely-open tint above. Listed after :open so it wins the background when both apply. */
 .tool-stripe-button:tw-active {
-    -fx-background-color: -color-accent-muted;
+    -fx-background-color: -state-accent-hover;
 }
 
 .tool-stripe-button:tw-active .toolbar-icon {
@@ -1047,15 +1130,16 @@
 
 .tool-window-header {
     -fx-background-color: -color-bg-subtle;
-    -fx-padding: 4 4 4 8;
+    -fx-padding: 6 6 6 12;
     -fx-border-color: -color-border-default;
     -fx-border-width: 0 0 1 0;
 }
 
+/* The kit renders a panel header as a small-caps section label rather than a title-case heading. */
 .tool-window-title {
-    -fx-font-size: 12px;
+    -fx-font-size: 11px;
     -fx-font-weight: bold;
-    -fx-text-fill: -color-fg-default;
+    -fx-text-fill: -color-fg-muted;
 }
 
 /* The tool window that currently holds keyboard focus: tint its header and accent the title, so it's
@@ -1237,13 +1321,16 @@
     -fx-border-width: 1 0 0 0;
 }
 
-/* Session message-log popup (MessageLogPopup): the status-bar echo history, newest first. */
+/* Session message-log popup (MessageLogPopup): the status-bar echo history, newest first.
+   Same overlay-card chrome as the command palette (12px radius + the kit's menu shadow). */
 .message-log {
-    -fx-background-color: -color-bg-default;
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 12;
     -fx-border-color: -color-border-default;
     -fx-border-width: 1;
+    -fx-border-radius: 12;
     -fx-padding: 8;
-    -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.25), 16, 0.2, 0, 4);
+    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 44, 0.16, 0, 18);
 }
 .message-log-header {
     -fx-font-size: 14px;
@@ -1257,15 +1344,13 @@
 }
 .message-log-list .list-cell {
     -fx-background-color: transparent;
+    -fx-background-radius: 5;
     -fx-padding: 2 4 2 4;
 }
-/* Selected (and copyable) rows get the accent highlight. */
+/* Selected (and copyable) rows: the same rounded selection wash as the palette/pickers, keeping
+   each row's own ink readable (a warn row stays amber, an error row stays red, even selected). */
 .message-log-list .list-cell:filled:selected {
-    -fx-background-color: -color-accent-emphasis;
-}
-.message-log-list .list-cell:filled:selected .message-log-time,
-.message-log-list .list-cell:filled:selected .message-log-text {
-    -fx-text-fill: -color-fg-emphasis;
+    -fx-background-color: -state-sel;
 }
 /* Small, muted, monospace time indicator so timestamps line up in a column. */
 .message-log-time {
@@ -1298,14 +1383,23 @@
 }
 
 /* The tab title lives in a graphic Label (.tab-title) so it can act as a drag handle for
-   mouse reordering; inherit the default tab-label appearance. */
+   mouse reordering; inherit the default tab-label appearance.
+
+   Kept at low specificity on purpose: `.tab.dirty .tab-title` and friends below must still win, so
+   these two rules must never grow a `.tab-pane > .tab-header-area > …` prefix. Source order matters
+   too — the state rules (dirty/pinned/read-only) follow, so an unsaved active tab stays amber. */
 .tab .tab-title {
+    -fx-text-fill: -color-fg-muted;
+}
+
+.tab:selected .tab-title {
     -fx-text-fill: -color-fg-default;
+    -fx-font-weight: bold;
 }
 
 /* Unsaved/dirty tab: amber/italic label so the bullet prefix is reinforced visually. */
 .tab.dirty .tab-title {
-    -fx-text-fill: #bf8700;
+    -fx-text-fill: -state-amber;
     -fx-font-style: italic;
 }
 
@@ -1474,10 +1568,10 @@
     -fx-padding: 0 6 0 6;
 }
 
-/* Marks a build made off master between releases (pom version ends in -SNAPSHOT). Semantic
-   colour so it tracks the theme; distinct from the red dev-mode badge beside it. */
+/* Marks a build made off master between releases (pom version ends in -SNAPSHOT). Amber, the
+   "not durable yet" hue — distinct from the red dev-mode badge beside it. */
 .snapshot-badge {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
     -fx-font-size: 13px;
     -fx-font-weight: bold;
     -fx-padding: 0 6 0 6;
@@ -1518,7 +1612,8 @@
     -fx-background-color: -color-bg-subtle;
     -fx-border-color: -color-border-default transparent transparent transparent;
     -fx-border-width: 1 0 0 0;
-    -fx-padding: 0 6 0 10;
+    -fx-padding: 2 14 2 14;
+    -fx-font-size: 11px;
     -fx-alignment: center-left;
 }
 
@@ -1554,61 +1649,66 @@
 /* Narrowing indicator: an amber pill, deliberately noticeable — while it shows, most of the file is
    inaccessible and the buffer looks truncated. Click to widen. */
 .status-bar .status-narrowed {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
     -fx-font-weight: bold;
-    -fx-background-color: -color-warning-subtle;
-    -fx-background-radius: 4;
+    -fx-background-color: -state-amber-bg;
+    -fx-background-radius: 999;
+    -fx-padding: 1 8 1 8;
 }
 
 /* MCP server segment: a green "running" pill, deliberately noticeable (a local agent endpoint is live). */
 .status-bar .status-mcp {
-    -fx-text-fill: -color-success-fg;
+    -fx-text-fill: -state-green;
     -fx-font-weight: bold;
-    -fx-background-color: -color-success-subtle;
-    -fx-background-radius: 4;
+    -fx-background-color: -state-green-bg;
+    -fx-background-radius: 999;
+    -fx-padding: 1 8 1 8;
 }
 
 .status-bar .status-mcp:hover {
-    -fx-background-color: -color-success-muted;
+    -fx-background-color: -state-green-hover;
 }
 
 /* Update-available segment: an accent pill, noticeable but not alarming (a newer release is available). */
 .status-bar .status-update {
-    -fx-text-fill: -color-accent-fg;
+    -fx-text-fill: -state-accent;
     -fx-font-weight: bold;
-    -fx-background-color: -color-accent-subtle;
-    -fx-background-radius: 4;
+    -fx-background-color: -state-accent-bg;
+    -fx-background-radius: 999;
+    -fx-padding: 1 8 1 8;
 }
 
 .status-bar .status-update:hover {
-    -fx-background-color: -color-accent-muted;
+    -fx-background-color: -state-accent-hover;
 }
 
 /* "● REC" macro-recording indicator (shown only while recording). */
 .status-bar .status-macro-rec {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
     -fx-font-weight: bold;
-    -fx-background-color: -color-danger-subtle;
-    -fx-background-radius: 4;
+    -fx-background-color: -state-red-bg;
+    -fx-background-radius: 999;
+    -fx-padding: 1 8 1 8;
 }
 .status-bar .status-macro-rec:hover {
-    -fx-background-color: -color-danger-muted;
+    -fx-background-color: -state-red-hover;
 }
 
 /* Remote (SFTP) file indicator — shown only for a remote buffer. */
 .status-bar .status-remote {
-    -fx-text-fill: -color-accent-fg;
+    -fx-text-fill: -state-accent;
     -fx-font-weight: bold;
-    -fx-background-color: -color-accent-subtle;
-    -fx-background-radius: 4;
+    -fx-background-color: -state-accent-bg;
+    -fx-background-radius: 999;
+    -fx-padding: 1 8 1 8;
 }
 .status-bar .status-remote:hover {
-    -fx-background-color: -color-accent-muted;
+    -fx-background-color: -state-accent-hover;
 }
 
 /* Read-only (View mode) toggle: muted "Editable" by default, amber/bold "Read-Only" when active. */
 .status-bar .status-readonly.active {
-    -fx-text-fill: #bf8700;
+    -fx-text-fill: -state-amber;
     -fx-font-weight: bold;
 }
 
@@ -1674,11 +1774,16 @@
 
 /* Command palette overlay (a Popup; the global AtlantaFX vars still resolve inside it) */
 .command-palette {
-    -fx-background-color: -color-bg-default;
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 12;
     -fx-border-color: -color-border-default;
     -fx-border-width: 1;
+    -fx-border-radius: 12;
     -fx-padding: 6;
-    -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.25), 16, 0.2, 0, 4);
+    /* The kit layers two shadows (a tight contact one + a wide ambient one); JavaFX takes a single
+       dropshadow, so this is the wide one with a short offset — the contact edge is carried by the
+       1px border instead. */
+    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 44, 0.16, 0, 18);
 }
 
 /* Full-scene backdrop behind an in-scene overlay (command palette, pickers): a faint scrim that also
@@ -1715,8 +1820,36 @@
     -fx-font-size: 11px;
 }
 
+/* Overlay rows (UI Kit v1). The kit marks the selected row with a tinted background AND a 2px accent
+   bar down its inside edge — the bar is what makes the selection readable at a glance in a long list,
+   where a faint tint alone reads as noise. JavaFX has no inset box-shadow, so the bar is a left border. */
+.command-palette .list-cell {
+    -fx-padding: 7 16 7 16;
+    -fx-font-size: 12.5px;
+    -fx-background-insets: 0;
+}
+
+.command-palette .list-view .list-cell:filled:selected,
+.command-palette .list-view:focused .list-cell:filled:selected {
+    -fx-background-color: -state-sel;
+    -fx-text-fill: -color-fg-default;
+    -fx-border-color: transparent transparent transparent -color-accent-emphasis;
+    -fx-border-width: 0 0 0 2;
+}
+
+/* Palette row title runs: plain text in the default ink, the query-matched characters in accent bold
+   (the kit's <mark>). Text nodes take -fx-fill, not -fx-text-fill. */
+.command-palette .list-cell .palette-cell-text {
+    -fx-fill: -color-fg-default;
+}
+.command-palette .list-cell .palette-match {
+    -fx-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+}
+
+/* The chord on a palette row — periwinkle, the one reserved keyboard hue (UI Kit state language). */
 .command-palette .list-cell .keybinding {
-    -fx-text-fill: -color-fg-muted;
+    -fx-text-fill: -state-key;
 }
 
 /* A command that can't run in the current context (a disabled feature): shown, but grayed and inert (#532). */
@@ -1761,16 +1894,31 @@
 /* ---- Settings window (sidebar + category pages) ---- */
 .settings-search {
     -fx-font-size: 13px;
+    -fx-background-color: -color-border-muted, -color-bg-subtle;
 }
-.settings-sidebar {
-    -fx-background-color: -color-bg-subtle;
+/* The nav rail (search + sidebar) — kit .set-nav: the DEFAULT surface with a right border, sitting
+   beside a SUBTLE page ground so the white cards on it actually read as cards. (This is the inverse
+   of the old scheme, which put the grey on the rail and left cards white-on-white.) */
+.settings-nav {
+    -fx-background-color: -color-bg-default;
     -fx-border-color: transparent -color-border-muted transparent transparent;
     -fx-border-width: 0 1 0 0;
+    -fx-padding: 12 10 10 10;
 }
+.settings-sidebar {
+    -fx-background-color: transparent;
+}
+/* Sidebar rows as rounded chips (kit .sn-item): the background is inset from the rail's edges so the
+   selected tint reads as a pill, while the cell itself still spans full width for hit-testing. */
 .settings-sidebar .list-cell {
-    -fx-padding: 7 12 7 12;
+    -fx-padding: 6 12 6 12;
     -fx-font-size: 13px;
     -fx-background-color: transparent;
+    -fx-background-radius: 7;
+    -fx-background-insets: 0 6 0 6;
+}
+.settings-sidebar .list-cell.settings-sidebar-item:filled:hover {
+    -fx-background-color: -color-bg-inset;
 }
 .settings-sidebar .list-cell:filled:selected {
     -fx-background-color: -color-accent-subtle;
@@ -1778,17 +1926,32 @@
     -fx-font-weight: bold;
 }
 .settings-content {
-    -fx-background-color: transparent;
+    -fx-background-color: -color-bg-subtle;
     -fx-border-width: 0;
 }
 .settings-content > .viewport {
     -fx-background-color: transparent;
 }
 .settings-page {
-    -fx-padding: 4 4 4 16;
+    -fx-padding: 22 30 28 30;
+}
+/* Footer bar — kit .set-foot: Reset left, the accent Close right, above its own border. */
+.settings-footer {
+    -fx-padding: 10 20 10 20;
+    -fx-border-color: -color-border-muted transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-background-color: -color-bg-default;
+}
+/* Boxed page note — kit .set-note. */
+.settings-note-box {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: -color-bg-inset;
+    -fx-background-radius: 9;
+    -fx-padding: 11 14 11 14;
 }
 .settings-page-title {
-    -fx-font-size: 17px;
+    -fx-font-size: 18px;
     -fx-font-weight: bold;
     /* The heading is a Text node (see SettingsWindow.page) so the bold glyph ink isn't clipped. Text uses
        -fx-fill (not -fx-text-fill); track the theme foreground so it works on light + dark themes. */
@@ -1811,17 +1974,106 @@
     -fx-padding: 8 0 0 0;
 }
 /* Git availability label on the Git settings page. */
+/* Detection result for an external tool (git / gh / mmdc / a language server / …). Green = verified,
+   red = broken — the same two meanings the status bar and the trees use, so a Settings page reads in
+   the same vocabulary. Tinted like a pill; the text wraps, so keep the padding modest. */
 .settings-git-status {
     -fx-font-size: 12px;
+    -fx-background-radius: 999;
+    -fx-padding: 2 10 2 10;
 }
 .settings-git-found {
-    -fx-text-fill: -color-success-fg;
+    -fx-text-fill: -state-green;
+    -fx-background-color: -state-green-bg;
 }
 .settings-git-missing {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
+    -fx-background-color: -state-red-bg;
+}
+
+/* ---- Settings card rows (UI Kit v1) ------------------------------------------------------------
+   A card groups related settings; a row states the setting as a title + description with the control
+   on the right, so a checkbox label no longer has to carry the whole explanation. Opt-in per page. */
+.settings-card {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 11;
+    -fx-background-radius: 11;
+    -fx-padding: 4 20 4 20;
+}
+.settings-card-title {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 12 0 2 0;
+}
+/* A separator between rows rather than around them, so the card reads as one block. JavaFX has no
+   structural pseudo-classes (`:last-child` would never match), so the final row is tagged
+   `settings-row-last` in code — see SettingsWindow.card(). */
+.settings-card-body > .settings-row {
+    -fx-border-color: transparent transparent -color-border-muted transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.settings-card-body > .settings-row-last {
+    -fx-border-width: 0;
+}
+.settings-row {
+    -fx-padding: 13 0 13 0;
+}
+/* The kit's one-line page subtitle under a Settings heading, saying what the page is for. */
+.settings-page-subtitle {
+    -fx-font-size: 12.5px;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 0 0 6 0;
+}
+/* A chord chip sitting on a Settings row, beside its control. */
+/* The kit draws a chord as a keycap: periwinkle on its soft ground, 1px border with a 2px bottom
+   edge so it reads as a physical key. */
+.settings-row .chord-chip {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-background-color: -state-key-bg;
+    -fx-background-radius: 5;
+    -fx-border-color: derive(-state-key, 55%);
+    -fx-border-width: 1 1 2 1;
+    -fx-border-radius: 5;
+    -fx-padding: 1 6 1 6;
+}
+.settings-row-title {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+.settings-row-desc {
+    -fx-font-size: 11.5px;
+    -fx-text-fill: -color-fg-muted;
 }
 
 /* Title header at the top of the palette / Jump-to popups, naming the action. */
+/* Kit input row: chip + borderless query over a divider — the input is the card's first row, so it
+   must not look like a boxed form field (no border, no focus ring; the card supplies the chrome). */
+.command-palette .palette-input-row {
+    -fx-border-color: transparent transparent -color-border-muted transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 4 10 8 10;
+}
+.command-palette .palette-prefix {
+    -fx-font-family: "JetBrains Mono", monospace;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-accent-fg;
+    -fx-background-color: -color-accent-subtle;
+    -fx-background-radius: 5;
+    -fx-padding: 2 7 2 7;
+}
+.command-palette .palette-input,
+.command-palette .palette-input:focused {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+    -fx-padding: 4 2 4 2;
+    -fx-font-size: 13.5px;
+}
+
 .command-palette .palette-title {
     -fx-font-weight: bold;
     -fx-font-size: 12px;
@@ -1832,16 +2084,21 @@
 /* Static legend of the navigation keys at the bottom of the palette / Jump-to popups (mirrors the
    Switcher's footer). */
 .command-palette .palette-hint {
-    -fx-text-fill: -color-fg-muted;
+    -fx-text-fill: -color-fg-subtle;
     -fx-font-size: 11px;
-    -fx-padding: 6 4 2 4;
+    -fx-border-color: -color-border-muted transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 7 10 2 10;
 }
 
 /* One-line description of the highlighted command, between the list and the navigation hint. */
 .command-palette .palette-desc {
     -fx-text-fill: -color-fg-muted;
-    -fx-font-size: 12px;
-    -fx-padding: 6 4 2 4;
+    -fx-font-size: 11.5px;
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+    -fx-padding: 7 10 8 10;
 }
 
 .find-bar {
@@ -2069,14 +2326,16 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 0.9em;
 }
-/* Keybinding chord shown right-aligned next to a Start action. */
+/* Keybinding chord shown right-aligned next to a Start action (periwinkle, as everywhere). */
 .welcome-key {
-    -fx-text-fill: -color-fg-muted;
+    -fx-text-fill: -state-key;
     -fx-font-size: 0.9em;
     -fx-padding: 0 0 0 16;
 }
 .welcome-action-row:hover .welcome-key {
-    -fx-text-fill: -color-fg-default;
+    -fx-text-fill: -state-key;
+    -fx-background-color: -state-key-bg;
+    -fx-background-radius: 4;
 }
 /* Footer: app version + home-page link. */
 .welcome-footer-row {
@@ -2286,7 +2545,7 @@
     -fx-text-fill: -color-fg-default;
 }
 /* "Experimental" notice at the top of the LSP / Debugging settings pages — amber to stand out. */
-.settings-experimental { -fx-text-fill: #bf8700; -fx-font-weight: bold; }
+.settings-experimental { -fx-text-fill: -state-amber; -fx-font-weight: bold; }
 
 /* Green "Start / Continue" play button in the Debug toolbar (text + the play glyph). */
 .debug-panel .debug-start { -fx-text-fill: #3fb950; -fx-font-weight: bold; }
@@ -2682,4 +2941,215 @@
 .lsp-signature-count {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 0.85em;
+}
+
+/* Settings → Keymaps: a command's current chord wears the same periwinkle chip as everywhere
+   else a binding is shown; an unbound command stays muted (there is no key to name). */
+.shortcut-chord {
+    -fx-text-fill: -state-key;
+    -fx-background-color: -state-key-bg;
+    -fx-background-radius: 4;
+    -fx-padding: 0 6 0 6;
+}
+.shortcut-unbound {
+    -fx-text-fill: -color-fg-subtle;
+    -fx-font-style: italic;
+}
+
+/* ---- UI Kit line icons -------------------------------------------------------------------------
+   The kit's glyphs are 16-unit outlines: stroked, never filled, with round caps and joins. Editora's
+   older Material glyphs are single filled paths coloured through `-fx-fill` on `.toolbar-icon`, so a
+   line glyph gets its own class and its own `-fx-stroke` rules — a shape cannot take its stroke colour
+   from a fill rule, and wearing both classes would let a `X .toolbar-icon` rule fill the outline solid.
+   Every context below mirrors the matching `.toolbar-icon` fill rule elsewhere in this file. */
+.icon-line {
+    -fx-fill: transparent;
+    -fx-stroke: -color-fg-muted;
+    -fx-stroke-width: 1.3;
+    -fx-stroke-line-cap: round;
+    -fx-stroke-line-join: round;
+}
+
+.button:hover .icon-line,
+.toggle-button:hover .icon-line {
+    -fx-stroke: -color-fg-default;
+}
+.button:disabled .icon-line,
+.toggle-button:disabled .icon-line {
+    -fx-stroke: -color-fg-subtle;
+}
+
+.tool-stripe-button .icon-line {
+    -fx-stroke: -color-fg-muted;
+}
+.tool-stripe-button:hover .icon-line {
+    -fx-stroke: -color-fg-default;
+}
+.tool-stripe-button:selected .icon-line {
+    -fx-stroke: -color-accent-fg;
+}
+
+.git-toolbar-button .icon-line {
+    -fx-stroke: -color-accent-fg;
+}
+.git-toolbar-button.git-needs-push .icon-line {
+    -fx-stroke: -state-amber;
+}
+
+
+.html-preview-toggle .icon-line { -fx-stroke: -color-fg-muted; }
+.html-preview-toggle:hover .icon-line { -fx-stroke: -color-accent-fg; }
+.zen-exit .icon-line { -fx-stroke: -color-fg-muted; }
+.zen-exit:hover .icon-line { -fx-stroke: -color-accent-fg; }
+.expert-exit .icon-line { -fx-stroke: -color-fg-muted; }
+.expert-exit:hover .icon-line { -fx-stroke: -color-accent-fg; }
+.toolbar-restore .icon-line { -fx-stroke: -color-fg-muted; }
+.toolbar-restore:hover .icon-line { -fx-stroke: -color-accent-fg; }
+.log-controls .log-follow .icon-line { -fx-stroke: -color-fg-muted; }
+.log-controls .log-follow:selected .icon-line { -fx-stroke: -color-accent-fg; }
+
+/* The project tree's folder/file glyphs follow the theme's tree colours. */
+.project-tree .folder-cell .icon-line { -fx-stroke: -project-folder-color; }
+.project-tree .file-cell .icon-line { -fx-stroke: -project-file-color; }
+.project-tree .modified-file .icon-line { -fx-stroke: -state-amber; }
+.project-tree .git-status-modified .icon-line, .git-tree .git-status-modified .icon-line { -fx-stroke: -color-accent-fg; }
+.project-tree .git-status-added .icon-line, .git-tree .git-status-added .icon-line { -fx-stroke: -color-success-fg; }
+.project-tree .git-status-untracked .icon-line, .git-tree .git-status-untracked .icon-line { -fx-stroke: -state-olive; }
+.project-tree .git-status-renamed .icon-line, .git-tree .git-status-renamed .icon-line { -fx-stroke: -state-violet; }
+.project-tree .git-status-deleted .icon-line, .git-tree .git-status-deleted .icon-line { -fx-stroke: -color-fg-muted; }
+
+/* Semantic one-off colours that the Material glyphs get through .toolbar-icon variants. */
+.icon-line.icon-run { -fx-stroke: -state-green; }
+.icon-line.icon-stop { -fx-stroke: -state-red; }
+.icon-line.icon-warn { -fx-stroke: -state-amber; }
+
+/* ---- Tab strip (UI Kit v1) ----------------------------------------------------------------------
+   The kit draws tabs as rounded-top cards on a recessed strip, with the active tab filled in the
+   EDITOR's background and bordered on three sides so it merges into the editor below — the file you
+   are editing is literally continuous with its tab. AtlantaFX instead paints a flat tab with a 2px
+   accent underline (its `-color-tab-border-selected` layer), so these override it.
+
+   app.css is an author (scene) stylesheet and the theme is the user-agent one, so these win regardless
+   of the theme's longer selectors. The active tab's fill is `-editor-surface`, not `-color-bg-default`:
+   the editor surface is deliberately a shade off the panel surface in the flagship themes, and the
+   whole point of this shape is that the two match exactly. */
+.tab-pane > .tab-header-area {
+    -fx-background-color: -color-bg-subtle;
+    -fx-padding: 6 10 0 10;
+    /* The theme centers tabs vertically (-fx-alignment: CENTER), which floats them off the strip's
+       bottom edge — the strip's border line then runs UNDER the active tab and the merge below never
+       reads. Bottom-align so the active tab actually touches the editor. */
+    -fx-alignment: BOTTOM_LEFT;
+}
+
+.tab-pane > .tab-header-area > .tab-header-background {
+    -fx-background-insets: 0, 0 0 1 0;
+    -fx-background-color: -color-border-muted, -color-bg-subtle;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 8 8 0 0;
+    -fx-padding: 6 11 7 11;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab:hover {
+    -fx-background-color: -color-bg-inset;
+    -fx-background-insets: 0;
+}
+
+/* The active tab's file-type glyph tints accent (kit: `.etab.on .fico`), echoing which file is live. */
+.tab-pane > .tab-header-area > .headers-region > .tab:selected .toolbar-icon {
+    -fx-fill: -color-accent-fg;
+}
+
+/* Two background layers = a 3-sided border: the outer layer is the border colour, the inner fill is
+   inset 1px on top/left/right and flush at the bottom, so the tab opens into the editor. */
+.tab-pane > .tab-header-area > .headers-region > .tab:top:selected,
+.tab-pane > .tab-header-area > .headers-region > .tab:bottom:selected {
+    -fx-background-color: -color-border-muted, -editor-surface;
+    -fx-background-insets: 0, 1 1 0 1;
+    -fx-background-radius: 8 8 0 0, 7 7 0 0;
+}
+
+/* Toolbar run cluster (UI Kit): play is green, debug is accent, stop is red — the one place the
+   toolbar speaks state colours. The buttons carry these classes from setupRunConfigToolbar. */
+.run-config-play .icon-line { -fx-stroke: -state-green; }
+.run-config-bug .icon-line { -fx-stroke: -state-accent; }
+.run-config-stop .icon-line { -fx-stroke: -state-red; }
+
+/* ---- Control geometry (UI Kit v1) --------------------------------------------------------------
+   The kit rounds controls harder than AtlantaFX: buttons 8px, combos/fields 7px, menus 8px. AtlantaFX
+   paints every control as two background layers (border colour under a 1px-inset fill), so each radius
+   is a pair — outer, then outer-1 for the fill. These are author-sheet rules, and an author sheet beats
+   the user-agent theme on the SAME property regardless of specificity — so every UA child-rule that
+   deliberately flattens a radius (editable cells, the spinner/combo inner field) is restated below,
+   or this pass would round corners that must stay square. */
+.button, .toggle-button, .menu-button, .split-menu-button {
+    -fx-background-radius: 8px, 7px;
+}
+/* The kit's select rests on the subtle ground (its .fake-select), not the input white. */
+.combo-box-base, .choice-box {
+    -fx-background-color: -color-border-default, -color-bg-subtle;
+    -fx-background-radius: 7px, 6px;
+}
+.text-input {
+    -fx-background-radius: 7px, 6px;
+}
+/* Restated UA resets (see the note above): */
+.cell .text-input {
+    -fx-background-radius: 0;
+}
+.combo-box-base > .text-field {
+    -fx-background-radius: 7px 0 0 7px, 6px 0 0 6px;
+}
+.spinner > .text-field {
+    -fx-background-radius: 7px 0 0 7px;
+}
+/* Combo dropdowns get the same card treatment as the overlays. */
+.combo-box-popup > .list-view {
+    -fx-background-radius: 8px, 7px;
+    -fx-border-radius: 8px, 7px;
+}
+.combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell {
+    -fx-background-radius: 5px;
+}
+
+/* ---- Settings: no square containers (UI Kit) ---------------------------------------------------
+   The controls pass above rounded buttons/combos/fields; these cover what it missed inside the
+   Settings window — list editors, spinners, text areas, and the embedded snippet/preview editors.
+   A rounded ListView needs inner padding, or its square cells overpaint the corner pixels. */
+.settings-page .list-view {
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 4;
+}
+.settings-page .list-view .list-cell {
+    -fx-background-radius: 5;
+}
+/* Spinner: 7px outer corners; the stacked arrow buttons round only their outer-right corners. */
+.spinner {
+    -fx-background-radius: 7;
+    -fx-border-radius: 7;
+}
+.spinner > .increment-arrow-button {
+    -fx-background-radius: 0 7 0 0;
+}
+.spinner > .decrement-arrow-button {
+    -fx-background-radius: 0 0 7 0;
+}
+/* TextArea: the outer shape comes from .text-input; the inner content region needs its own radius
+   or it paints square inside the rounded frame. */
+.text-area .content {
+    -fx-background-radius: 6;
+}
+/* Embedded editors (the Appearance live preview, the snippet/template body): round the surface.
+   Background-only — RichTextFX doesn't clip children to a radius, but the padding keeps text off
+   the corner pixels. */
+.settings-page .editor-area {
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 8;
 }
