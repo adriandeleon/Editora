@@ -197,6 +197,9 @@ final class GitCoordinator {
      * keep it fresh thereafter). Runs at startup and on every settings apply.
      */
     void applySupport() {
+        // Push the configured git command first (blank = PATH git) — changing it invalidates the
+        // service's availability cache, so the re-probe below sees the new command.
+        service.setCommand(host.settings().getGitPath());
         boolean on = isEnabled();
         ops.setStatusBarGitEnabled(on);
         if (!on) {

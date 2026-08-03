@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -143,7 +144,7 @@ public class SettingsWindow {
     }
 
     /** A searchable settings row: its page, its node (hidden when filtered out), and its keywords. */
-    private record SettingRow(Category category, Node node, String keywords, Label section) {}
+    private record SettingRow(Category category, Node node, String keywords, Label section, VBox card) {}
 
     private final ConfigManager config;
     private final Consumer<Settings> onApply;
@@ -178,6 +179,9 @@ public class SettingsWindow {
     private ComboBox<String> languageCombo;
     private ComboBox<String> keymapCombo;
     private ShortcutActions shortcutActions; // keybinding-editor backend (→ MainController)
+    /** Command id -> its row's chord chip, filled in once shortcutActions arrives. */
+    private final Map<String, Label> chordChips = new java.util.LinkedHashMap<>();
+
     private TextField shortcutFilter; // filters the shortcut list
     private VBox shortcutListBox; // rebuilt from shortcutActions.rows() on each change/filter
     private String recordingCommandId; // command id whose row is currently capturing a chord, or null
@@ -336,6 +340,7 @@ public class SettingsWindow {
     private Spinner<Integer> historyMaxAgeSpinner;
     private Spinner<Integer> historyMaxTotalSpinner;
     private Label gitStatusLabel;
+    private TextField gitPathField;
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
     private CheckBox htmlPreviewCheck;
@@ -463,6 +468,9 @@ public class SettingsWindow {
     private final Map<Category, Region> pages = new EnumMap<>(Category.class);
     private final List<SettingRow> rows = new ArrayList<>();
     private final List<Label> sectionLabels = new ArrayList<>();
+    /** Card containers (UI Kit v1), hidden by the search filter once all of their rows are. */
+    private final List<VBox> cards = new ArrayList<>();
+
     private final Set<Category> searchHiddenCats = EnumSet.noneOf(Category.class);
     private final Set<Group> searchHiddenGroups = EnumSet.noneOf(Group.class);
 
@@ -776,8 +784,8 @@ public class SettingsWindow {
         sidebar = new ListView<>();
         sidebar.getStyleClass().add("settings-sidebar");
         sidebar.getItems().setAll(sidebarItems());
-        sidebar.setPrefWidth(190);
-        sidebar.setMinWidth(190);
+        sidebar.setPrefWidth(216);
+        sidebar.setMinWidth(216);
         sidebar.setCellFactory(v -> new CategoryCell());
         sidebar.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
             if (b instanceof Category cat) { // group headers aren't pages
@@ -790,18 +798,29 @@ public class SettingsWindow {
         contentScroll.getStyleClass().add("settings-content");
         HBox.setHgrow(contentScroll, Priority.ALWAYS);
 
-        HBox body = new HBox(sidebar, contentScroll);
+        // The kit puts the search at the top of the nav rail, not spanning the window: search scopes the
+        // sidebar (it greys categories and auto-selects the first hit), so it lives with the sidebar.
+        VBox nav = new VBox(8, searchField, sidebar);
+        nav.getStyleClass().add("settings-nav");
+        VBox.setVgrow(sidebar, Priority.ALWAYS);
+
+        HBox body = new HBox(nav, contentScroll);
         VBox.setVgrow(body, Priority.ALWAYS);
 
+        // Kit footer: Reset to Defaults on the left (secondary), Close on the right (the one accent
+        // button). Reset also stays on the Advanced page so searching "reset" still finds it.
+        Button footReset = new Button(tr("settings.resetDefaults"));
+        footReset.setOnAction(e -> resetAll());
         Button close = new Button(tr("settings.close"));
+        close.getStyleClass().add("accent");
         close.setOnAction(e -> stage.close());
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox buttons = new HBox(8, spacer, close);
+        HBox buttons = new HBox(8, footReset, spacer, close);
         buttons.setAlignment(Pos.CENTER_LEFT);
+        buttons.getStyleClass().add("settings-footer");
 
-        VBox root = new VBox(10, searchField, body, buttons);
-        root.setPadding(new Insets(12));
+        VBox root = new VBox(0, body, buttons);
         root.setPrefWidth(WIDTH);
         root.setPrefHeight(HEIGHT);
 
@@ -1132,12 +1151,21 @@ public class SettingsWindow {
             apply();
             updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
             blameCheck.setDisable(!now); // inline blame only matters when Git is on
+            gitPathField.setDisable(!now);
         });
 
         blameCheck = new CheckBox(tr("settings.git.blameInline"));
         blameCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setGitBlameInline(now);
             apply();
+        });
+
+        gitPathField = new TextField();
+        gitPathField.setPromptText("git");
+        gitPathField.textProperty().addListener((obs, was, now) -> {
+            config.getSettings().setGitPath(now);
+            apply(); // applySupport pushes the command into GitService
+            probeGit();
         });
 
         githubCheck = new CheckBox(tr("settings.enableGithub"));
@@ -2202,149 +2230,163 @@ public class SettingsWindow {
 
     private VBox editorPage() {
         VBox p = page(tr("settings.cat.editor"));
-        Label display = section(p, tr("settings.section.display"));
-        row(p, Category.EDITOR, display, columnRulerCheck, "80 column ruler guide margin");
-        row(p, Category.EDITOR, display, lineHighlightCheck, "highlight current line caret");
-        row(p, Category.EDITOR, display, lineNumbersCheck, "line numbers gutter");
-        row(p, Category.EDITOR, display, minimapCheck, "minimap overview");
-        row(
-                p,
-                Category.EDITOR,
+        Card display = card(p, tr("settings.section.display"));
+        checkRow(display, Category.EDITOR, columnRulerCheck, null, "80 column ruler guide margin");
+        checkRow(display, Category.EDITOR, lineHighlightCheck, null, "highlight current line caret");
+        checkRow(display, Category.EDITOR, lineNumbersCheck, null, "line numbers gutter");
+        checkRow(display, Category.EDITOR, minimapCheck, null, "minimap overview");
+        checkRow(
                 display,
+                Category.EDITOR,
                 bracketColorsCheck,
+                null,
                 "bracket pair colorization colors nesting depth rainbow brackets parentheses braces vs code");
-        row(p, Category.EDITOR, display, wordWrapCheck, "word wrap soft wrap long lines");
-        row(p, Category.EDITOR, display, whitespaceCheck, "hidden characters whitespace spaces tabs eol");
-        row(p, Category.EDITOR, display, noteIndicatorsCheck, "personal notes gutter marker highlight indicators");
-        row(
-                p,
-                Category.EDITOR,
+        checkRow(display, Category.EDITOR, wordWrapCheck, null, "word wrap soft wrap long lines");
+        checkRow(display, Category.EDITOR, whitespaceCheck, null, "hidden characters whitespace spaces tabs eol");
+        checkRow(
                 display,
+                Category.EDITOR,
+                noteIndicatorsCheck,
+                null,
+                "personal notes gutter marker highlight indicators");
+        checkRow(
+                display,
+                Category.EDITOR,
                 multiCaretCheck,
+                null,
                 "multiple cursors carets column box selection alt drag vs code");
-        row(
-                p,
-                Category.EDITOR,
+        checkRow(
                 display,
+                Category.EDITOR,
                 copyLineNoSelectionCheck,
+                null,
                 "copy cut whole current line empty no selection clipboard vs code");
-        row(
-                p,
-                Category.EDITOR,
+        checkRow(
                 display,
+                Category.EDITOR,
                 copyWithHighlightingCheck,
+                null,
                 "copy syntax highlighting html colors paste slack document rich text vs code");
-        row(p, Category.EDITOR, display, autoRenameTagCheck, "auto rename tag html xml paired close mirror vs code");
-        row(p, Category.EDITOR, display, autoFillCheck, "auto fill mode break wrap prose lines fill column emacs");
-        row(
-                p,
-                Category.EDITOR,
+        checkRow(
                 display,
+                Category.EDITOR,
+                autoRenameTagCheck,
+                null,
+                "auto rename tag html xml paired close mirror vs code");
+        checkRow(
+                display,
+                Category.EDITOR,
+                autoFillCheck,
+                null,
+                "auto fill mode break wrap prose lines fill column emacs");
+        checkRow(
+                display,
+                Category.EDITOR,
                 autoCloseTagsCheck,
+                null,
                 "auto close tags html xml closing tag insert body vs code");
-        Label indent = section(p, tr("settings.section.indentation"));
-        row(
-                p,
-                Category.EDITOR,
+        Card indent = card(p, tr("settings.section.indentation"));
+        controlRow(
                 indent,
-                labeled(tr("settings.indentStyle"), indentStyleCombo),
+                Category.EDITOR,
+                tr("settings.indentStyle"),
+                null,
+                indentStyleCombo,
                 "indent style tabs spaces detect auto width");
-        row(
-                p,
-                Category.EDITOR,
+        controlRow(
+                indent, Category.EDITOR, tr("settings.tabSize"), null, tabSizeSpinner, "tab size indent width spaces");
+        controlRow(
                 indent,
-                labeled(tr("settings.tabSize"), tabSizeSpinner),
-                "tab size indent width spaces");
-        row(
-                p,
                 Category.EDITOR,
-                indent,
-                labeled(tr("settings.fillColumn"), fillColumnSpinner),
+                tr("settings.fillColumn"),
+                null,
+                fillColumnSpinner,
                 "fill column wrap paragraph reflow emacs m-q width");
-        row(
-                p,
-                Category.EDITOR,
+        checkRow(
                 indent,
+                Category.EDITOR,
                 editorConfigCheck,
+                null,
                 "editorconfig indent style size charset end of line trailing whitespace final newline");
-        Label performance = section(p, tr("settings.section.performance"));
+        Card performance = card(p, tr("settings.section.performance"));
         HBox largeFileBox = new HBox(8, largeFileThresholdSpinner, note(tr("settings.largeFileThreshold.unit")));
         largeFileBox.setAlignment(Pos.CENTER_LEFT);
-        row(
-                p,
-                Category.EDITOR,
+        controlRow(
                 performance,
-                labeled(tr("settings.largeFileThreshold"), largeFileBox),
+                Category.EDITOR,
+                tr("settings.largeFileThreshold"),
+                null,
+                largeFileBox,
                 "large file performance minimap lsp lines threshold responsive huge source");
-        Label logs = section(p, tr("settings.section.logs"));
-        row(
-                p,
-                Category.EDITOR,
+        Card logs = card(p, tr("settings.section.logs"));
+        checkRow(
                 logs,
+                Category.EDITOR,
                 logViewerCheck,
+                null,
                 "log viewer server logs tail follow level highlighting filter apache spring boot");
-        Label csv = section(p, tr("settings.section.csv"));
-        row(p, Category.EDITOR, csv, csvGridCheck, "csv tsv grid table preview spreadsheet columns");
-        row(p, Category.EDITOR, csv, csvRainbowCheck, "csv tsv rainbow column colors coloring highlight");
-        Label structured = section(p, tr("settings.section.structured"));
-        row(
-                p,
+        Card csv = card(p, tr("settings.section.csv"));
+        checkRow(csv, Category.EDITOR, csvGridCheck, null, "csv tsv grid table preview spreadsheet columns");
+        checkRow(csv, Category.EDITOR, csvRainbowCheck, null, "csv tsv rainbow column colors coloring highlight");
+        Card previews = card(p, tr("settings.section.previews"));
+        checkRow(
+                previews,
                 Category.EDITOR,
-                structured,
                 structuredPreviewCheck,
+                null,
                 "json yaml toml openapi swagger tree structured data preview");
-        Label svg = section(p, tr("settings.section.svg"));
-        row(p, Category.EDITOR, svg, svgPreviewCheck, "svg image vector graphic preview render");
-        Label crontab = section(p, tr("settings.section.crontab"));
-        row(p, Category.EDITOR, crontab, crontabPreviewCheck, "crontab cron schedule preview next run times");
-        Label fstab = section(p, tr("settings.section.fstab"));
-        row(p, Category.EDITOR, fstab, fstabPreviewCheck, "fstab mount filesystem preview options decode");
-        Label systemd = section(p, tr("settings.section.systemd"));
-        row(
-                p,
+        checkRow(previews, Category.EDITOR, svgPreviewCheck, null, "svg image vector graphic preview render");
+        checkRow(previews, Category.EDITOR, crontabPreviewCheck, null, "crontab cron schedule preview next run times");
+        checkRow(previews, Category.EDITOR, fstabPreviewCheck, null, "fstab mount filesystem preview options decode");
+        checkRow(
+                previews,
                 Category.EDITOR,
-                systemd,
                 systemdPreviewCheck,
+                null,
                 "systemd unit service timer preview oncalendar schedule decode");
-        Label sshConfig = section(p, tr("settings.section.sshConfig"));
-        row(p, Category.EDITOR, sshConfig, sshConfigPreviewCheck, "ssh config host connection preview decode");
-        Label dockerfile = section(p, tr("settings.section.dockerfile"));
-        row(
-                p,
+        checkRow(previews, Category.EDITOR, sshConfigPreviewCheck, null, "ssh config host connection preview decode");
+        checkRow(
+                previews,
                 Category.EDITOR,
-                dockerfile,
                 dockerfilePreviewCheck,
+                null,
                 "dockerfile docker image build stage preview digest");
-        Label githubActions = section(p, tr("settings.section.githubActions"));
-        row(
-                p,
+        checkRow(
+                previews,
                 Category.EDITOR,
-                githubActions,
                 githubActionsPreviewCheck,
+                null,
                 "github actions workflow ci yaml preview jobs triggers");
-        Label saving = section(p, tr("settings.section.saving"));
+        Card saving = card(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
         autoSaveBox.setAlignment(Pos.CENTER_LEFT);
-        row(
-                p,
-                Category.EDITOR,
+        controlRow(
                 saving,
-                labeled(tr("settings.autoSave"), autoSaveBox),
+                Category.EDITOR,
+                tr("settings.autoSave"),
+                null,
+                autoSaveBox,
                 "auto save autosave delay inactivity focus");
-        row(p, Category.EDITOR, saving, adminSaveCheck, "save administrator root sudo pkexec permission etc linux");
+        checkRow(
+                saving,
+                Category.EDITOR,
+                adminSaveCheck,
+                null,
+                "save administrator root sudo pkexec permission etc linux");
         Label adminSaveNote = note(tr("settings.adminSave.note"));
         adminSaveNote.setWrapText(true);
         adminSaveNote.setMaxWidth(440);
-        row(p, Category.EDITOR, saving, adminSaveNote, "save administrator root permission linux pkexec");
-        Label pdf = section(p, tr("settings.section.pdf"));
-        row(p, Category.EDITOR, pdf, pdfLineNumbersCheck, "pdf export line numbers gutter");
-        row(p, Category.EDITOR, pdf, pdfHighlightCheck, "pdf export syntax highlighting colors");
-        row(
-                p,
-                Category.EDITOR,
+        cardRow(saving, Category.EDITOR, adminSaveNote, "save administrator root permission linux pkexec");
+        Card pdf = card(p, tr("settings.section.pdf"));
+        checkRow(pdf, Category.EDITOR, pdfLineNumbersCheck, null, "pdf export line numbers gutter");
+        checkRow(pdf, Category.EDITOR, pdfHighlightCheck, null, "pdf export syntax highlighting colors");
+        controlRow(
                 pdf,
-                labeled(tr("settings.pdf.pageSize"), pdfPageSizeCombo),
+                Category.EDITOR,
+                tr("settings.pdf.pageSize"),
+                null,
+                pdfPageSizeCombo,
                 "pdf export page size letter a4 paper");
         return p;
     }
@@ -2352,21 +2394,25 @@ public class SettingsWindow {
     /** The Markdown settings page: editing (format bar), preview/PDF (math), and linting (enable + per-rule). */
     private Region markdownPage() {
         VBox p = page(tr("settings.cat.markdown"));
-        Label editing = section(p, tr("settings.section.markdownEditing"));
-        row(
-                p,
-                Category.MARKDOWN,
+        Card editing = card(p, tr("settings.section.markdownEditing"));
+        checkRow(
                 editing,
-                markdownFormatBarCheck,
-                "markdown format bar selection bold italic toolbar floating");
-        Label preview = section(p, tr("settings.section.markdownPreview"));
-        row(p, Category.MARKDOWN, preview, mathSupportCheck, "markdown math latex katex formula equation dollar");
-        Label lint = section(p, tr("settings.section.markdownLint"));
-        row(p, Category.MARKDOWN, lint, markdownLintCheck, "markdown lint linting warnings squiggles rules");
-        row(
-                p,
                 Category.MARKDOWN,
+                markdownFormatBarCheck,
+                null,
+                "markdown format bar selection bold italic toolbar floating");
+        Card preview = card(p, tr("settings.section.markdownPreview"));
+        checkRow(
+                preview,
+                Category.MARKDOWN,
+                mathSupportCheck,
+                null,
+                "markdown math latex katex formula equation dollar");
+        Card lint = card(p, tr("settings.section.markdownLint"));
+        checkRow(lint, Category.MARKDOWN, markdownLintCheck, null, "markdown lint linting warnings squiggles rules");
+        cardRow(
                 lint,
+                Category.MARKDOWN,
                 markdownLintRulesEditor(),
                 "markdown lint rules MD009 MD040 MD034 disable enable per-rule checklist");
         return p;
@@ -2535,12 +2581,14 @@ public class SettingsWindow {
 
     private VBox spellPage() {
         VBox p = page(tr("settings.cat.spellCheck"));
-        row(p, Category.SPELL_CHECK, null, spellCheckBox, "spell check spelling enable");
-        row(
-                p,
+        Card main = card(p, null);
+        checkRow(main, Category.SPELL_CHECK, spellCheckBox, null, "spell check spelling enable");
+        controlRow(
+                main,
                 Category.SPELL_CHECK,
+                tr("settings.language"),
                 null,
-                labeled(tr("settings.language"), spellLanguageCombo),
+                spellLanguageCombo,
                 "spell language dictionary english spanish french");
         // The two dictionary-file links, grouped together near the top (out of the checkbox/list flow).
         Hyperlink techLink = new Hyperlink(tr("settings.dict.openTechnical"));
@@ -2559,26 +2607,26 @@ public class SettingsWindow {
         });
         HBox dictLinks = new HBox(16, techLink, personalLink);
         dictLinks.setAlignment(Pos.CENTER_LEFT);
-        row(
-                p,
+        cardRow(
+                main,
                 Category.SPELL_CHECK,
-                null,
                 dictLinks,
                 "dictionary open technical personal file dictionary.txt bundled terms");
 
-        Label dict = section(p, tr("settings.dict.title"));
-        row(
-                p,
-                Category.SPELL_CHECK,
+        Card dict = card(p, tr("settings.dict.title"));
+        checkRow(
                 dict,
+                Category.SPELL_CHECK,
                 techDictEnableCheck,
+                null,
                 "technical dictionary terms programming code config async kubernetes enable on off");
-        row(p, Category.SPELL_CHECK, dict, dictEnableCheck, "personal dictionary enable on off honor words");
-        row(p, Category.SPELL_CHECK, dict, dictionaryEditor(), "personal dictionary words add remove custom ignore");
-        Label dictNote = note(tr("settings.dict.note"));
-        dictNote.setWrapText(true);
-        dictNote.setMaxWidth(440);
-        row(p, Category.SPELL_CHECK, dict, dictNote, "dictionary.txt file location global");
+        checkRow(
+                dict,
+                Category.SPELL_CHECK,
+                dictEnableCheck,
+                tr("settings.dict.note"),
+                "personal dictionary enable on off honor words dictionary.txt file location global");
+        cardRow(dict, Category.SPELL_CHECK, dictionaryEditor(), "personal dictionary words add remove custom ignore");
         return p;
     }
 
@@ -2664,84 +2712,89 @@ public class SettingsWindow {
     /** GENERAL ▸ Interface: window-chrome visibility + the Simple/Zen minimal-UI modes. */
     private VBox interfacePage() {
         VBox p = page(tr("settings.cat.interface"));
-        Label chrome = section(p, tr("settings.section.chrome"));
-        row(p, Category.INTERFACE, chrome, menuBarCheck, "menu bar menubar chrome");
-        row(p, Category.INTERFACE, chrome, toolbarCheck, "toolbar buttons chrome");
-        row(p, Category.INTERFACE, chrome, statusBarCheck, "status bar chrome");
-        row(p, Category.INTERFACE, chrome, tabBarCheck, "tab bar tabs chrome");
-        row(p, Category.INTERFACE, chrome, breadcrumbCheck, "breadcrumb file path chrome");
-        row(p, Category.INTERFACE, chrome, toolStripeCheck, "tool stripe tool windows buttons show hide");
-        Label stripeNote = note(tr("settings.toolWindows.stripeNote"));
-        stripeNote.setWrapText(true);
-        stripeNote.setMaxWidth(440);
-        row(p, Category.INTERFACE, chrome, stripeNote, "tool stripe tool windows precedence");
-        Label modes = section(p, tr("settings.section.modes"));
-        row(p, Category.INTERFACE, modes, simpleModeCheck, "simple minimal ui mode chrome distraction");
-        Label simpleNote = note(tr("settings.simpleMode.note"));
-        simpleNote.setWrapText(true);
-        simpleNote.setMaxWidth(440);
-        row(p, Category.INTERFACE, modes, simpleNote, "simple minimal ui mode");
-        row(p, Category.INTERFACE, modes, zenCheck, "zen distraction free focus mode");
-        row(p, Category.INTERFACE, modes, expertCheck, "expert focus mode keeps line numbers status bar");
+        Card chrome = card(p, tr("settings.section.chrome"));
+        checkRow(chrome, Category.INTERFACE, menuBarCheck, null, "menu bar menubar chrome");
+        checkRow(chrome, Category.INTERFACE, toolbarCheck, null, "toolbar buttons chrome");
+        checkRow(chrome, Category.INTERFACE, statusBarCheck, null, "status bar chrome");
+        checkRow(chrome, Category.INTERFACE, tabBarCheck, null, "tab bar tabs chrome");
+        checkRow(chrome, Category.INTERFACE, breadcrumbCheck, null, "breadcrumb file path chrome");
+        checkRow(
+                chrome,
+                Category.INTERFACE,
+                toolStripeCheck,
+                tr("settings.toolWindows.stripeNote"),
+                "tool stripe tool windows buttons show hide precedence");
+        Card modes = card(p, tr("settings.section.modes"));
+        checkRow(
+                modes,
+                Category.INTERFACE,
+                simpleModeCheck,
+                tr("settings.simpleMode.note"),
+                "simple minimal ui mode chrome distraction");
+        checkRow(modes, Category.INTERFACE, zenCheck, null, "zen distraction free focus mode");
+        checkRow(modes, Category.INTERFACE, expertCheck, null, "expert focus mode keeps line numbers status bar");
         return p;
     }
 
     /** GENERAL ▸ Workspace: project + personal-notes features and local file history. */
     private VBox workspacePage() {
         VBox p = page(tr("settings.cat.workspace"));
-        Label features = section(p, tr("settings.section.features"));
+        Card features = card(p, tr("settings.section.features"));
+        // The projects toggle keeps its "ⓘ" detail tooltip beside the switch.
         Label projectsInfo = new Label("ⓘ");
         projectsInfo.getStyleClass().add("info-badge");
         Tooltip projectsTip = new Tooltip(tr("settings.projects.tip"));
         projectsTip.setWrapText(true);
         projectsTip.setMaxWidth(380);
         Tooltip.install(projectsInfo, projectsTip);
-        HBox projectsRow = new HBox(6, projectsCheck, projectsInfo);
-        projectsRow.setAlignment(Pos.CENTER_LEFT);
-        row(p, Category.WORKSPACE, features, projectsRow, "projects workspace folder");
-        row(p, Category.WORKSPACE, features, projectHiddenCheck, "project tree hidden dot files folders show");
-        row(p, Category.WORKSPACE, features, notesCheck, "personal notes annotations enable feature");
-        Label history = section(p, tr("settings.section.localHistory"));
-        row(
-                p,
+        cardRow(
+                features,
                 Category.WORKSPACE,
+                settingRow(projectsCheck.getText(), null, new HBox(8, projectsInfo, switchFor(projectsCheck))),
+                "projects workspace folder");
+        checkRow(features, Category.WORKSPACE, projectHiddenCheck, null, "project tree hidden dot files folders show");
+        checkRow(features, Category.WORKSPACE, notesCheck, null, "personal notes annotations enable feature");
+        Card history = card(p, tr("settings.section.localHistory"));
+        checkRow(
                 history,
+                Category.WORKSPACE,
                 localHistoryCheck,
+                tr("settings.history.note"),
                 "local file history snapshot version revision restore undo");
-        row(
-                p,
-                Category.WORKSPACE,
+        controlRow(
                 history,
-                labeled(tr("settings.history.maxPerFile"), historyMaxPerFileSpinner),
+                Category.WORKSPACE,
+                tr("settings.history.maxPerFile"),
+                null,
+                historyMaxPerFileSpinner,
                 "local history max revisions per file limit retention");
-        row(
-                p,
-                Category.WORKSPACE,
+        controlRow(
                 history,
-                labeled(tr("settings.history.maxAgeDays"), historyMaxAgeSpinner),
+                Category.WORKSPACE,
+                tr("settings.history.maxAgeDays"),
+                null,
+                historyMaxAgeSpinner,
                 "local history max age days retention prune");
-        row(
-                p,
-                Category.WORKSPACE,
+        controlRow(
                 history,
-                labeled(tr("settings.history.maxTotalMb"), historyMaxTotalSpinner),
+                Category.WORKSPACE,
+                tr("settings.history.maxTotalMb"),
+                null,
+                historyMaxTotalSpinner,
                 "local history max total size megabytes project budget");
-        Label histNote = note(tr("settings.history.note"));
-        histNote.setWrapText(true);
-        histNote.setMaxWidth(440);
-        row(p, Category.WORKSPACE, history, histNote, "local history retention");
-        Label updates = section(p, tr("settings.section.updates"));
-        row(p, Category.WORKSPACE, updates, updateCheckCheck, "check for updates new version github release startup");
-        Label updateNote = note(tr("settings.updates.note"));
-        updateNote.setWrapText(true);
-        updateNote.setMaxWidth(440);
-        row(p, Category.WORKSPACE, updates, updateNote, "update check github network privacy");
+        Card updates = card(p, tr("settings.section.updates"));
+        checkRow(
+                updates,
+                Category.WORKSPACE,
+                updateCheckCheck,
+                tr("settings.updates.note"),
+                "check for updates new version github release startup network privacy");
 
-        Label trust = section(p, tr("settings.section.trustedFolders"));
+        Card trust = card(p, tr("settings.section.trustedFolders"));
         Label trustNote = note(tr("settings.trustedFolders.note"));
         trustNote.setWrapText(true);
         trustNote.setMaxWidth(440);
-        row(p, Category.WORKSPACE, trust, trustNote, "workspace trust build wrapper mvnw gradlew security");
+        cardRow(trust, Category.WORKSPACE, trustNote, "workspace trust build wrapper mvnw gradlew security");
         trustedFoldersList.setPrefHeight(120);
         trustedFoldersList.setPlaceholder(new Label(tr("settings.trustedFolders.empty")));
         Button revoke = new Button(tr("settings.trustedFolders.revoke"));
@@ -2765,11 +2818,10 @@ public class SettingsWindow {
             }
         });
         revokeAll.disableProperty().bind(Bindings.isEmpty(trustedFoldersList.getItems()));
-        row(p, Category.WORKSPACE, trust, trustedFoldersList, "workspace trust trusted folders list revoke");
-        row(
-                p,
-                Category.WORKSPACE,
+        cardRow(trust, Category.WORKSPACE, trustedFoldersList, "workspace trust trusted folders list revoke");
+        cardRow(
                 trust,
+                Category.WORKSPACE,
                 new HBox(8, revoke, revokeAll),
                 "workspace trust revoke remove trusted folder");
         return p;
@@ -2778,80 +2830,78 @@ public class SettingsWindow {
     /** EDITOR ▸ Code Completion: the autocomplete master + per-source sub-toggles, quick-doc, semantic tokens. */
     private VBox completionPage() {
         VBox p = page(tr("settings.cat.completion"));
-        Label completion = section(p, tr("settings.section.completion"));
-        row(p, Category.COMPLETION, completion, autocompleteCheck, "autocomplete completion suggestions enable popup");
-        HBox proseRow = new HBox(autocompleteProseCheck);
-        proseRow.setPadding(new Insets(0, 0, 0, 20));
-        row(p, Category.COMPLETION, completion, proseRow, "autocomplete prose words dictionary ghost text spelling");
-        HBox snippetsRow = new HBox(autocompleteSnippetsCheck);
-        snippetsRow.setPadding(new Insets(0, 0, 0, 20));
-        row(p, Category.COMPLETION, completion, snippetsRow, "autocomplete snippets popup templates");
-        HBox mermaidRow = new HBox(autocompleteMermaidCheck);
-        mermaidRow.setPadding(new Insets(0, 0, 0, 20));
-        row(p, Category.COMPLETION, completion, mermaidRow, "autocomplete mermaid diagram keywords snippets mmd");
-        row(
-                p,
+        Card auto = card(p, tr("settings.section.completion"));
+        checkRow(
+                auto, Category.COMPLETION, autocompleteCheck, null, "autocomplete completion suggestions enable popup");
+        // The three sub-sources follow their master directly; their disable state says the rest.
+        checkRow(
+                auto,
                 Category.COMPLETION,
-                completion,
+                autocompleteProseCheck,
+                null,
+                "autocomplete prose words dictionary ghost text spelling");
+        checkRow(auto, Category.COMPLETION, autocompleteSnippetsCheck, null, "autocomplete snippets popup templates");
+        checkRow(
+                auto,
+                Category.COMPLETION,
+                autocompleteMermaidCheck,
+                null,
+                "autocomplete mermaid diagram keywords snippets mmd");
+        checkRow(
+                auto,
+                Category.COMPLETION,
                 completionDocCheck,
+                null,
                 "completion documentation quick doc popup javadoc ctrl q");
-        row(
-                p,
+        Card lsp = card(p, null);
+        checkRow(
+                lsp,
                 Category.COMPLETION,
-                completion,
                 semanticHighlightCheck,
+                tr("settings.semanticHighlight.lspNote"),
                 "semantic highlighting lsp tokens types parameters fields deprecated");
-        row(
-                p,
+        checkRow(
+                lsp,
                 Category.COMPLETION,
-                completion,
                 inlayHintsCheck,
+                null,
                 "inlay hints parameter names inferred types lsp annotations");
         inlayHintsCheck.disableProperty().bind(lspCheck.selectedProperty().not());
-        row(
-                p,
+        checkRow(
+                lsp,
                 Category.COMPLETION,
-                completion,
                 onTypeFormattingCheck,
+                null,
                 "on-type formatting reindent semicolon brace enter lsp");
-        row(p, Category.COMPLETION, completion, pasteImportsCheck, "paste import auto imports java jdtls clipboard");
-        row(
-                p,
+        checkRow(lsp, Category.COMPLETION, pasteImportsCheck, null, "paste import auto imports java jdtls clipboard");
+        checkRow(
+                lsp,
                 Category.COMPLETION,
-                completion,
                 smartSemicolonCheck,
+                null,
                 "smart semicolon detection statement end java jdtls");
         onTypeFormattingCheck.disableProperty().bind(lspCheck.selectedProperty().not());
-        // Semantic highlighting comes from LSP: disable it (+ explain why) when LSP is off.
         semanticHighlightCheck
                 .disableProperty()
                 .bind(lspCheck.selectedProperty().not());
-        Label semanticNote = note(tr("settings.semanticHighlight.lspNote"));
-        semanticNote.setWrapText(true);
-        semanticNote.setMaxWidth(440);
-        semanticNote.setPadding(new Insets(0, 0, 0, 20));
-        semanticNote.visibleProperty().bind(lspCheck.selectedProperty().not());
-        semanticNote.managedProperty().bind(semanticNote.visibleProperty());
-        p.getChildren().add(semanticNote); // not a search row, so filter() never fights the visibility binding
         return p;
     }
 
     /** EDITOR ▸ TODO: in-editor TODO/FIXME highlighting + the per-pattern editor. */
     private VBox todoPage() {
         VBox p = page(tr("settings.cat.todo"));
-        Label todoHl = section(p, tr("settings.section.todo"));
-        row(p, Category.TODO, todoHl, todoHighlightCheck, "todo fixme highlight patterns tags comments annotations");
-        Label syntaxNote = note(tr("settings.todoSyntax"));
-        syntaxNote.setWrapText(true);
-        syntaxNote.setMaxWidth(560);
-        syntaxNote.managedProperty().bind(syntaxNote.visibleProperty());
-        p.getChildren().add(syntaxNote); // not a search row, so filter() never fights the visibility binding
-        row(p, Category.TODO, todoHl, todoPatternsEditor(), "todo fixme pattern regex color add remove edit");
-        Label partColors = section(p, tr("settings.section.todoPartColors"));
-        row(
-                p,
+        Card todoHl = card(p, tr("settings.section.todo"));
+        checkRow(
+                todoHl,
                 Category.TODO,
+                todoHighlightCheck,
+                tr("settings.todoSyntax"),
+                "todo fixme highlight patterns tags comments annotations");
+        cardRow(todoHl, Category.TODO, todoPatternsEditor(), "todo fixme pattern regex color add remove edit");
+        Card partColors = card(p, tr("settings.section.todoPartColors"));
+        cardRow(
                 partColors,
+                Category.TODO,
                 todoPartColorsEditor(),
                 "todo tag priority critical high medium low part color");
         return p;
@@ -2918,140 +2968,207 @@ public class SettingsWindow {
     /** LANGUAGES & TOOLS ▸ Web: HTML live preview + the built-in HTTP client (merged). */
     private VBox webPage() {
         VBox p = page(tr("settings.cat.web"));
-        Label preview = section(p, tr("settings.section.htmlPreview"));
-        row(p, Category.WEB, preview, htmlPreviewCheck, "html live preview browser serve enable");
-        Label previewHint = note(tr("settings.htmlPreview.hint"));
-        previewHint.setWrapText(true);
-        previewHint.setMaxWidth(440);
-        row(p, Category.WEB, preview, previewHint, "html preview browser safari chrome firefox edge server localhost");
-        Label http = section(p, tr("settings.section.httpClient"));
-        row(p, Category.WEB, http, httpCheck, "http client rest request enable run send");
-        Label httpHint = note(tr("settings.httpClient.hint"));
-        httpHint.setWrapText(true);
-        httpHint.setMaxWidth(440);
-        row(p, Category.WEB, http, httpHint, "http rest request response built-in client");
+        Card preview = card(p, tr("settings.section.htmlPreview"));
+        checkRow(
+                preview,
+                Category.WEB,
+                htmlPreviewCheck,
+                tr("settings.htmlPreview.hint"),
+                "html live preview browser serve enable safari chrome firefox edge server localhost");
+        Card http = card(p, tr("settings.section.httpClient"));
+        checkRow(
+                http,
+                Category.WEB,
+                httpCheck,
+                tr("settings.httpClient.hint"),
+                "http client rest request enable run send response built-in");
         return p;
     }
 
+    /** Reference implementation of the UI Kit card page — see {@link #card}/{@link #settingRow}. The
+     *  cards are untitled (the kit's are too): the page heading already says "Git", and each row names
+     *  itself. */
     private VBox gitPage() {
-        VBox p = page(tr("settings.cat.git"));
+        VBox p = page(tr("settings.cat.git"), tr("settings.git.subtitle"));
+
+        Card c = card(p, null);
         gitStatusLabel = new Label(tr("settings.git.checking"));
         gitStatusLabel.getStyleClass().add("settings-git-status");
         gitStatusLabel.setWrapText(true);
-        gitStatusLabel.setMaxWidth(440);
-        row(p, Category.GIT, null, gitStatusLabel, "git command found version installed not found");
-        row(p, Category.GIT, null, gitCheck, "git version control vcs enable");
-        row(p, Category.GIT, null, blameCheck, "git blame annotate inline author history line");
-        Label hint = note(tr("settings.git.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.GIT, null, hint, "git version control vcs enable");
+        gitStatusLabel.setMaxWidth(340);
+        cardRow(
+                c,
+                Category.GIT,
+                settingRow(tr("settings.enableGit"), tr("settings.git.hint"), switchFor(gitCheck)),
+                "git version control vcs enable");
+        Button gitBrowse = browseButton(tr("settings.git.command"), gitPathField);
+        gitPathField.setPrefWidth(180);
+        cardRow(
+                c,
+                Category.GIT,
+                settingRow(
+                        tr("settings.git.command"),
+                        tr("settings.git.command.desc"),
+                        new HBox(6, gitPathField, gitBrowse)),
+                "git command path executable browse");
+        cardRow(
+                c,
+                Category.GIT,
+                settingRow(tr("settings.git.detected"), null, gitStatusLabel),
+                "git command found version installed not found");
+
+        Card c2 = card(p, null);
+        cardRow(
+                c2,
+                Category.GIT,
+                settingRow(
+                        tr("settings.git.blameInline"),
+                        tr("settings.git.blameInline.desc"),
+                        new HBox(8, chordChip("git.toggleBlame"), switchFor(blameCheck))),
+                "git blame annotate inline author history line");
+
+        row(p, Category.GIT, null, noteBox(tr("settings.liveNote")), "live apply ok palette command");
         return p;
     }
 
     private VBox githubPage() {
         VBox p = page(tr("settings.cat.github"));
+        Card c = card(p, null);
         githubStatusLabel = new Label(tr("settings.github.checking"));
         githubStatusLabel.getStyleClass().add("settings-git-status");
         githubStatusLabel.setWrapText(true);
-        githubStatusLabel.setMaxWidth(440);
-        row(p, Category.GITHUB, null, githubStatusLabel, "github gh cli found installed authenticated not found");
-        row(p, Category.GITHUB, null, githubCheck, "github gh pull request pr enable");
-        row(
-                p,
+        githubStatusLabel.setMaxWidth(340);
+        checkRow(c, Category.GITHUB, githubCheck, tr("settings.github.hint"), "github gh pull request pr enable");
+        Button ghBrowse = browseButton(tr("settings.github.ghPath"), ghPathField);
+        ghPathField.setPrefWidth(180);
+        controlRow(
+                c,
                 Category.GITHUB,
+                tr("settings.github.ghPath"),
                 null,
-                exePathRow(tr("settings.github.ghPath"), ghPathField),
+                new HBox(6, ghPathField, ghBrowse),
                 "github gh path executable command");
-        Label hint = note(tr("settings.github.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.GITHUB, null, hint, "github gh cli token credentials auth");
+        controlRow(
+                c,
+                Category.GITHUB,
+                tr("settings.git.detected"),
+                null,
+                githubStatusLabel,
+                "github gh cli found installed authenticated not found");
         refreshGithubStatus();
         return p;
     }
 
     private VBox searchPage() {
         VBox p = page(tr("settings.cat.search"));
+        Card c = card(p, null);
         ripgrepStatusLabel = new Label(tr("settings.search.checking"));
         ripgrepStatusLabel.getStyleClass().add("settings-git-status");
         ripgrepStatusLabel.setWrapText(true);
-        ripgrepStatusLabel.setMaxWidth(440);
-        row(p, Category.SEARCH, null, ripgrepStatusLabel, "search ripgrep rg found installed not found");
-        row(p, Category.SEARCH, null, ripgrepCheck, "search ripgrep rg find in files fast");
-        row(
-                p,
+        ripgrepStatusLabel.setMaxWidth(340);
+        checkRow(c, Category.SEARCH, ripgrepCheck, tr("settings.search.hint"), "search ripgrep rg find in files fast");
+        Button rgBrowse = browseButton(tr("settings.search.ripgrepPath"), ripgrepCommandField);
+        ripgrepCommandField.setPrefWidth(180);
+        controlRow(
+                c,
                 Category.SEARCH,
+                tr("settings.search.ripgrepPath"),
                 null,
-                exePathRow(tr("settings.search.ripgrepPath"), ripgrepCommandField),
+                new HBox(6, ripgrepCommandField, rgBrowse),
                 "search ripgrep rg path executable command");
-        Label exclude = section(p, tr("settings.search.exclusions"));
-        row(
-                p,
+        controlRow(
+                c,
                 Category.SEARCH,
-                exclude,
+                tr("settings.git.detected"),
+                null,
+                ripgrepStatusLabel,
+                "search ripgrep rg found installed not found");
+        Card c2 = card(p, tr("settings.search.exclusions"));
+        checkRow(
+                c2,
+                Category.SEARCH,
                 searchGitignoreCheck,
+                null,
                 "search exclude gitignore ignored target node_modules build dist folders files");
-        Label hint = note(tr("settings.search.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.SEARCH, null, hint, "search ripgrep rg gitignore find in files");
         return p;
     }
 
     private VBox mermaidPage() {
         VBox p = page(tr("settings.cat.mermaid"));
+        Card c = card(p, null);
         mermaidStatusLabel = new Label(tr("settings.mermaid.checking"));
         mermaidStatusLabel.getStyleClass().add("settings-git-status");
         mermaidStatusLabel.setWrapText(true);
-        mermaidStatusLabel.setMaxWidth(440);
-        row(p, Category.MERMAID, null, mermaidStatusLabel, "mermaid mmdc maid found installed not found");
-        row(p, Category.MERMAID, null, installButton("mermaid"), "mermaid mmdc install download cli");
-        row(p, Category.MERMAID, null, mermaidCheck, "mermaid diagram enable mmdc render mmd");
-        row(
-                p,
+        mermaidStatusLabel.setMaxWidth(340);
+        checkRow(
+                c,
                 Category.MERMAID,
+                mermaidCheck,
+                tr("settings.mermaid.hint"),
+                "mermaid diagram enable mmdc render mmd");
+        mmdcPathField.setPrefWidth(180);
+        controlRow(
+                c,
+                Category.MERMAID,
+                tr("settings.mermaid.mmdcPath"),
                 null,
-                exePathRow(tr("settings.mermaid.mmdcPath"), mmdcPathField),
+                new HBox(6, mmdcPathField, browseButton(tr("settings.mermaid.mmdcPath"), mmdcPathField)),
                 "mermaid mmdc path executable render");
-        row(
-                p,
+        maidPathField.setPrefWidth(180);
+        controlRow(
+                c,
                 Category.MERMAID,
+                tr("settings.mermaid.maidPath"),
                 null,
-                exePathRow(tr("settings.mermaid.maidPath"), maidPathField),
+                new HBox(6, maidPathField, browseButton(tr("settings.mermaid.maidPath"), maidPathField)),
                 "mermaid maid path executable lint validate");
-        Label hint = note(tr("settings.mermaid.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.MERMAID, null, hint, "mermaid install npm mmdc maid cli");
+        controlRow(
+                c,
+                Category.MERMAID,
+                tr("settings.git.detected"),
+                null,
+                new HBox(8, mermaidStatusLabel, installButton("mermaid")),
+                "mermaid mmdc maid found installed not found install download cli");
         return p;
     }
 
     /** LANGUAGES & TOOLS ▸ Diagrams: Graphviz DOT + PlantUML preview (external CLIs). */
     private VBox diagramsPage() {
         VBox p = page(tr("settings.cat.diagrams"));
+        Card c = card(p, null);
         diagramStatusLabel = new Label(tr("settings.diagram.checking"));
         diagramStatusLabel.getStyleClass().add("settings-git-status");
         diagramStatusLabel.setWrapText(true);
-        diagramStatusLabel.setMaxWidth(440);
-        row(p, Category.DIAGRAMS, null, diagramStatusLabel, "diagram dot graphviz plantuml found installed not found");
-        row(p, Category.DIAGRAMS, null, diagramCheck, "diagram dot graphviz plantuml enable render preview puml gv");
-        row(
-                p,
+        diagramStatusLabel.setMaxWidth(340);
+        checkRow(
+                c,
                 Category.DIAGRAMS,
+                diagramCheck,
+                tr("settings.diagram.hint"),
+                "diagram dot graphviz plantuml enable render preview puml gv");
+        dotPathField.setPrefWidth(180);
+        controlRow(
+                c,
+                Category.DIAGRAMS,
+                tr("settings.diagram.dotPath"),
                 null,
-                exePathRow(tr("settings.diagram.dotPath"), dotPathField),
+                new HBox(6, dotPathField, browseButton(tr("settings.diagram.dotPath"), dotPathField)),
                 "diagram dot graphviz path executable render");
-        row(
-                p,
+        plantumlPathField.setPrefWidth(180);
+        controlRow(
+                c,
                 Category.DIAGRAMS,
+                tr("settings.diagram.plantumlPath"),
                 null,
-                exePathRow(tr("settings.diagram.plantumlPath"), plantumlPathField),
+                new HBox(6, plantumlPathField, browseButton(tr("settings.diagram.plantumlPath"), plantumlPathField)),
                 "diagram plantuml puml path executable render");
-        Label hint = note(tr("settings.diagram.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.DIAGRAMS, null, hint, "diagram install dot graphviz plantuml cli");
+        controlRow(
+                c,
+                Category.DIAGRAMS,
+                tr("settings.git.detected"),
+                null,
+                diagramStatusLabel,
+                "diagram dot graphviz plantuml found installed not found");
         return p;
     }
 
@@ -3077,23 +3194,32 @@ public class SettingsWindow {
     /** LANGUAGES & TOOLS ▸ Typst: multi-page rendered document preview (the external typst CLI). */
     private VBox typstPage() {
         VBox p = page(tr("settings.cat.typst"));
+        Card c = card(p, null);
         typstStatusLabel = new Label(tr("settings.typst.checking"));
         typstStatusLabel.getStyleClass().add("settings-git-status");
         typstStatusLabel.setWrapText(true);
-        typstStatusLabel.setMaxWidth(440);
-        row(p, Category.TYPST, null, typstStatusLabel, "typst document found installed not found");
-        row(p, Category.TYPST, null, typstCheck, "typst document enable render preview typ pdf");
-        row(
-                p,
+        typstStatusLabel.setMaxWidth(340);
+        checkRow(
+                c,
                 Category.TYPST,
+                typstCheck,
+                tr("settings.typst.hint"),
+                "typst document enable render preview typ pdf");
+        typstPathField.setPrefWidth(180);
+        controlRow(
+                c,
+                Category.TYPST,
+                tr("settings.typst.path"),
                 null,
-                exePathRow(tr("settings.typst.path"), typstPathField),
+                new HBox(6, typstPathField, browseButton(tr("settings.typst.path"), typstPathField)),
                 "typst path executable render document");
-        row(p, Category.TYPST, null, installButton("typst"), "typst install download cli render");
-        Label typstHint = note(tr("settings.typst.hint"));
-        typstHint.setWrapText(true);
-        typstHint.setMaxWidth(440);
-        row(p, Category.TYPST, null, typstHint, "typst install cli document");
+        controlRow(
+                c,
+                Category.TYPST,
+                tr("settings.git.detected"),
+                null,
+                new HBox(8, typstStatusLabel, installButton("typst")),
+                "typst document found installed not found install download cli");
         return p;
     }
 
@@ -3114,32 +3240,27 @@ public class SettingsWindow {
 
     private VBox buildToolsPage() {
         VBox p = page(tr("settings.cat.buildTools"));
-        Label testSec = section(p, tr("settings.section.testRunner"));
-        row(
-                p,
+        Card testCard = card(p, tr("settings.section.testRunner"));
+        checkRow(
+                testCard,
                 Category.BUILD_TOOLS,
-                testSec,
                 testRunnerCheck,
+                tr("settings.testRunner.hint"),
                 "test results runner junit surefire tree pass fail rerun intellij");
-        Label testHint = note(tr("settings.testRunner.hint"));
-        testHint.setWrapText(true);
-        testHint.setMaxWidth(440);
-        row(p, Category.BUILD_TOOLS, testSec, testHint, "test results runner");
         for (BuildTool bt : BuildTool.enabled()) {
-            Label sec = section(p, bt.displayName());
+            Card c = card(p, bt.displayName());
             String kw = bt.id() + " build tool project detected enable command override toolbar";
-            row(p, Category.BUILD_TOOLS, sec, buildToolStatusLabels.get(bt), kw);
-            row(p, Category.BUILD_TOOLS, sec, buildToolChecks.get(bt), kw);
-            row(
-                    p,
+            checkRow(c, Category.BUILD_TOOLS, buildToolChecks.get(bt), tr("settings." + bt.id() + ".hint"), kw);
+            TextField field = buildToolCommandFields.get(bt);
+            field.setPrefWidth(180);
+            controlRow(
+                    c,
                     Category.BUILD_TOOLS,
-                    sec,
-                    exePathRow(tr("settings.buildTools.commandOverride"), buildToolCommandFields.get(bt)),
+                    tr("settings.buildTools.commandOverride"),
+                    null,
+                    new HBox(6, field, browseButton(tr("settings.buildTools.commandOverride"), field)),
                     kw + " path executable wrapper");
-            Label hint = note(tr("settings." + bt.id() + ".hint"));
-            hint.setWrapText(true);
-            hint.setMaxWidth(440);
-            row(p, Category.BUILD_TOOLS, sec, hint, kw);
+            controlRow(c, Category.BUILD_TOOLS, tr("settings.git.detected"), null, buildToolStatusLabels.get(bt), kw);
         }
         return p;
     }
@@ -4614,11 +4735,13 @@ public class SettingsWindow {
 
     private VBox mcpPage() {
         VBox p = page(tr("settings.cat.mcp"));
-        row(p, Category.MCP, null, mcpCheck, "mcp model context protocol agent server enable ai claude");
-        Label hint = note(tr("settings.mcp.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.MCP, null, hint, "mcp agent llm command palette diagnostics search loopback token endpoint");
+        Card c = card(p, null);
+        checkRow(
+                c,
+                Category.MCP,
+                mcpCheck,
+                tr("settings.mcp.hint"),
+                "mcp model context protocol agent server enable ai claude llm loopback token endpoint");
         return p;
     }
 
@@ -5058,30 +5181,37 @@ public class SettingsWindow {
         experimental.setWrapText(true);
         experimental.setMaxWidth(440);
         row(p, Category.DEBUG, null, experimental, "debug experimental beta");
-        row(p, Category.DEBUG, null, debugCheck, "debug dap breakpoint step variables enable");
+        Card master = card(p, null);
+        checkRow(
+                master,
+                Category.DEBUG,
+                debugCheck,
+                tr("settings.debug.note"),
+                "debug dap breakpoint step variables enable install plugin vscode mason jdtls debugpy js-debug");
+        // One card per adapter, titled with the language (Java has no per-adapter enable — it rides
+        // the Java LSP server; see DebugCoordinator.debugEffectiveFor).
         for (DebugAdapterUi dbg : debugAdapterUis()) {
-            Label sec = section(p, tr(dbg.sectionKey()));
+            Card c = card(p, tr(dbg.sectionKey()));
             CheckBox enable = debugEnableChecks.get(dbg.id());
             if (enable != null) {
-                row(p, Category.DEBUG, sec, enable, dbg.keywords());
+                checkRow(c, Category.DEBUG, enable, null, dbg.keywords());
             }
             Label status = new Label(tr("settings.debug.checking"));
             status.getStyleClass().add("settings-git-status");
             status.setWrapText(true);
-            status.setMaxWidth(440);
+            status.setMaxWidth(340);
             debugStatusLabels.put(dbg.id(), status);
-            row(p, Category.DEBUG, sec, status, dbg.keywords());
-            row(
-                    p,
+            TextField field = debugCommandFields.get(dbg.id());
+            field.setPrefWidth(180);
+            controlRow(
+                    c,
                     Category.DEBUG,
-                    sec,
-                    exePathRow(tr(dbg.commandLabelKey()), debugCommandFields.get(dbg.id())),
+                    tr(dbg.commandLabelKey()),
+                    null,
+                    new HBox(6, field, browseButton(tr(dbg.commandLabelKey()), field)),
                     dbg.keywords());
+            controlRow(c, Category.DEBUG, tr("settings.git.detected"), null, status, dbg.keywords());
         }
-        Label hint = note(tr("settings.debug.note"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.DEBUG, null, hint, "debug install plugin vscode mason jdtls debugpy js-debug");
         return p;
     }
 
@@ -5171,24 +5301,32 @@ public class SettingsWindow {
                 lspCheck,
                 "lsp language server protocol enable java typescript python xml json bash diagnostics");
         row(p, Category.LSP, null, lspInstallPromptsCheck, "lsp install banner prompt offer language support");
+        // One card per server (UI Kit v1). Twenty-one servers × four controls was a ~84-row flat wall in
+        // which it took real effort to see which status line belonged to which enable box. The card is
+        // deliberately untitled: the server's own enable checkbox already names it in every locale, and a
+        // derived title ("Enable Java (jdtls)" minus "Enable ") would not survive translation.
         for (LspServerUi srv : lspServerUis()) {
-            row(p, Category.LSP, null, lspEnableChecks.get(srv.id()), srv.keywords());
+            Card c = card(p, null);
+            cardRow(
+                    c,
+                    Category.LSP,
+                    settingRow(tr(srv.enableLabelKey()), null, switchFor(lspEnableChecks.get(srv.id()))),
+                    srv.keywords());
             Label status = new Label(tr("settings.lsp.checking"));
             status.getStyleClass().add("settings-git-status");
             status.setWrapText(true);
             status.setMaxWidth(440);
             lspStatusLabels.put(srv.id(), status);
-            row(p, Category.LSP, null, status, srv.keywords());
+            cardRow(c, Category.LSP, status, srv.keywords());
             String langKey = installLangForServer(srv.id());
             if (langKey != null) {
-                row(p, Category.LSP, null, installButton(langKey), srv.keywords() + " install download");
+                cardRow(c, Category.LSP, installButton(langKey), srv.keywords() + " install download");
             } else if (com.editora.install.InstallCatalog.installableServerIds().contains(srv.id())) {
-                row(p, Category.LSP, null, installServerButton(srv.id()), srv.keywords() + " install download");
+                cardRow(c, Category.LSP, installServerButton(srv.id()), srv.keywords() + " install download");
             }
-            row(
-                    p,
+            cardRow(
+                    c,
                     Category.LSP,
-                    null,
                     exePathRow(tr(srv.commandLabelKey()), lspCommandFields.get(srv.id())),
                     srv.keywords());
         }
@@ -5479,6 +5617,20 @@ public class SettingsWindow {
         return box;
     }
 
+    /** The Browse… half of {@link #exePathRow}, for card rows whose title already names the field. */
+    private Button browseButton(String title, TextField field) {
+        Button browse = new Button(tr("settings.mermaid.browse"));
+        browse.setOnAction(e -> {
+            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
+            fc.setTitle(title);
+            java.io.File f = fc.showOpenDialog(stage);
+            if (f != null) {
+                field.setText(f.getAbsolutePath());
+            }
+        });
+        return browse;
+    }
+
     private HBox exePathRow(String label, TextField field) {
         Button browse = new Button(tr("settings.mermaid.browse"));
         browse.setOnAction(e -> {
@@ -5683,6 +5835,7 @@ public class SettingsWindow {
         if (gitStatusLabel == null || gitService == null) {
             return;
         }
+        gitService.setCommand(config.getSettings().getGitPath()); // probe what the setting names
         gitStatusLabel.getStyleClass().setAll("settings-git-status");
         gitStatusLabel.setText(tr("settings.git.checking"));
         gitService.version(version -> {
@@ -6073,6 +6226,19 @@ public class SettingsWindow {
         return box;
     }
 
+    /** A page with the kit's one-line subtitle under its heading, saying what the page is for. */
+    private VBox page(String title, String subtitle) {
+        VBox box = page(title);
+        if (subtitle != null && !subtitle.isBlank()) {
+            Label sub = new Label(subtitle);
+            sub.getStyleClass().add("settings-page-subtitle");
+            sub.setWrapText(true);
+            sub.setMaxWidth(520);
+            box.getChildren().add(sub);
+        }
+        return box;
+    }
+
     private Label section(VBox page, String name) {
         Label h = new Label(name);
         h.getStyleClass().add("settings-section");
@@ -6083,7 +6249,118 @@ public class SettingsWindow {
 
     private void row(VBox page, Category cat, Label section, Node node, String keywords) {
         page.getChildren().add(node);
-        rows.add(new SettingRow(cat, node, keywords, section));
+        rows.add(new SettingRow(cat, node, keywords, section, null));
+    }
+
+    // --- card rows (UI Kit v1) ---------------------------------------------------------------------
+    //
+    // A card groups related settings into one bordered block, and each row states its setting as a
+    // title + a one-line description with the control on the right — instead of a bare CheckBox whose
+    // own label has to carry the whole explanation. Pages opt in one at a time; `page`/`section`/`row`
+    // above are unchanged, so an unmigrated page renders exactly as before.
+
+    /** A card and the box its rows are appended to (the title, if any, sits above that box). */
+    private record Card(VBox box, VBox body) {}
+
+    private Card card(VBox page, String title) {
+        VBox body = new VBox();
+        body.getStyleClass().add("settings-card-body");
+        // Rows carry a bottom separator, which must not be drawn under the last one. JavaFX CSS has no
+        // structural pseudo-classes (`:last-child` parses but matches nothing), so tag the final row
+        // here and let .settings-row-last drop the border.
+        body.getChildren().addListener((javafx.collections.ListChangeListener<Node>) ch -> {
+            var kids = body.getChildren();
+            for (int i = 0; i < kids.size(); i++) {
+                kids.get(i).getStyleClass().remove("settings-row-last");
+            }
+            if (!kids.isEmpty()) {
+                kids.get(kids.size() - 1).getStyleClass().add("settings-row-last");
+            }
+        });
+        VBox box = new VBox();
+        box.getStyleClass().add("settings-card");
+        if (title != null && !title.isBlank()) {
+            Label t = new Label(title);
+            t.getStyleClass().add("settings-card-title");
+            box.getChildren().add(t);
+        }
+        box.getChildren().add(body);
+        page.getChildren().add(box);
+        cards.add(box);
+        return new Card(box, body);
+    }
+
+    /**
+     * Appends a row to a card. Mirrors {@link #row}, but the row is registered against its card so the
+     * search filter can hide the whole card once every row inside it is filtered out — otherwise a
+     * non-matching page would keep showing an empty bordered box.
+     */
+    private void cardRow(Card card, Category cat, Node node, String keywords) {
+        // Any node can be a card row, not just a settingRow() — a page mid-migration still has plain
+        // checkboxes, status labels and path fields. Wrap those (rather than adding the class to them)
+        // so .settings-row's padding can't collide with the node's own.
+        Node row = node;
+        if (!node.getStyleClass().contains("settings-row")) {
+            HBox h = new HBox(node);
+            h.setAlignment(Pos.CENTER_LEFT);
+            h.getStyleClass().add("settings-row");
+            HBox.setHgrow(node, Priority.ALWAYS); // a full-width control (a path field) keeps filling
+            row = h;
+        }
+        card.body().getChildren().add(row);
+        rows.add(new SettingRow(cat, row, keywords, null, card.box()));
+    }
+
+    /**
+     * A checkbox as a kit card row with zero new i18n: the row title is the checkbox's own localized
+     * label, the (optional) description is an existing localized string, and the control is the bound
+     * toggle switch. This is what makes migrating a page mechanical rather than a translation project.
+     */
+    private void checkRow(Card card, Category cat, CheckBox check, String description, String keywords) {
+        cardRow(card, cat, settingRow(check.getText(), description, switchFor(check)), keywords);
+    }
+
+    /** A labeled field/control as a card row: title left, the control right (kit "Git command" shape). */
+    private void controlRow(Card card, Category cat, String title, String description, Node control, String keywords) {
+        cardRow(card, cat, settingRow(title, description, control), keywords);
+    }
+
+    /** A card row: title + optional description on the left, the control on the right. */
+    private static Node settingRow(String title, String description, Node control) {
+        Label t = new Label(title);
+        t.getStyleClass().add("settings-row-title");
+        VBox main = new VBox(2, t);
+        if (description != null && !description.isBlank()) {
+            Label d = new Label(description);
+            d.getStyleClass().add("settings-row-desc");
+            d.setWrapText(true);
+            main.getChildren().add(d);
+        }
+        HBox.setHgrow(main, Priority.ALWAYS);
+        HBox row = new HBox(16, main);
+        if (control != null) {
+            HBox side = new HBox(8, control);
+            side.setAlignment(Pos.CENTER_RIGHT);
+            side.setMinWidth(Region.USE_PREF_SIZE); // the control must never be squeezed by a long description
+            row.getChildren().add(side);
+        }
+        row.setAlignment(Pos.CENTER_LEFT);
+        row.getStyleClass().add("settings-row");
+        return row;
+    }
+
+    /**
+     * The kit renders a card row's on/off control as a toggle switch, not a checkbox. All of Editora's
+     * setting state lives on {@link CheckBox}es (listeners, {@code syncAll}, palette toggles), so rather
+     * than rewire any of that, the switch is a <em>view</em>: bidirectionally bound to the checkbox's
+     * {@code selectedProperty} (and following its {@code disableProperty}), while the checkbox itself
+     * stays out of the scene graph. Every existing writer keeps working untouched.
+     */
+    private static atlantafx.base.controls.ToggleSwitch switchFor(CheckBox check) {
+        var sw = new atlantafx.base.controls.ToggleSwitch();
+        sw.selectedProperty().bindBidirectional(check.selectedProperty());
+        sw.disableProperty().bind(check.disableProperty());
+        return sw;
     }
 
     private Region labeled(String label, Node control) {
@@ -6101,6 +6378,15 @@ public class SettingsWindow {
     private static Label note(String text) {
         Label l = new Label(text);
         l.getStyleClass().add("settings-hint");
+        return l;
+    }
+
+    /** The kit's boxed page note (its {@code .set-note}) — a tinted, rounded paragraph, not a bare hint. */
+    private static Label noteBox(String text) {
+        Label l = new Label(text);
+        l.getStyleClass().add("settings-note-box");
+        l.setWrapText(true);
+        l.setMaxWidth(520);
         return l;
     }
 
@@ -6155,11 +6441,13 @@ public class SettingsWindow {
         if (!searching) {
             rows.forEach(r -> setShown(r.node(), true));
             sectionLabels.forEach(s -> setShown(s, true));
+            cards.forEach(c -> setShown(c, true));
             sidebar.refresh();
             return;
         }
         Set<Category> matched = EnumSet.noneOf(Category.class);
         Set<Label> visibleSections = new HashSet<>();
+        Set<VBox> visibleCards = new HashSet<>();
         for (SettingRow r : rows) {
             boolean m = matches(query, r.keywords());
             setShown(r.node(), m);
@@ -6168,9 +6456,13 @@ public class SettingsWindow {
                 if (r.section() != null) {
                     visibleSections.add(r.section());
                 }
+                if (r.card() != null) {
+                    visibleCards.add(r.card());
+                }
             }
         }
         sectionLabels.forEach(s -> setShown(s, visibleSections.contains(s)));
+        cards.forEach(c -> setShown(c, visibleCards.contains(c)));
         for (Category c : Category.values()) {
             if (!matched.contains(c)) {
                 searchHiddenCats.add(c);
@@ -6214,7 +6506,9 @@ public class SettingsWindow {
                 return;
             }
             if (item instanceof Group g) {
-                setText(g.display);
+                // The kit sets group headers in small caps; JavaFX CSS has no text-transform, so
+                // uppercase in code (default locale — the header text is localized).
+                setText(g.display.toUpperCase(Locale.getDefault()));
                 getStyleClass().add("settings-group-header");
                 setMouseTransparent(true); // headers can't be selected
                 setFocusTraversable(false);
@@ -6434,6 +6728,8 @@ public class SettingsWindow {
             gitCheck.setSelected(settings.isGitSupport());
             blameCheck.setSelected(settings.isGitBlameInline());
             blameCheck.setDisable(!settings.isGitSupport());
+            gitPathField.setText(settings.getGitPath());
+            gitPathField.setDisable(!settings.isGitSupport());
             githubCheck.setSelected(settings.isGithubSupport());
             ghPathField.setText(settings.getGhPath());
             ghPathField.setDisable(!settings.isGithubSupport());
@@ -6718,9 +7014,42 @@ public class SettingsWindow {
         void resetAll();
     }
 
+    /**
+     * A periwinkle chord chip for {@code commandId} (UI Kit v1: a Settings row teaches the keyboard
+     * instead of hiding it). The binding is not known when pages are built — {@link ShortcutActions} is
+     * injected afterwards — so the chip starts empty and {@link #refreshChordChips()} fills it in. An
+     * unbound command shows nothing at all rather than an empty chip.
+     */
+    private Label chordChip(String commandId) {
+        Label chip = new Label();
+        chip.getStyleClass().add("chord-chip");
+        setShown(chip, false);
+        chordChips.put(commandId, chip);
+        return chip;
+    }
+
+    /** Fills every {@link #chordChip} from the live keymap; hides the chip for an unbound command. */
+    private void refreshChordChips() {
+        if (shortcutActions == null || chordChips.isEmpty()) {
+            return;
+        }
+        Map<String, String> byId = new HashMap<>();
+        for (Shortcut s : shortcutActions.rows()) {
+            if (s.chord() != null && !s.chord().isBlank()) {
+                byId.put(s.id(), s.chord());
+            }
+        }
+        chordChips.forEach((id, chip) -> {
+            String chord = byId.get(id);
+            chip.setText(chord == null ? "" : chord);
+            setShown(chip, chord != null);
+        });
+    }
+
     /** Injects the keybinding-editor backend (→ MainController); enables the shortcuts list. */
     public void setShortcutActions(ShortcutActions actions) {
         this.shortcutActions = actions;
+        refreshChordChips();
         if (built) {
             refreshShortcuts();
         }

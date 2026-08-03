@@ -343,7 +343,9 @@ public final class BranchPopup {
                 setDisable(false);
                 Label label = new Label(a.label());
                 Label accel = new Label(a.accel() == null ? "" : a.accel());
-                accel.getStyleClass().add("keybinding");
+                // A real chord, so it wears the periwinkle chip (the "keybinding" class alone has no
+                // rule outside .command-palette). See the state language in app.css.
+                accel.getStyleClass().addAll("keybinding", "chord-chip");
                 setText(null);
                 setGraphic(row(label, accel));
             } else if (item instanceof BranchRow br) {

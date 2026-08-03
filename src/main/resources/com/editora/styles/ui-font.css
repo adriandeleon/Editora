@@ -1,0 +1,26 @@
+/* UI chrome font — Inter, on every platform (UI Kit v1: "Inter speaks, JetBrains Mono works").
+
+   Inter is bundled (resources/com/editora/fonts/inter/, all four faces) and registered by Fonts.load()
+   before any CSS is applied, so the family always resolves. It is NOT inherited from anywhere else:
+   AtlantaFX 2.1.0 neither bundles nor references Inter, and none of its themes set a `.root`
+   -fx-font-family — so without this sheet the whole interface falls back to JavaFX's default (Modena's
+   logical "System"), which is what made the app look unlike the kit's mockups even after the Caret & Ink
+   palette landed.
+
+   This is an author-level *scene* stylesheet rather than a rule in app.css because dialogs and popups
+   (alerts, the Settings window, the command palette, context menus, tooltips) each live in their own
+   scene that doesn't share app.css. A scene stylesheet also overrides the AtlantaFX user-agent
+   stylesheet and — unlike an inline style on the root — is re-applied cleanly when the theme is
+   switched at runtime (setUserAgentStylesheet). App.installUiFont attaches it to every window's scene.
+
+   The editor surface is unaffected: .editor-area sets -fx-font-family explicitly, and an element's own
+   value beats an inherited one.
+
+   Previously this file was macOS-only and mapped San Francisco via the logical "System" family. That
+   was dropped in favour of the kit: it applied to one platform (so the UI differed by OS for no design
+   reason), and JavaFX cannot rasterize .AppleSystemUIFont's bold weight cleanly — it faux-bolds and
+   mangles the glyphs, which is exactly why the Markdown preview was already pinned to Inter. Inter has
+   a real bold face on every platform. */
+.root {
+    -fx-font-family: "Inter", "System", "sans-serif";
+}

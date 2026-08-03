@@ -151,8 +151,11 @@ final class DoctorCoordinator {
         DoctorCheck git = DoctorCheck.checking("git", "vcs", "Git", "git").withSettings("git");
         if (gitOn) {
             specs.add(probe(git, base -> {
-                DoctorProbes.Presence p = DoctorProbes.version(List.of("git"));
-                return p.present() ? base.ok(p.version()) : base.missing("doctor.tip.missing", "git");
+                List<String> gitCmd = s.getGitPath() == null || s.getGitPath().isBlank()
+                        ? List.of("git")
+                        : List.of(s.getGitPath().trim().split("\\s+"));
+                DoctorProbes.Presence p = DoctorProbes.version(gitCmd);
+                return p.present() ? base.ok(p.version()) : base.missing("doctor.tip.missing", gitCmd.get(0));
             }));
         } else {
             specs.add(terminal(git.disabled()));

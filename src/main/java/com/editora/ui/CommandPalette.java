@@ -74,6 +74,9 @@ public class CommandPalette {
      */
     private final java.util.function.Supplier<java.util.function.Predicate<Command>> enabledPolicy;
 
+    /** The query of the current filter pass, read by the cells to highlight the matched characters. */
+    private String currentQuery = "";
+
     /** The current pass's predicate, refreshed by {@link #filter} and read by the cells while they render. */
     private java.util.function.Predicate<Command> enabledSnapshot = c -> true;
 
@@ -85,6 +88,9 @@ public class CommandPalette {
     private java.util.function.Function<Command, String> disabledReason = c -> null;
 
     private final TextField input = new TextField();
+    /** The input row's chord chip (see {@link #paletteChord}). */
+    private final Label prefixChip = new Label();
+
     private final ListView<Command> list = new ListView<>();
     private final ObservableList<Command> items = FXCollections.observableArrayList();
     /** One-line description of the highlighted command, shown above the navigation hint. */
@@ -125,7 +131,13 @@ public class CommandPalette {
     /** Rebuilds the chord hints from the current keymap (after a live keymap switch). */
     public void refreshBindings() {
         this.commandToKey = invert(keymap.bindings());
+        prefixChip.setText(paletteChord());
         list.refresh();
+    }
+
+    /** The chord that opens the palette (the kit's "M-x" prefix chip); keymap-accurate, not hardcoded. */
+    private String paletteChord() {
+        return commandToKey.getOrDefault("palette.show", "M-x");
     }
 
     private static Map<String, String> invert(Map<String, String> bindings) {
@@ -159,8 +171,15 @@ public class CommandPalette {
             });
         }
 
-        Label header = new Label(tr("palette.header"));
-        header.getStyleClass().add("palette-title");
+        // Kit shape: no title header — the first row IS the input, led by a small chip naming the
+        // chord that opened the palette (so the palette introduces itself by its keyboard identity).
+        prefixChip.setText(paletteChord());
+        prefixChip.getStyleClass().add("palette-prefix");
+        input.getStyleClass().add("palette-input");
+        javafx.scene.layout.HBox inputRow = new javafx.scene.layout.HBox(9, prefixChip, input);
+        inputRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        inputRow.getStyleClass().add("palette-input-row");
+        javafx.scene.layout.HBox.setHgrow(input, javafx.scene.layout.Priority.ALWAYS);
         // Description of the highlighted command, between the list and the navigation hint. Single line
         // with a fixed height (so the card doesn't jitter as descriptions vary in length) and ellipsis.
         desc.getStyleClass().add("palette-desc");
@@ -172,7 +191,7 @@ public class CommandPalette {
         });
         Label hint = new Label(tr("palette.hint"));
         hint.getStyleClass().add("palette-hint");
-        content = new VBox(6, header, input, list, desc, hint);
+        content = new VBox(6, inputRow, list, desc, hint);
         content.getStyleClass().add("command-palette");
         content.setPrefWidth(620);
         content.setMaxSize(620, Region.USE_PREF_SIZE); // hug its content; don't stretch to fill the overlay
@@ -289,6 +308,7 @@ public class CommandPalette {
     private void filter(String query) {
         // One snapshot of the live feature/context state for this whole pass — see enabledPolicy.
         enabledSnapshot = enabledPolicy.get();
+        currentQuery = query == null ? "" : query.trim();
         String q = query.toLowerCase(Locale.ROOT).trim();
         List<Command> matches = new ArrayList<>();
         for (Command command : registry.all()) {
@@ -388,8 +408,38 @@ public class CommandPalette {
         return showing;
     }
 
+    /**
+     * The title as styled runs: the characters the query matched wear {@code palette-match} (accent +
+     * bold — the kit's {@code <mark>}), the rest {@code palette-cell-text}. Reuses the completion popup's
+     * {@code MatchHighlighter} — same substring-else-subsequence semantics as {@link #filter}'s matcher,
+     * and it indexes the label directly (case folded per char) so highlights can't drift on a
+     * length-changing lowercase mapping.
+     */
+    private List<javafx.scene.text.Text> buildTitle(String text) {
+        int[][] ranges = com.editora.completion.MatchHighlighter.matchRanges(text, currentQuery);
+        List<javafx.scene.text.Text> parts = new ArrayList<>();
+        int pos = 0;
+        for (int[] r : ranges) {
+            if (r[0] > pos) {
+                parts.add(titleRun(text.substring(pos, r[0]), false));
+            }
+            parts.add(titleRun(text.substring(r[0], r[1]), true));
+            pos = r[1];
+        }
+        if (pos < text.length()) {
+            parts.add(titleRun(text.substring(pos), false));
+        }
+        return parts;
+    }
+
+    private javafx.scene.text.Text titleRun(String s, boolean matched) {
+        javafx.scene.text.Text t = new javafx.scene.text.Text(s);
+        t.getStyleClass().add(matched ? "palette-match" : "palette-cell-text");
+        return t;
+    }
+
     private final class CommandCell extends ListCell<Command> {
-        private final Label title = new Label();
+        private final javafx.scene.text.TextFlow title = new javafx.scene.text.TextFlow();
         private final Label key = new Label();
         private final HBox box = new HBox(10, title, spacer(), key);
 
@@ -419,7 +469,7 @@ public class CommandPalette {
                 setGraphic(null);
                 return;
             }
-            title.setText(item.title());
+            title.getChildren().setAll(buildTitle(item.title()));
             key.setText(commandToKey.getOrDefault(item.id(), ""));
             box.getStyleClass().remove("palette-disabled");
             setTooltip(null); // cells are recycled — never leave a previous row's explanation behind

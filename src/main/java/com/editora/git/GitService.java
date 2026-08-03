@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -61,6 +62,32 @@ public final class GitService {
     private volatile Boolean gitAvailable;
 
     /**
+     * The configured git command tokens (default {@code ["git"]}; blank override resets). Static —
+     * unlike {@code GitHubService} the low-level {@link #git} runner is static — which is also correct:
+     * the setting is app-wide {@code SharedConfig} state, so every window's service must agree.
+     */
+    private static volatile List<String> GIT_CMD = List.of("git");
+
+    /** Sets the git command/path (whitespace-tokenized); blank ⇒ resolve {@code git} on PATH. */
+    public void setCommand(String command) {
+        List<String> next = command == null || command.isBlank()
+                ? List.of("git")
+                : List.copyOf(Arrays.asList(command.trim().split("\\s+")));
+        if (!next.equals(GIT_CMD)) {
+            GIT_CMD = next;
+            gitAvailable = null; // re-probe with the new command
+        }
+    }
+
+    /** argv = the configured git command + args. */
+    private static List<String> gitArgv(String... args) {
+        List<String> cmd = new ArrayList<>(GIT_CMD.size() + args.length);
+        cmd.addAll(GIT_CMD);
+        cmd.addAll(List.of(args));
+        return cmd;
+    }
+
+    /**
      * Where completed, <em>user-initiated</em> git commands are reported (the Output "Git" tab).
      * Volatile: installed from the FX thread, read on {@link #exec}.
      */
@@ -82,7 +109,7 @@ public final class GitService {
         }
         boolean ok;
         try {
-            ok = ProcessRunner.run(null, QUICK, List.of("git", "--version")).ok();
+            ok = ProcessRunner.run(null, QUICK, gitArgv("--version")).ok();
         } catch (RuntimeException e) {
             ok = false;
         }
@@ -99,7 +126,7 @@ public final class GitService {
         exec.submit(() -> {
             String v = "";
             try {
-                ProcessRunner.Result r = ProcessRunner.run(null, QUICK, List.of("git", "--version"));
+                ProcessRunner.Result r = ProcessRunner.run(null, QUICK, gitArgv("--version"));
                 gitAvailable = r.ok();
                 if (r.ok()) {
                     v = r.out().strip();
@@ -199,7 +226,7 @@ public final class GitService {
         exec.submit(() -> {
             byte[] bytes = new byte[0];
             if (gitAvailable() && root != null && spec != null) {
-                List<String> cmd = List.of("git", "show", spec);
+                List<String> cmd = gitArgv("show", spec);
                 ProcessRunner.BytesResult r =
                         ProcessRunner.runBytes(root, QUICK, cmd, Map.of("GIT_OPTIONAL_LOCKS", "0"));
                 if (r.ok()) {
@@ -613,22 +640,15 @@ public final class GitService {
     private ProcessRunner.Result gitLogged(Path dir, Duration timeout, String... args) {
         long startNanos = System.nanoTime();
         ProcessRunner.Result r = git(dir, timeout, args);
-        List<String> argv = new ArrayList<>(args.length + 1);
-        argv.add("git");
-        argv.addAll(List.of(args));
+        List<String> argv = gitArgv(args);
         commandLog.record(
                 new CommandLog.Entry(argv, r.exit(), r.out(), r.err(), (System.nanoTime() - startNanos) / 1_000_000L));
         return r;
     }
 
     private static ProcessRunner.Result git(Path dir, Duration timeout, String... args) {
-        List<String> cmd = new ArrayList<>(args.length + 1);
-        cmd.add("git");
-        for (String a : args) {
-            cmd.add(a);
-        }
         // GIT_OPTIONAL_LOCKS=0 so status never blocks on the index lock (git-specific).
-        return ProcessRunner.run(dir, timeout, cmd, Map.of("GIT_OPTIONAL_LOCKS", "0"));
+        return ProcessRunner.run(dir, timeout, gitArgv(args), Map.of("GIT_OPTIONAL_LOCKS", "0"));
     }
 
     /** Clears the cached repo roots (e.g. after switching projects or an external repo change). */
