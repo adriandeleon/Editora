@@ -1161,6 +1161,18 @@
     -fx-background-color: -color-bg-default;
 }
 
+/* A tool window already IS the frame: it has a titled header with a bottom rule and sits against the
+   editor behind its own stripe. AtlantaFX still gives every TreeView/ListView a 1px border of its own
+   (`-color-cell-border`), so the content drew a second box inside the first — a hairline rectangle
+   floating in the padding, most visible down the right edge. Drop it; the panel supplies the boundary.
+   Scoped to `.tool-window-content` so Settings' list editors (which are standalone controls on a page
+   and DO need their frame) keep theirs. */
+.tool-window-content .tree-view,
+.tool-window-content .list-view,
+.tool-window-content .tree-table-view {
+    -fx-border-width: 0;
+}
+
 .tool-window-placeholder {
     -fx-text-fill: -color-fg-muted;
     -fx-text-alignment: center;
@@ -1364,10 +1376,10 @@
 .message-log-empty {
     -fx-text-fill: -color-fg-muted;
 }
+/* No rule above the actions row — the card is one surface, like the command palette. The row's own
+   padding separates it from the last message. */
 .message-log-footer {
-    -fx-padding: 6 4 2 4;
-    -fx-border-color: -color-border-default;
-    -fx-border-width: 1 0 0 0;
+    -fx-padding: 8 4 2 4;
 }
 .message-log-hint {
     -fx-text-fill: -color-fg-muted;
@@ -1499,7 +1511,7 @@
 
 /* Compact toolbar: tighter padding so the overall bar is ~25-30% shorter. */
 .tool-bar {
-    -fx-padding: 2 6 2 6;
+    -fx-padding: 0 6 0 6;
 }
 
 .toolbar-button {
@@ -1530,6 +1542,11 @@
 }
 
 .file-breadcrumb .breadcrumbs {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+/* Centring holder for the crumbs — see FileBreadcrumb.crumbHolder. */
+.file-breadcrumb .file-breadcrumb-holder {
     -fx-background-color: transparent;
     -fx-padding: 0;
 }
@@ -2052,8 +2069,6 @@
 /* Kit input row: chip + borderless query over a divider — the input is the card's first row, so it
    must not look like a boxed form field (no border, no focus ring; the card supplies the chrome). */
 .command-palette .palette-input-row {
-    -fx-border-color: transparent transparent -color-border-muted transparent;
-    -fx-border-width: 0 0 1 0;
     -fx-padding: 4 10 8 10;
 }
 .command-palette .palette-prefix {
@@ -2086,8 +2101,6 @@
 .command-palette .palette-hint {
     -fx-text-fill: -color-fg-subtle;
     -fx-font-size: 11px;
-    -fx-border-color: -color-border-muted transparent transparent transparent;
-    -fx-border-width: 1 0 0 0;
     -fx-padding: 7 10 2 10;
 }
 
@@ -2095,9 +2108,10 @@
 .command-palette .palette-desc {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 11.5px;
-    -fx-background-color: -color-bg-subtle;
-    -fx-border-color: -color-border-muted transparent transparent transparent;
-    -fx-border-width: 1 0 0 0;
+    -fx-font-weight: bold;
+    /* Transparent, not -color-bg-subtle: the card is one surface (see the no-internal-rules note
+       above), so weight rather than a tinted band is what sets the description apart. */
+    -fx-background-color: transparent;
     -fx-padding: 7 10 8 10;
 }
 
@@ -3035,7 +3049,7 @@
    whole point of this shape is that the two match exactly. */
 .tab-pane > .tab-header-area {
     -fx-background-color: -color-bg-subtle;
-    -fx-padding: 6 10 0 10;
+    -fx-padding: 3 10 0 10;
     /* The theme centers tabs vertically (-fx-alignment: CENTER), which floats them off the strip's
        bottom edge — the strip's border line then runs UNDER the active tab and the merge below never
        reads. Bottom-align so the active tab actually touches the editor. */
@@ -3051,7 +3065,7 @@
     -fx-background-color: transparent;
     -fx-background-insets: 0;
     -fx-background-radius: 8 8 0 0;
-    -fx-padding: 6 11 7 11;
+    -fx-padding: 2 11 3 11;
 }
 
 .tab-pane > .tab-header-area > .headers-region > .tab:hover {
@@ -3152,4 +3166,196 @@
     -fx-background-radius: 8;
     -fx-border-color: -color-border-muted;
     -fx-border-radius: 8;
+}
+
+/* ---- Rounding pass: the chrome the theme still draws square --------------------------------------
+   The UI Kit's surfaces are rounded; these are the leftovers AtlantaFX renders with hard or barely
+   rounded corners. (Deliberately NOT rounded: the editor text surface, the gutter, the docked strips
+   and the window itself — those are structural edges, not cards. See the tool-window note below.) */
+
+/* Scrollbar thumbs: the theme's 4px reads square at an 8px-wide bar. A pill is the modern shape and
+   matches the state-pill language. Applies to every scrollbar (editor, trees, lists, consoles). */
+.scroll-bar > .thumb {
+    -fx-background-radius: 999;
+}
+
+/* Popup surfaces: menus, submenus and tooltips to the kit's 8px card radius (theme ships 4px). */
+.context-menu,
+.tooltip {
+    -fx-background-radius: 8px, 7px;
+}
+.context-menu {
+    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 44, 0.16, 0, 18);
+}
+
+/* Tool window panels: rounded corners, no drawn frame. The panel is bounded by the editor on one
+   side and the window edge on the other, and the SplitPane divider between it and the editor is the
+   real, grabbable edge — an extra hairline just doubled it. The header keeps its own subtle-ground
+   fill, which separates it from the content without a rule under it.
+   NOT touched: `.split-pane-divider`, the resize handle. */
+.tool-window {
+    -fx-background-radius: 8;
+    -fx-border-width: 0;
+}
+.tool-window-header {
+    -fx-background-radius: 7 7 0 0;
+    -fx-border-width: 0;
+}
+
+/* ---- Toolbar: grouping without rules ------------------------------------------------------------
+   The toolbar's group dividers and the hairlines above/below it were three horizontal/vertical rules
+   stacked within ~40px of each other, which reads as clutter rather than structure. Spacing alone
+   groups the buttons.
+
+   The Separator NODES stay: their `-fx-padding: 0 0.75em` is what creates the gap between groups, and
+   MainController.collapseToolbarSeparators still hides the ones orphaned by Simple mode / a hidden
+   button group — so the gap collapses with the group it belonged to. Only the drawn line goes. */
+.tool-bar .separator:vertical > .line {
+    -fx-border-color: transparent;
+}
+
+/* The menu bar and toolbar each paint a 1px bottom rule as a second background layer (the theme's
+   `-color-border-muted, -color-bg-subtle` pair). Collapse each to its fill alone. The toolbar, menu
+   bar and tab strip all sit on -color-bg-subtle, so they read as one continuous band. */
+.menu-bar,
+.tool-bar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-insets: 0;
+}
+
+/* The theme pads the tab's inner label too (0.4em all round, on top of the tab's own padding), which
+   is most of the tab's height. Trim it — the tab's padding above already sets the height. */
+.tab-pane > .tab-header-area > .headers-region > .tab > .tab-container > .tab-label {
+    -fx-padding: 0 2 0 2;
+}
+
+/* ---- Bottom bars: one continuous band ------------------------------------------------------------
+   Mirrors the toolbar treatment at the top of the window. The bottom tool stripe, the breadcrumb and
+   the status bar each drew their own 1px top rule, stacking three hairlines within ~50px. They all sit
+   on -color-bg-subtle, so dropping the rules reads as one band; the stripe's own button tints and the
+   status segments still separate them. */
+.file-breadcrumb,
+.status-bar {
+    -fx-border-width: 0;
+}
+
+/* The tool stripes draw no edge either — on any side. Their -color-bg-subtle fill already sets the
+   rail apart from the editor/minimap beside it, and where a tool window is open the SplitPane divider
+   is the real (grabbable) edge. Placed after the per-side rules above so it wins on source order —
+   the selectors have equal specificity. */
+.tool-stripe {
+    -fx-border-width: 0;
+}
+
+/* The palette card is one surface: no internal rules between the input row, the results, the
+   description strip and the footer. The theme also frames every ListView, which drew a second box
+   just inside the card's own border — drop that too (the same double-frame the tool windows had).
+   The description strip keeps its subtle-ground tint, which separates it without a line.
+   QuickOpen and the other pickers share `.command-palette`, so they inherit all of this. */
+.command-palette .list-view {
+    -fx-border-width: 0;
+    -fx-background-color: transparent;
+}
+
+/* ---- Top chrome: tighter rows -------------------------------------------------------------------
+   The band between the menu bar and the tabs was mostly padding, stacked three deep: the menu bar's
+   container inset, each menu button's own 6px, and the toolbar's inset. Trimming the two container
+   insets and the menu buttons' vertical padding pulls the rows together without shrinking any click
+   target horizontally (the buttons keep their full width and their 3px vertical padding). */
+.menu-bar > .container {
+    -fx-padding: 0 4 0 4;
+}
+.menu-bar > .container > .menu-button {
+    -fx-padding: 3 10 3 10;
+}
+
+/* ---- Menu items: the chord in its own right-aligned column ---------------------------------------
+   In-window menu items are CustomMenuItems laying out title + spacer + chord (see MainMenuBar). The
+   theme's `.menu-item:focused > .label` only reaches a DIRECT child label, which these are not, so the
+   two labels carry their own colours. Periwinkle for the chord — the keyboard's one hue, as everywhere
+   else a binding is shown. */
+.menu-item .menu-item-title {
+    -fx-text-fill: -color-fg-default;
+}
+.menu-item .menu-item-chord {
+    -fx-text-fill: -state-key;
+    -fx-font-size: 11px;
+}
+
+/* ---- Settings: no internal rules -----------------------------------------------------------------
+   Matches the palette and the tool windows: the nav rail, the card rows and the footer are separated
+   by fill and spacing, not lines. (The cards keep their own outline — that IS the grouping.) */
+.settings-nav,
+.settings-footer {
+    -fx-border-width: 0;
+}
+.settings-card-body > .settings-row {
+    -fx-border-width: 0;
+}
+
+/* One ground for the whole window: rail, page and footer all sit on -color-bg-subtle, and the white
+   cards are the only raised surface. Previously the rail was bg-default, so the window read as two
+   panes of different paper — with the rules gone there was nothing left to justify the split. */
+.settings-nav,
+.settings-footer {
+    -fx-background-color: -color-bg-subtle;
+}
+
+/* The sidebar list keeps the theme's 1px frame; round it so it doesn't sit as the one square box in a
+   rounded window. Its rows are inset chips (above), so the frame is the only thing with corners. */
+.settings-sidebar {
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+}
+
+/* Switcher: one card surface, like the palette and the message log — the path and the key legend are
+   set apart by spacing, not rules. Also brings its card chrome up to the overlay standard (12px + the
+   kit's menu shadow); it was still on the old 4px/short-shadow treatment. */
+.switcher {
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 44, 0.16, 0, 18);
+}
+.switcher-path,
+.switcher-hint {
+    -fx-border-width: 0;
+}
+
+/* …and the palette's colours, row for row. The active column's selection was a SOLID accent bar with
+   inverted text — the one place in the app still doing that — so it now takes the shared -state-sel
+   wash plus the palette's 2px accent edge. The inactive column keeps the wash without the edge, which
+   is what tells the two columns apart now that neither inverts. */
+.switcher .list-cell {
+    -fx-padding: 7 16 7 16;
+    -fx-font-size: 12.5px;
+    -fx-background-radius: 5;
+}
+.switcher .list-cell:filled:selected {
+    -fx-background-color: -state-sel;
+    -fx-text-fill: -color-fg-default;
+}
+.switcher-column:active .list-cell:filled:selected {
+    -fx-background-color: -state-sel;
+    -fx-text-fill: -color-fg-default;
+    -fx-border-color: transparent transparent transparent -color-accent-emphasis;
+    -fx-border-width: 0 0 0 2;
+}
+
+/* The path line reads like the palette's description strip; the legend like its footer. */
+.switcher-path {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11.5px;
+    -fx-font-weight: bold;
+    -fx-padding: 7 10 8 10;
+}
+.switcher-hint {
+    -fx-text-fill: -color-fg-subtle;
+    -fx-font-size: 11px;
+    -fx-padding: 7 10 2 10;
+}
+.switcher-header {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 2 10 4 10;
 }
