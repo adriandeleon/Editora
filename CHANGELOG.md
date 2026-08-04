@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-03
+
 ### Added
 
 - **Per-project settings you can commit** — a project can carry `.editora/settings.toml` saying which
@@ -48,6 +50,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   macros and external tools already work.
 
 ### Changed
+
+- **Editora has its own look.** The palette comes from the app's own icon — a teal accent, an ink-navy
+  ground and a periwinkle reserved for one job: the keyboard. **Editora Light** and **Editora Dark** ship as
+  a matched pair and are the theme a fresh install starts in. **Nothing changes for an existing install** —
+  your saved theme is kept, and the new pair is simply two more entries in Settings → Appearance alongside
+  Primer, Nord, Dracula and the community themes.
+
+- **One vocabulary for state, everywhere.** Amber now means "not saved yet" in every place it can appear —
+  the tab, the Switcher, the file tree, pickers — and it follows the theme instead of being one fixed ochre
+  that suited a light background and little else. Red is broken, green is verified, olive and violet are
+  git's untracked and renamed, and periwinkle is only ever a keybinding.
+
+- **The interface is set in Inter.** Editora already bundled it for the Markdown preview and PDF export;
+  now the whole interface uses it, on every platform, instead of whatever default font each system supplied.
+
+- **Settings has been rebuilt.** Every page reads the same way: one background, with each group of settings
+  on a card, and every setting stated as a name, a plain-English line saying what it does, and its control
+  on the right — instead of a stack of bare checkboxes whose labels had to carry the whole explanation. A
+  tool's detection result is a green or red pill on its own row, and a setting whose feature has a
+  keybinding shows that chord beside its switch, so Settings teaches the keyboard instead of hiding it.
+
+- **Less line, more space.** Editora used to draw a hairline at nearly every seam, and in several places two
+  at once — a panel's frame plus the frame the tree inside it drew for itself. Those are gone; surfaces are
+  told apart by their shade and their spacing. Menus, tab strips and toolbars are tighter, tabs are shorter,
+  and the rounded corners are consistent from the command palette down to a spinner in Settings.
+
+- **Menu keybindings line up.** Each menu's shortcuts share one column instead of trailing after their
+  labels at whatever width each one happened to be, so a menu can be read down its right edge. (On macOS,
+  where the menu bar belongs to the system, they stay beside the label — the native menu draws text only.)
+
+- **Language, Tab Size and Line Endings open a picker, not a dialog.** Clicking those status-bar segments
+  used to open a separate window with a dropdown; they now use the same in-scene picker as everything else,
+  which you can type into. The language list is around a hundred grammars, and it was not searchable before.
 
 - **Projects are on by default.** The feature shipped opt-in, behind a checkbox most people never found —
   and much of what Editora has grown since is anchored to a project: the file tree, per-project bookmarks and
