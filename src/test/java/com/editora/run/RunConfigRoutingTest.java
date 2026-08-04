@@ -58,4 +58,32 @@ class RunConfigRoutingTest {
         assertNull(RunConfigRouting.pick(List.of(), null, ""));
         assertNull(RunConfigRouting.pick(null, null, "/w/app"));
     }
+
+    @Test
+    void prefersAnAlreadyManagedFileAmongOtherwiseArbitraryCandidates() {
+        // "any other open Java file" is an arbitrary choice; picking one jdtls already has open avoids
+        // starting a second server for an unrelated root just to answer one resolveClasspath.
+        Path cold = Path.of("/w/a/Cold.java");
+        Path warm = Path.of("/w/b/Warm.java");
+        assertEquals(warm, RunConfigRouting.pick(List.of(cold, warm), null, "", warm::equals));
+    }
+
+    @Test
+    void managedPreferenceNeverOverridesTheActiveFile() {
+        // The active file encodes intent; "managed" does not. Correctness comes from the caller opening
+        // whatever is returned (LspCoordinator.ensureManaged), so this stays a tie-break only.
+        Path active = Path.of("/w/a/Active.java");
+        Path warm = Path.of("/w/b/Warm.java");
+        assertEquals(active, RunConfigRouting.pick(List.of(active, warm), active, "", warm::equals));
+    }
+
+    @Test
+    void managedPreferenceStaysInsideTheConfiguredWorkingDirectory() {
+        // A managed file in the WRONG project must not win over an unmanaged one in the right project.
+        Path outsideWarm = Path.of("/other/Warm.java");
+        Path insideCold = Path.of("/w/proj/Cold.java");
+        assertEquals(
+                insideCold,
+                RunConfigRouting.pick(List.of(outsideWarm, insideCold), null, "/w/proj", outsideWarm::equals));
+    }
 }

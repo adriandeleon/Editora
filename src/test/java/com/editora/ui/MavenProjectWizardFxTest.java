@@ -105,6 +105,14 @@ class MavenProjectWizardFxTest {
                     // Stand in for what archetype:generate would lay down.
                     Files.createDirectories(projectDir);
                     Files.writeString(projectDir.resolve("pom.xml"), "<project/>");
+                    Path src = projectDir.resolve("src/main/java/com/example/demo");
+                    Files.createDirectories(src);
+                    Files.writeString(
+                            src.resolve("App.java"),
+                            // conventionally formatted, as an archetype emits — MainMethodScanner only
+                            // reports a main at brace depth 1
+                            "package com.example.demo;\n\npublic class App\n{\n"
+                                    + "    public static void main( String[] args )\n    {\n    }\n}\n");
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -124,6 +132,22 @@ class MavenProjectWizardFxTest {
             assertTrue(
                     list.stream().anyMatch(p -> Path.of(p.root()).equals(projectDir)),
                     "a successful generation registers the new folder as a project");
+
+            // ...and it is ready to run on the first click: a configuration named after the project,
+            // pre-selected, pointing at the main class the archetype actually wrote.
+            com.editora.config.Project created = list.stream()
+                    .filter(p -> Path.of(p.root()).equals(projectDir))
+                    .findFirst()
+                    .orElseThrow();
+            com.editora.config.ConfigManager seeded = new com.editora.config.ConfigManager(fx.shared, (Path)
+                    FxTestSupport.call(projects, "stateFile", new Class[] {com.editora.config.Project.class}, created));
+            seeded.load();
+            var configs = seeded.getWorkspaceState().getRunConfigurations();
+            assertEquals(1, configs.size(), "exactly one seeded configuration");
+            assertEquals("demo", configs.get(0).name(), "named after the project");
+            assertEquals("com.example.demo.App", configs.get(0).mainClass());
+            assertEquals(projectDir.toString(), configs.get(0).workingDir());
+            assertEquals("demo", seeded.getWorkspaceState().getSelectedRunConfig(), "pre-selected");
         } finally {
             deleteRecursively(parent);
         }
@@ -165,7 +189,7 @@ class MavenProjectWizardFxTest {
         }
 
         @Override
-        public void openProject(Path root, String name) {}
+        public void openProject(Path root, String name, String mainClass) {}
 
         @Override
         public void openPath(Path file) {}

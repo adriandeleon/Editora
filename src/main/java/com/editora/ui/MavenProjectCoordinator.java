@@ -67,8 +67,13 @@ final class MavenProjectCoordinator {
         /** Where the wizard starts when no folder was named (active file's dir → project root → home). */
         Path defaultParentDir();
 
-        /** Registers {@code root} as a project and opens it in its own window. */
-        void openProject(Path root, String name);
+        /**
+         * Registers {@code root} as a project and opens it in its own window.
+         *
+         * @param mainClass a {@code public static void main} class found in the generated sources, or null —
+         *     when non-null the window is seeded with a ready-to-run configuration named after the project
+         */
+        void openProject(Path root, String name, String mainClass);
 
         /** Opens a file in the current window (used to land on the generated {@code pom.xml}). */
         void openPath(Path file);
@@ -499,7 +504,10 @@ final class MavenProjectCoordinator {
     private void onGenerated(Path projectDir, String name) {
         host.setStatus(tr("status.mavenProject.created", name));
         ops.refreshProjectTree();
-        ops.openProject(projectDir, name);
+        // Look at what the archetype actually wrote rather than guessing from the coordinates: quickstart
+        // gives <package>.App, a webapp archetype gives no main at all. Null simply means no run
+        // configuration is seeded.
+        ops.openProject(projectDir, name, com.editora.maven.GeneratedProject.findMainClass(projectDir));
         Path pom = projectDir.resolve("pom.xml");
         if (Files.isRegularFile(pom)) {
             ops.openPath(pom);

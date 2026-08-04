@@ -76,6 +76,15 @@ interface CoordinatorHost {
     /** Shows the in-scene single-line input prompt (Emacs caret keys installed). */
     void promptText(String title, String label, String initial, Consumer<String> onAccept);
 
+    /**
+     * Whether {@code file} is currently open on a language server — which is <b>not</b> the same as being
+     * open in a tab. A background tab's server start is deferred, so a file can be visibly open and still
+     * unknown to jdtls. Default false: only the real window answers this.
+     */
+    default boolean isLspManaged(java.nio.file.Path file) {
+        return false;
+    }
+
     OverlayHost overlayHost();
 
     Window window();

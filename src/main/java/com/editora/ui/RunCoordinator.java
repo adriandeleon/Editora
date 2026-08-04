@@ -166,7 +166,7 @@ final class RunCoordinator {
                         && "java".equals(active.getLanguage())
                 ? active.getPath()
                 : null;
-        return RunConfigRouting.pick(open, activeJava, cfg.workingDir());
+        return RunConfigRouting.pick(open, activeJava, cfg.workingDir(), host::isLspManaged);
     }
 
     /**

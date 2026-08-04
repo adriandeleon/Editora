@@ -42,25 +42,61 @@ public final class RunConfigRouting {
      * @return the file to resolve against, or null when no Java file is open
      */
     public static Path pick(List<Path> openJavaFiles, Path activeJavaFile, String workingDir) {
+        return pick(openJavaFiles, activeJavaFile, workingDir, p -> false);
+    }
+
+    /**
+     * As above, but breaks ties towards a file the language server has <b>already opened</b>.
+     *
+     * <p>Only a tie-break: it never overrides the working-directory or active-file preferences above, because
+     * those encode which project the configuration belongs to and {@code managed} does not. Where the choice
+     * was otherwise arbitrary — "any other open Java file" — an already-open one avoids starting a second
+     * server for an unrelated root just to answer one {@code resolveClasspath}.
+     *
+     * <p>Correctness does not depend on this. The caller opens whatever comes back on the server first (see
+     * {@code LspCoordinator.ensureManaged}); this only makes the common case cheaper.
+     *
+     * @param managed whether a path is currently open on a language server
+     */
+    public static Path pick(
+            List<Path> openJavaFiles,
+            Path activeJavaFile,
+            String workingDir,
+            java.util.function.Predicate<Path> managed) {
         if (openJavaFiles == null || openJavaFiles.isEmpty()) {
             return activeJavaFile;
         }
+        java.util.function.Predicate<Path> isManaged = managed == null ? p -> false : managed;
         if (workingDir != null && !workingDir.isBlank()) {
             Path dir = normalize(Path.of(workingDir));
             // The active file wins among equally-valid candidates inside the configuration's own project.
             if (activeJavaFile != null && under(activeJavaFile, dir)) {
                 return activeJavaFile;
             }
+            Path firstUnder = null;
             for (Path candidate : openJavaFiles) {
                 if (under(candidate, dir)) {
-                    return candidate;
+                    if (isManaged.test(candidate)) {
+                        return candidate;
+                    }
+                    if (firstUnder == null) {
+                        firstUnder = candidate;
+                    }
                 }
+            }
+            if (firstUnder != null) {
+                return firstUnder;
             }
             // No open file under it: fall through rather than refuse. The working directory may simply be
             // somewhere else (an output folder, a sandbox), which says nothing about where the sources are.
         }
         if (activeJavaFile != null) {
             return activeJavaFile;
+        }
+        for (Path candidate : openJavaFiles) {
+            if (isManaged.test(candidate)) {
+                return candidate;
+            }
         }
         return openJavaFiles.get(0);
     }

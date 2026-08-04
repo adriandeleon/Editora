@@ -3084,6 +3084,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public boolean isLspManaged(java.nio.file.Path file) {
+            return lspEnabled() && file != null && lspManager.isManaged(file);
+        }
+
+        @Override
         public OverlayHost overlayHost() {
             return overlayHost;
         }
@@ -3371,12 +3376,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public void openProject(java.nio.file.Path root, String name) {
+                public void openProject(java.nio.file.Path root, String name, String mainClass) {
                     if (!projectsEnabled()) {
                         return; // still generated on disk; just not registered as a project
                     }
                     Project project = projects.createOrGet(name, root);
                     projects.save();
+                    seedRunConfiguration(project, root, name, mainClass);
                     if (windowManager != null) {
                         windowManager.openOrFocus(project);
                     }
@@ -3819,6 +3825,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void resolveJavaMainClasses(
                 java.nio.file.Path routingFile, java.util.function.Consumer<List<com.editora.run.JavaMainClass>> cb) {
+            // The routing file may be a background tab whose server start was deferred; open it first or
+            // jdtls has never seen it and answers "no language server for file".
+            lspCoordinator.ensureManaged(routingFile);
             dapManager.resolveMainClasses(
                     routingFile,
                     opts -> cb.accept(opts.stream()
@@ -3831,6 +3840,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 java.nio.file.Path routingFile,
                 com.editora.run.JavaMainClass mc,
                 java.util.function.Consumer<com.editora.run.JavaLaunchInfo> cb) {
+            lspCoordinator.ensureManaged(routingFile); // see resolveJavaMainClasses
             dapManager.resolveLaunch(
                     routingFile,
                     new com.editora.dap.DapManager.MainClassOption(mc.fqn(), mc.projectName(), mc.filePath()),
@@ -4431,6 +4441,44 @@ public class MainController implements com.editora.mcp.McpBridge {
      * the workspace-trust gate cannot cover it: that only fires when a repo ships an {@code mvnw}, and a
      * brand-new empty directory has none. Default button is Cancel, so dismissing never grants consent.
      */
+    /**
+     * Gives a freshly generated Maven project a run configuration named after it, so Run works on the first
+     * click instead of sending the user to Edit Configurations.
+     *
+     * <p>Written into the <b>new project's</b> session file before {@code openOrFocus} builds its window —
+     * that window loads {@code projects/<id>.json} on construction, so seeding afterwards would be a race,
+     * and writing it into <em>this</em> window's state would put the configuration in the wrong project.
+     * A throwaway {@link ConfigManager} over the shared config is the supported way to address another
+     * session file.
+     *
+     * <p>No main class means no configuration: a webapp or plugin archetype has nothing to launch, and a
+     * configuration that fails at the click is worse than none at all.
+     */
+    private void seedRunConfiguration(Project project, java.nio.file.Path root, String name, String mainClass) {
+        if (mainClass == null || mainClass.isBlank()) {
+            return;
+        }
+        try {
+            ConfigManager seeded = new ConfigManager(config.shared(), projects.stateFile(project));
+            seeded.load();
+            List<com.editora.config.RunConfiguration> list =
+                    new java.util.ArrayList<>(seeded.getWorkspaceState().getRunConfigurations());
+            if (list.stream().anyMatch(c -> name.equals(c.name()))) {
+                return; // an existing project reused by name already has its configuration
+            }
+            // workingDir = the project root, so the launch resolves against this project even with several
+            // open, and a relative path in the program behaves as it would from a terminal there.
+            list.add(new com.editora.config.RunConfiguration(name, "run", mainClass, "", "", "", root.toString()));
+            seeded.getWorkspaceState().setRunConfigurations(list);
+            seeded.getWorkspaceState().setSelectedRunConfig(name); // pre-selected in the toolbar
+            seeded.save();
+        } catch (RuntimeException e) {
+            // The project is generated and open either way; a missing configuration is a papercut, not a
+            // reason to fail the whole flow.
+            LOG.log(java.util.logging.Level.WARNING, "could not seed a run configuration", e);
+        }
+    }
+
     private boolean confirmArchetypeGenerate(com.editora.maven.MavenArchetype archetype) {
         ButtonType proceed = new ButtonType(tr("dialog.mavenProject.trustAccept"), ButtonBar.ButtonData.OK_DONE);
         Alert confirm = new Alert(
