@@ -32,6 +32,15 @@ final class TodoHighlightOverlay extends Region {
     private final Canvas canvas = new Canvas(1, 1);
     private List<TodoMark> marks = List.of();
     private boolean active;
+    /**
+     * False while this overlay's tab is in the background. A backgrounded tab keeps a full
+     * viewport-sized Canvas (and its RTTexture) alive for nothing: the existing 1x1 release only fires
+     * when the FEATURE is off or there is nothing to draw, never when the tab is merely not visible.
+     * Measured at ~2.4 MB retained per open tab across the overlays. Driven by
+     * {@code EditorBuffer.setRenderingActive}, the same hook the minimap already uses.
+     */
+    private boolean rendering = true;
+
     private boolean redrawPending;
 
     TodoHighlightOverlay(CodeArea area) {
@@ -103,8 +112,23 @@ final class TodoHighlightOverlay extends Region {
         scheduleRedraw();
     }
 
+    /** Release/repaint this overlay as its tab is backgrounded/shown (see {@link #rendering}). */
+    void setRenderingActive(boolean on) {
+        if (rendering == on) {
+            return;
+        }
+        rendering = on;
+        if (on) {
+            scheduleRedraw();
+        } else {
+            clear();
+            canvas.setWidth(1);
+            canvas.setHeight(1);
+        }
+    }
+
     private void scheduleRedraw() {
-        if (!active || redrawPending) {
+        if (!active || !rendering || redrawPending) {
             return;
         }
         redrawPending = true;

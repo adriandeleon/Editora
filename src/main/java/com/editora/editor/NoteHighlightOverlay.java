@@ -33,6 +33,15 @@ final class NoteHighlightOverlay extends Region {
     private final Canvas canvas = new Canvas(1, 1);
     private Supplier<List<int[]>> spans = List::of;
     private boolean active;
+    /**
+     * False while this overlay's tab is in the background. A backgrounded tab keeps a full
+     * viewport-sized Canvas (and its RTTexture) alive for nothing: the existing 1x1 release only fires
+     * when the FEATURE is off or there is nothing to draw, never when the tab is merely not visible.
+     * Measured at ~2.4 MB retained per open tab across the overlays. Driven by
+     * {@code EditorBuffer.setRenderingActive}, the same hook the minimap already uses.
+     */
+    private boolean rendering = true;
+
     private boolean redrawPending;
     // Whether the last redraw had visible note spans to paint. When false the canvas is shrunk to 1x1 to
     // release its viewport-sized RTTexture — a buffer with no visible notes shouldn't pin a full-viewport
@@ -88,8 +97,21 @@ final class NoteHighlightOverlay extends Region {
         scheduleRedraw();
     }
 
+    /** Release/repaint this overlay as its tab is backgrounded/shown (see {@link #rendering}). */
+    void setRenderingActive(boolean on) {
+        if (rendering == on) {
+            return;
+        }
+        rendering = on;
+        if (on) {
+            scheduleRedraw();
+        } else {
+            releaseCanvas();
+        }
+    }
+
     private void scheduleRedraw() {
-        if (!active || redrawPending) {
+        if (!active || !rendering || redrawPending) {
             return;
         }
         redrawPending = true;
