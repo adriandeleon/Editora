@@ -5,6 +5,8 @@ import java.util.Map;
 
 import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.control.Label;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 
 import com.editora.editor.LanguageRegistry;
@@ -349,6 +351,34 @@ public final class FileIcons {
         box.setMouseTransparent(true); // purely decorative — let clicks reach the row
         return box;
     }
+
+    /**
+     * A cell graphic pairing a file glyph with its Git status indicator ({@code M}/{@code A}/{@code D}/
+     * {@code R}/{@code U}) — used by the Project tree and the Commit tool window so the two read alike.
+     *
+     * <p>The letter is a {@link Label} of its own rather than a prefix on the cell's text because a
+     * {@code Labeled} cannot weight part of its own string, and the indicator is meant to carry more
+     * weight than the file name beside it. It is styled by {@code .git-status-letter} in {@code app.css},
+     * which restates the per-status colour — the status class sits on the enclosing cell, and text fill
+     * does not inherit into a child label.
+     *
+     * @param letter the one-character indicator, or {@code null}/blank for an unchanged file (then the
+     *     glyph is returned unwrapped, so a clean row keeps exactly the layout it had before)
+     */
+    public static Node withStatusLetter(Node icon, String letter) {
+        if (letter == null || letter.isBlank()) {
+            return icon;
+        }
+        Label label = new Label(letter);
+        label.getStyleClass().add("git-status-letter");
+        HBox box = new HBox(STATUS_LETTER_GAP, icon, label);
+        box.setAlignment(Pos.CENTER_LEFT);
+        box.setMouseTransparent(true); // decorative, like the boxed glyph — let clicks reach the row
+        return box;
+    }
+
+    /** Gap between the file glyph and its status letter. */
+    private static final double STATUS_LETTER_GAP = 5;
 
     /**
      * The glyph key for {@code fileName} — pure (no toolkit), so it is unit-testable. Non-language

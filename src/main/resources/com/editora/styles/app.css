@@ -216,19 +216,20 @@
     -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.2), 12, 0.15, 0, 3);
 }
 
+/* Structure / Bookmarks / Personal Notes trees carry no font size of their own: they inherit the root
+   14px, which is what the Project tree has always used. The four file-list tool windows are the same kind
+   of surface and used to disagree — Project at 14px, the other three pinned to 12px — so a glance from one
+   to the next changed size. Their filter fields follow the same rule. */
+
 /* Structure tool window: search box + collapsible region tree. */
 .structure-panel {
     -fx-background-color: -color-bg-default;
 }
 
-.structure-panel .structure-filter {
-    -fx-font-size: 12px;
-}
 
 .structure-tree {
     -fx-background-color: transparent;
     -fx-border-width: 0;
-    -fx-font-size: 12px;
 }
 
 .structure-tree .tree-cell {
@@ -250,13 +251,9 @@
 .bookmarks-panel {
     -fx-background-color: -color-bg-default;
 }
-.bookmarks-panel .bookmarks-filter {
-    -fx-font-size: 12px;
-}
 .bookmarks-tree {
     -fx-background-color: transparent;
     -fx-border-width: 0;
-    -fx-font-size: 12px;
 }
 .bookmarks-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
@@ -289,13 +286,9 @@
 .notes-panel {
     -fx-background-color: -color-bg-default;
 }
-.notes-panel .notes-filter {
-    -fx-font-size: 12px;
-}
 .notes-tree {
     -fx-background-color: transparent;
     -fx-border-width: 0;
-    -fx-font-size: 12px;
 }
 .notes-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
@@ -320,7 +313,6 @@
 .git-tree {
     -fx-background-color: transparent;
     -fx-border-width: 0;
-    -fx-font-size: 12px;
 }
 .git-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
@@ -330,8 +322,10 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-weight: bold;
 }
+/* The commit message box is content the user writes, not a caption — same size as the file list above
+   it and as the other tool windows. */
 .git-commit-message {
-    -fx-font-size: 12px;
+    -fx-font-size: 14px;
 }
 /* Commit tool window toolbar: compact icon buttons (legible, no truncated text labels). */
 .git-toolbar-button {
@@ -953,6 +947,20 @@
 .project-tree .git-status-deleted, .git-tree .git-status-deleted { -fx-text-fill: -color-fg-muted; }
 .project-tree .git-status-deleted .toolbar-icon, .git-tree .git-status-deleted .toolbar-icon { -fx-fill: -color-fg-muted; }
 .project-tree .git-status-dir-changed { -fx-text-fill: -color-accent-fg; }
+/* The M/A/D/R/U indicator (FileIcons.withStatusLetter) is its own Label inside the cell, so that it can
+   be bold while the file name beside it is not. Being a child, it does not pick up the cell's
+   -fx-text-fill — hence the colour is restated per status, mirroring the row colours above. */
+.git-status-letter { -fx-font-weight: bold; }
+.project-tree .git-status-modified .git-status-letter,
+.git-tree .git-status-modified .git-status-letter { -fx-text-fill: -color-accent-fg; }
+.project-tree .git-status-added .git-status-letter,
+.git-tree .git-status-added .git-status-letter { -fx-text-fill: -color-success-fg; }
+.project-tree .git-status-untracked .git-status-letter,
+.git-tree .git-status-untracked .git-status-letter { -fx-text-fill: -state-olive; }
+.project-tree .git-status-renamed .git-status-letter,
+.git-tree .git-status-renamed .git-status-letter { -fx-text-fill: -state-violet; }
+.project-tree .git-status-deleted .git-status-letter,
+.git-tree .git-status-deleted .git-status-letter { -fx-text-fill: -color-fg-muted; }
 /* Git Log commit list: the short hash reads in the accent color, the subject in the default text color. */
 .git-log-panel .git-log-hash { -fx-fill: -color-accent-fg; }
 .git-log-panel .git-log-subject { -fx-fill: -color-fg-default; }
@@ -1036,9 +1044,15 @@
 .tool-stripe {
     -fx-background-color: -color-bg-subtle;
     -fx-border-color: -color-border-default;
-    -fx-spacing: 2;
+    /* Room to breathe between stripe icons: at 2px the rail read as one continuous column of marks
+       rather than a list of separate, individually clickable tools. */
+    -fx-spacing: 8;
 }
 
+/* NOTE: the TOP inset here is only the pre-layout value — ToolWindowManager.applyStripeTopInset replaces
+   this whole shorthand with an inline style once the tab strip has a measured height, so the first icon
+   lines up with the editor's first line of text rather than with the tab strip. Change the side/bottom
+   insets here and in that method together, or the inline style will drop your change. */
 .tool-stripe-vertical {
     -fx-pref-width: 30;
     -fx-padding: 8 0 8 0;
@@ -1054,7 +1068,10 @@
 .tool-stripe-bottom { -fx-border-width: 1 0 0 0; }
 
 .tool-stripe-button {
-    -fx-padding: 5;
+    /* Taller than wide: on a vertical rail the padding is what separates one tool from the next, and at a
+       flat 5px the glyphs read as a single column of marks. (The bottom stripe overrides this below — its
+       buttons carry a text label and sit side by side, where the same insets would look stretched.) */
+    -fx-padding: 9 5 9 5;
     -fx-min-width: 24;
     -fx-min-height: 24;
     -fx-background-radius: 6;
@@ -1068,9 +1085,10 @@
     -fx-fill: -color-fg-default;
 }
 
-/* Bottom-stripe buttons carry a label beside the icon (see ToolWindowManager.applyStripeLabel). */
+/* Bottom-stripe buttons carry a label beside the icon (see ToolWindowManager.applyStripeLabel).
+   Sized with the main toolbar's text (30% over the 11px it used to be) — the stripe is a toolbar too. */
 .tool-stripe-horizontal .tool-stripe-button {
-    -fx-font-size: 11px;
+    -fx-font-size: 14px;
     -fx-graphic-text-gap: 5;
     -fx-padding: 3 8 3 8;
     -fx-text-fill: -color-fg-muted;
@@ -1135,11 +1153,22 @@
     -fx-border-width: 0 0 1 0;
 }
 
-/* The kit renders a panel header as a small-caps section label rather than a title-case heading. */
+/* Matched to the stripe button that opens this panel (.tool-stripe-horizontal .tool-stripe-button): same
+   size, same graphic gap, same glyph — the header and the stripe entry name the same thing, and at 11px
+   text-only the header read as a different kind of label entirely. */
 .tool-window-title {
-    -fx-font-size: 11px;
+    -fx-font-size: 14px;
     -fx-font-weight: bold;
+    -fx-graphic-text-gap: 5;
     -fx-text-fill: -color-fg-muted;
+}
+/* The glyph tracks the title's colour. Both families are covered: a tool window's icon may be a filled
+   Material glyph (-fx-fill) or a kit outline one (-fx-stroke), and which one it is varies per window. */
+.tool-window-title .toolbar-icon {
+    -fx-fill: -color-fg-muted;
+}
+.tool-window-title .icon-line {
+    -fx-stroke: -color-fg-muted;
 }
 
 /* The tool window that currently holds keyboard focus: tint its header and accent the title, so it's
@@ -1150,6 +1179,12 @@
 }
 .tool-window:active .tool-window-title {
     -fx-text-fill: -color-accent-fg;
+}
+.tool-window:active .tool-window-title .toolbar-icon {
+    -fx-fill: -color-accent-fg;
+}
+.tool-window:active .tool-window-title .icon-line {
+    -fx-stroke: -color-accent-fg;
 }
 
 .tool-window-close {
@@ -1509,14 +1544,55 @@
     -fx-border-width: 0 2 0 0;
 }
 
-/* Compact toolbar: tighter padding so the overall bar is ~25-30% shorter. */
+/* Compact toolbar: tighter padding so the overall bar is ~25-30% shorter.
+   The font size is 30% over the 14px root: the toolbar's only text is labels for the controls beside
+   the icons ("Project:", the run-configuration and recent-files pickers), and at root size they read as
+   an afterthought next to the glyphs. Set on the bar so every item inherits it. */
 .tool-bar {
-    -fx-padding: 0 6 0 6;
+    /* The right inset is 1, not 6, so the right-pinned Quit glyph's centre lands in the same vertical
+       column as the right tool stripe's icons directly below it (the stripe is 30px wide with its icons
+       centred, i.e. ~14.8px in from the window edge; Quit's own half-width accounts for the rest).
+       ToolWindowStripeAlignmentFxTest pins the two centres together. */
+    /* Deliberately asymmetric: below the bar the tab strip contributes its own 3px inset plus the gap
+       above the tab, while above it there is nothing at all between the controls and the window's title
+       bar — so equal insets read as top-heavy. The bordered controls (the project and run-configuration
+       combos) are where that shows, since a borderless icon button has no edge to sit flush against. */
+    -fx-padding: 5 1 2 6;
+    -fx-font-size: 18px;
+    /* A little air between every item. The combos in particular sat flush against the icon beside them,
+       which read as one control with a stray glyph attached. */
+    -fx-spacing: 5;
 }
 
 .toolbar-button {
     -fx-padding: 3 5 3 5;
     -fx-background-radius: 4;
+}
+
+/* Every toolbar control is the same height as an icon button (28px). The combos and the Recent menu
+   button size themselves from the bar's 18px label font plus the control theme's own generous insets,
+   which made them 39px and 44px against 28px buttons — a row of icons with two taller boxes punched
+   through it. Pinned rather than merely padded down: the height has to be the button's, whatever the
+   font does. The inner cell/arrow insets go to zero so the text still fits inside the smaller box. */
+.tool-bar .combo-box-base,
+.tool-bar .menu-button {
+    -fx-min-height: 28px;
+    -fx-pref-height: 28px;
+    -fx-max-height: 28px;
+    -fx-padding: 0;
+    /* The bar's 18px is a size for its standalone labels ("Project:"); a control's own value is UI text
+       inside a 28px box, where 18px leaves no room above or below it. Set on the control rather than the
+       popup because a JavaFX popup inherits its font from its owner node — this is also what brings the
+       Recent dropdown's items back down to a readable size. */
+    -fx-font-size: 14px;
+}
+.tool-bar .combo-box-base > .list-cell,
+.tool-bar .combo-box-base > .text-field {
+    -fx-padding: 0 10 0 10;
+}
+.tool-bar .combo-box-base > .arrow-button,
+.tool-bar .menu-button > .arrow-button {
+    -fx-padding: 0 6 0 4;
 }
 
 /* File breadcrumb bar (IntelliJ-style), at the bottom above the status bar. Kept compact. */
@@ -1630,7 +1706,9 @@
     -fx-border-color: -color-border-default transparent transparent transparent;
     -fx-border-width: 1 0 0 0;
     -fx-padding: 2 14 2 14;
-    -fx-font-size: 11px;
+    /* 20% above the 11px it used to be — the status bar carries a lot of small, frequently-read state
+       (caret position, encoding, EOL, language), and 11px was below comfortable reading size. */
+    -fx-font-size: 13px;
     -fx-alignment: center-left;
 }
 
@@ -1729,12 +1807,26 @@
     -fx-font-weight: bold;
 }
 
-/* MS-Word-style "View Mode" banner docked above a read-only editor. */
+/* MS-Word-style "View Mode" banner docked above a read-only editor. Kept ~30% shorter than it was: it
+   is chrome sitting between the tab strip and the file, and at its old 6px insets plus a full-size
+   button it took as much vertical space as the tab strip itself. */
 .view-mode-bar {
+    /* No bottom rule: the amber ground already separates the banner from the code under it, and the line
+       sat directly above the first line of text, reading as part of the document. */
     -fx-background-color: #fff8e1;
-    -fx-border-color: transparent transparent #e0c060 transparent;
-    -fx-border-width: 0 0 1 0;
-    -fx-padding: 6 12 6 12;
+    -fx-border-width: 0;
+    /* The vertical insets are the gap above and below the Enable Editing button — at 1px it sat hard
+       against the banner's edges. This is the one dial that trades against the banner staying short, so
+       it is deliberately modest: the strip lands ~17% under its original height rather than the ~30% it
+       reached when the button was flush. */
+    -fx-padding: 4 12 4 12;
+}
+
+/* The Enable Editing button sets the banner's height, so its insets are what keep the banner short —
+   weighted horizontally, where the label was hard against the button's edges, and the bar gives a
+   millimetre back vertically so the whole strip stays roughly the height it was. */
+.view-mode-bar .button {
+    -fx-padding: 4 16 4 16;
 }
 
 .view-mode-bar .view-mode-title {
@@ -1772,7 +1864,8 @@
 .status-bar .text-zoom-button {
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 1 6 1 6;
-    -fx-font-size: 12px;
+    /* Scaled with .status-bar's 11px→13px bump so the −/+ glyphs keep their relative weight. */
+    -fx-font-size: 14px;
     -fx-background-radius: 3;
     -fx-min-width: 20px;
 }
@@ -2045,6 +2138,28 @@
     -fx-border-width: 1 1 2 1;
     -fx-border-radius: 5;
     -fx-padding: 1 6 1 6;
+}
+/* The Appearance page's live preview is a swatch of the editor surface sitting inside a card, not an
+   input — the frame the control theme draws around the CodeArea reads as a second box inside the card's
+   own border. Drop it; the card already delimits the sample. */
+/* About panel (native-About layout: icon + name/version/tagline, copyright, a stack of links, then a
+   monospace environment block). Sizes are absolute rather than em-derived so the block stays a fixed
+   ratio to the name whatever the chrome font size is. */
+.about-content { -fx-padding: 6 8 2 8; }
+.about-name { -fx-font-size: 26px; -fx-font-weight: bold; }
+.about-version { -fx-font-size: 14px; -fx-text-fill: -color-fg-muted; }
+.about-tagline { -fx-font-size: 13px; -fx-text-fill: -color-fg-muted; }
+.about-copyright { -fx-text-fill: -color-fg-muted; }
+.about-update { -fx-text-fill: -state-accent; -fx-font-weight: bold; }
+.about-env {
+    -fx-font-family: "JetBrains Mono", monospace;
+    -fx-font-size: 11.5px;
+    -fx-text-fill: -color-fg-muted;
+}
+
+.settings-preview {
+    -fx-border-width: 0;
+    -fx-border-color: transparent;
 }
 .settings-row-title {
     -fx-font-size: 13px;
@@ -2639,11 +2754,16 @@
    Two read-only editor-areas (side-by-side) or one (unified). Per-line backgrounds are translucent
    washes (read over syntax colors); intra-line changed words get a stronger tint; filler lines (the
    absent side of an add/remove) get a faint hatched-grey. Tuned to read in both light + dark themes. */
-.diff-toolbar { -fx-background-color: -color-bg-subtle; -fx-border-color: transparent transparent -color-border-muted transparent; }
+/* The diff viewer's own chrome reads as one band, like the window's top and bottom bars: the toolbar and
+   the two pane headers all sit on -color-bg-subtle, so the rules between them stacked hairlines within a
+   ~40px strip for no separation the tint wasn't already giving. The separator NODES stay — their padding
+   is what groups the icons (see the identical treatment of .tool-bar above) — only the drawn line goes. */
+.diff-toolbar { -fx-background-color: -color-bg-subtle; -fx-border-width: 0; }
 .diff-toolbar-button { -fx-padding: 3 6 3 6; }
 .diff-toolbar-separator { -fx-padding: 0 3 0 3; }
+.diff-toolbar-separator:vertical > .line { -fx-border-color: transparent; }
 .diff-summary { -fx-text-fill: -color-fg-muted; -fx-font-size: 12px; }
-.diff-pane-header { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-padding: 2 6 2 6; -fx-background-color: -color-bg-subtle; }
+.diff-pane-header { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-padding: 2 6 2 6; -fx-background-color: -color-bg-subtle; -fx-border-width: 0; }
 .diff-lineno { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-padding: 0 6 0 0; -fx-opacity: 0.8; }
 .diff-sign { -fx-text-fill: -color-fg-muted; -fx-font-family: "JetBrains Mono", monospace; }
 /* Per-line diff backgrounds (RichTextFX paragraph styles). */
@@ -2820,11 +2940,13 @@
 .history-window-left {
     -fx-padding: 6;
 }
+/* No bottom rule — the diff viewer's own toolbar sits immediately below this one, and the two hairlines
+   stacked within a few pixels. Both bars are on -color-bg-subtle, so the ground already separates them
+   (the same treatment .diff-toolbar and the window's top/bottom bars got). */
 .history-window-toolbar {
     -fx-padding: 6 8 6 8;
     -fx-background-color: -color-bg-subtle;
-    -fx-border-color: transparent transparent -color-border-default transparent;
-    -fx-border-width: 0 0 1 0;
+    -fx-border-width: 0;
 }
 .history-window-header {
     -fx-font-weight: bold;
@@ -3046,15 +3168,19 @@
     -fx-alignment: BOTTOM_LEFT;
 }
 
+/* One flat fill, no bottom rule: the toolbar, the tab strip and the editor already sit on distinct
+   grounds, and the active tab carries its own three-sided border — so the strip's own hairline was a
+   second edge drawn a pixel away from the tab's. */
 .tab-pane > .tab-header-area > .tab-header-background {
-    -fx-background-insets: 0, 0 0 1 0;
-    -fx-background-color: -color-border-muted, -color-bg-subtle;
+    -fx-background-insets: 0;
+    -fx-background-color: -color-bg-subtle;
 }
 
 .tab-pane > .tab-header-area > .headers-region > .tab {
     -fx-background-color: transparent;
     -fx-background-insets: 0;
-    -fx-background-radius: 8 8 0 0;
+    /* Square corners: the tab reads as a flush panel merging into the editor below, not a rounded card. */
+    -fx-background-radius: 0;
     -fx-padding: 2 11 3 11;
 }
 
@@ -3072,9 +3198,11 @@
    inset 1px on top/left/right and flush at the bottom, so the tab opens into the editor. */
 .tab-pane > .tab-header-area > .headers-region > .tab:top:selected,
 .tab-pane > .tab-header-area > .headers-region > .tab:bottom:selected {
-    -fx-background-color: -color-border-muted, -editor-surface;
+    /* -color-border-default, not -muted: with the strip's own rule gone, this outline is the only thing
+       marking where the active tab is, and muted against the subtle ground was barely a shade. */
+    -fx-background-color: -color-border-default, -editor-surface;
     -fx-background-insets: 0, 1 1 0 1;
-    -fx-background-radius: 8 8 0 0, 7 7 0 0;
+    -fx-background-radius: 0, 0;
 }
 
 /* Toolbar run cluster (UI Kit): play is green, debug is accent, stop is red — the one place the

@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The breadcrumb no longer opens a menu taller than your screen** — clicking a folder with hundreds of
+  entries used to produce a flat list you could only inch through with tiny scroll arrows. Past thirty
+  entries it now splits into ranges (`android … cargo`), each opening a submenu.
+
+- **Filter the message log** — the session's status messages fill up fast, and finding the one you want meant
+  scrolling. The popup now opens with a filter field focused; type to narrow, Down or Enter to step into the
+  results. It is also 40% wider and 20% taller.
+
+- **Copy details from About** — the About panel was rebuilt as a native-style panel (icon, version, links, and
+  a monospace block listing Java, JavaFX, your OS and your config path) with a button that copies that block
+  for a bug report.
+
+### Changed
+
+- **Git, GitHub and Web are no longer marked Beta.**
+
+- **The Output console appears when you are in a Git repository.** Git and GitHub write every command they run
+  into a transcript there, and in a repository with no build file its stripe button never appeared — so those
+  transcripts had no way in.
+
+- **Chrome sizing and alignment throughout.** The status bar reads 20% larger and the toolbar's labels 30%.
+  The tool stripe's icons line up with the first line of code rather than with the tab strip above it, and
+  Quit sits directly above them. Every toolbar control — the project and run-configuration pickers included —
+  is now the same height as the icons beside it, with their own text at a size that fits. Tabs are square, and
+  the hairlines stacked between the toolbar, tab strip, diff viewer and View-Mode banner are gone.
+
+- **The Settings window opens larger** (clamped to your screen) so the template, snippet, external-tool and
+  toolbar lists show their contents without scrolling, and each page now opens at its top instead of
+  wherever the previous page was scrolled to.
+
+- **Project, Bookmarks, Structure, Personal Notes and Commit share one font size** — the five list tool
+  windows disagreed, so a glance from one to the next changed size. A tool window's title also matches the
+  stripe button that opens it, icon included.
+
+- **Toolbar regrouped.** Undo/Redo is its own group rather than sharing one with the clipboard; Close no
+  longer sits beside Save, where a mis-click discarded the tab instead of saving it; Clear Recent moved
+  inside the Recent dropdown, where it can't be hit by accident; Recent sits with the project controls and
+  Settings beside About. New File and the page glyph were drawn taller than every other icon and now match.
+  The command palette's lightning bolt became a `>_` prompt, Simple mode's empty square became a window
+  frame, and Settings' sun became a cog.
+
+- **Git status letters (M/A/D/R/U) are bold** in the Project tree and the Commit window.
+
+- **Go to Line opens where every other popup does** — it was the one overlay centred in the middle of the
+  window.
+
+- **The Maven icon is legible at icon size.** It was the official Apache Maven mark, a two-feather
+  illustration whose hairline quills collapsed into a smudge at 19px; it is now a single bold feather.
+
 ## [0.10.0] - 2026-08-03
 
 ### Added

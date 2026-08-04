@@ -18,6 +18,7 @@ import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -1303,22 +1304,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 Path name = item.getFileName();
                 label = name == null ? item.toString() : name.toString();
             }
-            // Prefix a changed file with its status letter (M/A/D/R/U), like the Commit window; an unsaved
+            // Mark a changed file with its status letter (M/A/D/R/U), like the Commit window; an unsaved
             // (dirty) file keeps its "• " marker instead. The color comes from the git-status style class.
+            // The letter goes in the graphic beside the glyph rather than into the text, so it can be bold
+            // on its own (a Labeled cannot weight part of its string).
             if (dirty) {
                 label = "• " + label;
-            } else if (fileStatus != null) {
-                label = fileStatus.letter() + "  " + label;
             }
             setText(label);
             setContextMenu(null); // built lazily in setOnContextMenuRequested (see the PathCell constructor)
             Path fileName = item.getFileName();
             // Box the folder glyph in the same fixed icon column as the (already-boxed) file glyphs, so
             // folder and file rows share one icon width and every label starts at the same x.
-            setGraphic(
-                    isDir
-                            ? FileIcons.boxed(Icons.project())
-                            : FileIcons.forFileName(fileName == null ? label : fileName.toString()));
+            Node glyph = isDir
+                    ? FileIcons.boxed(Icons.project())
+                    : FileIcons.forFileName(fileName == null ? label : fileName.toString());
+            setGraphic(FileIcons.withStatusLetter(glyph, fileStatus == null ? null : fileStatus.letter()));
         }
 
         private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir, boolean isRoot) {

@@ -25,6 +25,10 @@ final class ToolWindowPanel extends BorderPane {
         Label title = new Label();
         title.textProperty().bind(tw.titleProperty()); // updates live when a tool window retitles itself
         title.getStyleClass().add("tool-window-title");
+        // The same glyph the stripe button shows, so an open panel's header reads as the stripe entry that
+        // opened it rather than as an unrelated caption. createIcon() hands back a fresh node each call — a
+        // JavaFX node can only have one parent, and the stripe already owns one.
+        title.setGraphic(tw.createIcon());
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);

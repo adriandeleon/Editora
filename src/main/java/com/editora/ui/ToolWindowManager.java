@@ -81,6 +81,10 @@ public class ToolWindowManager {
     private boolean zenHidesStripes;
     /** User setting: when false the tool stripes are hidden (UI only — windows still open via keys/palette). */
     private boolean stripesEnabled = true;
+    /** Pulses to keep re-looking for the tab header's node before giving up (see the binder below). */
+    private static final int SKIN_LOOKUP_ATTEMPTS = 20;
+    /** True once the vertical stripes' top inset tracks the tab-header height, so the binder runs once. */
+    private boolean stripeInsetBound;
 
     public ToolWindowManager(BorderPane workspace, Node editorArea, ConfigManager config, KeymapManager keymap) {
         this.config = config;
@@ -104,6 +108,7 @@ public class ToolWindowManager {
         workspace.setBottom(bottomStripe);
         workspace.setCenter(vSplit);
         updateStripeVisibility();
+        alignVerticalStripesWithEditorText(editorArea);
 
         // Highlight whichever tool window holds keyboard focus. Tracked centrally via the scene's single
         // focus owner — more reliable than per-node focusWithin for deeply nested controls (e.g. the
@@ -115,6 +120,66 @@ public class ToolWindowManager {
             }
         });
     }
+
+    /**
+     * Lines the vertical stripes' topmost icon up with the editor's first line of text instead of with the
+     * tab strip above it. The stripes are {@link BorderPane} siblings of the whole editor area, so they
+     * begin at the tab strip's top edge; insetting them by the live tab-header height drops the first icon
+     * to where the code starts.
+     *
+     * <p>Read from the header rather than hardcoded because the tab strip is hideable at runtime
+     * ({@code view.toggleTabBar}, Zen/Expert), which takes its height to zero — a constant would then leave
+     * the icons a tab-strip's height below the text they are meant to sit beside.
+     *
+     * <p>The skin (and so the {@code .tab-header-area} node) is built during the first CSS pass, which has
+     * not necessarily happened when the editor area first joins a scene — hence the bounded retry.
+     */
+    private void alignVerticalStripesWithEditorText(Node editorArea) {
+        editorArea.sceneProperty().addListener((obs, old, scene) -> {
+            if (scene != null) {
+                bindStripeTopInset(editorArea, SKIN_LOOKUP_ATTEMPTS);
+            }
+        });
+        if (editorArea.getScene() != null) {
+            bindStripeTopInset(editorArea, SKIN_LOOKUP_ATTEMPTS);
+        }
+    }
+
+    private void bindStripeTopInset(Node editorArea, int attemptsLeft) {
+        if (stripeInsetBound || attemptsLeft <= 0 || editorArea.getScene() == null) {
+            return;
+        }
+        editorArea.applyCss();
+        if (!(editorArea.lookup(".tab-header-area") instanceof Region header)) {
+            Platform.runLater(() -> bindStripeTopInset(editorArea, attemptsLeft - 1));
+            return;
+        }
+        stripeInsetBound = true;
+        header.heightProperty().addListener((o, a, h) -> applyStripeTopInset(h.doubleValue()));
+        applyStripeTopInset(header.getHeight());
+    }
+
+    /**
+     * Applies the computed top inset to both vertical stripes.
+     *
+     * <p>Set as an inline style rather than through {@code setPadding}: {@code app.css} is an author
+     * stylesheet, and an author stylesheet overrides a programmatically set property — so
+     * {@code .tool-stripe-vertical}'s own {@code -fx-padding} would win it back on the next CSS pass. That
+     * forces the other three insets to be restated here; keep them in step with that rule.
+     */
+    private void applyStripeTopInset(double tabHeaderHeight) {
+        // Less the button's own top inset: what should line up with the first line of code is the GLYPH,
+        // and the button pads above it (`.tool-stripe-button` in app.css) to separate the icons on the rail.
+        // Without this subtraction, giving the buttons breathing room silently walks the first icon down
+        // past the text it is supposed to sit beside.
+        long top = Math.max(0, Math.round(tabHeaderHeight) - STRIPE_BUTTON_TOP_INSET);
+        String style = "-fx-padding: " + top + "px 0 8px 0;";
+        leftStripe.setStyle(style);
+        rightStripe.setStyle(style);
+    }
+
+    /** Mirrors {@code .tool-stripe-button}'s top inset in app.css — keep the two in step. */
+    private static final int STRIPE_BUTTON_TOP_INSET = 9;
 
     /**
      * Marks the tool window that contains the scene's focus owner as active (others inactive): its panel

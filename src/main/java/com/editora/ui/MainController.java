@@ -2126,6 +2126,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         for (Path path : recentFiles.getList()) {
             recentButton.getItems().add(recentMenuItem(path));
         }
+        // "Clear recent files" lives here rather than as its own toolbar icon: as a bare trash can beside
+        // the file group it read as "delete this file" and sat a slot away from Save. Inside the dropdown it
+        // is unambiguous and can't be hit by accident. (The file.clearRecent command + the catalog entry are
+        // unchanged, so anyone who wants the icon back can add it in Settings → Toolbar.)
+        recentButton.getItems().add(new SeparatorMenuItem());
+        MenuItem clear = new MenuItem(tr("tooltip.clearRecent"), Icons.trash());
+        clear.setOnAction(e -> onClearRecent());
+        recentButton.getItems().add(clear);
     }
 
     /** A recent-file menu entry: filename label that opens the file, plus an inline ✕ icon to remove it. */
@@ -2775,7 +2783,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             toolWindows.register(tw, true); // tasks-tree stripe visible by preference…
             toolWindows.setAvailable(tw, false); // …but hidden until the tool's marker file is detected
         }
-        toolWindows.register(buildOutputToolWindow, false); // shared console stripe off by default; auto-opens on run
+        // Default-visible, with setAvailable below as the real gate: availability already answers "is there
+        // anything to show?" (a detected build tool, a Git repo, or a tab already written), so ALSO defaulting
+        // the user-visibility flag to false made the stripe button unreachable in exactly those cases. A user
+        // who hides it in Settings → Tool Windows still has that preference persisted and respected.
+        toolWindows.register(buildOutputToolWindow, true);
         toolWindows.setAvailable(buildOutputToolWindow, false); // …available once any build tool is detected
         toolWindows.register(testResultsToolWindow, false); // stripe off by default; auto-opens on a `test` run
         toolWindows.setAvailable(testResultsToolWindow, false); // …available once a test run has occurred
@@ -3105,6 +3117,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void setGitLogWindowAvailable(boolean available) {
+            // Entering or leaving a repo also decides whether the shared Output console is reachable — Git
+            // writes its command transcripts there. Hooked here because this runs on every applyGitState
+            // (tab switch / focus / save / mutation), which is exactly when the repo context can change.
+            refreshBuildOutputAvailability();
             toolWindows.setAvailable(gitLogToolWindow, available && activeBuffer() != null);
         }
 
@@ -3469,10 +3485,22 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** The shared console is offered once any build tool is detected, or once anything has written to it. */
+    /**
+     * The shared Output console is available whenever something can write into it: a detected build tool, a
+     * tab already written (a finished build, a CI log), or <b>a Git repository</b> — Git and GitHub log every
+     * command they run into their own transcript tabs there, and in a repo with no build file the stripe
+     * button is the only way to reach them.
+     */
     private void refreshBuildOutputAvailability() {
         if (buildOutputToolWindow != null) {
-            toolWindows.setAvailable(buildOutputToolWindow, anyBuildDetected() || buildOutputPanel.hasTabs());
+            toolWindows.setAvailable(
+                    buildOutputToolWindow, anyBuildDetected() || inGitRepo() || buildOutputPanel.hasTabs());
         }
+    }
+
+    /** Whether the active context is inside a Git repository (and Git is switched on). */
+    private boolean inGitRepo() {
+        return git != null && git.isAvailable();
     }
 
     private boolean anyBuildDetected() {
@@ -5856,7 +5884,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         // Project switcher just right of the Settings icon (a ~3-icon gap), with the open-folder icon
         // immediately to the right of the combobox, before the flexible spacer.
-        items.addAll(projectToolbarGap, projectToolbarLabel, toolbarProjectCombo, openFolderButton);
+        // Recent sits with the project controls rather than with New/Open: it is a "where have I been"
+        // dropdown, and beside the file actions it read as one of them.
+        items.addAll(projectToolbarGap, projectToolbarLabel, toolbarProjectCombo, openFolderButton, recentButton);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -5881,7 +5911,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             items.addAll(toolbarGap(), devBadge);
         }
 
-        items.addAll(toolbarGap(), aboutButton, toolbarGap(), quitButton);
+        // Settings pairs with About: both are "about the app", not about the document.
+        items.addAll(toolbarGap(), settingsButton, aboutButton, toolbarGap(), quitButton);
     }
 
     /** Id → the existing {@code @FXML} toolbar widget backing each default/special customizable item. */
@@ -5894,7 +5925,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             m.put("buffer.close", closeTabButton);
             m.put("file.save", saveButton);
             m.put("file.saveAs", saveAsButton);
-            m.put("toolbar.recent", recentButton);
             m.put("file.clearRecent", clearRecentButton);
             m.put("edit.undo", undoButton);
             m.put("edit.redo", redoButton);
@@ -5907,7 +5937,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             m.put("view.splitHorizontal", splitHorizontalButton);
             m.put("palette.show", paletteButton);
             m.put("view.toggleSimpleMode", simpleModeButton);
-            m.put("view.settings", settingsButton);
             m.put("toolbar.runConfig", runConfigCombo);
             m.put("toolbar.runConfig.run", runConfigRunButton);
             m.put("toolbar.runConfig.debug", runConfigDebugButton);
@@ -10543,8 +10572,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         int total = area.getParagraphs().size();
-        // Centered card (lowered to the middle of the app) with a muted note re-reminding the user of the
-        // line:column notation.
+        // Sits near the top like the palette and every other overlay card (it used to be centered in the
+        // middle of the window, which made it jump relative to the rest), with a muted note re-reminding
+        // the user of the line:column notation.
         Label promptLabel = new Label(tr("dialog.goToLine.content", total));
         TextField field = new TextField(String.valueOf(area.getCurrentParagraph() + 1));
         field.setPrefColumnCount(32);
@@ -10563,7 +10593,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> handleGoToLine(field.getText(), area, total),
                 null,
                 false,
-                true);
+                false);
     }
 
     /** Parses {@code input} as {@code line} or {@code line:column} and moves the caret there. */

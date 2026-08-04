@@ -43,7 +43,17 @@ public final class MessageLogPopup {
     /** When the popup last hid — used so a click on the echo that auto-hid it doesn't immediately reopen. */
     private long lastHiddenAt;
 
+    /** Card width. */
+    private static final double WIDTH = 773;
+    /** List height. */
+    private static final double LIST_HEIGHT = 336;
+
     private final ListView<MessageLog.Entry> list = new ListView<>();
+    /** Master list; {@link #list} renders a filtered view of it so filtering keeps row identity. */
+    private final javafx.collections.ObservableList<MessageLog.Entry> allEntries =
+            javafx.collections.FXCollections.observableArrayList();
+
+    private final javafx.scene.control.TextField filter = new javafx.scene.control.TextField();
     private final VBox root;
     private MessageLog log;
 
@@ -52,7 +62,7 @@ public final class MessageLogPopup {
         header.getStyleClass().add("message-log-header");
 
         list.getStyleClass().add("message-log-list");
-        list.setPrefSize(552, 280); // 20% wider than the original 460
+        list.setPrefSize(WIDTH, LIST_HEIGHT);
         // Rows are selectable (multiple) so they can be copied to the clipboard.
         list.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         Label empty = new Label(tr("messagelog.empty"));
@@ -130,9 +140,18 @@ public final class MessageLogPopup {
         footer.getStyleClass().add("message-log-footer");
         footer.setAlignment(Pos.CENTER_LEFT);
 
-        root = new VBox(6, header, list, footer);
+        // Live filter over the session's messages — the log fills up fast (every save, search and status
+        // echo lands here), so finding the one line you want by scrolling is the slow path.
+        filter.getStyleClass().add("message-log-filter");
+        filter.setPromptText(tr("messagelog.filter"));
+        filter.textProperty().addListener((o, a, b) -> applyFilter());
+        // Down / Enter move into the results without leaving the field, matching the filterable tool
+        // windows; the list's own keys (⌘C, Esc) still work once focus is there.
+        FilterFieldNav.install(filter, list, () -> {});
+
+        root = new VBox(6, header, filter, list, footer);
         root.getStyleClass().add("message-log");
-        root.setMaxSize(552, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
+        root.setMaxSize(WIDTH, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
         root.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep nav/copy keys for the popup
         root.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             // Close on Esc, C-g (the app's keyboard-quit), or M-g. (The OverlayHost also handles Esc/C-g,
@@ -192,19 +211,40 @@ public final class MessageLogPopup {
             return;
         }
         this.log = log;
+        filter.clear(); // a query from the last time it was open would hide the messages that just arrived
         refreshItems();
         if (!list.getItems().isEmpty()) {
             list.getSelectionModel().clearAndSelect(0); // newest, so ⌘C copies the latest by default
         }
         showing = true;
-        overlayHost.show(root, anchor, list::requestFocus, () -> {
+        // Focus the filter, not the list: typing narrows straight away, and Down/Enter step into the rows.
+        overlayHost.show(root, anchor, filter::requestFocus, () -> {
             showing = false;
             lastHiddenAt = System.currentTimeMillis();
         });
     }
 
     private void refreshItems() {
-        list.getItems().setAll(log == null ? java.util.List.of() : log.entries());
+        allEntries.setAll(log == null ? java.util.List.of() : log.entries());
+        applyFilter();
+    }
+
+    /**
+     * Narrows the visible rows to those whose message contains the filter text (case-insensitive). Kept as
+     * a plain re-population of the view list rather than a {@code FilteredList}: the list's items are
+     * replaced wholesale on every refresh, and a bound FilteredList would have to be rebuilt alongside it.
+     */
+    private void applyFilter() {
+        String q = filter.getText() == null ? "" : filter.getText().trim().toLowerCase(java.util.Locale.ROOT);
+        if (q.isEmpty()) {
+            list.getItems().setAll(allEntries);
+            return;
+        }
+        list.getItems()
+                .setAll(allEntries.stream()
+                        .filter(e -> e.text() != null
+                                && e.text().toLowerCase(java.util.Locale.ROOT).contains(q))
+                        .toList());
     }
 
     public void hide() {

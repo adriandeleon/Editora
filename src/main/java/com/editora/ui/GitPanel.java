@@ -382,8 +382,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 setContextMenu(null);
             } else if (item instanceof FileRow f) {
                 FileEntry e = f.entry();
-                setText(statusLetter(e) + "  " + f.entry().path());
-                setGraphic(Icons.fileSheet());
+                // The status letter rides in the graphic, not the text, so it can be bold on its own.
+                setText(f.entry().path());
+                setGraphic(FileIcons.withStatusLetter(Icons.fileSheet(), statusLetter(e)));
                 // Color the row by status (same palette as the Project tree) so the two windows match.
                 getStyleClass().add(GitFileStatus.of(e).cssClass());
                 setTooltip(new Tooltip(e.path()));
