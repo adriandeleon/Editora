@@ -42,6 +42,7 @@ final class MenuBarModel {
                                 "file.new",
                                 "template.new",
                                 "project.newFromTemplate",
+                                "maven.newProject",
                                 "file.open",
                                 "project.open",
                                 SEPARATOR,

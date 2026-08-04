@@ -1,0 +1,72 @@
+{
+  "_comment": [
+    "Curated archetypes offered by the New Maven Project wizard. These are treated as vetted: the wizard",
+    "runs them without a consent prompt, whereas a user-typed GAV or an entry pulled from Maven Central's",
+    "full catalog is third-party code and must be confirmed first.",
+    "Keep this list short and boring — it is a starting point, not a directory. Anything missing is one",
+    "'Custom archetype...' or 'Load full catalog...' away.",
+    "Versions are pinned so a generation is reproducible; bump them deliberately."
+  ],
+  "archetypes": [
+    {
+      "groupId": "org.apache.maven.archetypes",
+      "artifactId": "maven-archetype-quickstart",
+      "version": "1.5",
+      "description": "A plain Java application with JUnit — the standard starting point"
+    },
+    {
+      "groupId": "org.apache.maven.archetypes",
+      "artifactId": "maven-archetype-webapp",
+      "version": "1.5",
+      "description": "A Java web application packaged as a WAR"
+    },
+    {
+      "groupId": "org.apache.maven.archetypes",
+      "artifactId": "maven-archetype-simple",
+      "version": "1.5",
+      "description": "A minimal project with no sample sources"
+    },
+    {
+      "groupId": "org.apache.maven.archetypes",
+      "artifactId": "maven-archetype-site",
+      "version": "1.4",
+      "description": "A Maven site with example documentation"
+    },
+    {
+      "groupId": "org.apache.maven.archetypes",
+      "artifactId": "maven-archetype-plugin",
+      "version": "1.4",
+      "description": "A Maven plugin"
+    },
+    {
+      "groupId": "org.openjfx",
+      "artifactId": "javafx-archetype-simple",
+      "version": "0.0.6",
+      "description": "A JavaFX desktop application"
+    },
+    {
+      "groupId": "org.openjfx",
+      "artifactId": "javafx-archetype-fxml",
+      "version": "0.0.6",
+      "description": "A JavaFX application with FXML views"
+    },
+    {
+      "groupId": "io.quarkus",
+      "artifactId": "quarkus-maven-plugin",
+      "version": "3.15.1",
+      "description": "A Quarkus application"
+    },
+    {
+      "groupId": "org.apache.camel.archetypes",
+      "artifactId": "camel-archetype-java",
+      "version": "4.8.1",
+      "description": "An Apache Camel route written in Java"
+    },
+    {
+      "groupId": "org.scala-tools.archetypes",
+      "artifactId": "scala-archetype-simple",
+      "version": "1.3",
+      "description": "A Scala project built with Maven"
+    }
+  ]
+}

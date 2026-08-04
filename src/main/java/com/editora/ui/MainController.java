@@ -1553,6 +1553,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         autoSaveExecutor.shutdownNow();
         diffCoordinator.shutdown(); // the diff-service worker thread
+        mavenProjectCoordinator.shutdown(); // archetype:generate process + catalog fetch thread
         externalToolCoordinator.shutdown(); // the external-tool worker thread
         httpClient.shutdown(); // the http-client worker thread
         remoteCoordinator.shutdown(); // SFTP sessions + the SSH client (and un-pin the static Vfs hooks)
@@ -2319,6 +2320,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         projectPanel.setOnBeforeDelete(
                 file -> historyCoordinator.captureBeforeDelete(file)); // snapshot to Local History before delete
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
+        projectPanel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         projectPanel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
         // An external program (a terminal `git`, another editor, a build) changed files under the repo while
         // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
@@ -3359,6 +3361,51 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The server-log-viewer feature (level highlighting, tail-follow, filtering); see {@link LogViewerCoordinator}. */
     private final LogViewerCoordinator logViewer = new LogViewerCoordinator(coordinatorHost);
 
+    /** New Maven Project wizard; owns the archetype picker/form and the archetype:generate run. */
+    private final MavenProjectCoordinator mavenProjectCoordinator = new MavenProjectCoordinator(
+            coordinatorHost,
+            new MavenProjectCoordinator.Ops() {
+                @Override
+                public java.nio.file.Path defaultParentDir() {
+                    return defaultNewDir();
+                }
+
+                @Override
+                public void openProject(java.nio.file.Path root, String name) {
+                    if (!projectsEnabled()) {
+                        return; // still generated on disk; just not registered as a project
+                    }
+                    Project project = projects.createOrGet(name, root);
+                    projects.save();
+                    if (windowManager != null) {
+                        windowManager.openOrFocus(project);
+                    }
+                }
+
+                @Override
+                public void openPath(java.nio.file.Path file) {
+                    MainController.this.openPath(file);
+                }
+
+                @Override
+                public com.editora.command.KeymapManager keymap() {
+                    return keymap;
+                }
+
+                @Override
+                public boolean confirmArchetype(com.editora.maven.MavenArchetype archetype) {
+                    return confirmArchetypeGenerate(archetype);
+                }
+
+                @Override
+                public void refreshProjectTree() {
+                    if (projectPanel != null) {
+                        projectPanel.refreshTree();
+                    }
+                }
+            },
+            buildOutputPanel);
+
     /** External Tools feature; owns the service/console panel/commands (the tool window stays here). */
     private final ExternalToolCoordinator externalToolCoordinator =
             new ExternalToolCoordinator(coordinatorHost, new ExternalToolCoordinator.Ops() {
@@ -4378,6 +4425,26 @@ public class MainController implements com.editora.mcp.McpBridge {
      * to grant trust. Mirrors {@link #confirmEnableMcp} / {@code confirmEnablePlugin} — the default button is
      * Cancel, so dismissing the dialog never grants trust.
      */
+    /**
+     * Consent before generating from an archetype we did not vet (a user-typed GAV, or one pulled from the
+     * remote catalog). {@code archetype:generate} downloads and executes third-party Maven plugin code, and
+     * the workspace-trust gate cannot cover it: that only fires when a repo ships an {@code mvnw}, and a
+     * brand-new empty directory has none. Default button is Cancel, so dismissing never grants consent.
+     */
+    private boolean confirmArchetypeGenerate(com.editora.maven.MavenArchetype archetype) {
+        ButtonType proceed = new ButtonType(tr("dialog.mavenProject.trustAccept"), ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = new Alert(
+                Alert.AlertType.WARNING,
+                tr("dialog.mavenProject.trustBody", archetype.gav()),
+                ButtonType.CANCEL,
+                proceed);
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("dialog.mavenProject.trustTitle"));
+        confirm.setHeaderText(tr("dialog.mavenProject.trustHeader", archetype.artifactId()));
+        confirm.getDialogPane().setMinWidth(520);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == proceed;
+    }
+
     private boolean confirmTrustFolder(java.nio.file.Path root, java.nio.file.Path wrapper) {
         java.nio.file.Path name = root.getFileName();
         ButtonType trust = new ButtonType(tr("dialog.trust.accept"), ButtonBar.ButtonData.OK_DONE);
@@ -14429,6 +14496,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         // --- Keyboard macros ---
         macroCoordinator.registerCommands(); // macro.* + one macro.run.<slug> per persisted macro
         // --- External Tools ---
+        mavenProjectCoordinator.registerCommands(registry);
+        registry.register(Command.of(
+                "maven.setArchetypeCatalogUrl",
+                () -> promptStringSetting(
+                        "maven.setArchetypeCatalogUrl",
+                        () -> config.getSettings().getMavenArchetypeCatalogUrl(),
+                        v -> config.getSettings().setMavenArchetypeCatalogUrl(v),
+                        () -> {})));
         externalToolCoordinator.registerCommands(
                 registry); // externalTool.run/clearOutput/rerunLast + per-tool run.<slug>
         // Project commands no-op when project support is disabled (fully gated).
