@@ -70,10 +70,11 @@ final class MavenProjectCoordinator {
         /**
          * Registers {@code root} as a project and opens it in its own window.
          *
-         * @param mainClass a {@code public static void main} class found in the generated sources, or null —
-         *     when non-null the window is seeded with a ready-to-run configuration named after the project
+         * @param main the entry point found in the generated sources, or null — when non-null the new
+         *     window is seeded with a ready-to-run configuration named after the project, and opens on the
+         *     class that will run (jdtls needs it open to resolve a classpath)
          */
-        void openProject(Path root, String name, String mainClass);
+        void openProject(Path root, String name, com.editora.maven.GeneratedProject.MainClass main);
 
         /** Opens a file in the current window (used to land on the generated {@code pom.xml}). */
         void openPath(Path file);
@@ -507,7 +508,7 @@ final class MavenProjectCoordinator {
         // Look at what the archetype actually wrote rather than guessing from the coordinates: quickstart
         // gives <package>.App, a webapp archetype gives no main at all. Null simply means no run
         // configuration is seeded.
-        ops.openProject(projectDir, name, com.editora.maven.GeneratedProject.findMainClass(projectDir));
+        ops.openProject(projectDir, name, com.editora.maven.GeneratedProject.findMain(projectDir));
         Path pom = projectDir.resolve("pom.xml");
         if (Files.isRegularFile(pom)) {
             ops.openPath(pom);

@@ -322,6 +322,14 @@ final class RunCoordinator {
             reportIncomplete(cfg);
             return;
         }
+        // A file name where a class name belongs resolves to an EMPTY classpath with no error, which the
+        // launch would otherwise report as "the project hasn't finished importing" — blaming a healthy
+        // language server for a typo. Say what is actually wrong and open the field that fixes it.
+        if (cfg.mainClassLooksLikeAFile()) {
+            host.setStatus(tr("status.run.mainClassIsAFile", cfg.mainClass()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
         // A named configuration is independent of whatever is on screen: any open Java file in its project
         // can route the classpath resolution, so this no longer refuses just because the active tab is a
         // README. Null means no Java file is open at all, which is the only genuinely unresolvable case.

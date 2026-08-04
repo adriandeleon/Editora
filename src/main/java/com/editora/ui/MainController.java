@@ -3376,13 +3376,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public void openProject(java.nio.file.Path root, String name, String mainClass) {
+                public void openProject(
+                        java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.MainClass main) {
                     if (!projectsEnabled()) {
                         return; // still generated on disk; just not registered as a project
                     }
                     Project project = projects.createOrGet(name, root);
                     projects.save();
-                    seedRunConfiguration(project, root, name, mainClass);
+                    seedNewProjectSession(project, root, name, main);
                     if (windowManager != null) {
                         windowManager.openOrFocus(project);
                     }
@@ -4448,34 +4449,44 @@ public class MainController implements com.editora.mcp.McpBridge {
      * <p>Written into the <b>new project's</b> session file before {@code openOrFocus} builds its window —
      * that window loads {@code projects/<id>.json} on construction, so seeding afterwards would be a race,
      * and writing it into <em>this</em> window's state would put the configuration in the wrong project.
-     * A throwaway {@link ConfigManager} over the shared config is the supported way to address another
-     * session file.
+     * <p><b>Deliberately does not call {@code ConfigManager.load()}.</b> That runs
+     * {@code SharedConfig.load()}, which replaces the shared {@code Settings} instance every open window
+     * holds <em>by reference</em> and re-reads every shared store from disk — corrupting live windows in
+     * order to write one file. A brand-new project needs no load: {@code ConfigManager} starts with a fresh
+     * {@code WorkspaceState}, which is exactly the right starting point, and an existing session file is
+     * left strictly alone.
+     *
+     * <p>The open file matters as much as the configuration: a Java launch resolves its classpath through
+     * jdtls routed via an <b>open Java file</b>, so a window that opens on {@code pom.xml} alone has nothing
+     * to route through and Run reports "open a Java file from the project".
      *
      * <p>No main class means no configuration: a webapp or plugin archetype has nothing to launch, and a
      * configuration that fails at the click is worse than none at all.
      */
-    private void seedRunConfiguration(Project project, java.nio.file.Path root, String name, String mainClass) {
-        if (mainClass == null || mainClass.isBlank()) {
+    private void seedNewProjectSession(
+            Project project, java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.MainClass main) {
+        if (main == null || main.fqn() == null || main.fqn().isBlank()) {
             return;
         }
         try {
-            ConfigManager seeded = new ConfigManager(config.shared(), projects.stateFile(project));
-            seeded.load();
-            List<com.editora.config.RunConfiguration> list =
-                    new java.util.ArrayList<>(seeded.getWorkspaceState().getRunConfigurations());
-            if (list.stream().anyMatch(c -> name.equals(c.name()))) {
-                return; // an existing project reused by name already has its configuration
+            java.nio.file.Path stateFile = projects.stateFile(project);
+            if (java.nio.file.Files.exists(stateFile)) {
+                return; // an existing project reused by name keeps its own session
             }
+            ConfigManager seeded = new ConfigManager(config.shared(), stateFile);
+            WorkspaceState state = seeded.getWorkspaceState(); // fresh defaults; see the note above
             // workingDir = the project root, so the launch resolves against this project even with several
             // open, and a relative path in the program behaves as it would from a terminal there.
-            list.add(new com.editora.config.RunConfiguration(name, "run", mainClass, "", "", "", root.toString()));
-            seeded.getWorkspaceState().setRunConfigurations(list);
-            seeded.getWorkspaceState().setSelectedRunConfig(name); // pre-selected in the toolbar
+            state.setRunConfigurations(List.of(
+                    new com.editora.config.RunConfiguration(name, "run", main.fqn(), "", "", "", root.toString())));
+            state.setSelectedRunConfig(name);
+            state.setOpenFiles(List.of(new WorkspaceState.OpenFile(main.file().toString(), 0, false)));
+            state.setActiveFile(main.file().toString());
             seeded.save();
         } catch (RuntimeException e) {
             // The project is generated and open either way; a missing configuration is a papercut, not a
             // reason to fail the whole flow.
-            LOG.log(java.util.logging.Level.WARNING, "could not seed a run configuration", e);
+            LOG.log(java.util.logging.Level.WARNING, "could not seed the new project's session", e);
         }
     }
 

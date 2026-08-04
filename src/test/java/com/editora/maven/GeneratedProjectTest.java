@@ -97,6 +97,16 @@ class GeneratedProjectTest {
     }
 
     @Test
+    void findMainAlsoReturnsTheSourceFileToOpen(@TempDir Path root) throws Exception {
+        // The window seeds this file as its open tab: jdtls resolves a classpath through an OPEN Java file,
+        // so a project that opens on pom.xml alone cannot run.
+        write(root, "src/main/java/com/example/demo/App.java", appWithMain("com.example.demo", "App"));
+        GeneratedProject.MainClass m = GeneratedProject.findMain(root);
+        assertEquals("com.example.demo.App", m.fqn());
+        assertEquals(root.resolve("src/main/java/com/example/demo/App.java"), m.file());
+    }
+
+    @Test
     void nullProjectDirIsNullNotAnException() {
         assertNull(GeneratedProject.findMainClass(null));
     }

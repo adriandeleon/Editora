@@ -778,6 +778,11 @@ final class DebugCoordinator {
             ops.editConfiguration(cfg.name()); // take them to the field that would make it run
             return;
         }
+        if (cfg.mainClassLooksLikeAFile()) { // see the Run path: an empty classpath, not an error
+            host.setStatus(tr("status.run.mainClassIsAFile", cfg.mainClass()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
         if (!debugEffectiveFor("java")) {
             host.setStatus(tr("status.debug.unavailable"));
             return;

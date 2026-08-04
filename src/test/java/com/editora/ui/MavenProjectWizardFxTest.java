@@ -148,6 +148,12 @@ class MavenProjectWizardFxTest {
             assertEquals("com.example.demo.App", configs.get(0).mainClass());
             assertEquals(projectDir.toString(), configs.get(0).workingDir());
             assertEquals("demo", seeded.getWorkspaceState().getSelectedRunConfig(), "pre-selected");
+            // The open file is not cosmetic: a Java launch resolves its classpath through an OPEN Java
+            // file, so a window that opens on pom.xml alone reports "open a Java file from the project".
+            var open = seeded.getWorkspaceState().getOpenFiles();
+            assertEquals(1, open.size());
+            assertTrue(open.get(0).getPath().endsWith("App.java"), "the class that will run is open");
+            assertTrue(seeded.getWorkspaceState().getActiveFile().endsWith("App.java"), "and it is the active tab");
         } finally {
             deleteRecursively(parent);
         }
@@ -189,7 +195,7 @@ class MavenProjectWizardFxTest {
         }
 
         @Override
-        public void openProject(Path root, String name, String mainClass) {}
+        public void openProject(Path root, String name, com.editora.maven.GeneratedProject.MainClass main) {}
 
         @Override
         public void openPath(Path file) {}

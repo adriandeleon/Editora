@@ -30,15 +30,24 @@ public final class GeneratedProject {
 
     private GeneratedProject() {}
 
+    /** A discovered entry point: its fully-qualified name and the source file that declares it. */
+    public record MainClass(String fqn, Path file) {}
+
+    /** The FQN only — see {@link #findMain(Path)} when the source file is also needed. */
+    public static String findMainClass(Path projectDir) {
+        MainClass m = findMain(projectDir);
+        return m == null ? null : m.fqn();
+    }
+
     /**
-     * The fully-qualified name of a {@code public static void main} class under {@code projectDir}'s
-     * {@code src/main/java}, or {@code null} if there is none.
+     * The {@code public static void main} class under {@code projectDir}'s {@code src/main/java}, with the
+     * file that declares it, or {@code null} if there is none.
      *
      * <p>Deterministic when several exist: shallowest path first, then alphabetical, so the same project
      * always yields the same configuration rather than depending on filesystem order. Test sources are not
      * searched — a runnable main in {@code src/test/java} is not what "Run" should mean.
      */
-    public static String findMainClass(Path projectDir) {
+    public static MainClass findMain(Path projectDir) {
         if (projectDir == null) {
             return null;
         }
@@ -59,7 +68,7 @@ public final class GeneratedProject {
         for (Path file : candidates) {
             String fqn = mainClassIn(file);
             if (fqn != null) {
-                return fqn;
+                return new MainClass(fqn, file);
             }
         }
         return null;
