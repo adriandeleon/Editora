@@ -6302,18 +6302,6 @@ public class SettingsWindow {
     private Card card(VBox page, String title) {
         VBox body = new VBox();
         body.getStyleClass().add("settings-card-body");
-        // Rows carry a bottom separator, which must not be drawn under the last one. JavaFX CSS has no
-        // structural pseudo-classes (`:last-child` parses but matches nothing), so tag the final row
-        // here and let .settings-row-last drop the border.
-        body.getChildren().addListener((javafx.collections.ListChangeListener<Node>) ch -> {
-            var kids = body.getChildren();
-            for (int i = 0; i < kids.size(); i++) {
-                kids.get(i).getStyleClass().remove("settings-row-last");
-            }
-            if (!kids.isEmpty()) {
-                kids.get(kids.size() - 1).getStyleClass().add("settings-row-last");
-            }
-        });
         VBox box = new VBox();
         box.getStyleClass().add("settings-card");
         if (title != null && !title.isBlank()) {

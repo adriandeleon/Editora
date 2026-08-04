@@ -2024,16 +2024,6 @@
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 12 0 2 0;
 }
-/* A separator between rows rather than around them, so the card reads as one block. JavaFX has no
-   structural pseudo-classes (`:last-child` would never match), so the final row is tagged
-   `settings-row-last` in code — see SettingsWindow.card(). */
-.settings-card-body > .settings-row {
-    -fx-border-color: transparent transparent -color-border-muted transparent;
-    -fx-border-width: 0 0 1 0;
-}
-.settings-card-body > .settings-row-last {
-    -fx-border-width: 0;
-}
 .settings-row {
     -fx-padding: 13 0 13 0;
 }
@@ -3289,9 +3279,7 @@
 .settings-footer {
     -fx-border-width: 0;
 }
-.settings-card-body > .settings-row {
-    -fx-border-width: 0;
-}
+
 
 /* One ground for the whole window: rail, page and footer all sit on -color-bg-subtle, and the white
    cards are the only raised surface. Previously the rail was bg-default, so the window read as two
