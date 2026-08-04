@@ -66,8 +66,9 @@ class MenuBarFxTest {
                 if (item instanceof SeparatorMenuItem) {
                     continue;
                 }
-                assertNotNull(item.getOnAction(), "menu item has no action: " + item.getText());
-                assertFalse(item.getText() == null || item.getText().isBlank(), "menu item has no label");
+                String text = MainMenuBar.displayTextOf(item);
+                assertNotNull(item.getOnAction(), "menu item has no action: " + text);
+                assertFalse(text.isBlank(), "menu item has no label");
                 wired++;
             }
         }
@@ -83,9 +84,8 @@ class MenuBarFxTest {
         MenuBar bar = bar();
         MenuItem save = itemFor(bar, "file.save");
         assertNotNull(save, "File > Save is present");
-        assertTrue(
-                save.getText().length() > "Save".length(),
-                "the label carries a chord beside the title, was: " + save.getText());
+        String text = MainMenuBar.displayTextOf(save);
+        assertTrue(text.length() > "Save".length(), "the item shows a chord beside the title, was: " + text);
     }
 
     /**

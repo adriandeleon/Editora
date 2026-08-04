@@ -28,7 +28,6 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
@@ -10602,13 +10601,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         List<String> names = new ArrayList<>();
         names.add(LanguageRegistry.plaintext());
         names.addAll(GrammarRegistry.shared().availableLanguageNames());
-        String current = names.contains(buffer.getLanguage()) ? buffer.getLanguage() : names.get(0);
-        ChoiceDialog<String> dialog = new ChoiceDialog<>(current, names);
-        dialog.initOwner(stage);
-        dialog.setTitle(tr("dialog.setLanguage.title"));
-        dialog.setHeaderText(null);
-        dialog.setContentText(tr("dialog.setLanguage.content"));
-        dialog.showAndWait().ifPresent(name -> {
+        // An in-scene picker, like every other status-bar selector — filterable, keyboard-first, and it
+        // does not open a second window over the editor. (The list is ~100 grammars; a ChoiceDialog's
+        // combo made that unsearchable.)
+        chooseSetting("buffer.setLanguage", () -> names, name -> name, name -> {
             buffer.setLanguageOverride(name);
             statusBar.refresh();
             setStatus(tr("status.language", name));
@@ -10618,14 +10614,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Changes the (persisted) tab width and applies it to every buffer. */
     private void chooseTabSize() {
         Settings s = config.getSettings();
-        List<Integer> options = List.of(2, 4, 8);
-        ChoiceDialog<Integer> dialog =
-                new ChoiceDialog<>(options.contains(s.getTabSize()) ? s.getTabSize() : 4, options);
-        dialog.initOwner(stage);
-        dialog.setTitle(tr("dialog.tabSize.title"));
-        dialog.setHeaderText(null);
-        dialog.setContentText(tr("dialog.tabSize.content"));
-        dialog.showAndWait().ifPresent(size -> {
+        chooseSetting("buffer.setTabSize", () -> List.of("2", "4", "8"), size -> size, choice -> {
+            int size = Integer.parseInt(choice);
             s.setTabSize(size);
             requestSave();
             applyViewSettingsToAllBuffers(s);
@@ -10863,12 +10853,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (buffer == null) {
             return;
         }
-        ChoiceDialog<String> dialog = new ChoiceDialog<>(buffer.getLineEnding(), List.of("LF", "CRLF"));
-        dialog.initOwner(stage);
-        dialog.setTitle(tr("dialog.lineEndings.title"));
-        dialog.setHeaderText(null);
-        dialog.setContentText(tr("dialog.lineEndings.content"));
-        dialog.showAndWait().ifPresent(choice -> {
+        chooseSetting("buffer.convertLineEndings", () -> List.of("LF", "CRLF"), c -> c, choice -> {
             buffer.convertLineEndings("CRLF".equals(choice));
             statusBar.refresh();
             setStatus(tr("status.lineEndingsSet", choice));

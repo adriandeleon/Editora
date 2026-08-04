@@ -50,7 +50,16 @@ public class FileBreadcrumb extends StackPane {
     private BiConsumer<Path, Boolean> onOpenTerminal;
 
     private final Breadcrumbs<Path> breadcrumbs = new Breadcrumbs<>();
-    private final ScrollPane scroll = new ScrollPane(breadcrumbs);
+
+    /**
+     * Vertically centres the crumbs in the fixed-height bar. {@code fitToHeight} stretches the scroll's
+     * content to the viewport, but {@code Breadcrumbs}' skin lays its buttons out at the TOP of whatever
+     * height it is given — so all of the bar's slack collected below the text, leaving the row visibly
+     * bottom-heavy. A centring holder splits that slack evenly instead.
+     */
+    private final StackPane crumbHolder = new StackPane(breadcrumbs);
+
+    private final ScrollPane scroll = new ScrollPane(crumbHolder);
 
     /** The crumb node for the trailing (leaf) segment, used to anchor a re-opened dropdown. */
     private Node leafCrumbNode;
@@ -74,6 +83,8 @@ public class FileBreadcrumb extends StackPane {
         // The skin overrides each crumb button's onAction (to fire this event), so catch clicks here.
         breadcrumbs.setOnCrumbAction(this::onCrumbAction);
 
+        crumbHolder.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        crumbHolder.getStyleClass().add("file-breadcrumb-holder");
         scroll.setFitToHeight(true);
         scroll.setPannable(true);
         // No visible scrollbars — they'd make the bar taller than one text line. Long paths are

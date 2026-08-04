@@ -1647,55 +1647,62 @@ public class SettingsWindow {
 
     private VBox appearancePage() {
         VBox p = page(tr("settings.cat.appearance"));
+        Card mainCard = card(p, null);
         Label langNote = note(tr("settings.uiLanguage.note"));
         VBox langBox = new VBox(4, languageCombo, langNote);
-        row(
-                p,
+        controlRow(
+                mainCard,
                 Category.APPEARANCE,
+                tr("settings.uiLanguage"),
                 null,
-                labeled(tr("settings.uiLanguage"), langBox),
+                langBox,
                 "language interface ui locale translation");
         Label fontNote = note(tr("settings.fontNote"));
         VBox fontBox = new VBox(4, fontFamily, fontNote);
-        row(
-                p,
+        controlRow(
+                mainCard,
                 Category.APPEARANCE,
+                tr("settings.fontFamily"),
                 null,
-                labeled(tr("settings.fontFamily"), fontBox),
+                fontBox,
                 "font family typeface monospace");
-        row(p, Category.APPEARANCE, null, labeled(tr("settings.fontSize"), fontSize), "font size text");
-        row(
-                p,
+        controlRow(mainCard, Category.APPEARANCE, tr("settings.fontSize"), null, fontSize, "font size text");
+        controlRow(
+                mainCard,
                 Category.APPEARANCE,
+                tr("settings.theme"),
                 null,
-                labeled(tr("settings.theme"), themeCombo),
+                themeCombo,
                 "theme appearance dark light app chrome");
         Label etNote = note(tr("settings.editorThemeNote"));
         VBox etBox = new VBox(4, editorThemeCombo, etNote);
-        row(
-                p,
+        controlRow(
+                mainCard,
                 Category.APPEARANCE,
+                tr("settings.editorTheme"),
                 null,
-                labeled(tr("settings.editorTheme"), etBox),
+                etBox,
                 "editor theme syntax colors highlighting");
-        Label previewSection = section(p, tr("settings.livePreview"));
-        row(p, Category.APPEARANCE, previewSection, preview, "preview sample code");
+        Card previewSection = card(p, tr("settings.livePreview"));
+        cardRow(previewSection, Category.APPEARANCE, preview, "preview sample code");
         return p;
     }
 
     private VBox keymapsPage() {
         VBox p = page(tr("settings.cat.keymaps"));
+        Card mainCard = card(p, null);
         Label kmNote = note(tr("settings.keymap.note"));
         VBox kmBox = new VBox(4, keymapCombo, kmNote);
-        row(
-                p,
+        controlRow(
+                mainCard,
                 Category.KEYMAPS,
+                tr("settings.keymap"),
                 null,
-                labeled(tr("settings.keymap"), kmBox),
+                kmBox,
                 "keymap keybindings shortcuts emacs vim cua sublime vscode intellij");
 
         // --- Customize shortcuts: searchable list of every command + its current chord ---
-        Label sec = section(p, tr("settings.shortcuts.title"));
+        Card sec = card(p, tr("settings.shortcuts.title"));
         shortcutFilter = new TextField();
         shortcutFilter.setPromptText(tr("settings.shortcuts.filter"));
         shortcutFilter.textProperty().addListener((o, was, now) -> refreshShortcuts());
@@ -1714,10 +1721,9 @@ public class SettingsWindow {
             }
         });
         VBox box = new VBox(6, note, shortcutFilter, scroll, resetAll);
-        row(
-                p,
-                Category.KEYMAPS,
+        cardRow(
                 sec,
+                Category.KEYMAPS,
                 box,
                 "shortcut keybinding customize rebind record reset clear key chord accelerator");
         refreshShortcuts();
@@ -1880,16 +1886,16 @@ public class SettingsWindow {
 
     private VBox macrosPage() {
         VBox p = page(tr("settings.cat.macros"));
-        row(
-                p,
+        Card mainCard = card(p, null);
+        cardRow(
+                mainCard,
                 Category.MACROS,
-                null,
                 macrosEditor(),
                 "macros keyboard record replay steps rename delete keybinding command text");
         Label note = note(tr("settings.macro.note"));
         note.setWrapText(true);
         note.setMaxWidth(460);
-        row(p, Category.MACROS, null, note, "macros record f3 f4 replay keybinding save");
+        cardRow(mainCard, Category.MACROS, note, "macros record f3 f4 replay keybinding save");
         return p;
     }
 
@@ -3301,11 +3307,12 @@ public class SettingsWindow {
 
     private VBox snippetsPage() {
         VBox p = page(tr("settings.cat.snippets"));
-        row(p, Category.SNIPPETS, null, snippetsEditor(), "snippets user prefix trigger expansion tab stops body");
+        Card mainCard = card(p, null);
+        cardRow(mainCard, Category.SNIPPETS, snippetsEditor(), "snippets user prefix trigger expansion tab stops body");
         Label help = note(tr("settings.snippet.help"));
         help.setWrapText(true);
         help.setMaxWidth(460);
-        row(p, Category.SNIPPETS, null, help, "snippets help tab stop placeholder variable");
+        cardRow(mainCard, Category.SNIPPETS, help, "snippets help tab stop placeholder variable");
         return p;
     }
 
@@ -3546,19 +3553,20 @@ public class SettingsWindow {
 
     private VBox templatesPage() {
         VBox p = page(tr("settings.cat.templates"));
-        Label author = section(p, tr("settings.section.templates"));
-        row(
-                p,
-                Category.TEMPLATES,
+        Card author = card(p, tr("settings.section.templates"));
+        controlRow(
                 author,
-                labeled(tr("settings.authorName"), templateAuthorField),
+                Category.TEMPLATES,
+                tr("settings.authorName"),
+                null,
+                templateAuthorField,
                 "author name file templates new from template variable");
-        Label list = section(p, tr("settings.section.templatesList"));
-        row(p, Category.TEMPLATES, list, templatesEditor(), "templates file new from template scaffold bundled");
+        Card list = card(p, tr("settings.section.templatesList"));
+        cardRow(list, Category.TEMPLATES, templatesEditor(), "templates file new from template scaffold bundled");
         Label help = note(tr("settings.template.help"));
         help.setWrapText(true);
         help.setMaxWidth(460);
-        row(p, Category.TEMPLATES, list, help, "templates help variable cursor placeholder");
+        cardRow(list, Category.TEMPLATES, help, "templates help variable cursor placeholder");
         return p;
     }
 
@@ -3827,16 +3835,16 @@ public class SettingsWindow {
 
     private VBox remotePage() {
         VBox p = page(tr("settings.cat.remote"));
-        row(
-                p,
+        Card mainCard = card(p, null);
+        cardRow(
+                mainCard,
                 Category.REMOTE,
-                null,
                 remoteConnectionsEditor(),
                 "remote sftp ssh connection host user key password saved site server");
         Label note = note(tr("settings.remote.note"));
         note.setWrapText(true);
         note.setMaxWidth(460);
-        row(p, Category.REMOTE, null, note, "remote secret password passphrase not stored security");
+        cardRow(mainCard, Category.REMOTE, note, "remote secret password passphrase not stored security");
         return p;
     }
 
@@ -4014,16 +4022,16 @@ public class SettingsWindow {
 
     private VBox externalToolsPage() {
         VBox p = page(tr("settings.cat.externalTools"));
-        row(
-                p,
+        Card mainCard = card(p, null);
+        cardRow(
+                mainCard,
                 Category.EXTERNAL_TOOLS,
-                null,
                 externalToolsEditor(),
                 "external tools command cli macro stdin output console run formatter filter");
         Label macros = note(tr("settings.externalTool.macrosHelp"));
         macros.setWrapText(true);
         macros.setMaxWidth(460);
-        row(p, Category.EXTERNAL_TOOLS, null, macros, "external tools macros filepath selection linenumber");
+        cardRow(mainCard, Category.EXTERNAL_TOOLS, macros, "external tools macros filepath selection linenumber");
         return p;
     }
 
@@ -4182,16 +4190,16 @@ public class SettingsWindow {
 
     private VBox runConfigsPage() {
         VBox p = page(tr("settings.cat.runConfigs"));
-        row(
-                p,
+        Card mainCard = card(p, null);
+        cardRow(
+                mainCard,
                 Category.RUN_CONFIGS,
-                null,
                 runConfigsEditor(),
                 "run debug configuration main class program vm args working directory launch project");
         Label help = note(tr("settings.runConfig.help"));
         help.setWrapText(true);
         help.setMaxWidth(460);
-        row(p, Category.RUN_CONFIGS, null, help, "run configuration palette save delete");
+        cardRow(mainCard, Category.RUN_CONFIGS, help, "run configuration palette save delete");
         return p;
     }
 
@@ -4414,10 +4422,10 @@ public class SettingsWindow {
     /** Deep-copies the persisted tools so the working list edits independently until persisted. */
     private VBox abbreviationsPage() {
         VBox p = page(tr("settings.cat.abbreviations"));
-        row(
-                p,
+        Card mainCard = card(p, null);
+        cardRow(
+                mainCard,
                 Category.ABBREVIATIONS,
-                null,
                 abbreviationsEditor(),
                 "abbrev abbreviation expand text replacement snippet shortcut dictionary emacs");
         return p;
@@ -4754,11 +4762,17 @@ public class SettingsWindow {
      */
     private VBox aiGeneralPage() {
         VBox p = page(tr("settings.cat.aiGeneral"));
-        row(p, Category.AI_GENERAL, null, aiMasterCheck, "ai enable disable master switch agent actions all");
+        Card mainCard = card(p, null);
+        checkRow(
+                mainCard,
+                Category.AI_GENERAL,
+                aiMasterCheck,
+                null,
+                "ai enable disable master switch agent actions all");
         Label hint = note(tr("settings.ai.masterHint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
-        row(p, Category.AI_GENERAL, null, hint, "ai enable disable master switch agent actions all off default");
+        cardRow(mainCard, Category.AI_GENERAL, hint, "ai enable disable master switch agent actions all off default");
         return p;
     }
 
@@ -4771,37 +4785,43 @@ public class SettingsWindow {
 
     private VBox agentPage() {
         VBox p = page(tr("settings.cat.agent"));
-        row(p, Category.AGENT, null, agentCheck, "ai agent acp claude code chat enable assistant");
-        row(
-                p,
+        Card mainCard = card(p, null);
+        checkRow(mainCard, Category.AGENT, agentCheck, null, "ai agent acp claude code chat enable assistant");
+        cardRow(
+                mainCard,
                 Category.AGENT,
-                null,
                 labeledRow(tr("settings.agent.client"), agentClientCombo),
                 "ai agent acp active client switch gemini copilot codex qwen opencode claude");
+        // One (untitled) card per agent client, mirroring the Language Servers page: the command row
+        // names the client, so a title would just repeat it in every locale.
         for (AgentClientUi a : agentClientUis()) {
+            Card c = card(p, null);
             Label status = new Label(tr("settings.agent.checking"));
             status.getStyleClass().add("settings-git-status");
             status.setWrapText(true);
-            status.setMaxWidth(440);
+            status.setMaxWidth(340);
             agentStatusLabels.put(a.id(), status);
-            row(p, Category.AGENT, null, status, a.keywords());
-            row(
-                    p,
+            TextField field = agentCommandFields.get(a.id());
+            field.setPrefWidth(180);
+            controlRow(
+                    c,
                     Category.AGENT,
+                    tr(a.commandLabelKey()),
                     null,
-                    exePathRow(tr(a.commandLabelKey()), agentCommandFields.get(a.id())),
+                    new HBox(6, field, browseButton(tr(a.commandLabelKey()), field)),
                     a.keywords());
+            controlRow(c, Category.AGENT, tr("settings.git.detected"), null, status, a.keywords());
         }
-        row(
-                p,
+        checkRow(
+                mainCard,
                 Category.AGENT,
-                null,
                 agentIncludeContextCheck,
+                null,
                 "ai agent acp context cursor line selection file attach prompt");
         Label hint = note(tr("settings.agent.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
-        row(p, Category.AGENT, null, hint, "ai agent acp claude code install npm chat tool window");
+        cardRow(mainCard, Category.AGENT, hint, "ai agent acp claude code install npm chat tool window");
         return p;
     }
 
@@ -4929,72 +4949,78 @@ public class SettingsWindow {
 
     private VBox aiPage() {
         VBox p = page(tr("settings.cat.ai"));
+        Card mainCard = card(p, null);
         HBox aiEnableRow = new HBox(6, aiCheck, infoIcon(tr("settings.ai.actionsTooltip")));
         aiEnableRow.setAlignment(Pos.CENTER_LEFT);
-        row(p, Category.AI, null, aiEnableRow, "ai actions anthropic claude commit message explain rewrite enable");
+        cardRow(
+                mainCard,
+                Category.AI,
+                aiEnableRow,
+                "ai actions anthropic claude commit message explain rewrite enable");
         aiStatusLabel = new Label(tr("settings.ai.statusUnknown"));
         aiStatusLabel.getStyleClass().add("settings-git-status");
         aiStatusLabel.setWrapText(true);
         aiStatusLabel.setMaxWidth(440);
-        row(p, Category.AI, null, aiStatusLabel, "ai connection status test green red working reachable");
-        row(
-                p,
+        cardRow(mainCard, Category.AI, aiStatusLabel, "ai connection status test green red working reachable");
+        cardRow(
+                mainCard,
                 Category.AI,
-                null,
                 labeledRow(tr("settings.ai.provider"), aiProviderCombo),
                 "ai provider anthropic openai local lm studio ollama vllm");
-        row(
-                p,
+        cardRow(
+                mainCard,
                 Category.AI,
-                null,
                 labeledRow(tr("settings.ai.endpoint"), aiEndpointField),
                 "ai endpoint url local server lm studio ollama port");
         Label providerNote = note(tr("settings.ai.providerNote"));
         providerNote.setWrapText(true);
         providerNote.setMaxWidth(440);
-        row(p, Category.AI, null, providerNote, "ai provider local lm studio no api key endpoint");
-        row(
-                p,
+        cardRow(mainCard, Category.AI, providerNote, "ai provider local lm studio no api key endpoint");
+        cardRow(
+                mainCard,
                 Category.AI,
-                null,
                 exePathRow(tr("settings.ai.model"), aiModelField),
                 "ai model anthropic claude opus id");
-        row(
-                p,
+        cardRow(
+                mainCard,
                 Category.AI,
-                null,
                 exePathRow(tr("settings.ai.apiKey"), aiApiKeyField),
                 "ai api key anthropic token credential");
         Label keyNote = note(tr("settings.ai.apiKeyNote"));
         keyNote.setWrapText(true);
         keyNote.setMaxWidth(440);
-        row(p, Category.AI, null, keyNote, "ai api key environment variable plain text security");
-        row(p, Category.AI, null, aiInlineCheck, "ai inline ghost completion suggestion copilot autocomplete");
-        row(
-                p,
+        cardRow(mainCard, Category.AI, keyNote, "ai api key environment variable plain text security");
+        checkRow(
+                mainCard,
                 Category.AI,
+                aiInlineCheck,
                 null,
+                "ai inline ghost completion suggestion copilot autocomplete");
+        cardRow(
+                mainCard,
+                Category.AI,
                 exePathRow(tr("settings.ai.completionModel"), aiCompletionModelField),
                 "ai inline completion model haiku fast latency");
         Label inlineNote = note(tr("settings.ai.inlineHint"));
         inlineNote.setWrapText(true);
         inlineNote.setMaxWidth(440);
-        row(p, Category.AI, null, inlineNote, "ai inline ghost completion tab accept cost");
+        cardRow(mainCard, Category.AI, inlineNote, "ai inline ghost completion tab accept cost");
         Label hint = note(tr("settings.ai.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
-        row(p, Category.AI, null, hint, "ai commit message explain rewrite selection anthropic streaming");
+        cardRow(mainCard, Category.AI, hint, "ai commit message explain rewrite selection anthropic streaming");
         return p;
     }
 
     private VBox pluginsPage() {
         VBox p = page(tr("settings.cat.plugins"));
+        Card mainCard = card(p, null);
         Label warn = note(tr("settings.plugins.note"));
         warn.getStyleClass().add("settings-experimental");
         warn.setWrapText(true);
         warn.setMaxWidth(440);
-        row(p, Category.PLUGINS, null, warn, "plugins extensions untrusted security warning");
-        row(p, Category.PLUGINS, null, pluginCheck, "plugins extensions enable support");
+        cardRow(mainCard, Category.PLUGINS, warn, "plugins extensions untrusted security warning");
+        checkRow(mainCard, Category.PLUGINS, pluginCheck, null, "plugins extensions enable support");
 
         Label folderLabel = new Label(tr("settings.plugins.folder"));
         Label folderPath =
@@ -5004,7 +5030,7 @@ public class SettingsWindow {
         folderPath.setMaxWidth(380);
         HBox folderRow = new HBox(6, folderLabel, folderPath);
         folderRow.setAlignment(Pos.CENTER_LEFT);
-        row(p, Category.PLUGINS, null, folderRow, "plugins folder directory location path");
+        cardRow(mainCard, Category.PLUGINS, folderRow, "plugins folder directory location path");
 
         Button reload = new Button(tr("settings.plugins.reload"));
         reload.setOnAction(e -> {
@@ -5013,15 +5039,15 @@ public class SettingsWindow {
                 refreshPluginList();
             }
         });
-        row(p, Category.PLUGINS, null, reload, "plugins reload rescan discover refresh");
+        cardRow(mainCard, Category.PLUGINS, reload, "plugins reload rescan discover refresh");
 
         Label restart = note(tr("settings.plugins.restart"));
         restart.setWrapText(true);
         restart.setMaxWidth(440);
-        row(p, Category.PLUGINS, null, restart, "plugins restart apply");
+        cardRow(mainCard, Category.PLUGINS, restart, "plugins restart apply");
 
         // --- Marketplace: a curated GitHub-hosted registry + install-from-disk.
-        Label market = section(p, tr("settings.plugins.marketplace"));
+        Card market = card(p, tr("settings.plugins.marketplace"));
         pluginRegistryField = new TextField();
         pluginRegistryField.setPromptText(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
         // Wide enough to show a full registry URL (the default is ~75 chars); also grows with the page.
@@ -5041,17 +5067,18 @@ public class SettingsWindow {
         regNote.setWrapText(true);
         regNote.setMaxWidth(440);
         VBox regBox = new VBox(4, pluginRegistryField, pluginRegistryWarn, regNote);
-        row(
-                p,
-                Category.PLUGINS,
+        controlRow(
                 market,
-                labeled(tr("settings.plugins.registryUrl"), regBox),
+                Category.PLUGINS,
+                tr("settings.plugins.registryUrl"),
+                null,
+                regBox,
                 "plugins registry url index marketplace github browse");
         Label sigNote = note(tr("settings.plugins.requireSignatureNote"));
         sigNote.setWrapText(true);
         sigNote.setMaxWidth(440);
         VBox sigBox = new VBox(2, pluginRequireSigCheck, sigNote);
-        row(p, Category.PLUGINS, market, sigBox, "plugins signature signed verify registry security trust");
+        cardRow(market, Category.PLUGINS, sigBox, "plugins signature signed verify registry security trust");
         Button browse = new Button(tr("settings.plugins.browse"));
         browse.setOnAction(e -> {
             if (onBrowsePlugins != null) {
@@ -5069,11 +5096,11 @@ public class SettingsWindow {
         });
         HBox marketButtons = new HBox(8, browse, installFile);
         marketButtons.setAlignment(Pos.CENTER_LEFT);
-        row(p, Category.PLUGINS, market, marketButtons, "plugins browse install file zip marketplace registry");
+        cardRow(market, Category.PLUGINS, marketButtons, "plugins browse install file zip marketplace registry");
 
-        Label installed = section(p, tr("settings.plugins.installed"));
+        Card installed = card(p, tr("settings.plugins.installed"));
         pluginListBox = new VBox(8);
-        row(p, Category.PLUGINS, installed, pluginListBox, "plugins installed list enable disable");
+        cardRow(installed, Category.PLUGINS, pluginListBox, "plugins installed list enable disable");
         refreshPluginList();
         return p;
     }
@@ -5294,13 +5321,16 @@ public class SettingsWindow {
         experimental.setWrapText(true);
         experimental.setMaxWidth(440);
         row(p, Category.LSP, null, experimental, "lsp experimental beta");
-        row(
-                p,
+        Card master = card(p, null);
+        checkRow(
+                master,
                 Category.LSP,
-                null,
                 lspCheck,
-                "lsp language server protocol enable java typescript python xml json bash diagnostics");
-        row(p, Category.LSP, null, lspInstallPromptsCheck, "lsp install banner prompt offer language support");
+                tr("settings.lsp.hint"),
+                "lsp language server protocol enable java typescript python xml json bash diagnostics"
+                        + " install jdtls pyright lemminx");
+        checkRow(
+                master, Category.LSP, lspInstallPromptsCheck, null, "lsp install banner prompt offer language support");
         // One card per server (UI Kit v1). Twenty-one servers × four controls was a ~84-row flat wall in
         // which it took real effort to see which status line belonged to which enable box. The card is
         // deliberately untitled: the server's own enable checkbox already names it in every locale, and a
@@ -5330,10 +5360,6 @@ public class SettingsWindow {
                     exePathRow(tr(srv.commandLabelKey()), lspCommandFields.get(srv.id())),
                     srv.keywords());
         }
-        Label hint = note(tr("settings.lsp.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        row(p, Category.LSP, null, hint, "lsp install language server jdtls pyright lemminx bash");
         return p;
     }
 
@@ -5850,9 +5876,9 @@ public class SettingsWindow {
 
     /** The tool-window placement page: one row per registered tool window (Show / Side / ▲▼ reorder). */
     private VBox toolWindowsPage() {
-        VBox p = page(tr("settings.cat.toolWindows"));
-        Label hint = note(tr("settings.toolWindows.hint"));
-        p.getChildren().add(hint);
+        // The page hint reads as the subtitle, like the other pages.
+        VBox p = page(tr("settings.cat.toolWindows"), tr("settings.toolWindows.hint"));
+        Card mainCard = card(p, null);
         // The tool-stripe toggle now lives on the Interface page; "show hidden files" on the Workspace page.
 
         List<Runnable> moveRefreshers = new ArrayList<>();
@@ -5947,39 +5973,52 @@ public class SettingsWindow {
                 debugToolWindowRef = tw;
             }
 
+            // A card row like every other page: the window's name on the left (with the gated ones'
+            // explanation as its description), and show / side / reorder pinned right.
             Label title = new Label(tw.getTitle());
-            title.setMinWidth(130);
-            title.setPrefWidth(130);
+            title.getStyleClass().add("settings-row-title");
+            VBox main = new VBox(2, title);
+            HBox.setHgrow(main, Priority.ALWAYS);
             HBox reorder = new HBox(2, moveUp, moveDown);
-            HBox rowBox = new HBox(10, title, showCheck, sideCombo, reorder);
+            HBox controls = new HBox(8, switchFor(showCheck), sideCombo, reorder);
+            controls.setAlignment(Pos.CENTER_RIGHT);
+            controls.setMinWidth(Region.USE_PREF_SIZE);
+            HBox rowBox = new HBox(16, main, controls);
             rowBox.setAlignment(Pos.CENTER_LEFT);
+            rowBox.getStyleClass().add("settings-row");
             // For the context-gated windows, a muted note explaining why the row may be disabled.
             if ("project".equals(tw.getId())) {
                 projectDisabledNote = note(tr("settings.toolWindows.projectDisabled"));
                 projectDisabledNote.setWrapText(true);
-                rowBox.getChildren().add(projectDisabledNote);
+                projectDisabledNote.getStyleClass().add("settings-row-desc");
+                main.getChildren().add(projectDisabledNote);
             } else if ("commit".equals(tw.getId())) {
                 commitDisabledNote = note(tr("settings.toolWindows.commitDisabled"));
                 commitDisabledNote.setWrapText(true);
-                rowBox.getChildren().add(commitDisabledNote);
+                commitDisabledNote.getStyleClass().add("settings-row-desc");
+                main.getChildren().add(commitDisabledNote);
             } else if ("notes".equals(tw.getId())) {
                 notesDisabledNote = note(tr("settings.toolWindows.notesDisabled"));
                 notesDisabledNote.setWrapText(true);
-                rowBox.getChildren().add(notesDisabledNote);
+                notesDisabledNote.getStyleClass().add("settings-row-desc");
+                main.getChildren().add(notesDisabledNote);
             } else if ("problems".equals(tw.getId())) {
                 problemsDisabledNote = note(tr("settings.toolWindows.problemsDisabled"));
                 problemsDisabledNote.setWrapText(true);
-                rowBox.getChildren().add(problemsDisabledNote);
+                problemsDisabledNote.getStyleClass().add("settings-row-desc");
+                main.getChildren().add(problemsDisabledNote);
             } else if ("run".equals(tw.getId())) {
                 runDisabledNote = note(tr("settings.toolWindows.runDisabled"));
                 runDisabledNote.setWrapText(true);
-                rowBox.getChildren().add(runDisabledNote);
+                runDisabledNote.getStyleClass().add("settings-row-desc");
+                main.getChildren().add(runDisabledNote);
             } else if ("debug".equals(tw.getId())) {
                 debugDisabledNote = note(tr("settings.toolWindows.debugDisabled"));
                 debugDisabledNote.setWrapText(true);
-                rowBox.getChildren().add(debugDisabledNote);
+                debugDisabledNote.getStyleClass().add("settings-row-desc");
+                main.getChildren().add(debugDisabledNote);
             }
-            row(p, Category.TOOL_WINDOWS, null, rowBox, "tool window " + tw.getTitle() + " placement side show");
+            cardRow(mainCard, Category.TOOL_WINDOWS, rowBox, "tool window " + tw.getTitle() + " placement side show");
         }
         refreshMoves.run();
         updateProjectRowEnabled();
@@ -5991,7 +6030,7 @@ public class SettingsWindow {
 
     private VBox advancedPage() {
         VBox p = page(tr("settings.cat.advanced"));
-        Label fileSection = section(p, tr("settings.section.file"));
+        Card fileSection = card(p, tr("settings.section.file"));
         Hyperlink link = new Hyperlink(displaySettingsPath(config.getSettingsFile()));
         link.setTooltip(new Tooltip(tr("settings.openFileTip")));
         link.setOnAction(e -> {
@@ -6001,7 +6040,7 @@ public class SettingsWindow {
         });
         HBox fileRow = new HBox(6, new Label(tr("settings.path")), link);
         fileRow.setAlignment(Pos.CENTER_LEFT);
-        row(p, Category.ADVANCED, fileSection, fileRow, "settings file path toml config location");
+        cardRow(fileSection, Category.ADVANCED, fileRow, "settings file path toml config location");
 
         Path sessionLog = DebugLog.sessionFile(config.getConfigDir());
         Hyperlink sessionLink = new Hyperlink(displaySettingsPath(sessionLog));
@@ -6013,19 +6052,18 @@ public class SettingsWindow {
         });
         HBox sessionRow = new HBox(6, new Label(tr("settings.sessionLog")), sessionLink);
         sessionRow.setAlignment(Pos.CENTER_LEFT);
-        row(
-                p,
-                Category.ADVANCED,
+        cardRow(
                 fileSection,
+                Category.ADVANCED,
                 sessionRow,
                 "session log debug crash report editora-session.log diagnostics");
 
-        Label resetSection = section(p, tr("settings.section.reset"));
+        Card resetSection = card(p, tr("settings.section.reset"));
         Button reset = new Button(tr("settings.resetDefaults"));
         reset.setOnAction(e -> resetAll());
-        row(p, Category.ADVANCED, resetSection, reset, "reset defaults restore factory clear");
+        cardRow(resetSection, Category.ADVANCED, reset, "reset defaults restore factory clear");
 
-        Label ioSection = section(p, tr("settings.section.io"));
+        Card ioSection = card(p, tr("settings.section.io"));
         Button exportConfig = new Button(tr("settings.exportConfig"));
         exportConfig.setOnAction(e -> {
             if (onExportConfig != null) {
@@ -6034,9 +6072,9 @@ public class SettingsWindow {
         });
         Label exportHint = note(tr("settings.exportConfig.hint"));
         VBox exportBox = new VBox(4, exportConfig, exportHint);
-        row(p, Category.ADVANCED, ioSection, exportBox, "import export backup settings config zip archive");
+        cardRow(ioSection, Category.ADVANCED, exportBox, "import export backup settings config zip archive");
 
-        Label debugSection = section(p, tr("settings.section.debug"));
+        Card debugSection = card(p, tr("settings.section.debug"));
         Button debugLog = new Button(tr("settings.debugLog"));
         debugLog.setOnAction(e -> {
             if (onShowDebugLog != null) {
@@ -6045,10 +6083,9 @@ public class SettingsWindow {
         });
         Label debugHint = note(tr("settings.debugLog.hint"));
         VBox debugBox = new VBox(4, debugLog, debugHint);
-        row(
-                p,
-                Category.ADVANCED,
+        cardRow(
                 debugSection,
+                Category.ADVANCED,
                 debugBox,
                 "debug log logs errors warnings exceptions diagnostics bug report console");
         return p;
@@ -6061,12 +6098,12 @@ public class SettingsWindow {
      */
     private Region toolbarPage() {
         VBox p = page(tr("settings.cat.toolbar"));
-        Label sec = section(p, tr("settings.toolbar.section"));
+        Card sec = card(p, tr("settings.toolbar.section"));
 
         Label desc = note(tr("settings.toolbar.note"));
         desc.setWrapText(true);
         desc.setMaxWidth(560);
-        row(p, Category.TOOLBAR, sec, desc, "toolbar customize icons order add remove reorder drag");
+        cardRow(sec, Category.TOOLBAR, desc, "toolbar customize icons order add remove reorder drag");
 
         ListView<String> available = new ListView<>(toolbarAvailableItems);
         ListView<String> current = new ListView<>(toolbarCurrentItems);
@@ -6101,12 +6138,12 @@ public class SettingsWindow {
         HBox lists = new HBox(10, availBox, mid, curBox);
         HBox.setHgrow(availBox, Priority.ALWAYS);
         HBox.setHgrow(curBox, Priority.ALWAYS);
-        row(p, Category.TOOLBAR, sec, lists, "toolbar available current add remove up down move");
+        cardRow(sec, Category.TOOLBAR, lists, "toolbar available current add remove up down move");
 
         Button sepBtn = new Button(tr("settings.toolbar.addSeparator"));
         Button restore = new Button(tr("settings.toolbar.restoreDefault"));
         HBox bottom = new HBox(6, sepBtn, spacer(), restore);
-        row(p, Category.TOOLBAR, sec, bottom, "toolbar separator restore default reset");
+        cardRow(sec, Category.TOOLBAR, bottom, "toolbar separator restore default reset");
 
         Runnable refresh = () -> {
             if (toolbarActions == null) {
