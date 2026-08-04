@@ -63,6 +63,10 @@ public class QuickOpen<T> {
 
     private final TextField input = new TextField();
     private final ListView<T> list = new ListView<>();
+
+    /** Supplies the value currently in force, pre-selected on open (see {@link #setCurrentItem}). */
+    private java.util.function.Supplier<T> currentItem;
+
     private final ObservableList<T> items = FXCollections.observableArrayList();
     private List<T> all = List.of();
 
@@ -110,6 +114,18 @@ public class QuickOpen<T> {
     /** Sets a per-item leading icon shown on the row's title label (e.g. a file-type glyph). */
     public void setItemIcon(Function<T, Node> itemIcon) {
         this.itemIcon = itemIcon;
+    }
+
+    /**
+     * Marks one item as the current value, so opening the picker lands on it rather than on the first
+     * row. Restores what a {@code ChoiceDialog} gave for free when these were native dialogs: for a
+     * "change this setting" picker, the value in force is the useful starting point — the user is
+     * usually moving one step from it, and it says what the current value IS.
+     *
+     * <p>Only honoured while the query is empty; once the user types, the best match leads as before.
+     */
+    public void setCurrentItem(java.util.function.Supplier<T> currentItem) {
+        this.currentItem = currentItem;
     }
 
     /** Injects the shared overlay host used to show the picker card. */
@@ -247,9 +263,20 @@ public class QuickOpen<T> {
             }
         }
         items.setAll(matches);
-        if (!items.isEmpty()) {
-            list.getSelectionModel().select(0);
+        if (items.isEmpty()) {
+            return;
         }
+        // With no query, start on the value in force when one was supplied; otherwise the first row.
+        int start = 0;
+        if (q.isEmpty() && currentItem != null) {
+            T current = currentItem.get();
+            int idx = current == null ? -1 : items.indexOf(current);
+            if (idx >= 0) {
+                start = idx;
+            }
+        }
+        list.getSelectionModel().select(start);
+        list.scrollTo(start);
     }
 
     /** Shows the picker as a centered in-scene overlay. {@code owner} is unused (kept for call-site

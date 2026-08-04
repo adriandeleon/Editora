@@ -10604,7 +10604,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         // An in-scene picker, like every other status-bar selector — filterable, keyboard-first, and it
         // does not open a second window over the editor. (The list is ~100 grammars; a ChoiceDialog's
         // combo made that unsearchable.)
-        chooseSetting("buffer.setLanguage", () -> names, name -> name, name -> {
+        String current = names.contains(buffer.getLanguage()) ? buffer.getLanguage() : names.get(0);
+        chooseSetting("buffer.setLanguage", () -> names, name -> name, () -> current, name -> {
             buffer.setLanguageOverride(name);
             statusBar.refresh();
             setStatus(tr("status.language", name));
@@ -10614,14 +10615,19 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Changes the (persisted) tab width and applies it to every buffer. */
     private void chooseTabSize() {
         Settings s = config.getSettings();
-        chooseSetting("buffer.setTabSize", () -> List.of("2", "4", "8"), size -> size, choice -> {
-            int size = Integer.parseInt(choice);
-            s.setTabSize(size);
-            requestSave();
-            applyViewSettingsToAllBuffers(s);
-            statusBar.refresh();
-            setStatus(tr("status.tabSize", size));
-        });
+        chooseSetting(
+                "buffer.setTabSize",
+                () -> List.of("2", "4", "8"),
+                size -> size,
+                () -> String.valueOf(s.getTabSize()),
+                choice -> {
+                    int size = Integer.parseInt(choice);
+                    s.setTabSize(size);
+                    requestSave();
+                    applyViewSettingsToAllBuffers(s);
+                    statusBar.refresh();
+                    setStatus(tr("status.tabSize", size));
+                });
     }
 
     // --- Settings palette commands ----------------------------------------------------------------
@@ -10716,12 +10722,25 @@ public class MainController implements com.editora.mcp.McpBridge {
             java.util.function.Supplier<List<String>> options,
             java.util.function.Function<String, String> label,
             java.util.function.Consumer<String> onChoose) {
+        chooseSetting(commandId, options, label, null, onChoose);
+    }
+
+    /** As above, but opens on {@code current} — the value in force — instead of the first row. */
+    private void chooseSetting(
+            String commandId,
+            java.util.function.Supplier<List<String>> options,
+            java.util.function.Function<String, String> label,
+            java.util.function.Supplier<String> current,
+            java.util.function.Consumer<String> onChoose) {
         QuickOpen<String> picker = new QuickOpen<>(
                 commandTitle(commandId), tr("palette.setting.pick"), options::get, label::apply, id -> "", id -> {
                     if (id != null) {
                         onChoose.accept(id);
                     }
                 });
+        if (current != null) {
+            picker.setCurrentItem(current);
+        }
         picker.setOverlayHost(overlayHost);
         picker.show(stage);
     }
@@ -10853,11 +10872,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (buffer == null) {
             return;
         }
-        chooseSetting("buffer.convertLineEndings", () -> List.of("LF", "CRLF"), c -> c, choice -> {
-            buffer.convertLineEndings("CRLF".equals(choice));
-            statusBar.refresh();
-            setStatus(tr("status.lineEndingsSet", choice));
-        });
+        chooseSetting(
+                "buffer.convertLineEndings", () -> List.of("LF", "CRLF"), c -> c, buffer::getLineEnding, choice -> {
+                    buffer.convertLineEndings("CRLF".equals(choice));
+                    statusBar.refresh();
+                    setStatus(tr("status.lineEndingsSet", choice));
+                });
     }
 
     /** Persists the buffer's collapsed fold regions + manual fold ranges, keyed by its file path. */
