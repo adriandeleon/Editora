@@ -49,6 +49,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so it appears in the command palette by name and can be given its own keyboard shortcut, the same way saved
   macros and external tools already work.
 
+- **A menu bar** — File / Edit / Find / View / Navigate / Code / Run / VCS / Tools / Window / Help, so the
+  things Editora can do are *browsable* rather than only findable by name in the command palette. Each entry
+  shows its current keybinding and updates when you switch keymaps; a command whose feature is switched off
+  appears greyed rather than vanishing, so the menu stays a stable map. On macOS it sits in the system menu
+  bar. Hide it from Settings → Interface or the palette (**View: Toggle Menu Bar**); it is hidden
+  automatically in Zen, Expert and Simple modes. The palette is still the complete index — the menu is a
+  curated subset of the ~470 commands.
+
+- **Two files on screen at once** — the editor area can now be split into independent **editor groups**, each
+  with its own tabs and its own selection, so you can put a header beside its implementation or a test beside
+  what it tests. **Split Editor Group Right** and **Split Editor Group Down** move the current file into a new
+  group, **Move File to Next Editor Group** shifts it along, **Focus Next Editor Group** moves the keyboard
+  between them, and **Merge Editor Groups** puts everything back. Closing the last file in a group collapses
+  it, so you never end up staring at an empty pane. All five are in the command palette and bindable.
+  Splits **nest**, so a side-by-side pair can hold a stacked pair and you can build an L-shaped layout —
+  while splitting the same direction twice widens the existing row instead, giving you three columns rather
+  than a lopsided chain. **Drag a tab onto another group** to move it there, or onto a group's edge to split
+  that group and drop the file on that side — a translucent highlight shows where it will land. **Your split
+  layout is saved with the session**, so the arrangement you left comes back on the next launch (a file
+  that has since disappeared no longer leaves a blank pane behind). This is distinct from the existing
+  **Split Editor** commands, which show two views of the *same* file — those still work exactly as before,
+  and the two can be combined.
+
+- **The Git and GitHub command lines you run are now visible** — the shared output console gained a **Git**
+  and a **GitHub** tab holding a transcript of the `git` / `gh` commands Editora ran on your behalf: the
+  command, its output, and its exit code and duration. Git logs the commands you asked for (commit, push,
+  pull, checkout, stash, clone…) and deliberately not the `status`/`diff` reads it re-runs on every tab
+  switch, which would bury them. Neither steals focus: the transcript is waiting when you open the window.
+
+- **Bracket-pair colorization** — each `()`, `[]` and `{}` is tinted by how deeply it is nested, so "how far
+  in am I?" is readable without counting. It is a different question from the existing matching-bracket
+  highlight, which answers "where does *this* one close?", and the two combine on the same character.
+  Brackets inside strings and comments are skipped — a stray `{` in a string would otherwise shift the colour
+  of every bracket below it and read as the feature being broken. On by default, as in VS Code; Settings →
+  Editor turns it off.
+
+- **Folding gained the four things it was missing** — **fold a selection** into a range of your own choosing
+  (which survives your edits and comes back on the next launch), **fold all block comments**, **fold all
+  `#region` markers** (`//#region`, `#region`, `#pragma region`, `<!-- #region -->` and friends), and **fold
+  everything except the block you are in**. All four are palette commands and bindable, and they merge with
+  the folds Editora detects — or the ones your language server reports — rather than replacing them.
+
+- **Pasted Java code imports itself.** Paste a snippet into a Java file and the Java language server is asked
+  which imports it needs; they are added for you. This is the one paste behaviour nothing else in the stack
+  can approximate, because it needs the type resolver. An answer that lost a race with your typing is dropped
+  rather than applied to text it wasn't computed for.
+
+- **Smart semicolon placement for Java** — typing `;` part-way through an expression puts it at the end of the
+  statement: `compute(1, 2|)` becomes `compute(1, 2);|`. The semicolon is never held back waiting for the
+  server, so typing never stalls; it lands where you typed it and moves afterwards if the server disagrees, as
+  a single undo step. Type straight on through and the correction is skipped rather than applied late.
+
+- **The GitHub tool window is filterable and keyboard-driven** — Pull Requests, Issues and Runs share one
+  filter box that matches on everything a row shows (number, title, author, branch, state, labels), with a
+  leading `#` optional so `42` and `#42` both find PR 42. The window opens with focus in the filter and the
+  first row selected; `C-n`/`C-p` move the selection without leaving the box, Down enters the list, Enter
+  opens. The filter clears when you switch segment and survives a refresh.
+
 ### Changed
 
 - **Editora has its own look.** The palette comes from the app's own icon — a teal accent, an ink-navy
@@ -112,43 +170,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Java file in the project now serves, and it only complains when there genuinely isn't one. Debugging
   remains Java-only, and now says so instead of reporting a confusing Java error.
 
-### Added
-
-- **A menu bar** — File / Edit / Find / View / Navigate / Code / Run / VCS / Tools / Window / Help, so the
-  things Editora can do are *browsable* rather than only findable by name in the command palette. Each entry
-  shows its current keybinding and updates when you switch keymaps; a command whose feature is switched off
-  appears greyed rather than vanishing, so the menu stays a stable map. On macOS it sits in the system menu
-  bar. Hide it from Settings → Interface or the palette (**View: Toggle Menu Bar**); it is hidden
-  automatically in Zen, Expert and Simple modes. The palette is still the complete index — the menu is a
-  curated subset of the ~470 commands.
-
-- **Two files on screen at once** — the editor area can now be split into independent **editor groups**, each
-  with its own tabs and its own selection, so you can put a header beside its implementation or a test beside
-  what it tests. **Split Editor Group Right** and **Split Editor Group Down** move the current file into a new
-  group, **Move File to Next Editor Group** shifts it along, **Focus Next Editor Group** moves the keyboard
-  between them, and **Merge Editor Groups** puts everything back. Closing the last file in a group collapses
-  it, so you never end up staring at an empty pane. All five are in the command palette and bindable.
-  Splits **nest**, so a side-by-side pair can hold a stacked pair and you can build an L-shaped layout —
-  while splitting the same direction twice widens the existing row instead, giving you three columns rather
-  than a lopsided chain. **Drag a tab onto another group** to move it there, or onto a group's edge to split
-  that group and drop the file on that side — a translucent highlight shows where it will land. **Your split
-  layout is saved with the session**, so the arrangement you left comes back on the next launch (a file
-  that has since disappeared no longer leaves a blank pane behind). This is distinct from the existing
-  **Split Editor** commands, which show two views of the *same* file — those still work exactly as before,
-  and the two can be combined.
-- **The Git and GitHub command lines you run are now visible** — the shared output console gained a **Git**
-  and a **GitHub** tab holding a transcript of the `git` / `gh` commands Editora ran on your behalf: the
-  command, its output, and its exit code and duration. Git logs the commands you asked for (commit, push,
-  pull, checkout, stash, clone…) and deliberately not the `status`/`diff` reads it re-runs on every tab
-  switch, which would bury them. Neither steals focus: the transcript is waiting when you open the window.
-
-### Changed
-
 - **The "Build Output" tool window is now just "Output"** — it holds build tools, Git, GitHub and CI logs,
   so the old name undersold it. Your stripe placement and any keybinding are unaffected (only the label
   changed).
-
-### Changed
 
 - **Running an incomplete run configuration takes you to it.** It used to say which configuration was missing
   its main class (or its script) and leave you to go and find it. Pressing Run is a request to run it, so it
@@ -168,6 +192,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name otherwise. Adding twice from the same file gets you "App" and "App (2)" rather than two entries with
   the same name, which previously collided into a single palette command.
 
+### Performance
+
+- **Closing a large tab no longer stalls highlighting everywhere else.** Files of the same language share one
+  grammar, and only one of them can be tokenized at a time, so a background pass over a very large document
+  held that lock for its whole duration and every other file of that language waited behind it. Two paths let
+  such a pass run when nothing needed it any more: a pass that had already been superseded ran to completion
+  instead of stopping, and a closed buffer could still dispatch a fresh one. Both are now refused.
+
 ### Fixed
 
 - **A run configuration with no main class now says so**, instead of reporting a Java language server stack
@@ -175,6 +207,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   class sent an empty search to the language server, which answered with an internal `SearchPattern … is
   null` error. It now tells you which configuration is missing its main class — the same thing the script
   configurations have always done about a missing script.
+
+- **A stray command-line flag no longer opens its value as a file.** Any two-token option Editora doesn't
+  define — a JVM flag leaking into the program arguments, say — had its *value* treated as a path, so
+  launching could greet you with `Failed to open: <cwd>/javafx.graphics/com.sun.glass.ui=com.editora`. A
+  token sitting directly after an unrecognized option is now only opened if it actually exists on disk;
+  `editora typo.txt` still reports the typo as before.
+
+- **Doctor no longer crushes the tool name.** A row is laid out as one line, so a long resolved path shrank
+  everything beside it and the name identifying the row was reduced to "…" or "Docker…". The name now keeps
+  its width and only the paths shrink — ellipsized from the left, since the binary at the end is the
+  informative part, with the full text on hover. The column also grows with the window and follows the text
+  zoom.
+
+- **The Split Vertical and Split Horizontal buttons are disabled where they would do nothing.** The Welcome
+  and Doctor pages and the image, hex, PDF and diff viewers aren't text buffers and can't be split, but the
+  buttons stayed lit and silently did nothing when pressed.
 
 ## [0.9.10] - 2026-07-26
 
