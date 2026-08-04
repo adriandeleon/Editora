@@ -86,6 +86,20 @@ public final class DiffViewerPane implements TabContent {
     private Runnable onSave = () -> {};
 
     private boolean unified; // false = side-by-side (default)
+
+    /**
+     * Width of the side-by-side view's left pane, or 0 in unified view. The toolbar's right-hand cluster
+     * (change count + navigation + actions) is capped by this so it begins where the second file begins
+     * rather than at the far edge of the window — on a wide window those controls were a screen away from
+     * the diff they act on.
+     */
+    private final javafx.beans.property.DoubleProperty leftPaneWidth =
+            new javafx.beans.property.SimpleDoubleProperty(0);
+
+    /** The side-by-side left pane, kept so {@link #showSideBySide()} can re-bind {@link #leftPaneWidth}
+     *  after a round trip through the unified view (which unbinds it). */
+    private javafx.scene.layout.Region leftPaneBox;
+
     private int changeCursor = -1; // index into model.changeBlockStarts for prev/next nav
 
     // Side-by-side areas (built once, lazily).
@@ -200,6 +214,7 @@ public final class DiffViewerPane implements TabContent {
         // Called after construction (the view is already built without arrows) — rebuild so the
         // per-line "apply" chevrons appear in the editable side's gutter.
         sideBySideNode = null;
+        leftPaneBox = null;
         unifiedNode = null;
         leftArea = null;
         rightArea = null;
@@ -230,6 +245,7 @@ public final class DiffViewerPane implements TabContent {
         this.model = newModel;
         // Drop cached nodes so the next show* rebuilds from the new model.
         sideBySideNode = null;
+        leftPaneBox = null;
         unifiedNode = null;
         leftArea = null;
         rightArea = null;
@@ -285,10 +301,21 @@ public final class DiffViewerPane implements TabContent {
         toggleButton.getStyleClass().addAll("flat", "diff-toolbar-button");
         toggleButton.setFocusTraversable(false);
         updateToggleButton();
+        // The gap grows as usual, but stops at the left pane's edge so the cluster lands at the start of
+        // the second file. Uncapped in unified view (leftPaneWidth 0), where there is no second pane and
+        // right-aligned is still the sensible place for it.
+        Region gap = spacer();
+        gap.maxWidthProperty()
+                .bind(javafx.beans.binding.Bindings.createDoubleBinding(
+                        () -> leftPaneWidth.get() <= 0
+                                ? Double.MAX_VALUE
+                                : Math.max(0, leftPaneWidth.get() - summary.getWidth() - TOOLBAR_H_PADDING),
+                        leftPaneWidth,
+                        summary.widthProperty()));
         HBox bar = new HBox(
                 2,
                 summary,
-                spacer(),
+                gap,
                 changeNav,
                 next,
                 prev,
@@ -301,7 +328,7 @@ public final class DiffViewerPane implements TabContent {
                 export);
         bar.getStyleClass().add("diff-toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
-        bar.setPadding(new Insets(3, 6, 3, 6));
+        bar.setPadding(new Insets(3, TOOLBAR_H_PADDING, 3, TOOLBAR_H_PADDING));
         return bar;
     }
 
@@ -330,6 +357,9 @@ public final class DiffViewerPane implements TabContent {
         b.setOnAction(e -> action.run());
         return b;
     }
+
+    /** Horizontal inset of the diff toolbar; also what the cluster cap has to allow for. */
+    private static final double TOOLBAR_H_PADDING = 6;
 
     private static Region spacer() {
         Region r = new Region();
@@ -377,6 +407,11 @@ public final class DiffViewerPane implements TabContent {
     private void showSideBySide() {
         if (sideBySideNode == null) {
             buildSideBySide();
+        }
+        // (Re-)bind every time, not once at build: showUnified unbinds it, so a toggle out and back would
+        // otherwise leave the toolbar cluster stuck at the window edge. Tracks the divider as it is dragged.
+        if (leftPaneBox != null) {
+            leftPaneWidth.bind(leftPaneBox.widthProperty());
         }
         root.setCenter(sideBySideNode);
     }
@@ -441,6 +476,7 @@ public final class DiffViewerPane implements TabContent {
         javafx.scene.layout.VBox.setVgrow(rightScroll, Priority.ALWAYS);
         javafx.scene.control.SplitPane split = new javafx.scene.control.SplitPane(leftBox, rightBox);
         split.setDividerPositions(0.5);
+        leftPaneBox = leftBox;
         sideBySideNode = split;
     }
 
@@ -491,6 +527,8 @@ public final class DiffViewerPane implements TabContent {
         if (unifiedNode == null) {
             buildUnified();
         }
+        leftPaneWidth.unbind(); // no second pane to align to; the cluster goes back to the right edge
+        leftPaneWidth.set(0);
         root.setCenter(unifiedNode);
     }
 

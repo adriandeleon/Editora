@@ -5952,8 +5952,15 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setRightAnchor(control, codePaneControlInset());
     }
 
+    /**
+     * Width the editor's own vertical scrollbar takes on the right edge of the code pane. The floating
+     * controls clear it: sitting on the thumb both looks wrong and swallows the drag, since the control is
+     * on top.
+     */
+    private static final double SCROLLBAR_GUTTER = 14;
+
     private double codePaneControlInset() {
-        return (minimapVisible && !largeFile && !heavyFile) ? Minimap.WIDTH + 6 : 10;
+        return SCROLLBAR_GUTTER + ((minimapVisible && !largeFile && !heavyFile) ? Minimap.WIDTH + 6 : 10);
     }
 
     /** Keeps the control clear of the minimap when it toggles (no full view rebuild). */

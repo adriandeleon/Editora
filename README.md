@@ -480,7 +480,7 @@ Editora is built with the help of AI coding tools.
   edit/resolve/delete; `M-g n` jumps across files and notes export to JSON. Stored per project in
   `notes.json`. Separate from bookmarks — both coexist in the gutter. **On by default** — toggle
   under *Settings → Application → Enable Personal Notes*.
-- **Git** _(Beta)_ — uses your installed `git` (no bundled library). The status bar shows the current branch with
+- **Git** — uses your installed `git` (no bundled library). The status bar shows the current branch with
   ahead/behind counts (click to switch branches); the gutter draws change bars vs `HEAD` (added /
   modified / deleted); and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
   stage, unstage, discard, **Stage All**, and a commit box. Palette/keys cover commit (`C-x g`), stage
@@ -502,7 +502,7 @@ Editora is built with the help of AI coding tools.
   current file, or restore one (an undoable whole-file replace). Snapshots are deduped by content and stored
   gzip-compressed under `<configDir>/history/`, pruned by configurable limits (revisions/file, age,
   size/project). On by default; local-only; off in Simple UI mode.
-- **HTTP client** _(Beta)_ — open a `.http`/`.rest` file and click the green ▶ next to a request to run it with
+- **HTTP client** — open a `.http`/`.rest` file and click the green ▶ next to a request to run it with
   Editora's **built-in** HTTP client; the response (status, headers, pretty-printed JSON body, timing/
   size) shows in the file's **preview** — the same Editor/Split/Preview view Markdown and CSV use, so the
   floating toggle top-right switches between the requests, a side-by-side view, and the response alone.
@@ -513,7 +513,7 @@ Editora is built with the help of AI coding tools.
   **environment files** (`http-client.env.json` + a `$shared` section) with a picker, **Basic/Digest auth**
   shorthand, automatic URL encoding, response-to-file redirects, per-request directives, run-whole-file, and
   saving the response. On by default (*Settings → HTTP Client*).
-- **HTML live preview** _(Beta)_ — a floating browser icon on any HTML file opens it in a detected desktop
+- **HTML live preview** — a floating browser icon on any HTML file opens it in a detected desktop
   browser (Safari, Chrome, Firefox, Edge, or the system default), served over a tiny **loopback** web server
   so its CSS/JS/images load. The page **reloads live as you type** (unsaved edits included). On by default
   (*Settings → HTML Preview*); no external tool — it uses the JDK's built-in HTTP server.

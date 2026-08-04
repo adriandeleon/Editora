@@ -224,23 +224,46 @@ public class FileBreadcrumb extends StackPane {
                 menu.getItems().add(new SeparatorMenuItem()); // divider before the folder listing
             }
         }
-        for (Path d : dirs) {
-            // Match the Project tool window's icons (FileIcons.boxed folder + per-type file glyphs).
-            MenuItem mi = new MenuItem(d.getFileName().toString(), FileIcons.boxed(Icons.project()));
-            mi.setOnAction(e -> navigateInto(d, anchor));
-            menu.getItems().add(mi);
-        }
-        for (Path f : files) {
-            MenuItem mi = new MenuItem(
-                    f.getFileName().toString(),
-                    FileIcons.forFileName(f.getFileName().toString()));
-            mi.setOnAction(e -> onOpenFile.accept(f));
-            menu.getItems().add(mi);
+        // Folders first, then files — one sequence, so paging can't split at an awkward boundary.
+        List<Path> entries = new ArrayList<>(dirs);
+        entries.addAll(files);
+        List<int[]> pages = BreadcrumbPages.pages(entries.size(), BreadcrumbPages.PAGE_SIZE);
+        if (pages.isEmpty()) {
+            // Short listing: flat, exactly as before.
+            for (Path p : entries) {
+                menu.getItems().add(entryItem(p, anchor));
+            }
+        } else {
+            for (int[] page : pages) {
+                javafx.scene.control.Menu sub = new javafx.scene.control.Menu(BreadcrumbPages.label(
+                        entries.get(page[0]).getFileName().toString(),
+                        entries.get(page[1] - 1).getFileName().toString()));
+                for (int i = page[0]; i < page[1]; i++) {
+                    sub.getItems().add(entryItem(entries.get(i), anchor));
+                }
+                menu.getItems().add(sub);
+            }
         }
         if (!menu.getItems().isEmpty()) {
             // The bar sits at the bottom, so the menu drops upward from the crumb.
             menu.show(anchor, Side.TOP, 0, 0);
         }
+    }
+
+    /**
+     * One listing row: a folder drills in, a file opens. Icons match the Project tool window
+     * ({@link FileIcons#boxed} folder + per-type file glyphs).
+     */
+    private MenuItem entryItem(Path p, Node anchor) {
+        String name = p.getFileName().toString();
+        if (Files.isDirectory(p)) {
+            MenuItem mi = new MenuItem(name, FileIcons.boxed(Icons.project()));
+            mi.setOnAction(e -> navigateInto(p, anchor));
+            return mi;
+        }
+        MenuItem mi = new MenuItem(name, FileIcons.forFileName(name));
+        mi.setOnAction(e -> onOpenFile.accept(p));
+        return mi;
     }
 
     /** Drill into {@code folder}: it becomes the trailing crumb and the dropdown reopens on it. */

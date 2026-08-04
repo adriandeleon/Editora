@@ -65,8 +65,20 @@ import static com.editora.i18n.Messages.tr;
  */
 public class SettingsWindow {
 
-    private static final double WIDTH = 989;
-    private static final double HEIGHT = 784;
+    /**
+     * Preferred size — big enough that the master-detail lists (templates, snippets, external tools, the
+     * toolbar layout's two columns) show their default contents without a scrollbar.
+     *
+     * <p>Clamped against the screen by {@link #preferredSize()}: a fixed size larger than the display
+     * would put the Close button off-screen, and this is a window the user cannot resize their way out of
+     * if it opens taller than their laptop.
+     */
+    private static final double WIDTH = 1180;
+
+    private static final double HEIGHT = 940;
+
+    /** Fraction of the screen's usable area the window may occupy before the preferred size is clamped. */
+    private static final double MAX_SCREEN_FRACTION = 0.92;
 
     /** Sidebar group headers; every {@link Category} belongs to exactly one, shown in declaration order. */
     private enum Group {
@@ -113,12 +125,12 @@ public class SettingsWindow {
         DIAGRAMS(tr("settings.cat.diagrams"), Group.LANGUAGES_TOOLS),
         TYPST(tr("settings.cat.typst"), Group.LANGUAGES_TOOLS),
         BUILD_TOOLS(tr("settings.cat.buildTools"), Group.LANGUAGES_TOOLS),
-        WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS, true),
+        WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
         RUN_CONFIGS(tr("settings.cat.runConfigs"), Group.LANGUAGES_TOOLS),
         // Version control
-        GIT(tr("settings.cat.git"), Group.VERSION_CONTROL, true),
-        GITHUB(tr("settings.cat.github"), Group.VERSION_CONTROL, true),
+        GIT(tr("settings.cat.git"), Group.VERSION_CONTROL),
+        GITHUB(tr("settings.cat.github"), Group.VERSION_CONTROL),
         // System
         KEYMAPS(tr("settings.cat.keymaps"), Group.SYSTEM),
         MACROS(tr("settings.cat.macros"), Group.SYSTEM),
@@ -790,6 +802,12 @@ public class SettingsWindow {
         sidebar.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
             if (b instanceof Category cat) { // group headers aren't pages
                 contentScroll.setContent(pages.get(cat));
+                // Every page starts at its top. A ScrollPane keeps its vvalue across a content swap, so
+                // opening a short page after scrolling down a long one landed mid-page — and on a page
+                // that fits, silently nowhere at all. Deferred: the new content has not been laid out
+                // yet, and setting vvalue before that is undone when the scroll range is recomputed.
+                contentScroll.setVvalue(0);
+                javafx.application.Platform.runLater(() -> contentScroll.setVvalue(0));
             }
         });
 
@@ -821,10 +839,11 @@ public class SettingsWindow {
         buttons.getStyleClass().add("settings-footer");
 
         VBox root = new VBox(0, body, buttons);
-        root.setPrefWidth(WIDTH);
-        root.setPrefHeight(HEIGHT);
+        javafx.geometry.Dimension2D size = preferredSize();
+        root.setPrefWidth(size.getWidth());
+        root.setPrefHeight(size.getHeight());
 
-        Scene scene = new Scene(root, WIDTH, HEIGHT);
+        Scene scene = new Scene(root, size.getWidth(), size.getHeight());
         // The live preview needs the editor surface + token colors; the dialog controls keep AtlantaFX.
         scene.getStylesheets()
                 .addAll(
@@ -841,6 +860,18 @@ public class SettingsWindow {
         stage.setMinHeight(480);
 
         sidebar.getSelectionModel().select(Category.APPEARANCE);
+    }
+
+    /**
+     * {@link #WIDTH}×{@link #HEIGHT}, clamped to {@link #MAX_SCREEN_FRACTION} of the primary screen's
+     * <em>visual</em> bounds (which exclude the menu bar / taskbar). Without the clamp the window would
+     * open taller than a laptop display and hide its own Close button.
+     */
+    private static javafx.geometry.Dimension2D preferredSize() {
+        javafx.geometry.Rectangle2D screen = javafx.stage.Screen.getPrimary().getVisualBounds();
+        return new javafx.geometry.Dimension2D(
+                Math.min(WIDTH, screen.getWidth() * MAX_SCREEN_FRACTION),
+                Math.min(HEIGHT, screen.getHeight() * MAX_SCREEN_FRACTION));
     }
 
     // --- control construction (logic unchanged from the flat window) -----------------------------
@@ -1904,7 +1935,7 @@ public class SettingsWindow {
         macroItems.setAll(config.getMacroStore().macros);
 
         ListView<com.editora.macro.Macro> list = new ListView<>(macroItems);
-        list.setPrefSize(200, 280);
+        list.setPrefSize(220, 420);
         list.setPlaceholder(note(tr("settings.macro.empty")));
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
@@ -2639,7 +2670,7 @@ public class SettingsWindow {
     /** A simple editor for the global personal dictionary ({@code dictionary.txt}): list + add/remove. */
     private javafx.scene.Node dictionaryEditor() {
         dictionaryList = new ListView<>();
-        dictionaryList.setPrefSize(280, 220);
+        dictionaryList.setPrefSize(300, 380);
         dictionaryList.setPlaceholder(new Label(tr("settings.dict.empty")));
         refreshDictionaryList();
 
@@ -2927,14 +2958,18 @@ public class SettingsWindow {
                 s.getTodoPriorityMediumColor(), c -> config.getSettings().setTodoPriorityMediumColor(c));
         todoLowColorPicker = partColorPicker(
                 s.getTodoPriorityLowColor(), c -> config.getSettings().setTodoPriorityLowColor(c));
-        VBox box = new VBox(
-                6,
-                partColorRow(tr("settings.todo.part.tag"), todoTagColorPicker),
-                partColorRow(tr("settings.todo.part.critical"), todoCriticalColorPicker),
-                partColorRow(tr("settings.todo.part.high"), todoHighColorPicker),
-                partColorRow(tr("settings.todo.part.medium"), todoMediumColorPicker),
-                partColorRow(tr("settings.todo.part.low"), todoLowColorPicker));
-        return box;
+        // A GridPane, not a row of HBoxes: the labels differ in width ("Tag" vs "Critical priority") and in
+        // every locale, so a per-row minimum width leaves the pickers ragged the moment one label outgrows
+        // it. A shared first column sizes itself to the widest label, whatever that turns out to be.
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+        grid.setHgap(8);
+        grid.setVgap(6);
+        addPartColorRow(grid, 0, tr("settings.todo.part.tag"), todoTagColorPicker);
+        addPartColorRow(grid, 1, tr("settings.todo.part.critical"), todoCriticalColorPicker);
+        addPartColorRow(grid, 2, tr("settings.todo.part.high"), todoHighColorPicker);
+        addPartColorRow(grid, 3, tr("settings.todo.part.medium"), todoMediumColorPicker);
+        addPartColorRow(grid, 4, tr("settings.todo.part.low"), todoLowColorPicker);
+        return grid;
     }
 
     private javafx.scene.control.ColorPicker partColorPicker(String web, java.util.function.Consumer<String> setter) {
@@ -2947,12 +2982,12 @@ public class SettingsWindow {
         return cp;
     }
 
-    private static javafx.scene.layout.HBox partColorRow(String label, javafx.scene.control.ColorPicker picker) {
+    private static void addPartColorRow(
+            javafx.scene.layout.GridPane grid, int row, String label, javafx.scene.control.ColorPicker picker) {
         Label l = new Label(label);
-        l.setMinWidth(96);
-        javafx.scene.layout.HBox h = new javafx.scene.layout.HBox(8, l, picker);
-        h.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-        return h;
+        grid.add(l, 0, row);
+        grid.add(picker, 1, row);
+        javafx.scene.layout.GridPane.setValignment(l, javafx.geometry.VPos.CENTER);
     }
 
     /** Re-reads the five TODO part-color pickers from settings (after a palette color change). */
@@ -3327,9 +3362,18 @@ public class SettingsWindow {
         language.setValue(currentSnippetLang);
 
         ListView<com.editora.snippet.Snippet> list = new ListView<>(snippetItems);
-        list.setPrefSize(200, 280);
+        list.setPrefSize(220, 420);
         VBox.setVgrow(list, Priority.ALWAYS); // grow the list to fill the page height
         list.setCellFactory(lv -> new ListCell<>() {
+            {
+                // A ListCell reports its graphic's intrinsic width as its preferred width, so a name
+                // plus the "bundled" tag made the list demand more than its viewport and grow a
+                // horizontal scrollbar — which then stole the height the last row needed, producing a
+                // vertical one too. Asking for nothing lets the row fit the viewport and the name
+                // ellipsize instead.
+                setPrefWidth(0);
+            }
+
             @Override
             protected void updateItem(com.editora.snippet.Snippet s, boolean empty) {
                 super.updateItem(s, empty);
@@ -3573,9 +3617,18 @@ public class SettingsWindow {
     /** Master-detail editor: the templates (bundled + user) on the left, a form for the selected one. */
     private javafx.scene.Node templatesEditor() {
         ListView<com.editora.template.Template> list = new ListView<>(templateItems);
-        list.setPrefSize(200, 280);
+        list.setPrefSize(220, 420);
         VBox.setVgrow(list, Priority.ALWAYS); // grow the list to fill the page height
         list.setCellFactory(lv -> new ListCell<>() {
+            {
+                // A ListCell reports its graphic's intrinsic width as its preferred width, so a name
+                // plus the "bundled" tag made the list demand more than its viewport and grow a
+                // horizontal scrollbar — which then stole the height the last row needed, producing a
+                // vertical one too. Asking for nothing lets the row fit the viewport and the name
+                // ellipsize instead.
+                setPrefWidth(0);
+            }
+
             @Override
             protected void updateItem(com.editora.template.Template t, boolean empty) {
                 super.updateItem(t, empty);
@@ -3853,7 +3906,7 @@ public class SettingsWindow {
         remoteItems.setAll(config.getConnections());
 
         ListView<com.editora.vfs.RemoteConnection> list = new ListView<>(remoteItems);
-        list.setPrefSize(190, 220);
+        list.setPrefSize(210, 380);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(com.editora.vfs.RemoteConnection c, boolean empty) {
@@ -4041,7 +4094,7 @@ public class SettingsWindow {
 
         ListView<com.editora.externaltool.ExternalTool> list = new ListView<>(externalToolItems);
         externalToolList = list;
-        list.setPrefSize(170, 220);
+        list.setPrefSize(200, 380);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(com.editora.externaltool.ExternalTool t, boolean empty) {
@@ -4227,7 +4280,7 @@ public class SettingsWindow {
 
         ListView<com.editora.config.RunConfiguration> list = new ListView<>(runConfigItems);
         runConfigList = list;
-        list.setPrefSize(170, 220);
+        list.setPrefSize(200, 380);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(com.editora.config.RunConfiguration c, boolean empty) {
@@ -4443,7 +4496,7 @@ public class SettingsWindow {
 
         ListView<com.editora.config.Abbreviation> list = new ListView<>(abbrevItems);
         abbrevList = list;
-        list.setPrefSize(170, 220);
+        list.setPrefSize(200, 380);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(com.editora.config.Abbreviation a, boolean empty) {
@@ -6109,8 +6162,9 @@ public class SettingsWindow {
         ListView<String> current = new ListView<>(toolbarCurrentItems);
         available.setCellFactory(v -> toolbarCell());
         current.setCellFactory(v -> toolbarCell());
-        available.setPrefSize(220, 300);
-        current.setPrefSize(220, 300);
+        // Tall enough for the default toolbar layout (~20 items) to be read without scrolling.
+        available.setPrefSize(260, 460);
+        current.setPrefSize(260, 460);
 
         Label availLabel = new Label(tr("settings.toolbar.available"));
         Label curLabel = new Label(tr("settings.toolbar.current"));
@@ -6559,7 +6613,7 @@ public class SettingsWindow {
 
     private void buildPreview() {
         preview = new CodeArea(PREVIEW_SAMPLE);
-        preview.getStyleClass().add("editor-area");
+        preview.getStyleClass().addAll("editor-area", "settings-preview");
         preview.setEditable(false);
         preview.setFocusTraversable(false);
         preview.setShowCaret(org.fxmisc.richtext.Caret.CaretVisibility.OFF);
@@ -7473,6 +7527,19 @@ public class SettingsWindow {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(owner);
         alert.setTitle(tr("dialog.about.title", com.editora.AppInfo.NAME));
+        // The whole dialog is the content: no Alert header band or graphic, so the icon, name, version and
+        // tagline read as one block the way a native About panel does.
+        alert.setHeaderText(null);
+        alert.setGraphic(null);
+        alert.getDialogPane().getStyleClass().add("about-dialog");
+        // A Dialog lives in its own scene, so it does NOT inherit the main window's app.css — the panel's
+        // .about-* rules have to be attached here or they never apply. (The AtlantaFX -color-* tokens do
+        // resolve: those come from the application-wide user-agent stylesheet.)
+        var appCss = SettingsWindow.class.getResource("/com/editora/styles/app.css");
+        if (appCss != null) {
+            alert.getDialogPane().getStylesheets().add(appCss.toExternalForm());
+        }
+
         // For a snapshot build, append the git branch to the version string so a build made from a
         // worktree/feature branch can be told apart from one made off master. Empty for release builds
         // and for packaged snapshots with no git checkout.
@@ -7483,37 +7550,55 @@ public class SettingsWindow {
                 versionString += " (" + branch + ")";
             }
         }
-        alert.setHeaderText(com.editora.AppInfo.NAME + " " + versionString);
+
+        // --- header: icon beside name / version / tagline ------------------------------------------
+        Label name = new Label(com.editora.AppInfo.NAME);
+        name.getStyleClass().add("about-name");
+        Label version = new Label(tr("about.version", versionString));
+        version.getStyleClass().add("about-version");
+        Label tagline = new Label(tr("about.tagline"));
+        tagline.getStyleClass().add("about-tagline");
+        tagline.setWrapText(true);
+        VBox titleBox = new VBox(2, name, version, tagline);
+        titleBox.setAlignment(Pos.CENTER_LEFT);
+
+        HBox header = new HBox(16, titleBox);
         var iconStream = SettingsWindow.class.getResourceAsStream("/com/editora/icons/icon-128.png");
         if (iconStream != null) {
             ImageView logo = new ImageView(new Image(iconStream));
             logo.setFitWidth(72);
             logo.setFitHeight(72);
-            alert.setGraphic(logo);
+            logo.setPreserveRatio(true);
+            header.getChildren().add(0, logo);
         }
+        header.setAlignment(Pos.TOP_LEFT);
 
-        // Build commit shown only when provided (dev builds); empty/null in production.
-        String commitLine = commit == null || commit.isBlank() ? "" : tr("about.commit", commit) + "\n";
-        Label info = new Label(tr("about.tagline") + "\n\n"
-                + "Java " + System.getProperty("java.version", "?") + "\n"
-                + "JavaFX " + System.getProperty("javafx.runtime.version", "?") + "\n"
-                + tr("about.built", com.editora.AppInfo.buildTime()) + "\n"
-                + commitLine + "\n"
-                + com.editora.AppInfo.COPYRIGHT + "\n"
-                + com.editora.AppInfo.LICENSE);
+        // --- copyright + links ----------------------------------------------------------------------
+        Label copyright = new Label(com.editora.AppInfo.COPYRIGHT);
+        copyright.getStyleClass().add("about-copyright");
 
-        Hyperlink homeLink = new Hyperlink(com.editora.AppInfo.HOMEPAGE.replaceFirst("^https?://", ""));
-        homeLink.setPadding(Insets.EMPTY);
-        homeLink.setOnAction(e -> {
+        VBox links = new VBox(2);
+        links.getChildren().add(aboutLink(com.editora.AppInfo.LICENSE, () -> {
             if (openUrl != null) {
                 openUrl.accept(com.editora.AppInfo.HOMEPAGE);
             }
-        });
-        HBox homeRow = new HBox(4, new Label(tr("about.homepage")), homeLink);
-        homeRow.setAlignment(Pos.CENTER_LEFT);
-
-        Hyperlink settingsLink = new Hyperlink(displaySettingsPath(settingsFile));
-        settingsLink.setPadding(Insets.EMPTY);
+        }));
+        links.getChildren().add(aboutLink(tr("about.homepage"), () -> {
+            if (openUrl != null) {
+                openUrl.accept(com.editora.AppInfo.HOMEPAGE);
+            }
+        }));
+        links.getChildren().add(aboutLink(tr("about.releases"), () -> {
+            if (openUrl != null) {
+                openUrl.accept(com.editora.AppInfo.RELEASES_PAGE);
+            }
+        }));
+        Hyperlink settingsLink =
+                aboutLink(tr("settings.aboutSettingsLabel") + " " + displaySettingsPath(settingsFile), () -> {
+                    if (openFile != null) {
+                        openFile.accept(settingsFile);
+                    }
+                });
         settingsLink.setTooltip(new Tooltip(tr("settings.openFileTip")));
         settingsLink.setOnAction(e -> {
             alert.close();
@@ -7521,31 +7606,87 @@ public class SettingsWindow {
                 openFile.accept(settingsFile);
             }
         });
-        HBox settingsRow = new HBox(4, new Label(tr("settings.aboutSettingsLabel")), settingsLink);
-        settingsRow.setAlignment(Pos.CENTER_LEFT);
-
-        VBox content = new VBox(10, info, homeRow, settingsRow);
-        // When a newer release is known, an "Update available: X.Y.Z" row with a link to the release page.
+        links.getChildren().add(settingsLink);
+        // When a newer release is known, an "Update available: X.Y.Z" row linking to that release.
         if (update != null) {
-            Hyperlink updateLink = new Hyperlink(update.version());
-            updateLink.setPadding(Insets.EMPTY);
             String updateUrl =
                     update.url() == null || update.url().isBlank() ? com.editora.AppInfo.RELEASES_PAGE : update.url();
+            Hyperlink updateLink = aboutLink(tr("about.updateAvailable") + " " + update.version(), () -> {});
+            updateLink.getStyleClass().add("about-update");
             updateLink.setOnAction(e -> {
                 alert.close();
                 if (openUrl != null) {
                     openUrl.accept(updateUrl);
                 }
             });
-            Label updateLabel = new Label(tr("about.updateAvailable"));
-            updateLabel.getStyleClass().add("about-update");
-            HBox updateRow = new HBox(4, updateLabel, updateLink);
-            updateRow.setAlignment(Pos.CENTER_LEFT);
-            content.getChildren().add(updateRow);
+            links.getChildren().add(updateLink);
         }
 
+        // --- environment block ------------------------------------------------------------------------
+        String details = environmentDetails(versionString, commit, settingsFile);
+        Label env = new Label(details);
+        env.getStyleClass().add("about-env");
+
+        // --- footer: Copy details (in the content, so it does not dismiss) --------------------------
+        Button copyDetails = new Button(tr("about.copyDetails"));
+        copyDetails.setOnAction(e -> {
+            javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+            cc.putString(details);
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+            copyDetails.setText(tr("about.copied"));
+        });
+        HBox footer = new HBox(copyDetails);
+        footer.setAlignment(Pos.CENTER_LEFT);
+
+        VBox content = new VBox(14, header, copyright, links, env, footer);
+        content.getStyleClass().add("about-content");
         alert.getDialogPane().setContent(content);
+        // A single Close button; "Copy details" lives in the content so pressing it keeps the panel open.
+        alert.getButtonTypes()
+                .setAll(new ButtonType(tr("dialog.close"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE));
         alert.showAndWait();
+    }
+
+    /** A borderless link row for the About panel. */
+    private static Hyperlink aboutLink(String text, Runnable onClick) {
+        Hyperlink link = new Hyperlink(text);
+        link.setPadding(Insets.EMPTY);
+        link.setOnAction(e -> onClick.run());
+        return link;
+    }
+
+    /** The monospace environment block, also what "Copy details" puts on the clipboard. */
+    private static String environmentDetails(String versionString, String commit, Path settingsFile) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(com.editora.AppInfo.NAME)
+                .append(' ')
+                .append(versionString)
+                .append(" (")
+                .append(tr("about.built", com.editora.AppInfo.buildTime()))
+                .append(")\n");
+        if (commit != null && !commit.isBlank()) {
+            sb.append(tr("about.commit", commit)).append('\n');
+        }
+        sb.append("Java: ")
+                .append(System.getProperty("java.version", "?"))
+                .append(" (")
+                .append(System.getProperty("java.vendor", "?"))
+                .append(")\n");
+        sb.append("JavaFX: ")
+                .append(System.getProperty("javafx.runtime.version", "?"))
+                .append('\n');
+        sb.append("OS: ")
+                .append(System.getProperty("os.name", "?"))
+                .append(' ')
+                .append(System.getProperty("os.version", "?"))
+                .append(" (")
+                .append(System.getProperty("os.arch", "?"))
+                .append(")\n");
+        Path configDir = settingsFile == null ? null : settingsFile.getParent();
+        if (configDir != null) {
+            sb.append("Config: ").append(displaySettingsPath(configDir));
+        }
+        return sb.toString();
     }
 
     private static String spellLanguageName(String id) {

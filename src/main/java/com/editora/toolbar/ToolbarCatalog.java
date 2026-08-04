@@ -14,9 +14,12 @@ import java.util.Map;
  * coordinator maps to its existing {@code @FXML} field). The {@code id} of a command button is its command
  * id; special widgets use a {@code toolbar.*} synthetic id.
  *
- * <p>The customizable region is the toolbar's <em>left icon cluster</em>. The fixed tail (project-combo
- * group, the Open-Folder icon beside it, the dev badge, About and Quit) is not part of this catalog and stays
- * pinned — see {@code MainController.arrangeToolbarTail}.
+ * <p>The customizable region is the toolbar's <em>left icon cluster</em>. The fixed tail is not part of this
+ * catalog and stays pinned — the project-combo group, the Open-Folder icon and Recent beside it, the dev
+ * badge, then Settings, About and Quit. Recent and Settings live there rather than here because their
+ * position is relative to tail items (Recent belongs beside the project controls; Settings reads as a pair
+ * with About), which a customizable-cluster entry cannot express — see {@code
+ * MainController.appendFixedTail}.
  */
 public final class ToolbarCatalog {
 
@@ -32,11 +35,7 @@ public final class ToolbarCatalog {
      * selector, which was declared in the FXML but never registered here, so every rebuild dropped it.
      */
     public static final java.util.Set<String> SPECIAL_WIDGET_IDS = java.util.Set.of(
-            "toolbar.recent",
-            "toolbar.runConfig",
-            "toolbar.runConfig.run",
-            "toolbar.runConfig.debug",
-            "toolbar.runConfig.stop");
+            "toolbar.runConfig", "toolbar.runConfig.run", "toolbar.runConfig.debug", "toolbar.runConfig.stop");
 
     /** A customizable toolbar item. {@code commandId} is null for a non-command widget (the Recent button). */
     public record Item(String id, String iconKey, String commandId) {}
@@ -56,7 +55,6 @@ public final class ToolbarCatalog {
         add("buffer.close", "closeTab", "buffer.close");
         add("file.save", "save", "file.save");
         add("file.saveAs", "saveAs", "file.saveAs");
-        add("toolbar.recent", "recent", null); // the Recent MenuButton (special widget, no single command)
         add("file.clearRecent", "trash", "file.clearRecent");
         add("edit.undo", "undo", "edit.undo");
         add("edit.redo", "redo", "edit.redo");
@@ -69,7 +67,6 @@ public final class ToolbarCatalog {
         add("view.splitHorizontal", "splitHorizontal", "view.splitHorizontal");
         add("palette.show", "palette", "palette.show");
         add("view.toggleSimpleMode", "simpleMode", "view.toggleSimpleMode");
-        add("view.settings", "settings", "view.settings");
         // Run configurations: special widgets, like the Recent MenuButton — the selector is a ComboBox and
         // the three buttons act on whatever it has selected rather than dispatching a fixed command, so the
         // coordinator maps all four to their existing @FXML fields.
@@ -112,18 +109,19 @@ public final class ToolbarCatalog {
      */
     public static List<String> defaultLayout() {
         List<String> l = new ArrayList<>();
+        // File — creating and persisting a document. Buffer: Close deliberately does NOT live here: it sat
+        // immediately beside Save, so a mis-click on a muscle-memory target discarded the tab instead of
+        // saving it. It stays available via the catalog, the tab's own ✕, and C-x k.
         l.add("file.new");
         l.add("template.new");
         l.add("file.find");
-        l.add("buffer.close");
         l.add("file.save");
         l.add("file.saveAs");
         l.add(SEPARATOR);
-        l.add("toolbar.recent");
-        l.add("file.clearRecent");
-        l.add(SEPARATOR);
+        // History, then clipboard — two distinct ideas that used to share one group of five.
         l.add("edit.undo");
         l.add("edit.redo");
+        l.add(SEPARATOR);
         l.add("edit.cut");
         l.add("edit.copy");
         l.add("edit.paste");
@@ -136,14 +134,13 @@ public final class ToolbarCatalog {
         l.add("toolbar.runConfig.debug");
         l.add("toolbar.runConfig.stop");
         l.add(SEPARATOR);
+        // View — the three chrome/layout toggles together rather than scattered behind lone separators.
         l.add("view.splitVertical");
         l.add("view.splitHorizontal");
-        l.add(SEPARATOR);
-        l.add("palette.show");
-        l.add(SEPARATOR);
         l.add("view.toggleSimpleMode");
         l.add(SEPARATOR);
-        l.add("view.settings");
+        l.add("palette.show");
+        // Recent and Settings are appended by the fixed tail, not listed here.
         return l;
     }
 }
