@@ -493,29 +493,94 @@ final class GitCoordinator {
                 args);
     }
 
+    /**
+     * {@code git add} over one or more repo-relative paths (the Commit window's Stage action, which is
+     * multi-select). One invocation — and therefore one refresh — for the whole set.
+     */
+    void gitStagePaths(List<String> paths) {
+        if (paths.isEmpty()) {
+            return;
+        }
+        gitOp(
+                paths.size() == 1 ? tr("status.git.staged", paths.get(0)) : tr("status.git.stagedMany", paths.size()),
+                argv(paths, "add", "--"));
+    }
+
+    /** {@code git reset -q HEAD} over one or more repo-relative paths; mirrors {@link #gitStagePaths}. */
+    void gitUnstagePaths(List<String> paths) {
+        if (paths.isEmpty()) {
+            return;
+        }
+        gitOp(
+                paths.size() == 1
+                        ? tr("status.git.unstaged", paths.get(0))
+                        : tr("status.git.unstagedMany", paths.size()),
+                argv(paths, "reset", "-q", "HEAD", "--"));
+    }
+
+    /** {@code prefix} followed by {@code paths} — the argv for a git command over a pathspec list. */
+    private static String[] argv(List<String> paths, String... prefix) {
+        String[] out = new String[prefix.length + paths.size()];
+        System.arraycopy(prefix, 0, out, 0, prefix.length);
+        for (int i = 0; i < paths.size(); i++) {
+            out[prefix.length + i] = paths.get(i);
+        }
+        return out;
+    }
+
     /** Confirms then discards a file's changes (or deletes an untracked file) — destructive. */
     void discardChanges(String path, boolean untracked) {
-        if (repoRoot == null) {
+        discardChanges(untracked ? List.of() : List.of(path), untracked ? List.of(path) : List.of());
+    }
+
+    /**
+     * Confirms <em>once</em> then reverts the given repo-relative paths — destructive. {@code tracked}
+     * paths are checked out from the index/HEAD, {@code untracked} ones are deleted; a mixed set says so
+     * in the prompt and then runs both commands (each over its whole list, so at most two invocations).
+     */
+    void discardChanges(List<String> tracked, List<String> untracked) {
+        if (repoRoot == null || (tracked.isEmpty() && untracked.isEmpty())) {
             return;
         }
         Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
-                untracked ? tr("dialog.discard.untracked", path) : tr("dialog.discard.tracked", path),
-                ButtonType.OK,
-                ButtonType.CANCEL);
+                Alert.AlertType.CONFIRMATION, discardPrompt(tracked, untracked), ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.discard.title"));
         confirm.setHeaderText(null);
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
-        if (untracked) {
-            gitOp("Deleted " + path, "clean", "-f", "--", path);
-        } else {
-            gitOp("Discarded changes to " + path, "checkout", "--", path);
+        if (!tracked.isEmpty()) {
+            gitOp(
+                    tracked.size() == 1
+                            ? tr("status.git.discarded", tracked.get(0))
+                            : tr("status.git.discardedMany", tracked.size()),
+                    argv(tracked, "checkout", "--"));
         }
-        // The on-disk file changed under any open buffer for it — re-check so it reloads if needed.
+        if (!untracked.isEmpty()) {
+            gitOp(
+                    untracked.size() == 1
+                            ? tr("status.git.deleted", untracked.get(0))
+                            : tr("status.git.deletedMany", untracked.size()),
+                    argv(untracked, "clean", "-f", "--"));
+        }
+        // The on-disk files changed under any open buffer for them — re-check so they reload if needed.
         Platform.runLater(ops::checkExternalChanges);
+    }
+
+    /** The confirmation body: names the single file, else counts, and spells out a mixed set exactly. */
+    private static String discardPrompt(List<String> tracked, List<String> untracked) {
+        if (untracked.isEmpty()) {
+            return tracked.size() == 1
+                    ? tr("dialog.discard.tracked", tracked.get(0))
+                    : tr("dialog.discard.trackedMany", tracked.size());
+        }
+        if (tracked.isEmpty()) {
+            return untracked.size() == 1
+                    ? tr("dialog.discard.untracked", untracked.get(0))
+                    : tr("dialog.discard.untrackedMany", untracked.size());
+        }
+        return tr("dialog.discard.mixed", tracked.size(), untracked.size());
     }
 
     void gitCommit(String message) {
@@ -681,7 +746,7 @@ final class GitCoordinator {
             return;
         }
         // rel() forward-slash-normalizes the pathspec (git treats "\" as an escape on Windows).
-        gitOp("Staged " + file.getFileName(), "add", "--", rel(file));
+        gitStagePath(file);
     }
 
     /** Unstages the active file (palette {@code git.unstageFile}; mirrors {@link #gitStageActiveFile}). */
@@ -692,7 +757,7 @@ final class GitCoordinator {
             host.setStatus(tr("status.noGitFile"));
             return;
         }
-        gitOp("Unstaged " + file.getFileName(), "reset", "-q", "HEAD", "--", rel(file));
+        gitUnstagePath(file);
     }
 
     /** Discards the active file's changes (palette {@code git.discardFile}; confirms first). */
@@ -723,7 +788,7 @@ final class GitCoordinator {
         if (rel == null || reportIfNoRepo()) {
             return;
         }
-        gitOp("Staged " + file.getFileName(), "add", "--", rel);
+        gitStagePaths(List.of(rel));
     }
 
     /** {@code git reset -q HEAD -- <path>} for a file or folder (the Project-tree "Unstage" action). */
@@ -732,7 +797,7 @@ final class GitCoordinator {
         if (rel == null || reportIfNoRepo()) {
             return;
         }
-        gitOp("Unstaged " + file.getFileName(), "reset", "-q", "HEAD", "--", rel);
+        gitUnstagePaths(List.of(rel));
     }
 
     /**

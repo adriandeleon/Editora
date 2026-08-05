@@ -483,7 +483,9 @@ Editora is built with the help of AI coding tools.
 - **Git** — uses your installed `git` (no bundled library). The status bar shows the current branch with
   ahead/behind counts (click to switch branches); the gutter draws change bars vs `HEAD` (added /
   modified / deleted); and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
-  stage, unstage, discard, **Stage All**, and a commit box. Palette/keys cover commit (`C-x g`), stage
+  stage, unstage, discard, **Stage All**, and a commit box. The file list is **multi-select** — extend with
+  Shift+Up/Down or Shift/Ctrl-click, then right-click to stage, unstage or discard the whole selection in one
+  `git` call (also *Git: Stage/Unstage Selected Files* on the palette). Palette/keys cover commit (`C-x g`), stage
   current file, switch/new branch, fetch/pull/push, and **clone** ("Git: Clone Repository…" clones a
   repo and opens a file from it — independent of projects). A **Git Log** tool window (`M-g h`, or *Show
   File History* on a tab) browses commits — select one to see its files, double-click for a read-only

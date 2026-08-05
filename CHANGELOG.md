@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Stage or unstage several files at once.** The Commit window's file list is now multi-select: extend the
+  selection with Shift+Up/Down from the keyboard or Shift/Ctrl-click with the mouse, then right-click and
+  Stage, Unstage or Discard the whole run in one go. A mixed selection offers both Stage and Unstage, each
+  acting only on the files it applies to, and Discard confirms once for the lot. Also on the palette as
+  *Git: Stage Selected Files* and *Git: Unstage Selected Files*, and the menu key opens the same menu for the
+  focused row, so the flow never needs the mouse. Each action is one `git` invocation for the whole
+  selection, so one refresh — not one per file.
+
 - **The breadcrumb no longer opens a menu taller than your screen** — clicking a folder with hundreds of
   entries used to produce a flat list you could only inch through with tiny scroll arrows. Past thirty
   entries it now splits into ranges (`android … cargo`), each opening a submenu.

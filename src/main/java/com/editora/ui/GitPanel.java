@@ -1,13 +1,17 @@
 package com.editora.ui;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
@@ -39,15 +43,25 @@ import static com.editora.i18n.Messages.tr;
  */
 public final class GitPanel extends VBox implements ToolWindowContent {
 
-    /** Mutations the panel asks the controller to perform (all by repo-relative path). */
+    /**
+     * Mutations the panel asks the controller to perform (all by repo-relative path). The
+     * stage/unstage/discard operations take a <em>list</em> because the tree is multi-select: the
+     * controller runs one {@code git} invocation over every path (and therefore one refresh) rather
+     * than N of them.
+     */
     public interface Actions {
         void open(String repoRelativePath);
 
-        void stage(String path);
+        void stage(List<String> paths);
 
-        void unstage(String path);
+        void unstage(List<String> paths);
 
-        void discard(String path, boolean untracked);
+        /**
+         * Reverts local changes: {@code tracked} paths are checked out from the index/HEAD and
+         * {@code untracked} ones are deleted. Either list may be empty; the controller confirms once
+         * for the whole set.
+         */
+        void discard(List<String> tracked, List<String> untracked);
 
         void stageAll();
 
@@ -87,6 +101,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private final Label aheadLabel = new Label();
 
     private Button pushButton;
+    /** The menu currently on screen, hidden before showing the next one (each is built per right-click,
+     *  since its contents depend on the live selection). */
+    private ContextMenu openMenu;
+
     private Runnable onGenerateCommitMessage = () -> {};
     /** Shown only while {@link #setAiAvailable} says AI Actions is enabled + reachable; sits in its own
      *  thin toolbar row directly above the commit message box (not the repo-wide header). */
@@ -122,9 +140,23 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         tree.setShowRoot(false);
         tree.getStyleClass().add("git-tree");
         tree.setCellFactory(t -> new GitCell());
+        // Multi-select: Shift+Up/Down extends from the keyboard, Shift/Ctrl+click from the mouse, and the
+        // context menu then acts on the whole selection (see actionTargets).
+        tree.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                 openSelected();
+            }
+        });
+        // Keyboard menu key / Shift+F10: the event targets the focused *TreeView* (cells aren't focusable),
+        // so a cell handler never sees it — open the menu for the focused row instead. Mouse requests are
+        // consumed by the cell, so they never reach here.
+        tree.setOnContextMenuRequested(e -> {
+            TreeItem<Row> focused =
+                    tree.getFocusModel() == null ? null : tree.getFocusModel().getFocusedItem();
+            if (focused != null && focused.getValue() instanceof FileRow) {
+                showMenu(tree, focused, e.getScreenX(), e.getScreenY());
+                e.consume();
             }
         });
         VBox.setVgrow(tree, Priority.ALWAYS);
@@ -311,6 +343,168 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    // --- multi-selection -------------------------------------------------------------------------
+
+    /**
+     * The rows a context-menu action applies to: the whole selection when the right-clicked row is part
+     * of a multi-selection (so a Shift-selected run stages together), else just the clicked row — which
+     * is then made the selection, the standard "right-click outside the selection re-selects" behavior.
+     * Group rows are filtered out, so a Shift-range crossing a group header is harmless.
+     */
+    private List<FileRow> actionTargets(TreeItem<Row> clicked) {
+        List<TreeItem<Row>> selected = tree.getSelectionModel().getSelectedItems();
+        boolean clickedInSelection = clicked != null && selected.contains(clicked);
+        if (clickedInSelection) {
+            List<FileRow> rows = fileRows(selected);
+            if (rows.size() > 1) {
+                return rows;
+            }
+        }
+        if (clicked == null || !(clicked.getValue() instanceof FileRow f)) {
+            return List.of();
+        }
+        tree.getSelectionModel().clearSelection();
+        tree.getSelectionModel().select(clicked);
+        return List.of(f);
+    }
+
+    /** The file rows among {@code items} (group rows and nulls dropped), in selection order. */
+    private static List<FileRow> fileRows(List<TreeItem<Row>> items) {
+        List<FileRow> rows = new ArrayList<>();
+        for (TreeItem<Row> item : items) {
+            if (item != null && item.getValue() instanceof FileRow f) {
+                rows.add(f);
+            }
+        }
+        return rows;
+    }
+
+    /** The currently selected file rows (used by the palette {@code git.stageSelected}/{@code unstageSelected}). */
+    private List<FileRow> selectedFileRows() {
+        return fileRows(tree.getSelectionModel().getSelectedItems());
+    }
+
+    /**
+     * Stages every selected row that isn't already staged. Returns false (and does nothing) when the
+     * selection holds no such row, so the caller can echo why.
+     */
+    public boolean stageSelected() {
+        List<String> paths = paths(selectedFileRows(), false);
+        if (paths.isEmpty()) {
+            return false;
+        }
+        actions.stage(paths);
+        return true;
+    }
+
+    /** Unstages every selected staged row; mirrors {@link #stageSelected}. */
+    public boolean unstageSelected() {
+        List<String> paths = paths(selectedFileRows(), true);
+        if (paths.isEmpty()) {
+            return false;
+        }
+        actions.unstage(paths);
+        return true;
+    }
+
+    /** The distinct paths of the rows on the given side of the staged divide (a file can be in both). */
+    private static List<String> paths(List<FileRow> rows, boolean staged) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        for (FileRow r : rows) {
+            if ((r.group() == Group.STAGED) == staged) {
+                out.add(r.entry().path());
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /** Builds and shows the context menu for {@code clicked}'s action targets at the given screen point. */
+    private void showMenu(Node anchor, TreeItem<Row> clicked, double screenX, double screenY) {
+        List<FileRow> targets = actionTargets(clicked);
+        if (targets.isEmpty()) {
+            return;
+        }
+        if (openMenu != null) {
+            openMenu.hide();
+        }
+        openMenu = buildMenu(targets);
+        openMenu.show(anchor, screenX, screenY);
+    }
+
+    /**
+     * The context menu for {@code targets}. Open/Show Diff are single-row actions; stage, unstage and
+     * discard each appear when at least one target is on their side of the staged divide, so a mixed
+     * selection offers both Stage and Unstage — each acting only on the rows it applies to.
+     */
+    private ContextMenu buildMenu(List<FileRow> targets) {
+        ContextMenu menu = new ContextMenu();
+        if (targets.size() == 1) {
+            FileRow only = targets.get(0);
+            FileEntry e = only.entry();
+            MenuItem open = new MenuItem(tr("gitpanel.menu.open"));
+            open.setGraphic(Icons.fileSheet());
+            open.setOnAction(a -> actions.open(e.path()));
+            menu.getItems().add(open);
+            if (!e.untracked()) { // an untracked file has no committed/index version to diff against
+                MenuItem showDiff = new MenuItem(tr("gitpanel.menu.showDiff"));
+                showDiff.setGraphic(Icons.diff());
+                boolean staged = only.group() == Group.STAGED;
+                showDiff.setOnAction(a -> actions.diff(e.path(), staged));
+                menu.getItems().add(showDiff);
+            }
+        }
+        List<String> toStage = paths(targets, false);
+        if (!toStage.isEmpty()) {
+            MenuItem stage = new MenuItem(
+                    toStage.size() == 1 ? tr("gitpanel.menu.stage") : tr("gitpanel.menu.stageMany", toStage.size()));
+            stage.setGraphic(Icons.stageAll());
+            stage.setOnAction(a -> actions.stage(toStage));
+            menu.getItems().add(stage);
+        }
+        List<String> toUnstage = paths(targets, true);
+        if (!toUnstage.isEmpty()) {
+            MenuItem unstage = new MenuItem(
+                    toUnstage.size() == 1
+                            ? tr("gitpanel.menu.unstage")
+                            : tr("gitpanel.menu.unstageMany", toUnstage.size()));
+            unstage.setGraphic(Icons.remove());
+            unstage.setOnAction(a -> actions.unstage(toUnstage));
+            menu.getItems().add(unstage);
+        }
+        addDiscardItem(menu, targets);
+        return menu;
+    }
+
+    /** Adds the Discard/Delete item for the non-staged targets (nothing when there are none). */
+    private void addDiscardItem(ContextMenu menu, List<FileRow> targets) {
+        LinkedHashSet<String> tracked = new LinkedHashSet<>();
+        LinkedHashSet<String> untracked = new LinkedHashSet<>();
+        for (FileRow r : targets) {
+            if (r.group() == Group.STAGED) {
+                continue;
+            }
+            (r.entry().untracked() ? untracked : tracked).add(r.entry().path());
+        }
+        int total = tracked.size() + untracked.size();
+        if (total == 0) {
+            return;
+        }
+        String label;
+        if (total == 1) {
+            label = tracked.isEmpty() ? tr("gitpanel.menu.deleteUntracked") : tr("gitpanel.menu.discard");
+        } else {
+            label = tracked.isEmpty()
+                    ? tr("gitpanel.menu.deleteUntrackedMany", total)
+                    : tr("gitpanel.menu.discardMany", total);
+        }
+        List<String> trackedPaths = List.copyOf(tracked);
+        List<String> untrackedPaths = List.copyOf(untracked);
+        MenuItem discard = new MenuItem(label);
+        discard.setGraphic(Icons.trash());
+        discard.setOnAction(a -> actions.discard(trackedPaths, untrackedPaths));
+        menu.getItems().add(discard);
+    }
+
     // --- ToolWindowContent ---
 
     public void focusContent() {
@@ -365,6 +559,18 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     };
 
     private final class GitCell extends TreeCell<Row> {
+
+        GitCell() {
+            // Built per request rather than stored via setContextMenu: the items depend on the current
+            // selection, which changes long after updateItem last ran for this cell.
+            setOnContextMenuRequested(e -> {
+                if (getItem() instanceof FileRow) {
+                    showMenu(this, getTreeItem(), e.getScreenX(), e.getScreenY());
+                    e.consume();
+                }
+            });
+        }
+
         @Override
         protected void updateItem(Row item, boolean empty) {
             super.updateItem(item, empty);
@@ -372,14 +578,12 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
-                setContextMenu(null);
                 return;
             }
             if (item instanceof GroupRow g) {
                 setText(tr(g.group().key) + " (" + g.count() + ")");
                 getStyleClass().add("git-group-row");
                 setGraphic(null);
-                setContextMenu(null);
             } else if (item instanceof FileRow f) {
                 FileEntry e = f.entry();
                 // The status letter rides in the graphic, not the text, so it can be bold on its own.
@@ -388,42 +592,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 // Color the row by status (same palette as the Project tree) so the two windows match.
                 getStyleClass().add(GitFileStatus.of(e).cssClass());
                 setTooltip(new Tooltip(e.path()));
-                setContextMenu(buildMenu(f));
             }
-        }
-
-        private ContextMenu buildMenu(FileRow f) {
-            FileEntry e = f.entry();
-            MenuItem open = new MenuItem(tr("gitpanel.menu.open"));
-            open.setGraphic(Icons.fileSheet());
-            open.setOnAction(a -> actions.open(e.path()));
-            ContextMenu menu = new ContextMenu(open);
-            if (!e.untracked()) { // an untracked file has no committed/index version to diff against
-                MenuItem showDiff = new MenuItem(tr("gitpanel.menu.showDiff"));
-                showDiff.setGraphic(Icons.diff());
-                boolean staged = f.group() == Group.STAGED;
-                showDiff.setOnAction(a -> actions.diff(e.path(), staged));
-                menu.getItems().add(showDiff);
-            }
-            if (f.group() == Group.STAGED) {
-                MenuItem unstage = new MenuItem(tr("gitpanel.menu.unstage"));
-                unstage.setGraphic(Icons.remove());
-                unstage.setOnAction(a -> actions.unstage(e.path()));
-                menu.getItems().add(unstage);
-            } else {
-                MenuItem stage = new MenuItem(tr("gitpanel.menu.stage"));
-                stage.setGraphic(Icons.stageAll());
-                stage.setOnAction(a -> actions.stage(e.path()));
-                menu.getItems().add(stage);
-            }
-            if (f.group() != Group.STAGED) {
-                MenuItem discard =
-                        new MenuItem(e.untracked() ? tr("gitpanel.menu.deleteUntracked") : tr("gitpanel.menu.discard"));
-                discard.setGraphic(Icons.trash());
-                discard.setOnAction(a -> actions.discard(e.path(), e.untracked()));
-                menu.getItems().add(discard);
-            }
-            return menu;
         }
     }
 }
