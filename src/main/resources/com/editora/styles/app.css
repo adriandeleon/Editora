@@ -1142,8 +1142,13 @@
     -fx-border-width: 0 2 0 0;
 }
 
+/* Subtle ground, NOT the content's default: a panel's own fill is visible only in the top inset that
+   ToolWindowManager.applyPanelTopInset pads in to drop the header to its stripe button — the header and
+   the content paint over everything else. That inset sits in the same row as the editor's tab strip and
+   the tool stripes' matching inset, both of which are -color-bg-subtle, so a default-ground panel cut a
+   white notch out of an otherwise continuous band across the top of the window. */
 .tool-window {
-    -fx-background-color: -color-bg-default;
+    -fx-background-color: -color-bg-subtle;
 }
 
 .tool-window-header {
@@ -3313,7 +3318,12 @@
    fill, which separates it from the content without a rule under it.
    NOT touched: `.split-pane-divider`, the resize handle. */
 .tool-window {
-    -fx-background-radius: 8;
+    /* Square at the top: the panel's own fill shows only in its top inset, which is meant to read as
+       part of the chrome band across the window (see the fill rule above) — rounding it there would
+       punch two corner nicks of the ground behind into that band. The card rounding a reader actually
+       sees is the header's, below. The bottom corners never show (the content paints square over
+       them), so they keep the 8 the rest of the kit uses. */
+    -fx-background-radius: 0 0 8 8;
     -fx-border-width: 0;
 }
 .tool-window-header {
