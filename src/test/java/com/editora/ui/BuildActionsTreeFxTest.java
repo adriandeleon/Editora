@@ -188,6 +188,130 @@ class BuildActionsTreeFxTest {
         assertEquals(List.of(), ranToggle.get(), "the vanished toggle must not still contribute its argv");
     }
 
+    private static javafx.scene.control.TextField filterOf(BuildActionsTree panel) {
+        return FxTestSupport.field(panel, "filterField");
+    }
+
+    /** The task labels currently rendered, section by section, flattened. */
+    private static List<String> renderedLabels(BuildActionsTree panel) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            List<String> out = new ArrayList<>();
+            TreeItem<Object> root = treeOf(panel).getRoot();
+            if (root == null) {
+                return out;
+            }
+            for (TreeItem<Object> section : root.getChildren()) {
+                for (TreeItem<Object> row : section.getChildren()) {
+                    out.add(String.valueOf(row.getValue()));
+                }
+            }
+            return out;
+        });
+    }
+
+    @Test
+    void filterNarrowsTheTaskRows() throws Exception {
+        BuildActionsTree panel = FxTestSupport.callOnFx(() -> {
+            BuildActionsTree p = new BuildActionsTree();
+            p.setProvider(new StaticProvider("package"));
+            return p;
+        });
+        assertEquals(2, renderedLabels(panel).size(), "package + test before filtering");
+
+        FxTestSupport.runOnFx(() -> filterOf(panel).setText("tes"));
+        List<String> filtered = renderedLabels(panel);
+        assertEquals(1, filtered.size(), "only the matching task stays");
+        assertTrue(filtered.get(0).contains("test"), filtered.toString());
+
+        // Clearing restores everything.
+        FxTestSupport.runOnFx(() -> filterOf(panel).clear());
+        assertEquals(2, renderedLabels(panel).size(), "clearing the filter restores every task");
+    }
+
+    @Test
+    void aSectionTitleMatchKeepsTheWholeSection() throws Exception {
+        BuildActionsTree panel = FxTestSupport.callOnFx(() -> {
+            BuildActionsTree p = new BuildActionsTree();
+            p.setProvider(new StaticProvider("package"));
+            return p;
+        });
+        FxTestSupport.runOnFx(() -> filterOf(panel).setText("lifecycle"));
+        assertEquals(2, renderedLabels(panel).size(), "matching the section title lists all its tasks");
+    }
+
+    @Test
+    void aFilterMatchingNothingEmptiesTheTree() throws Exception {
+        BuildActionsTree panel = FxTestSupport.callOnFx(() -> {
+            BuildActionsTree p = new BuildActionsTree();
+            p.setProvider(new StaticProvider("package"));
+            return p;
+        });
+        FxTestSupport.runOnFx(() -> filterOf(panel).setText("nothing-matches-this"));
+        assertNull(FxTestSupport.callOnFx(() -> treeOf(panel).getRoot()), "no matches ⇒ placeholder, no tree");
+
+        // …and a re-detect while that filter is active must not restore the rows behind it. (The
+        // unchanged-sections fast path in setProvider has to account for the filter, not just the tasks.)
+        FxTestSupport.runOnFx(() -> panel.setProvider(new StaticProvider("package")));
+        assertNull(FxTestSupport.callOnFx(() -> treeOf(panel).getRoot()), "the filter still applies after a re-detect");
+    }
+
+    @Test
+    void aFilterHidingAToggleDoesNotDeactivateIt() throws Exception {
+        AtomicReference<List<String>> ranToggle = new AtomicReference<>();
+        BuildActionsTree panel = FxTestSupport.callOnFx(() -> {
+            BuildActionsTree p = new BuildActionsTree();
+            p.setOnRun((taskArgs, toggleArgs) -> ranToggle.set(toggleArgs));
+            p.setProvider(new FakeProvider());
+            return p;
+        });
+        FxTestSupport.call(
+                panel,
+                "toggle",
+                new Class<?>[] {BuildAction.Toggle.class, boolean.class},
+                new BuildAction.Toggle("dist", "dist"),
+                true);
+        // Filtering to the tasks hides the toggle's row — but filtering is a view, so it stays active.
+        FxTestSupport.runOnFx(() -> filterOf(panel).setText("package"));
+        FxTestSupport.runOnFx(() -> {
+            TreeView<Object> tree = treeOf(panel);
+            tree.getSelectionModel()
+                    .select(tree.getRoot().getChildren().get(0).getChildren().get(0));
+        });
+        FxTestSupport.invoke(panel, "runSelected");
+        assertEquals(List.of("-Pdist"), ranToggle.get(), "a hidden toggle keeps contributing its argv");
+    }
+
+    @Test
+    void ctrlNAndCtrlPMoveTheSelection() throws Exception {
+        BuildActionsTree panel = FxTestSupport.callOnFx(() -> {
+            BuildActionsTree p = new BuildActionsTree();
+            p.setProvider(new StaticProvider("package"));
+            return p;
+        });
+        // The panel marks itself editora.ownsKeys, so the global dispatcher hands these chords over —
+        // without the panel's own handler they do nothing at all.
+        FxTestSupport.runOnFx(() -> treeOf(panel).getSelectionModel().select(0));
+        FxTestSupport.runOnFx(() -> pressCtrl(panel, javafx.scene.input.KeyCode.N));
+        assertEquals(
+                1,
+                (int) FxTestSupport.callOnFx(
+                        () -> treeOf(panel).getSelectionModel().getSelectedIndex()),
+                "C-n moves down");
+        FxTestSupport.runOnFx(() -> pressCtrl(panel, javafx.scene.input.KeyCode.P));
+        assertEquals(
+                0,
+                (int) FxTestSupport.callOnFx(
+                        () -> treeOf(panel).getSelectionModel().getSelectedIndex()),
+                "C-p moves back up");
+    }
+
+    /** Fires a Ctrl+&lt;code&gt; KEY_PRESSED at the panel's tree, as the scene would. */
+    private static void pressCtrl(BuildActionsTree panel, javafx.scene.input.KeyCode code) {
+        treeOf(panel)
+                .fireEvent(new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_PRESSED, "", "", code, false, true, false, false));
+    }
+
     @Test
     void anUnchangedReDetectKeepsTheSelection() throws Exception {
         // BuildCoordinator.refresh() re-parses on every save / tab switch / focus-regain and hands over a

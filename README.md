@@ -392,7 +392,9 @@ Editora is built with the help of AI coding tools.
   **tasks tool window** (its stripe appears only when the tool's marker file is present): a browsable tree of
   the tool's goals/scripts/targets with a mini toolbar (Run / Reload / Stop / Run custom…), double-click or
   Enter to run, streaming to a shared **Output** window with one tab per tool (Maven/npm/Cargo/Go/Gradle),
-  alongside its Git / GitHub / CI tabs.
+  alongside its Git / GitHub / CI tabs. Each tasks window has a **filter box** (focused when the window
+  opens; Down/Enter step into and run the results) and Emacs navigation in the tree — `C-n`/`C-p` to move,
+  `C-f`/`C-b` to expand/collapse a section — like the Bookmarks and Personal Notes windows.
   The same actions are also a searchable command-palette popup (`<tool>.showActions`):
   - **Maven** (`pom.xml`) — the standard lifecycle phases, the pom's declared profiles (checkable, composing
     with a run via `-P`), and each plugin's explicitly-bound goals (`spotless:check`, `jacoco:report`, …),
