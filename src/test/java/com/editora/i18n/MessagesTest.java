@@ -38,6 +38,57 @@ class MessagesTest {
         return p;
     }
 
+    /** The raw lines of one catalog — the parity checks read parsed keys, which hides malformed lines. */
+    private static List<String> readLines(String suffix) {
+        try (InputStream in =
+                Messages.class.getResourceAsStream("/com/editora/i18n/messages" + suffix + ".properties")) {
+            assertTrue(in != null, "missing catalog: " + suffix);
+            return List.of(new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n", -1));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Every line is a comment, blank, a continuation, or {@code key=value}.
+     *
+     * <p>The parity check cannot see this. A merge writes SYMMETRIC conflict markers into all six catalogs
+     * at once, and {@code Properties.load} turns each marker into a key with an empty value — so the key
+     * sets still match and a full {@code verify} passes with {@code <<<<<<< HEAD} sitting in the shipped
+     * resources. Observed, not hypothesised: it is how a conflicted cherry-pick went green here.
+     */
+    @Test
+    void noCatalogHasAMalformedLine() {
+        for (String lang : ALL_CATALOGS) {
+            String suffix = lang.isEmpty() ? "" : "_" + lang;
+            List<String> lines = readLines(suffix);
+            boolean continuation = false;
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                boolean wasContinuation = continuation;
+                continuation = endsWithOddBackslashes(line);
+                String trimmed = line.strip();
+                if (wasContinuation || trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("!")) {
+                    continue;
+                }
+                String where = "messages" + suffix + ".properties:" + (i + 1);
+                assertFalse(
+                        trimmed.startsWith("<<<<<<<") || trimmed.startsWith(">>>>>>>") || trimmed.equals("======="),
+                        where + " is an unresolved merge conflict marker: " + trimmed);
+                assertTrue(trimmed.indexOf('=') > 0, where + " is neither a comment nor key=value: " + trimmed);
+            }
+        }
+    }
+
+    /** True when the line ends inside an escape, i.e. the next line continues this value. */
+    private static boolean endsWithOddBackslashes(String line) {
+        int n = 0;
+        for (int i = line.length() - 1; i >= 0 && line.charAt(i) == '\\'; i--) {
+            n++;
+        }
+        return n % 2 == 1;
+    }
+
     @Test
     void translationCatalogsHaveExactlyTheBaseKeySet() {
         Properties base = loadProps("/com/editora/i18n/messages.properties");
