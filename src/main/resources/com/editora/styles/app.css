@@ -1399,10 +1399,11 @@
 .message-log-list .list-cell:filled:selected {
     -fx-background-color: -state-sel;
 }
-/* Small, muted, monospace time indicator so timestamps line up in a column. */
+/* Small, muted time indicator. Inherits the UI chrome font (ui-font.css) like the rest of the overlay
+   surfaces: an explicit -fx-font-family here would beat the inherited value and leave one monospace
+   column in an otherwise Inter popup. Digits no longer align perfectly in exchange. */
 .message-log-time {
     -fx-text-fill: -color-fg-muted;
-    -fx-font-family: "JetBrains Mono", "monospace";
     -fx-font-size: 11px;
 }
 .message-log-text {
@@ -2176,8 +2177,8 @@
 .command-palette .palette-input-row {
     -fx-padding: 4 10 8 10;
 }
+/* The chord chip in the palette input row. Chrome font, not monospace — see .message-log-time. */
 .command-palette .palette-prefix {
-    -fx-font-family: "JetBrains Mono", monospace;
     -fx-font-size: 11px;
     -fx-font-weight: bold;
     -fx-text-fill: -color-accent-fg;
@@ -2848,9 +2849,9 @@
 .fif-popup .ws-symbol-detail { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
 .fif-popup .fif-count { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
 .fif-popup .fif-match-row { -fx-padding: 0 0 0 16; }
+/* Line number on a Find-in-Files match row. Chrome font — see .message-log-time. */
 .fif-popup .fif-line {
     -fx-text-fill: -color-fg-muted;
-    -fx-font-family: monospace;
     -fx-font-size: 0.85em;
     -fx-min-width: 40;
 }
