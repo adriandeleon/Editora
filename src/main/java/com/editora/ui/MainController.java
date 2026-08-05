@@ -3824,6 +3824,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public List<com.editora.config.RunConfiguration> runConfigurations() {
+            return List.copyOf(config.getWorkspaceState().getRunConfigurations());
+        }
+
+        @Override
+        public String selectedRunConfigName() {
+            return config.getWorkspaceState().getSelectedRunConfig();
+        }
+
+        @Override
         public void resolveJavaMainClasses(
                 java.nio.file.Path routingFile, java.util.function.Consumer<List<com.editora.run.JavaMainClass>> cb) {
             // The routing file may be a background tab whose server start was deferred; open it first or

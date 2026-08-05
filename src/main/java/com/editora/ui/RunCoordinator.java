@@ -55,6 +55,12 @@ final class RunCoordinator {
         /** Whether a project main class can be resolved+run (jdtls + the java-debug bundle available today). */
         boolean javaLaunchAvailable();
 
+        /** This window's saved run configurations (empty when none). */
+        List<RunConfiguration> runConfigurations();
+
+        /** The configuration name selected in the toolbar, or blank. */
+        String selectedRunConfigName();
+
         /** Enumerates {@code routingFile}'s project main classes (empty if none/unavailable). FX thread. */
         void resolveJavaMainClasses(Path routingFile, Consumer<List<JavaMainClass>> cb);
 
@@ -416,6 +422,15 @@ final class RunCoordinator {
         if (b.isDirty() && !ops.saveBuffer(b)) {
             return;
         }
+        // A saved configuration is the user's stated intent for how this project runs: the before-launch
+        // build, the program and VM arguments, the environment, the working directory. The ad-hoc path below
+        // has none of that — which is exactly why a freshly generated project's gutter ▶ launched against an
+        // empty target/classes. So in a Maven/Gradle project, run the configuration instead.
+        RunConfiguration configured = configurationForGutterRun(targetFqn, root);
+        if (configured != null) {
+            runConfig(configured);
+            return;
+        }
         if (ops.javaLaunchAvailable()) {
             runViaJdtls(routing, root, targetFqn); // fast + project-wide enumeration
         } else if (ops.mavenProjectAt(root)) {
@@ -426,6 +441,56 @@ final class RunCoordinator {
         } else {
             host.setStatus(tr("status.run.javaUnavailable"));
         }
+    }
+
+    /**
+     * The saved configuration the gutter ▶ should run for {@code targetFqn}, or null to fall back to the
+     * ad-hoc main-class run.
+     *
+     * <p>Preference order, and why:
+     *
+     * <ol>
+     *   <li>a configuration that launches <b>this</b> class — never surprising, and the case a generated
+     *       project lands in;
+     *   <li>otherwise the toolbar's selected configuration, so the ▶ is as capable as the Run button.
+     * </ol>
+     *
+     * <p>Only in a Maven/Gradle project: elsewhere there is no build for a before-launch step to run and the
+     * ad-hoc path is the whole story. A compact source file never reaches here — {@code EditorBuffer} routes
+     * those to their own handler.
+     */
+    /**
+     * The configuration a gutter ▶ should launch, or null to keep the ad-hoc main-class run.
+     *
+     * <p>In a Maven/Gradle project the configuration is the better launch: it carries the before-launch build,
+     * program/VM arguments, working dir and env that a bare "run this main class" has none of — so a generated
+     * project whose {@code target/classes} was empty launched and failed. The configuration naming the clicked
+     * class wins; only if none does do we fall back to whatever the toolbar has selected. Outside a build tool
+     * there is nothing for a before-launch step to do, so the plain path stays.
+     */
+    private RunConfiguration configurationForGutterRun(String targetFqn, Path root) {
+        if (root == null || !(ops.mavenProjectAt(root) || ops.gradleProjectAt(root))) {
+            return null;
+        }
+        List<RunConfiguration> all = ops.runConfigurations();
+        if (all == null || all.isEmpty()) {
+            return null;
+        }
+        if (targetFqn != null && !targetFqn.isBlank()) {
+            for (RunConfiguration c : all) {
+                if (c.isJava() && targetFqn.equals(c.mainClass())) {
+                    return c;
+                }
+            }
+        }
+        String selected = ops.selectedRunConfigName();
+        if (selected == null || selected.isBlank()) {
+            return null;
+        }
+        return all.stream()
+                .filter(c -> c.isJava() && selected.equals(c.name()))
+                .findFirst()
+                .orElse(null);
     }
 
     private void runViaJdtls(Path routing, Path root, String targetFqn) {

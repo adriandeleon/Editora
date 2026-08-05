@@ -19,6 +19,7 @@ import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * Launching a <em>saved</em> Java run configuration must resolve its classpath through the entry jdtls itself
@@ -97,6 +98,20 @@ class RunConfigLaunchFxTest {
             return true;
         }
 
+        List<RunConfiguration> configs = List.of();
+        String selected = "";
+        boolean maven = true;
+
+        @Override
+        public List<RunConfiguration> runConfigurations() {
+            return configs;
+        }
+
+        @Override
+        public String selectedRunConfigName() {
+            return selected;
+        }
+
         @Override
         public void resolveJavaMainClasses(Path routingFile, Consumer<List<JavaMainClass>> cb) {
             cb.accept(enumerated);
@@ -110,7 +125,7 @@ class RunConfigLaunchFxTest {
 
         @Override
         public boolean mavenProjectAt(Path r) {
-            return true;
+            return maven;
         }
 
         @Override
@@ -156,5 +171,58 @@ class RunConfigLaunchFxTest {
         JavaMainClass used = ops.resolvedWith.get();
         assertNotNull(used);
         assertEquals("myproj", used.projectName(), "the configuration's own value is the fallback");
+    }
+
+    private static RunConfiguration cfg(String name, String mainClass) {
+        return new RunConfiguration(name, "run", "java", "", mainClass, name, "", "", "/tmp", "", "");
+    }
+
+    /**
+     * The new decision function directly. The launch plumbing it delegates to ({@code runConfig} →
+     * {@code runJavaConfig}) is already covered by the two tests above, so this pins only what was added:
+     * WHICH configuration a gutter ▶ picks.
+     */
+    private RunConfiguration choose(RecordingOps ops, String fqn) throws Exception {
+        RunCoordinator c = new RunCoordinator(FxTestSupport.field(fx.controller, "coordinatorHost"), ops);
+        java.lang.reflect.Method m =
+                RunCoordinator.class.getDeclaredMethod("configurationForGutterRun", String.class, Path.class);
+        m.setAccessible(true);
+        return (RunConfiguration) m.invoke(c, fqn, root);
+    }
+
+    @Test
+    void theGutterPlayButtonPrefersTheConfigurationForThatClass() throws Exception {
+        // The ad-hoc path carries no before-launch build, args or env — which is why a generated project's
+        // gutter ▶ launched against an empty target/classes.
+        RecordingOps ops = new RecordingOps();
+        ops.configs = List.of(cfg("other", "com.example.Other"), cfg("demo", "com.example.demo.App"));
+        ops.selected = "other";
+        assertEquals(
+                "demo",
+                choose(ops, "com.example.demo.App").name(),
+                "the configuration for the clicked class wins over the toolbar selection");
+    }
+
+    @Test
+    void withNoMatchingConfigurationItFallsBackToTheSelectedOne() throws Exception {
+        RecordingOps ops = new RecordingOps();
+        ops.configs = List.of(cfg("demo", "com.example.demo.App"));
+        ops.selected = "demo";
+        assertEquals("demo", choose(ops, "com.example.Unconfigured").name());
+    }
+
+    @Test
+    void outsideAMavenOrGradleProjectTheAdHocPathIsKept() throws Exception {
+        // No build means nothing for a before-launch step to run; the plain main-class run is the whole story.
+        RecordingOps ops = new RecordingOps();
+        ops.configs = List.of(cfg("demo", "com.example.demo.App"));
+        ops.selected = "demo";
+        ops.maven = false;
+        assertNull(choose(ops, "com.example.demo.App"));
+    }
+
+    @Test
+    void withNoConfigurationsAtAllTheAdHocPathIsKept() throws Exception {
+        assertNull(choose(new RecordingOps(), "com.example.demo.App"));
     }
 }
