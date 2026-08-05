@@ -173,9 +173,33 @@ public class ToolWindowManager {
         // Without this subtraction, giving the buttons breathing room silently walks the first icon down
         // past the text it is supposed to sit beside.
         long top = Math.max(0, Math.round(tabHeaderHeight) - STRIPE_BUTTON_TOP_INSET);
+        verticalStripeTopInset = top;
         String style = "-fx-padding: " + top + "px 0 8px 0;";
         leftStripe.setStyle(style);
         rightStripe.setStyle(style);
+        for (Map.Entry<ToolWindow, Region> e : panels.entrySet()) {
+            applyPanelTopInset(e.getKey(), e.getValue());
+        }
+    }
+
+    /** The inset the vertical stripes carry, so a panel opened later starts at the same line. */
+    private double verticalStripeTopInset;
+
+    /**
+     * Drops a left/right tool window's header to the first stripe button.
+     *
+     * <p>The stripes and the split holding the panels are siblings of one {@link BorderPane}, so they share
+     * a top edge — and the stripes are deliberately inset to line their first glyph up with the editor's
+     * first line of code. Without the same inset the panel's header sits a tab-strip's height above the
+     * stripe button that opened it, which reads as two competing top edges.
+     *
+     * <p>Bottom panels live below the horizontal split and are never inset. The inset is an inline style
+     * for the reason given on {@link #applyStripeTopInset}, and is safe to overwrite wholesale because
+     * {@code ToolWindowPanel} sets no inline style of its own.
+     */
+    private void applyPanelTopInset(ToolWindow tw, Region panel) {
+        boolean vertical = currentSide(tw) != ToolWindow.Side.BOTTOM;
+        panel.setStyle(vertical ? "-fx-padding: " + Math.round(verticalStripeTopInset) + "px 0 0 0;" : "");
     }
 
     /** Mirrors {@code .tool-stripe-button}'s top inset in app.css — keep the two in step. */
@@ -560,21 +584,33 @@ public class ToolWindowManager {
         ToolWindowPanel panel = new ToolWindowPanel(tw, () -> close(tw));
         panels.put(tw, panel);
         openBySide.put(side, tw);
+        applyPanelTopInset(tw, panel); // match the stripe the button that opened it sits on
+        boolean firstOpen = !config.getWorkspaceState().getToolWindowSizes().containsKey(tw.getId());
+        double pos = dividerFor(tw, side);
         switch (side) {
             case LEFT -> {
                 hSplit.getItems().add(0, panel);
-                double pos = config.getWorkspaceState().getLeftDividerPosition();
-                Platform.runLater(() -> hSplit.setDividerPosition(0, pos));
+                Platform.runLater(() -> {
+                    hSplit.setDividerPosition(0, pos);
+                    // A pulse later, so the fit sees the panel at its remembered width rather than the
+                    // previous layout's — a SplitPane only settles a position on a layout pass.
+                    if (firstOpen) {
+                        Platform.runLater(() -> fitToContent(panel, 0, true));
+                    }
+                });
             }
             case RIGHT -> {
                 hSplit.getItems().add(panel);
-                double pos = config.getWorkspaceState().getRightDividerPosition();
                 int dividerIdx = hSplit.getItems().size() - 2;
-                Platform.runLater(() -> hSplit.setDividerPosition(dividerIdx, pos));
+                Platform.runLater(() -> {
+                    hSplit.setDividerPosition(dividerIdx, pos);
+                    if (firstOpen) {
+                        Platform.runLater(() -> fitToContent(panel, dividerIdx, false));
+                    }
+                });
             }
             case BOTTOM -> {
                 vSplit.getItems().add(panel);
-                double pos = config.getWorkspaceState().getBottomDividerPosition();
                 Platform.runLater(() -> vSplit.setDividerPosition(0, pos));
             }
         }
@@ -596,24 +632,30 @@ public class ToolWindowManager {
      * captures it when a tool window is actually hidden, so a quit-while-open would otherwise lose it.
      */
     public void persistDividers() {
-        WorkspaceState state = config.getWorkspaceState();
         ToolWindow left = openBySide.get(ToolWindow.Side.LEFT);
         if (left != null) {
             int idx = hSplit.getItems().indexOf(panels.get(left));
             if (idx >= 0 && idx < hSplit.getDividers().size()) {
-                state.setLeftDividerPosition(hSplit.getDividers().get(idx).getPosition());
+                rememberDivider(
+                        left,
+                        ToolWindow.Side.LEFT,
+                        hSplit.getDividers().get(idx).getPosition());
             }
         }
         ToolWindow right = openBySide.get(ToolWindow.Side.RIGHT);
         if (right != null) {
             int idx = hSplit.getItems().indexOf(panels.get(right));
             if (idx > 0 && idx - 1 < hSplit.getDividers().size()) {
-                state.setRightDividerPosition(hSplit.getDividers().get(idx - 1).getPosition());
+                rememberDivider(
+                        right,
+                        ToolWindow.Side.RIGHT,
+                        hSplit.getDividers().get(idx - 1).getPosition());
             }
         }
         ToolWindow bottom = openBySide.get(ToolWindow.Side.BOTTOM);
         if (bottom != null && !vSplit.getDividers().isEmpty()) {
-            state.setBottomDividerPosition(vSplit.getDividers().get(0).getPosition());
+            rememberDivider(
+                    bottom, ToolWindow.Side.BOTTOM, vSplit.getDividers().get(0).getPosition());
         }
     }
 
@@ -623,28 +665,24 @@ public class ToolWindowManager {
             return;
         }
         ToolWindow.Side side = currentSide(tw);
-        WorkspaceState settings = config.getWorkspaceState();
         switch (side) {
             case LEFT -> {
                 int idx = hSplit.getItems().indexOf(panel);
                 if (idx >= 0 && idx < hSplit.getDividers().size()) {
-                    settings.setLeftDividerPosition(
-                            hSplit.getDividers().get(idx).getPosition());
+                    rememberDivider(tw, side, hSplit.getDividers().get(idx).getPosition());
                 }
                 hSplit.getItems().remove(panel);
             }
             case RIGHT -> {
                 int idx = hSplit.getItems().indexOf(panel);
                 if (idx > 0 && idx - 1 < hSplit.getDividers().size()) {
-                    settings.setRightDividerPosition(
-                            hSplit.getDividers().get(idx - 1).getPosition());
+                    rememberDivider(tw, side, hSplit.getDividers().get(idx - 1).getPosition());
                 }
                 hSplit.getItems().remove(panel);
             }
             case BOTTOM -> {
                 if (!vSplit.getDividers().isEmpty()) {
-                    settings.setBottomDividerPosition(
-                            vSplit.getDividers().get(0).getPosition());
+                    rememberDivider(tw, side, vSplit.getDividers().get(0).getPosition());
                 }
                 vSplit.getItems().remove(panel);
             }
@@ -784,6 +822,73 @@ public class ToolWindowManager {
         order.add(after ? ti + 1 : ti, src.getId());
         relayoutStripe(currentSide(target));
         config.save();
+    }
+
+    /**
+     * The split fraction this window should open at: its own remembered size, else its side's.
+     *
+     * <p>Sizes used to be per SIDE only — three numbers for every window docked there — so opening the
+     * Project tree at 22% and then the Structure outline left both at whatever the last one was dragged to.
+     * The per-side value is still kept up to date and is what a never-opened window inherits, so a first
+     * open is no worse than it was.
+     */
+    private double dividerFor(ToolWindow tw, ToolWindow.Side side) {
+        WorkspaceState s = config.getWorkspaceState();
+        Double own = s.getToolWindowSizes().get(tw.getId());
+        if (own != null) {
+            return own;
+        }
+        return switch (side) {
+            case LEFT -> s.getLeftDividerPosition();
+            case RIGHT -> s.getRightDividerPosition();
+            case BOTTOM -> s.getBottomDividerPosition();
+        };
+    }
+
+    /** Records a window's size against its own id, and as its side's default for the next new window. */
+    private void rememberDivider(ToolWindow tw, ToolWindow.Side side, double pos) {
+        WorkspaceState s = config.getWorkspaceState();
+        s.getToolWindowSizes().put(tw.getId(), pos);
+        switch (side) {
+            case LEFT -> s.setLeftDividerPosition(pos);
+            case RIGHT -> s.setRightDividerPosition(pos);
+            case BOTTOM -> s.setBottomDividerPosition(pos);
+        }
+    }
+
+    /**
+     * On a window's FIRST open, widens it so its content stops needing a horizontal scrollbar.
+     *
+     * <p>Gated on a scrollbar actually being there rather than on the preferred width alone: the panels
+     * that overflow are trees and lists, and a virtualized control's preferred width is a constant, not a
+     * measure of its content — so asking it unprompted would answer confidently and wrongly. Seeing the
+     * scrollbar first means the width it then reports is at worst a harmless over-estimate, and the fit
+     * only ever widens, never shrinks.
+     *
+     * <p>Best-effort by nature, and only on a first open (afterwards the user's own size wins): the fit is
+     * a snapshot of the rows visible at that moment, so expanding a deep tree node later can still bring
+     * the scrollbar back.
+     */
+    private void fitToContent(Region panel, int dividerIdx, boolean leftSide) {
+        if (dividerIdx < 0 || dividerIdx >= hSplit.getDividers().size() || !overflowsHorizontally(panel)) {
+            return;
+        }
+        double pos = ToolWindowFit.fraction(panel.prefWidth(-1), panel.getWidth(), hSplit.getWidth(), leftSide);
+        if (pos != ToolWindowFit.NO_CHANGE) {
+            hSplit.setDividerPosition(dividerIdx, pos);
+        }
+    }
+
+    /** True while anything inside the panel is showing a horizontal scrollbar. */
+    private static boolean overflowsHorizontally(Region panel) {
+        for (Node n : panel.lookupAll(".scroll-bar")) {
+            if (n instanceof javafx.scene.control.ScrollBar sb
+                    && sb.getOrientation() == Orientation.HORIZONTAL
+                    && sb.isVisible()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void persist() {

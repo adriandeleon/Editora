@@ -169,7 +169,8 @@ public enum ConfigSchema {
                     1, ConfigMigrations::identity,
                     2, ConfigMigrations::identity,
                     3, ConfigMigrations::identity,
-                    4, ConfigMigrations::identity)), // v4→5: + manualFoldRegions (additive)
+                    4, ConfigMigrations::identity, // v4→5: + manualFoldRegions (additive)
+                    5, ConfigMigrations::identity)), // v5→6: + toolWindowSizes (additive)
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.
