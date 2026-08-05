@@ -25,8 +25,12 @@ public class WorkspaceState {
      * {@code java}, which is what every pre-existing configuration was, so this is identity too.
      *
      * <p>v3 → v4 added {@code selectedRunConfig} (the toolbar selection); blank by default, identity.
+     *
+     * <p>v6 → v7 <em>removed</em> {@code kind} from {@link RunConfiguration}. Identity all the same: an
+     * unknown field is ignored on load and dropped on the next write, and running or debugging is now the
+     * caller's choice rather than something the entry declares.
      */
-    public static final int SCHEMA_VERSION = 6;
+    public static final int SCHEMA_VERSION = 7;
 
     private int schemaVersion = SCHEMA_VERSION;
 

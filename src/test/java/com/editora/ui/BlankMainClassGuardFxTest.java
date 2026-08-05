@@ -40,7 +40,7 @@ class BlankMainClassGuardFxTest {
 
     /** What Settings → Run Configurations → Add produces, verbatim. */
     private static RunConfiguration freshlyAdded() {
-        return new RunConfiguration("New configuration", "run", "", "", "", "", "");
+        return new RunConfiguration("New configuration", "", "", "", "", "");
     }
 
     /** Configurations the guard took us to, in order. */
@@ -117,7 +117,7 @@ class BlankMainClassGuardFxTest {
     /** A script configuration missing its script gets the same treatment — the guard that already existed. */
     @Test
     void aScriptConfigurationWithNoScriptAlsoOpensItsForm() throws Exception {
-        RunConfiguration script = new RunConfiguration("Deploy", "run", "shell", "", "", "", "", "", "", "", "");
+        RunConfiguration script = new RunConfiguration("Deploy", "shell", "", "", "", "", "", "", "", "");
         String status = runAndReadStatus(script);
 
         assertTrue(status.contains("Deploy"), "names the configuration, got: " + status);

@@ -763,8 +763,12 @@ final class DebugCoordinator {
         startMainClassDebug(fqn);
     }
 
-    /** Debugs a saved {@link RunConfiguration} (its main class + program args; its working dir when set). VM
-     *  args aren't yet forwarded to the debug launch. */
+    /**
+     * Debugs a saved {@link RunConfiguration} — its main class, program args, VM args, environment and
+     * working directory, and its before-launch step.
+     *
+     * <p>Java only: the script types run but do not debug yet.
+     */
     void debugConfig(RunConfiguration cfg) {
         if (!cfg.isJava()) {
             // Script types run but do not debug yet. Say so plainly: falling through would resolve a Java
@@ -804,24 +808,33 @@ final class DebugCoordinator {
             return; // save whatever the user was editing before launching, as before
         }
         Path cwd = cfg.workingDir().isBlank() ? root : Path.of(cfg.workingDir());
-        // routing may be a background tab whose server start was deferred; open it on jdtls first, or the
-        // resolve below comes back "no language server for file" while jdtls is running perfectly.
-        lsp.ensureManaged(routing);
-        dapManager.resolveMainClasses(routing, options -> {
-            DapManager.MainClassOption match = options.stream()
-                    .filter(o -> cfg.mainClass().equals(o.mainClass()))
-                    .findFirst()
-                    .orElse(null);
-            if (match == null) {
-                host.setStatus(tr("status.debug.noMainClass"));
-                return;
-            }
-            ops.openToolWindow();
-            debugPanel.setSessionFile(shortName(match.mainClass()));
-            dapManager.setProgramArgs(ProgramArgs.tokenize(cfg.args()));
-            dapManager.setVmArgs(cfg.vmArgs());
-            dapManager.setEnv(com.editora.run.EnvVars.parse(cfg.env()));
-            withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, match, cwd));
+        // The same gate the Run path has always had: a failed build aborts the launch rather than debugging
+        // the previous class files, where every breakpoint would sit on a stale line number.
+        //
+        // Placed after the guards above rather than around the whole method — unlike Run, which wraps its
+        // dispatch — because those guards reject a configuration that cannot launch at all (a script type, a
+        // blank main class), and spending a multi-minute build on one before saying so is worse than not
+        // building.
+        RunCoordinator.withBeforeLaunch(host, cfg, cwd, () -> {
+            // routing may be a background tab whose server start was deferred; open it on jdtls first, or the
+            // resolve below comes back "no language server for file" while jdtls is running perfectly.
+            lsp.ensureManaged(routing);
+            dapManager.resolveMainClasses(routing, options -> {
+                DapManager.MainClassOption match = options.stream()
+                        .filter(o -> cfg.mainClass().equals(o.mainClass()))
+                        .findFirst()
+                        .orElse(null);
+                if (match == null) {
+                    host.setStatus(tr("status.debug.noMainClass"));
+                    return;
+                }
+                ops.openToolWindow();
+                debugPanel.setSessionFile(shortName(match.mainClass()));
+                dapManager.setProgramArgs(ProgramArgs.tokenize(cfg.args()));
+                dapManager.setVmArgs(cfg.vmArgs());
+                dapManager.setEnv(com.editora.run.EnvVars.parse(cfg.env()));
+                withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, match, cwd));
+            });
         });
     }
 

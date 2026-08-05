@@ -31,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A run configuration no longer picks run or debug for you.** Each entry carried a "Kind" of run or debug
+  that decided only what the *Run* button did with it — so a debug-kind entry turned Run into a second Debug
+  button and left no way to plain-run it at all. The field is gone: one configuration, two buttons. Existing
+  entries keep working; a saved kind is ignored. In exchange every configuration now gets a **Debug:
+  &lt;name&gt;** command alongside its **Run: &lt;name&gt;** one, so a keybinding can reach either verb — which
+  is the one thing Kind was genuinely good for. There is also a new **Debug: Run Configuration…** picker
+  beside the existing Run one.
+
 - **Git, GitHub and Web are no longer marked Beta.**
 
 - **The Output console appears when you are in a Git repository.** Git and GitHub write every command they run
@@ -65,6 +73,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The Maven icon is legible at icon size.** It was the official Apache Maven mark, a two-feather
   illustration whose hairline quills collapsed into a smudge at 19px; it is now a single bold feather.
+
+### Fixed
+
+- **Debugging now runs a configuration's before-launch step.** Only the Run path did. A configuration whose
+  before-launch was `mvn -q compile` therefore compiled when you pressed Run and silently debugged the
+  *previous* class files when you pressed Debug — every breakpoint landing on a stale line number, in the one
+  mode where that is hardest to spot. A failing step now aborts the debug launch, exactly as it aborts a run.
 
 ## [0.10.0] - 2026-08-03
 

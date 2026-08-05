@@ -4,19 +4,26 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
- * A saved run/debug configuration: a {@code name}, whether it runs or debugs
- * ({@code kind} = {@code "run"}/{@code "debug"}), the {@code mainClass} (fully-qualified) + its {@code
+ * A saved launch configuration: a {@code name}, the {@code mainClass} (fully-qualified) + its {@code
  * projectName} (multi-module), program {@code args}, JVM {@code vmArgs}, an optional {@code workingDir}
  * (blank ⇒ the project root), and {@code env} — environment variables as quote-aware {@code KEY=VALUE} pairs
  * (see {@code run/EnvVars}).
  *
  * <p>{@code type} says <em>what</em> is launched — {@code java} (the {@code mainClass}, resolved through
  * jdtls) or a script type handled by {@code run/ScriptRunCommand}, whose {@code target} is the script path or
- * make target. It is orthogonal to {@code kind}, which says whether to run or debug. Absent from an older
- * entry it defaults to {@code java}, so every configuration saved before types existed keeps working.
+ * make target. Absent from an older entry it defaults to {@code java}, so every configuration saved before
+ * types existed keeps working.
+ *
+ * <p>A configuration does <b>not</b> say whether to run or debug — that is the caller's choice, as in
+ * IntelliJ and VS Code. One entry backs the toolbar's Run and Debug buttons and both synthetic commands
+ * ({@link #commandIdFor} / {@link #debugCommandIdFor}). It used to carry a {@code kind} of
+ * {@code "run"}/{@code "debug"} that only decided what the <em>Run</em> button did with it, which made the
+ * Run button a duplicate of Debug and left no way to plain-run such an entry at all; a stored
+ * {@code "kind"} is now ignored on load (see {@code JsonIgnoreProperties}) and dropped on the next write.
  *
  * <p>{@code beforeLaunch} is an optional command line run first — a build, a codegen step — in the same
- * working directory; a non-zero exit aborts the launch, so a stale binary is never run by accident.
+ * working directory; a non-zero exit aborts the launch, so a stale binary is never run by accident. Both the
+ * run and the debug path honour it.
  *
  * <p>Persisted per window in {@code WorkspaceState.runConfigurations}. Jackson
  * round-trips this record; the compact constructor defaults every field so an older/partial entry loads.
@@ -24,7 +31,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record RunConfiguration(
         String name,
-        String kind,
         String type,
         String target,
         String mainClass,
@@ -35,12 +41,19 @@ public record RunConfiguration(
         String env,
         String beforeLaunch) {
 
-    /** Prefix of the synthetic per-configuration commands, so stale ones can be found and dropped. */
+    /** Prefix of the synthetic per-configuration run commands, so stale ones can be found and dropped. */
     public static final String COMMAND_PREFIX = "run.config.";
+
+    /**
+     * Prefix of the synthetic per-configuration <em>debug</em> commands.
+     *
+     * <p>Under {@code debug.} on purpose: {@code Chrome}'s feature rules gate that whole prefix, so these
+     * disappear from the palette when debugging is off or Simple UI mode is on, with no rule of their own.
+     */
+    public static final String DEBUG_COMMAND_PREFIX = "debug.config.";
 
     public RunConfiguration {
         name = name == null ? "" : name;
-        kind = kind == null ? "run" : kind;
         // Defaults to java so every configuration saved before types existed keeps working untouched.
         type = type == null || type.isBlank() ? "java" : type;
         target = target == null ? "" : target;
@@ -53,34 +66,33 @@ public record RunConfiguration(
         beforeLaunch = beforeLaunch == null ? "" : beforeLaunch;
     }
 
-    /** Back-compat constructor for callers that don't set environment variables ({@code env} = {@code ""}). */
+    /**
+     * Convenience constructor for a plain Java main-class configuration with no environment variables and no
+     * before-launch step.
+     *
+     * <p>Six arguments, deliberately: the pre-{@code kind} shapes took seven and eight, so an unconverted
+     * call site fails to compile rather than quietly re-binding {@code "run"} to {@code mainClass} and
+     * shifting every argument after it by one. Positional {@code String} constructors give no other warning.
+     */
     public RunConfiguration(
-            String name,
-            String kind,
-            String mainClass,
-            String projectName,
-            String args,
-            String vmArgs,
-            String workingDir) {
-        this(name, kind, mainClass, projectName, args, vmArgs, workingDir, "");
+            String name, String mainClass, String projectName, String args, String vmArgs, String workingDir) {
+        this(name, "java", "", mainClass, projectName, args, vmArgs, workingDir, "", "");
     }
 
-    /** Back-compat constructor for the pre-type shape: a Java main-class configuration. */
-    public RunConfiguration(
-            String name,
-            String kind,
-            String mainClass,
-            String projectName,
-            String args,
-            String vmArgs,
-            String workingDir,
-            String env) {
-        this(name, kind, "java", "", mainClass, projectName, args, vmArgs, workingDir, env, "");
-    }
-
-    /** The id of the synthetic command that launches this configuration ({@code run.config.<slug>}). */
+    /** The id of the synthetic command that runs this configuration ({@code run.config.<slug>}). */
     public static String commandIdFor(String name) {
         return COMMAND_PREFIX + slug(name);
+    }
+
+    /**
+     * The id of the synthetic command that debugs this configuration ({@code debug.config.<slug>}).
+     *
+     * <p>Its own command rather than a flag on the run one, because a command id is what a keybinding binds
+     * to: without it there is no way to bind a key — or find a palette entry — that debugs a <em>named</em>
+     * configuration, which is the one thing the old {@code kind} field genuinely provided.
+     */
+    public static String debugCommandIdFor(String name) {
+        return DEBUG_COMMAND_PREFIX + slug(name);
     }
 
     /**
@@ -137,10 +149,5 @@ public record RunConfiguration(
     @JsonIgnore
     public boolean mainClassLooksLikeAFile() {
         return isJava() && (mainClass.endsWith(".java") || mainClass.endsWith(".class"));
-    }
-
-    @JsonIgnore
-    public boolean isDebug() {
-        return "debug".equalsIgnoreCase(kind);
     }
 }
