@@ -819,6 +819,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 resetAllShortcuts();
             }
         });
+        this.settingsWindow.setRunConfigsChangedHandler(
+                this::refreshRunConfigs); // Run Configurations page edits → repopulate the toolbar selector
         this.settingsWindow.setMacrosChangedHandler(
                 this::refreshSavedMacroCommandsAllWindows); // Macros page edits → re-register commands everywhere
         this.settingsWindow.setAgentCoordinator(agentCoordinator); // AI Agent page: per-client status + combo
