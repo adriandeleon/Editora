@@ -378,6 +378,65 @@ class RunConfigToolbarFxTest {
                 "deleting them all leaves none behind");
     }
 
+    /**
+     * Stop follows the run, not the configuration list.
+     *
+     * <p>Its enabled state is computed from {@code RunCoordinator.isRunning()}, but nothing told the toolbar
+     * when that changed — {@code updateRunConfigButtons()} was reached only by a rebuild of the configuration
+     * list or a change of its selection. So the button sat disabled (and therefore grey rather than red)
+     * through the entire run it exists to interrupt, and no other test noticed because every one of them
+     * asserts after a rebuild, which is exactly when the stale value happens to be right.
+     *
+     * <p>The "while running" half is asserted <em>inside the runnable that launched it</em>: the exit is
+     * reported through {@code Platform.runLater}, so no queued callback can have run yet and a program that
+     * finishes quickly cannot race the assertion. The program is this JVM's own {@code java -version} —
+     * present on every platform the suite runs on, and it exits on its own if anything below fails.
+     */
+    @Test
+    void theStopButtonIsEnabledWhileAProgramIsRunning(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        setConfigs(List.of(java("Server")));
+        javafx.scene.control.Button stop = FxTestSupport.field(fx.controller, "runConfigStopButton");
+        assertTrue(FxTestSupport.callOnFx(stop::isDisable), "disabled with nothing running");
+
+        Object runCoordinator = FxTestSupport.field(fx.controller, "runCoordinator");
+        List<String> command = List.of(javaExecutable(), "-version");
+        FxTestSupport.runOnFx(() -> {
+            FxTestSupport.call(
+                    runCoordinator,
+                    "streamRun",
+                    new Class[] {String.class, java.nio.file.Path.class, List.class},
+                    "probe",
+                    dir,
+                    command);
+            assertFalse(stop.isDisable(), "Stop should be enabled the moment a program starts");
+        });
+
+        assertTrue(awaitStopDisabled(stop), "and disabled again once it exits");
+        setConfigs(List.of());
+    }
+
+    /** Polls the FX thread (which also drains the exit callback) until Stop goes back to disabled. */
+    private boolean awaitStopDisabled(javafx.scene.control.Button stop) throws Exception {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
+        while (System.nanoTime() < deadline) {
+            if (FxTestSupport.callOnFx(stop::isDisable)) {
+                return true;
+            }
+            Thread.sleep(25);
+        }
+        return false;
+    }
+
+    /** This JVM's own launcher — an absolute path, so it needs no PATH lookup and carries any .exe suffix. */
+    private static String javaExecutable() {
+        return ProcessHandle.current()
+                .info()
+                .command()
+                .orElseGet(() -> java.nio.file.Path.of(System.getProperty("java.home"), "bin", "java")
+                        .toString());
+    }
+
     /** Run/Debug are meaningless with nothing selected, so they are disabled rather than silently no-op. */
     @Test
     void theButtonsDisableWithNoSelection() throws Exception {
