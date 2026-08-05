@@ -1,7 +1,9 @@
 package com.editora.ui;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 import javafx.geometry.Insets;
@@ -9,6 +11,7 @@ import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -56,6 +59,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     private final Label placeholder = new Label();
     private final StackPane body = new StackPane();
     private final HBox toolbar = new HBox(2);
+    private final TextField filterField = new TextField();
     private final Button runButton;
     private final Button stopButton;
     private Button secondaryButton;
@@ -66,8 +70,12 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     /** Placeholder text for a null provider (null ⇒ the generic "nothing detected"). */
     private String emptyMessage;
 
-    /** The sections currently on screen — lets {@link #setProvider} skip a no-op re-root (see its javadoc). */
+    /** The sections currently on screen — lets {@link #setProvider} skip a no-op re-root (see its javadoc).
+     *  Held <em>unfiltered</em>, with the filter that produced the visible tree beside it, so the skip stays
+     *  correct while a filter is active (same tasks + same query ⇒ same tree). */
     private List<BuildAction.Section> rendered;
+
+    private String renderedFilter = "";
 
     private RunHandler onRun = (a, b) -> {};
     private Runnable onRefresh = () -> {};
@@ -88,6 +96,27 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         toolbar.getStyleClass().add("build-tasks-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
+        // Filter/search row, mirroring the Bookmarks / Personal Notes tool windows (same style classes, same
+        // Down/Enter hand-off into the results via FilterFieldNav).
+        filterField.setPromptText(tr("buildtree.filterPrompt"));
+        filterField.getStyleClass().add("bookmarks-filter");
+        filterField.textProperty().addListener((o, w, n) -> rebuild());
+        FilterFieldNav.install(filterField, tree, this::runSelected);
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+        Button clearFilter = new Button("✕");
+        clearFilter.getStyleClass().add("project-filter-clear");
+        clearFilter.setFocusTraversable(false);
+        clearFilter.setTooltip(new Tooltip(tr("project.filterClear")));
+        clearFilter.setOnAction(e -> {
+            filterField.clear();
+            filterField.requestFocus();
+        });
+        clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        clearFilter.managedProperty().bind(clearFilter.visibleProperty());
+        HBox filterBar = new HBox(6, filterField, clearFilter);
+        filterBar.getStyleClass().add("project-filter-bar");
+        filterBar.setAlignment(Pos.CENTER_LEFT);
+
         tree.setShowRoot(false);
         tree.getStyleClass().add("build-tasks-tree");
         tree.setCellFactory(t -> new ItemCell());
@@ -96,17 +125,13 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
                 runSelected();
             }
         });
-        tree.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == KeyCode.ENTER) {
-                runSelected();
-                e.consume();
-            }
-        });
+        tree.addEventFilter(KeyEvent.KEY_PRESSED, this::onTreeKey);
 
         placeholder.getStyleClass().add("tool-window-placeholder");
+        placeholder.setWrapText(true);
         body.getChildren().addAll(tree, placeholder);
         VBox.setVgrow(body, Priority.ALWAYS);
-        getChildren().addAll(toolbar, body);
+        getChildren().addAll(toolbar, filterBar, body);
 
         setRunning(false); // nothing is running yet — Stop must not look live on a fresh window
         setProvider(null);
@@ -182,8 +207,8 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         if (activeToggles.retainAll(toggleIds(sections))) {
             sections = provider.sections(activeToggles); // re-query without the stale ids
         }
-        if (sections.equals(rendered) && tree.getRoot() != null) {
-            return; // same tasks as what's on screen — keep the selection + scroll position
+        if (sections.equals(rendered) && filterQuery().equals(renderedFilter) && tree.getRoot() != null) {
+            return; // same tasks + same filter as what's on screen — keep the selection + scroll position
         }
         rebuild(sections);
     }
@@ -211,17 +236,26 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     }
 
     private void rebuild(List<BuildAction.Section> sections) {
-        boolean has = provider != null && sections != null;
-        placeholder.setText(emptyMessage != null ? emptyMessage : tr("buildtree.empty"));
+        String query = filterQuery();
+        boolean detected = provider != null && sections != null;
+        List<BuildAction.Section> visible = !detected || query.isEmpty() ? sections : filtered(sections, query);
+        boolean has = detected && !visible.isEmpty();
+        // "No matching tasks" only when a filter is what emptied the tree — otherwise the marker-absent /
+        // build-file-broken message the caller gave us.
+        placeholder.setText(
+                detected && !query.isEmpty()
+                        ? tr("buildtree.noMatches")
+                        : (emptyMessage != null ? emptyMessage : tr("buildtree.empty")));
         placeholder.setVisible(!has);
         tree.setVisible(has);
+        rendered = detected ? List.copyOf(sections) : null;
+        renderedFilter = query;
         if (!has) {
-            rendered = null;
             tree.setRoot(null);
             return;
         }
         TreeItem<Item> root = new TreeItem<>(null);
-        for (BuildAction.Section section : sections) {
+        for (BuildAction.Section section : visible) {
             TreeItem<Item> sectionItem = new TreeItem<>(new SectionItem(section.title()));
             sectionItem.setExpanded(true);
             for (BuildAction.Row row : section.rows()) {
@@ -232,8 +266,47 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
             }
             root.getChildren().add(sectionItem);
         }
-        rendered = List.copyOf(sections);
         tree.setRoot(root);
+    }
+
+    /** The filter text, normalized (lower-cased + stripped); empty when nothing is being filtered. */
+    private String filterQuery() {
+        String text = filterField.getText();
+        return text == null ? "" : text.strip().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * {@code sections} narrowed to what matches {@code query} (a case-insensitive substring of the row's
+     * label — or of the section title, which keeps that whole section, so "lifecycle" lists its phases).
+     * Empty sections are dropped. Purely a view: the active toggles are unaffected, so a profile checked
+     * before filtering keeps contributing its argv even while its row is hidden.
+     */
+    static List<BuildAction.Section> filtered(List<BuildAction.Section> sections, String query) {
+        List<BuildAction.Section> out = new ArrayList<>();
+        for (BuildAction.Section section : sections) {
+            if (matches(section.title(), query)) {
+                out.add(section);
+                continue;
+            }
+            List<BuildAction.Row> rows = new ArrayList<>();
+            for (BuildAction.Row row : section.rows()) {
+                if (matches(label(row), query)) {
+                    rows.add(row);
+                }
+            }
+            if (!rows.isEmpty()) {
+                out.add(new BuildAction.Section(section.title(), List.copyOf(rows)));
+            }
+        }
+        return out;
+    }
+
+    private static String label(BuildAction.Row row) {
+        return row instanceof BuildAction.Task t ? t.label() : ((BuildAction.Toggle) row).label();
+    }
+
+    private static boolean matches(String text, String query) {
+        return text != null && text.toLowerCase(Locale.ROOT).contains(query);
     }
 
     private void runSelected() {
@@ -264,9 +337,95 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
 
     @Override
     public void focusFirstItem() {
-        tree.requestFocus();
+        // Land on the filter field so the task can be typed for immediately; Down/Enter move into / run the
+        // results (FilterFieldNav), as in the Project / Bookmarks / Notes windows.
         if (tree.getRoot() != null && !tree.getRoot().getChildren().isEmpty()) {
             tree.getSelectionModel().select(0);
+        }
+        filterField.requestFocus();
+    }
+
+    /** Moves keyboard focus into the panel (the filter field), for window-switching. */
+    public void focusContent() {
+        filterField.requestFocus();
+    }
+
+    // --- keyboard navigation (mirrors BookmarksPanel / StructurePanel) ---
+
+    /**
+     * Emacs navigation inside the tree: {@code C-n}/{@code C-p} move, {@code C-f}/{@code C-b} expand a
+     * section or step out of it, and {@code Enter}/{@code C-m} runs the selected task. The panel marks
+     * itself {@code editora.ownsKeys}, so the global dispatcher leaves these chords to it — without a
+     * handler here they were simply swallowed. Plain arrows stay with the {@link TreeView} itself.
+     */
+    private void onTreeKey(KeyEvent e) {
+        if (e.getCode() == KeyCode.ENTER) {
+            runSelected();
+            e.consume();
+            return;
+        }
+        if (!e.isControlDown()) {
+            return;
+        }
+        switch (e.getCode()) {
+            case N -> {
+                move(1);
+                e.consume();
+            }
+            case P -> {
+                move(-1);
+                e.consume();
+            }
+            case F -> {
+                expandOrDescend();
+                e.consume();
+            }
+            case B -> {
+                collapseOrAscend();
+                e.consume();
+            }
+            case M -> {
+                runSelected();
+                e.consume();
+            }
+            default -> {}
+        }
+    }
+
+    /** Moves the selection by {@code delta} rows, wrapping (the BookmarksPanel behavior). */
+    private void move(int delta) {
+        int rows = tree.getExpandedItemCount();
+        if (rows == 0) {
+            return;
+        }
+        int idx = tree.getSelectionModel().getSelectedIndex();
+        int next = idx < 0 ? (delta > 0 ? 0 : rows - 1) : Math.floorMod(idx + delta, rows);
+        tree.getSelectionModel().select(next);
+        tree.scrollTo(next);
+    }
+
+    private void expandOrDescend() {
+        TreeItem<Item> item = tree.getSelectionModel().getSelectedItem();
+        if (item != null && !item.isLeaf() && !item.isExpanded()) {
+            item.setExpanded(true);
+        } else {
+            move(1);
+        }
+    }
+
+    private void collapseOrAscend() {
+        TreeItem<Item> item = tree.getSelectionModel().getSelectedItem();
+        if (item == null) {
+            move(-1);
+            return;
+        }
+        if (!item.isLeaf() && item.isExpanded()) {
+            item.setExpanded(false);
+        } else if (item.getParent() != null && item.getParent() != tree.getRoot()) {
+            tree.getSelectionModel().select(item.getParent());
+            tree.scrollTo(tree.getSelectionModel().getSelectedIndex());
+        } else {
+            move(-1);
         }
     }
 

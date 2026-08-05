@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   focused row, so the flow never needs the mouse. Each action is one `git` invocation for the whole
   selection, so one refresh — not one per file.
 
+- **Filter and keyboard-navigate the build tool windows.** The Maven, Gradle, npm, Cargo and Go task trees now
+  open with a filter box focused, the way Bookmarks and Personal Notes do: type to narrow the goals, scripts
+  or targets, Down or Enter to step into and run the result. Matching a section title (`lifecycle`) keeps that
+  whole section. Inside the tree, `C-n`/`C-p` move and `C-f`/`C-b` expand or collapse a section — chords the
+  panel used to swallow, since it takes its own keys.
+
 - **The breadcrumb no longer opens a menu taller than your screen** — clicking a folder with hundreds of
   entries used to produce a flat list you could only inch through with tiny scroll arrows. Past thirty
   entries it now splits into ranges (`android … cargo`), each opening a submenu.
