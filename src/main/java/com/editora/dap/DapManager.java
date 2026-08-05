@@ -502,6 +502,17 @@ public final class DapManager implements DapClient.Host {
             List<String> classpaths = new ArrayList<>();
             parseClasspath(res, modulepaths, classpaths);
             if (classpaths.isEmpty() && modulepaths.isEmpty()) {
+                // Log what the server ACTUALLY said. An empty classpath has two very different causes —
+                // the project genuinely isn't importable, or we failed to read a perfectly good reply — and
+                // the message below can only guess at the first. Without this the two are indistinguishable
+                // from the outside, which cost a long debugging session: jdtls was returning
+                // [[], ["…/target/classes"]] while the user was told the project hadn't imported.
+                LOG.log(
+                        Level.WARNING,
+                        () -> "resolveClasspath returned no entries for " + opt.mainClass() + " (project='"
+                                + proj + "'); raw result type="
+                                + (res == null ? "null" : res.getClass().getName())
+                                + " value=" + abbreviate(String.valueOf(res)));
                 cb.accept(ResolvedLaunch.failed("Could not resolve the classpath for " + opt.mainClass()
                         + " — make sure the Java project has finished importing (watch the LSP status), "
                         + "then try again."));
@@ -1168,8 +1179,27 @@ public final class DapManager implements DapClient.Host {
         return out;
     }
 
-    /** resolveClasspath returns {@code [modulepaths, classpaths]} (a 2-element array of string arrays). */
+    /**
+     * resolveClasspath returns {@code [modulepaths, classpaths]} (a 2-element array of string arrays).
+     *
+     * <p>Handles a raw {@link java.util.List} as well as a gson {@link JsonElement}. lsp4j deserializes an
+     * untyped {@code executeCommand} result to whichever the payload maps to, and the {@link #asJson}
+     * fallback — {@code JsonParser.parseString(String.valueOf(res))} — round-trips a {@code List} through
+     * Java's {@code toString()}, which emits <em>unquoted</em> elements. Gson's lenient parser accepts that
+     * for a plain path but not for one containing a comma, bracket or space, so a classpath entry could be
+     * silently dropped or mangled depending on where the project happens to live. Reading the list directly
+     * removes the round trip entirely.
+     */
     private static void parseClasspath(Object res, List<String> modulepaths, List<String> classpaths) {
+        if (res instanceof List<?> list) {
+            if (!list.isEmpty()) {
+                collectStrings(list.get(0), modulepaths);
+            }
+            if (list.size() >= 2) {
+                collectStrings(list.get(1), classpaths);
+            }
+            return;
+        }
         JsonElement el = asJson(res);
         if (el != null && el.isJsonArray()) {
             JsonArray arr = el.getAsJsonArray();
@@ -1178,6 +1208,23 @@ public final class DapManager implements DapClient.Host {
             }
             if (arr.size() >= 2) {
                 collectStrings(arr.get(1), classpaths);
+            }
+        }
+    }
+
+    /** Collects strings from either a gson array or a plain {@link java.util.List}. */
+    private static void collectStrings(Object maybeList, List<String> out) {
+        if (maybeList instanceof JsonElement el) {
+            collectStrings(el, out);
+            return;
+        }
+        if (maybeList instanceof List<?> list) {
+            for (Object o : list) {
+                if (o instanceof String s) {
+                    out.add(s);
+                } else if (o != null) {
+                    out.add(String.valueOf(o));
+                }
             }
         }
     }
@@ -1218,6 +1265,14 @@ public final class DapManager implements DapClient.Host {
     private static String str(JsonObject o, String key) {
         JsonElement e = o.get(key);
         return e != null && e.isJsonPrimitive() ? e.getAsString() : null;
+    }
+
+    /** Bounded rendering of a server reply for a log line — a classpath can be very long. */
+    private static String abbreviate(String s) {
+        if (s == null) {
+            return "null";
+        }
+        return s.length() <= 600 ? s : s.substring(0, 600) + "… (" + s.length() + " chars)";
     }
 
     /** lsp4j hands untyped executeCommand results back as gson {@link JsonElement}s; pass others through. */

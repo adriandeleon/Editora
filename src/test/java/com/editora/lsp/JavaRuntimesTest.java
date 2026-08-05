@@ -1,0 +1,82 @@
+package com.editora.lsp;
+
+import java.util.List;
+import java.util.Map;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class JavaRuntimesTest {
+
+    @Test
+    void readsTheModernVersionScheme() {
+        assertEquals(21, JavaRuntimes.majorFromRelease("JAVA_VERSION=\"21.0.11\"\nOS_NAME=\"Linux\"\n"));
+        assertEquals(25, JavaRuntimes.majorFromRelease("MODULES=\"x\"\nJAVA_VERSION=\"25\"\n"));
+    }
+
+    @Test
+    void readsTheLegacyOneDotEightScheme() {
+        assertEquals(8, JavaRuntimes.majorFromRelease("JAVA_VERSION=\"1.8.0_402\""));
+    }
+
+    @Test
+    void anUnreadableReleaseFileIsZeroNotAnException() {
+        assertEquals(0, JavaRuntimes.majorFromRelease(null));
+        assertEquals(0, JavaRuntimes.majorFromRelease(""));
+        assertEquals(0, JavaRuntimes.majorFromRelease("OS_NAME=\"Linux\""));
+        assertEquals(0, JavaRuntimes.majorFromRelease("JAVA_VERSION=\"unknown\""));
+        assertEquals(0, JavaRuntimes.majorFromRelease("JAVA_VERSION"));
+    }
+
+    @Test
+    void executionEnvironmentNamesMatchWhatJdtlsExpects() {
+        assertEquals("JavaSE-1.8", JavaRuntimes.executionEnvironment(8));
+        assertEquals("JavaSE-11", JavaRuntimes.executionEnvironment(11));
+        assertEquals("JavaSE-25", JavaRuntimes.executionEnvironment(25));
+    }
+
+    @Test
+    void newestFirstAndOnlyItIsDefault() {
+        List<Map<String, Object>> out = JavaRuntimes.runtimes(List.of(
+                new JavaRuntimes.Jdk(17, "/jdk17"),
+                new JavaRuntimes.Jdk(25, "/jdk25"),
+                new JavaRuntimes.Jdk(21, "/jdk21")));
+        assertEquals(
+                List.of("JavaSE-25", "JavaSE-21", "JavaSE-17"),
+                out.stream().map(m -> (String) m.get("name")).toList());
+        assertEquals(Boolean.TRUE, out.get(0).get("default"));
+        assertEquals(
+                1, out.stream().filter(m -> m.containsKey("default")).count(), "jdtls accepts at most one default");
+    }
+
+    @Test
+    void oneEntryPerExecutionEnvironment() {
+        // sdkman's "current" symlink and its target are the same JDK reached two ways; two entries naming
+        // JavaSE-25 would make jdtls reject the whole setting.
+        List<Map<String, Object>> out = JavaRuntimes.runtimes(
+                List.of(new JavaRuntimes.Jdk(25, "/jdk25"), new JavaRuntimes.Jdk(25, "/other25")));
+        assertEquals(1, out.size());
+        assertEquals("JavaSE-25", out.get(0).get("name"));
+    }
+
+    @Test
+    void junkEntriesAreDropped() {
+        assertTrue(JavaRuntimes.runtimes(null).isEmpty());
+        assertTrue(JavaRuntimes.runtimes(List.of()).isEmpty());
+        assertTrue(
+                JavaRuntimes.runtimes(List.of(new JavaRuntimes.Jdk(0, "/nope"))).isEmpty());
+        assertTrue(JavaRuntimes.runtimes(List.of(new JavaRuntimes.Jdk(21, " "))).isEmpty());
+    }
+
+    @Test
+    void discoveryFindsTheRunningJdkAtLeast() {
+        // Editora always runs on a JDK, so this can never legitimately be empty — and an empty setting is
+        // exactly the state that leaves a project's JRE container unresolved.
+        List<Map<String, Object>> out = JavaRuntimes.runtimes(JavaRuntimes.discover());
+        assertFalse(out.isEmpty(), "the JVM running the tests must be discovered");
+        assertTrue(out.stream().allMatch(m -> ((String) m.get("name")).startsWith("JavaSE-")));
+    }
+}

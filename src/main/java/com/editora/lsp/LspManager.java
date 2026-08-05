@@ -2100,9 +2100,34 @@ public final class LspManager {
      * Pure + package-private so it's directly unit-tested.
      */
     static Map<String, Object> javaInitOptions(List<String> debugBundles) {
-        Map<String, Object> autobuildOff = Map.of("java", Map.of("autobuild", Map.of("enabled", false)));
         Map<String, Object> options = new java.util.HashMap<>();
-        options.put("settings", autobuildOff);
+        options.put("settings", Map.of("java", javaSettings()));
+        return finishJavaInitOptions(options, debugBundles);
+    }
+
+    /**
+     * jdtls's {@code settings.java}: autobuild off, plus the JDKs this machine actually has.
+     *
+     * <p>{@code configuration.runtimes} is not optional polish. m2e writes a project's execution environment
+     * into its Eclipse {@code .classpath} from the pom, so {@code maven.compiler.release=17} demands
+     * {@code JavaSE-17}; jdtls can only bind that to a JDK it has been told about, and telling it nothing
+     * leaves it knowing only the JVM it runs on. A project targeting any other release then has an
+     * unresolved container, and an unresolved container makes {@code vscode.java.resolveClasspath} return an
+     * <b>empty classpath with no error</b> — which Run could only report as "the project hasn't finished
+     * importing" for a project that had imported perfectly. Declaring the real runtimes also gives jdtls a
+     * sane default to fall back to when a project's exact release isn't installed at all.
+     */
+    private static Map<String, Object> javaSettings() {
+        Map<String, Object> java = new java.util.HashMap<>();
+        java.put("autobuild", Map.of("enabled", false));
+        List<Map<String, Object>> runtimes = JavaRuntimes.runtimes(JavaRuntimes.discover());
+        if (!runtimes.isEmpty()) {
+            java.put("configuration", Map.of("runtimes", runtimes));
+        }
+        return Map.copyOf(java);
+    }
+
+    private static Map<String, Object> finishJavaInitOptions(Map<String, Object> options, List<String> debugBundles) {
         options.put("extendedClientCapabilities", javaExtendedClientCapabilities());
         if (!debugBundles.isEmpty()) {
             options.put("bundles", debugBundles);
