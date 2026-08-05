@@ -10,9 +10,11 @@ import javafx.scene.control.TreeView;
  * first row if none is selected), and <b>Enter</b> opens the selected (or first) row via {@code onEnter}.
  * Used by the Project / Structure / Bookmarks / Personal-Notes tool windows so all four behave alike.
  *
- * <p>The {@link ListView} overload (GitHub tool window) adds Emacs {@code C-n}/{@code C-p}, which move the
- * selection <em>without leaving the field</em>, so filter-then-pick needs no hand off the keyboard. The tree
- * overload has no such binding — there {@code C-n}/{@code C-p} would have to coexist with expand/collapse.
+ * <p>Both overloads also bind Emacs {@code C-n}/{@code C-p}, which move the selection <em>without leaving
+ * the field</em>, so filter-then-pick needs no hand off the keyboard. These filter fields deliberately do not
+ * install {@link com.editora.command.TextInputKeymap}, so the two chords are free here (and next-line /
+ * previous-line would mean nothing in a single-line field anyway). Expand/collapse stays {@code C-f}/{@code
+ * C-b} inside the tree, where each panel binds it.
  */
 final class FilterFieldNav {
 
@@ -31,6 +33,19 @@ final class FilterFieldNav {
                     }
                     e.consume();
                 }
+                // Only with Control — a bare n/p is a character the user is typing into the filter.
+                case N -> {
+                    if (e.isControlDown()) {
+                        selectRelative(tree, 1);
+                        e.consume();
+                    }
+                }
+                case P -> {
+                    if (e.isControlDown()) {
+                        selectRelative(tree, -1);
+                        e.consume();
+                    }
+                }
                 case ENTER -> {
                     if (tree.getSelectionModel().isEmpty() && tree.getExpandedItemCount() > 0) {
                         tree.getSelectionModel().select(0);
@@ -41,6 +56,22 @@ final class FilterFieldNav {
                 default -> {}
             }
         });
+    }
+
+    /**
+     * Moves the tree selection by {@code delta}, clamped; a selection-less tree starts at row 0.
+     * {@code clearAndSelect}, not {@code select} — on a multi-selection tree (the Commit window) plain
+     * {@code select} <em>adds</em> a row instead of moving, so each press would grow the selection.
+     */
+    private static void selectRelative(TreeView<?> tree, int delta) {
+        int rows = tree.getExpandedItemCount();
+        if (rows == 0) {
+            return;
+        }
+        int current = tree.getSelectionModel().getSelectedIndex();
+        int i = current < 0 ? 0 : Math.clamp(current + delta, 0, rows - 1);
+        tree.getSelectionModel().clearAndSelect(i);
+        tree.scrollTo(i);
     }
 
     /**

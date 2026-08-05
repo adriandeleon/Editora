@@ -3,6 +3,8 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.stream.Stream;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -13,6 +15,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -94,6 +97,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
     private final Actions actions;
     private final TreeView<Row> tree = new TreeView<>();
+    private final TextField filterField = new TextField();
+    private final HBox filterBar;
     private final TextArea message = new TextArea();
     private final Button commitButton = new Button(tr("gitpanel.commit"));
     private final Label branchLabel = new Label();
@@ -112,6 +117,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             iconButton(Icons.aiGenerate(), tr("gitpanel.aiCommitTip"), () -> onGenerateCommitMessage.run());
 
     private final HBox messageToolbar = new HBox(aiCommitButton);
+
+    /** The status last pushed by the controller, so a filter change can re-render without a fresh {@code
+     *  git status} (filtering is a view, not a refresh). */
+    private GitStatus lastStatus;
 
     private final StackPane placeholderPane;
     private final Label placeholder = new Label(tr("gitpanel.placeholder"));
@@ -137,9 +146,31 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         header.getStyleClass().add("git-toolbar");
         header.setAlignment(Pos.CENTER_LEFT);
 
+        // Filter/search row, mirroring the Bookmarks / Personal Notes tool windows (same style classes, the
+        // same Down/Enter + C-n/C-p hand-off into the results via FilterFieldNav).
+        filterField.setPromptText(tr("gitpanel.filterPrompt"));
+        filterField.getStyleClass().add("bookmarks-filter");
+        filterField.textProperty().addListener((o, w, n) -> renderFiles());
+        FilterFieldNav.install(filterField, tree, this::openSelected);
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+        Button clearFilter = new Button("✕");
+        clearFilter.getStyleClass().add("project-filter-clear");
+        clearFilter.setFocusTraversable(false);
+        clearFilter.setTooltip(new Tooltip(tr("project.filterClear")));
+        clearFilter.setOnAction(e -> {
+            filterField.clear();
+            filterField.requestFocus();
+        });
+        clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
+        clearFilter.managedProperty().bind(clearFilter.visibleProperty());
+        filterBar = new HBox(6, filterField, clearFilter);
+        filterBar.getStyleClass().add("project-filter-bar");
+        filterBar.setAlignment(Pos.CENTER_LEFT);
+
         tree.setShowRoot(false);
         tree.getStyleClass().add("git-tree");
         tree.setCellFactory(t -> new GitCell());
+        tree.addEventFilter(KeyEvent.KEY_PRESSED, this::onTreeKey);
         // Multi-select: Shift+Up/Down extends from the keyboard, Shift/Ctrl+click from the mouse, and the
         // context menu then acts on the whole selection (see actionTargets).
         tree.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
@@ -244,45 +275,78 @@ public final class GitPanel extends VBox implements ToolWindowContent {
      * "Not a Git repository" placeholder and hides the commit UI.
      */
     public void setStatus(GitStatus status) {
-        HBox header = (HBox) getProperties().get("git.header");
         if (status == null || !status.isRepo()) {
+            lastStatus = null;
             getChildren().setAll(placeholderPane);
             return;
         }
+        lastStatus = status;
         branchLabel.setText("⎇ " + (status.branch().isBlank() ? "(detached)" : status.branch()));
         updatePushIndicator(status);
 
-        TreeItem<Row> root = new TreeItem<>();
-        addGroup(
-                root,
-                Group.STAGED,
-                status.files().stream().filter(FileEntry::staged).toList());
-        addGroup(
-                root,
-                Group.MODIFIED,
-                status.files().stream().filter(FileEntry::unstaged).toList());
-        addGroup(
-                root,
-                Group.UNTRACKED,
-                status.files().stream().filter(FileEntry::untracked).toList());
-        tree.setRoot(root);
-
+        // The commit affordances read the FULL status, never the filtered view: hiding a staged file behind
+        // a filter must not disable Commit.
         boolean hasStaged = status.files().stream().anyMatch(FileEntry::staged);
         commitButton.setDisable(!hasStaged);
         commitButton.setText(tr("gitpanel.commit"));
         // Nothing to summarize without a staged diff — grey it out instead of silently no-op'ing on click.
         aiCommitButton.setDisable(!hasStaged);
 
-        if (root.getChildren().isEmpty()) {
-            Label clean = new Label(tr("gitpanel.clean"));
-            clean.getStyleClass().add("tool-window-placeholder");
-            clean.setWrapText(true);
-            StackPane cleanPane = new StackPane(clean);
-            VBox.setVgrow(cleanPane, Priority.ALWAYS);
-            getChildren().setAll(header, cleanPane, messageToolbar, message, commitButton);
-        } else {
-            getChildren().setAll(header, tree, messageToolbar, message, commitButton);
+        renderFiles();
+    }
+
+    /**
+     * (Re)builds the file tree from {@link #lastStatus} through the current filter, and swaps in the right
+     * body — the tree, the "nothing to commit" note, or a "no files match" note when a filter is what
+     * emptied it. Runs on each status push and on every filter keystroke; the filter never re-runs
+     * {@code git status}.
+     */
+    private void renderFiles() {
+        if (lastStatus == null) {
+            return;
         }
+        HBox header = (HBox) getProperties().get("git.header");
+        String query = filterQuery();
+        TreeItem<Row> root = new TreeItem<>();
+        addGroup(root, Group.STAGED, matching(lastStatus.files().stream().filter(FileEntry::staged), query));
+        addGroup(root, Group.MODIFIED, matching(lastStatus.files().stream().filter(FileEntry::unstaged), query));
+        addGroup(root, Group.UNTRACKED, matching(lastStatus.files().stream().filter(FileEntry::untracked), query));
+        tree.setRoot(root);
+
+        if (root.getChildren().isEmpty()) {
+            boolean filteredOut = !query.isEmpty() && !lastStatus.files().isEmpty();
+            Label note = new Label(filteredOut ? tr("gitpanel.noMatches") : tr("gitpanel.clean"));
+            note.getStyleClass().add("tool-window-placeholder");
+            note.setWrapText(true);
+            StackPane notePane = new StackPane(note);
+            VBox.setVgrow(notePane, Priority.ALWAYS);
+            // The filter bar stays even with nothing to show, or a filter that matches nothing would remove
+            // the only control that can clear it.
+            getChildren().setAll(header, filterBar, notePane, messageToolbar, message, commitButton);
+        } else {
+            getChildren().setAll(header, filterBar, tree, messageToolbar, message, commitButton);
+        }
+    }
+
+    /** The filter text, normalized (lower-cased + stripped); empty when nothing is being filtered. */
+    private String filterQuery() {
+        String text = filterField.getText();
+        return text == null ? "" : text.strip().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * {@code files} narrowed to those whose repo-relative path contains {@code query} (case-insensitive).
+     * A query that names a group ("staged", "untracked") is <em>not</em> special-cased here — the group's
+     * own title is matched by {@link #addGroup}, which keeps that whole group.
+     */
+    private static List<FileEntry> matching(Stream<FileEntry> files, String query) {
+        List<FileEntry> out = new ArrayList<>();
+        files.forEach(f -> {
+            if (query.isEmpty() || f.path().toLowerCase(Locale.ROOT).contains(query)) {
+                out.add(f);
+            }
+        });
+        return out;
     }
 
     /**
@@ -325,6 +389,14 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     }
 
     private void addGroup(TreeItem<Row> root, Group group, List<FileEntry> files) {
+        // A query naming the group itself ("untracked") lists that whole group, even when no path matches.
+        String query = filterQuery();
+        if (!query.isEmpty()
+                && files.isEmpty()
+                && lastStatus != null
+                && tr(group.key).toLowerCase(Locale.ROOT).contains(query)) {
+            files = allIn(group);
+        }
         if (files.isEmpty()) {
             return;
         }
@@ -336,10 +408,105 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         root.getChildren().add(node);
     }
 
+    /** Every file of {@code group} in the last status, ignoring the filter (the group-title match). */
+    private List<FileEntry> allIn(Group group) {
+        return switch (group) {
+            case STAGED -> lastStatus.files().stream().filter(FileEntry::staged).toList();
+            case MODIFIED ->
+                lastStatus.files().stream().filter(FileEntry::unstaged).toList();
+            case UNTRACKED ->
+                lastStatus.files().stream().filter(FileEntry::untracked).toList();
+        };
+    }
+
     private void openSelected() {
         TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
         if (item != null && item.getValue() instanceof FileRow f) {
             actions.open(f.entry().path());
+        }
+    }
+
+    // --- keyboard navigation (mirrors BookmarksPanel) ---
+
+    /**
+     * Emacs navigation inside the tree: {@code C-n}/{@code C-p} move, {@code C-f}/{@code C-b} expand a group
+     * or step out of it, {@code Enter}/{@code C-m} opens the selected file. The panel marks itself
+     * {@code editora.ownsKeys}, so the global dispatcher leaves these chords to it — with no handler here
+     * they were simply swallowed. Plain arrows (including Shift+arrow, which extends the selection) stay
+     * with the {@link TreeView}.
+     */
+    private void onTreeKey(KeyEvent e) {
+        if (e.getCode() == KeyCode.ENTER) {
+            openSelected();
+            e.consume();
+            return;
+        }
+        if (!e.isControlDown()) {
+            return;
+        }
+        switch (e.getCode()) {
+            case N -> {
+                move(1);
+                e.consume();
+            }
+            case P -> {
+                move(-1);
+                e.consume();
+            }
+            case F -> {
+                expandOrDescend();
+                e.consume();
+            }
+            case B -> {
+                collapseOrAscend();
+                e.consume();
+            }
+            case M -> {
+                openSelected();
+                e.consume();
+            }
+            default -> {}
+        }
+    }
+
+    /**
+     * Moves the selection by {@code delta} rows, wrapping. {@code clearAndSelect}, not {@code select} — the
+     * tree is multi-select, where plain {@code select} <em>adds</em> a row, so each press would grow the
+     * selection instead of moving it.
+     */
+    private void move(int delta) {
+        int rows = tree.getExpandedItemCount();
+        if (rows == 0) {
+            return;
+        }
+        int idx = tree.getSelectionModel().getSelectedIndex();
+        int next = idx < 0 ? (delta > 0 ? 0 : rows - 1) : Math.floorMod(idx + delta, rows);
+        tree.getSelectionModel().clearAndSelect(next);
+        tree.scrollTo(next);
+    }
+
+    private void expandOrDescend() {
+        TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
+        if (item != null && !item.isLeaf() && !item.isExpanded()) {
+            item.setExpanded(true);
+        } else {
+            move(1);
+        }
+    }
+
+    private void collapseOrAscend() {
+        TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
+        if (item == null) {
+            move(-1);
+            return;
+        }
+        if (!item.isLeaf() && item.isExpanded()) {
+            item.setExpanded(false);
+        } else if (item.getParent() != null && item.getParent() != tree.getRoot()) {
+            tree.getSelectionModel().clearAndSelect(tree.getRow(item.getParent()));
+            tree.scrollTo(tree.getSelectionModel().getSelectedIndex());
+        } else {
+            move(-1);
         }
     }
 
@@ -509,7 +676,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
     public void focusContent() {
         if (tree.getRoot() != null && !tree.getRoot().getChildren().isEmpty()) {
-            tree.requestFocus();
+            filterField.requestFocus();
         } else {
             message.requestFocus();
         }
@@ -517,6 +684,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
     @Override
     public void focusFirstItem() {
+        // Land on the filter field so a file can be typed for immediately; Down/Enter and C-n/C-p move into
+        // and through the results (FilterFieldNav), as in the Project / Bookmarks / Notes windows.
         if (tree.getExpandedItemCount() > 0 && tree.getSelectionModel().isEmpty()) {
             tree.getSelectionModel().select(0);
             tree.scrollTo(0);
