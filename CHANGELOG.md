@@ -56,6 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is the one thing Kind was genuinely good for. There is also a new **Debug: Run Configuration…** picker
   beside the existing Run one.
 
+- **Inlay hints now appear where they belong.** They used to be parked at the end of the line, so a call with
+  several arguments produced a trailing run of grey text whose only clue to which hint went with which
+  argument was left-to-right order. Each hint now renders inline at the position it describes, gently pushing
+  the code after it aside, the way IntelliJ and VS Code do it. They remain annotations, not text: selecting or
+  copying a line still gives you exactly what is in the file.
+
+
 - **Inlay hints no longer label every argument of every call.** `System.out.println("Hello")` used to earn a
   grey `x:`, because the JDK declares `println(String x)` — a hint that tells you nothing, and the common case
   rather than an edge one. Names that explain nothing (`x`, `arg0`) and names that merely repeat their

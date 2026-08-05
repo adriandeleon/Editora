@@ -502,7 +502,6 @@ public class EditorBuffer implements TabContent {
 
     private SearchHighlightOverlay searchOverlay; // lazily attached — see searchOverlay()
     private OccurrenceHighlightOverlay occurrenceOverlay; // lazily attached — see occurrenceOverlay() (#675)
-    private InlayHintsOverlay inlayHintsOverlay; // lazily attached — see inlayHintsOverlay() (#681)
     /** Highlights configured TODO/FIXME-style patterns (per-pattern color), behind the text. */
     private final TodoHighlightOverlay todoOverlay = new TodoHighlightOverlay(area);
     /** Injected matcher (compiled patterns) + on/off gate; null/false = no highlight. */
@@ -2272,14 +2271,6 @@ public class EditorBuffer implements TabContent {
         return occurrenceOverlay;
     }
 
-    private InlayHintsOverlay inlayHintsOverlay() {
-        if (inlayHintsOverlay == null) {
-            inlayHintsOverlay = attachLazyOverlay(new InlayHintsOverlay(area), todoOverlay);
-            inlayHintsOverlay.setFont(fontFamily, fontSize);
-        }
-        return inlayHintsOverlay;
-    }
-
     private LogHighlightOverlay logOverlay() {
         if (logOverlay == null) {
             logOverlay = attachLazyOverlay(new LogHighlightOverlay(area), whitespace);
@@ -2355,16 +2346,65 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Sets the per-line LSP inlay-hint annotations (0-based line → aggregated text, drawn after the
-     *  line); null/empty clears + releases the overlay texture (#681). */
-    public void setInlayHints(java.util.Map<Integer, String> hints) {
+    /** One LSP inlay hint, positioned: 0-based line + column, and the label to render there. */
+    public record InlayHint(int line, int col, String label) {}
+
+    /** 0-based line → the hints on it. Read live by the areas' inlay factory. */
+    private java.util.Map<Integer, java.util.List<org.fxmisc.richtext.Inlay>> inlayHintsByLine = java.util.Map.of();
+
+    private boolean inlayFactoryInstalled;
+
+    /**
+     * Sets the LSP inlay hints, rendered <b>inline at their own column</b> — each hint displaces the glyphs
+     * after it instead of being parked at the end of the line (#824).
+     *
+     * <p>Hints are <em>decorations, not text</em>: they never enter the document, never shift an offset, and
+     * never appear in a selection or a copy. See {@code org.fxmisc.richtext.Inlay}.
+     */
+    public void setInlayHints(java.util.List<InlayHint> hints) {
         if (largeFile || hints == null || hints.isEmpty()) {
-            if (inlayHintsOverlay != null) {
-                inlayHintsOverlay.setHints(java.util.Map.of());
+            if (!inlayHintsByLine.isEmpty()) {
+                inlayHintsByLine = java.util.Map.of();
+                refreshInlayAreas();
             }
             return;
         }
-        inlayHintsOverlay().setHints(hints);
+        java.util.Map<Integer, java.util.List<org.fxmisc.richtext.Inlay>> byLine = new java.util.HashMap<>();
+        for (InlayHint h : hints) {
+            byLine.computeIfAbsent(h.line(), k -> new java.util.ArrayList<>())
+                    .add(new org.fxmisc.richtext.Inlay(h.col(), h.label(), "inlay-hint"));
+        }
+        inlayHintsByLine = byLine;
+        ensureInlayFactory();
+        refreshInlayAreas();
+    }
+
+    /**
+     * Installs the inlay factory on both views, once. The factory closes over the field rather than the
+     * value, so pushing new hints is a map swap plus a refresh — no rebinding, and the split view stays in
+     * step for free.
+     */
+    private void ensureInlayFactory() {
+        if (inlayFactoryInstalled) {
+            return;
+        }
+        inlayFactoryInstalled = true;
+        java.util.function.IntFunction<java.util.List<org.fxmisc.richtext.Inlay>> factory =
+                line -> inlayHintsByLine.get(line);
+        area.setInlayFactory(factory);
+        if (area2 != null) {
+            area2.setInlayFactory(factory);
+        }
+    }
+
+    private void refreshInlayAreas() {
+        if (!inlayFactoryInstalled) {
+            return;
+        }
+        area.refreshInlays();
+        if (area2 != null) {
+            area2.refreshInlays();
+        }
     }
 
     /** Injects the document-highlight request (the coordinator asks the server and pushes spans back);
@@ -6037,9 +6077,6 @@ public class EditorBuffer implements TabContent {
         }
         whitespace.setFont(family, size);
         inlineValues.setFont(family, size);
-        if (inlayHintsOverlay != null) {
-            inlayHintsOverlay.setFont(family, size);
-        }
         if (blameLines != null) {
             // The blame annotation column width is font-relative — recompute + rebuild so it stays aligned.
             blameColumnWidth = measureBlameColumnWidth(blameLines);

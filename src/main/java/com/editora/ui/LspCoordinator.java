@@ -871,10 +871,9 @@ final class LspCoordinator {
         var mode = InlayHintFilter.Mode.of(host.settings().getInlayHintMode());
         lspManager.requestInlayHints(path, window[0], window[1], buffer.lineCount(), buffer.lastLineLength(), spans -> {
             if (buffer == host.activeBuffer() && buffer.docVersion() == version) {
-                // Filter before aggregating: the aggregate joins a line's labels into one opaque run, so a
-                // dropped hint has to be gone before that. Line text is read here (FX thread, same
-                // docVersion) so the argument at each hint's column is the one the server saw (#823).
-                buffer.setInlayHints(aggregateInlayHints(InlayHintFilter.filter(spans, mode, buffer::lineText)));
+                // Filter first, then position (#823 + #824). Line text is read here — FX thread, same
+                // docVersion — so the argument classified at each hint's column is the one the server saw.
+                buffer.setInlayHints(toInlayHints(InlayHintFilter.filter(spans, mode, buffer::lineText)));
             }
         });
     }
@@ -898,14 +897,20 @@ final class LspCoordinator {
         return new int[] {Math.min(start, end), end};
     }
 
-    /** Pure: hints grouped per line in (line, col) order, labels joined — the end-of-line aggregate. */
-    static Map<Integer, String> aggregateInlayHints(List<com.editora.lsp.LspManager.InlayHintSpan> spans) {
+    /**
+     * Pure: the server's spans as positioned editor hints, in (line, col) order.
+     *
+     * <p>This replaced an end-of-line aggregate that joined a line's labels into one string (#824). Hints
+     * now carry their own column all the way to the renderer, so the order matters only for determinism —
+     * placement no longer depends on it.
+     */
+    static List<EditorBuffer.InlayHint> toInlayHints(List<com.editora.lsp.LspManager.InlayHintSpan> spans) {
         List<com.editora.lsp.LspManager.InlayHintSpan> sorted = new java.util.ArrayList<>(spans);
         sorted.sort(java.util.Comparator.comparingInt(com.editora.lsp.LspManager.InlayHintSpan::line)
                 .thenComparingInt(com.editora.lsp.LspManager.InlayHintSpan::col));
-        Map<Integer, String> out = new java.util.HashMap<>();
+        List<EditorBuffer.InlayHint> out = new java.util.ArrayList<>(sorted.size());
         for (var s : sorted) {
-            out.merge(s.line(), s.label(), (a, b) -> a + "  " + b);
+            out.add(new EditorBuffer.InlayHint(s.line(), s.col(), s.label()));
         }
         return out;
     }
