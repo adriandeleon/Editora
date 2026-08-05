@@ -16,4 +16,16 @@ final class FxlessAccess {
             throw new AssertionError("parseClasspath is the contract under test", e);
         }
     }
+
+    /** The same, for {@code vscode.java.resolveMainClass}'s reply. */
+    @SuppressWarnings("unchecked")
+    static List<DapManager.MainClassOption> parseMainClasses(Object res) {
+        try {
+            Method m = DapManager.class.getDeclaredMethod("parseMainClasses", Object.class);
+            m.setAccessible(true);
+            return (List<DapManager.MainClassOption>) m.invoke(null, res);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("parseMainClasses is the contract under test", e);
+        }
+    }
 }
