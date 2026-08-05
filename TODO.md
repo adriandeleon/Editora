@@ -22,6 +22,24 @@ A backlog of planned features and improvements. Unordered within each section.
       gate's semantics directly; the wiring into a live debug session needs a real jdtls plus the java-debug
       bundle, so that half is a device test.*
 
+
+- [x] **Inline inlay-hint placement** (#824) — hints render **at the column they describe**, displacing the
+      glyphs after them, instead of being parked at the end of the line where a multi-argument call gave no
+      clue which hint belonged to which argument. The old placement was a real constraint, not laziness: a
+      canvas overlay draws *over* the text and cannot push glyphs aside. Measured
+      (`InlayPlacementSpikeFxTest`, kept as the record of why): injecting a node into a `TextFlow` displaces
+      the following glyphs but **costs character indices** — one for a non-`Text` node, its full length for a
+      `Text` node — while an unmanaged child is index-free and displaces nothing. **Displacement and
+      index-freedom are mutually exclusive**, so this needed the fork: richtextfx `0.11.7-inlay.1` adds
+      `Inlay`, a document↔flow `InlayIndex` translation applied at `TextFlowExt`'s index-taking methods, and
+      an `inlayFactoryProperty()` mirroring `paragraphGraphicFactory` (which is what makes cell recycling
+      work). Splitting is delegated to `Paragraph.subSequence` rather than hand-splitting `TextExt`, since an
+      inlay column usually falls *inside* a style span. **The trap:** `ParagraphText.updateBackgroundShapes`
+      does its own index walk with the same non-`Text`-is-one-char rule, so translating its ranges a second
+      time would have shifted every background/border/underline by the hint width — visible as misplaced
+      squiggles with nothing pointing at inlays; it uses new flow-native shape variants instead. Hints stay
+      **decorations, never text** (offsets/`getText()`/selections/copies unchanged — a leak would corrupt a
+      file on save). `InlayHintsOverlay` deleted.
 - [x] **Inlay-hint filtering** (#823) — a server labels *every* argument of every call, so
       `System.out.println("Hello")` earned an `x:` (the JDK declares `println(String x)`). Two tiers in the
       pure, unit-tested `lsp/InlayHintFilter`: **always** drop a parameter hint whose name explains nothing
@@ -32,7 +50,7 @@ A backlog of planned features and improvements. Unordered within each section.
       both rules above are about how an *argument* is named. `kind` is **optional** in the protocol, so
       `LspManager.isParameterHint` falls back to the label shape (a leading `:` is the type form) — without
       it a server that omits the kind would have its type hints become filterable. Filtering runs **before**
-      `aggregateInlayHints`, since the aggregate joins a line's labels into one opaque run. Ambiguity
+      `toInlayHints`, so a dropped hint never reaches the renderer. Ambiguity
       resolves toward the mode: an unclassifiable column (past the line end) is dropped in `literals`
       ("only when sure") and kept in `all`. Settings → Code Completion picker + `lsp.setInlayHintMode`;
       schema 94→95 (additive).
@@ -306,10 +324,11 @@ A backlog of planned features and improvements. Unordered within each section.
       coalesced, 1×1 when empty) draws each line's hints joined in (line,col) order (pure
       `LspCoordinator.aggregateInlayHints`, unit-tested) after the line's last glyph — deliberately NOT
       mid-line, which would overdraw following glyphs; true inline placement needs document-model segments
-      (deferred). `Settings.inlayHints` default **off** (they're divisive), schema 84→85 additive;
-      Settings → Code Completion checkbox (disabled while LSP is off) + palette `view.toggleInlayHints`;
-      `docVersion` guard drops stale responses. `inlayLabel` joins label parts. *Deferred: true inline
-      (mid-line) rendering, `inlayHint/resolve` tooltips, `workspace/inlayHint/refresh`.*
+      (deferred). **Superseded by #824**, which added exactly those segments in the fork — the overlay and
+      the aggregate are both gone. `Settings.inlayHints` default **off** (they're divisive), schema 84→85
+      additive; Settings → Code Completion checkbox (disabled while LSP is off) + palette
+      `view.toggleInlayHints`; `docVersion` guard drops stale responses. `inlayLabel` joins label parts.
+      *Deferred: `inlayHint/resolve` tooltips, `workspace/inlayHint/refresh`.*
 - [x] **Semantic-tokens delta** (#679) — client declares `requests.full.delta`; the manager caches
       `{resultId, data}` per document URI (cleared on close/shutdown; a crashed server's replacement
       rejects the old id → error → fallback to full + state cleared, self-healing). The whole-document

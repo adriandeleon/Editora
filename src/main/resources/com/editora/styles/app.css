@@ -2338,6 +2338,18 @@
     -fx-opacity: 0.65;
 }
 
+/* ---- LSP inlay hints (#824): inline decorations laid out between the glyphs, not text.
+   RichTextFX renders each as a Label carrying .inlay (every decoration) plus the caller's own
+   class, .inlay-hint. Muted and italic so they read as annotation rather than as code, with a
+   hair of horizontal padding so a hint never appears welded to the token it labels. ---- */
+.inlay {
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: transparent;
+    -fx-font-style: italic;
+    -fx-padding: 0 0.15em 0 0.15em;
+    -fx-opacity: 0.8;
+}
+
 /* ---- Markdown selection format bar (floating, anchored above the selection) ---- */
 .markdown-format-bar {
     -fx-background-color: -color-bg-default;
