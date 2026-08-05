@@ -5,6 +5,7 @@ import java.net.ServerSocket;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -537,11 +538,16 @@ public final class DapManager implements DapClient.Host {
             cb.accept(List.of());
             return;
         }
-        lsp.executeCommand(
-                routingFile,
-                "vscode.java.resolveMainClass",
-                List.of(),
-                (res, err) -> cb.accept(err != null ? List.of() : parseMainClasses(res)));
+        lsp.executeCommand(routingFile, "vscode.java.resolveMainClass", List.of(), (res, err) -> {
+            if (err != null) {
+                // The caller cannot tell this from "the project has none" — it reports the same thing either
+                // way — so the log is the only place the difference can survive.
+                LOG.log(Level.WARNING, err, () -> "vscode.java.resolveMainClass failed for " + routingFile);
+                cb.accept(List.of());
+                return;
+            }
+            cb.accept(parseMainClasses(res));
+        });
     }
 
     /**
@@ -1165,8 +1171,32 @@ public final class DapManager implements DapClient.Host {
 
     // --- gson result parsing (jdtls executeCommand returns untyped JsonElements) -----------------
 
+    /**
+     * Reads {@code vscode.java.resolveMainClass}'s reply — {@code [{mainClass, projectName, filePath}, …]}.
+     *
+     * <p>Handles a raw {@link java.util.List} of {@link Map}s as well as a gson {@link JsonElement}, for the
+     * same reason {@link #parseClasspath} does — and here it was not merely a hazard but the whole feature:
+     * lsp4j hands this particular result back as an {@code ArrayList<LinkedTreeMap>}, so {@link #asJson}'s
+     * {@code String.valueOf} fallback fed gson Java's {@code toString()} form,
+     * {@code [{mainClass=com.example.App, filePath=/home/…}]}. Gson's lenient parser reads unquoted keys and
+     * {@code =} separators, but not an unquoted value beginning {@code /} (it scans as a comment) — so every
+     * absolute file path threw {@code MalformedJsonException}, {@code asJson} logged it at {@code FINE} and
+     * returned null, and Editora reported "no main class was found" for a project whose main class jdtls had
+     * just named. Confirmed against a real jdtls in {@code JdtlsResolveMainClassProbeTest}. Reading the list
+     * directly removes the round trip entirely.
+     */
     private static List<MainClassOption> parseMainClasses(Object res) {
         List<MainClassOption> out = new ArrayList<>();
+        if (res instanceof List<?> list) {
+            for (Object e : list) {
+                if (e instanceof Map<?, ?> m) {
+                    out.add(new MainClassOption(str(m, "mainClass"), str(m, "projectName"), str(m, "filePath")));
+                } else if (e instanceof JsonObject o) {
+                    out.add(new MainClassOption(str(o, "mainClass"), str(o, "projectName"), str(o, "filePath")));
+                }
+            }
+            return out;
+        }
         JsonElement el = asJson(res);
         if (el != null && el.isJsonArray()) {
             for (JsonElement e : el.getAsJsonArray()) {
@@ -1267,6 +1297,12 @@ public final class DapManager implements DapClient.Host {
         return e != null && e.isJsonPrimitive() ? e.getAsString() : null;
     }
 
+    /** The {@link Map} twin of the above, for a reply lsp4j deserialized to plain collections. */
+    private static String str(Map<?, ?> m, String key) {
+        Object v = m.get(key);
+        return v == null ? null : String.valueOf(v);
+    }
+
     /** Bounded rendering of a server reply for a log line — a classpath can be very long. */
     private static String abbreviate(String s) {
         if (s == null) {
@@ -1286,7 +1322,14 @@ public final class DapManager implements DapClient.Host {
         try {
             return com.google.gson.JsonParser.parseString(String.valueOf(res));
         } catch (RuntimeException e) {
-            LOG.log(Level.FINE, "could not parse executeCommand result", e);
+            // WARNING, not FINE: every caller turns null into an empty result, which reaches the user as a
+            // statement about their project ("no main class was found"). A swallowed parse failure reported
+            // as a fact about the workspace is how the resolveMainClass bug survived — say so in the log.
+            LOG.log(
+                    Level.WARNING,
+                    e,
+                    () -> "could not parse an executeCommand result of type "
+                            + res.getClass().getName() + ": " + abbreviate(String.valueOf(res)));
             return null;
         }
     }
