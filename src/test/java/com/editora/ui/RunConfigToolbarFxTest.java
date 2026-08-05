@@ -64,6 +64,34 @@ class RunConfigToolbarFxTest {
     }
 
     /**
+     * The Settings page's edits must reach the toolbar selector.
+     *
+     * <p>The Run Configurations page edits {@code WorkspaceState}, not {@code Settings}, so it never goes
+     * through {@code SettingsWindow.apply()} — and {@code apply()} → {@code onApply} is the only thing that
+     * reaches {@code refreshRunConfigs()}. So a configuration added there was saved to disk and then simply
+     * never appeared in the selector until the next launch, with nothing logged. This drives the hook the
+     * page now fires; a no-op hook fails it.
+     */
+    @Test
+    void aConfigurationAddedOnTheSettingsPageReachesTheSelector() throws Exception {
+        setConfigs(List.of());
+
+        SettingsWindow settings = FxTestSupport.field(fx.controller, "settingsWindow");
+        Runnable pageEdited = FxTestSupport.field(settings, "onRunConfigsChanged");
+
+        FxTestSupport.runOnFx(() -> {
+            com.editora.config.ConfigManager cfg = FxTestSupport.field(fx.controller, "config");
+            cfg.getWorkspaceState().setRunConfigurations(new java.util.ArrayList<>(List.of(java("demo"))));
+            pageEdited.run(); // exactly what persistRunConfigs() does after writing the list
+        });
+
+        ComboBox<RunConfiguration> combo = combo();
+        assertTrue(
+                combo.getItems().stream().anyMatch(c -> c != null && "demo".equals(c.name())),
+                "the added configuration is missing from the toolbar selector");
+    }
+
+    /**
      * Every catalog item the toolbar can show must resolve to a real node.
      *
      * <p>The gap this closes: a special widget declared in {@code ToolbarCatalog} but never mapped in

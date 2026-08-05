@@ -317,6 +317,8 @@ public class SettingsWindow {
     private String macroOriginalName; // the saved name of the selected macro (to detect rename)
     /** Re-registers the {@code macro.run.*} commands across windows after a Macros-page edit. */
     private Runnable onMacrosChanged = () -> {};
+
+    private Runnable onRunConfigsChanged = () -> {};
     /** Shared snippet manager (injected after construction); backs the Snippets management page. */
     private com.editora.snippet.SnippetManager snippetManager;
     /** Working copy of the snippets (bundled + user) for the language selected on the Snippets page. */
@@ -1900,6 +1902,15 @@ public class SettingsWindow {
                 .map(Shortcut::title)
                 .findFirst()
                 .orElse(commandId);
+    }
+
+    /**
+     * Injects the toolbar-selector refresh hook (→ {@code MainController.refreshRunConfigs}); used by the Run
+     * Configurations page. Run configurations live in the per-window {@code WorkspaceState}, so this refreshes
+     * only this window — unlike the macro hook, which re-registers commands everywhere.
+     */
+    public void setRunConfigsChangedHandler(Runnable handler) {
+        this.onRunConfigsChanged = handler == null ? () -> {} : handler;
     }
 
     /** Injects the cross-window macro re-register hook (→ {@code MainController}); used by the Macros page. */
@@ -4440,6 +4451,9 @@ public class SettingsWindow {
     private void persistRunConfigs() {
         config.getWorkspaceState().setRunConfigurations(new java.util.ArrayList<>(runConfigItems));
         config.save();
+        // This page does not go through apply() — it edits WorkspaceState, not Settings — so nothing else
+        // would tell the toolbar selector (and the run.config.<slug> commands) that the list changed.
+        onRunConfigsChanged.run();
     }
 
     /** Re-reads the live per-window run-config list into the editor, restoring the selection by name. */
