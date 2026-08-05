@@ -2459,18 +2459,18 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public void stage(String path) {
-                git.gitOp("Staged " + path, "add", "--", path);
+            public void stage(List<String> paths) {
+                git.gitStagePaths(paths);
             }
 
             @Override
-            public void unstage(String path) {
-                git.gitOp("Unstaged " + path, "reset", "-q", "HEAD", "--", path);
+            public void unstage(List<String> paths) {
+                git.gitUnstagePaths(paths);
             }
 
             @Override
-            public void discard(String path, boolean untracked) {
-                git.discardChanges(path, untracked);
+            public void discard(List<String> tracked, List<String> untracked) {
+                git.discardChanges(tracked, untracked);
             }
 
             @Override
@@ -4301,6 +4301,19 @@ public class MainController implements com.editora.mcp.McpBridge {
             gitPanel.setAiAvailable(available);
         }
     });
+
+    /**
+     * Stages (or unstages) the Commit window's selected rows — the palette twins of its context menu, so
+     * the whole flow works without the mouse. Opens the window first, since acting on a selection the user
+     * can't see would be a surprise, and echoes when the selection holds nothing to act on.
+     */
+    private void stageSelectedInCommitWindow(boolean stage) {
+        toolWindows.open(commitToolWindow, true);
+        boolean acted = stage ? gitPanel.stageSelected() : gitPanel.unstageSelected();
+        if (!acted) {
+            setStatus(tr(stage ? "status.git.nothingToStage" : "status.git.nothingToUnstage"));
+        }
+    }
 
     // --- Doctor (external-tool health screen, a Welcome-style tab; see doctor/ + DoctorCoordinator) ---
 
@@ -15629,6 +15642,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("git.stageFile", () -> git.ifEnabled(git::gitStageActiveFile)));
         registry.register(Command.of("git.unstageFile", () -> git.ifEnabled(git::gitUnstageActiveFile)));
         registry.register(Command.of("git.discardFile", () -> git.ifEnabled(git::gitDiscardActiveFile)));
+        registry.register(
+                Command.of("git.stageSelected", () -> git.ifEnabled(() -> stageSelectedInCommitWindow(true))));
+        registry.register(
+                Command.of("git.unstageSelected", () -> git.ifEnabled(() -> stageSelectedInCommitWindow(false))));
         registry.register(Command.of("git.switchBranch", () -> git.ifEnabled(this::chooseBranch)));
         registry.register(Command.of("git.newBranch", () -> git.ifEnabled(git::newBranch)));
         registry.register(Command.of("git.fetch", () -> git.ifEnabled(() -> git.gitSync("Fetch", "fetch", "--all"))));

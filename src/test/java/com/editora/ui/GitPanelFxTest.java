@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import javafx.scene.control.Button;
@@ -33,13 +34,13 @@ class GitPanelFxTest {
         public void open(String repoRelativePath) {}
 
         @Override
-        public void stage(String path) {}
+        public void stage(List<String> paths) {}
 
         @Override
-        public void unstage(String path) {}
+        public void unstage(List<String> paths) {}
 
         @Override
-        public void discard(String path, boolean untracked) {}
+        public void discard(List<String> tracked, List<String> untracked) {}
 
         @Override
         public void stageAll() {}
@@ -113,6 +114,146 @@ class GitPanelFxTest {
         FxTestSupport.runOnFx(() -> p.setStatus(new GitStatus(true, "main", "origin/main", 0, 0, List.of())));
         Button commit = FxTestSupport.field(p, "commitButton");
         assertTrue(FxTestSupport.callOnFx(commit::isDisable), "nothing staged ⇒ commit disabled");
+    }
+
+    /** Records what the panel asks the controller to do, so the multi-selection actions can be asserted. */
+    private static final class Recording implements GitPanel.Actions {
+        final List<List<String>> staged = new ArrayList<>();
+        final List<List<String>> unstaged = new ArrayList<>();
+        final List<List<String>> discardedTracked = new ArrayList<>();
+        final List<List<String>> discardedUntracked = new ArrayList<>();
+
+        @Override
+        public void open(String repoRelativePath) {}
+
+        @Override
+        public void stage(List<String> paths) {
+            staged.add(paths);
+        }
+
+        @Override
+        public void unstage(List<String> paths) {
+            unstaged.add(paths);
+        }
+
+        @Override
+        public void discard(List<String> tracked, List<String> untracked) {
+            discardedTracked.add(tracked);
+            discardedUntracked.add(untracked);
+        }
+
+        @Override
+        public void stageAll() {}
+
+        @Override
+        public void commit(String message) {}
+
+        @Override
+        public void push() {}
+
+        @Override
+        public void refresh() {}
+
+        @Override
+        public void diff(String repoRelativePath, boolean staged) {}
+    }
+
+    /** The three-group status the multi-selection tests select rows out of. */
+    private static GitStatus mixedStatus() {
+        return new GitStatus(
+                true,
+                "main",
+                "origin/main",
+                0,
+                0,
+                List.of(
+                        new FileEntry("staged.txt", 'M', '.', null),
+                        new FileEntry("changed.txt", '.', 'M', null),
+                        new FileEntry("new.txt", '?', '?', null)));
+    }
+
+    /** Selects every file row (skipping the group headers), i.e. what a Ctrl-A / full Shift-range gives. */
+    private static void selectAllFileRows(GitPanel p) throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            TreeView<Object> t = tree(p);
+            t.getSelectionModel().clearSelection();
+            for (TreeItem<Object> group : t.getRoot().getChildren()) {
+                for (TreeItem<Object> file : group.getChildren()) {
+                    t.getSelectionModel().select(file);
+                }
+            }
+        });
+    }
+
+    @Test
+    void treeIsMultiSelect() throws Exception {
+        GitPanel p = panel();
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        selectAllFileRows(p);
+        assertEquals(
+                3,
+                FxTestSupport.callOnFx(
+                        () -> tree(p).getSelectionModel().getSelectedItems().size()),
+                "three file rows stay selected at once");
+    }
+
+    @Test
+    void stageSelectedStagesEveryNonStagedRowInOneCall() throws Exception {
+        Recording rec = new Recording();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(rec));
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        selectAllFileRows(p);
+
+        assertTrue(FxTestSupport.callOnFx(p::stageSelected));
+        assertEquals(1, rec.staged.size(), "one git invocation for the whole selection");
+        // The already-staged row is not re-staged; the modified + untracked ones are.
+        assertEquals(List.of("changed.txt", "new.txt"), rec.staged.get(0));
+    }
+
+    @Test
+    void unstageSelectedUnstagesOnlyTheStagedRows() throws Exception {
+        Recording rec = new Recording();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(rec));
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        selectAllFileRows(p);
+
+        assertTrue(FxTestSupport.callOnFx(p::unstageSelected));
+        assertEquals(List.of(List.of("staged.txt")), rec.unstaged);
+    }
+
+    @Test
+    void selectedActionsReportWhenTheSelectionHasNothingToDo() throws Exception {
+        Recording rec = new Recording();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(rec));
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        // Select the untracked row only: nothing to unstage there.
+        FxTestSupport.runOnFx(() -> {
+            TreeView<Object> t = tree(p);
+            t.getSelectionModel().clearSelection();
+            TreeItem<Object> untrackedGroup =
+                    t.getRoot().getChildren().get(t.getRoot().getChildren().size() - 1);
+            t.getSelectionModel().select(untrackedGroup.getChildren().get(0));
+        });
+        assertFalse(FxTestSupport.callOnFx(p::unstageSelected), "no staged row selected");
+        assertTrue(rec.unstaged.isEmpty(), "and nothing is run");
+        assertTrue(FxTestSupport.callOnFx(p::stageSelected), "but it can be staged");
+    }
+
+    @Test
+    void groupRowsInTheSelectionAreIgnored() throws Exception {
+        Recording rec = new Recording();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(rec));
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        // A Shift-range across a group boundary sweeps up the header row too — it must not break staging.
+        FxTestSupport.runOnFx(() -> {
+            TreeView<Object> t = tree(p);
+            t.getSelectionModel().clearSelection();
+            for (int i = 0; i < t.getExpandedItemCount(); i++) {
+                t.getSelectionModel().select(i);
+            }
+        });
+        assertTrue(FxTestSupport.callOnFx(p::stageSelected));
+        assertEquals(List.of("changed.txt", "new.txt"), rec.staged.get(0));
     }
 
     @Test
