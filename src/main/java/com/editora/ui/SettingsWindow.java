@@ -397,6 +397,7 @@ public class SettingsWindow {
     private Label diagramStatusLabel;
     private final java.util.Map<BuildTool, CheckBox> buildToolChecks = new java.util.EnumMap<>(BuildTool.class);
     private final java.util.Map<BuildTool, TextField> buildToolCommandFields = new java.util.EnumMap<>(BuildTool.class);
+    private final TextField mavenArchetypeCatalogField = new TextField();
     private final java.util.Map<BuildTool, Label> buildToolStatusLabels = new java.util.EnumMap<>(BuildTool.class);
     private CheckBox ripgrepCheck;
     private CheckBox searchGitignoreCheck;
@@ -1297,6 +1298,12 @@ public class SettingsWindow {
                 apply();
             });
             buildToolCommandFields.put(bt, commandField);
+            if (bt == BuildTool.MAVEN) {
+                mavenArchetypeCatalogField.textProperty().addListener((obs, was, now) -> {
+                    config.getSettings().setMavenArchetypeCatalogUrl(now);
+                    apply();
+                });
+            }
             Label status = new Label(tr("settings.buildTools.notFound", bt.displayName()));
             status.getStyleClass().add("settings-git-status");
             status.setWrapText(true);
@@ -3302,6 +3309,17 @@ public class SettingsWindow {
                     new HBox(6, field, browseButton(tr("settings.buildTools.commandOverride"), field)),
                     kw + " path executable wrapper");
             controlRow(c, Category.BUILD_TOOLS, tr("settings.git.detected"), null, buildToolStatusLabels.get(bt), kw);
+            if (bt == BuildTool.MAVEN) {
+                mavenArchetypeCatalogField.setPrefWidth(320);
+                cardRow(
+                        c,
+                        Category.BUILD_TOOLS,
+                        settingRow(
+                                tr("settings.maven.archetypeCatalog"),
+                                tr("settings.maven.archetypeCatalog.hint"),
+                                mavenArchetypeCatalogField),
+                        kw + " archetype catalog url new project wizard");
+            }
         }
         return p;
     }
@@ -6836,6 +6854,9 @@ public class SettingsWindow {
             for (BuildTool bt : BuildTool.enabled()) {
                 buildToolChecks.get(bt).setSelected(bt.enabledIn(settings));
                 buildToolCommandFields.get(bt).setText(bt.commandIn(settings));
+                if (bt == BuildTool.MAVEN) {
+                    mavenArchetypeCatalogField.setText(settings.getMavenArchetypeCatalogUrl());
+                }
             }
             refreshBuildToolStatus();
             ripgrepCheck.setSelected(settings.isRipgrepSearch());

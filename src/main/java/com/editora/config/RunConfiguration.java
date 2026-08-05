@@ -124,6 +124,21 @@ public record RunConfiguration(
         return isJava() && mainClass.isBlank();
     }
 
+    /**
+     * Whether {@link #mainClass} is a <em>file name</em> rather than a fully-qualified class name — the
+     * mistake the Edit Configurations form invites, since the file in front of you is called
+     * {@code App.java} but jdtls wants {@code com.example.App}.
+     *
+     * <p>Worth its own check because the failure is otherwise deeply misleading: jdtls happily looks up a
+     * type literally named {@code App.java}, finds nothing, and returns an <b>empty classpath with no
+     * error</b> — which the launch then reports as "make sure the Java project has finished importing",
+     * sending the user to debug their perfectly healthy language server.
+     */
+    @JsonIgnore
+    public boolean mainClassLooksLikeAFile() {
+        return isJava() && (mainClass.endsWith(".java") || mainClass.endsWith(".class"));
+    }
+
     @JsonIgnore
     public boolean isDebug() {
         return "debug".equalsIgnoreCase(kind);

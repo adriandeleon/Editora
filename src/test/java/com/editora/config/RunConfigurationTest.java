@@ -86,4 +86,14 @@ class RunConfigurationTest {
         assertEquals("run", back.kind());
         assertEquals("", back.args());
     }
+
+    @Test
+    void aFileNameInTheMainClassFieldIsDetected() {
+        // jdtls answers a file name with an EMPTY classpath and no error, which the launch would otherwise
+        // report as "the project hasn't finished importing" — blaming a healthy server for a typo.
+        assertTrue(new RunConfiguration("App", "run", "App.java", "", "", "", "").mainClassLooksLikeAFile());
+        assertTrue(new RunConfiguration("App", "run", "App.class", "", "", "", "").mainClassLooksLikeAFile());
+        assertFalse(new RunConfiguration("App", "run", "com.example.App", "", "", "", "").mainClassLooksLikeAFile());
+        assertFalse(new RunConfiguration("App", "run", "", "", "", "", "").mainClassLooksLikeAFile());
+    }
 }

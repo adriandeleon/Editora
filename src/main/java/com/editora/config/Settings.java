@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 93;
+    public static final int SCHEMA_VERSION = 94;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -269,6 +269,9 @@ public class Settings {
     /** Override command for launching Maven; blank = auto (prefer the project's ./mvnw wrapper, else
      *  resolve "mvn" on PATH). */
     private String mavenCommand = "";
+
+    /** Where "Load full catalog…" in the New Maven Project wizard fetches archetypes from. */
+    private String mavenArchetypeCatalogUrl = "https://repo.maven.apache.org/maven2/archetype-catalog.xml";
     /** npm support (a toolbar icon + actions popup of package.json scripts, streaming runs to a console): on
      *  by default — self-gates on detection, so the toolbar button stays hidden until a package.json is
      *  actually found for the current project/file. */
@@ -1571,6 +1574,14 @@ public class Settings {
 
     public void setMavenCommand(String mavenCommand) {
         this.mavenCommand = mavenCommand == null ? "" : mavenCommand;
+    }
+
+    public String getMavenArchetypeCatalogUrl() {
+        return mavenArchetypeCatalogUrl == null ? "" : mavenArchetypeCatalogUrl;
+    }
+
+    public void setMavenArchetypeCatalogUrl(String mavenArchetypeCatalogUrl) {
+        this.mavenArchetypeCatalogUrl = mavenArchetypeCatalogUrl == null ? "" : mavenArchetypeCatalogUrl;
     }
 
     public boolean isNpmSupport() {

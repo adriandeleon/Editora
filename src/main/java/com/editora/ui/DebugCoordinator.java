@@ -778,6 +778,11 @@ final class DebugCoordinator {
             ops.editConfiguration(cfg.name()); // take them to the field that would make it run
             return;
         }
+        if (cfg.mainClassLooksLikeAFile()) { // see the Run path: an empty classpath, not an error
+            host.setStatus(tr("status.run.mainClassIsAFile", cfg.mainClass()));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
         if (!debugEffectiveFor("java")) {
             host.setStatus(tr("status.debug.unavailable"));
             return;
@@ -799,6 +804,9 @@ final class DebugCoordinator {
             return; // save whatever the user was editing before launching, as before
         }
         Path cwd = cfg.workingDir().isBlank() ? root : Path.of(cfg.workingDir());
+        // routing may be a background tab whose server start was deferred; open it on jdtls first, or the
+        // resolve below comes back "no language server for file" while jdtls is running perfectly.
+        lsp.ensureManaged(routing);
         dapManager.resolveMainClasses(routing, options -> {
             DapManager.MainClassOption match = options.stream()
                     .filter(o -> cfg.mainClass().equals(o.mainClass()))
@@ -850,6 +858,7 @@ final class DebugCoordinator {
                 dapManager.setProgramArgs(ProgramArgs.tokenize(programArgsForMain(opt)));
                 dapManager.setVmArgs(""); // the gutter/command debug carries no VM args/env
                 dapManager.setEnv(java.util.Map.of());
+                lsp.ensureManaged(routing); // see above
                 withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, opt, root));
             };
             if (targetFqn != null) {

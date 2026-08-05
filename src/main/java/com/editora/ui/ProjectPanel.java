@@ -87,6 +87,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private volatile java.util.function.Consumer<List<FsChange>> fsChangeSink;
     /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
     private Consumer<Path> onNewFromTemplate;
+
+    private Consumer<Path> onNewMavenProject;
     /** Injected by MainController: reveal a path in the OS file manager. Args: (path, isDirectory). */
     private BiConsumer<Path, Boolean> onReveal;
     /** Injected by MainController: open a terminal at a path's folder. Args: (path, isDirectory). */
@@ -787,6 +789,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** Injects the "New From Template…" handler (given the target folder) shown on a folder's menu. */
+    public void setOnNewMavenProject(Consumer<Path> onNewMavenProject) {
+        this.onNewMavenProject = onNewMavenProject;
+    }
+
     public void setOnNewFromTemplate(Consumer<Path> onNewFromTemplate) {
         this.onNewFromTemplate = onNewFromTemplate;
     }
@@ -1335,6 +1341,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 newFromTemplate.setGraphic(Icons.newFile());
                 newFromTemplate.setOnAction(e -> onNewFromTemplate.accept(treeItem.getValue()));
                 menu.getItems().add(newFromTemplate);
+            }
+            if (isDir && onNewMavenProject != null) {
+                MenuItem newMaven = new MenuItem(tr("project.menu.newMavenProject"));
+                newMaven.setGraphic(Icons.newFolder());
+                newMaven.setOnAction(e -> onNewMavenProject.accept(treeItem.getValue()));
+                menu.getItems().add(newMaven);
             }
             // Rename is offered on every file/folder EXCEPT the project root — renaming that would move the
             // whole project folder on disk and leave the project pointing at a path that no longer exists.

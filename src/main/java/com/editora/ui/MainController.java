@@ -1553,6 +1553,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         autoSaveExecutor.shutdownNow();
         diffCoordinator.shutdown(); // the diff-service worker thread
+        mavenProjectCoordinator.shutdown(); // archetype:generate process + catalog fetch thread
         externalToolCoordinator.shutdown(); // the external-tool worker thread
         httpClient.shutdown(); // the http-client worker thread
         remoteCoordinator.shutdown(); // SFTP sessions + the SSH client (and un-pin the static Vfs hooks)
@@ -2319,6 +2320,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         projectPanel.setOnBeforeDelete(
                 file -> historyCoordinator.captureBeforeDelete(file)); // snapshot to Local History before delete
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
+        projectPanel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         projectPanel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
         // An external program (a terminal `git`, another editor, a build) changed files under the repo while
         // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
@@ -3082,6 +3084,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public boolean isLspManaged(java.nio.file.Path file) {
+            return lspEnabled() && file != null && lspManager.isManaged(file);
+        }
+
+        @Override
         public OverlayHost overlayHost() {
             return overlayHost;
         }
@@ -3358,6 +3365,53 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The server-log-viewer feature (level highlighting, tail-follow, filtering); see {@link LogViewerCoordinator}. */
     private final LogViewerCoordinator logViewer = new LogViewerCoordinator(coordinatorHost);
+
+    /** New Maven Project wizard; owns the archetype picker/form and the archetype:generate run. */
+    private final MavenProjectCoordinator mavenProjectCoordinator = new MavenProjectCoordinator(
+            coordinatorHost,
+            new MavenProjectCoordinator.Ops() {
+                @Override
+                public java.nio.file.Path defaultParentDir() {
+                    return defaultNewDir();
+                }
+
+                @Override
+                public void openProject(
+                        java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.MainClass main) {
+                    if (!projectsEnabled()) {
+                        return; // still generated on disk; just not registered as a project
+                    }
+                    Project project = projects.createOrGet(name, root);
+                    projects.save();
+                    seedNewProjectSession(project, root, name, main);
+                    if (windowManager != null) {
+                        windowManager.openOrFocus(project);
+                    }
+                }
+
+                @Override
+                public void openPath(java.nio.file.Path file) {
+                    MainController.this.openPath(file);
+                }
+
+                @Override
+                public com.editora.command.KeymapManager keymap() {
+                    return keymap;
+                }
+
+                @Override
+                public boolean confirmArchetype(com.editora.maven.MavenArchetype archetype) {
+                    return confirmArchetypeGenerate(archetype);
+                }
+
+                @Override
+                public void refreshProjectTree() {
+                    if (projectPanel != null) {
+                        projectPanel.refreshTree();
+                    }
+                }
+            },
+            buildOutputPanel);
 
     /** External Tools feature; owns the service/console panel/commands (the tool window stays here). */
     private final ExternalToolCoordinator externalToolCoordinator =
@@ -3770,8 +3824,21 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public List<com.editora.config.RunConfiguration> runConfigurations() {
+            return List.copyOf(config.getWorkspaceState().getRunConfigurations());
+        }
+
+        @Override
+        public String selectedRunConfigName() {
+            return config.getWorkspaceState().getSelectedRunConfig();
+        }
+
+        @Override
         public void resolveJavaMainClasses(
                 java.nio.file.Path routingFile, java.util.function.Consumer<List<com.editora.run.JavaMainClass>> cb) {
+            // The routing file may be a background tab whose server start was deferred; open it first or
+            // jdtls has never seen it and answers "no language server for file".
+            lspCoordinator.ensureManaged(routingFile);
             dapManager.resolveMainClasses(
                     routingFile,
                     opts -> cb.accept(opts.stream()
@@ -3784,6 +3851,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 java.nio.file.Path routingFile,
                 com.editora.run.JavaMainClass mc,
                 java.util.function.Consumer<com.editora.run.JavaLaunchInfo> cb) {
+            lspCoordinator.ensureManaged(routingFile); // see resolveJavaMainClasses
             dapManager.resolveLaunch(
                     routingFile,
                     new com.editora.dap.DapManager.MainClassOption(mc.fqn(), mc.projectName(), mc.filePath()),
@@ -4378,6 +4446,83 @@ public class MainController implements com.editora.mcp.McpBridge {
      * to grant trust. Mirrors {@link #confirmEnableMcp} / {@code confirmEnablePlugin} — the default button is
      * Cancel, so dismissing the dialog never grants trust.
      */
+    /**
+     * Consent before generating from an archetype we did not vet (a user-typed GAV, or one pulled from the
+     * remote catalog). {@code archetype:generate} downloads and executes third-party Maven plugin code, and
+     * the workspace-trust gate cannot cover it: that only fires when a repo ships an {@code mvnw}, and a
+     * brand-new empty directory has none. Default button is Cancel, so dismissing never grants consent.
+     */
+    /**
+     * Gives a freshly generated Maven project a run configuration named after it, so Run works on the first
+     * click instead of sending the user to Edit Configurations.
+     *
+     * <p>Written into the <b>new project's</b> session file before {@code openOrFocus} builds its window —
+     * that window loads {@code projects/<id>.json} on construction, so seeding afterwards would be a race,
+     * and writing it into <em>this</em> window's state would put the configuration in the wrong project.
+     * <p><b>Deliberately does not call {@code ConfigManager.load()}.</b> That runs
+     * {@code SharedConfig.load()}, which replaces the shared {@code Settings} instance every open window
+     * holds <em>by reference</em> and re-reads every shared store from disk — corrupting live windows in
+     * order to write one file. A brand-new project needs no load: {@code ConfigManager} starts with a fresh
+     * {@code WorkspaceState}, which is exactly the right starting point, and an existing session file is
+     * left strictly alone.
+     *
+     * <p>The open file matters as much as the configuration: a Java launch resolves its classpath through
+     * jdtls routed via an <b>open Java file</b>, so a window that opens on {@code pom.xml} alone has nothing
+     * to route through and Run reports "open a Java file from the project".
+     *
+     * <p>No main class means no configuration: a webapp or plugin archetype has nothing to launch, and a
+     * configuration that fails at the click is worse than none at all.
+     */
+    private void seedNewProjectSession(
+            Project project, java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.MainClass main) {
+        if (main == null || main.fqn() == null || main.fqn().isBlank()) {
+            return;
+        }
+        try {
+            java.nio.file.Path stateFile = projects.stateFile(project);
+            if (java.nio.file.Files.exists(stateFile)) {
+                return; // an existing project reused by name keeps its own session
+            }
+            ConfigManager seeded = new ConfigManager(config.shared(), stateFile);
+            WorkspaceState state = seeded.getWorkspaceState(); // fresh defaults; see the note above
+            // workingDir = the project root, so the launch resolves against this project even with several
+            // open, and a relative path in the program behaves as it would from a terminal there.
+            // projectName = the artifactId, which is what jdtls names an imported Maven project. Blank works
+            // too (Run falls back to jdtls's own enumeration), but naming it lets the very first launch
+            // resolve directly instead of round-tripping an enumeration first.
+            // beforeLaunch = compile. archetype:generate writes SOURCES only, and Editora runs jdtls with
+            // autobuild disabled, so nothing has produced target/classes yet: the resolved classpath is
+            // correct and the JVM still dies with ClassNotFoundException on the very first Run. A
+            // before-launch step is the mechanism for exactly this — a non-zero exit aborts the launch, so a
+            // failed compile never runs a stale binary. Bare `mvn` rather than a resolved absolute path:
+            // this is persisted, and a path would rot the moment the user changed their Maven install.
+            state.setRunConfigurations(List.of(new com.editora.config.RunConfiguration(
+                    name, "run", "java", "", main.fqn(), name, "", "", root.toString(), "", "mvn -q compile")));
+            state.setSelectedRunConfig(name);
+            state.setOpenFiles(List.of(new WorkspaceState.OpenFile(main.file().toString(), 0, false)));
+            state.setActiveFile(main.file().toString());
+            seeded.save();
+        } catch (RuntimeException e) {
+            // The project is generated and open either way; a missing configuration is a papercut, not a
+            // reason to fail the whole flow.
+            LOG.log(java.util.logging.Level.WARNING, "could not seed the new project's session", e);
+        }
+    }
+
+    private boolean confirmArchetypeGenerate(com.editora.maven.MavenArchetype archetype) {
+        ButtonType proceed = new ButtonType(tr("dialog.mavenProject.trustAccept"), ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = new Alert(
+                Alert.AlertType.WARNING,
+                tr("dialog.mavenProject.trustBody", archetype.gav()),
+                ButtonType.CANCEL,
+                proceed);
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("dialog.mavenProject.trustTitle"));
+        confirm.setHeaderText(tr("dialog.mavenProject.trustHeader", archetype.artifactId()));
+        confirm.getDialogPane().setMinWidth(520);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == proceed;
+    }
+
     private boolean confirmTrustFolder(java.nio.file.Path root, java.nio.file.Path wrapper) {
         java.nio.file.Path name = root.getFileName();
         ButtonType trust = new ButtonType(tr("dialog.trust.accept"), ButtonBar.ButtonData.OK_DONE);
@@ -6438,6 +6583,78 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Marks the restore complete, running the CLI startup action first if it hasn't already run. */
     private void runPendingAfterRestore() {
         runPendingStartupAction(false);
+        openMainClassForRunConfig();
+    }
+
+    /**
+     * Opens the class a saved Java run configuration launches, when the restored session has no Java file.
+     *
+     * <p>A Java launch resolves its classpath through jdtls <b>routed via an open Java file</b>
+     * ({@link com.editora.run.RunConfigRouting}), so a project whose session holds only {@code pom.xml}
+     * cannot run its own saved configuration — it reports "open a Java file from the project", which reads
+     * like a bug when the configuration is sitting right there in the toolbar.
+     *
+     * <p>Deliberately conservative, so it can't be a surprise:
+     *
+     * <ul>
+     *   <li>only when this window has a project and a Java configuration with a real main class;
+     *   <li>only when <b>no</b> Java file was restored — an existing Java tab already routes fine;
+     *   <li>only if the file actually exists under the project root (no disk search, just the standard
+     *       source layouts — see {@link com.editora.run.MainClassSource});
+     *   <li>in the <b>background</b> when other tabs restored, so it never steals the tab the user left on.
+     * </ul>
+     */
+    private void openMainClassForRunConfig() {
+        Path root = windowProjectRoot();
+        if (root == null) {
+            return;
+        }
+        String fqn = mainClassOfSelectedJavaConfig();
+        if (fqn == null) {
+            return;
+        }
+        boolean hasJavaOpen = false;
+        boolean hasAnyTab = false;
+        for (Tab t : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(t);
+            hasAnyTab = true;
+            if (b != null && b.getPath() != null && "java".equals(b.getLanguage())) {
+                hasJavaOpen = true;
+                break;
+            }
+        }
+        if (hasJavaOpen) {
+            return; // an open Java tab already gives the launch something to route through
+        }
+        for (String relative : com.editora.run.MainClassSource.candidates(fqn)) {
+            Path candidate = root.resolve(relative);
+            if (java.nio.file.Files.isRegularFile(candidate)) {
+                if (hasAnyTab) {
+                    openBackgroundBuffer(candidate); // don't steal the tab the session restored
+                } else {
+                    openPath(candidate);
+                }
+                return;
+            }
+        }
+    }
+
+    /** The main class of this window's selected Java run configuration (else the first one), or null. */
+    private String mainClassOfSelectedJavaConfig() {
+        List<com.editora.config.RunConfiguration> configs =
+                config.getWorkspaceState().getRunConfigurations();
+        if (configs == null || configs.isEmpty()) {
+            return null;
+        }
+        String selected = config.getWorkspaceState().getSelectedRunConfig();
+        com.editora.config.RunConfiguration chosen = configs.stream()
+                .filter(c -> c.name().equals(selected))
+                .findFirst()
+                .orElse(configs.get(0));
+        // A file name in the field is a mistake caught with its own message at launch; do not act on it here.
+        return chosen.isJava() && !chosen.missingMainClass() && !chosen.mainClassLooksLikeAFile()
+                ? chosen.mainClass()
+                : null;
     }
 
     /** Activates {@code dir} as the active project (startup-safe; no open buffers to confirm). */
@@ -14429,6 +14646,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         // --- Keyboard macros ---
         macroCoordinator.registerCommands(); // macro.* + one macro.run.<slug> per persisted macro
         // --- External Tools ---
+        mavenProjectCoordinator.registerCommands(registry);
+        registry.register(Command.of(
+                "maven.setArchetypeCatalogUrl",
+                () -> promptStringSetting(
+                        "maven.setArchetypeCatalogUrl",
+                        () -> config.getSettings().getMavenArchetypeCatalogUrl(),
+                        v -> config.getSettings().setMavenArchetypeCatalogUrl(v),
+                        () -> {})));
         externalToolCoordinator.registerCommands(
                 registry); // externalTool.run/clearOutput/rerunLast + per-tool run.<slug>
         // Project commands no-op when project support is disabled (fully gated).

@@ -640,6 +640,33 @@ final class LspCoordinator {
         }
     }
 
+    /**
+     * Opens {@code file} on its language server <em>now</em> if the show-deferral has been holding it back.
+     *
+     * <p>Needed because "open in a tab" and "open on a language server" are not the same thing. A Java run or
+     * debug launch routes its {@code resolveClasspath} through <b>any</b> open Java file
+     * ({@code RunConfigRouting.pick}) — which may well be a background tab, and a background tab is exactly
+     * what {@link #syncBufferWhenShown} defers. Worse, {@link #applyGating} re-defers every non-active buffer,
+     * and that runs on every LSP settings apply and after {@link #restartServers}: a file that <em>was</em>
+     * managed silently stops being so while its tab stays open. The launch then failed with
+     * "no language server for file" while jdtls sat there running perfectly.
+     *
+     * <p>Synchronous for the caller's purposes: {@code openDocument} caches the session before returning, so
+     * {@code sessionFor} answers immediately even though {@code initialize} is still in flight (the
+     * {@code didOpen} queues behind it).
+     */
+    void ensureManaged(java.nio.file.Path file) {
+        if (file == null || lspManager.isManaged(file)) {
+            return;
+        }
+        java.nio.file.Path key = ops.canonicalize(file);
+        host.forEachBuffer(b -> {
+            if (b.getPath() != null && key.equals(ops.canonicalize(b.getPath())) && deferredLsp.remove(b)) {
+                syncBuffer(b);
+            }
+        });
+    }
+
     /** Whether a server's own enable toggle is on (under the global LSP enable). */
     boolean serverEnabled(String serverId) {
         return projectSettings().enabledFor(serverId, globalServerEnabled(serverId));
