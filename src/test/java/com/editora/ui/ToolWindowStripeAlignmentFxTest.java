@@ -8,6 +8,8 @@ import javafx.geometry.Bounds;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.layout.BackgroundFill;
+import javafx.scene.layout.CornerRadii;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 import javafx.stage.Stage;
@@ -163,6 +165,53 @@ class ToolWindowStripeAlignmentFxTest {
                         inScene(header).getMinY(),
                         TOLERANCE,
                         "the panel header should start level with the stripe button that opened it");
+            } finally {
+                stripeButton.fire(); // leave the layout as the other tests here expect to find it
+            }
+        });
+    }
+
+    /**
+     * That same inset must also be the same COLOUR as the chrome it sits in.
+     *
+     * <p>The inset is padding <em>inside</em> the panel, so the panel's own fill paints it — and with the
+     * content's default ground that put a white notch in the band the toolbar, the tab strip and the
+     * stripes' matching insets otherwise make across the top of the window. Aligning the header without
+     * matching the fill fixes half the problem, and the half that is left is only visible to the eye.
+     *
+     * <p>The corner radii are asserted with it: rounding the panel's background would punch the ground
+     * behind it back through the band at both ends, which is the same defect a few pixels smaller.
+     */
+    @Test
+    void anOpenSidePanelsTopInsetContinuesTheChromeBandAbove() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Button stripeButton = firstRightStripeButton();
+            stripeButton.fire();
+            try {
+                Scene scene = FxTestSupport.<Stage>field(fx.controller, "stage").getScene();
+                scene.getRoot().applyCss();
+                scene.getRoot().layout();
+
+                ToolWindowManager twm = FxTestSupport.field(fx.controller, "toolWindows");
+                java.util.Map<ToolWindow, Region> panels = FxTestSupport.field(twm, "panels");
+                Region panel = panels.values().iterator().next();
+                assertTrue(
+                        panel.getInsets().getTop() > 0,
+                        "precondition: a side panel is inset at the top, so its own fill is what paints there");
+
+                Region toolBar = (Region) scene.lookup(".tool-bar");
+                assertNotNull(toolBar, "the toolbar should be in the scene");
+                BackgroundFill panelFill = panel.getBackground().getFills().get(0);
+                assertEquals(
+                        toolBar.getBackground().getFills().get(0).getFill(),
+                        panelFill.getFill(),
+                        "a side panel's top inset should carry the same ground as the chrome above it");
+
+                CornerRadii radii = panelFill.getRadii();
+                assertEquals(
+                        0.0,
+                        radii.getTopLeftHorizontalRadius() + radii.getTopRightHorizontalRadius(),
+                        "the panel's background should be square at the top, where it meets that band");
             } finally {
                 stripeButton.fire(); // leave the layout as the other tests here expect to find it
             }
