@@ -6564,6 +6564,78 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Marks the restore complete, running the CLI startup action first if it hasn't already run. */
     private void runPendingAfterRestore() {
         runPendingStartupAction(false);
+        openMainClassForRunConfig();
+    }
+
+    /**
+     * Opens the class a saved Java run configuration launches, when the restored session has no Java file.
+     *
+     * <p>A Java launch resolves its classpath through jdtls <b>routed via an open Java file</b>
+     * ({@link com.editora.run.RunConfigRouting}), so a project whose session holds only {@code pom.xml}
+     * cannot run its own saved configuration — it reports "open a Java file from the project", which reads
+     * like a bug when the configuration is sitting right there in the toolbar.
+     *
+     * <p>Deliberately conservative, so it can't be a surprise:
+     *
+     * <ul>
+     *   <li>only when this window has a project and a Java configuration with a real main class;
+     *   <li>only when <b>no</b> Java file was restored — an existing Java tab already routes fine;
+     *   <li>only if the file actually exists under the project root (no disk search, just the standard
+     *       source layouts — see {@link com.editora.run.MainClassSource});
+     *   <li>in the <b>background</b> when other tabs restored, so it never steals the tab the user left on.
+     * </ul>
+     */
+    private void openMainClassForRunConfig() {
+        Path root = windowProjectRoot();
+        if (root == null) {
+            return;
+        }
+        String fqn = mainClassOfSelectedJavaConfig();
+        if (fqn == null) {
+            return;
+        }
+        boolean hasJavaOpen = false;
+        boolean hasAnyTab = false;
+        for (Tab t : tabPane.getTabs()) {
+            EditorBuffer b = bufferOf(t);
+            hasAnyTab = true;
+            if (b != null && b.getPath() != null && "java".equals(b.getLanguage())) {
+                hasJavaOpen = true;
+                break;
+            }
+        }
+        if (hasJavaOpen) {
+            return; // an open Java tab already gives the launch something to route through
+        }
+        for (String relative : com.editora.run.MainClassSource.candidates(fqn)) {
+            Path candidate = root.resolve(relative);
+            if (java.nio.file.Files.isRegularFile(candidate)) {
+                if (hasAnyTab) {
+                    openBackgroundBuffer(candidate); // don't steal the tab the session restored
+                } else {
+                    openPath(candidate);
+                }
+                return;
+            }
+        }
+    }
+
+    /** The main class of this window's selected Java run configuration (else the first one), or null. */
+    private String mainClassOfSelectedJavaConfig() {
+        List<com.editora.config.RunConfiguration> configs =
+                config.getWorkspaceState().getRunConfigurations();
+        if (configs == null || configs.isEmpty()) {
+            return null;
+        }
+        String selected = config.getWorkspaceState().getSelectedRunConfig();
+        com.editora.config.RunConfiguration chosen = configs.stream()
+                .filter(c -> c.name().equals(selected))
+                .findFirst()
+                .orElse(configs.get(0));
+        // A file name in the field is a mistake caught with its own message at launch; do not act on it here.
+        return chosen.isJava() && !chosen.missingMainClass() && !chosen.mainClassLooksLikeAFile()
+                ? chosen.mainClass()
+                : null;
     }
 
     /** Activates {@code dir} as the active project (startup-safe; no open buffers to confirm). */
