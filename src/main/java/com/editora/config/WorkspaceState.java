@@ -26,7 +26,7 @@ public class WorkspaceState {
      *
      * <p>v3 → v4 added {@code selectedRunConfig} (the toolbar selection); blank by default, identity.
      */
-    public static final int SCHEMA_VERSION = 5;
+    public static final int SCHEMA_VERSION = 6;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -45,6 +45,12 @@ public class WorkspaceState {
     private double leftDividerPosition = 0.22;
     private double rightDividerPosition = 0.78;
     private double bottomDividerPosition = 0.72;
+    /**
+     * Per-tool-window size: id -> the split fraction it was last left at. Additive in schema v6; a window
+     * absent here falls back to its side's value above, which is also kept up to date — so a window opened
+     * for the first time still inherits a sensible width rather than a hardcoded default.
+     */
+    private Map<String, Double> toolWindowSizes = new LinkedHashMap<>();
     /** Per-tool-window side preference: id -> "LEFT"|"RIGHT"|"BOTTOM". Overrides the default side. */
     private Map<String, String> toolWindowSides = new LinkedHashMap<>();
     /** Per-tool-window visibility: id -> true/false. Missing = visible. */
@@ -189,6 +195,14 @@ public class WorkspaceState {
 
     public void setOpenBottomToolWindow(String openBottomToolWindow) {
         this.openBottomToolWindow = openBottomToolWindow == null ? "" : openBottomToolWindow;
+    }
+
+    public Map<String, Double> getToolWindowSizes() {
+        return toolWindowSizes;
+    }
+
+    public void setToolWindowSizes(Map<String, Double> toolWindowSizes) {
+        this.toolWindowSizes = toolWindowSizes == null ? new LinkedHashMap<>() : toolWindowSizes;
     }
 
     public double getLeftDividerPosition() {
