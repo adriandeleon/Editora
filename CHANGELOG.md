@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Filter and keyboard-navigate the Commit window.** It now opens with a filter box focused, like Bookmarks
+  and Personal Notes: type to narrow the changed files, Down or Enter to step into and open one. Typing a
+  group's name (`untracked`) lists that whole group. Inside the tree, `C-n`/`C-p` move and `C-f`/`C-b`
+  expand or collapse a group — chords the panel used to swallow, since it takes its own keys. Filtering is
+  only a view: hiding a staged file behind a filter does not disable Commit, and staging still acts on the
+  files you selected, not on everything that matches.
+
+- **`C-n`/`C-p` now move the results from the filter box** in every filterable tool window — Project,
+  Structure, Bookmarks, Personal Notes, the Commit window and the build task trees — so narrowing and then
+  picking never needs a hand off the keyboard. Previously only the GitHub window's list did this.
+
 - **Stage or unstage several files at once.** The Commit window's file list is now multi-select: extend the
   selection with Shift+Up/Down from the keyboard or Shift/Ctrl-click with the mouse, then right-click and
   Stage, Unstage or Discard the whole run in one go. A mixed selection offers both Stage and Unstage, each
@@ -81,6 +92,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   illustration whose hairline quills collapsed into a smudge at 19px; it is now a single bold feather.
 
 ### Fixed
+
+- **A long status-bar message no longer squashes the segments beside it.** The echo line and the state
+  segments share one row, and when they did not all fit every one of them was shrunk — so a wordy message
+  reduced `LSP: jdtls`, `Editable`, the caret position and the rest to bare ellipses. The message now
+  truncates on its own and the segments keep their full width; the full text is still one click away in the
+  message log.
 
 - **Debugging now runs a configuration's before-launch step.** Only the Run path did. A configuration whose
   before-launch was `mvn -q compile` therefore compiled when you pressed Run and silently debugged the

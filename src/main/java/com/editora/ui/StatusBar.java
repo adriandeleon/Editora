@@ -5,6 +5,7 @@ import java.util.Locale;
 import java.util.function.Supplier;
 
 import javafx.beans.InvalidationListener;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
@@ -236,7 +237,29 @@ public final class StatusBar extends HBox {
                         endings,
                         encoding,
                         size);
+        pinSegmentWidths();
         refresh();
+    }
+
+    /**
+     * Makes the echo line the <em>only</em> child that gives up space, so a long message can never squeeze
+     * or shove the state segments beside it.
+     *
+     * <p>An {@link HBox} whose children don't fit shrinks each of them from its preferred toward its minimum
+     * width, sharing the deficit out — and a {@link Label}'s minimum is just its ellipsis, so every segment
+     * is shrinkable. A 200-character message (the {@link #MAX_ECHO_CHARS} cap) therefore ate into
+     * {@code LSP: jdtls}, {@code Editable}, the caret position and the rest, or pushed them past the right
+     * edge. Pinning every segment's minimum to its preferred width leaves the echo — explicitly shrinkable
+     * to nothing — as the sole donor, so it ellipsizes and the segments stay whole; the full text is still
+     * one click away in the message log. (Same fix as the Doctor pane's row labels.)
+     */
+    private void pinSegmentWidths() {
+        echo.setMinWidth(0); // the one child that gives: it ellipsizes rather than displacing anything
+        for (Node child : getChildren()) {
+            if (child != echo && child instanceof Region region && HBox.getHgrow(region) != Priority.ALWAYS) {
+                region.setMinWidth(Region.USE_PREF_SIZE); // never shrink a state segment
+            }
+        }
     }
 
     /** The text-zoom control: {@code [ −  100%  + ]}, dispatching the zoom commands. */

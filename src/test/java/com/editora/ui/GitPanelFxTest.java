@@ -7,6 +7,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.layout.HBox;
 
 import com.editora.git.GitStatus;
 import com.editora.git.GitStatus.FileEntry;
@@ -183,6 +184,132 @@ class GitPanelFxTest {
                 }
             }
         });
+    }
+
+    private static javafx.scene.control.TextField filterOf(GitPanel p) {
+        return FxTestSupport.field(p, "filterField");
+    }
+
+    /** The file-row paths currently rendered, flattened across the groups. */
+    private static List<String> renderedPaths(GitPanel p) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            List<String> out = new ArrayList<>();
+            TreeItem<Object> root = tree(p).getRoot();
+            if (root == null) {
+                return out;
+            }
+            for (TreeItem<Object> group : root.getChildren()) {
+                for (TreeItem<Object> file : group.getChildren()) {
+                    out.add(String.valueOf(file.getValue()));
+                }
+            }
+            return out;
+        });
+    }
+
+    @Test
+    void filterNarrowsTheFileRows() throws Exception {
+        GitPanel p = panel();
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        assertEquals(3, renderedPaths(p).size(), "all three files before filtering");
+
+        FxTestSupport.runOnFx(() -> filterOf(p).setText("chang"));
+        List<String> filtered = renderedPaths(p);
+        assertEquals(1, filtered.size(), filtered.toString());
+        assertTrue(filtered.get(0).contains("changed.txt"), filtered.toString());
+
+        FxTestSupport.runOnFx(() -> filterOf(p).clear());
+        assertEquals(3, renderedPaths(p).size(), "clearing restores every file");
+    }
+
+    @Test
+    void filteringByGroupNameKeepsThatWholeGroup() throws Exception {
+        GitPanel p = panel();
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        // "untracked" matches no path, but it names a group — list that group rather than nothing.
+        FxTestSupport.runOnFx(() -> filterOf(p).setText("untracked"));
+        List<String> filtered = renderedPaths(p);
+        assertEquals(1, filtered.size(), filtered.toString());
+        assertTrue(filtered.get(0).contains("new.txt"), filtered.toString());
+    }
+
+    @Test
+    void aFilterHidingTheStagedFileLeavesCommitEnabled() throws Exception {
+        GitPanel p = panel();
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        FxTestSupport.runOnFx(() -> filterOf(p).setText("new.txt")); // hides staged.txt
+        Button commit = FxTestSupport.field(p, "commitButton");
+        assertFalse(
+                FxTestSupport.callOnFx(commit::isDisable),
+                "the commit affordances read the full status, not the filtered view");
+    }
+
+    @Test
+    void aFilterMatchingNothingKeepsTheFilterBarReachable() throws Exception {
+        GitPanel p = panel();
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        FxTestSupport.runOnFx(() -> filterOf(p).setText("nothing-matches-this"));
+        assertTrue(renderedPaths(p).isEmpty(), "no rows survive the filter");
+        // The bar must stay on screen, or there is no way left to clear the filter that emptied the panel.
+        assertTrue(
+                FxTestSupport.callOnFx(() -> p.getChildren().contains(FxTestSupport.<HBox>field(p, "filterBar"))),
+                "the filter bar survives an empty result");
+    }
+
+    @Test
+    void ctrlNAndCtrlPMoveTheSelectionInsteadOfGrowingIt() throws Exception {
+        GitPanel p = panel();
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        FxTestSupport.runOnFx(() -> tree(p).getSelectionModel().clearAndSelect(0));
+        FxTestSupport.runOnFx(() -> pressCtrl(p, javafx.scene.input.KeyCode.N));
+        // On a MULTIPLE-selection tree a plain select() would ADD the row; C-n must move, leaving one row.
+        assertEquals(
+                1,
+                FxTestSupport.callOnFx(
+                        () -> tree(p).getSelectionModel().getSelectedItems().size()),
+                "C-n moves the selection, it does not grow it");
+        assertEquals(
+                1,
+                (int) FxTestSupport.callOnFx(() -> tree(p).getSelectionModel().getSelectedIndex()),
+                "C-n moved down one row");
+        FxTestSupport.runOnFx(() -> pressCtrl(p, javafx.scene.input.KeyCode.P));
+        assertEquals(
+                0,
+                (int) FxTestSupport.callOnFx(() -> tree(p).getSelectionModel().getSelectedIndex()),
+                "C-p moves back up");
+    }
+
+    @Test
+    void ctrlNFromTheFilterFieldMovesTheSelection() throws Exception {
+        GitPanel p = panel();
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        FxTestSupport.runOnFx(() -> tree(p).getSelectionModel().clearAndSelect(0));
+        // The shared FilterFieldNav binding: move the results without taking your hands off the filter.
+        FxTestSupport.runOnFx(() -> filterOf(p)
+                .fireEvent(new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_PRESSED,
+                        "",
+                        "",
+                        javafx.scene.input.KeyCode.N,
+                        false,
+                        true,
+                        false,
+                        false)));
+        assertEquals(
+                1,
+                (int) FxTestSupport.callOnFx(() -> tree(p).getSelectionModel().getSelectedIndex()),
+                "C-n in the filter field moves the tree selection");
+        assertEquals(
+                1,
+                FxTestSupport.callOnFx(
+                        () -> tree(p).getSelectionModel().getSelectedItems().size()),
+                "and moves it rather than growing it");
+    }
+
+    /** Fires a Ctrl+&lt;code&gt; KEY_PRESSED at the panel's tree, as the scene would. */
+    private static void pressCtrl(GitPanel p, javafx.scene.input.KeyCode code) {
+        tree(p).fireEvent(new javafx.scene.input.KeyEvent(
+                javafx.scene.input.KeyEvent.KEY_PRESSED, "", "", code, false, true, false, false));
     }
 
     @Test
