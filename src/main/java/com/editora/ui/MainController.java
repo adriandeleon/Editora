@@ -15619,6 +15619,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("remote.settings", () -> settingsWindow.showRemote(stage)));
         registry.register(Command.of("remote.disconnect", remoteCoordinator::disconnect));
         registry.register(Command.of("git.clone", () -> git.ifEnabled(git::cloneRepo)));
+        registry.register(Command.of("git.init", () -> git.ifEnabled(git::initRepo)));
         registry.register(Command.of("git.commit", () -> git.ifEnabled(git::gitCommitFocus)));
         registry.register(Command.of("git.stageFile", () -> git.ifEnabled(git::gitStageActiveFile)));
         registry.register(Command.of("git.unstageFile", () -> git.ifEnabled(git::gitUnstageActiveFile)));

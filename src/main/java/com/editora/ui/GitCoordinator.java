@@ -896,6 +896,53 @@ final class GitCoordinator {
      * yourself). Clones into that folder, then opens a file from it (its README, if any) so Git lights up.
      * Clone and Projects are independent — no project is created.
      */
+    /**
+     * Creates a repository in a folder ({@code git init}) — the other half of {@link #cloneRepo()}, and the
+     * only way to start version control on a folder that Editora opened but that has no repo yet.
+     *
+     * <p>Defaults to this window's project root, else the active file's folder. Refuses a folder that is
+     * already inside a repository rather than nesting one, which is almost always a mistake and is
+     * confusing to undo. On success the whole Git UI lights up through the normal
+     * {@link #afterMutation()} path — status bar, Commit window, gutter change bars.
+     */
+    void initRepo() {
+        Path fromProject = ops.projectRoot();
+        EditorBuffer active = host.activeBuffer();
+        final Path suggested = fromProject != null
+                ? fromProject
+                : (active != null && active.getPath() != null ? active.getPath().getParent() : null);
+        host.promptText(
+                tr("dialog.gitInit.title"),
+                tr("dialog.gitInit.folder"),
+                suggested == null ? "" : suggested.toString(),
+                text -> {
+                    if (text == null || text.isBlank()) {
+                        return;
+                    }
+                    Path dir = com.editora.config.PathKeys.resolveUserInput(
+                            text.strip(), suggested, System.getProperty("user.home"));
+                    if (dir == null || !java.nio.file.Files.isDirectory(dir)) {
+                        host.setError(tr("status.gitInit.notAFolder", text.strip()));
+                        return;
+                    }
+                    host.setStatus(tr("status.gitInit.initializing", dir.toString()));
+                    // The already-a-repo check lives in the service: answering it runs git rev-parse, which
+                    // must not happen on the FX thread.
+                    service.init(dir, (r, existing) -> {
+                        if (existing != null) {
+                            host.setError(tr("status.gitInit.alreadyRepo", existing.toString()));
+                            return;
+                        }
+                        if (!r.ok()) {
+                            gitError(tr("status.gitInit.failed"), r.message());
+                            return;
+                        }
+                        host.setStatus(tr("status.gitInit.done", dir.toString()));
+                        afterMutation(); // status bar, Commit window, gutter bars all light up
+                    });
+                });
+    }
+
     void cloneRepo() {
         KeymapManager keymap = ops.keymap();
         TextField urlField = new TextField();

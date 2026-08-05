@@ -531,4 +531,15 @@ class ChromeTest {
         // Neither -> disabled.
         assertFalse(Chrome.paletteEnabled("git.push", only("git"), noBuffer()));
     }
+
+    @Test
+    void repoCreatingCommandsStayEnabledOutsideARepository() {
+        // git.clone and git.init are the two commands whose whole point is that there is no repo yet.
+        // Gating them on inRepo() would grey them out in exactly the situation they exist for.
+        Chrome.PaletteContext noRepo =
+                new Chrome.PaletteContext(true, false, false, false, false, false, false, false, false);
+        assertTrue(Chrome.contextEnabled("git.clone", noRepo), "clone is how you get a repo");
+        assertTrue(Chrome.contextEnabled("git.init", noRepo), "init is the other way");
+        assertFalse(Chrome.contextEnabled("git.commit", noRepo), "an ordinary git command still needs one");
+    }
 }
