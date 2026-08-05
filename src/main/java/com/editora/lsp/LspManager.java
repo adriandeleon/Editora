@@ -823,8 +823,22 @@ public final class LspManager {
         return out;
     }
 
-    /** A single inlay hint: 0-based position + the rendered label ({@code x:} for a parameter name). */
-    public record InlayHintSpan(int line, int col, String label) {}
+    /**
+     * A single inlay hint: 0-based position + the rendered label ({@code x:} for a parameter name) +
+     * whether it is a <b>parameter</b> hint rather than a type hint.
+     *
+     * <p>The kind is carried because filtering (#823) applies only to parameter hints: suppressing an
+     * uninformative name, or one labelling a non-literal argument, is about how an <em>argument</em> is
+     * named — whereas a {@code : String} type hint is information the source does not otherwise carry and
+     * must survive every mode.
+     */
+    public record InlayHintSpan(int line, int col, String label, boolean parameter) {
+
+        /** A parameter hint — the dominant kind, and what a server omitting the kind is assumed to mean. */
+        public InlayHintSpan(int line, int col, String label) {
+            this(line, col, label, true);
+        }
+    }
 
     /** True if {@code file}'s server is ready and advertises inlay hints (#681). */
     public boolean supportsInlayHints(Path file) {
@@ -894,12 +908,34 @@ public final class LspManager {
                     String label = inlayLabel(h);
                     if (!label.isBlank()) {
                         out.add(new InlayHintSpan(
-                                h.getPosition().getLine(), h.getPosition().getCharacter(), label));
+                                h.getPosition().getLine(),
+                                h.getPosition().getCharacter(),
+                                label,
+                                isParameterHint(h.getKind(), label)));
                     }
                 }
             }
             Platform.runLater(() -> cb.accept(out));
         });
+    }
+
+    /**
+     * Pure: whether a hint names an argument (parameter) rather than an inferred type, used to decide
+     * what filtering may touch (#823).
+     *
+     * <p>{@code kind} is <b>optional</b> in the protocol, and a server that omits it would otherwise have
+     * every hint treated as a parameter — so an unkinded {@code : String} would become filterable. The
+     * fallback reads the label instead: a leading {@code :} is the type form, a trailing {@code :}/{@code =}
+     * the parameter form.
+     */
+    static boolean isParameterHint(org.eclipse.lsp4j.InlayHintKind kind, String label) {
+        if (kind == org.eclipse.lsp4j.InlayHintKind.Parameter) {
+            return true;
+        }
+        if (kind == org.eclipse.lsp4j.InlayHintKind.Type) {
+            return false;
+        }
+        return !label.startsWith(":");
     }
 
     /** Pure: an inlay hint's display label — the plain string, or its label parts joined. */

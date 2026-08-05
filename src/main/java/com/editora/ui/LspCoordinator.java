@@ -19,6 +19,7 @@ import javafx.stage.Popup;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.LspDiagnostic;
 import com.editora.editor.MarkdownRenderer;
+import com.editora.lsp.InlayHintFilter;
 import com.editora.lsp.JdtlsGenerate;
 import com.editora.lsp.LspManager;
 import org.fxmisc.richtext.CodeArea;
@@ -867,9 +868,13 @@ final class LspCoordinator {
         }
         int[] window = paddedWindow(buffer.visibleLineWindow(), SEMANTIC_WINDOW_PAD, buffer.lineCount());
         long version = buffer.docVersion();
+        var mode = InlayHintFilter.Mode.of(host.settings().getInlayHintMode());
         lspManager.requestInlayHints(path, window[0], window[1], buffer.lineCount(), buffer.lastLineLength(), spans -> {
             if (buffer == host.activeBuffer() && buffer.docVersion() == version) {
-                buffer.setInlayHints(aggregateInlayHints(spans));
+                // Filter before aggregating: the aggregate joins a line's labels into one opaque run, so a
+                // dropped hint has to be gone before that. Line text is read here (FX thread, same
+                // docVersion) so the argument at each hint's column is the one the server saw (#823).
+                buffer.setInlayHints(aggregateInlayHints(InlayHintFilter.filter(spans, mode, buffer::lineText)));
             }
         });
     }

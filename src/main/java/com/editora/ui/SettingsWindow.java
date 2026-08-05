@@ -222,6 +222,7 @@ public class SettingsWindow {
     private CheckBox completionDocCheck;
     private CheckBox semanticHighlightCheck;
     private CheckBox inlayHintsCheck;
+    private ComboBox<String> inlayHintModeCombo;
     private CheckBox onTypeFormattingCheck;
     private CheckBox pasteImportsCheck;
     private CheckBox smartSemicolonCheck;
@@ -1040,6 +1041,27 @@ public class SettingsWindow {
         completionDocCheck = viewCheck(tr("settings.completionDoc"), Settings::setCompletionDoc);
         semanticHighlightCheck = viewCheck(tr("settings.semanticHighlight"), Settings::setSemanticHighlight);
         inlayHintsCheck = viewCheck(tr("settings.inlayHints"), Settings::setInlayHints);
+        inlayHintModeCombo = new ComboBox<>();
+        inlayHintModeCombo.getItems().setAll("literals", "all");
+        inlayHintModeCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String key) {
+                return inlayHintModeName(key);
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        inlayHintModeCombo.setPrefWidth(170);
+        inlayHintModeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setInlayHintMode(now);
+            apply();
+        });
         onTypeFormattingCheck = viewCheck(tr("settings.onTypeFormatting"), Settings::setLspOnTypeFormatting);
         pasteImportsCheck = viewCheck(tr("settings.lspPasteImports"), Settings::setLspPasteImports);
         smartSemicolonCheck = viewCheck(tr("settings.lspSmartSemicolon"), Settings::setLspSmartSemicolon);
@@ -2922,6 +2944,19 @@ public class SettingsWindow {
                 null,
                 "inlay hints parameter names inferred types lsp annotations");
         inlayHintsCheck.disableProperty().bind(lspCheck.selectedProperty().not());
+        controlRow(
+                lsp,
+                Category.COMPLETION,
+                tr("settings.inlayHintMode"),
+                tr("settings.inlayHintMode.note"),
+                inlayHintModeCombo,
+                "inlay hints filter parameter names literals noise suppress lsp");
+        // Sub-setting of the checkbox above (master/sub pattern): meaningless while hints are off.
+        inlayHintModeCombo
+                .disableProperty()
+                .bind(lspCheck.selectedProperty()
+                        .not()
+                        .or(inlayHintsCheck.selectedProperty().not()));
         checkRow(
                 lsp,
                 Category.COMPLETION,
@@ -6777,6 +6812,7 @@ public class SettingsWindow {
             completionDocCheck.setSelected(settings.isCompletionDoc());
             semanticHighlightCheck.setSelected(settings.isSemanticHighlight());
             inlayHintsCheck.setSelected(settings.isInlayHints());
+            inlayHintModeCombo.setValue(settings.getInlayHintMode());
             onTypeFormattingCheck.setSelected(settings.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(settings.isLspPasteImports());
             smartSemicolonCheck.setSelected(settings.isLspSmartSemicolon());
@@ -7392,6 +7428,7 @@ public class SettingsWindow {
             completionDocCheck.setSelected(s.isCompletionDoc());
             semanticHighlightCheck.setSelected(s.isSemanticHighlight());
             inlayHintsCheck.setSelected(s.isInlayHints());
+            inlayHintModeCombo.setValue(s.getInlayHintMode());
             onTypeFormattingCheck.setSelected(s.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(s.isLspPasteImports());
             smartSemicolonCheck.setSelected(s.isLspSmartSemicolon());
@@ -7726,6 +7763,11 @@ public class SettingsWindow {
             case "fr" -> tr("spell.lang.fr");
             default -> id;
         };
+    }
+
+    /** Friendly label for an inlay-hint filter mode ({@code literals}/{@code all}); shared with the palette picker. */
+    public static String inlayHintModeName(String id) {
+        return "all".equalsIgnoreCase(id) ? tr("settings.inlayHintMode.all") : tr("settings.inlayHintMode.literals");
     }
 
     /** Friendly label for a global indent-style id ({@code detect}/{@code space}/{@code tab}); shared with the palette picker. */

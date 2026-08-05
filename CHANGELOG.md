@@ -56,6 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is the one thing Kind was genuinely good for. There is also a new **Debug: Run Configuration…** picker
   beside the existing Run one.
 
+- **Inlay hints no longer label every argument of every call.** `System.out.println("Hello")` used to earn a
+  grey `x:`, because the JDK declares `println(String x)` — a hint that tells you nothing, and the common case
+  rather than an edge one. Names that explain nothing (`x`, `arg0`) and names that merely repeat their
+  argument (`foo(name: name)`) are now always hidden, and a picker in Settings → Code Completion chooses
+  whether the rest appear on **literal arguments only** (the new default, matching VS Code) or on all of them.
+  Type hints are never filtered.
+
 - **Git, GitHub and Web are no longer marked Beta.**
 
 - **The Output console appears when you are in a Git repository.** Git and GitHub write every command they run

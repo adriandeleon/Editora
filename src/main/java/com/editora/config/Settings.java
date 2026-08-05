@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 94;
+    public static final int SCHEMA_VERSION = 95;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -141,6 +141,11 @@ public class Settings {
     private boolean semanticHighlight = true;
     /** LSP inlay hints (parameter names / inferred types) drawn after each line; default off (#681). */
     private boolean inlayHints = false;
+    /** How aggressively parameter-name hints are suppressed: {@code literals} (keep only those labelling a
+     *  literal argument) or {@code all}. Only effective while {@link #inlayHints} is on, and type hints are
+     *  never filtered. Defaults to {@code literals}, matching VS Code's Java extension: a hint on every
+     *  argument of every call is mostly noise, the more so while hints render at end-of-line (#823). */
+    private String inlayHintMode = "literals";
     /** Re-indent the current line when a language server's trigger character is typed ({@code ;}, {@code }},
      *  Enter). Default <b>off</b>: it acts on very common keystrokes and overlaps the local auto-indent
      *  assists, so it is opt-in until it has proven itself in the field (#740). */
@@ -1106,6 +1111,14 @@ public class Settings {
 
     public void setInlayHints(boolean inlayHints) {
         this.inlayHints = inlayHints;
+    }
+
+    public String getInlayHintMode() {
+        return inlayHintMode == null ? "literals" : inlayHintMode;
+    }
+
+    public void setInlayHintMode(String inlayHintMode) {
+        this.inlayHintMode = inlayHintMode;
     }
 
     public boolean isEditorConfigSupport() {
