@@ -261,8 +261,10 @@ Editora is built with the help of AI coding tools.
   (`mvn compile dependency:build-classpath`, running from the reactor root with `-pl <module> -am` in a
   multi-module build) and Gradle delegates to `run` (or `bootRun` for Spring Boot).
 - **Run configurations** — save a named configuration per project (main class, module, program & VM
-  arguments, environment variables, working directory) and re-run or debug it from the palette; edit the
-  whole list in **Settings → Run Configurations**. In a Gradle project the main class the build declares
+  arguments, environment variables, working directory, and a before-launch build step) and re-run or debug it
+  from the palette; edit the whole list in **Settings → Run Configurations**. A configuration does not choose
+  between running and debugging — the toolbar's two buttons do, and every entry gets both a *Run: &lt;name&gt;*
+  and a *Debug: &lt;name&gt;* command you can bind a key to. In a Gradle project the main class the build declares
   (`mainClass`, `mainClass.set(…)`, or the legacy `mainClassName`) is pre-filled. The toolbar selector shows
   where something is launchable — a Maven/Gradle/npm/Cargo/Go build file inside the open project, or a
   makefile at its root, or any detected build when no project is open — and whenever you have a

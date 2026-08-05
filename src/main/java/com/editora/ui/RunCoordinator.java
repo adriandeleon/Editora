@@ -270,6 +270,12 @@ final class RunCoordinator {
         });
     }
 
+    /** {@link #withBeforeLaunch(CoordinatorHost, RunConfiguration, Path, Runnable)} at this coordinator's own
+     *  working directory. */
+    private void withBeforeLaunch(RunConfiguration cfg, Runnable then) {
+        withBeforeLaunch(host, cfg, beforeLaunchDir(cfg), then);
+    }
+
     /**
      * Runs {@code cfg}'s before-launch command, if it has one, then {@code then} — or reports the failure and
      * runs nothing.
@@ -278,8 +284,15 @@ final class RunCoordinator {
      * marshalled back on, so everything after it keeps the single-threaded UI assumption the rest of this
      * class is written against. With no before-launch step this is a straight call, not a thread hop, so the
      * common case is unchanged.
+     *
+     * <p>Static and package-visible so {@link DebugCoordinator} launches through the same gate. It used to be
+     * private, and the debug path simply had no before-launch step — so a configuration whose build was
+     * {@code mvn -q compile} compiled when you pressed Run and silently debugged the previous class files
+     * when you pressed Debug, which is the exact failure the step exists to prevent, in the one mode where a
+     * stale line number is most confusing. The caller supplies {@code cwd} because each coordinator resolves
+     * the project root its own way.
      */
-    private void withBeforeLaunch(RunConfiguration cfg, Runnable then) {
+    static void withBeforeLaunch(CoordinatorHost host, RunConfiguration cfg, Path cwd, Runnable then) {
         String command = cfg.beforeLaunch();
         if (command == null || command.isBlank()) {
             then.run();
@@ -290,7 +303,6 @@ final class RunCoordinator {
             then.run();
             return;
         }
-        Path cwd = beforeLaunchDir(cfg);
         host.setStatus(tr("status.run.beforeLaunch", cfg.name()));
         Thread worker = new Thread(
                 () -> {

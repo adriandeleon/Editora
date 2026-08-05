@@ -14,6 +14,7 @@ import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -60,7 +61,7 @@ class RunConfigToolbarFxTest {
     }
 
     private static RunConfiguration java(String name) {
-        return new RunConfiguration(name, "run", "com.example.App", "", "", "", "");
+        return new RunConfiguration(name, "com.example.App", "", "", "", "");
     }
 
     /**
@@ -337,18 +338,33 @@ class RunConfigToolbarFxTest {
         return FxTestSupport.field(fx.controller, "EDIT_CONFIGS_ROW");
     }
 
-    /** Each configuration becomes a real command, so it shows in the palette and can take a keybinding. */
+    /**
+     * Each configuration becomes <b>two</b> real commands — run and debug — so both verbs show in the palette
+     * and can take a keybinding.
+     *
+     * <p>Two rather than one because a command id is what a keybinding binds to. A configuration used to
+     * carry a {@code kind} that the single command honoured; that was the only way to bind a key which
+     * debugged a named configuration, at the cost of making such an entry impossible to plain-run.
+     */
     @Test
-    void eachConfigurationBecomesABindableCommand() throws Exception {
+    void eachConfigurationBecomesTwoBindableCommands() throws Exception {
         setConfigs(List.of(java("Integration Tests")));
 
-        String id = RunConfiguration.commandIdFor("Integration Tests");
-        assertEquals("run.config.integration-tests", id, "slugged into a stable id");
-        assertTrue(FxTestSupport.callOnFx(() -> registry.get(id).isPresent()), "registered");
-        assertEquals(
-                "Integration Tests",
-                FxTestSupport.callOnFx(() -> registry.get(id).orElseThrow().title()),
-                "titled by the configuration's own name");
+        String runId = RunConfiguration.commandIdFor("Integration Tests");
+        String debugId = RunConfiguration.debugCommandIdFor("Integration Tests");
+        assertEquals("run.config.integration-tests", runId, "slugged into a stable id");
+        assertEquals("debug.config.integration-tests", debugId, "and a distinct one for debugging");
+        assertTrue(FxTestSupport.callOnFx(() -> registry.get(runId).isPresent()), "run command registered");
+        assertTrue(FxTestSupport.callOnFx(() -> registry.get(debugId).isPresent()), "debug command registered");
+
+        // Both carry the configuration's name, but must be told apart in a palette listing them side by side.
+        String runTitle =
+                FxTestSupport.callOnFx(() -> registry.get(runId).orElseThrow().title());
+        String debugTitle =
+                FxTestSupport.callOnFx(() -> registry.get(debugId).orElseThrow().title());
+        assertTrue(runTitle.contains("Integration Tests"), "names the configuration, got: " + runTitle);
+        assertTrue(debugTitle.contains("Integration Tests"), "names the configuration, got: " + debugTitle);
+        assertNotEquals(runTitle, debugTitle, "and the two are distinguishable");
 
         setConfigs(List.of());
     }

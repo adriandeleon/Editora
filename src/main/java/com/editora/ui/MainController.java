@@ -125,7 +125,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * {@code runConfigCombo.getValue()} is never the sentinel by the time anything reads it.
      */
     private static final com.editora.config.RunConfiguration EDIT_CONFIGS_ROW =
-            new com.editora.config.RunConfiguration("", "run", "", "", "", "", "");
+            new com.editora.config.RunConfiguration("", "", "", "", "", "");
 
     /** True while the value listener is reverting a click on {@link #EDIT_CONFIGS_ROW}, so it ignores itself. */
     private boolean revertingRunConfigRow;
@@ -4504,7 +4504,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // failed compile never runs a stale binary. Bare `mvn` rather than a resolved absolute path:
             // this is persisted, and a path would rot the moment the user changed their Maven install.
             state.setRunConfigurations(List.of(new com.editora.config.RunConfiguration(
-                    name, "run", "java", "", main.fqn(), name, "", "", root.toString(), "", "mvn -q compile")));
+                    name, "java", "", main.fqn(), name, "", "", root.toString(), "", "mvn -q compile")));
             state.setSelectedRunConfig(name);
             state.setOpenFiles(List.of(new WorkspaceState.OpenFile(main.file().toString(), 0, false)));
             state.setActiveFile(main.file().toString());
@@ -9762,7 +9762,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.spellLanguage", langId));
     }
 
-    /** {@code run.config}: pick a saved run/debug configuration and launch it. */
+    /**
+     * A configuration's detail line in the pickers: what it actually launches.
+     *
+     * <p>This slot used to hold the {@code run}/{@code debug} tag. With that gone the useful thing to show is
+     * the target itself — which also disambiguates two configurations that differ only in their arguments.
+     * No i18n: a class name and a script path are technical identifiers, not prose.
+     */
+    private static String runConfigDetail(com.editora.config.RunConfiguration cfg) {
+        return cfg.isJava() ? cfg.mainClass() : cfg.target();
+    }
+
+    /** {@code run.config}: pick a saved configuration and run it. */
     private void runSavedConfig() {
         if (config.getWorkspaceState().getRunConfigurations().isEmpty()) {
             setStatus(tr("status.run.noConfigs"));
@@ -9773,14 +9784,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 tr("run.config.prompt"),
                 () -> List.copyOf(config.getWorkspaceState().getRunConfigurations()),
                 com.editora.config.RunConfiguration::name,
-                c -> c.isDebug() ? tr("run.config.debugTag") : tr("run.config.runTag"),
+                MainController::runConfigDetail,
                 cfg -> {
-                    if (cfg == null) {
-                        return;
-                    }
-                    if (cfg.isDebug()) {
-                        debugCoordinator.debugConfig(cfg);
-                    } else {
+                    if (cfg != null) {
                         runCoordinator.runConfig(cfg);
                     }
                 });
@@ -9788,7 +9794,28 @@ public class MainController implements com.editora.mcp.McpBridge {
         picker.show(stage);
     }
 
-    /** Renders the selector's rows by name (with a run/debug tag) and remembers the choice across restarts. */
+    /** {@code debug.config}: pick a saved configuration and debug it — the same entries, the other verb. */
+    private void debugSavedConfig() {
+        if (config.getWorkspaceState().getRunConfigurations().isEmpty()) {
+            setStatus(tr("status.run.noConfigs"));
+            return;
+        }
+        QuickOpen<com.editora.config.RunConfiguration> picker = new QuickOpen<>(
+                tr("run.config.debugPickerTitle"),
+                tr("run.config.prompt"),
+                () -> List.copyOf(config.getWorkspaceState().getRunConfigurations()),
+                com.editora.config.RunConfiguration::name,
+                MainController::runConfigDetail,
+                cfg -> {
+                    if (cfg != null) {
+                        debugCoordinator.debugConfig(cfg);
+                    }
+                });
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** Renders the selector's rows by name and remembers the choice across restarts. */
     private void setupRunConfigCombo() {
         runConfigCombo.getStyleClass().add("run-config-combo");
         runConfigCombo.setPromptText(tr("toolbar.runConfig.none"));
@@ -9808,8 +9835,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 if (cfg == EDIT_CONFIGS_ROW) {
                     return tr("toolbar.runConfig.edit");
                 }
-                String tag = cfg.isDebug() ? tr("run.config.debugTag") : tr("run.config.runTag");
-                return cfg.name() + "  ·  " + tag;
+                // Just the name: the row no longer carries a run/debug tag, because the two buttons beside
+                // this combo are what choose between them.
+                return cfg.name();
             }
 
             @Override
@@ -9844,9 +9872,15 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Rebuilds the toolbar selector from the saved configurations and re-registers one synthetic
-     * {@code run.config.<slug>} command per configuration, so each is palette-visible and can be given a
-     * keybinding — the same shape macros ({@code macro.run.*}) and external tools already use.
+     * Rebuilds the toolbar selector from the saved configurations and re-registers <b>two</b> synthetic
+     * commands per configuration — {@code run.config.<slug>} and {@code debug.config.<slug>} — so each is
+     * palette-visible and can be given a keybinding, the same shape macros ({@code macro.run.*}) and
+     * external tools already use.
+     *
+     * <p>Two rather than one because a command id is what a keybinding binds to. A configuration used to
+     * declare a {@code kind}, and the single command honoured it; that was the only way to bind a key that
+     * debugged a named configuration, and it came at the cost of making such an entry impossible to plain-run
+     * from the toolbar. A command each gives both without the trade.
      *
      * <p>Called after any change to the list: the save/delete commands, and every settings apply (the
      * Settings page edits the same list).
@@ -9856,10 +9890,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 List.copyOf(config.getWorkspaceState().getRunConfigurations());
 
         // Drop stale synthetic commands before re-registering, or a renamed configuration would leave its old
-        // id behind in the palette pointing at something that no longer exists.
+        // id behind in the palette pointing at something that no longer exists. Both prefixes: missing one
+        // here would strand every debug twin the moment a configuration was renamed.
         List<String> stale = new ArrayList<>();
         for (Command c : registry.all()) {
-            if (c.id().startsWith(com.editora.config.RunConfiguration.COMMAND_PREFIX)) {
+            if (c.id().startsWith(com.editora.config.RunConfiguration.COMMAND_PREFIX)
+                    || c.id().startsWith(com.editora.config.RunConfiguration.DEBUG_COMMAND_PREFIX)) {
                 stale.add(c.id());
             }
         }
@@ -9867,8 +9903,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         for (com.editora.config.RunConfiguration cfg : configs) {
             registry.register(Command.of(
                     com.editora.config.RunConfiguration.commandIdFor(cfg.name()),
-                    cfg.name(),
-                    () -> launchRunConfig(cfg)));
+                    tr("run.config.runCommandTitle", cfg.name()),
+                    () -> runCoordinator.runConfig(cfg)));
+            registry.register(Command.of(
+                    com.editora.config.RunConfiguration.debugCommandIdFor(cfg.name()),
+                    tr("run.config.debugCommandTitle", cfg.name()),
+                    () -> debugCoordinator.debugConfig(cfg)));
         }
 
         if (runConfigCombo == null) {
@@ -9998,27 +10038,24 @@ public class MainController implements com.editora.mcp.McpBridge {
         runConfigEditor.accept(name);
     }
 
-    /** Launches {@code cfg} by its own kind — the selector's Run button honours a debug configuration. */
-    private void launchRunConfig(com.editora.config.RunConfiguration cfg) {
-        if (cfg == null) {
-            return;
-        }
-        if (cfg.isDebug()) {
-            debugCoordinator.debugConfig(cfg);
-        } else {
+    /** The configuration the toolbar's Run/Debug buttons act on, or null with nothing selected. */
+    private com.editora.config.RunConfiguration selectedRunConfig() {
+        return runConfigCombo == null ? null : runConfigCombo.getValue();
+    }
+
+    /** Runs the selected configuration. The button chooses the verb; the configuration never does. */
+    @FXML
+    private void onRunSelectedConfig() {
+        com.editora.config.RunConfiguration cfg = selectedRunConfig();
+        if (cfg != null) {
             runCoordinator.runConfig(cfg);
         }
     }
 
-    @FXML
-    private void onRunSelectedConfig() {
-        launchRunConfig(runConfigCombo == null ? null : runConfigCombo.getValue());
-    }
-
-    /** Debug regardless of the configuration's own kind — the Debug button is an explicit override. */
+    /** Debugs the selected configuration — the same entry, the other verb. */
     @FXML
     private void onDebugSelectedConfig() {
-        com.editora.config.RunConfiguration cfg = runConfigCombo == null ? null : runConfigCombo.getValue();
+        com.editora.config.RunConfiguration cfg = selectedRunConfig();
         if (cfg != null) {
             debugCoordinator.debugConfig(cfg);
         }
@@ -10074,7 +10111,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
             List<com.editora.config.RunConfiguration> list =
                     new java.util.ArrayList<>(config.getWorkspaceState().getRunConfigurations());
-            list.add(new com.editora.config.RunConfiguration(name.strip(), "run", fqn, "", args, "", ""));
+            list.add(new com.editora.config.RunConfiguration(name.strip(), fqn, "", args, "", ""));
             config.getWorkspaceState().setRunConfigurations(list);
             config.save();
             refreshRunConfigs();
@@ -10165,7 +10202,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 tr("run.config.prompt"),
                 () -> List.copyOf(config.getWorkspaceState().getRunConfigurations()),
                 com.editora.config.RunConfiguration::name,
-                c -> c.isDebug() ? tr("run.config.debugTag") : tr("run.config.runTag"),
+                MainController::runConfigDetail,
                 cfg -> {
                     if (cfg == null) {
                         return;
@@ -15489,6 +15526,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("file.runWithArgs", runCoordinator::runActiveFileWithArgs));
         registry.register(Command.of("run.mainClass", runCoordinator::runMainClass));
         registry.register(Command.of("run.config", this::runSavedConfig));
+        // Under `debug.` so Chrome's feature rule gates it with the rest of debugging, exactly like the
+        // per-configuration debug.config.<slug> commands below.
+        registry.register(Command.of("debug.config", this::debugSavedConfig));
         registry.register(Command.of("run.saveConfig", this::saveRunConfig));
         registry.register(Command.of("run.deleteConfig", this::deleteRunConfig));
         registry.register(Command.of("run.editConfigs", this::editRunConfigs));

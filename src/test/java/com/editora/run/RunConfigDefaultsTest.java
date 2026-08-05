@@ -63,7 +63,6 @@ class RunConfigDefaultsTest {
         assertEquals("App", c.name(), "named after the class, not \"New Configuration\"");
         assertEquals("com.example.App", c.mainClass());
         assertEquals("java", c.type());
-        assertEquals("run", c.kind());
         assertFalse(c.missingMainClass(), "runnable straight away");
     }
 

@@ -15,7 +15,7 @@ class SharedRunConfigsTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static RunConfiguration cfg(String name, String args) {
-        return new RunConfiguration(name, "run", "com.example.App", "", args, "", "");
+        return new RunConfiguration(name, "com.example.App", "", args, "", "");
     }
 
     @Test

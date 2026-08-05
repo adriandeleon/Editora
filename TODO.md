@@ -3,6 +3,24 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Run configurations: no more run/debug `kind`, and debug honours before-launch** — the `kind` field
+      decided only what the *Run* button did with an entry, so a debug-kind configuration turned Run into a
+      second Debug button and could not be plain-run at all. One configuration, two buttons now; a stored
+      `kind` is ignored on load and dropped on the next write (`WorkspaceState` schema 6→7, identity). The one
+      thing `kind` was genuinely good for — a **keybinding** that debugs a *named* configuration — is now a
+      second synthetic command family, **`debug.config.<slug>`** beside `run.config.<slug>`, which lands under
+      `debug.` so `Chrome`'s existing feature rule gates it for free. `refreshRunConfigs` must scan **both**
+      prefixes when dropping stale ids, or a rename strands every debug twin. The record's convenience
+      constructor was deliberately narrowed to 6 args (the pre-`kind` shapes took 7 and 8) so every
+      unconverted call site fails to **compile** instead of silently re-binding `"run"` to `mainClass` and
+      shifting the rest — positional `String` constructors give no other warning. Separately,
+      `RunCoordinator.withBeforeLaunch` became `static` + package-visible so `DebugCoordinator` shares it: it
+      was private, so **the debug path ran no build step at all** and a configuration whose before-launch was
+      `mvn -q compile` silently debugged the previous class files, every breakpoint on a stale line number.
+      Debug runs it *after* its guards (a script type or blank main class cannot launch, so building first is
+      wasted minutes), whereas Run wraps its whole dispatch. *Coverage note: `BeforeLaunchGateFxTest` pins the
+      gate's semantics directly; the wiring into a live debug session needs a real jdtls plus the java-debug
+      bundle, so that half is a device test.*
 - [x] **jdtls organize-imports / copy-FQN / reload-project** (#746, partial) — three more of the unused
       commands. Signatures came off the jar (`JavaProtocolExtensions`): `organizeImports(CodeActionParams)`
       wants the **whole file's range**, not a caret position — a position compiles and returns an empty edit,

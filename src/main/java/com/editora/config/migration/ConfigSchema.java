@@ -170,7 +170,11 @@ public enum ConfigSchema {
                     2, ConfigMigrations::identity,
                     3, ConfigMigrations::identity,
                     4, ConfigMigrations::identity, // v4→5: + manualFoldRegions (additive)
-                    5, ConfigMigrations::identity)), // v5→6: + toolWindowSizes (additive)
+                    5, ConfigMigrations::identity, // v5→6: + toolWindowSizes (additive)
+                    // v6→7: RunConfiguration lost `kind` ("run"/"debug"). A removal, but still identity: the
+                    // field is unknown on load and dropped on the next write, and a v6 reader copes with a
+                    // v7 file for the same reason (a missing `kind` defaulted to "run" there anyway).
+                    6, ConfigMigrations::identity)),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.

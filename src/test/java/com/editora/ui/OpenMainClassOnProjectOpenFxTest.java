@@ -101,7 +101,7 @@ class OpenMainClassOnProjectOpenFxTest {
     void opensTheConfiguredMainClassWhenNoJavaFileIsOpen() throws Exception {
         closeAllTabs();
         Path root = project("a");
-        openWith(root, new RunConfiguration("demo", "run", "com.example.demo.App", "", "", "", root.toString()));
+        openWith(root, new RunConfiguration("demo", "com.example.demo.App", "", "", "", root.toString()));
         assertTrue(javaTabOpen("App.java"), "the class the configuration launches is opened");
     }
 
@@ -111,7 +111,7 @@ class OpenMainClassOnProjectOpenFxTest {
         Path root = project("b");
         // The App.java-in-mainClass mistake is reported at launch with its own message; acting on it here
         // would re-hide it behind a file that opens but still cannot run.
-        openWith(root, new RunConfiguration("demo", "run", "App.java", "", "", "", root.toString()));
+        openWith(root, new RunConfiguration("demo", "App.java", "", "", "", root.toString()));
         assertFalse(javaTabOpen("App.java"));
     }
 
@@ -119,7 +119,7 @@ class OpenMainClassOnProjectOpenFxTest {
     void doesNothingWhenTheConfigurationHasNoMainClass() throws Exception {
         closeAllTabs();
         Path root = project("c");
-        openWith(root, new RunConfiguration("demo", "run", "", "", "", "", root.toString()));
+        openWith(root, new RunConfiguration("demo", "", "", "", "", root.toString()));
         assertFalse(javaTabOpen("App.java"));
     }
 
@@ -127,7 +127,7 @@ class OpenMainClassOnProjectOpenFxTest {
     void doesNothingWhenTheClassIsNotOnDisk() throws Exception {
         closeAllTabs();
         Path root = project("d");
-        openWith(root, new RunConfiguration("demo", "run", "com.example.demo.Missing", "", "", "", root.toString()));
+        openWith(root, new RunConfiguration("demo", "com.example.demo.Missing", "", "", "", root.toString()));
         assertFalse(javaTabOpen("Missing.java"));
     }
 }

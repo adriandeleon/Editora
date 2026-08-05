@@ -156,7 +156,7 @@ class RunConfigLaunchFxTest {
     @Test
     void aBlankProjectNameIsFilledInFromJdtlsOwnEnumeration() throws Exception {
         RecordingOps ops = new RecordingOps();
-        launch(ops, new RunConfiguration("demo", "run", "com.example.demo.App", "", "", "", root.toString()));
+        launch(ops, new RunConfiguration("demo", "com.example.demo.App", "", "", "", root.toString()));
 
         JavaMainClass used = ops.resolvedWith.get();
         assertNotNull(used, "the launch reached the classpath resolution");
@@ -169,7 +169,7 @@ class RunConfigLaunchFxTest {
         // A project jdtls cannot enumerate must still try, rather than silently do nothing.
         RecordingOps ops = new RecordingOps();
         ops.enumerated = List.of();
-        launch(ops, new RunConfiguration("demo", "run", "com.example.demo.App", "myproj", "", "", root.toString()));
+        launch(ops, new RunConfiguration("demo", "com.example.demo.App", "myproj", "", "", root.toString()));
 
         JavaMainClass used = ops.resolvedWith.get();
         assertNotNull(used);
@@ -177,7 +177,7 @@ class RunConfigLaunchFxTest {
     }
 
     private static RunConfiguration cfg(String name, String mainClass) {
-        return new RunConfiguration(name, "run", "java", "", mainClass, name, "", "", "/tmp", "", "");
+        return new RunConfiguration(name, "java", "", mainClass, name, "", "", "/tmp", "", "");
     }
 
     /**

@@ -30,7 +30,7 @@ public final class RunConfigDefaults {
             String suggestedMainClass, Collection<String> existingNames, String fallbackName) {
         String name = uniqueName(nameFor(suggestedMainClass, fallbackName), existingNames);
         return new com.editora.config.RunConfiguration(
-                name, "run", suggestedMainClass == null ? "" : suggestedMainClass.strip(), "", "", "", "");
+                name, suggestedMainClass == null ? "" : suggestedMainClass.strip(), "", "", "", "");
     }
 
     /**
@@ -55,9 +55,10 @@ public final class RunConfigDefaults {
     /**
      * {@code base}, or {@code base (2)}, {@code base (3)}… until it collides with nothing in {@code existing}.
      *
-     * <p><b>Not cosmetic.</b> Each configuration is registered as a synthetic {@code run.config.<slug>}
-     * command so it can be found in the palette and given a keybinding, and the slug comes from the name — so
-     * two configurations sharing a name share an id, and the second silently overwrites the first's command.
+     * <p><b>Not cosmetic.</b> Each configuration is registered as synthetic {@code run.config.<slug>} and
+     * {@code debug.config.<slug>} commands so it can be found in the palette and given a keybinding, and the
+     * slug comes from the name — so two configurations sharing a name share both ids, and the second
+     * silently overwrites the first's commands.
      * Adding twice from the same file would otherwise produce that collision every time, since both would be
      * named after the same class.
      *
