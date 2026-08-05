@@ -156,8 +156,8 @@ public enum ConfigSchema {
                     Map.entry(90, (Migration) ConfigMigrations::identity), // v90→91: + lspPasteImports (additive)
                     Map.entry(91, (Migration) ConfigMigrations::identity), // v91→92: + lspSmartSemicolon (additive)
                     Map.entry(92, (Migration) ConfigMigrations::identity), // v92→93: + gitPath (additive)
-                    Map.entry(93, (Migration)
-                            ConfigMigrations::identity))), // v93→94: + mavenArchetypeCatalogUrl (additive)
+                    Map.entry(93, (Migration) ConfigMigrations::identity), // v93→94: + mavenArchetypeCatalogUrl
+                    Map.entry(94, (Migration) ConfigMigrations::identity))), // v94→95: + inlayHintMode (additive)
     // v1 → v2 added the editor-group layout + OpenFile.group. Both default to the old single-group
     // behaviour, so the step is identity.
     // v1→v2 editor-group layout, v2→v3 RunConfiguration type/target, v3→v4 selectedRunConfig — all additive

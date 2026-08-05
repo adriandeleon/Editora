@@ -11122,6 +11122,24 @@ public class MainController implements com.editora.mcp.McpBridge {
                 });
     }
 
+    /** Picker for how aggressively inlay parameter-name hints are suppressed (Literals only / All). */
+    private void chooseInlayHintMode() {
+        chooseSetting(
+                "lsp.setInlayHintMode", () -> List.of("literals", "all"), SettingsWindow::inlayHintModeName, id -> {
+                    Settings s = config.getSettings();
+                    s.setInlayHintMode(id);
+                    requestSave();
+                    lspCoordinator.applyInlayHints();
+                    if (settingsWindow != null) {
+                        settingsWindow.syncAll();
+                    }
+                    setStatus(tr(
+                            "status.settingChanged",
+                            commandTitle("lsp.setInlayHintMode"),
+                            SettingsWindow.inlayHintModeName(id)));
+                });
+    }
+
     /** Picker for the editor font family (same choices as Settings → Appearance). */
     private void chooseFont() {
         chooseSetting("appearance.setFont", SettingsWindow::fontFamilyChoices, name -> name, name -> {
@@ -15668,6 +15686,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> config.getSettings().isInlayHints(),
                         config.getSettings()::setInlayHints,
                         lspCoordinator::applyInlayHints)));
+        registry.register(Command.of("lsp.setInlayHintMode", this::chooseInlayHintMode));
         registry.register(Command.of("tool.commit", () -> git.ifEnabled(() -> toolWindows.toggle(commitToolWindow))));
         // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is
         // absent / not in a repo. The ifGit wrapper disables the commands + keybindings when Git is off.

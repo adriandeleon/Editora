@@ -21,6 +21,21 @@ A backlog of planned features and improvements. Unordered within each section.
       wasted minutes), whereas Run wraps its whole dispatch. *Coverage note: `BeforeLaunchGateFxTest` pins the
       gate's semantics directly; the wiring into a live debug session needs a real jdtls plus the java-debug
       bundle, so that half is a device test.*
+
+- [x] **Inlay-hint filtering** (#823) — a server labels *every* argument of every call, so
+      `System.out.println("Hello")` earned an `x:` (the JDK declares `println(String x)`). Two tiers in the
+      pure, unit-tested `lsp/InlayHintFilter`: **always** drop a parameter hint whose name explains nothing
+      (single letter, `arg0`/`param1`/`p2`) or merely repeats its argument (`foo(name: name)`, and the
+      equally redundant `this.name`); then a `literals`/`all` mode — default **literals**, matching VS Code —
+      for the rest. **Type hints are never filtered**, which is why `InlayHintSpan` now carries the server's
+      `InlayHintKind`: a `: String` after a `var` is information the source doesn't otherwise have, whereas
+      both rules above are about how an *argument* is named. `kind` is **optional** in the protocol, so
+      `LspManager.isParameterHint` falls back to the label shape (a leading `:` is the type form) — without
+      it a server that omits the kind would have its type hints become filterable. Filtering runs **before**
+      `aggregateInlayHints`, since the aggregate joins a line's labels into one opaque run. Ambiguity
+      resolves toward the mode: an unclassifiable column (past the line end) is dropped in `literals`
+      ("only when sure") and kept in `all`. Settings → Code Completion picker + `lsp.setInlayHintMode`;
+      schema 94→95 (additive).
 - [x] **jdtls organize-imports / copy-FQN / reload-project** (#746, partial) — three more of the unused
       commands. Signatures came off the jar (`JavaProtocolExtensions`): `organizeImports(CodeActionParams)`
       wants the **whole file's range**, not a caret position — a position compiles and returns an empty edit,

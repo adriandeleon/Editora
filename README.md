@@ -223,7 +223,8 @@ Editora is built with the help of AI coding tools.
   **Override/Implement Methods** — each opens a checkbox list: Space toggles, Enter generates), and
   **Format Document** (whole-file reformat via the server, when it advertises formatting — palette or the
   editor right-click menu), **inlay hints** (the server's parameter-name / inferred-type annotations, drawn
-  in grey italics after each line — off by default, Settings → Code Completion), **re-indent as you type**
+  in grey italics after each line — off by default, Settings → Code Completion; parameter hints that explain
+  nothing are always hidden, and by default the rest appear only on literal arguments), **re-indent as you type**
   (typing `;`, `}` or Enter snaps the line to the server's own indentation convention — indentation only,
   never a reformat; off by default, Settings → Code Completion or `view.toggleOnTypeFormatting`), and
   **server-provided folding + expand/shrink selection** (grammar-accurate where a server offers them — an

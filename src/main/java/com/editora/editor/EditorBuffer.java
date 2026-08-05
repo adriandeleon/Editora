@@ -7205,6 +7205,18 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
+     * A 0-based line's text, or {@code ""} when the index is out of range — so a caller reading lines a
+     * server reported against a document that has since moved gets an empty string rather than an
+     * exception. Used by inlay-hint filtering to classify the argument at a hint's column (#823).
+     */
+    public String lineText(int line) {
+        var paragraphs = area.getParagraphs();
+        return (line < 0 || line >= paragraphs.size())
+                ? ""
+                : paragraphs.get(line).getText();
+    }
+
+    /**
      * Enables huge-file (read-only) mode: implies large-file mode, and makes the views non-editable
      * with no undo. Used for files the loader had to truncate; see {@link #HUGE_FILE_BYTES}.
      */
