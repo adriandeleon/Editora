@@ -173,9 +173,33 @@ public class ToolWindowManager {
         // Without this subtraction, giving the buttons breathing room silently walks the first icon down
         // past the text it is supposed to sit beside.
         long top = Math.max(0, Math.round(tabHeaderHeight) - STRIPE_BUTTON_TOP_INSET);
+        verticalStripeTopInset = top;
         String style = "-fx-padding: " + top + "px 0 8px 0;";
         leftStripe.setStyle(style);
         rightStripe.setStyle(style);
+        for (Map.Entry<ToolWindow, Region> e : panels.entrySet()) {
+            applyPanelTopInset(e.getKey(), e.getValue());
+        }
+    }
+
+    /** The inset the vertical stripes carry, so a panel opened later starts at the same line. */
+    private double verticalStripeTopInset;
+
+    /**
+     * Drops a left/right tool window's header to the first stripe button.
+     *
+     * <p>The stripes and the split holding the panels are siblings of one {@link BorderPane}, so they share
+     * a top edge — and the stripes are deliberately inset to line their first glyph up with the editor's
+     * first line of code. Without the same inset the panel's header sits a tab-strip's height above the
+     * stripe button that opened it, which reads as two competing top edges.
+     *
+     * <p>Bottom panels live below the horizontal split and are never inset. The inset is an inline style
+     * for the reason given on {@link #applyStripeTopInset}, and is safe to overwrite wholesale because
+     * {@code ToolWindowPanel} sets no inline style of its own.
+     */
+    private void applyPanelTopInset(ToolWindow tw, Region panel) {
+        boolean vertical = currentSide(tw) != ToolWindow.Side.BOTTOM;
+        panel.setStyle(vertical ? "-fx-padding: " + Math.round(verticalStripeTopInset) + "px 0 0 0;" : "");
     }
 
     /** Mirrors {@code .tool-stripe-button}'s top inset in app.css — keep the two in step. */
@@ -560,6 +584,7 @@ public class ToolWindowManager {
         ToolWindowPanel panel = new ToolWindowPanel(tw, () -> close(tw));
         panels.put(tw, panel);
         openBySide.put(side, tw);
+        applyPanelTopInset(tw, panel); // match the stripe the button that opened it sits on
         switch (side) {
             case LEFT -> {
                 hSplit.getItems().add(0, panel);

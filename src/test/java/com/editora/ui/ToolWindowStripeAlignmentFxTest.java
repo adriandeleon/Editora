@@ -134,6 +134,41 @@ class ToolWindowStripeAlignmentFxTest {
         });
     }
 
+    /**
+     * An open side panel's header must start where the stripe's first button does.
+     *
+     * <p>The stripes and the split holding the panels share a top edge, but only the stripes were inset to
+     * meet the editor's first line of code — so the panel's header sat a tab-strip's height above the very
+     * button that opened it. Two competing top edges, and nothing but the eye to catch it.
+     */
+    @Test
+    void anOpenSidePanelsHeaderStartsAtTheFirstStripeButton() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Button stripeButton = firstRightStripeButton();
+            stripeButton.fire();
+            try {
+                Scene scene = FxTestSupport.<Stage>field(fx.controller, "stage").getScene();
+                scene.getRoot().applyCss();
+                scene.getRoot().layout();
+
+                ToolWindowManager twm = FxTestSupport.field(fx.controller, "toolWindows");
+                java.util.Map<ToolWindow, Region> panels = FxTestSupport.field(twm, "panels");
+                assertEquals(1, panels.size(), "firing the stripe button should have opened its tool window");
+                Region panel = panels.values().iterator().next();
+                Node header = panel.lookup(".tool-window-header");
+                assertNotNull(header, "an open tool window should carry a header");
+
+                assertEquals(
+                        inScene(stripeButton).getMinY(),
+                        inScene(header).getMinY(),
+                        TOLERANCE,
+                        "the panel header should start level with the stripe button that opened it");
+            } finally {
+                stripeButton.fire(); // leave the layout as the other tests here expect to find it
+            }
+        });
+    }
+
     @Test
     void quitGlyphSharesAVerticalCentreLineWithTheStripeIcons() throws Exception {
         FxTestSupport.runOnFx(() -> {
