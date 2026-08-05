@@ -32,6 +32,17 @@ final class RunCoordinator {
         void openToolWindow();
 
         /**
+         * A program started or ended, so anything reading {@link RunCoordinator#isRunning()} must re-read it —
+         * today the toolbar's Stop button, which is enabled only while something is running.
+         *
+         * <p>Fired from the one place a run is launched and from the listener that ends it, rather than left
+         * to whatever else happens to refresh the toolbar: with no such call the Stop button only ever
+         * re-evaluated when the configuration list was rebuilt or its selection changed, so it sat disabled
+         * through the entire run it exists to interrupt.
+         */
+        void onRunStateChanged();
+
+        /**
          * Opens the Run Configurations page on {@code name}, so a configuration that cannot run takes you to
          * where you fix it rather than only saying what is wrong.
          */
@@ -756,14 +767,19 @@ final class RunCoordinator {
             public void onExit(int code) {
                 panel.finished(code);
                 host.setStatus(code == 0 ? tr("status.run.ok") : tr("status.run.exit", code));
+                ops.onRunStateChanged();
             }
 
             @Override
             public void onError(String message) {
                 panel.failed(message);
                 host.setStatus(tr("status.run.failed", message));
+                ops.onRunStateChanged();
             }
         });
+        // After the call, not inside onStart: RunService publishes the process before it notifies, so by here
+        // isRunning() is true whether the launch succeeded or failed back through onError above.
+        ops.onRunStateChanged();
     }
 
     /** Stops the currently running program (Run tool window Stop button / {@code run.stop} command). */

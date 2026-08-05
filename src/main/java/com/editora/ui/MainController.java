@@ -3788,6 +3788,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void onRunStateChanged() {
+            updateRunConfigButtons();
+        }
+
+        @Override
         public void editConfiguration(String name) {
             runConfigEditor.accept(name);
         }

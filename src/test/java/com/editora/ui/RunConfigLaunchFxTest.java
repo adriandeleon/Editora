@@ -70,6 +70,9 @@ class RunConfigLaunchFxTest {
         public void openToolWindow() {}
 
         @Override
+        public void onRunStateChanged() {}
+
+        @Override
         public void editConfiguration(String name) {}
 
         @Override
