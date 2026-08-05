@@ -4480,8 +4480,14 @@ public class MainController implements com.editora.mcp.McpBridge {
             // projectName = the artifactId, which is what jdtls names an imported Maven project. Blank works
             // too (Run falls back to jdtls's own enumeration), but naming it lets the very first launch
             // resolve directly instead of round-tripping an enumeration first.
-            state.setRunConfigurations(List.of(
-                    new com.editora.config.RunConfiguration(name, "run", main.fqn(), name, "", "", root.toString())));
+            // beforeLaunch = compile. archetype:generate writes SOURCES only, and Editora runs jdtls with
+            // autobuild disabled, so nothing has produced target/classes yet: the resolved classpath is
+            // correct and the JVM still dies with ClassNotFoundException on the very first Run. A
+            // before-launch step is the mechanism for exactly this — a non-zero exit aborts the launch, so a
+            // failed compile never runs a stale binary. Bare `mvn` rather than a resolved absolute path:
+            // this is persisted, and a path would rot the moment the user changed their Maven install.
+            state.setRunConfigurations(List.of(new com.editora.config.RunConfiguration(
+                    name, "run", "java", "", main.fqn(), name, "", "", root.toString(), "", "mvn -q compile")));
             state.setSelectedRunConfig(name);
             state.setOpenFiles(List.of(new WorkspaceState.OpenFile(main.file().toString(), 0, false)));
             state.setActiveFile(main.file().toString());
