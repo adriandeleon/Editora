@@ -581,6 +581,40 @@ public final class GitService {
         });
     }
 
+    /**
+     * Creates a repository in {@code dir} ({@code git init}).
+     *
+     * <p>Runs <em>in</em> {@code dir} rather than a repo root, like {@link #clone}: this is one of the two
+     * commands whose whole point is that there is no repository yet.
+     *
+     * <p>The already-a-repo check happens here, on the service thread, precisely because answering it means
+     * running {@code git rev-parse} — doing that from the caller would block the FX thread. {@code existing}
+     * is non-null when {@code dir} already sits inside a repository, in which case nothing was run: nesting
+     * a repo inside another is nearly always a mistake and awkward to undo.
+     *
+     * @param onResult receives the {@code git init} result and, when refused, the enclosing repo's root
+     */
+    public void init(Path dir, java.util.function.BiConsumer<ProcessRunner.Result, Path> onResult) {
+        exec.submit(() -> {
+            Path abs = dir.toAbsolutePath();
+            if (!gitAvailable()) {
+                ProcessRunner.Result r = new ProcessRunner.Result(-1, "", "Git is not installed");
+                Platform.runLater(() -> onResult.accept(r, null));
+                return;
+            }
+            Path existing = resolveRoot(abs);
+            if (existing != null) {
+                Platform.runLater(() -> onResult.accept(new ProcessRunner.Result(-1, "", ""), existing));
+                return;
+            }
+            ProcessRunner.Result r = gitLogged(abs, QUICK, "init");
+            if (r.ok()) {
+                invalidateCaches(); // the cached "not a repo" for this folder is now wrong
+            }
+            Platform.runLater(() -> onResult.accept(r, null));
+        });
+    }
+
     // --- mutations (run a command, post the raw result for status/error reporting) ---------------
 
     /**

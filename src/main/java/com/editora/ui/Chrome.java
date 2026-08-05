@@ -277,6 +277,12 @@ final class Chrome {
             java.util.Set.of("debug.stop", "debug.restart", "debug.pause");
 
     /** Debug commands that only mean anything while a thread is suspended at a stop. */
+    /**
+     * Git commands that must stay enabled <b>outside</b> a repository — creating one is the whole point.
+     * Gating these on {@code inRepo()} would grey them out in the only situation they exist for.
+     */
+    private static final java.util.Set<String> NEEDS_NO_REPO = java.util.Set.of("git.clone", "git.init");
+
     private static final java.util.Set<String> DEBUG_NEEDS_SUSPENDED = java.util.Set.of(
             "debug.continue",
             "debug.stepOver",
@@ -311,10 +317,13 @@ final class Chrome {
         if (id.startsWith("preview.")) {
             return c.hasPreview() ? null : new DisabledReason("palette.disabled.needsPreview", null);
         }
-        // Git acts on the repo the active file lives in — except cloning, which is what you run when you
-        // have no repo yet.
+        // Git acts on the repo the active file lives in — except cloning and init, which are exactly what
+        // you run when you have no repo yet. Gating those on inRepo() would grey them out in the only
+        // situation they exist for.
         if (id.startsWith("git.") || id.equals("tool.commit") || id.equals("tool.gitLog")) {
-            return c.inRepo() || id.equals("git.clone") ? null : new DisabledReason("palette.disabled.needsRepo", null);
+            return c.inRepo() || NEEDS_NO_REPO.contains(id)
+                    ? null
+                    : new DisabledReason("palette.disabled.needsRepo", null);
         }
         if (DEBUG_NEEDS_SUSPENDED.contains(id)) {
             return c.debugSuspended() ? null : new DisabledReason("palette.disabled.needsSuspended", null);
