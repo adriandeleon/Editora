@@ -147,6 +147,9 @@ class MavenProjectWizardFxTest {
             assertEquals("demo", configs.get(0).name(), "named after the project");
             assertEquals("com.example.demo.App", configs.get(0).mainClass());
             assertEquals(projectDir.toString(), configs.get(0).workingDir());
+            // jdtls names an imported Maven project by its artifactId; a blank projectName makes
+            // resolveClasspath answer with an EMPTY classpath and no error.
+            assertEquals("demo", configs.get(0).projectName(), "so the first launch resolves directly");
             assertEquals("demo", seeded.getWorkspaceState().getSelectedRunConfig(), "pre-selected");
             // The open file is not cosmetic: a Java launch resolves its classpath through an OPEN Java
             // file, so a window that opens on pom.xml alone reports "open a Java file from the project".

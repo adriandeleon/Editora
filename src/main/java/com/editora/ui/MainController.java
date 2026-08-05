@@ -4477,8 +4477,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             WorkspaceState state = seeded.getWorkspaceState(); // fresh defaults; see the note above
             // workingDir = the project root, so the launch resolves against this project even with several
             // open, and a relative path in the program behaves as it would from a terminal there.
+            // projectName = the artifactId, which is what jdtls names an imported Maven project. Blank works
+            // too (Run falls back to jdtls's own enumeration), but naming it lets the very first launch
+            // resolve directly instead of round-tripping an enumeration first.
             state.setRunConfigurations(List.of(
-                    new com.editora.config.RunConfiguration(name, "run", main.fqn(), "", "", "", root.toString())));
+                    new com.editora.config.RunConfiguration(name, "run", main.fqn(), name, "", "", root.toString())));
             state.setSelectedRunConfig(name);
             state.setOpenFiles(List.of(new WorkspaceState.OpenFile(main.file().toString(), 0, false)));
             state.setActiveFile(main.file().toString());

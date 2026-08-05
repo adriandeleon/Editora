@@ -353,18 +353,35 @@ final class RunCoordinator {
         java.util.Map<String, String> env = com.editora.run.EnvVars.parse(cfg.env());
         String label = shortName(cfg.mainClass());
         if (ops.javaLaunchAvailable()) {
-            JavaMainClass mc = new JavaMainClass(cfg.mainClass(), cfg.projectName(), routing.toString());
-            ops.resolveJavaLaunch(routing, mc, info -> {
-                if (info == null || !info.ok()) {
-                    host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
-                    return;
-                }
-                streamRun(
-                        label,
-                        cwd,
-                        JavaRunCommand.build(
-                                info.javaExec(), info.modulePaths(), info.classPaths(), cfg.mainClass(), vm, args),
-                        env);
+            // Ask jdtls to enumerate its own main classes first and use the entry it returns, exactly as the
+            // Debug path and the gutter Run marker already do.
+            //
+            // Hand-building the option instead is what made a saved configuration fail where the identical
+            // gutter click worked: resolveClasspath is passed (mainClass, projectName), a saved configuration
+            // usually carries a BLANK projectName, and jdtls answers an unmatched project with an EMPTY
+            // classpath and NO error — surfacing as "make sure the Java project has finished importing" for a
+            // project that had imported perfectly. jdtls's own entry carries the real project name (and the
+            // file that actually declares the class, rather than whichever file happened to route the call).
+            //
+            // Falls back to the configuration's own values when the enumeration comes back empty, so a
+            // project jdtls cannot enumerate still gets its previous behaviour rather than nothing.
+            ops.resolveJavaMainClasses(routing, options -> {
+                JavaMainClass mc = options.stream()
+                        .filter(o -> cfg.mainClass().equals(o.fqn()))
+                        .findFirst()
+                        .orElseGet(() -> new JavaMainClass(cfg.mainClass(), cfg.projectName(), routing.toString()));
+                ops.resolveJavaLaunch(routing, mc, info -> {
+                    if (info == null || !info.ok()) {
+                        host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
+                        return;
+                    }
+                    streamRun(
+                            label,
+                            cwd,
+                            JavaRunCommand.build(
+                                    info.javaExec(), info.modulePaths(), info.classPaths(), cfg.mainClass(), vm, args),
+                            env);
+                });
             });
         } else if (ops.mavenProjectAt(root)) {
             host.setStatus(tr("status.run.resolvingClasspath"));
