@@ -234,6 +234,40 @@ class IndenterTest {
     }
 
     @Test
+    void smartTabMovesTheCaretToTheIndentWhenTheLineIsAlreadyIndented() {
+        // Enter inside a block leaves the new line already carrying its indent, so a Tab pressed from
+        // column 0 has no text to add — but it must still put the caret where typing starts, or it looks
+        // like Tab did nothing at all.
+        String text = "    void m() {\n        \n    }"; // the blank body line starts at offset 15
+        Indenter.TabEdit e = Indenter.smartTab(text, 15, 15, "java", 4, false);
+        assertEquals("", e.replacement()); // the indent is already right
+        assertEquals(15 + 8, e.selStart()); // …and the caret lands after it
+        assertEquals(15 + 8, e.selEnd());
+    }
+
+    @Test
+    void smartTabFromInsideTheIndentGoesToItsEndAndThenStops() {
+        String text = "    void m() {\n        \n    }";
+        // Caret part-way through the leading whitespace: Tab finishes the journey.
+        Indenter.TabEdit mid = Indenter.smartTab(text, 15 + 3, 15 + 3, "java", 4, false);
+        assertEquals("", mid.replacement());
+        assertEquals(15 + 8, mid.selStart());
+        // Already at the indent's end: a genuine no-op, so repeated Tab still cannot pile up indentation.
+        Indenter.TabEdit atEnd = Indenter.smartTab(text, 15 + 8, 15 + 8, "java", 4, false);
+        assertEquals("", atEnd.replacement());
+        assertEquals(15 + 8, atEnd.selStart());
+    }
+
+    @Test
+    void smartTabOnAnOverIndentedLineMovesTheCaretWithoutDedenting() {
+        // Deliberately deeper than the block suggests (a continuation line, say): Tab must not "correct" it.
+        String text = "    void m() {\n              \n    }"; // 14 spaces where 8 are suggested
+        Indenter.TabEdit e = Indenter.smartTab(text, 15, 15, "java", 4, false);
+        assertEquals("", e.replacement());
+        assertEquals(15 + 14, e.selStart());
+    }
+
+    @Test
     void smartTabUsesTheFilesSpaceUnitWhenSnapping() {
         // Space-indented file: snapping a blank line uses spaces, never a raw \t.
         String text = "class C {\n    int x;\n\n}"; // blank line at offset 21

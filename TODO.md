@@ -3,6 +3,14 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Tab moves the caret to the indent on an already-indented line** — Enter inside a block leaves the new
+      line carrying its indent, so Tab had nothing to add and the "repeated Tab must not pile on indentation"
+      guard swallowed the keystroke whole: from column 0 (`C-a`/Home/a click) Tab did *nothing*. Both paths
+      now end with the caret at the end of the leading whitespace — `Indenter.smartTab`'s no-op branch, and
+      `applyLspLineIndent` when the server's indent already matches. The latter takes a `fromTab` flag because
+      it is shared with on-type formatting, which fires mid-typing and must never move the caret. Found by
+      probing the pure core with the reported document: the genuinely-empty-line case worked, which is why it
+      looked like Tab was broken only sometimes.
 - [x] **LSP snippet completions expand instead of flattening** — Editora turned every server snippet into
       literal text, which is what made Java completion feel useless: jdtls sends `java.util.${0:*};` for an
       import package and `add(${1:e})` for a method, and the placeholders arrived as characters to delete by

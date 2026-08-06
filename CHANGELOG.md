@@ -125,6 +125,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Tab on an already-indented line now moves the caret to where you type.** Pressing Enter inside a block
+  leaves the new line already carrying its indent, so Tab has no indentation left to add — and it did
+  nothing at all. Going back to the start of that line (`C-a`, Home, a click) and pressing Tab left the
+  caret sitting at column 0, which reads as Tab being broken. It now puts the caret at the end of the
+  indent, the way Emacs' own TAB does. Repeated Tab still refuses to pile on more indentation, and an
+  over-indented line is left alone rather than "corrected". The same applies with a language server
+  handling the re-indent; on-type formatting is untouched, since that fires while you are typing.
+
 - **Java completion no longer leaves placeholder text in your file.** A language server can send a
   completion as a *snippet* — text with placeholders — and Editora was flattening every one of them into
   literal characters. jdtls does this everywhere, so:

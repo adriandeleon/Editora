@@ -103,13 +103,19 @@ public final class Indenter {
         }
         String beforeCaret = text.substring(ls, caret);
         if (beforeCaret.isBlank()) {
-            // In leading whitespace: snap the line up to the indent the surrounding code implies. Once it
-            // is already at (or past) that level, Tab does nothing — repeated Tab must not keep piling on
-            // indentation. (Use Shift-Tab to dedent.)
+            // In leading whitespace: snap the line up to the indent the surrounding code implies, and put
+            // the caret where typing starts.
             String leading = leadingWhitespace(text.substring(ls, lineEnd(text, caret)));
             String suggested = suggestedIndent(text, ls, style, unit);
             if (width(leading, tabSize) >= width(suggested, tabSize)) {
-                return new TabEdit(caret, caret, "", caret, caret); // no-op (consumed; no extra indent)
+                // Already at (or past) that level, so the text is left alone — repeated Tab must not keep
+                // piling on indentation (use Shift-Tab to dedent). The caret still moves to the end of the
+                // indent, which is the whole point of pressing Tab there: after Enter inside a block the
+                // line already carries its indent, so coming back to column 0 (C-a, Home, a click) and
+                // pressing Tab used to do *nothing at all* rather than putting the caret where you type.
+                // Emacs' own TAB behaves this way, and it stays a true no-op once the caret is there.
+                int atIndentEnd = ls + leading.length();
+                return new TabEdit(caret, caret, "", atIndentEnd, atIndentEnd);
             }
             int newCaret = ls + suggested.length();
             return new TabEdit(ls, ls + leading.length(), suggested, newCaret, newCaret);

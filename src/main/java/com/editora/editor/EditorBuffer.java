@@ -7646,20 +7646,34 @@ public class EditorBuffer implements TabContent {
                     || !a.getParagraph(par).getText().equals(line)) {
                 return; // stale, detached, or the line changed under us
             }
-            applyLspLineIndent(a, par, line, caret, edits);
+            applyLspLineIndent(a, par, line, caret, edits, true);
         });
         return true;
     }
 
-    /** Adopts the formatter's leading whitespace for the current line, leaving the rest of the line as-is. */
-    private void applyLspLineIndent(CodeArea a, int par, String line, int caret, java.util.List<LspTextEdit> edits) {
+    /**
+     * Adopts the formatter's leading whitespace for the current line, leaving the rest of the line as-is.
+     *
+     * <p>{@code fromTab} distinguishes the two callers, and only matters when the indent is already right:
+     * a Tab pressed from inside the leading whitespace must still put the caret where typing starts (the
+     * same rule the re-indent below applies), whereas on-type formatting fires while the user is typing and
+     * must never move the caret out from under them.
+     */
+    private void applyLspLineIndent(
+            CodeArea a, int par, String line, int caret, java.util.List<LspTextEdit> edits, boolean fromTab) {
         String newIndent = LineIndent.formattedIndent(line, edits, par);
         if (newIndent == null) {
             return; // unusable (multi-line) result → leave the line untouched
         }
         String oldIndent = LineIndent.leadingWhitespace(line);
         if (newIndent.equals(oldIndent)) {
-            return; // already correctly indented
+            // Already correctly indented: no edit, but Tab from within the indent still moves the caret to
+            // its end — otherwise Tab looks like it did nothing at all.
+            int indentEnd = a.getAbsolutePosition(par, 0) + oldIndent.length();
+            if (fromTab && caret < indentEnd && indentEnd <= a.getLength()) {
+                a.moveTo(indentEnd);
+            }
+            return;
         }
         int lineStart = a.getAbsolutePosition(par, 0);
         int oldEnd = lineStart + oldIndent.length();
@@ -7894,7 +7908,7 @@ public class EditorBuffer implements TabContent {
                     || !a.getParagraph(par).getText().equals(line)) {
                 return; // stale, detached, or the user kept typing and the line moved on
             }
-            applyLspLineIndent(a, par, line, caret, edits);
+            applyLspLineIndent(a, par, line, caret, edits, false);
         });
     }
 
