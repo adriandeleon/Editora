@@ -163,6 +163,27 @@ public final class CompletionEngine {
     }
 
     /**
+     * The document range an accepted completion replaces, as {@code {start, end}} offsets.
+     *
+     * <p>The <b>start</b> never passes the caret: a server computes its range against the document as it was
+     * when the request went out, so anything typed since has to be absorbed rather than skipped over.
+     *
+     * <p>The <b>end</b> is the caret <em>unless the server asked for more</em>. It does exactly that when it
+     * means to rewrite a construct that already exists after the caret: jdtls completing
+     * {@code import java.ut|;} sends a range covering the trailing {@code ;} and an insert that ends in one,
+     * so replacing only up to the caret leaves the old semicolon behind and yields
+     * {@code import java.util.*;;}. The extension is clamped to {@code lineEnd} — every real completion
+     * range lies within one line, and a stale end must never be able to swallow the lines below.
+     *
+     * @param serverEnd the server's range end as an offset, or negative when it sent none
+     */
+    public static int[] replacedRange(int caret, int start, int serverEnd, int lineEnd) {
+        int from = Math.min(caret, Math.max(0, start));
+        int to = serverEnd < 0 ? caret : Math.max(caret, Math.min(serverEnd, Math.max(caret, lineEnd)));
+        return new int[] {from, to};
+    }
+
+    /**
      * The number of characters at the end of {@code before} that are also the start of {@code insert} — the
      * overlap the accept should replace so an insert isn't duplicated after the text that triggered it. Used
      * only when the identifier walk captured nothing (the char before the caret is a non-identifier trigger

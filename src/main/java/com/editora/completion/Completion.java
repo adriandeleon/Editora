@@ -26,7 +26,7 @@ public record Completion(
         boolean preselect,
         boolean deprecated,
         Object resolveToken,
-        ReplaceStart replaceStart) {
+        ReplaceRange replaceRange) {
 
     public enum Kind {
         SNIPPET,
@@ -34,17 +34,33 @@ public record Completion(
     }
 
     /**
-     * The LSP {@code textEdit.range.start} of the replaced range (0-based line/character), when a language
-     * server sent one. Editors must replace the server-specified range on accept, not just the identifier
-     * before the caret — the two differ when a server advertises a trigger character that is part of its own
-     * insert text (phpactor's {@code $}, bash variables). Null for word/snippet items and {@code insertText}-
-     * only LSP items. The end of the replaced range is always the current caret (absorbing chars typed since
-     * the request).
+     * The LSP {@code textEdit.range} the accept must replace (0-based line/character), when a language
+     * server sent one. Editors must replace the server-specified range, not just the identifier before the
+     * caret — the two differ when a server advertises a trigger character that is part of its own insert
+     * text (phpactor's {@code $}, bash variables). Null for word/snippet items and {@code insertText}-only
+     * LSP items.
+     *
+     * <p>The <b>end</b> matters as much as the start, and only for text <em>after</em> the caret. jdtls
+     * completing an import whose {@code ;} is already there sends a range covering that {@code ;} and an
+     * insert that ends in one, because it means to replace the whole declaration — so ignoring the end (the
+     * old behaviour, which always replaced up to the caret) left the old semicolon behind and produced
+     * {@code import java.util.*;;}. {@link #startingAt} marks "no end supplied", where the caret is right.
      */
-    public record ReplaceStart(int line, int character) {}
+    public record ReplaceRange(int line, int character, int endLine, int endCharacter) {
 
-    /** Returns a copy carrying the given LSP replace-start (or null to clear it). */
-    public Completion withReplaceStart(ReplaceStart rs) {
+        /** A range whose end is the live caret — an editor-derived range, or a server that sent none. */
+        public static ReplaceRange startingAt(int line, int character) {
+            return new ReplaceRange(line, character, -1, -1);
+        }
+
+        /** Whether the server supplied an end; otherwise the caret ends the replaced range. */
+        public boolean hasEnd() {
+            return endLine >= 0;
+        }
+    }
+
+    /** Returns a copy carrying the given LSP replace range (or null to clear it). */
+    public Completion withReplaceRange(ReplaceRange rs) {
         return new Completion(
                 label,
                 insert,
@@ -58,6 +74,28 @@ public record Completion(
                 deprecated,
                 resolveToken,
                 rs);
+    }
+
+    /**
+     * Returns a copy that expands {@code s} on accept instead of inserting {@link #insert} literally (null
+     * leaves it literal) — how a language server's snippet-format item gets its placeholders turned into
+     * real tab stops. {@link #kind} is deliberately unchanged: {@link Kind#SNIPPET} marks a <em>local</em>
+     * snippet, which is what the engine's ranking and the wide-token replace range key on.
+     */
+    public Completion withSnippet(Snippet s) {
+        return new Completion(
+                label,
+                insert,
+                kind,
+                detail,
+                s,
+                onAccept,
+                iconKind,
+                sortText,
+                preselect,
+                deprecated,
+                resolveToken,
+                replaceRange);
     }
 
     /** A plain word completion (dictionary or user word). */

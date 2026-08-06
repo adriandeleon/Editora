@@ -52,7 +52,7 @@ class CompletionAcceptRangeFxTest {
     @Test
     void explicitTextEditRangeReplacesTheSigil() throws Exception {
         // A server that sends textEdit.range starting at the '$' (line 2, char 0): the range start is honored.
-        Completion c = Completion.lsp("$user", "$user", "").withReplaceStart(new Completion.ReplaceStart(2, 0));
+        Completion c = Completion.lsp("$user", "$user", "").withReplaceRange(Completion.ReplaceRange.startingAt(2, 0));
         assertEquals("<?php\n$user = 1;\n$user\n", acceptOverPhpSigil(c));
     }
 

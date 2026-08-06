@@ -7,6 +7,7 @@ import com.editora.completion.Completion.Kind;
 import com.editora.snippet.Snippet;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -153,6 +154,21 @@ class CompletionEngineTest {
         assertFalse(
                 identifierOnly.stream().anyMatch(c -> c.insert().startsWith("#")),
                 "the identifier-only prefix `in` never matched a `#`-directive snippet — this was the bug");
+    }
+
+    @Test
+    void replacedRangeExtendsPastTheCaretOnlyWhenTheServerAsksAndOnlyWithinTheLine() {
+        // `import java.ut|;` — caret 14, server range 7..15 covering the ';' its own insert ends with.
+        // Stopping at the caret is what produced `import java.util.*;;`.
+        assertArrayEquals(new int[] {7, 15}, CompletionEngine.replacedRange(14, 7, 15, 15));
+        // No end supplied (an editor-derived range) ⇒ the caret ends it.
+        assertArrayEquals(new int[] {7, 14}, CompletionEngine.replacedRange(14, 7, -1, 20));
+        // A stale end behind the caret must not shrink the replacement — chars typed since are absorbed.
+        assertArrayEquals(new int[] {7, 16}, CompletionEngine.replacedRange(16, 7, 14, 20));
+        // A start past the caret is clamped to it, so the accept can never skip typed characters.
+        assertArrayEquals(new int[] {14, 14}, CompletionEngine.replacedRange(14, 99, -1, 20));
+        // An end past the line is clamped: a stale range must not swallow the lines below.
+        assertArrayEquals(new int[] {7, 15}, CompletionEngine.replacedRange(14, 7, 400, 15));
     }
 
     @Test

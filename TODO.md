@@ -3,6 +3,25 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **LSP snippet completions expand instead of flattening** — Editora turned every server snippet into
+      literal text, which is what made Java completion feel useless: jdtls sends `java.util.${0:*};` for an
+      import package and `add(${1:e})` for a method, and the placeholders arrived as characters to delete by
+      hand. They now run through the same `SnippetSession` local snippets use (`CompletionMapper.snippetOf` →
+      `Completion.withSnippet`; the accept path already had the branch). Two details the probe earned:
+      **only a real tab stop** counts, never a bare `$`, or an unescaped `$user` from phpactor would be read
+      as a variable and insert *nothing*; and `SnippetSession` had to **select** a defaulted `${0:…}` rather
+      than move the caret in front of it, which also un-stranded the bundled snippets that use that form.
+      Recorded against a live server by `JdtlsSnippetProbeTest`, which also pins that jdtls returns
+      **packages only** at `import java.uti` — the types come after the trailing `.`, so the selected `*` is
+      the whole flow rather than a nicety.
+      The accept also had to start honouring the server's range **end**, not just its start: completing an
+      import whose `;` already exists (`import java.ut|;`) gets a range that covers that `;`, so replacing to
+      the caret left it beside the one the insert adds — `import java.util.*;;`. `CompletionEngine.replacedRange`
+      is the pure rule (start clamped to the caret so typed-since chars are absorbed; end extends only *past*
+      the caret and only within the line, so a stale range can't swallow the lines below), and
+      `Completion.ReplaceStart` became `ReplaceRange` to carry it.
+      *Deferred: nothing re-triggers completion after accepting, so reaching the class list still needs the
+      user to type over the `*`; VS Code behaves the same way.*
 - [x] **New ▸ &lt;file type&gt; on the Project tree** — the IDE-standard "New ▸ Java Class / Python File / YAML"
       catalog: ~50 types in seven category submenus, driven by the pure `template/NewFileCatalog` table (one
       row per type, so the menu, the `file.newFileOfType` palette picker and the tests all pick a new type up

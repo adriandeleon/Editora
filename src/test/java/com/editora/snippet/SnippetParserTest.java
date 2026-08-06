@@ -35,6 +35,16 @@ class SnippetParserTest {
     }
 
     @Test
+    void aFinalStopKeepsItsDefaultAsARange() {
+        // jdtls sends exactly this for an import package proposal: the '*' is text to be selected, not a
+        // bare caret position. The session relies on the range being non-empty to select rather than move.
+        ParsedSnippet p = SnippetParser.parse("java.util.${0:*};", NONE);
+        assertEquals("java.util.*;", p.text());
+        assertArrayEquals(new int[] {10, 11}, stop(p, 0).ranges().get(0));
+        assertEquals("*", stop(p, 0).placeholder());
+    }
+
+    @Test
     void mirrorReusesFirstText() {
         ParsedSnippet p = SnippetParser.parse("${1:a}-$1", NONE);
         assertEquals("a-a", p.text());

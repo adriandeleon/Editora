@@ -105,7 +105,7 @@ public final class SnippetSession {
         this.finalRange = dollarZero;
 
         if (fields.isEmpty()) {
-            area.moveTo(finalRange[0]);
+            placeFinalCaret();
             ended = true;
             return;
         }
@@ -149,10 +149,29 @@ public final class SnippetSession {
         if (ended) {
             return;
         }
-        int caret = Math.min(finalRange[0], area.getLength());
         endSession();
-        area.moveTo(caret);
+        placeFinalCaret();
         area.requestFollowCaret();
+    }
+
+    /**
+     * Puts the caret on {@code $0} — <b>selecting</b> its text when the stop carries a default
+     * ({@code ${0:*}}), so the next keystroke replaces it.
+     *
+     * <p>A bare {@code $0} is a caret position and nothing more, but a defaulted one is a placeholder like
+     * any other; it is only "final" in that there is no stop after it. jdtls leans on exactly that for
+     * imports — {@code java.util.${0:*};} means "here is the on-demand form, with the {@code *} ready to
+     * be typed over" — so leaving the caret merely <em>before</em> the text hands the user a stray
+     * {@code *} to delete, which is how the whole proposal came to look useless.
+     */
+    private void placeFinalCaret() {
+        int start = Math.min(finalRange[0], area.getLength());
+        int end = Math.min(finalRange[1], area.getLength());
+        if (end > start) {
+            area.selectRange(start, end);
+        } else {
+            area.moveTo(start);
+        }
     }
 
     /** Ends the session without moving the caret (e.g. user pressed Esc or edited elsewhere). */

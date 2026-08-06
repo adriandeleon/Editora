@@ -450,7 +450,9 @@ Editora is built with the help of AI coding tools.
   **snippet** completions (accepting expands the snippet with its tab stops; Enter/Tab accept, arrows
   navigate). In **prose** (plain text / Markdown), inline **"ghost text"** — a single greyed
   continuation after the caret from the spell dictionary + your personal dictionary; **Tab** accepts.
-  Settings → Editor has a master toggle plus per-source checkboxes (words/prose, snippets).
+  Settings → Editor has a master toggle plus per-source checkboxes (words/prose, snippets). A **language
+  server's** completions expand as snippets too: accepting a Java method selects its first argument with Tab
+  stepping through the rest, and accepting an `import` package selects the `*` ready to type the class over.
 - **Welcome page** — a VSCode-style start panel (New File / Open File / recent files) shown in the editor
   area when no files are open, instead of a blank Untitled buffer; `--new-file[=name]` opens a fresh buffer
   instead.

@@ -8866,8 +8866,9 @@ public class EditorBuffer implements TabContent {
         }
         // Snippets match the whole non-whitespace token (so a non-identifier trigger — `#inc`→`#include`,
         // `?xml`, `[PSCustomObject]` — surfaces in the popup, not only via Tab, #446); words/keywords use the
-        // identifier run. When the token is wider than the identifier, stamp a ReplaceStart on the snippet-kind
-        // items so accepting one replaces `[wideStart, caret]` (e.g. the whole `#inc`, never `##include`).
+        // identifier run. When the token is wider than the identifier, stamp a replace range on the
+        // snippet-kind items so accepting one replaces `[wideStart, caret]` (the whole `#inc`, never
+        // `##include`) — start only, since the caret is the right end for a locally derived range.
         int wideStart = snippetTokenStart(text, caret);
         String wideToken = text.substring(wideStart, caret);
         List<Completion> items =
@@ -8877,9 +8878,9 @@ public class EditorBuffer implements TabContent {
         }
         if (wideStart < start && !items.isEmpty()) {
             var pos = a.offsetToPosition(wideStart, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
-            Completion.ReplaceStart rs = new Completion.ReplaceStart(pos.getMajor(), pos.getMinor());
+            Completion.ReplaceRange rs = Completion.ReplaceRange.startingAt(pos.getMajor(), pos.getMinor());
             items = items.stream()
-                    .map(c -> c.snippet() != null && c.replaceStart() == null ? c.withReplaceStart(rs) : c)
+                    .map(c -> c.snippet() != null && c.replaceRange() == null ? c.withReplaceRange(rs) : c)
                     .toList();
         }
         // Prose: a single inline "ghost text" suffix after the caret (only at end-of-line content, so it
@@ -9230,12 +9231,24 @@ public class EditorBuffer implements TabContent {
         while (start > 0 && isPrefixChar(text.charAt(start - 1))) {
             start--;
         }
-        Completion.ReplaceStart rs = c.replaceStart();
+        int end = caret;
+        Completion.ReplaceRange rs = c.replaceRange();
         if (rs != null) {
             // The server told us exactly what to replace (LSP textEdit.range) — honor it over the identifier
-            // walk. The end stays the current caret so any chars typed since the request are absorbed.
+            // walk, both ends. The start never passes the caret (chars typed since the request are absorbed);
+            // the end only ever extends past it, which is how a server says it is rewriting something already
+            // there — jdtls covers the `;` an import already has, and stopping at the caret would leave it
+            // behind beside the one its insert ends with (`import java.util.*;;`).
             try {
-                start = Math.min(caret, lspOffset(a, rs.line(), rs.character()));
+                int lineEnd = caret;
+                while (lineEnd < text.length() && text.charAt(lineEnd) != '\n') {
+                    lineEnd++;
+                }
+                int serverEnd = rs.hasEnd() ? lspOffset(a, rs.endLine(), rs.endCharacter()) : -1;
+                int[] range = CompletionEngine.replacedRange(
+                        caret, lspOffset(a, rs.line(), rs.character()), serverEnd, lineEnd);
+                start = range[0];
+                end = range[1];
             } catch (RuntimeException ignored) {
                 // Range no longer valid (document moved) — fall back to the identifier walk above.
             }
@@ -9251,16 +9264,16 @@ public class EditorBuffer implements TabContent {
         // server computed against the document as it is right here, before the accept — can be translated onto
         // the document the accept leaves behind (#410). Taken before the edit; completed just after it.
         var preStart = lspPosition(a, start);
-        var preEnd = lspPosition(a, caret);
+        var preEnd = lspPosition(a, end);
         int preLength = text.length();
         if (c.snippet() != null) {
-            startSnippet(a, c.snippet(), start, caret);
+            startSnippet(a, c.snippet(), start, end);
         } else {
-            a.replaceText(start, caret, c.insert());
+            a.replaceText(start, end, c.insert());
         }
         // Where the replaced range's end landed. Derived from the net length change rather than the accepted
         // text, so it holds for the snippet path too (its expansion re-indents and adds tab stops).
-        var postEnd = lspPosition(a, caret + (a.getLength() - preLength));
+        var postEnd = lspPosition(a, end + (a.getLength() - preLength));
         pendingCompletionShift =
                 new LspEditShift.Change(preStart[0], preStart[1], preEnd[0], preEnd[1], postEnd[0], postEnd[1]);
         // Stamped AFTER the edit (which bumps docVersion), so the auto-trigger that edit schedules is the
