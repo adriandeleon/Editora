@@ -82,4 +82,36 @@ public final class LspEditShift {
     private static boolean strictlyBefore(int line, int col, int atLine, int atCol) {
         return line < atLine || (line == atLine && col < atCol);
     }
+
+    /**
+     * Where a caret at absolute offset {@code caret} ends up once a set of edits is applied — used to put the
+     * caret back where the user left it after an auto-import has been spliced in above it.
+     *
+     * <p>An {@code additionalTextEdits} import lands <em>before</em> the caret, and applying it leaves the caret
+     * at the end of the inserted line, which is nowhere the user was typing. Only edits ending at or before the
+     * caret move it, by their net length change; edits entirely after it leave it alone.
+     *
+     * <p>{@code ranges} are {@code {from, to}} absolute offsets against the document as it stood <b>before</b>
+     * these edits, ascending and non-overlapping — exactly what {@link EditorBuffer#applyLspEdits} resolves them
+     * to — with {@code texts} the parallel replacements.
+     */
+    public static int caretAfterEdits(int caret, List<int[]> ranges, List<String> texts) {
+        int shift = 0;
+        for (int i = 0; i < ranges.size(); i++) {
+            int from = ranges.get(i)[0];
+            int to = ranges.get(i)[1];
+            int newLen = texts.get(i) == null ? 0 : texts.get(i).length();
+            if (to <= caret) {
+                shift += newLen - (to - from);
+            } else if (from < caret) {
+                // This edit replaces the text the caret sits inside, so the offset it named is gone. Land at the
+                // end of the replacement — and because the ranges are ascending and non-overlapping, everything
+                // still to come starts after the caret and cannot move it.
+                return from + shift + newLen;
+            } else {
+                break; // ascending: this edit and every later one start after the caret
+            }
+        }
+        return caret + shift;
+    }
 }

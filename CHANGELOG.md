@@ -147,6 +147,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     The end only ever extends *past* the caret and never beyond the current line: anything you typed while
     the popup was open is still absorbed, and a stale range can't eat the lines below.
 
+- **Accepting a completion that adds an import no longer moves your cursor.** Typing `List<Item` and hitting
+  Tab inserted `import demo.Inventory.Item;` correctly, but then left the cursor at the end of that new import
+  line — so the next thing you typed went into the import statement. The cursor now stays on the identifier
+  you were typing, following its own text down as the import is added above it.
+
 - **A long status-bar message no longer squashes the segments beside it.** The echo line and the state
   segments share one row, and when they did not all fit every one of them was shrunk — so a wordy message
   reduced `LSP: jdtls`, `Editable`, the caret position and the rest to bare ellipses. The message now

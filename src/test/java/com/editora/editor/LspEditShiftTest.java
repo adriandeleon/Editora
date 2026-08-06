@@ -117,4 +117,69 @@ class LspEditShiftTest {
         List<LspTextEdit> out = LspEditShift.shift(List.of(importEdit(40)), shrink);
         assertEquals(37, out.get(0).startLine());
     }
+
+    // --- caretAfterEdits: keeping the caret put while an import is spliced in above it (#834) ---
+
+    private static List<int[]> ranges(int... pairs) {
+        List<int[]> out = new java.util.ArrayList<>();
+        for (int i = 0; i < pairs.length; i += 2) {
+            out.add(new int[] {pairs[i], pairs[i + 1]});
+        }
+        return out;
+    }
+
+    @Test
+    void anImportInsertedAboveTheCaretPushesItDownByExactlyTheInsertedText() {
+        // The reported case: caret sits in `List<Item` and the server adds an import line above it.
+        String imported = "import demo.Inventory.Item;\n";
+        int caret = 200;
+        assertEquals(caret + imported.length(), LspEditShift.caretAfterEdits(caret, ranges(60, 60), List.of(imported)));
+    }
+
+    @Test
+    void anEditAfterTheCaretLeavesItAlone() {
+        assertEquals(50, LspEditShift.caretAfterEdits(50, ranges(80, 90), List.of("whatever")));
+    }
+
+    @Test
+    void anEditEndingExactlyAtTheCaretStillMovesIt() {
+        // Boundary: text inserted immediately before the caret is text the caret must move past.
+        assertEquals(53, LspEditShift.caretAfterEdits(50, ranges(50, 50), List.of("abc")));
+    }
+
+    @Test
+    void aDeletionAboveTheCaretPullsItUp() {
+        assertEquals(40, LspEditShift.caretAfterEdits(50, ranges(10, 20), List.of("")));
+    }
+
+    @Test
+    void severalEditsAboveTheCaretAccumulate() {
+        assertEquals(50 + 3 + 2, LspEditShift.caretAfterEdits(50, ranges(0, 0, 10, 10), List.of("abc", "de")));
+    }
+
+    @Test
+    void editsAreCountedOnlyUpToTheCaret() {
+        // One before, one after: only the first may move the caret.
+        assertEquals(53, LspEditShift.caretAfterEdits(50, ranges(0, 0, 90, 95), List.of("abc", "replacement")));
+    }
+
+    @Test
+    void anEditStraddlingTheCaretLandsAtTheEndOfItsReplacement() {
+        // The offset the caret named is gone, so the honest landing spot is the end of the new text —
+        // offset by whatever earlier edits already shifted.
+        assertEquals(0 + 4, LspEditShift.caretAfterEdits(2, ranges(0, 5), List.of("abcd")));
+        assertEquals(3 + 10 + 4, LspEditShift.caretAfterEdits(12, ranges(0, 0, 10, 15), List.of("abc", "abcd")));
+    }
+
+    @Test
+    void noEditsLeavesTheCaretExactlyWhereItWas() {
+        assertEquals(7, LspEditShift.caretAfterEdits(7, List.of(), List.of()));
+    }
+
+    @Test
+    void aNullReplacementCountsAsADeletion() {
+        List<String> withNull = new java.util.ArrayList<>();
+        withNull.add(null);
+        assertEquals(45, LspEditShift.caretAfterEdits(50, ranges(0, 5), withNull));
+    }
 }
