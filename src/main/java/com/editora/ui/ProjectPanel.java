@@ -87,6 +87,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private volatile java.util.function.Consumer<List<FsChange>> fsChangeSink;
     /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
     private Consumer<Path> onNewFromTemplate;
+    /** Injected by MainController: "New ▸ &lt;type&gt;" on a folder, given the target dir and the file kind. */
+    private BiConsumer<Path, com.editora.template.NewFileType> onNewFile;
 
     private Consumer<Path> onNewMavenProject;
     /** Injected by MainController: reveal a path in the OS file manager. Args: (path, isDirectory). */
@@ -843,6 +845,94 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.fileActions = fileActions;
     }
 
+    /**
+     * Injects the "New ▸ &lt;type&gt;" handler ({@code (targetFolder, type)}) — creating the file itself
+     * needs the window (the name prompt, opening the result, the status line), so the panel only offers
+     * the menu.
+     */
+    public void setOnNewFile(BiConsumer<Path, com.editora.template.NewFileType> onNewFile) {
+        this.onNewFile = onNewFile;
+    }
+
+    /**
+     * The folder menu's "New ▸" submenu: the generic File… and Folder… entries, the two everyday file
+     * types, one submenu per {@link com.editora.template.NewFileCatalog} category, then the template
+     * scaffolds.
+     *
+     * <p>Built from the catalog rather than written out, so a new file type appears here, in the palette
+     * picker and in the tests from one table row. Each entry carries the same {@link FileIcons} glyph the
+     * file will show in the tree once it exists, which is what makes a long list scannable.
+     */
+    private Menu newMenu(TreeItem<Path> dirItem) {
+        Menu newMenu = new Menu(tr("newfile.menu.new"));
+        newMenu.setGraphic(Icons.newFile());
+        Path dir = dirItem.getValue();
+
+        if (onNewFile != null) {
+            newMenu.getItems().add(typeItem(com.editora.template.NewFileCatalog.PLAIN, dirItem));
+        }
+        MenuItem folder = new MenuItem(tr("project.menu.newFolder"));
+        folder.setGraphic(Icons.newFolder());
+        folder.setOnAction(e -> newFolder(dirItem));
+        newMenu.getItems().add(folder);
+
+        if (onNewFile != null) {
+            newMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+            for (com.editora.template.NewFileType type : com.editora.template.NewFileCatalog.topLevel()) {
+                newMenu.getItems().add(typeItem(type, dirItem));
+            }
+            for (com.editora.template.NewFileCatalog.Category category :
+                    com.editora.template.NewFileCatalog.categories()) {
+                Menu submenu = new Menu(tr(category.labelKey()));
+                // The category's own glyph is its first member's — "Java" gets the Java icon, and so on.
+                submenu.setGraphic(FileIcons.forFileName(category.types().get(0).suggestedFileName()));
+                for (com.editora.template.NewFileType type : category.types()) {
+                    submenu.getItems().add(typeItem(type, dirItem));
+                }
+                newMenu.getItems().add(submenu);
+            }
+        }
+        if (onNewFromTemplate != null || onNewMavenProject != null) {
+            newMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+        }
+        if (onNewFromTemplate != null) {
+            MenuItem fromTemplate = new MenuItem(tr("project.menu.newFromTemplate"));
+            fromTemplate.setGraphic(Icons.fileSheet());
+            fromTemplate.setOnAction(e -> onNewFromTemplate.accept(dir));
+            newMenu.getItems().add(fromTemplate);
+        }
+        if (onNewMavenProject != null) {
+            MenuItem maven = new MenuItem(tr("project.menu.newMavenProject"));
+            maven.setGraphic(Icons.newFolder());
+            maven.setOnAction(e -> onNewMavenProject.accept(dir));
+            newMenu.getItems().add(maven);
+        }
+        return newMenu;
+    }
+
+    /**
+     * A file type's display label: a proper name ("Python", "Dockerfile") verbatim, an ordinary word
+     * ("Class", "Text File") from the i18n catalog. Shared with the palette picker so the menu and the
+     * picker can never disagree about what a type is called.
+     */
+    static String labelFor(com.editora.template.NewFileType type) {
+        return type.hasLiteralLabel() ? type.label() : tr(type.labelKey());
+    }
+
+    /** One "New ▸" entry: the type's label and the glyph the file will carry once it exists. */
+    private MenuItem typeItem(com.editora.template.NewFileType type, TreeItem<Path> dirItem) {
+        MenuItem item = new MenuItem(labelFor(type));
+        item.setGraphic(
+                type.extension().isEmpty() && type.suggestedFileName().isEmpty()
+                        ? Icons.newFile()
+                        : FileIcons.forFileName(type.suggestedFileName()));
+        item.setOnAction(e -> {
+            dirItem.setExpanded(true); // reveal where the new file will land
+            onNewFile.accept(dirItem.getValue(), type);
+        });
+        return item;
+    }
+
     /** Prompts for a name and creates a new subfolder inside {@code dirItem}'s directory. */
     private void newFolder(TreeItem<Path> dirItem) {
         if (prompt == null) {
@@ -1331,22 +1421,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir, boolean isRoot) {
             ContextMenu menu = new ContextMenu();
             if (isDir) {
-                MenuItem newFolder = new MenuItem(tr("project.menu.newFolder"));
-                newFolder.setGraphic(Icons.newFolder());
-                newFolder.setOnAction(e -> newFolder(treeItem));
-                menu.getItems().add(newFolder);
-            }
-            if (isDir && onNewFromTemplate != null) {
-                MenuItem newFromTemplate = new MenuItem(tr("project.menu.newFromTemplate"));
-                newFromTemplate.setGraphic(Icons.newFile());
-                newFromTemplate.setOnAction(e -> onNewFromTemplate.accept(treeItem.getValue()));
-                menu.getItems().add(newFromTemplate);
-            }
-            if (isDir && onNewMavenProject != null) {
-                MenuItem newMaven = new MenuItem(tr("project.menu.newMavenProject"));
-                newMaven.setGraphic(Icons.newFolder());
-                newMaven.setOnAction(e -> onNewMavenProject.accept(treeItem.getValue()));
-                menu.getItems().add(newMaven);
+                menu.getItems().add(newMenu(treeItem));
             }
             // Rename is offered on every file/folder EXCEPT the project root — renaming that would move the
             // whole project folder on disk and leave the project pointing at a path that no longer exists.

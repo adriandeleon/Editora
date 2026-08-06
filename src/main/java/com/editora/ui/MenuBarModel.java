@@ -40,6 +40,7 @@ final class MenuBarModel {
                         "menubar.file",
                         List.of(
                                 "file.new",
+                                "file.newFileOfType",
                                 "template.new",
                                 "project.newFromTemplate",
                                 "maven.newProject",

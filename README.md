@@ -434,6 +434,14 @@ Editora is built with the help of AI coding tools.
   `${1:default}`, mirrors, choices, variables, escapes). Snippets ship for all 21 highlighted languages
   (most from the MIT [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection);
   add your own in `~/.editora/snippets/<language>.json` (user snippets override bundled).
+- **New ▸ &lt;file type&gt;** — right-click a folder in the Project tool window: **New ▸** offers a generic
+  `File…` and `Folder…`, Text and Markdown, then a submenu per family — **Java** (Class, Interface, Record,
+  Enum, Annotation, `package-info.java`), Web, Scripts, Languages, Data &amp; Config, Docs &amp; Diagrams, Build
+  &amp; Ops — about fifty types in all. Name it and it opens, with the caret already in the body. A new Java
+  file gets its **package declaration from the folder it is created in** (`src/main/java/demo` →
+  `package demo;`), and a qualified name (`text.Slug`) creates the sub-package folder. The typed name wins
+  over the type's extension, so `notes.json` under Text File is JSON. Also on the palette as *File: New File
+  of Type…*, which creates in the active file's folder.
 - **File templates** _(Beta)_ — "New File From Template" (`C-c C-n`) creates a file (or a whole set of files) from
   a reusable template, prompting for any `${variables}` in a wizard and placing the caret at `${cursor}`.
   Bundled templates (Java class, HTML page / multi-file bundle, Markdown doc, Python script) plus your

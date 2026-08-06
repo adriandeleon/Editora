@@ -2321,6 +2321,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Lazy lambda: historyCoordinator is constructed later in this method, so defer the field read to call time.
         projectPanel.setOnBeforeDelete(
                 file -> historyCoordinator.captureBeforeDelete(file)); // snapshot to Local History before delete
+        projectPanel.setOnNewFile(this::newFileOfType); // folder "New ▸ <type>"
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
         projectPanel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         projectPanel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
@@ -11938,6 +11939,99 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
             """;
 
+    // --- New file of a known type ("New ▸ …") -----------------------------------------------------
+
+    /**
+     * The Project tree's "New ▸ &lt;type&gt;" flow: prompt for a name (prefilled with the type's
+     * suggestion), write the file into {@code dir}, and open it at the type's caret position.
+     *
+     * <p>Deliberately separate from the template wizard: this is the IDE-standard "give me a Python
+     * file" gesture, where a picker plus a variable form would be four interactions for one file. All
+     * of the deciding — what the typed name means, where it lands, what goes in it — is the pure
+     * {@link com.editora.template.NewFileContent}, so this method only prompts, writes and reports.
+     */
+    private void newFileOfType(java.nio.file.Path dir, com.editora.template.NewFileType type) {
+        if (dir == null || type == null) {
+            return;
+        }
+        // The folder is in the prompt, not just the title: from the palette it comes from the active
+        // file rather than from something the user just clicked, so "which folder?" is a real question.
+        promptText(
+                tr("newfile.prompt.title", ProjectPanel.labelFor(type)),
+                tr("newfile.prompt.label", homeCollapsed(dir.toString())),
+                type.suggestedFileName(),
+                input -> createFileOfType(dir, type, input));
+    }
+
+    /** Writes the planned file and opens it; reports (without creating anything) on any refusal. */
+    private void createFileOfType(java.nio.file.Path dir, com.editora.template.NewFileType type, String input) {
+        // A Java file's package comes from where it is being created, so "New ▸ Class" in
+        // src/main/java/demo writes `package demo;` the way an IDE does — the folder already knows.
+        String basePackage = type.isJava() ? com.editora.template.NewFileContent.packageFor(dir) : "";
+        com.editora.template.NewFileContent.Plan plan =
+                com.editora.template.NewFileContent.plan(type, input, basePackage);
+        if (plan == null) {
+            setError(tr("status.newfile.invalidName"));
+            return;
+        }
+        // Re-check containment against the resolved path even though plan() already refuses `..` and
+        // absolute names — the same belt-and-braces the template writer applies, since this is the one
+        // place a typed string becomes a file.
+        java.nio.file.Path target = dir.resolve(plan.relativePath()).normalize();
+        if (!target.startsWith(dir.normalize())) {
+            setError(tr("status.newfile.invalidName"));
+            return;
+        }
+        if (java.nio.file.Files.exists(target)) {
+            setError(tr("status.newfile.exists", plan.fileName()));
+            return;
+        }
+        com.editora.template.NewFileContent.Rendered rendered =
+                com.editora.template.NewFileContent.render(type, plan.baseName(), plan.packageName());
+        try {
+            if (target.getParent() != null) {
+                java.nio.file.Files.createDirectories(target.getParent());
+            }
+            java.nio.file.Files.writeString(target, rendered.text());
+        } catch (java.io.IOException e) {
+            setError(tr("status.newfile.failed", e.getMessage()));
+            return;
+        }
+        openAndPlaceCaret(target, rendered.caret());
+        if (projectPanel != null) {
+            projectPanel.refreshTree();
+        }
+        setStatus(tr("status.newfile.created", plan.fileName()));
+    }
+
+    /**
+     * {@code file.newFileOfType}: the keyboard route to the same catalog — pick a type, then name it.
+     * Creates in {@link #defaultNewDir()} (the active file's folder, else the project root), since the
+     * palette has no folder context.
+     */
+    private void newFileOfTypePicker() {
+        QuickOpen<com.editora.template.NewFileType> picker = new QuickOpen<>(
+                tr("newfile.picker.title"),
+                tr("newfile.picker.prompt"),
+                () -> new ArrayList<>(com.editora.template.NewFileCatalog.all()),
+                ProjectPanel::labelFor,
+                t -> newFileTypeDetail(t),
+                t -> newFileOfType(defaultNewDir(), t));
+        picker.setOverlayHost(overlayHost);
+        picker.show(stage);
+    }
+
+    /** A picker row's detail line: the category it lives under, and the file name it suggests. */
+    private static String newFileTypeDetail(com.editora.template.NewFileType type) {
+        String category = com.editora.template.NewFileCatalog.categoryOf(type);
+        String suggested = type.suggestedFileName();
+        if (category == null) {
+            return suggested;
+        }
+        String categoryLabel = tr("newfile.category." + category);
+        return suggested.isEmpty() ? categoryLabel : categoryLabel + " · " + suggested;
+    }
+
     // --- File templates --------------------------------------------------------------------------
 
     /**
@@ -15304,6 +15398,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.addCaretAbove", () -> withMultiCaret(EditorBuffer::addCaretAbove)));
         registry.register(Command.of("edit.addCaretBelow", () -> withMultiCaret(EditorBuffer::addCaretBelow)));
         registry.register(Command.of("edit.collapseCarets", () -> withMultiCaret(EditorBuffer::collapseCarets)));
+        registry.register(Command.of("file.newFileOfType", this::newFileOfTypePicker));
         registry.register(Command.of("template.new", () -> newFromTemplate(null)));
         registry.register(Command.of("template.newInFolder", () -> newFromTemplate(defaultNewDir())));
         registry.register(Command.of("project.newFromTemplate", this::newProjectFromTemplate));
