@@ -9332,7 +9332,10 @@ public class EditorBuffer implements TabContent {
      * computed them — see {@link LspEditShift}.
      */
     public void applyCompletionAdditionalEdits(java.util.List<LspTextEdit> edits) {
-        applyLspEdits(LspEditShift.shift(edits, pendingCompletionShift));
+        // Keep the caret where the accept left it. The import lands *above* the caret, and both apply paths
+        // (replaceText, and MultiChangeBuilder.commit) leave the caret at the end of what they inserted — so
+        // without this, accepting `List<Item` threw the caret onto the newly inserted `import` line (#834).
+        applyLspEdits(LspEditShift.shift(edits, pendingCompletionShift), true);
     }
 
     /**
@@ -9344,10 +9347,20 @@ public class EditorBuffer implements TabContent {
      * clamping it onto the last line would apply the edit at a wrong place (#667). Inert when not editable.
      */
     public void applyLspEdits(java.util.List<LspTextEdit> edits) {
+        applyLspEdits(edits, false);
+    }
+
+    /**
+     * As {@link #applyLspEdits(java.util.List)}, but optionally restoring the caret to the position it
+     * addressed <em>before</em> the edits. Used by the auto-import path, where the inserted line sits above
+     * the caret and would otherwise drag it away from what the user was typing (#834).
+     */
+    private void applyLspEdits(java.util.List<LspTextEdit> edits, boolean preserveCaret) {
         if (edits == null || edits.isEmpty() || !isEditable()) {
             return;
         }
         CodeArea a = focusedArea != null ? focusedArea : area;
+        int caretBefore = a.getCaretPosition();
         // Resolve each edit to an absolute [start,end] against the current document, keep valid + non-overlapping,
         // sorted ascending. Applying them as ONE MultiChangeBuilder commit makes the whole set a single undo
         // unit — a multi-line Format Document (or an auto-import's additional edits) was previously one
@@ -9383,6 +9396,7 @@ public class EditorBuffer implements TabContent {
         }
         if (ranges.size() == 1) {
             a.replaceText(ranges.get(0)[0], ranges.get(0)[1], texts.get(0));
+            restoreCaretAfterEdits(a, preserveCaret, caretBefore, ranges, texts);
             return;
         }
         // Apply BOTTOM-TO-TOP. The fork's MultiChangeBuilder applies its replacements *sequentially against
@@ -9397,6 +9411,22 @@ public class EditorBuffer implements TabContent {
             builder.replaceTextAbsolutely(ranges.get(i)[0], ranges.get(i)[1], texts.get(i));
         }
         builder.commit(); // one undo unit for the whole edit set
+        restoreCaretAfterEdits(a, preserveCaret, caretBefore, ranges, texts);
+    }
+
+    /** Puts the caret back where it was, translated across the edits just applied; see {@code LspEditShift}. */
+    private static void restoreCaretAfterEdits(
+            CodeArea a,
+            boolean preserveCaret,
+            int caretBefore,
+            java.util.List<int[]> ranges,
+            java.util.List<String> texts) {
+        if (!preserveCaret) {
+            return;
+        }
+        int target = LspEditShift.caretAfterEdits(caretBefore, ranges, texts);
+        a.moveTo(Math.max(0, Math.min(target, a.getLength())));
+        a.requestFollowCaret();
     }
 
     private static int lspEditOffset(CodeArea a, LspTextEdit e) {

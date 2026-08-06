@@ -22,6 +22,19 @@ A backlog of planned features and improvements. Unordered within each section.
       `Completion.ReplaceStart` became `ReplaceRange` to carry it.
       *Deferred: nothing re-triggers completion after accepting, so reaching the class list still needs the
       user to type over the `*`; VS Code behaves the same way.*
+
+- [x] **Auto-import no longer steals the caret** (#834) — accepting a completion whose
+      `additionalTextEdits` add an `import` left the caret at the end of the inserted import line, because
+      **both** of `applyLspEdits`' apply paths (`replaceText` and `MultiChangeBuilder.commit`) leave the caret
+      at the end of what they inserted, and the import lands *above* the caret. `LspEditShift` already
+      translated the server's edit *positions* across the accept (#410); nothing translated the **caret**
+      across the edits. New pure `LspEditShift.caretAfterEdits(caret, ranges, texts)`: edits ending at or
+      before the caret move it by their net length change, edits after it leave it alone, and an edit
+      straddling it collapses to the end of its replacement (correct because the ranges are ascending and
+      non-overlapping, so nothing later can move it again). Wired through a private `applyLspEdits(edits,
+      preserveCaret)` overload, so the **public** behaviour is unchanged and **Format Document still leaves
+      the caret exactly where it did** — pinned by a control test, since silently changing that would be a
+      second, unrequested behaviour change. *Deferred: caret preservation for Format Document itself.*
 - [x] **New ▸ &lt;file type&gt; on the Project tree** — the IDE-standard "New ▸ Java Class / Python File / YAML"
       catalog: ~50 types in seven category submenus, driven by the pure `template/NewFileCatalog` table (one
       row per type, so the menu, the `file.newFileOfType` palette picker and the tests all pick a new type up
