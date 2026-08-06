@@ -125,6 +125,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java completion no longer leaves placeholder text in your file.** A language server can send a
+  completion as a *snippet* — text with placeholders — and Editora was flattening every one of them into
+  literal characters. jdtls does this everywhere, so:
+  - Typing `import java.uti` and accepting `java.util` produced `import java.util.*;` with the caret past
+    the semicolon: an on-demand import nobody asked for, and no way to carry on to `ArrayList`. The server
+    had actually sent `java.util.${0:*};` — the `*` is a placeholder meant to be **selected**. It now is, so
+    typing `ArrayList` replaces it and you get `import java.util.ArrayList;`.
+  - Accepting a method left its arguments as text to delete: `list.add` inserted `list.add(e)` with a
+    literal `e`. Now the argument is selected and **Tab steps through the rest**, so
+    `addAll(int index, Collection c)` fills in like any snippet.
+  - The same applies to every other server that sends snippet completions.
+  - A server that marks an item as a snippet but sends an unescaped literal `$` (phpactor's `$user`, shell
+    variables) is still inserted verbatim — only a real placeholder starts a snippet.
+  - Bundled snippets ending in `${0:something}` also select that text now, instead of leaving the caret in
+    front of it.
+  - **No more doubled semicolon.** Completing an import a second time — `import java.ut|;`, caret before a
+    semicolon that is already there — produced `import java.util.*;;`. The server's replacement range covers
+    that semicolon (which is why its insert ends with one), and Editora was replacing only up to the caret.
+    It now honours the end of the range the server sends, so the old semicolon is replaced rather than kept.
+    The end only ever extends *past* the caret and never beyond the current line: anything you typed while
+    the popup was open is still absorbed, and a stale range can't eat the lines below.
+
 - **A long status-bar message no longer squashes the segments beside it.** The echo line and the state
   segments share one row, and when they did not all fit every one of them was shrunk — so a wordy message
   reduced `LSP: jdtls`, `Editable`, the caret position and the rest to bare ellipses. The message now

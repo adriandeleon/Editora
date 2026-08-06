@@ -12,9 +12,16 @@ import org.eclipse.lsp4j.InsertTextFormat;
 
 /**
  * Pure mapping from LSP {@link CompletionItem}s to the editor's {@link Completion} popup entries. The
- * insert text prefers an explicit {@code insertText}/{@code textEdit} newText; snippet-format items fall
- * back to the plain label (Editora inserts literal text for LSP items rather than running a snippet
- * session), so server placeholders like {@code $0} are never inserted verbatim.
+ * insert text prefers an explicit {@code insertText}/{@code textEdit} newText.
+ *
+ * <p>A <b>snippet-format</b> item keeps its body: {@link #snippetOf} hands the raw template to the
+ * editor, which expands it through the same {@code SnippetSession} local snippets use, so the server's
+ * placeholders become real tab stops. Accepting jdtls's {@code java.util.$&#123;0:*&#125;;} therefore
+ * selects the {@code *} ready to be typed over, and {@code add($&#123;1:e&#125;)} selects the argument —
+ * where flattening the template to literal text (what this used to do) left a stray {@code *} or a
+ * literal {@code e} to delete by hand, which is most of what made Java completion feel useless. The
+ * {@code insert} field still carries the flattened text, since that is what de-duplication and the
+ * label fallback compare on.
  *
  * <p>The IntelliJ-style presentation fields are populated here (the only place that touches lsp4j's
  * {@code CompletionItemKind}/tags): {@code iconKind} for the per-row glyph, the right-hand {@code detail}
@@ -56,7 +63,8 @@ public final class CompletionMapper {
                             Boolean.TRUE.equals(item.getPreselect()),
                             isDeprecated(item),
                             item)
-                    .withReplaceStart(replaceStartOf(item)));
+                    .withReplaceRange(replaceRangeOf(item))
+                    .withSnippet(snippetOf(item, label)));
         }
         return out;
     }
@@ -145,6 +153,49 @@ public final class CompletionMapper {
         return item.getInsertTextFormat() == InsertTextFormat.Snippet ? stripSnippet(raw) : raw;
     }
 
+    /**
+     * The snippet to expand when this item is accepted, or null to insert {@link #insertText} literally.
+     *
+     * <p>Non-null only for a snippet-format item whose body actually contains a <b>tab stop</b>
+     * ({@code $1} / {@code ${0:*}}), never merely a {@code $}. That distinction is load-bearing: a server
+     * may mark an item as a snippet and still send an unescaped literal dollar (phpactor's {@code $user},
+     * a shell variable), and running that through the snippet parser would read {@code $user} as a
+     * variable and insert nothing at all. A body with no stop has nothing for a session to do anyway.
+     */
+    static com.editora.snippet.Snippet snippetOf(CompletionItem item, String label) {
+        if (item.getInsertTextFormat() != InsertTextFormat.Snippet) {
+            return null;
+        }
+        String raw = textEditNewText(item);
+        if (raw == null) {
+            raw = item.getInsertText();
+        }
+        if (raw == null || !hasTabStop(raw)) {
+            return null;
+        }
+        return new com.editora.snippet.Snippet(label, label, raw, detailText(item), "");
+    }
+
+    /** True when {@code body} contains an LSP/TextMate tab stop — {@code $0}…{@code $9} or {@code ${0…}}. */
+    static boolean hasTabStop(String body) {
+        for (int i = 0; i + 1 < body.length(); i++) {
+            if (body.charAt(i) != '$') {
+                continue;
+            }
+            if (i > 0 && body.charAt(i - 1) == '\\') {
+                continue; // an escaped literal dollar
+            }
+            char next = body.charAt(i + 1);
+            if (Character.isDigit(next)) {
+                return true;
+            }
+            if (next == '{' && i + 2 < body.length() && Character.isDigit(body.charAt(i + 2))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Strips LSP snippet syntax to plain text: {@code ${1:name}}→{@code name}, {@code ${1}}/{@code $1}/
      *  {@code $0}→removed, and {@code \$ \} \\} unescaped. Pure. */
     static String stripSnippet(String s) {
@@ -170,12 +221,17 @@ public final class CompletionMapper {
     }
 
     /**
-     * The {@code textEdit.range.start} as an editor {@link Completion.ReplaceStart}, or null when the item
-     * carries no {@code textEdit} (an {@code insertText}-only item — the editor then walks the identifier /
-     * trigger overlap itself). Covers both the {@code TextEdit} and {@code InsertReplaceEdit} shapes; the
-     * insert range's start is used (identical to the replace range's start for a completion).
+     * The {@code textEdit.range} as an editor {@link Completion.ReplaceRange}, or null when the item carries
+     * no {@code textEdit} (an {@code insertText}-only item — the editor then walks the identifier / trigger
+     * overlap itself).
+     *
+     * <p>Both ends are carried, because a server uses the end to say it is rewriting something that already
+     * follows the caret (jdtls covering an existing {@code ;} in an import). For the
+     * {@code InsertReplaceEdit} shape the <b>insert</b> range is used for both, matching VS Code's default
+     * mode: its replace range deliberately reaches over the whole token after the caret, which would eat
+     * text the user has not asked to lose.
      */
-    static Completion.ReplaceStart replaceStartOf(CompletionItem item) {
+    static Completion.ReplaceRange replaceRangeOf(CompletionItem item) {
         if (item.getTextEdit() == null) {
             return null;
         }
@@ -189,8 +245,15 @@ public final class CompletionMapper {
         if (range == null || range.getStart() == null) {
             return null;
         }
-        return new Completion.ReplaceStart(
-                range.getStart().getLine(), range.getStart().getCharacter());
+        if (range.getEnd() == null) {
+            return Completion.ReplaceRange.startingAt(
+                    range.getStart().getLine(), range.getStart().getCharacter());
+        }
+        return new Completion.ReplaceRange(
+                range.getStart().getLine(),
+                range.getStart().getCharacter(),
+                range.getEnd().getLine(),
+                range.getEnd().getCharacter());
     }
 
     private static String textEditNewText(CompletionItem item) {
