@@ -3,6 +3,17 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **New ▸ &lt;file type&gt; on the Project tree** — the IDE-standard "New ▸ Java Class / Python File / YAML"
+      catalog: ~50 types in seven category submenus, driven by the pure `template/NewFileCatalog` table (one
+      row per type, so the menu, the `file.newFileOfType` palette picker and the tests all pick a new type up
+      together). Deliberately *not* built on `TemplateRegistry`: a template is a variable-driven document
+      behind a wizard, which is four interactions for "give me an empty YAML file". The pure
+      `template/NewFileContent` owns every rule that turns a typed name into a path — which is what makes the
+      refusals testable, since the typed string reaches the filesystem. Java files infer their package from
+      the folder (`src/main/java/demo` → `package demo;`) and accept a qualified name; `package-info` /
+      `module-info` are special-cased as the only legal Java file names that are not identifiers.
+      *Deferred: a "New ▸" on the editor tab menu (it acts on a folder, and a tab has none but its own
+      parent); per-project custom entries; remembering the last-used type.*
 - [x] **Run configurations: no more run/debug `kind`, and debug honours before-launch** — the `kind` field
       decided only what the *Run* button did with an entry, so a debug-kind configuration turned Run into a
       second Debug button and could not be plain-run at all. One configuration, two buttons now; a stored

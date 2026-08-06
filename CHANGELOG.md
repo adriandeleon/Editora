@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Create a file of any supported type from the Project tree.** Right-clicking a folder now opens a single
+  **New ▸** submenu: a generic `File…` and `Folder…`, Text and Markdown, then one submenu per family —
+  **Java** (Class, Interface, Record, Enum, Annotation, `package-info.java`), **Web**, **Scripts**,
+  **Languages**, **Data & Config**, **Docs & Diagrams**, **Build & Ops** — about fifty types in all, each
+  carrying the icon the file will show in the tree. You are asked for a name, prefilled with a sensible one,
+  and the file opens with the caret already in the body rather than at the end.
+  - A new **Java** file gets its package declaration from where it is created: "New ▸ Class" in
+    `src/main/java/demo` writes `package demo;`. A qualified name (`text.Slug`) creates the sub-package
+    folder and extends the package to match, and `package-info` / `module-info` are accepted despite not
+    being identifiers.
+  - The typed name always wins over the type's extension — `notes.json` under Text File gives you JSON, not
+    `notes.json.txt`, and a dotfile stays a dotfile. A name that tries to climb out of the folder (`../x`)
+    creates nothing at all, and an existing file is never overwritten.
+  - Also on the command palette as **File: New File of Type…** (and in the File menu), creating in the
+    active file's folder.
+  - The existing **New Folder…**, **New From Template…** and **New Maven Project…** items moved inside that
+    same **New ▸** submenu, shortened to *Folder…* / *From Template…* / *Maven Project…*.
+
 - **Filter and keyboard-navigate the Commit window.** It now opens with a filter box focused, like Bookmarks
   and Personal Notes: type to narrow the changed files, Down or Enter to step into and open one. Typing a
   group's name (`untracked`) lists that whole group. Inside the tree, `C-n`/`C-p` move and `C-f`/`C-b`
