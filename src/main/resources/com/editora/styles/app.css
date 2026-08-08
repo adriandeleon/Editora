@@ -3320,8 +3320,20 @@
 .tooltip {
     -fx-background-radius: 8px, 7px;
 }
+/* The offset must be >= the radius, and this is not a cosmetic choice.
+   A context menu is a real native WINDOW, and JavaFX sizes it to its root's bounds INCLUDING the effect —
+   so a shadow inflates the window by `radius` in every direction, shifted by the offset, and that margin is
+   transparent to the eye but not to the pointer: the window manager routes the mouse to whichever window is
+   topmost. The kit's card shadow (44 / offset 18) left 26px of invisible window ABOVE each menu, against a
+   menu-bar row 24px tall — measured, the popup began 2px above the TOP of the bar and reached 44px past it
+   on either side. It therefore covered its own neighbours' titles, and sliding the mouse from one menu to
+   the next landed on the open popup instead of the next button, so the bar did not switch.
+   `offsetY >= radius` puts the whole shadow below the menu, leaving nothing over the bar it hangs from.
+   The other kit surfaces keep the wide 44/18 shadow: the palette, switcher and message log are in-scene
+   overlay cards (see OverlayHost), not windows, so their effect bounds route nothing.
+   Pinned by MenuPopupBoundsFxTest. */
 .context-menu {
-    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 44, 0.16, 0, 18);
+    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 16, 0.16, 0, 16);
 }
 
 /* Tool window panels: rounded corners, no drawn frame. The panel is bounded by the editor on one
