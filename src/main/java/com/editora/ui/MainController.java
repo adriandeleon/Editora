@@ -12582,6 +12582,31 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /**
+     * Copies the active buffer's rendered preview to the clipboard. Markdown lands as rich text (a
+     * {@code text/html} flavor beside the plain text), so it pastes formatted into Word / Teams / Gmail;
+     * a diagram copies its source. The palette twin of the preview's right-click Copy.
+     */
+    private void copyPreview() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.hasPreview()) {
+            setStatus(tr("status.preview.none"));
+            return;
+        }
+        b.copyPreviewToClipboard();
+        setStatus(tr(b.isMarkdown() ? "status.preview.copiedRich" : "status.preview.copied"));
+    }
+
+    /** Copies the active Markdown buffer's preview as HTML <em>markup</em> (for pasting into an HTML file). */
+    private void copyPreviewHtml() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.copyPreviewHtmlSource()) {
+            setStatus(tr("status.html.notMarkdown"));
+            return;
+        }
+        setStatus(tr("status.preview.copiedHtml"));
+    }
+
     /** Exports the active Markdown buffer's rendered preview to a standalone HTML file. */
     private void exportPreviewHtml() {
         EditorBuffer b = activeBuffer();
@@ -15127,6 +15152,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
         registry.register(Command.of("preview.exportPdf", this::exportPreviewPdf));
         registry.register(Command.of("preview.exportHtml", this::exportPreviewHtml));
+        registry.register(Command.of("preview.copy", this::copyPreview));
+        registry.register(Command.of("preview.copyHtml", this::copyPreviewHtml));
         registry.register(Command.of("preview.exportDocx", this::exportPreviewDocx));
         registry.register(Command.of("preview.exportOdt", this::exportPreviewOdt));
         registry.register(Command.of("editor.print", this::printCode));

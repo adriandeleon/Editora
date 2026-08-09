@@ -46,8 +46,11 @@ public final class MarkdownHtmlExport {
                 + "</article>\n</body>\n</html>\n";
     }
 
-    /** Replaces math spans with {@code <img>} data URIs, skipping fenced code blocks. */
-    private static String substituteMath(String markdown) {
+    /**
+     * Replaces math spans with {@code <img>} data URIs, skipping fenced code blocks. Package-visible so the
+     * clipboard fragment ({@link MarkdownClipboardHtml}) rasterizes equations the same way this export does.
+     */
+    static String substituteMath(String markdown) {
         String[] lines = markdown.split("\n", -1);
         StringBuilder out = new StringBuilder();
         String fence = null;

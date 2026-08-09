@@ -4775,12 +4775,37 @@ public class EditorBuffer implements TabContent {
         this.previewExportJsonHandler = handler == null ? () -> {} : handler;
     }
 
-    /** Copies the preview text to the clipboard — rendered plain text for Markdown, the source for a diagram. */
+    /**
+     * Copies the preview to the clipboard — rendered plain text for Markdown, the source for a diagram.
+     *
+     * <p>Markdown additionally carries a {@code text/html} flavor ({@link MarkdownClipboardHtml}), so the
+     * same copy pastes as <em>formatted</em> text into Word / Teams / Outlook / Gmail while a plain-text
+     * target still gets the markup-stripped text. Both flavors always go on together: the consumer picks,
+     * so there is nothing for the user to configure. The preview's own nodes aren't selectable, so this is
+     * whole-document (as it already was for plain text).
+     */
     public void copyPreviewToClipboard() {
         String text = isMarkdown() ? MarkdownRenderer.plainText(getContent()) : getContent();
         javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
         cc.putString(text == null ? "" : text);
+        if (isMarkdown()) {
+            cc.putHtml(MarkdownClipboardHtml.toHtml(getContent(), MathImages.isEnabled()));
+        }
         Clipboard.getSystemClipboard().setContent(cc);
+    }
+
+    /**
+     * Copies the preview's HTML <em>markup</em> as plain text (for pasting into an HTML file), as opposed to
+     * {@link #copyPreviewToClipboard}, which puts rendered rich text on the clipboard. Markdown only.
+     */
+    public boolean copyPreviewHtmlSource() {
+        if (!isMarkdown()) {
+            return false;
+        }
+        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+        cc.putString(MarkdownClipboardHtml.toHtml(getContent(), MathImages.isEnabled()));
+        Clipboard.getSystemClipboard().setContent(cc);
+        return true;
     }
 
     private void showPreviewContextMenu(double screenX, double screenY) {
@@ -4791,7 +4816,15 @@ public class EditorBuffer implements TabContent {
             MenuItem copy = new MenuItem(tr("editmenu.copy"));
             copy.setGraphic(MenuIcons.copy());
             copy.setOnAction(ev -> copyPreviewToClipboard());
-            previewContextMenu = new javafx.scene.control.ContextMenu(selectAll, copy, new SeparatorMenuItem());
+            previewContextMenu = new javafx.scene.control.ContextMenu(selectAll, copy);
+            if (isMarkdown()) {
+                // Copy puts rendered rich text on the clipboard; this one puts the HTML markup itself.
+                MenuItem copyHtml = new MenuItem(tr("command.preview.copyHtml"));
+                copyHtml.setGraphic(MenuIcons.code());
+                copyHtml.setOnAction(ev -> copyPreviewHtmlSource());
+                previewContextMenu.getItems().add(copyHtml);
+            }
+            previewContextMenu.getItems().add(new SeparatorMenuItem());
             if (isMarkwhen()) {
                 // Markwhen: JSON export + a timeline⇄calendar view switch (PDF/Word/Print don't apply).
                 MenuItem json = new MenuItem(tr("command.markwhen.exportJson"));
