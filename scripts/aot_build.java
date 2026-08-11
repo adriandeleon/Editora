@@ -213,7 +213,23 @@ public class aot_build {
             }
             cmd.add(imageJava.toString());
             cmd.addAll(List.of(
-                    "-Xmx2g", "-XX:+UseSerialGC",
+                    // Heap and GC MIRROR the shipped launcher (pom.xml dist <javaOptions>). This read
+                    // -XX:+UseSerialGC for one release after the launcher moved to G1; AotTrainerOptionsTest
+                    // now fails if the two lists drift again.
+                    //
+                    // Measured, JDK 25, before assuming the worst: a GC mismatch does NOT invalidate the
+                    // cache. Every train/run combination of Serial and G1 maps all four regions with no
+                    // error, and whether the archived HEAP data maps is decided by the RUNTIME GC, not the
+                    // training one (G1 maps it, Serial does not) — so the mismatched builds still got their
+                    // heap objects. Building this app image both ways produced caches of the SAME size
+                    // (75,350,016 bytes), and 8 interleaved startup runs of each found no difference beyond
+                    // the noise (medians 1120 ms G1-trained vs 1078 ms Serial-trained, spreads overlapping,
+                    // and the nominal edge to the WRONG side). So this fix buys no measurable speed.
+                    //
+                    // Mirroring is still correct: the cache should archive the collector the app actually
+                    // runs, and a flag that can diverge silently here is the class of bug worth a guard,
+                    // whatever this particular one turned out to cost. Do not cite it as a perf win.
+                    "-Xmx2g", "-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=30000",
                     "--enable-native-access=javafx.graphics",
                     // Mirror the packaged launcher's javaOptions (see pom.xml dist profile): lets the macOS
                     // "Open With" handler reach the internal com.sun.glass.ui API. Harmless on other OSes.

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- The build's AOT cache is now trained under the same garbage collector the packaged app runs. The switch to
+  G1 in 0.11.0 updated the launcher but not the trainer, which kept training under SerialGC. **No user-visible
+  effect**: a GC mismatch turns out not to invalidate the cache, the archived heap data follows the runtime
+  collector rather than the training one, and 8 interleaved startup runs of each build found no difference
+  beyond the noise. A test now fails if the trainer's options and the launcher's drift apart again, since the
+  next flag to diverge may not be as harmless.
+
 ## [0.11.0] - 2026-08-11
 
 ### Added
