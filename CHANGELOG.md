@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **"Failed to open" for a file that had just opened.** Launching Editora with a position —
+  `Editora notes.txt:42`, which is what a terminal's clickable-link setting sends — opened the file at the
+  line *and* reported a failure. macOS delivers a launcher argument through the `openFiles` Apple Event as
+  well as on argv, and the two were parsed differently: argv understood the `:line[:column]` suffix, the
+  event took the whole string as a filename and looked for a file that had a colon and a number in its name.
+  Both paths now go through the same parse, and OS-delivered files honour a line number as command-line ones
+  always have. Existence is asked first, because a colon is a legal character in a macOS filename: a file
+  really called `notes:1` opens as itself rather than as line 1 of `notes`.
+
 ### Internal
 
 - The build's AOT cache is now trained under the same garbage collector the packaged app runs. The switch to

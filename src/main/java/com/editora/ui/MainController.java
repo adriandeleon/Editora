@@ -6449,18 +6449,17 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** A startup file to open, with an optional 1-based line/column ({@code 0} = unspecified). */
     /**
      * Opens OS-delivered files in this window (macOS Finder "Open With" — routed here by
-     * {@code App.installMacOpenFilesHandler} → {@code WindowManager.openExternalFiles}). Each path is opened
-     * like any other file (an already-open file just re-focuses its tab); paths are normalized to absolute.
+     * {@code MacOpenFiles.install} → {@code WindowManager.openExternalFiles}). Each target is opened like any
+     * other file (an already-open file just re-focuses its tab) and, when it carries one, jumped to its line.
      */
-    public void openExternalFiles(java.util.List<Path> files) {
-        if (files == null) {
+    public void openExternalFiles(java.util.List<OpenTarget> files) {
+        if (files == null || files.isEmpty()) {
             return;
         }
-        for (Path f : files) {
-            if (f != null) {
-                openPath(f.toAbsolutePath().normalize());
-            }
-        }
+        // The command line's own path, rather than a second one beside it. The two used to differ — this one
+        // could not honour a line number — and a difference between them is invisible until someone opens the
+        // same file both ways and gets two different results.
+        applyStartupTargets(files, null);
     }
 
     public record OpenTarget(Path file, int line, int column) {}

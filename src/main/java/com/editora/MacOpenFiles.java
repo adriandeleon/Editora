@@ -41,14 +41,22 @@ final class MacOpenFiles {
                 if (files == null || files.length == 0) {
                     return;
                 }
-                java.util.List<java.nio.file.Path> paths = new java.util.ArrayList<>();
+                // Through the same parse the command line uses. macOS delivers a launcher argument here as
+                // well as on argv, so `Editora file.java:42` arrived twice: once parsed into a file and a
+                // line, and once as a literal name with the suffix still attached — which opened nothing and
+                // reported a failure for a file that had in fact just opened.
+                java.util.List<com.editora.ui.MainController.OpenTarget> targets = new java.util.ArrayList<>();
                 for (String f : files) {
-                    if (f != null && !f.isBlank()) {
-                        paths.add(java.nio.file.Path.of(f));
+                    if (f == null || f.isBlank()) {
+                        continue;
+                    }
+                    com.editora.ui.MainController.OpenTarget target = App.externalTarget(f);
+                    if (target != null) {
+                        targets.add(target);
                     }
                 }
-                if (!paths.isEmpty()) {
-                    javafx.application.Platform.runLater(() -> windows.openExternalFiles(paths));
+                if (!targets.isEmpty()) {
+                    javafx.application.Platform.runLater(() -> windows.openExternalFiles(targets));
                 }
             }));
         } catch (Throwable t) {

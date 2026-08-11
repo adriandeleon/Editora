@@ -282,7 +282,7 @@ public class WindowManager {
      * focused window, building the no-project window if none is open. On macOS the path arrives via an Apple
      * Event rather than a command-line argument, so {@code App.installMacOpenFilesHandler} routes it here.
      */
-    public void openExternalFiles(List<Path> files) {
+    public void openExternalFiles(List<MainController.OpenTarget> files) {
         if (files == null || files.isEmpty()) {
             return;
         }

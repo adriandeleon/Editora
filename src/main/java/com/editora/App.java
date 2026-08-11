@@ -500,6 +500,36 @@ public class App extends Application {
      * {@code :digits[:digits]} is the position; everything before it is the path, so Windows paths like
      * {@code C:\dir} (no trailing {@code :digits}) and {@code C:\dir:10} parse correctly.
      */
+    /**
+     * The target for a file the <em>OS</em> handed us (the macOS {@code openFiles} Apple Event), which arrives
+     * as one string and may carry a {@code :line[:column]} suffix exactly as a command-line argument does.
+     *
+     * <p>Existence decides, and in that order, because <b>a colon is a legal character in a filename</b> on
+     * macOS: a file really called {@code notes:1} must open as itself rather than as line 1 of {@code notes}.
+     * Only when nothing is there by that name is the suffix read as a position.
+     *
+     * <p>Split from {@link #parseTarget} rather than folded into it: a command line is typed by someone who
+     * meant the suffix, while an Apple Event delivers whatever was passed to the launcher, so only this side
+     * needs the check — and paying for a filesystem probe on every command-line argument would be worse.
+     */
+    static com.editora.ui.MainController.OpenTarget externalTarget(
+            String arg, java.util.function.Predicate<java.nio.file.Path> exists) {
+        java.nio.file.Path literal;
+        try {
+            literal = java.nio.file.Path.of(arg);
+        } catch (java.nio.file.InvalidPathException e) {
+            return null;
+        }
+        if (exists.test(literal)) {
+            return new com.editora.ui.MainController.OpenTarget(literal, 0, 0);
+        }
+        return parseTarget(arg);
+    }
+
+    static com.editora.ui.MainController.OpenTarget externalTarget(String arg) {
+        return externalTarget(arg, java.nio.file.Files::exists);
+    }
+
     static com.editora.ui.MainController.OpenTarget parseTarget(String arg) {
         java.util.regex.Matcher m =
                 java.util.regex.Pattern.compile("^(.+?):(\\d+)(?::(\\d+))?$").matcher(arg);
