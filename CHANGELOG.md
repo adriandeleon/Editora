@@ -7,7 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-11
+
 ### Added
+
+- **New Maven Project.** Editora could only ever *open* an existing folder as a project. There is now an
+  IDEA-style wizard: pick an archetype, fill in the coordinates, and the generated project is registered and
+  opened in its own window. Reachable from the File menu, the Project tree's **New ▸** submenu, and the
+  palette as **Maven: New Project…**.
+  - Archetypes come from a curated list that ships with Editora, with **Load full catalog…** to pull Maven
+    Central's if you need something else. Where both list the same archetype the curated pin wins, since the
+    published catalog is often years behind.
+  - The package name is derived the way IntelliJ does it (`my-app` → `my_app`, `2048` → `_2048`, `new` →
+    `new_`), so a project name that isn't a legal Java identifier still produces one.
+  - Generation shells out to `mvn archetype:generate` rather than writing a pom by hand, so the feature needs
+    Maven on your PATH — which is checked *before* the wizard opens, not after five fields have been typed.
+  - The new project arrives ready to run: a run configuration is seeded for its main class, with
+    `mvn -q compile` as its before-launch step, and that class is opened so Run works on the first press.
+
+- **Git: Initialize Repository…** — you could clone a repository but not start one, so a folder opened as a
+  project had to be taken to a terminal for `git init`. The command prompts for a folder (defaulting to the
+  project root), runs `git init`, and brings the Git UI up the usual way: status bar, Commit window, gutter
+  change bars. Creating a repository *inside* an existing one is refused, naming the enclosing root, since
+  it's nearly always a mistake and awkward to undo.
+
+- **Copy the Markdown preview as rich text.** Copying from the preview now puts an HTML flavour on the
+  clipboard beside the plain text, so one Copy pastes formatted into Word, Teams, Outlook or Gmail while a
+  plain-text target still gets the markup-stripped version. Both go on together and the receiving app picks,
+  so there's nothing to configure. Equations paste as images; headings, bold, lists, tables and links survive
+  even in an app that throws the styling away.
+
+- **Each tool window remembers its own size.** Sizes were three numbers — one per side — shared by every
+  window docked there, so sizing the Project tree and then opening the Structure outline left both at
+  whatever the last one had been dragged to. On a first open, a panel whose content is already showing a
+  horizontal scrollbar is widened to fit, up to 45% of the split.
 
 - **Create a file of any supported type from the Project tree.** Right-clicking a folder now opens a single
   **New ▸** submenu: a generic `File…` and `Folder…`, Text and Markdown, then one submenu per family —
@@ -64,6 +97,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a monospace block listing Java, JavaFX, your OS and your config path) with a button that copies that block
   for a bug report.
 
+- **The gutter ▶ uses your run configuration inside a Maven or Gradle project.** It used to launch an ad-hoc
+  "run this main class" with no before-launch build, no program or VM arguments, no working directory and no
+  environment — which in a build-tool project is the wrong launch, and in a freshly generated one simply
+  failed, because nothing had compiled yet. The configuration naming the clicked class wins, otherwise the
+  one selected in the toolbar. Outside a build tool the old behaviour is unchanged.
+
+- **Opening a project no longer leaves Run complaining about a missing file.** A saved Java configuration
+  resolves its classpath through an open Java file, so a session that had only `pom.xml` open reported "open
+  a Java file from the project" with the configuration sitting right there in the toolbar. The class that
+  will run is now opened when the project restores — in the background, so it never steals the tab you left
+  on.
+
 ### Changed
 
 - **A run configuration no longer picks run or debug for you.** Each entry carried a "Kind" of run or debug
@@ -115,6 +160,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The command palette's lightning bolt became a `>_` prompt, Simple mode's empty square became a window
   frame, and Settings' sun became a cog.
 
+- **A side tool window's header now starts level with the stripe button that opened it.** The stripes were
+  inset to line their first glyph up with the first line of code, but the panels beside them were not, so a
+  panel's header sat a tab strip's height above its own button. The band across the top of the window is
+  continuous now too — the panel's top inset was painting white into an otherwise unbroken strip.
+
+- **The overlay popups use the interface font throughout.** The command palette's chord chip, Find in Files'
+  line numbers and the message log's timestamps were each the one monospace element in an otherwise
+  Inter card, so they read as a different kind of text rather than part of the same surface. The trade is
+  that timestamps and line numbers no longer sit in a perfectly aligned column, which JavaFX can't give us
+  without tabular figures.
+
 - **Git status letters (M/A/D/R/U) are bold** in the Project tree and the Commit window.
 
 - **Go to Line opens where every other popup does** — it was the one overlay centred in the middle of the
@@ -123,7 +179,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The Maven icon is legible at icon size.** It was the official Apache Maven mark, a two-feather
   illustration whose hairline quills collapsed into a smudge at 19px; it is now a single bold feather.
 
+### Performance
+
+- **Typing no longer gets slower the longer you leave Editora open.** Every keystroke permanently leaked two
+  JavaFX animation timers through the 80-column ruler, which measured the caret with a zero-width query —
+  and that form makes the editor allocate a throwaway caret whose blink timer nothing ever stops. The timers
+  accumulated as pulse receivers and were never released, so the cost grew with the session and did not
+  recover:
+
+  | keystrokes | pulse receivers | median keystroke |
+  | --- | --- | --- |
+  | 0 | 7 | — |
+  | 500 | 1,019 | 6.4 ms |
+  | 1,000 | 2,019 | 11.8 ms |
+  | 2,000 | 4,019 | 28.4 ms |
+
+  Measuring an actual character instead leaves the count flat and the keystroke at about 2 ms however long
+  you type. A benchmark now counts pulse receivers per keystroke so this can't come back.
+
+- **The packaged app uses a third less memory, with far shorter GC pauses.** It shipped with the serial
+  collector, chosen on the reasoning that a mostly-idle editor would get sub-millisecond pauses and a
+  smaller footprint from it. Measured on a real session, none of that held — it sized a ~548 MB young
+  generation it never handed back, against a live set of about 72 MB, and had that much to copy on every
+  collection. Switching to G1 with periodic uncommit: **RSS 1130 → 738 MB**, **longest GC pause 138 → 34 ms**
+  (median 91 → 8 ms), startup unchanged. A 138 ms stop-the-world is eight dropped frames on the typing path.
+
 ### Fixed
+
+- **Sliding along the menu bar switches menus again.** On Linux, moving the mouse from one menu to the next
+  often did nothing. A menu popup is a real window, and JavaFX sizes that window to include the drop shadow —
+  so the wide shadow the interface pass gave menus left 26px of invisible but mouse-catching window above
+  every open menu, covering the bar and its neighbours' titles. The menu's shadow now falls entirely below
+  it, and the popup starts exactly at the bar's bottom edge.
+
+- **Running a Java project works from a cold start.** Generating a project and pressing Run walked into a
+  chain of separate failures, each of which blamed something that was working correctly:
+  - "Could not resolve the classpath — make sure the Java project has finished importing", on projects that
+    had imported perfectly. Editora never told jdtls which JDKs were installed, so a project asking for a
+    Java 17 execution environment on a machine with 21 and 25 got an empty classpath and no error. The
+    installed JDKs are now declared when the server starts, read from each one's `release` file rather than
+    by running it.
+  - The same message on a *saved* configuration, because it hand-built the request from the configuration's
+    own (usually blank) project name instead of asking jdtls to identify the class, the way Debug and the
+    gutter marker already did.
+  - "No main class was found in this project" when debugging a saved configuration — jdtls answered
+    correctly and the reply was discarded. Any absolute path in it broke the parse, so this failed on
+    essentially every real project. Classpaths containing a space, comma or bracket were being silently
+    mangled by the same bug.
+  - "Could not find or load main class" once the classpath did resolve: `archetype:generate` writes sources
+    only and Editora runs jdtls without autobuild, so nothing had been compiled.
+  - "No language server for file": a background Java file's server start is deferred until its tab is shown,
+    so the file the launch routed through had never been opened on jdtls even though its tab was.
+
+- **The toolbar's Stop button is enabled while a program is running.** Nothing refreshed it when a run
+  started or finished, so it stayed disabled — and greyed out — no matter what was running.
+
+- **A run configuration added on the Settings page shows up in the toolbar.** It was written to disk and then
+  never appeared in the selector, or as a palette command, until the next launch, with nothing logged.
 
 - **Tab on an already-indented line now moves the caret to where you type.** Pressing Enter inside a block
   leaves the new line already carrying its indent, so Tab has no indentation left to add — and it did
