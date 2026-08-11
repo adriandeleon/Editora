@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- Routine dependency bumps, taken as one batch: JavaFX 26.0.1 → 26.0.2, Jackson 2.19.0 → 2.22.1, Gson
+  2.11.0 → 2.14.0, Lucene 10.2.2 → 10.5.0, java-diff-utils 4.12 → 4.17, joni 2.2.6 → 2.2.7, jcodings
+  1.0.58 → 1.0.64, JUnit 5.11.4 → 5.14.4. All patch or minor.
+
+  Verified with a packaged build as well as the suite, because a dependency change here can break the
+  *installer* while every test passes: java-diff-utils is an automatic module carrying a moditect
+  descriptor, and JavaFX is linked into the runtime image. The app image builds and its AOT training run —
+  which launches the real GUI — completes, which is what says the jimage is whole.
+
+  Deliberately not taken: PDFBox, POI and MINA SSHD, whose jlink descriptors are hand-written and want a
+  build and a launch of their own; commonmark, where a 0.x minor can move the API; and the early-access,
+  alpha, milestone and major offers (JavaFX 28-ea, slf4j 2.1.0-alpha1, SSHD 3.0.0-M5, JUnit 6, LSP4J 1.0.0,
+  JSVG 2.1.0).
+
 ### Fixed
 
 - **"Failed to open" for a file that had just opened.** Launching Editora with a position —
