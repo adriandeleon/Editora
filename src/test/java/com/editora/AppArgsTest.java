@@ -261,4 +261,43 @@ class AppArgsTest {
         assertEquals(List.of(), App.fileTargets(List.of("--single-window")));
         assertEquals(List.of(), App.fileTargets(List.of("--single-window=MyProj")));
     }
+
+    // --- files the OS hands us, which arrive as one string like a command-line argument ------------
+
+    @Test
+    void anOsDeliveredPathCarriesItsLineLikeACommandLineOneDoes() {
+        // The bug: macOS delivers a launcher argument through the openFiles Apple Event as well as on
+        // argv, and this side used to take the whole string as a filename. "Editora foo.java:42" then
+        // opened the file from argv and reported a failure to open "foo.java:42" from the event — one
+        // argument, two answers, and the visible one was the wrong one.
+        OpenTarget target = App.externalTarget("/src/Foo.java:42:7", path -> false);
+        assertEquals(Path.of("/src/Foo.java"), target.file());
+        assertEquals(42, target.line());
+        assertEquals(7, target.column());
+    }
+
+    @Test
+    void aFileThatReallyIsCalledThatOpensAsItself() {
+        // A colon is a legal character in a macOS filename, so existence has to be asked first: a file
+        // named "notes:1" is itself, not line 1 of "notes". Guessing the other way loses a real file.
+        Predicate<Path> onlyTheLiteral = path -> path.equals(Path.of("/src/notes:1"));
+        OpenTarget target = App.externalTarget("/src/notes:1", onlyTheLiteral);
+        assertEquals(Path.of("/src/notes:1"), target.file());
+        assertEquals(0, target.line());
+    }
+
+    @Test
+    void anOrdinaryPathHasNoPosition() {
+        OpenTarget target = App.externalTarget("/src/Foo.java", path -> true);
+        assertEquals(Path.of("/src/Foo.java"), target.file());
+        assertEquals(0, target.line());
+        assertEquals(0, target.column());
+    }
+
+    @Test
+    void aStringThatIsNoPathAtAllIsSkippedRatherThanThrown() {
+        // Windows rejects characters a path may not contain, and an Apple Event is not something we
+        // control the contents of. Dropping it beats an exception out of the event handler.
+        assertNull(App.externalTarget("bad\u0000name", path -> false));
+    }
 }
