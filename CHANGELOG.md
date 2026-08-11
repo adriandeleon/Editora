@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   beyond the noise. A test now fails if the trainer's options and the launcher's drift apart again, since the
   next flag to diverge may not be as harmless.
 
+- `scripts/measure-startup.sh` runs on macOS. It used `timeout` and `date +%s%3N`, both GNU-only and
+  neither present on a stock macOS, so the startup harness `CLAUDE.md` presents as the permanent way to
+  measure cold start could not run on the primary development machine at all. Both are now capability-
+  detected. Three further defects surfaced while fixing it: a `grep` that matched nothing killed the script
+  under `set -e` before its own diagnostic could print, so a failed measurement exited 1 explaining nothing;
+  the log that diagnostic pointed at was deleted by the exit trap before anyone could read it; and the usage
+  text was a hardcoded line range that had already drifted. Measured impact of the missing timestamp: the
+  fallback origin overstated time-to-first-paint by roughly 30% on macOS, all of it in the pre-`main` phase.
+
 ## [0.11.0] - 2026-08-11
 
 ### Added
