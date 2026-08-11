@@ -1,9 +1,5 @@
 package com.editora.build;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -13,7 +9,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Guards the AOT trainer's JVM options against the shipped launcher's.
@@ -204,7 +205,8 @@ class AotTrainerOptionsTest {
     }
 
     private static String stripJavaComments(String s) {
-        String noBlock = Pattern.compile("/\\*.*?\\*/", Pattern.DOTALL).matcher(s).replaceAll("");
+        String noBlock =
+                Pattern.compile("/\\*.*?\\*/", Pattern.DOTALL).matcher(s).replaceAll("");
         return noBlock.replaceAll("(?m)//.*$", "");
     }
 }
