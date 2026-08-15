@@ -3,6 +3,7 @@ package com.editora.config.migration;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -181,6 +182,33 @@ public final class ConfigMigrations {
      * project reopens as its own window on first launch. No active project ⇒ an empty set (the global
      * window opens by default).
      */
+    /**
+     * v7 → v8 for a session file: seed {@code openToolWindows} from the three single-id fields, which is
+     * what a side's open set was before a side could hold two windows.
+     *
+     * <p>A seeding step rather than a plain identity because the read path has no other way to know what
+     * was open: the map is the source of truth from v8 on, so an un-seeded upgrade would silently restore
+     * a session with every tool window closed.
+     */
+    static JsonNode seedOpenToolWindows(JsonNode input) {
+        if (!(input instanceof ObjectNode o) || o.has("openToolWindows")) {
+            return input;
+        }
+        ObjectNode open = JsonNodeFactory.instance.objectNode();
+        record Legacy(String side, String field) {}
+        for (Legacy l : List.of(
+                new Legacy("LEFT", "openLeftToolWindow"),
+                new Legacy("RIGHT", "openRightToolWindow"),
+                new Legacy("BOTTOM", "openBottomToolWindow"))) {
+            JsonNode id = o.get(l.field());
+            if (id != null && id.isTextual() && !id.asText().isEmpty()) {
+                open.set(l.side(), JsonNodeFactory.instance.arrayNode().add(id.asText()));
+            }
+        }
+        o.set("openToolWindows", open);
+        return o;
+    }
+
     static JsonNode seedOpenProjectIds(JsonNode input) {
         if (!(input instanceof ObjectNode o) || o.has("openProjectIds")) {
             return input;

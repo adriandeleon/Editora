@@ -97,6 +97,34 @@ class ConfigMigrationsTest {
     }
 
     @Test
+    void seedOpenToolWindowsCarriesTheSingleIdFieldsIntoThePerSideLists() {
+        ObjectNode v7 = mapper.createObjectNode();
+        v7.put("openLeftToolWindow", "project");
+        v7.put("openRightToolWindow", "");
+        v7.put("openBottomToolWindow", "problems");
+
+        JsonNode out = ConfigMigrations.seedOpenToolWindows(v7);
+
+        JsonNode open = out.get("openToolWindows");
+        assertEquals(1, open.get("LEFT").size());
+        assertEquals("project", open.get("LEFT").get(0).asText());
+        assertEquals("problems", open.get("BOTTOM").get(0).asText());
+        assertFalse(open.has("RIGHT"), "a side with nothing open needs no entry");
+    }
+
+    @Test
+    void seedOpenToolWindowsLeavesAnAlreadySeededFileAlone() {
+        // Re-running the step must not overwrite a real v8 layout with the stale single-id fields.
+        ObjectNode v8 = mapper.createObjectNode();
+        v8.put("openLeftToolWindow", "project");
+        v8.putObject("openToolWindows").putArray("LEFT").add("structure");
+
+        JsonNode out = ConfigMigrations.seedOpenToolWindows(v8);
+
+        assertEquals("structure", out.get("openToolWindows").get("LEFT").get(0).asText());
+    }
+
+    @Test
     void growTodoDefaultKeywordsAppendsMissingKeywordsPreservingCustomEntries() {
         ObjectNode settings = mapper.createObjectNode();
         ArrayNode patterns = settings.putArray("todoPatterns");

@@ -1142,6 +1142,18 @@
     -fx-border-width: 0 2 0 0;
 }
 
+/* The stripe itself while a button hovers over its empty space — the "drop here to re-dock" zone,
+   which is the only affordance an EMPTY side has (it has no buttons to draw an insertion line on).
+   An empty stripe is normally unmanaged; ToolWindowManager reveals it for the duration of a drag. */
+.tool-stripe.tool-stripe-drop-target {
+    -fx-background-color: -color-accent-subtle;
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 1;
+    -fx-border-style: segments(4, 4) line-cap round;
+    -fx-min-width: 30;
+    -fx-min-height: 30;
+}
+
 /* Subtle ground, NOT the content's default: a panel's own fill is visible only in the top inset that
    ToolWindowManager.applyPanelTopInset pads in to drop the header to its stripe button — the header and
    the content paint over everything else. That inset sits in the same row as the editor's tab strip and
@@ -1192,7 +1204,9 @@
     -fx-stroke: -color-accent-fg;
 }
 
-.tool-window-close {
+.tool-window-close,
+.tool-window-float,
+.tool-window-maximize {
     -fx-padding: 2;
 }
 
