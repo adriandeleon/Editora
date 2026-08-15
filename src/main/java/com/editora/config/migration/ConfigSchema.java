@@ -174,7 +174,11 @@ public enum ConfigSchema {
                     // v6→7: RunConfiguration lost `kind` ("run"/"debug"). A removal, but still identity: the
                     // field is unknown on load and dropped on the next write, and a v6 reader copes with a
                     // v7 file for the same reason (a missing `kind` defaulted to "run" there anyway).
-                    6, ConfigMigrations::identity)),
+                    6, ConfigMigrations::identity,
+                    // v7→8: a side can now hold two tool windows, so the open set became a per-side list.
+                    7, ConfigMigrations::seedOpenToolWindows,
+                    // v8→9: + floatingToolWindows / floatingToolWindowBounds (additive)
+                    8, ConfigMigrations::identity)),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.

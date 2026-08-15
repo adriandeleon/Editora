@@ -30,7 +30,7 @@ public class WorkspaceState {
      * unknown field is ignored on load and dropped on the next write, and running or debugging is now the
      * caller's choice rather than something the entry declares.
      */
-    public static final int SCHEMA_VERSION = 7;
+    public static final int SCHEMA_VERSION = 9;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -46,6 +46,32 @@ public class WorkspaceState {
     private String openLeftToolWindow = "";
     private String openRightToolWindow = "";
     private String openBottomToolWindow = "";
+    /**
+     * The tool windows open on each side: side name ("LEFT"/"RIGHT"/"BOTTOM") -> ids, in the order they
+     * are stacked. Additive in schema v8, which is when a side stopped being able to hold only one.
+     *
+     * <p>The three single-id fields above are still written, carrying each side's <em>first</em> window, so
+     * a v7 build reading a v8 file restores a sensible single-window layout rather than an empty one.
+     */
+    private Map<String, List<String>> openToolWindows = new LinkedHashMap<>();
+    /**
+     * Where the divider sits <em>inside</em> a split side: side name -> fraction. Distinct from
+     * {@code toolWindowSizes}, which is how much of the editor the whole side takes — this is how the side
+     * divides between the two windows sharing it, so it belongs to the side rather than to either window.
+     */
+    private Map<String, Double> toolWindowSplitDividers = new LinkedHashMap<>();
+
+    /**
+     * Tool windows that were open in their own floating stage. Additive in schema v9.
+     *
+     * <p>Floating is a state of an <em>open</em> window rather than a sticky per-window mode: closing a
+     * floating stage closes the window, and reopening it from the stripe docks it. That way a window can
+     * never be reopened into a stage the user has forgotten about.
+     */
+    private List<String> floatingToolWindows = new ArrayList<>();
+    /** Where each floating tool window was last left: id -> [x, y, width, height]. Additive in schema v9. */
+    private Map<String, List<Double>> floatingToolWindowBounds = new LinkedHashMap<>();
+
     private double leftDividerPosition = 0.22;
     private double rightDividerPosition = 0.78;
     private double bottomDividerPosition = 0.72;
@@ -199,6 +225,40 @@ public class WorkspaceState {
 
     public void setOpenBottomToolWindow(String openBottomToolWindow) {
         this.openBottomToolWindow = openBottomToolWindow == null ? "" : openBottomToolWindow;
+    }
+
+    public List<String> getFloatingToolWindows() {
+        return floatingToolWindows;
+    }
+
+    public void setFloatingToolWindows(List<String> floatingToolWindows) {
+        this.floatingToolWindows = floatingToolWindows == null ? new ArrayList<>() : floatingToolWindows;
+    }
+
+    public Map<String, List<Double>> getFloatingToolWindowBounds() {
+        return floatingToolWindowBounds;
+    }
+
+    public void setFloatingToolWindowBounds(Map<String, List<Double>> floatingToolWindowBounds) {
+        this.floatingToolWindowBounds =
+                floatingToolWindowBounds == null ? new LinkedHashMap<>() : floatingToolWindowBounds;
+    }
+
+    public Map<String, List<String>> getOpenToolWindows() {
+        return openToolWindows;
+    }
+
+    public void setOpenToolWindows(Map<String, List<String>> openToolWindows) {
+        this.openToolWindows = openToolWindows == null ? new LinkedHashMap<>() : openToolWindows;
+    }
+
+    public Map<String, Double> getToolWindowSplitDividers() {
+        return toolWindowSplitDividers;
+    }
+
+    public void setToolWindowSplitDividers(Map<String, Double> toolWindowSplitDividers) {
+        this.toolWindowSplitDividers =
+                toolWindowSplitDividers == null ? new LinkedHashMap<>() : toolWindowSplitDividers;
     }
 
     public Map<String, Double> getToolWindowSizes() {

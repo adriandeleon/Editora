@@ -469,6 +469,22 @@ final class Icons {
                 + "M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z");
     }
 
+    /** Material "input" (an arrow into a frame) — put a floating tool window back in the dock. */
+    static Node dock() {
+        return of("M21 3.01H3c-1.1 0-2 .9-2 2V9h2V4.99h18v14.03H3V15H1v4.01c0 1.1.9 1.98 2 1.98h18c1.1 0 2-.88 "
+                + "2-1.98v-14c0-1.11-.9-2-2-2zM11 16l4-4-4-4v3H1v2h10v3z");
+    }
+
+    /** Material "fullscreen" (four outward corners) — the tool window header's Maximize button. */
+    static Node maximize() {
+        return of("M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z");
+    }
+
+    /** Material "fullscreen_exit" (four inward corners) — the same button once the window is maximized. */
+    static Node restoreSize() {
+        return of("M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z");
+    }
+
     static Node closeSmall() {
         // Same outline as closeTab() — used by the tool window header.
         return of("M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 "

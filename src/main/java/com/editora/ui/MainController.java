@@ -296,6 +296,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private QuickOpen<StructurePanel.Outline> structurePalette;
     private QuickOpen<Tab> openFilesPalette;
     private QuickOpen<ToolWindow> toolWindowPalette;
+    private QuickOpen<ToolWindow> splitToolWindowPalette;
     private QuickOpen<com.editora.editor.UndoHistory.Checkpoint> undoHistoryPalette;
     private QuickOpen<com.editora.snippet.Snippet> snippetPalette;
     private com.editora.snippet.SnippetManager snippets;
@@ -1677,6 +1678,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                 ToolWindow::getTitle,
                 tw -> invertBindings().getOrDefault(tw.getCommandId(), ""),
                 toolWindows::open);
+        splitToolWindowPalette = new QuickOpen<>(
+                tr("toolwindow.openInSplit"),
+                tr("toolwindow.splitPrompt"),
+                () -> toolWindows.getRegisteredToolWindows().stream()
+                        .filter(toolWindows::canSplitWith)
+                        .collect(java.util.stream.Collectors.toCollection(ArrayList::new)),
+                ToolWindow::getTitle,
+                tw -> invertBindings().getOrDefault(tw.getCommandId(), ""),
+                toolWindows::openInSplit);
         undoHistoryPalette = new QuickOpen<>(
                 tr("toolwindow.undoHistory"),
                 tr("undoHistory.popupPrompt"),
@@ -9561,6 +9571,55 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Shows/hides the tool stripes (UI only; tool windows still open via keybinding/palette). */
+    /**
+     * Expands the active tool window over its split, or hands the space back if it already holds it.
+     *
+     * <p>Session-only and deliberately unpersisted: maximizing is a "let me read this for a moment" gesture,
+     * and a window that reopened next launch covering the editor would read as a broken layout.
+     */
+    /**
+     * Picks a tool window to open <em>beside</em> whatever holds its side, splitting that side in two.
+     *
+     * <p>The picker lists only what could actually join a side right now, so an empty list is the honest
+     * answer to "nothing is open to split with" rather than a list of choices that would silently replace.
+     */
+    private void showSplitToolWindowPalette() {
+        if (toolWindows.getRegisteredToolWindows().stream().noneMatch(toolWindows::canSplitWith)) {
+            setStatus(tr("status.toolwindow.nothingToSplit"));
+            return;
+        }
+        splitToolWindowPalette.show(stage);
+    }
+
+    /**
+     * Detaches the active tool window into its own stage, or docks a floating one back.
+     *
+     * <p>Same target rule as maximize — the focused tool window, else the only open one — because the
+     * palette necessarily takes focus out of the panel before the command runs.
+     */
+    private void toggleFloatingToolWindow() {
+        ToolWindow tw = toolWindows.maximizeTarget();
+        if (tw == null) {
+            setStatus(tr("status.toolwindow.noMaximizeTarget"));
+            return;
+        }
+        toolWindows.toggleFloating(tw);
+        setStatus(tr(
+                toolWindows.isFloating(tw) ? "status.toolwindow.floated" : "status.toolwindow.docked", tw.getTitle()));
+    }
+
+    private void toggleMaximizedToolWindow() {
+        ToolWindow tw = toolWindows.maximizeTarget();
+        if (tw == null) {
+            setStatus(tr("status.toolwindow.noMaximizeTarget"));
+            return;
+        }
+        toolWindows.toggleMaximized(tw);
+        setStatus(tr(
+                toolWindows.isMaximized(tw) ? "status.toolwindow.maximized" : "status.toolwindow.restored",
+                tw.getTitle()));
+    }
+
     private void toggleToolStripe() {
         Settings s = config.getSettings();
         s.setShowToolStripe(!s.isShowToolStripe());
@@ -15131,6 +15190,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("install.languageServer", this::chooseInstallServer));
         registry.register(Command.of("view.toggleColumnRuler", this::toggleColumnRuler));
         registry.register(Command.of("view.toggleToolStripe", this::toggleToolStripe));
+        registry.register(Command.of("view.maximizeToolWindow", this::toggleMaximizedToolWindow));
+        registry.register(Command.of("view.splitToolWindow", this::showSplitToolWindowPalette));
+        registry.register(Command.of("view.floatToolWindow", this::toggleFloatingToolWindow));
         registry.register(Command.of("view.toggleSimpleMode", this::toggleSimpleMode));
         registry.register(Command.of("view.customizeToolbar", () -> settingsWindow.showToolbar(stage)));
         registry.register(Command.of("toolbar.restoreDefault", () -> toolbarCoordinator.restoreDefault()));
