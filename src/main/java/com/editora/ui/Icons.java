@@ -347,14 +347,18 @@ final class Icons {
     }
 
     /**
-     * A {@code >_} terminal prompt — the conventional mark for a command palette.
+     * A keyboard — the surface that answers "what can this do". Shared with Calcula, whose icon set draws
+     * the palette the same way.
      *
-     * <p>Was a lightning bolt, which says "fast" or "power" but not "type a command here"; on a bar that
-     * also carries a run ▶ and a debug bug, "energy" is the one thing it isn't about.
+     * <p>Third try. It was a lightning bolt, which says "fast" or "power" but not "type a command here";
+     * then a {@code >_} terminal prompt, which is legible but names the wrong thing — the palette is not a
+     * shell, and on a bar that already carries a run ▶ and a debug bug, another console mark is one too
+     * many. The keys are drawn as 0.25-unit segments and read as dots only under the round line cap
+     * {@code .icon-line} sets; with a butt cap they would square off into dashes.
      */
     static Node palette() {
-        return line("M2.5 2.5h11a1 1 0 0 1 1 1v9a1 1 0 0 1 -1 1h-11a1 1 0 0 1 -1 -1v-9a1 1 0 0 1 1 -1z"
-                + "M4.6 6.1l2.1 2L4.6 10.1M8.6 10.4h3.2");
+        return line("M 1.75 4.25 H 14.25 V 11.75 H 1.75 Z M 4.25 6.75 H 4.5 M 7 6.75 H 7.25"
+                + " M 9.75 6.75 H 10 M 12 6.75 H 12.25 M 5 9.25 H 11");
     }
 
     static Node closeTab() {
