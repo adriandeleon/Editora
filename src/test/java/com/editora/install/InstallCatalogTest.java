@@ -1,7 +1,11 @@
 package com.editora.install;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.editora.install.InstallCatalog.ArchiveSpec;
 import com.editora.install.InstallCatalog.Kind;
@@ -98,6 +102,32 @@ class InstallCatalogTest {
                 url.endsWith("/jdt-language-server-" + InstallCatalog.JDTLS_VERSION + "-" + InstallCatalog.JDTLS_BUILD
                         + ".tar.gz"),
                 url);
+    }
+
+    /**
+     * The shell installer and the in-app installer must pin the <b>same</b> jdtls build. The version lives in two
+     * files, and nothing but this test makes them agree — so a one-sided bump would silently hand script users and
+     * in-app users different servers, which matters because Editora's documented jdtls behaviour is measured against
+     * one build (see {@code InstallCatalog.JDTLS_VERSION}).
+     */
+    @Test
+    void installScriptPinsTheSameJdtlsBuildAsTheCatalog() throws IOException {
+        Path script = Path.of("scripts/install-jdtls.sh");
+        assertTrue(Files.isRegularFile(script), "missing " + script.toAbsolutePath());
+        String text = Files.readString(script);
+
+        String bumpBoth = " — scripts/install-jdtls.sh and com.editora.install.InstallCatalog pin the jdtls build"
+                + " separately and must be bumped together (and the behaviours in JDTLS_VERSION's javadoc re-checked).";
+        assertEquals(
+                InstallCatalog.JDTLS_VERSION, shellDefault(text, "JDTLS_VERSION"), "jdtls version differs" + bumpBoth);
+        assertEquals(
+                InstallCatalog.JDTLS_BUILD, shellDefault(text, "JDTLS_BUILD"), "jdtls build stamp differs" + bumpBoth);
+
+        // The two variables only count if the download URL is still built from them.
+        assertTrue(
+                text.contains("$JDTLS_VERSION") && text.contains("$JDTLS_BUILD"),
+                "scripts/install-jdtls.sh no longer builds its download URL from JDTLS_VERSION/JDTLS_BUILD,"
+                        + bumpBoth);
     }
 
     @Test
@@ -311,5 +341,16 @@ class InstallCatalogTest {
                         "/home/u/.editora/plugins/lsp/maven" + sep + "*",
                         "org.eclipse.lemminx.XMLServerLauncher"),
                 com.editora.lsp.LspServerRegistry.tokenize(cmd));
+    }
+
+    /** Extracts {@code <default>} from a {@code NAME="${NAME:-<default>}"} line of a shell script. */
+    private static String shellDefault(String script, String var) {
+        Matcher m = Pattern.compile("(?m)^" + var + "=\"\\$\\{" + var + ":-([^}\"]+)\\}\"")
+                .matcher(script);
+        assertTrue(
+                m.find(),
+                "scripts/install-jdtls.sh no longer defines " + var + " as " + var + "=\"${" + var
+                        + ":-<default>}\"; update this test's extraction to match the script.");
+        return m.group(1);
     }
 }
