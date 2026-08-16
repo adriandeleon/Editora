@@ -79,4 +79,26 @@ class DapManagerTest {
         assertEquals(5, merged.breakpoints().get(0).line());
         assertEquals(1, DapManager.withTempLine(null, f, 5).breakpoints().size());
     }
+
+    /**
+     * {@code vscode.java.resolveJavaExecutable} answers a bare path, which lsp4j hands back as a plain
+     * String — not JSON. Parsing it as JSON threw on every debug launch and logged a stack trace, then fell
+     * back to the same value, so the reply was always right and the log said it was broken.
+     */
+    @Test
+    void aPlainStringReplyIsTheValueNotJsonText() {
+        assertEquals(
+                "/home/u/.sdkman/candidates/java/17.0.20-tem/bin/java",
+                FxlessAccess.asString("/home/u/.sdkman/candidates/java/17.0.20-tem/bin/java"));
+        assertEquals(
+                "C:\\Program Files\\Java\\jdk-25\\bin\\java.exe", // backslashes are not JSON escapes here
+                FxlessAccess.asString("C:\\Program Files\\Java\\jdk-25\\bin\\java.exe"));
+    }
+
+    @Test
+    void aJsonStringReplyStillUnwrapsToItsValue() {
+        assertEquals("/usr/bin/java", FxlessAccess.asString(new com.google.gson.JsonPrimitive("/usr/bin/java")));
+        assertNull(FxlessAccess.asString(null));
+        assertNull(FxlessAccess.asString(new com.google.gson.JsonArray())); // not a single value
+    }
 }

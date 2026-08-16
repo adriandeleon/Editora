@@ -1284,12 +1284,21 @@ public final class DapManager implements DapClient.Host {
         return -1;
     }
 
+    /**
+     * A server reply that is meant to be a single string — a path, a name.
+     *
+     * <p>A {@link String} is taken <b>as the value</b> rather than as JSON text. lsp4j only hands back a
+     * gson {@link JsonElement} for a reply it could not type; {@code vscode.java.resolveJavaExecutable}
+     * answers a bare path, which arrives as a plain String and is not JSON — so routing it through
+     * {@link #asJson} threw on every debug launch, logged a WARNING with a stack trace, and then fell back
+     * to exactly this value anyway. The result was always right; the noise said otherwise.
+     */
     private static String asString(Object res) {
-        JsonElement el = asJson(res);
-        if (el != null && el.isJsonPrimitive()) {
-            return el.getAsString();
+        if (res instanceof String s) {
+            return s;
         }
-        return res instanceof String s ? s : null;
+        JsonElement el = asJson(res);
+        return el != null && el.isJsonPrimitive() ? el.getAsString() : null;
     }
 
     private static String str(JsonObject o, String key) {
