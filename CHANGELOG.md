@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-16
+
+### Added
+
+- **Tool window docking.** A tool window can now be **maximized** over its split, **re-docked to another
+  stripe by dragging its button**, **shared with a second window on the same side**, and **floated** into
+  its own window. Maximize and float have a header button each and a palette command; a side holds at most
+  two windows, split vertically on the left and right and horizontally at the bottom, where two consoles
+  side by side are the only way both stay readable. Floating windows remember their bounds, and reuse them
+  only when they still overlap a screen — a window saved on a since-detached monitor is re-centred rather
+  than opened somewhere unreachable.
+
+  Maximize is expressed as divider positions rather than by reparenting, so focus, stripe state and
+  remembered sizes all survive it. The two ways that could have shipped broken: a `SplitPane` honours its
+  items' minimum widths, so without zeroing them for the duration a "maximize" stops part-way and reads as
+  a bug; and closing or persisting while maximized would record a 0-or-1 divider as that window's size,
+  reopening it next session covering the editor, permanently.
+
+- **A pom.xml summary preview.** A `pom.xml` opens with its own rendering instead of the generic XML tree:
+  coordinates and parent, then modules, properties, dependencies, managed dependencies, plugins, managed
+  plugins, and each profile's own set — with the artifact name and its version in aligned columns. The XML
+  tree is one toggle away (`pom.toggleView`, or the preview's right-click menu), and Settings → Editor →
+  File previews turns the whole thing off.
+
+  The point is the two indirections that otherwise leave you scrolling the file to answer "which version
+  is this?": a `${property}` version is shown **resolved**, with the reference kept beside it, and a blank
+  version is filled from the file's own `<dependencyManagement>` and tagged *managed*. What the file cannot
+  answer, it says — a version inherited from a parent pom reads *inherited* rather than a number Editora
+  would be inventing. No parent pom is read, so this is a reading of the file, not an effective pom.
+
+- **Maven: update the versions in an existing project.** `maven.updateVersions` checks the nearest
+  `pom.xml`'s dependencies and plugins against Maven Central and **shows what would change before writing
+  anything** — a row per artifact, current → latest, behind a dialog you can decline. The update is applied
+  through the open buffer as a single edit, so one Ctrl-Z takes the whole thing back.
+
+  Maven Central's `<release>` marker is deliberately not trusted (it means "newest non-snapshot published",
+  which for maven-surefire-plugin was a milestone for years), and a version is never walked *backwards*,
+  which an unguarded set-to-latest would do to a pom pinned on purpose.
+
+- **A Maven submenu on the right-click menu** — on a `pom.xml` in the editor, and on a folder or a `pom.xml`
+  row in the Project tree. One builder serves every surface, so they cannot drift into offering different
+  actions, and it offers nothing at all when Maven is off or there is no pom.
+
+- **New Maven Project: advanced options.** A collapsed section carrying the project `<url>`, the Java
+  release (a combo of the JDK majors actually installed, still editable), and an update-to-latest-versions
+  checkbox. None of the three can be an archetype property — `archetype:generate` ignores them and
+  quickstart bakes its own into the pom template — so they are applied as a post-generation, format-
+  preserving pom edit. Empty means "keep what the archetype wrote".
+
+- **An LSP submenu** in the editor's right-click menu. A fully-featured server contributes up to eight
+  actions, which pushed cut/copy/paste and the spelling suggestions far enough down the menu to hunt for;
+  and a bare "Go to Definition" between "Paste" and a spelling suggestion named nothing about where it came
+  from. Which actions a server contributes is unchanged — the submenu is only their container.
+
+### Changed
+
+- File Templates is no longer labelled *beta* in Settings.
+
+- The in-app jdtls install is pinned to a milestone build rather than the rolling `-latest` tarball. Two
+  users installing a week apart were getting different servers, and an untested overnight build shipped
+  straight to them — which matters more for jdtls than for most servers, because Editora's handling of it
+  is measured against specific builds. A test fails if the pin drifts between the two files that carry it.
+
+### Fixed
+
+- **Recent files that no longer exist are no longer offered.** A recent list outlives the files in it, and
+  an entry that cannot open is worse than no entry. Remote (SFTP) entries are deliberately never checked —
+  that is a network round trip per entry, on the UI thread, every time the menu is built, and it answers
+  "gone" for a host that is merely asleep. Entries are filtered rather than pruned, so a file on an
+  unplugged drive comes back by itself.
+
+- **Find in Files showed two different icons** for one feature — the toolbar button and the tool window
+  disagreed, the window carrying the plain magnifier that belongs to the in-file find bar.
+
+- **The tool stripe's drop-zone highlight stuck after a drag.** Reordering a stripe button by dropping it on
+  a neighbour left the dashed border painted for the rest of the session.
+
+- **Creating a Maven project beside an existing one failed outright** ("Unable to add module to the current
+  project as it is not of packaging type 'pom'"). `archetype:generate` registers the new project as a
+  `<module>` of whatever project it finds and refuses when that one is an ordinary jar project. Generation
+  now happens in a scratch directory and the finished project is moved into place; an aggregator
+  (`packaging=pom`) is still left attached, where the module is what you want.
+
+- **"Failed to open" for a file that had just opened.** Launching Editora with a position —
+  `Editora notes.txt:42`, which is what a terminal's clickable-link setting sends — opened the file at the
+  line *and* reported a failure. macOS delivers a launcher argument through the `openFiles` Apple Event as
+  well as on argv, and the two were parsed differently: argv understood the `:line[:column]` suffix, the
+  event took the whole string as a filename and looked for a file that had a colon and a number in its name.
+  Both paths now go through the same parse, and OS-delivered files honour a line number as command-line ones
+  always have. Existence is asked first, because a colon is a legal character in a macOS filename: a file
+  really called `notes:1` opens as itself rather than as line 1 of `notes`.
+
+- **Every debug launch logged a parse failure for a reply that was correct.** jdtls answers the "where is
+  java?" request with a bare path, which is not JSON; it was parsed as JSON anyway, logged a stack trace,
+  and then fell through to the same value. Nothing was broken except the log — which is the problem, since
+  a routine failure firing on every launch trains you to ignore the one that matters.
+
 ### Internal
 
 - Routine dependency bumps, taken as one batch: JavaFX 26.0.1 → 26.0.2, Jackson 2.19.0 → 2.22.1, Gson
@@ -23,18 +120,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alpha, milestone and major offers (JavaFX 28-ea, slf4j 2.1.0-alpha1, SSHD 3.0.0-M5, JUnit 6, LSP4J 1.0.0,
   JSVG 2.1.0).
 
-### Fixed
-
-- **"Failed to open" for a file that had just opened.** Launching Editora with a position —
-  `Editora notes.txt:42`, which is what a terminal's clickable-link setting sends — opened the file at the
-  line *and* reported a failure. macOS delivers a launcher argument through the `openFiles` Apple Event as
-  well as on argv, and the two were parsed differently: argv understood the `:line[:column]` suffix, the
-  event took the whole string as a filename and looked for a file that had a colon and a number in its name.
-  Both paths now go through the same parse, and OS-delivered files honour a line number as command-line ones
-  always have. Existence is asked first, because a colon is a legal character in a macOS filename: a file
-  really called `notes:1` opens as itself rather than as line 1 of `notes`.
-
-### Internal
+- An uncaught exception on the UI thread now records **what had keyboard focus** beside it. A crash inside a
+  JavaFX control's own event handling produces a stack with no application frames at all, so it names the
+  control's class and nothing about which of the app's many lists or trees it was — which is the difference
+  between a report that can be acted on and one that cannot.
 
 - The build's AOT cache is now trained under the same garbage collector the packaged app runs. The switch to
   G1 in 0.11.0 updated the launcher but not the trainer, which kept training under SerialGC. **No user-visible
