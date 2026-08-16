@@ -120,6 +120,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alpha, milestone and major offers (JavaFX 28-ea, slf4j 2.1.0-alpha1, SSHD 3.0.0-M5, JUnit 6, LSP4J 1.0.0,
   JSVG 2.1.0).
 
+- The toolbar's run-configuration selector rebuilds its rows in one assignment rather than replacing them and
+  then appending its trailing "Edit Configurations…" row. A ComboBox whose items shrink while its popup is
+  being clicked makes JavaFX throw out of its own event handling — reproduced against JavaFX 26 — and the two
+  steps left the list one row short in between. Not presented as the fix for the crash that prompted the
+  look: nothing in that report names a control, and this was simply the one place in the app with the shape.
+
+- `RunConfigToolbarFxTest` no longer races the program it launches. It asserted the Stop button was enabled
+  straight after starting `java -version`, and "is it running" is a live reading of the OS — so if the UI
+  thread was descheduled for longer than that program takes, the child was already gone. It now runs a
+  sleeper it stops itself, which also covers what the Stop button is for.
+
 - An uncaught exception on the UI thread now records **what had keyboard focus** beside it. A crash inside a
   JavaFX control's own event handling produces a stack with no application frames at all, so it names the
   control's class and nothing about which of the app's many lists or trees it was — which is the difference
