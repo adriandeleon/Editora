@@ -16,8 +16,12 @@ set -euo pipefail
 
 CONFIG_DIR="${EDITORA_CONFIG_DIR:-$HOME/.editora}"
 DEST="$CONFIG_DIR/plugins/lsp/java"
-# The canonical "latest snapshot" tarball published by the Eclipse jdt.ls project.
-URL="${JDTLS_URL:-https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz}"
+# A PINNED Eclipse jdt.ls milestone — deliberately not the snapshots/ nightly, so this script and the in-app
+# installer (InstallCatalog.JDTLS_VERSION/JDTLS_BUILD) hand out the same, tested server. Keep the two in sync;
+# milestones are listed at https://download.eclipse.org/jdtls/milestones/. Override with JDTLS_URL to test another.
+JDTLS_VERSION="${JDTLS_VERSION:-1.60.0}"
+JDTLS_BUILD="${JDTLS_BUILD:-202606262232}"
+URL="${JDTLS_URL:-https://download.eclipse.org/jdtls/milestones/$JDTLS_VERSION/jdt-language-server-$JDTLS_VERSION-$JDTLS_BUILD.tar.gz}"
 
 for cmd in curl tar; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "error: '$cmd' is required but not installed." >&2; exit 1; }

@@ -83,6 +83,23 @@ class InstallCatalogTest {
         assertTrue(InstallCatalog.forBufferLanguage(null).isEmpty());
     }
 
+    /**
+     * The jdtls tarball must stay a <b>pinned milestone</b>. It used to be the {@code snapshots/} nightly, which
+     * hands two users installing a week apart different servers and ships an untested overnight build straight
+     * to them — and Editora's jdtls behaviour is measured against a specific build (see {@code JDTLS_VERSION}).
+     */
+    @Test
+    void jdtlsTarballIsAPinnedMilestoneNotTheNightly() {
+        String url = InstallCatalog.JDTLS_TARBALL_URL;
+        assertTrue(url.startsWith("https://download.eclipse.org/jdtls/milestones/"), url);
+        assertFalse(url.contains("/snapshots/"), url);
+        assertFalse(url.contains("latest"), url);
+        assertTrue(
+                url.endsWith("/jdt-language-server-" + InstallCatalog.JDTLS_VERSION + "-" + InstallCatalog.JDTLS_BUILD
+                        + ".tar.gz"),
+                url);
+    }
+
     @Test
     void javaStepsAreJdtlsThenJavaDebug() {
         List<Step> steps = InstallCatalog.steps(Lang.JAVA);

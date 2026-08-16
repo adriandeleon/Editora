@@ -61,6 +61,7 @@ class IconsFxTest {
         assertRenders("paste", Icons::paste); // two rounded rects
         assertRenders("find", Icons::find);
         assertRenders("findInFiles", Icons::findInFiles);
+        assertRenders("palette", Icons::palette); // keyboard: key marks are 0.25-unit segments
         assertRenders("run", Icons::run);
         assertRenders("debug", Icons::debug);
         assertRenders("stopSquare", Icons::stopSquare);
