@@ -189,4 +189,62 @@ class ToolWindowRedockFxTest {
             assertFalse(right.isManaged(), "the empty stripe must go away again when the drag ends");
         });
     }
+
+    /**
+     * The drop-target highlight goes on at most once, however long the cursor hovers.
+     *
+     * <p>{@code DRAG_OVER} fires tens of times a second, and the handler used to {@code add} the class on
+     * every one of them while both clear paths called {@code remove}, which drops only the first occurrence
+     * — so a second of hovering left dozens behind and one removal could not clear them.
+     */
+    @Test
+    void hoveringDoesNotStackTheDropTargetHighlight() throws Exception {
+        Rig r = rig();
+        FxTestSupport.runOnFx(() -> {
+            Pane stripe = r.stripe(ToolWindow.Side.LEFT);
+            for (int i = 0; i < 50; i++) {
+                markDropTarget(r, stripe, true);
+            }
+            assertEquals(
+                    1,
+                    java.util.Collections.frequency(stripe.getStyleClass(), DROP_TARGET),
+                    "the highlight class stacked up, so one removal cannot clear it");
+
+            markDropTarget(r, stripe, false);
+            assertFalse(stripe.getStyleClass().contains(DROP_TARGET));
+        });
+    }
+
+    /**
+     * Ending the drag clears every stripe, whatever the drop landed on.
+     *
+     * <p>This is the case that was actually reported: dropping a button onto a NEIGHBOUR to reorder it means
+     * the button consumes the event, so the stripe's own DRAG_DROPPED never runs — and sliding from stripe
+     * space onto one of its child buttons is not an exit from the stripe, so DRAG_EXITED does not run
+     * either. The stripe kept its dashed drop-zone border for the rest of the session.
+     */
+    @Test
+    void endingTheDragClearsTheHighlightOnEveryStripe() throws Exception {
+        Rig r = rig();
+        FxTestSupport.runOnFx(() -> {
+            for (ToolWindow.Side side : ToolWindow.Side.values()) {
+                markDropTarget(r, r.stripe(side), true);
+            }
+
+            FxTestSupport.call(r.manager(), "setDraggingStripeButton", new Class[] {boolean.class}, false);
+
+            for (ToolWindow.Side side : ToolWindow.Side.values()) {
+                assertFalse(
+                        r.stripe(side).getStyleClass().contains(DROP_TARGET),
+                        side + " kept the drop-zone highlight after the drag ended");
+            }
+        });
+    }
+
+    private static final String DROP_TARGET = "tool-stripe-drop-target";
+
+    /** Drives the manager's own highlight helper — a static method, so the instance is only a handle. */
+    private static void markDropTarget(Rig r, Pane stripe, boolean on) {
+        FxTestSupport.call(r.manager(), "setStripeDropTarget", new Class[] {Pane.class, boolean.class}, stripe, on);
+    }
 }
