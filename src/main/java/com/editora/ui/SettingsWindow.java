@@ -259,6 +259,7 @@ public class SettingsWindow {
     private CheckBox sshConfigPreviewCheck;
     private CheckBox dockerfilePreviewCheck;
     private CheckBox githubActionsPreviewCheck;
+    private CheckBox pomPreviewCheck;
     private CheckBox csvRainbowCheck;
     private CheckBox bracketColorsCheck;
     private CheckBox autoRenameTagCheck;
@@ -1182,6 +1183,7 @@ public class SettingsWindow {
         sshConfigPreviewCheck = viewCheck(tr("settings.sshConfigPreview"), Settings::setSshConfigPreview);
         dockerfilePreviewCheck = viewCheck(tr("settings.dockerfilePreview"), Settings::setDockerfilePreview);
         githubActionsPreviewCheck = viewCheck(tr("settings.githubActionsPreview"), Settings::setGithubActionsPreview);
+        pomPreviewCheck = viewCheck(tr("settings.pomPreview"), Settings::setPomPreview);
         csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
         bracketColorsCheck = viewCheck(tr("settings.bracketColors"), Settings::setBracketColors);
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
@@ -2434,6 +2436,12 @@ public class SettingsWindow {
                 githubActionsPreviewCheck,
                 null,
                 "github actions workflow ci yaml preview jobs triggers");
+        checkRow(
+                previews,
+                Category.EDITOR,
+                pomPreviewCheck,
+                null,
+                "maven pom xml preview dependencies plugins properties versions summary");
         Card saving = card(p, tr("settings.section.saving"));
         Label delayLabel = note("delay (seconds)");
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
@@ -6849,6 +6857,7 @@ public class SettingsWindow {
             sshConfigPreviewCheck.setSelected(settings.isSshConfigPreview());
             dockerfilePreviewCheck.setSelected(settings.isDockerfilePreview());
             githubActionsPreviewCheck.setSelected(settings.isGithubActionsPreview());
+            pomPreviewCheck.setSelected(settings.isPomPreview());
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
             bracketColorsCheck.setSelected(settings.isBracketColors());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
@@ -7497,6 +7506,7 @@ public class SettingsWindow {
             sshConfigPreviewCheck.setSelected(s.isSshConfigPreview());
             dockerfilePreviewCheck.setSelected(s.isDockerfilePreview());
             githubActionsPreviewCheck.setSelected(s.isGithubActionsPreview());
+            pomPreviewCheck.setSelected(s.isPomPreview());
             csvRainbowCheck.setSelected(s.isCsvRainbow());
             bracketColorsCheck.setSelected(s.isBracketColors());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());

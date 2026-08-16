@@ -1435,12 +1435,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             ContextMenu menu = new ContextMenu();
             if (isDir) {
                 menu.getItems().add(newMenu(treeItem));
-                // Built per right-click rather than once: a folder gains or loses its pom.xml while the
-                // tree is open, and mavenMenuFor answers null for a folder that has none.
-                javafx.scene.control.Menu maven = mavenMenuFor(treeItem.getValue());
-                if (maven != null) {
-                    menu.getItems().add(maven);
-                }
+            }
+            // Offered on a folder holding a pom and on a pom.xml row itself — the same submenu the editor's
+            // right-click on that file shows. Built per right-click rather than once: a folder gains or loses
+            // its pom.xml while the tree is open, and mavenMenuFor owns the whole "is there anything here?"
+            // rule (it answers null for a folder with no pom, and for any file that is not a pom.xml).
+            javafx.scene.control.Menu maven = mavenMenuFor(treeItem.getValue());
+            if (maven != null) {
+                menu.getItems().add(maven);
             }
             // Rename is offered on every file/folder EXCEPT the project root — renaming that would move the
             // whole project folder on disk and leave the project pointing at a path that no longer exists.

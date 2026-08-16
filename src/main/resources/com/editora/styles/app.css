@@ -694,6 +694,34 @@
 .ghactions-step { -fx-text-fill: -color-fg-default; -fx-padding: 0 0 0 12; }
 .ghactions-error { -fx-text-fill: -color-danger-fg; }
 
+/* Maven pom.xml summary preview — theme-aware via AtlantaFX semantic colors. */
+.pom-preview-scroll { -fx-background-color: -color-bg-default; }
+.pom-preview { -fx-background-color: -color-bg-default; -fx-padding: 10; -fx-spacing: 2; }
+.pom-header { -fx-spacing: 2; -fx-padding: 0 0 6 0; }
+.pom-title { -fx-text-fill: -color-fg-default; -fx-font-size: 1.3em; -fx-font-weight: bold; }
+.pom-coords { -fx-text-fill: -color-accent-fg; -fx-font-family: monospace; }
+.pom-name-line { -fx-text-fill: -color-fg-default; }
+.pom-desc { -fx-text-fill: -color-fg-muted; -fx-padding: 2 0 0 0; }
+.pom-parent { -fx-text-fill: -color-fg-muted; -fx-font-family: monospace; -fx-font-size: 0.9em; }
+.pom-section { -fx-text-fill: -color-fg-muted; -fx-font-weight: bold; -fx-padding: 12 0 3 0;
+               -fx-border-color: transparent transparent -color-border-muted transparent; -fx-border-width: 0 0 0.5 0; }
+.pom-grid { -fx-hgap: 12; -fx-padding: 3 0 0 0; }
+.pom-mono { -fx-font-family: monospace; }
+.pom-name { -fx-text-fill: -color-fg-default; -fx-font-family: monospace; }
+.pom-group { -fx-fill: -color-fg-muted; -fx-font-family: monospace; }
+.pom-artifact { -fx-fill: -color-fg-default; -fx-font-family: monospace; }
+.pom-value { -fx-text-fill: -color-fg-default; }
+.pom-version { -fx-text-fill: -color-accent-fg; }
+/* A version this file supplies indirectly, via its own <dependencyManagement>/<pluginManagement>. */
+.pom-version-managed { -fx-text-fill: -color-success-fg; }
+/* A version this file can't resolve — it comes from a parent pom we haven't read. */
+.pom-version-unknown { -fx-text-fill: -color-fg-subtle; -fx-font-style: italic; -fx-font-size: 0.9em; }
+.pom-tag { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
+.pom-goals { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; -fx-padding: 0 0 2 16; }
+.pom-profile-title { -fx-text-fill: -color-accent-fg; -fx-font-weight: bold; -fx-padding: 16 0 0 0; }
+.pom-empty { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
+.pom-error { -fx-text-fill: -color-danger-fg; }
+
 /* Keep the tree token colors stable when a row is selected. The rows are TextFlows of Text runs, whose
    -fx-fill AtlantaFX flips to the selection foreground (-color-cell-fg-selected) on a selected cell — so
    without these the colored tokens visibly recolor on select/deselect (a "redraw" flash). Restating each

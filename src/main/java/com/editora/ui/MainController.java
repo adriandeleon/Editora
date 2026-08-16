@@ -1091,6 +1091,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 s.isSpellCheck(),
                 s.isCsvPreview(),
                 s.isStructuredPreview(),
+                s.isPomPreview(),
                 markdownLintEnabled(),
                 editorConfigEnabled(),
                 simpleModeActive());
@@ -6989,6 +6990,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setFormatBarEnabled(config.getSettings().isMarkdownFormatBar());
         buffer.setPreviewExportPdfHandler(this::exportPreviewPdf); // preview right-click menu
         buffer.setPreviewPrintHandler(this::printPreview);
+        buffer.setPomViewToggleHandler(this::togglePomView); // pom preview right-click: summary ⇄ XML tree
         buffer.setPreviewExportDocxHandler(this::exportPreviewDocx); // preview → MS Word
         buffer.setPreviewExportOdtHandler(this::exportPreviewOdt); // preview → OpenDocument
         buffer.setPreviewExportJsonHandler(this::exportMarkwhenJson); // Markwhen preview → JSON
@@ -6999,14 +7001,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setCompletionProvider(completion::complete);
         buffer.setAiCompletionProvider(aiCoordinator::inlineComplete);
         buffer.setAiCompletionEnabled(aiCoordinator.isInlineCompletionEnabled());
-        // A Maven submenu only on a pom.xml: the actions are about the project the file IS, and offering
-        // them on every buffer in the repo would say nothing about which pom.
+        // A Maven submenu only on a pom.xml — mavenMenu itself enforces that, so this surface and the
+        // project tree's cannot disagree about when it appears.
         buffer.setBuildMenuContributor(() -> {
-            java.nio.file.Path path = buffer.getPath();
-            if (path == null || !"pom.xml".equals(String.valueOf(path.getFileName()))) {
-                return List.of();
-            }
-            javafx.scene.control.Menu maven = mavenProjectCoordinator.mavenMenu(path);
+            javafx.scene.control.Menu maven = mavenProjectCoordinator.mavenMenu(buffer.getPath());
             return maven == null ? List.of() : List.of(maven);
         });
         buffer.setMenuContributor(
@@ -12823,6 +12821,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr(b.isStructuredOpenApi() ? "status.structured.viewToggled" : "status.structured.notOpenApi"));
     }
 
+    /** Flips a pom.xml preview between its Maven summary (the default) and the standard XML tree. */
+    private void togglePomView() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || !b.isPom()) {
+            setStatus(tr("status.pom.notPom"));
+            return;
+        }
+        if (!b.togglePomView()) {
+            // The XML tree belongs to the structured-data preview; say which switch is missing rather than
+            // flipping into a view that isn't there.
+            setStatus(tr("status.pom.xmlPreviewOff"));
+            return;
+        }
+        setStatus(tr(b.isPomShowingXml() ? "status.pom.viewXml" : "status.pom.viewSummary"));
+    }
+
     /** Persists the Markwhen buffer's preview renderer choice (TIMELINE default → removed). */
     private void persistMarkwhenView(EditorBuffer buffer) {
         Path file = buffer.getPath();
@@ -13121,6 +13135,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setSshConfigPreviewEnabled(s.isSshConfigPreview()); // per-Host connection summary
         buffer.setDockerfilePreviewEnabled(s.isDockerfilePreview()); // per-stage build digest
         buffer.setGithubActionsPreviewEnabled(s.isGithubActionsPreview()); // workflow triggers + jobs digest
+        buffer.setPomPreviewEnabled(s.isPomPreview()); // Maven pom.xml summary (wins over the XML tree)
         if (buffer.isStructured() || buffer.isXml() || buffer.isSvg()) {
             ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/XML/SVG gate flips
         }
@@ -15338,6 +15353,17 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleStructuredPreview",
                         () -> config.getSettings().isStructuredPreview(),
                         config.getSettings()::setStructuredPreview,
+                        () -> {
+                            applyViewSettingsToAllBuffers(config.getSettings());
+                            settingsWindow.syncAll();
+                        })));
+        registry.register(Command.of("pom.toggleView", this::togglePomView));
+        registry.register(Command.of(
+                "view.togglePomPreview",
+                () -> toggleSetting(
+                        "view.togglePomPreview",
+                        () -> config.getSettings().isPomPreview(),
+                        config.getSettings()::setPomPreview,
                         () -> {
                             applyViewSettingsToAllBuffers(config.getSettings());
                             settingsWindow.syncAll();

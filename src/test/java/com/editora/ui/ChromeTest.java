@@ -123,6 +123,7 @@ class ChromeTest {
                 on.test("spell"),
                 on.test("csv"),
                 on.test("structured"),
+                on.test("pomPreview"),
                 on.test("markdownLint"),
                 on.test("editorConfig"),
                 simpleMode);

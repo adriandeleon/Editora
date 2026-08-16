@@ -129,8 +129,11 @@ public final class PomParser {
     }
 
     // --- DOM helpers -----------------------------------------------------------------------------
+    // Package-private (not private) so {@link PomSummary} — the other pom.xml reader in this package, which
+    // needs a different, display-oriented slice of the same document — shares one XXE-hardened parse and one
+    // set of child-element accessors rather than carrying a second copy of them.
 
-    private static Document parseDocument(String xml) throws PomParseException {
+    static Document parseDocument(String xml) throws PomParseException {
         try {
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
             // XXE hardening: never resolve a DOCTYPE or an external/parameter entity.
@@ -147,7 +150,7 @@ public final class PomParser {
         }
     }
 
-    private static Element firstChildElement(Element parent, String tagName) {
+    static Element firstChildElement(Element parent, String tagName) {
         if (parent == null) {
             return null;
         }
@@ -159,7 +162,7 @@ public final class PomParser {
         return null;
     }
 
-    private static List<Element> childElements(Element parent, String tagName) {
+    static List<Element> childElements(Element parent, String tagName) {
         List<Element> out = new ArrayList<>();
         if (parent == null) {
             return out;
@@ -172,12 +175,12 @@ public final class PomParser {
         return out;
     }
 
-    private static String firstChildText(Element parent, String tagName) {
+    static String firstChildText(Element parent, String tagName) {
         Element el = firstChildElement(parent, tagName);
         return el == null ? null : text(el);
     }
 
-    private static String text(Element el) {
+    static String text(Element el) {
         StringBuilder sb = new StringBuilder();
         NodeList children = el.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
@@ -189,11 +192,11 @@ public final class PomParser {
         return sb.toString();
     }
 
-    private static boolean isBlank(String s) {
+    static boolean isBlank(String s) {
         return s == null || s.isBlank();
     }
 
-    private static String strip(String s) {
+    static String strip(String s) {
         return s == null ? "" : s.strip();
     }
 }
