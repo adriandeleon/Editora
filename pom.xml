@@ -6,7 +6,7 @@
 
     <groupId>com.editora</groupId>
     <artifactId>editora</artifactId>
-    <version>0.11.1-SNAPSHOT</version>
+    <version>0.12.0</version>
     <packaging>jar</packaging>
 
     <name>Editora</name>
