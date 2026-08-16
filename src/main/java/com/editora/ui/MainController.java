@@ -10035,9 +10035,17 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Replaces the selector's items, re-selecting the previous choice by name. */
     private void repopulate(
             List<com.editora.config.RunConfiguration> configs, com.editora.config.RunConfiguration previous) {
-        runConfigCombo.getItems().setAll(configs);
-        // Always offered, including with no configurations at all — with none it is how you make the first.
-        runConfigCombo.getItems().add(EDIT_CONFIGS_ROW);
+        // One setAll, not setAll-then-add. The sentinel is always offered — including with no configurations
+        // at all, where it is how you make the first — and building the row list first means the combo's items
+        // never pass through a state that is missing it. Two mutations fire two change events, and the popup's
+        // own ListView is a listener on them: a combo whose items shrink under a selection in flight is the
+        // shape that makes JavaFX's ListViewBehavior read a stale added-range and throw
+        // IndexOutOfBoundsException out to the uncaught handler (reproduced against JavaFX 26 in
+        // ComboItemsMutationFxTest). Whether that is the crash seen in the wild is unproven — this closes the
+        // one place in the app carrying the shape.
+        List<com.editora.config.RunConfiguration> rows = new ArrayList<>(configs);
+        rows.add(EDIT_CONFIGS_ROW);
+        runConfigCombo.getItems().setAll(rows);
         // Re-select by name: the list is rebuilt from the store on every refresh, so the old instance is not
         // the same object even when the configuration is unchanged. Searches `configs`, not the combo's items,
         // so the sentinel can never be re-selected — it has a blank name and would otherwise match an unnamed
