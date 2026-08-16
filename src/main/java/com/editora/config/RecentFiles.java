@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -45,6 +46,33 @@ public class RecentFiles {
     public RecentFiles(Path configDir) {
         this.file = configDir.resolve(FILE_NAME);
         load();
+    }
+
+    /**
+     * The entries worth showing: local files that are still on disk, plus every non-local one unchecked.
+     *
+     * <p>A recent list outlives the files in it — a build output, a scratch file, a checkout that has been
+     * deleted — and offering an entry that cannot open is worse than offering nothing.
+     *
+     * <p><b>Remote paths are deliberately never checked.</b> They are kept whatever {@code exists} would
+     * say, because asking is a network round trip on an SFTP filesystem — per entry, on the FX thread,
+     * every time the dropdown is built — which would freeze the UI for as long as the host takes to answer,
+     * and answer "gone" for a host that is merely asleep. {@code isLocal} decides which are which.
+     *
+     * <p>Filtering only: the stored list is left alone, so a file on an unplugged drive or an unmounted
+     * share comes back by itself rather than being pruned the one time it was unreachable.
+     *
+     * @param isLocal whether an entry lives on the default filesystem ({@code Vfs::isLocal})
+     * @param exists whether it is still there ({@code Files::exists}) — consulted only for local entries
+     */
+    public static List<Path> showable(List<Path> entries, Predicate<Path> isLocal, Predicate<Path> exists) {
+        List<Path> out = new ArrayList<>();
+        for (Path p : entries) {
+            if (p != null && (!isLocal.test(p) || exists.test(p))) {
+                out.add(p);
+            }
+        }
+        return out;
     }
 
     public ObservableList<Path> getList() {

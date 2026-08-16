@@ -2128,15 +2128,27 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Repopulates the recent-files menu from the persisted list (most-recent first). */
+    /**
+     * The recent entries still worth offering — see {@link RecentFiles#showable}. Kept here so the toolbar
+     * dropdown and the Welcome page filter identically; a deleted file must not be offered by either.
+     */
+    List<Path> showableRecentFiles() {
+        return recentFiles == null
+                ? List.of()
+                : RecentFiles.showable(
+                        recentFiles.getList(), com.editora.vfs.Vfs::isLocal, java.nio.file.Files::exists);
+    }
+
     private void rebuildRecentMenu() {
         recentButton.getItems().clear();
-        if (recentFiles.getList().isEmpty()) {
+        List<Path> shown = showableRecentFiles();
+        if (shown.isEmpty()) {
             MenuItem empty = new MenuItem(tr("menu.noRecentFiles"));
             empty.setDisable(true);
             recentButton.getItems().add(empty);
             return;
         }
-        for (Path path : recentFiles.getList()) {
+        for (Path path : shown) {
             recentButton.getItems().add(recentMenuItem(path));
         }
         // "Clear recent files" lives here rather than as its own toolbar icon: as a bare trash can beside
