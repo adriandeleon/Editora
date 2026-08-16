@@ -192,6 +192,39 @@ class PomEditsTest {
         assertTrue(PomEdits.pluginVersions(pom).isEmpty());
     }
 
+    // --- dependencies ----------------------------------------------------------------------------
+
+    @Test
+    void readsAndRewritesDependencyVersions() {
+        assertEquals(Map.of("org.junit.jupiter:junit-jupiter-api", "5.11.0"), PomEdits.dependencyVersions(QUICKSTART));
+        String out =
+                PomEdits.setDependencyVersions(QUICKSTART, Map.of("org.junit.jupiter:junit-jupiter-api", "5.13.0"));
+        assertTrue(out.contains("<version>5.13.0</version>"), out);
+        assertTrue(out.contains("<version>3.13.0</version>"), "a plugin version must not be touched");
+    }
+
+    /** A property reference is the indirection the author chose — replacing it is a different edit. */
+    @Test
+    void skipsPropertyDrivenDependencyVersions() {
+        String pom = """
+                <project><dependencies><dependency>
+                  <groupId>g</groupId><artifactId>a</artifactId><version>${a.version}</version>
+                </dependency></dependencies></project>
+                """;
+        assertTrue(PomEdits.dependencyVersions(pom).isEmpty());
+    }
+
+    /** A dependency with no groupId is malformed, not an implicit org.apache.maven.plugins. */
+    @Test
+    void aDependencyWithoutAGroupIsIgnored() {
+        String pom = """
+                <project><dependencies><dependency>
+                  <artifactId>a</artifactId><version>1.0</version>
+                </dependency></dependencies></project>
+                """;
+        assertTrue(PomEdits.dependencyVersions(pom).isEmpty());
+    }
+
     // --- packaging -------------------------------------------------------------------------------
 
     @Test
