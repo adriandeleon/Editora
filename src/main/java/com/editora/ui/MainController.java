@@ -2532,7 +2532,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 "search",
                 tr("toolwindow.search"),
                 ToolWindow.Side.RIGHT,
-                Icons::find,
+                // The same glyph as the toolbar's Find in Files button — one feature, one mark. The plain
+                // magnifier this used belongs to the in-file find bar, which is a different thing.
+                Icons::findInFiles,
                 searchCoordinator.panel(),
                 "tool.search");
         todoToolWindow = new ToolWindow(
