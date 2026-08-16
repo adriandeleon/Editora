@@ -403,10 +403,14 @@ class RunConfigToolbarFxTest {
      * through the entire run it exists to interrupt, and no other test noticed because every one of them
      * asserts after a rebuild, which is exactly when the stale value happens to be right.
      *
-     * <p>The "while running" half is asserted <em>inside the runnable that launched it</em>: the exit is
-     * reported through {@code Platform.runLater}, so no queued callback can have run yet and a program that
-     * finishes quickly cannot race the assertion. The program is this JVM's own {@code java -version} —
-     * present on every platform the suite runs on, and it exits on its own if anything below fails.
+     * <p>The child is a program that <b>cannot finish on its own</b>, and the test stops it. That is not
+     * fastidiousness: {@code RunService.isRunning()} is {@code process.isAlive()}, a live reading of the OS,
+     * so a child chosen for being quick ({@code java -version}) is a child that may already have exited by
+     * the time the assertion reads the button. The failure was reported twice from full-suite runs and never
+     * reproduced in isolation (#826, #845) — the signature of the FX thread being descheduled between the
+     * launch and the read while an ~80 ms program runs to completion in the gap. A sleeper cannot lose that
+     * race however long the thread is starved, and stopping it explicitly covers what the Stop button is
+     * for, which asserting on a program that quit by itself never did.
      */
     @Test
     void theStopButtonIsEnabledWhileAProgramIsRunning(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
@@ -416,19 +420,31 @@ class RunConfigToolbarFxTest {
         assertTrue(FxTestSupport.callOnFx(stop::isDisable), "disabled with nothing running");
 
         Object runCoordinator = FxTestSupport.field(fx.controller, "runCoordinator");
-        List<String> command = List.of(javaExecutable(), "-version");
-        FxTestSupport.runOnFx(() -> {
-            FxTestSupport.call(
-                    runCoordinator,
-                    "streamRun",
-                    new Class[] {String.class, java.nio.file.Path.class, List.class},
-                    "probe",
-                    dir,
-                    command);
-            assertFalse(stop.isDisable(), "Stop should be enabled the moment a program starts");
-        });
+        // The JDK's source-file launcher, so the sleeper needs no build step and no PATH lookup. It is alive
+        // from pb.start() — through its own compile — until killed, which is what makes the read below
+        // deterministic. ProcessRegistry tracks it, so the JVM shutdown hook reaps it even if this test dies.
+        java.nio.file.Path sleeper = dir.resolve("Sleeper.java");
+        java.nio.file.Files.writeString(
+                sleeper,
+                "public class Sleeper { public static void main(String[] a) throws Exception {"
+                        + " Thread.sleep(300_000); } }\n");
+        List<String> command = List.of(javaExecutable(), sleeper.toString());
+        try {
+            FxTestSupport.runOnFx(() -> {
+                FxTestSupport.call(
+                        runCoordinator,
+                        "streamRun",
+                        new Class[] {String.class, java.nio.file.Path.class, List.class},
+                        "probe",
+                        dir,
+                        command);
+                assertFalse(stop.isDisable(), "Stop should be enabled the moment a program starts");
+            });
+        } finally {
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(runCoordinator, "stopRun", new Class[] {}));
+        }
 
-        assertTrue(awaitStopDisabled(stop), "and disabled again once it exits");
+        assertTrue(awaitStopDisabled(stop), "and disabled again once it is stopped");
         setConfigs(List.of());
     }
 

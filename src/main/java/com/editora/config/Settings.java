@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 95;
+    public static final int SCHEMA_VERSION = 96;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -341,6 +341,8 @@ public class Settings {
     private boolean dockerfilePreview = true;
     /** GitHub Actions workflow preview (triggers + jobs digest, content-detected YAML): on by default. */
     private boolean githubActionsPreview = true;
+    /** Maven pom.xml summary preview (properties/dependencies/plugins, instead of the XML tree): on by default. */
+    private boolean pomPreview = true;
     /** Auto-rename the paired HTML/XML tag when a tag name is edited: on by default. */
     private boolean autoRenameTag = true;
 
@@ -697,6 +699,14 @@ public class Settings {
 
     public void setGithubActionsPreview(boolean githubActionsPreview) {
         this.githubActionsPreview = githubActionsPreview;
+    }
+
+    public boolean isPomPreview() {
+        return pomPreview;
+    }
+
+    public void setPomPreview(boolean pomPreview) {
+        this.pomPreview = pomPreview;
     }
 
     public boolean isCsvRainbow() {

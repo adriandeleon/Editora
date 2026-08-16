@@ -17,6 +17,17 @@ final class FxlessAccess {
         }
     }
 
+    /** The same, for a reply meant to be one string ({@code vscode.java.resolveJavaExecutable}'s path). */
+    static String asString(Object res) {
+        try {
+            Method m = DapManager.class.getDeclaredMethod("asString", Object.class);
+            m.setAccessible(true);
+            return (String) m.invoke(null, res);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("asString is the contract under test", e);
+        }
+    }
+
     /** The same, for {@code vscode.java.resolveMainClass}'s reply. */
     @SuppressWarnings("unchecked")
     static List<DapManager.MainClassOption> parseMainClasses(Object res) {

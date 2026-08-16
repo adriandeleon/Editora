@@ -68,10 +68,52 @@ public final class DebugLog {
         handler.setLevel(Level.ALL); // capture everything the (already level-gated) loggers emit
         Logger.getLogger("").addHandler(handler);
 
-        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> append(
-                line(Instant.now(), "SEVERE", "uncaught", "Uncaught exception in thread \"" + thread.getName() + "\"")
-                        + System.lineSeparator()
-                        + stackTrace(error)));
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> append(line(
+                        Instant.now(),
+                        "SEVERE",
+                        "uncaught",
+                        "Uncaught exception in thread \"" + thread.getName() + "\"" + focusContext())
+                + System.lineSeparator()
+                + stackTrace(error)));
+    }
+
+    /**
+     * What had the keyboard focus, appended to an uncaught FX-thread exception — {@code [focus:
+     * ListView.git-tree in Git Log]}.
+     *
+     * <p>A crash inside a JavaFX control's own event handling produces a stack with <b>no application
+     * frames at all</b>, so it names the control's class and nothing about which of the app's dozen
+     * ListViews it was. That turns a bug report into guesswork: an IOOBE thrown from
+     * {@code ListViewBehavior} while selecting a row could have come from any panel. The focus owner plus
+     * its style classes usually identifies it outright.
+     *
+     * <p>Best-effort and defensive by construction: it runs while the toolkit is already in a bad state, so
+     * everything is guarded and it only reads plain properties — never calls back into layout or user code.
+     * Returns {@code ""} off the FX thread (where the scene graph must not be touched) and on any failure.
+     */
+    private static String focusContext() {
+        try {
+            if (!javafx.application.Platform.isFxApplicationThread()) {
+                return "";
+            }
+            javafx.stage.Window window = javafx.stage.Window.getWindows().stream()
+                    .filter(javafx.stage.Window::isFocused)
+                    .findFirst()
+                    .orElse(null);
+            javafx.scene.Scene scene = window == null ? null : window.getScene();
+            return describeFocus(scene == null ? null : scene.getFocusOwner());
+        } catch (Throwable ignored) {
+            return ""; // a diagnostic must never become the failure it is describing
+        }
+    }
+
+    /** Renders one focused node as {@code  [focus: ListView.git-tree]}; {@code ""} for none. */
+    static String describeFocus(javafx.scene.Node node) {
+        if (node == null) {
+            return "";
+        }
+        String classes = String.join(".", node.getStyleClass());
+        return " [focus: " + node.getClass().getSimpleName() + (classes.isEmpty() ? "" : "." + classes) + "]";
     }
 
     /**

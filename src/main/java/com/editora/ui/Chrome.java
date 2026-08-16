@@ -127,6 +127,7 @@ final class Chrome {
             boolean spell,
             boolean csv,
             boolean structured,
+            boolean pomPreview,
             boolean markdownLint,
             boolean editorConfig,
             /** Simple UI mode, which forces several features off on top of their own setting. Not a gate of
@@ -198,6 +199,7 @@ final class Chrome {
             rule(PaletteGates::spell, "spell.", "view.toggleSpellCheck"),
             rule(PaletteGates::csv, "csv.", "view.toggleCsvGrid"),
             rule(PaletteGates::structured, "structured.", "view.toggleStructuredPreview"),
+            rule(PaletteGates::pomPreview, "pom.", "view.togglePomPreview"),
             rule(PaletteGates::markdownLint, "markdownLint.", "view.toggleMarkdownLint"),
             rule(PaletteGates::editorConfig, "editorConfig.", "view.toggleEditorConfig"));
 

@@ -240,6 +240,12 @@ public class EditorBuffer implements TabContent {
     private boolean dockerfilePreviewEnabled;
     /** GitHub Actions workflow preview (content-detected YAML): on when the feature is enabled. */
     private boolean githubActionsPreviewEnabled;
+    /** Maven pom.xml summary preview: on when the feature is enabled (pushed from settings). */
+    private boolean pomPreviewEnabled;
+    /** Per-buffer, session-only: this pom is showing the generic XML tree instead of its summary. */
+    private boolean pomShowXml;
+    /** How much of an XML file's head is read to decide whether it is a pom (a {@code <project>} preamble). */
+    private static final int POM_SNIFF_CHARS = 4096;
     /** Holds the self-scrolling structured preview node (tree or OpenAPI docs); the Split/Preview side. */
     private StackPane structuredContentHolder;
     /** PREVIEW-mode wrapper for {@link #structuredContentHolder} so the mode toggle can overlay it. */
@@ -340,6 +346,10 @@ public class EditorBuffer implements TabContent {
     private Runnable typstImagePasteHandler;
     /** Preview right-click menu actions (injected from the controller's export/print commands). */
     private Runnable previewExportPdfHandler = () -> {};
+    /** Runs the {@code pom.toggleView} command (summary ⇄ XML tree) from the preview's right-click menu. */
+    private Runnable pomViewToggleHandler = () -> {};
+    /** The menu item for that switch — relabelled per show, and hidden for a non-pom tree preview. */
+    private MenuItem pomViewItem;
 
     private Runnable previewExportPngHandler = () -> {};
     private Runnable previewExportSvgHandler = () -> {};
@@ -2672,6 +2682,7 @@ public class EditorBuffer implements TabContent {
                 || hasCsvPreview()
                 || hasHttpPreview()
                 || hasStructuredPreview()
+                || hasPomPreview()
                 || hasXmlPreview()
                 || hasSvgPreview()
                 || hasCrontabPreview()
@@ -2886,9 +2897,68 @@ public class EditorBuffer implements TabContent {
         reconcilePreviewMode();
     }
 
+    /**
+     * A Maven pom.xml — an XML buffer named {@code pom.xml}/{@code *.pom}, or any other XML file carrying a
+     * {@code <project>} root with a {@code <modelVersion>} (so a {@code pom-template.xml} or a generated
+     * {@code effective-pom.xml} is recognized too). Reads only a bounded head, like {@link #isGithubActions()}.
+     */
+    public boolean isPom() {
+        if (!isXml()) {
+            return false;
+        }
+        String fileName = path != null ? path.getFileName().toString() : displayName;
+        if (fileName != null && ("pom.xml".equalsIgnoreCase(fileName) || fileName.endsWith(".pom"))) {
+            return true;
+        }
+        String head = area.getText(0, Math.min(area.getLength(), POM_SNIFF_CHARS));
+        return head.contains("<modelVersion") && head.contains("<project");
+    }
+
+    /**
+     * Whether the pom summary is the preview to render — the feature is on, this is a pom, and the user
+     * hasn't switched this buffer to the generic XML tree. Independent of {@link #hasXmlPreview()}'s
+     * structured-preview gate, so turning the XML tree off still leaves a pom its own preview.
+     */
+    public boolean hasPomPreview() {
+        return pomPreviewEnabled && !hugeFile && !pomShowXml && isPom();
+    }
+
+    /** Pushes the pom-preview feature gate (from Settings); drops back to the XML tree/source when off. */
+    public void setPomPreviewEnabled(boolean enabled) {
+        if (this.pomPreviewEnabled == enabled) {
+            return;
+        }
+        this.pomPreviewEnabled = enabled;
+        reconcilePreviewMode();
+    }
+
+    /** Whether this pom buffer is currently showing the generic XML tree instead of the pom summary. */
+    public boolean isPomShowingXml() {
+        return pomShowXml;
+    }
+
+    /**
+     * Flips a pom between its summary and the standard XML tree, then re-renders. Refuses the XML direction
+     * when the structured-data preview (which owns the XML tree) is switched off, rather than flipping into a
+     * view that isn't there and stranding the buffer back in the editor.
+     *
+     * @return false when the flip was refused for that reason
+     */
+    public boolean togglePomView() {
+        if (!pomShowXml && !structuredPreviewEnabled) {
+            return false;
+        }
+        pomShowXml = !pomShowXml;
+        if (markdownViewMode != MarkdownViewMode.EDITOR) {
+            scheduleRenderPreview();
+        }
+        return true;
+    }
+
     /** Whether this buffer uses the self-scrolling tree host (structured, XML, crontab, or fstab) — shared surface. */
     private boolean hasTreePreview() {
         return hasStructuredPreview()
+                || hasPomPreview()
                 || hasXmlPreview()
                 || hasCrontabPreview()
                 || hasFstabPreview()
@@ -4779,6 +4849,12 @@ public class EditorBuffer implements TabContent {
         this.previewExportPdfHandler = handler == null ? () -> {} : handler;
     }
 
+    /** Injects the pom preview's "Show as XML" / "Show POM Summary" action (the controller command, so the
+     *  menu route and the palette route report the same status and share the refusal guard). */
+    public void setPomViewToggleHandler(Runnable handler) {
+        this.pomViewToggleHandler = handler == null ? () -> {} : handler;
+    }
+
     /** Injects the Typst preview right-click "Export to PNG" / "Export to SVG" actions (controller commands). */
     public void setPreviewExportPngHandler(Runnable handler) {
         this.previewExportPngHandler = handler == null ? () -> {} : handler;
@@ -5312,6 +5388,27 @@ public class EditorBuffer implements TabContent {
             });
             return;
         }
+        if (hasPomPreview()) {
+            // Whole file is a Maven pom: parse off-thread into the display summary (coordinates, properties,
+            // dependencies, plugins, profiles), build the section list on the FX thread into the shared
+            // self-scrolling host. Must precede the XML branch — a pom is XML, and its summary wins unless
+            // the user switched this buffer to the generic tree.
+            String src = area.getText();
+            long gen = ++previewGen;
+            PREVIEW_POOL.submit(() -> {
+                try {
+                    com.editora.maven.PomSummary parsed = com.editora.maven.PomSummary.parse(src);
+                    Platform.runLater(() -> {
+                        if (gen == previewGen) {
+                            structuredContentHolder().getChildren().setAll(PomPreview.build(parsed));
+                        }
+                    });
+                } catch (Throwable t) {
+                    surfaceTreePreviewError(gen, t);
+                }
+            });
+            return;
+        }
         if (hasXmlPreview()) {
             // Whole file is one XML doc: parse off-thread (JDK DOM), build the DOM tree on the FX thread into
             // the same self-scrolling host as the JSON/YAML/TOML tree. The previewGen guard drops a stale render.
@@ -5722,8 +5819,19 @@ public class EditorBuffer implements TabContent {
             MenuItem print = new MenuItem(tr("command.preview.print"));
             print.setGraphic(MenuIcons.print());
             print.setOnAction(ev -> previewPrintHandler.run());
-            treePreviewContextMenu = new javafx.scene.control.ContextMenu(pdf, print);
+            pomViewItem = new MenuItem();
+            pomViewItem.setGraphic(MenuIcons.code());
+            pomViewItem.setOnAction(ev -> pomViewToggleHandler.run());
+            treePreviewContextMenu = new javafx.scene.control.ContextMenu(pomViewItem, pdf, print);
             treePreviewContextMenu.getStyleClass().add("editor-context-menu");
+        }
+        // The pom summary is the only tree-hosted preview with a second rendering of the same file, so its
+        // switch is the only item here that isn't shown for every one of them. Relabelled per show (it names
+        // the view it switches *to*), since the buffer can be flipped from the palette between two shows.
+        boolean pom = isPom();
+        pomViewItem.setVisible(pom);
+        if (pom) {
+            pomViewItem.setText(tr(pomShowXml ? "pom.menu.showSummary" : "pom.menu.showXml"));
         }
         treePreviewContextMenu.show(structuredContentHolder(), screenX, screenY);
     }
@@ -5755,6 +5863,13 @@ public class EditorBuffer implements TabContent {
             return p.ok()
                     ? snapshotRows(StructuredTree.printableRows(p.root()), "structured-tree", lightUaStylesheet)
                     : null;
+        }
+        if (hasPomPreview()) {
+            javafx.scene.layout.VBox box =
+                    PomPreview.content(com.editora.maven.PomSummary.parse(area.getText()), EXPORT_TIMELINE_WIDTH);
+            box.getStyleClass().add("markdown-preview");
+            byte[] png = snapshotNodePng(box, lightUaStylesheet);
+            return png == null ? null : java.util.List.of(png);
         }
         if (isXml()) {
             XmlParser.Parsed p = XmlParser.parse(area.getText());

@@ -249,16 +249,27 @@ final class MavenProjectCoordinator {
     /**
      * A <b>Maven</b> submenu of the commands that make sense for {@code context}, or null when none do.
      *
-     * <p>Shared by the two surfaces that offer it — the editor's right-click on a {@code pom.xml} and the
-     * project tree's folder menu — so they cannot drift into offering different Maven actions. Returns null
-     * rather than an empty menu so a caller can simply skip it: Maven off, or a folder with no pom, means
-     * there is nothing here worth a menu entry.
+     * <p>Shared by every surface that offers it — the editor's right-click on a {@code pom.xml}, and the
+     * project tree's menu on both a folder and a {@code pom.xml} row — so they cannot drift into offering
+     * different Maven actions. Returns null rather than an empty menu so a caller can simply skip it.
+     *
+     * <p>The <b>whole</b> "is there anything here?" rule lives here, not at the call sites: Maven off, a
+     * folder with no pom above it, or a file that is not itself a {@code pom.xml}. That last one is why a
+     * file context is not simply resolved through its parent directory — every file in a Maven project has a
+     * pom above it, so doing that would hang a Maven submenu off every {@code .java} file in the tree, saying
+     * nothing about which project. The name must be exactly {@code pom.xml} because that is the only file
+     * {@code mvn} will run against; an {@code effective-pom.xml} beside a real one would otherwise offer a
+     * menu that silently acts on its neighbour.
      */
     javafx.scene.control.Menu mavenMenu(Path context) {
         if (!host.settings().isMavenSupport() || context == null) {
             return null;
         }
-        Path pom = nearestPom(Files.isDirectory(context) ? context : context.getParent());
+        boolean directory = Files.isDirectory(context);
+        if (!directory && !isPomFile(context)) {
+            return null;
+        }
+        Path pom = nearestPom(directory ? context : context.getParent());
         if (pom == null) {
             return null; // no Maven project here — the New Maven Project entry lives elsewhere
         }
@@ -271,6 +282,13 @@ final class MavenProjectCoordinator {
                         item("command.maven.rerunLast", Icons.refresh(), () -> registry.run("maven.rerunLast")),
                         item("command.maven.stop", Icons.stopSquare(), () -> registry.run("maven.stop")));
         return menu;
+    }
+
+    /** Whether {@code file} is a Maven project file — the exact name {@code mvn} itself looks for. */
+    static boolean isPomFile(Path file) {
+        return file != null
+                && file.getFileName() != null
+                && "pom.xml".equals(file.getFileName().toString());
     }
 
     /** Labels reuse the commands' own titles, so the menu and the palette can never say different things. */
