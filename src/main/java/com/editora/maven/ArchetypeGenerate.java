@@ -1,5 +1,6 @@
 package com.editora.maven;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,6 +25,43 @@ public final class ArchetypeGenerate {
      * @param mvnExecutable the resolved Maven launcher, e.g. {@code ["mvn"]} — from
      *     {@code BuildTool.MAVEN.executable(...)}, so a user's Settings override is honoured
      */
+    /**
+     * Whether generation must be detached from a Maven project already sitting in the target directory.
+     *
+     * <p>{@code archetype:generate} run inside an existing project tries to register the new project as a
+     * {@code <module>} of it, and fails outright when that project is not {@code packaging=pom}: <em>"Unable
+     * to add module to the current project as it is not of packaging type 'pom'"</em>. Generating a project
+     * next to an unrelated jar project is an ordinary thing to want, so the run is detached instead — see
+     * {@link #argv} and the {@code outputDirectory} it then passes.
+     *
+     * <p>An aggregator ({@code packaging=pom}) is deliberately left attached: adding the module there is
+     * what the user almost certainly wants, and it is what Maven on the command line would do.
+     *
+     * <p>Note the check is on the pom in the <em>output</em> directory, not the working one — verified by
+     * disassembling archetype-common 3.4.1, after a first attempt that merely moved the working directory
+     * and failed identically. That is why the caller generates wholly inside a scratch directory and moves
+     * the result, rather than pointing {@code outputDirectory} at a folder that already holds a project.
+     *
+     * @param packaging the target directory's own pom packaging, or null when it has no pom at all
+     */
+    public static boolean detachFromExistingProject(String packaging) {
+        if (packaging == null) {
+            return false; // no project there — nothing to be a module of
+        }
+        // A pom with no <packaging> is a jar, so blank detaches too.
+        return !"pom".equals(packaging.strip());
+    }
+
+    /**
+     * As {@link #argv}, but generating into {@code outputDirectory} — which must be a directory holding no
+     * {@code pom.xml}, or the module registration described above fires against it.
+     */
+    public static List<String> detachedArgv(List<String> mvnExecutable, MavenProjectSpec spec, Path outputDirectory) {
+        List<String> argv = new ArrayList<>(argv(mvnExecutable, spec));
+        argv.add("-DoutputDirectory=" + outputDirectory);
+        return List.copyOf(argv);
+    }
+
     public static List<String> argv(List<String> mvnExecutable, MavenProjectSpec spec) {
         if (mvnExecutable == null || mvnExecutable.isEmpty() || spec == null || !spec.isValid()) {
             throw new IllegalArgumentException("archetype:generate needs a maven executable and a valid spec");

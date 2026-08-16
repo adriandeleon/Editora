@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.editora.command.CommandRegistry;
 import com.editora.maven.MavenArchetype;
+import com.editora.maven.MavenProjectExtras;
 import com.editora.maven.MavenProjectSpec;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -232,6 +234,241 @@ class MavenProjectWizardFxTest {
                     // best-effort temp cleanup
                 }
             });
+        }
+    }
+
+    /** A pom close enough to quickstart's for the post-generation edits to have something to work on. */
+    private static final String POM = """
+            <project>
+              <artifactId>demo</artifactId>
+              <name>demo</name>
+              <url>http://www.example.com</url>
+              <properties>
+                <maven.compiler.release>17</maven.compiler.release>
+              </properties>
+            </project>
+            """;
+
+    /**
+     * The Advanced answers are applied to the generated pom.
+     *
+     * <p>They cannot be archetype properties: {@code archetype:generate} takes only the archetype
+     * coordinates plus groupId/artifactId/version/package, and quickstart bakes both of these into its pom
+     * template. So the wizard writes them afterwards, which is what this pins.
+     */
+    @Test
+    void advancedValuesAreWrittenIntoTheGeneratedPom() throws Exception {
+        Path parent = Files.createTempDirectory("editora-maven-extras");
+        try {
+            MavenProjectCoordinator c = coordinator();
+            Path projectDir = parent.resolve("demo");
+            FxTestSupport.runOnFx(() -> c.setRunnerForTest((dir, command, listener) -> {
+                try {
+                    Files.createDirectories(projectDir);
+                    Files.writeString(projectDir.resolve("pom.xml"), POM);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                listener.onExit(0);
+            }));
+
+            MavenProjectSpec spec = new MavenProjectSpec(
+                    quickstart(), "com.example", "demo", "1.0-SNAPSHOT", "com.example.demo", parent);
+            FxTestSupport.runOnFx(
+                    () -> c.generate(spec, new MavenProjectExtras("https://example.org/demo", "21", false)));
+
+            String pom = Files.readString(projectDir.resolve("pom.xml"));
+            assertTrue(pom.contains("<url>https://example.org/demo</url>"), pom);
+            assertTrue(pom.contains("<maven.compiler.release>21</maven.compiler.release>"), pom);
+        } finally {
+            deleteRecursively(parent);
+        }
+    }
+
+    /** An untouched Advanced section must leave the archetype's own pom byte-for-byte alone. */
+    @Test
+    void anUntouchedAdvancedSectionChangesNothing() throws Exception {
+        Path parent = Files.createTempDirectory("editora-maven-extras-none");
+        try {
+            MavenProjectCoordinator c = coordinator();
+            Path projectDir = parent.resolve("demo");
+            FxTestSupport.runOnFx(() -> c.setRunnerForTest((dir, command, listener) -> {
+                try {
+                    Files.createDirectories(projectDir);
+                    Files.writeString(projectDir.resolve("pom.xml"), POM);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                listener.onExit(0);
+            }));
+
+            MavenProjectSpec spec = new MavenProjectSpec(
+                    quickstart(), "com.example", "demo", "1.0-SNAPSHOT", "com.example.demo", parent);
+            FxTestSupport.runOnFx(() -> c.generate(spec, MavenProjectExtras.NONE));
+
+            assertEquals(POM, Files.readString(projectDir.resolve("pom.xml")));
+        } finally {
+            deleteRecursively(parent);
+        }
+    }
+
+    /**
+     * With the update box ticked, the dependency half runs as a SECOND maven invocation in the project
+     * directory — not as extra flags on archetype:generate, which would not accept them.
+     */
+    @Test
+    void updatingVersionsRunsTheVersionsPluginInTheProject() throws Exception {
+        Path parent = Files.createTempDirectory("editora-maven-versions");
+        try {
+            MavenProjectCoordinator c = coordinator();
+            Path projectDir = parent.resolve("demo");
+            List<List<String>> runs = new java.util.ArrayList<>();
+            List<Path> dirs = new java.util.ArrayList<>();
+            FxTestSupport.runOnFx(() -> c.setRunnerForTest((dir, command, listener) -> {
+                runs.add(command);
+                dirs.add(dir);
+                if (runs.size() == 1) {
+                    try {
+                        Files.createDirectories(projectDir);
+                        Files.writeString(projectDir.resolve("pom.xml"), POM);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                listener.onExit(0);
+            }));
+
+            MavenProjectSpec spec = new MavenProjectSpec(
+                    quickstart(), "com.example", "demo", "1.0-SNAPSHOT", "com.example.demo", parent);
+            FxTestSupport.runOnFx(() -> c.generate(spec, new MavenProjectExtras("", "", true)));
+
+            assertEquals(2, runs.size(), "the dependency update is a second maven run");
+            assertTrue(
+                    runs.get(1).contains("versions:use-latest-releases"),
+                    runs.get(1).toString());
+            assertTrue(runs.get(1).contains("-DgenerateBackupPoms=false"), "a versionsBackup pom is litter");
+            assertEquals(projectDir, dirs.get(1), "it must run IN the generated project, not its parent");
+        } finally {
+            deleteRecursively(parent);
+        }
+    }
+
+    // --- detaching from an existing project ------------------------------------------------------
+
+    /**
+     * Generating next to an unrelated jar project must not try to make the new project its module.
+     *
+     * <p>Reported from a real run: "Unable to add module to the current project as it is not of packaging
+     * type 'pom'". archetype:generate adds a <module> to whatever project it finds in its working
+     * directory, so the run has to happen somewhere that has none.
+     */
+    @Test
+    void generatingBesideAJarProjectDetachesTheRun() throws Exception {
+        Path parent = Files.createTempDirectory("editora-maven-beside-jar");
+        try {
+            Files.writeString(parent.resolve("pom.xml"), "<project><packaging>jar</packaging></project>");
+            MavenProjectCoordinator c = coordinator();
+            AtomicReference<Path> cwd = new AtomicReference<>();
+            AtomicReference<List<String>> argv = new AtomicReference<>();
+            FxTestSupport.runOnFx(() -> c.setRunnerForTest((dir, command, listener) -> {
+                cwd.set(dir);
+                argv.set(command);
+                listener.onExit(1);
+            }));
+
+            MavenProjectSpec spec = new MavenProjectSpec(
+                    quickstart(), "com.example", "demo", "1.0-SNAPSHOT", "com.example.demo", parent);
+            FxTestSupport.runOnFx(() -> c.generate(spec));
+
+            assertNotEquals(parent, cwd.get(), "the run must not happen inside the existing project");
+            assertFalse(Files.exists(cwd.get().resolve("pom.xml")), "the working dir must hold no pom");
+            // Generated INSIDE the scratch dir, not into `parent`: the module check reads the pom in the
+            // OUTPUT directory, so aiming outputDirectory at a folder that already holds a project fails
+            // exactly as running there did. The finished project is moved into place afterwards.
+            assertTrue(
+                    argv.get().contains("-DoutputDirectory=" + cwd.get()),
+                    "generation must happen inside the pom-less scratch dir: " + argv.get());
+        } finally {
+            deleteRecursively(parent);
+        }
+    }
+
+    /** The finished project is moved out of the scratch directory to where the user asked for it. */
+    @Test
+    void aDetachedRunMovesTheProjectIntoPlace() throws Exception {
+        Path parent = Files.createTempDirectory("editora-maven-move");
+        try {
+            Files.writeString(parent.resolve("pom.xml"), "<project><packaging>jar</packaging></project>");
+            MavenProjectCoordinator c = coordinator();
+            FxTestSupport.runOnFx(() -> c.setRunnerForTest((dir, command, listener) -> {
+                try {
+                    // Stand in for Maven: write the project where the argv says it will land.
+                    Path generated = dir.resolve("demo");
+                    Files.createDirectories(generated.resolve("src"));
+                    Files.writeString(generated.resolve("pom.xml"), "<project><artifactId>demo</artifactId></project>");
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                listener.onExit(0);
+            }));
+
+            MavenProjectSpec spec = new MavenProjectSpec(
+                    quickstart(), "com.example", "demo", "1.0-SNAPSHOT", "com.example.demo", parent);
+            FxTestSupport.runOnFx(() -> c.generate(spec));
+
+            assertTrue(Files.isRegularFile(parent.resolve("demo/pom.xml")), "the project was not moved into place");
+            assertTrue(Files.isDirectory(parent.resolve("demo/src")), "the whole tree must come across");
+        } finally {
+            deleteRecursively(parent);
+        }
+    }
+
+    /** An aggregator is left attached — adding the module there is the wanted behaviour. */
+    @Test
+    void generatingInsideAnAggregatorStaysAttached() throws Exception {
+        Path parent = Files.createTempDirectory("editora-maven-aggregator");
+        try {
+            Files.writeString(parent.resolve("pom.xml"), "<project><packaging>pom</packaging></project>");
+            MavenProjectCoordinator c = coordinator();
+            AtomicReference<Path> cwd = new AtomicReference<>();
+            AtomicReference<List<String>> argv = new AtomicReference<>();
+            FxTestSupport.runOnFx(() -> c.setRunnerForTest((dir, command, listener) -> {
+                cwd.set(dir);
+                argv.set(command);
+                listener.onExit(1);
+            }));
+
+            MavenProjectSpec spec = new MavenProjectSpec(
+                    quickstart(), "com.example", "demo", "1.0-SNAPSHOT", "com.example.demo", parent);
+            FxTestSupport.runOnFx(() -> c.generate(spec));
+
+            assertEquals(parent, cwd.get(), "an aggregator should still get its module");
+            assertFalse(
+                    argv.get().stream().anyMatch(a -> a.startsWith("-DoutputDirectory=")), "no detaching needed here");
+        } finally {
+            deleteRecursively(parent);
+        }
+    }
+
+    /** An empty target directory keeps the original behaviour exactly. */
+    @Test
+    void anEmptyLocationRunsInPlace() throws Exception {
+        Path parent = Files.createTempDirectory("editora-maven-empty");
+        try {
+            MavenProjectCoordinator c = coordinator();
+            AtomicReference<Path> cwd = new AtomicReference<>();
+            FxTestSupport.runOnFx(() -> c.setRunnerForTest((dir, command, listener) -> {
+                cwd.set(dir);
+                listener.onExit(1);
+            }));
+
+            MavenProjectSpec spec = new MavenProjectSpec(
+                    quickstart(), "com.example", "demo", "1.0-SNAPSHOT", "com.example.demo", parent);
+            FxTestSupport.runOnFx(() -> c.generate(spec));
+
+            assertEquals(parent, cwd.get());
+        } finally {
+            deleteRecursively(parent);
         }
     }
 }

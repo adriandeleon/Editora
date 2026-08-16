@@ -1204,6 +1204,13 @@
     -fx-stroke: -color-accent-fg;
 }
 
+/* A disclosure inside a dialog form: its title names a group of fields, so it should read at the same
+   size as the labels beside it. AtlantaFX sizes a TitledPane title up as a heading, which in a form makes
+   the optional section louder than the fields it belongs to. */
+.dialog-advanced > .title {
+    -fx-font-size: 1em;
+}
+
 .tool-window-close,
 .tool-window-float,
 .tool-window-maximize {
