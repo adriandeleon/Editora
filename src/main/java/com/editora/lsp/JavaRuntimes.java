@@ -99,6 +99,25 @@ public final class JavaRuntimes {
     public record Jdk(int major, String path) {}
 
     /**
+     * The distinct major versions of the discovered JDKs, newest first — for offering the user a choice of
+     * release levels they can actually compile against.
+     *
+     * <p>Distinct because several installs commonly share a major (a 25 and a 25.0.4 side by side), and
+     * newest-first because that is the one most likely to be wanted.
+     */
+    public static List<Integer> majorsDescending(List<Jdk> jdks) {
+        if (jdks == null) {
+            return List.of();
+        }
+        return jdks.stream()
+                .map(Jdk::major)
+                .filter(m -> m > 0)
+                .distinct()
+                .sorted(java.util.Comparator.reverseOrder())
+                .toList();
+    }
+
+    /**
      * Parses the {@code JAVA_VERSION} line of a JDK's {@code release} file into a major version, or 0.
      *
      * <p>Handles both schemes: {@code "21.0.11"} → 21 and the legacy {@code "1.8.0_402"} → 8.

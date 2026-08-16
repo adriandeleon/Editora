@@ -79,4 +79,27 @@ class JavaRuntimesTest {
         assertFalse(out.isEmpty(), "the JVM running the tests must be discovered");
         assertTrue(out.stream().allMatch(m -> ((String) m.get("name")).startsWith("JavaSE-")));
     }
+
+    @Test
+    void majorsAreDistinctAndNewestFirst() {
+        // Several installs commonly share a major — a 25 and a 25.0.4 side by side.
+        java.util.List<JavaRuntimes.Jdk> jdks = java.util.List.of(
+                new JavaRuntimes.Jdk(17, "/a"),
+                new JavaRuntimes.Jdk(25, "/b"),
+                new JavaRuntimes.Jdk(25, "/c"),
+                new JavaRuntimes.Jdk(21, "/d"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of(25, 21, 17), JavaRuntimes.majorsDescending(jdks));
+    }
+
+    /** A JDK whose release file could not be parsed has major 0 — not a version to offer. */
+    @Test
+    void majorsSkipsUnparsedRuntimesAndNull() {
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of(21),
+                JavaRuntimes.majorsDescending(
+                        java.util.List.of(new JavaRuntimes.Jdk(0, "/x"), new JavaRuntimes.Jdk(21, "/y"))));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                JavaRuntimes.majorsDescending(null).isEmpty());
+    }
 }

@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -19,10 +20,14 @@ import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TitledPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 
 import com.editora.build.BuildService;
@@ -33,12 +38,16 @@ import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import com.editora.doctor.DoctorProbes;
+import com.editora.lsp.JavaRuntimes;
 import com.editora.maven.ArchetypeCatalog;
 import com.editora.maven.ArchetypeCatalogParser;
 import com.editora.maven.ArchetypeGenerate;
+import com.editora.maven.CentralVersions;
 import com.editora.maven.MavenArchetype;
 import com.editora.maven.MavenCoordinates;
+import com.editora.maven.MavenProjectExtras;
 import com.editora.maven.MavenProjectSpec;
+import com.editora.maven.PomEdits;
 import com.editora.plugin.PluginRegistry;
 
 import static com.editora.i18n.Messages.tr;
@@ -406,17 +415,61 @@ final class MavenProjectCoordinator {
         }
         revalidate.run();
 
+        TextField urlField = field(keymap, 30);
+        ComboBox<String> releaseCombo = new ComboBox<>();
+        releaseCombo.setEditable(true); // a release level need not be one of the installed JDKs
+        releaseCombo.setPrefWidth(120);
+        TextInputKeymap.install(releaseCombo.getEditor(), keymap);
+        // Empty means "keep whatever the archetype wrote": these values are the archetype's to choose, and
+        // prefilling quickstart's would impose them on archetypes that use neither.
+        urlField.setPromptText("http://www.example.com");
+        releaseCombo.getEditor().setPromptText("17");
+        CheckBox updateVersions = new CheckBox(tr("dialog.mavenProject.updateVersions"));
+        Label updateHint = new Label(tr("dialog.mavenProject.updateVersionsHint"));
+        updateHint.getStyleClass().add("settings-hint");
+        updateHint.setWrapText(true);
+
+        GridPane advancedGrid = new GridPane();
+        advancedGrid.setHgap(8);
+        advancedGrid.setVgap(8);
+        advancedGrid.add(new Label(tr("dialog.mavenProject.url")), 0, 0);
+        advancedGrid.add(urlField, 1, 0);
+        advancedGrid.add(new Label(tr("dialog.mavenProject.javaRelease")), 0, 1);
+        advancedGrid.add(releaseCombo, 1, 1);
+        GridPane.setHgrow(urlField, Priority.ALWAYS);
+        VBox advancedBox = new VBox(8, advancedGrid, updateVersions, updateHint);
+        TitledPane advanced = new TitledPane(tr("dialog.mavenProject.advanced"), advancedBox);
+        // Filled on first expand rather than up front: discovery walks the JDK install roots, and the
+        // common path never opens this section at all.
+        advanced.expandedProperty().addListener((o, was, now) -> {
+            if (now && releaseCombo.getItems().isEmpty()) {
+                for (Integer major : JavaRuntimes.majorsDescending(JavaRuntimes.discover())) {
+                    releaseCombo.getItems().add(String.valueOf(major));
+                }
+            }
+        });
+        advanced.setExpanded(false); // collapsed by default — the common path is the five fields above
+        advanced.setAnimated(false);
+        advanced.getStyleClass().add("dialog-advanced");
+
+        VBox body = new VBox(10, grid, advanced);
+
         OverlayInput.show(
                 host.overlayHost(),
                 tr("dialog.mavenProject.title"),
-                grid,
+                body,
                 nameField,
                 tr("dialog.mavenProject.create"),
                 valid,
                 () -> {
                     MavenProjectSpec spec =
                             specFrom(archetype, nameField, locationField, groupField, versionField, packageField);
-                    generate(spec);
+                    generate(
+                            spec,
+                            new MavenProjectExtras(
+                                    urlField.getText(),
+                                    releaseCombo.getEditor().getText(),
+                                    updateVersions.isSelected()));
                 },
                 null,
                 false);
@@ -446,6 +499,10 @@ final class MavenProjectCoordinator {
 
     /** Package-visible so the FX test can drive generation past the two cards. */
     void generate(MavenProjectSpec spec) {
+        generate(spec, MavenProjectExtras.NONE);
+    }
+
+    void generate(MavenProjectSpec spec, MavenProjectExtras extras) {
         if (!spec.isValid()) {
             host.setError(tr("status.mavenProject.invalid", spec.firstProblem()));
             return;
@@ -464,7 +521,20 @@ final class MavenProjectCoordinator {
             host.setError(tr("status.mavenProject.mkdirFailed", String.valueOf(e.getMessage())));
             return;
         }
-        List<String> argv = ArchetypeGenerate.argv(mavenExecutable(parent), spec);
+        // Generating next to an UNRELATED Maven project fails outright: archetype:generate tries to add the
+        // new project as a <module> of whatever project it finds in the working directory, and refuses when
+        // that one is not packaging=pom. So when the target holds such a project, the run is detached — a
+        // pom-less scratch working directory plus -DoutputDirectory — and Maven simply has no current
+        // project to register a module with. An aggregator pom is left attached, where the module is wanted.
+        Path scratch = ArchetypeGenerate.detachFromExistingProject(packagingOf(parent)) ? scratchDir() : null;
+        Path workingDir = scratch != null ? scratch : parent;
+        List<String> mvn = absoluteExecutable(mavenExecutable(parent), parent);
+        // Generated INSIDE the scratch dir and moved afterwards, rather than generated into `parent` from a
+        // scratch working directory: the module check reads the pom in the OUTPUT directory, so pointing
+        // outputDirectory at a folder that already holds a project fails exactly as running there did.
+        List<String> argv = scratch != null
+                ? ArchetypeGenerate.detachedArgv(mvn, spec, scratch)
+                : ArchetypeGenerate.argv(mvn, spec);
         Path projectDir = spec.projectDir();
         host.setStatus(tr("status.mavenProject.generating", spec.artifactId()));
         output.started(
@@ -473,7 +543,7 @@ final class MavenProjectCoordinator {
                 ArchetypeGenerate.displayCommand(argv),
                 OutputStyle.maven(),
                 service::stop);
-        runner.run(parent, argv, new BuildService.Listener() {
+        runner.run(workingDir, argv, new BuildService.Listener() {
             @Override
             public void onStart(String commandLine) {
                 // header already shown by started(...)
@@ -487,8 +557,9 @@ final class MavenProjectCoordinator {
             @Override
             public void onExit(int code) {
                 output.finished(MavenProjectCoordinator.this, code);
-                if (code == 0 && Files.isDirectory(projectDir)) {
-                    onGenerated(projectDir, spec.artifactId());
+                boolean placed = scratch == null || moveIntoPlace(scratch, spec, projectDir);
+                if (code == 0 && placed && Files.isDirectory(projectDir)) {
+                    afterGenerate(projectDir, spec, extras);
                 } else {
                     host.setError(tr("status.mavenProject.failed", spec.artifactId()));
                 }
@@ -500,6 +571,264 @@ final class MavenProjectCoordinator {
                 host.setError(tr("status.mavenProject.failed", spec.artifactId()));
             }
         });
+    }
+
+    /**
+     * Applies the Advanced answers to the freshly generated project, then opens it.
+     *
+     * <p>Ordered so each step sees the last one's work: the pom edits first (so a chosen
+     * {@code maven.compiler.release} is in place before anything reads it), then the dependency update,
+     * then the plugin versions, then the project opens. Every step is best-effort — a failure leaves what
+     * the archetype wrote and says so, because a generated project that exists is worth more than one
+     * abandoned half-way through a nicety.
+     */
+    /** The packaging of the pom in {@code dir}, or null when it has none (or one that cannot be read). */
+    private String packagingOf(Path dir) {
+        Path pom = dir.resolve("pom.xml");
+        if (!Files.isRegularFile(pom)) {
+            return null;
+        }
+        // PomEdits rather than PomParser: this needs one element, not a validated model, and a minimal or
+        // hand-written aggregator would fail full parsing and be misread as a jar project.
+        String text = read(pom);
+        String packaging = text == null ? null : PomEdits.packaging(text);
+        // A file that exists but yields nothing is still a project — detach rather than risk the failure.
+        return packaging == null ? "jar" : packaging;
+    }
+
+    /**
+     * Moves the generated project out of the scratch directory to where the user asked for it.
+     *
+     * <p>An atomic rename when both sit on one filesystem, a recursive copy when they do not — the scratch
+     * directory is the system temp dir, which is very often a different mount from the user's home.
+     *
+     * @return false when the project could not be put in place, so the caller reports a failure
+     */
+    private boolean moveIntoPlace(Path scratch, MavenProjectSpec spec, Path projectDir) {
+        Path generated = scratch.resolve(spec.artifactId());
+        if (!Files.isDirectory(generated)) {
+            return false;
+        }
+        try {
+            Files.createDirectories(projectDir.getParent());
+            try {
+                Files.move(generated, projectDir);
+            } catch (java.nio.file.FileSystemException crossDevice) {
+                copyRecursively(generated, projectDir);
+            }
+            return Files.isDirectory(projectDir);
+        } catch (Exception e) {
+            host.setError(tr("status.mavenProject.moveFailed", String.valueOf(e.getMessage())));
+            return false;
+        } finally {
+            deleteRecursively(scratch);
+        }
+    }
+
+    private static void copyRecursively(Path from, Path to) throws java.io.IOException {
+        try (java.util.stream.Stream<Path> walk = Files.walk(from)) {
+            for (Path p : walk.toList()) {
+                Path target = to.resolve(from.relativize(p).toString());
+                if (Files.isDirectory(p)) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.createDirectories(target.getParent());
+                    Files.copy(p, target);
+                }
+            }
+        }
+    }
+
+    private static void deleteRecursively(Path dir) {
+        try (java.util.stream.Stream<Path> walk = Files.walk(dir)) {
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.deleteIfExists(p);
+                } catch (Exception ignored) {
+                    // best-effort cleanup of a temp dir
+                }
+            });
+        } catch (Exception ignored) {
+            // best-effort
+        }
+    }
+
+    /** A throwaway pom-less directory to run Maven from, or null if one cannot be made. */
+    private Path scratchDir() {
+        try {
+            Path dir = Files.createTempDirectory("editora-archetype");
+            dir.toFile().deleteOnExit();
+            return dir;
+        } catch (Exception e) {
+            return null; // fall back to running in place — worst case the old failure, with its own message
+        }
+    }
+
+    /**
+     * Resolves a project-relative wrapper to an absolute path.
+     *
+     * <p>{@code BuildTool.MAVEN.executable} hands back {@code ./mvnw} on Unix, which is correct only while
+     * the working directory is the project. A detached run happens somewhere else entirely, where that
+     * relative path would resolve to nothing.
+     */
+    private static List<String> absoluteExecutable(List<String> executable, Path projectDir) {
+        if (executable.isEmpty()) {
+            return executable;
+        }
+        String first = executable.get(0);
+        if (!first.startsWith("./")) {
+            return executable;
+        }
+        List<String> out = new ArrayList<>(executable);
+        out.set(0, projectDir.resolve(first.substring(2)).toString());
+        return List.copyOf(out);
+    }
+
+    private void afterGenerate(Path projectDir, MavenProjectSpec spec, MavenProjectExtras extras) {
+        if (extras.editsPom()) {
+            editPom(projectDir, pom -> {
+                String out = PomEdits.setProjectUrl(pom, extras.url());
+                return PomEdits.setProperty(out, "maven.compiler.release", extras.javaRelease());
+            });
+        }
+        if (!extras.updateVersions()) {
+            onGenerated(projectDir, spec.artifactId());
+            return;
+        }
+        // Dependencies first, through versions-maven-plugin, streamed into the console the generation is
+        // already showing. Plugins are NOT covered by it — its in-place goals expose processDependencies,
+        // processDependencyManagement and processParent, and for plugins it offers only
+        // display-plugin-updates (checked against 2.21.0) — so those are resolved and rewritten below.
+        List<String> argv = new ArrayList<>(mavenExecutable(projectDir));
+        argv.add("versions:use-latest-releases");
+        argv.add("-B");
+        argv.add("-DgenerateBackupPoms=false"); // the pom is seconds old; a pom.xml.versionsBackup is litter
+        host.setStatus(tr("status.mavenProject.updatingVersions"));
+        output.appendOutput(this, ArchetypeGenerate.displayCommand(argv), false);
+        runner.run(projectDir, argv, new BuildService.Listener() {
+            @Override
+            public void onStart(String commandLine) {}
+
+            @Override
+            public void onOutput(String line, boolean stderr) {
+                output.appendOutput(MavenProjectCoordinator.this, line, stderr);
+            }
+
+            @Override
+            public void onExit(int code) {
+                // Carries on regardless of the exit code: a failed dependency update should not also cost
+                // the plugin half, and the project itself is already generated.
+                updatePluginVersions(projectDir, spec.artifactId());
+            }
+
+            @Override
+            public void onError(String message) {
+                output.appendOutput(MavenProjectCoordinator.this, message, true);
+                updatePluginVersions(projectDir, spec.artifactId());
+            }
+        });
+    }
+
+    /**
+     * Resolves each pinned plugin's latest stable version from Maven Central and rewrites the pom.
+     *
+     * <p>Off the FX thread: it is one HTTPS GET per plugin (seven for a quickstart pom). Failures are
+     * silent per artifact — see {@link CentralVersions#latest} — and the whole step degrades to leaving the
+     * versions the archetype chose.
+     */
+    private void updatePluginVersions(Path projectDir, String artifactId) {
+        Path pomFile = projectDir.resolve("pom.xml");
+        String pom = read(pomFile);
+        Map<String, String> current = pom == null ? Map.of() : PomEdits.pluginVersions(pom);
+        if (current.isEmpty()) {
+            finishUpdate(projectDir, artifactId, 0);
+            return;
+        }
+        fetchExecutor().execute(() -> {
+            Map<String, String> latest = CentralVersions.latest(current.keySet(), this::fetchMetadata);
+            Map<String, String> upgrades = CentralVersions.upgradesOnly(current, latest);
+            Platform.runLater(() -> {
+                if (!upgrades.isEmpty()) {
+                    editPom(projectDir, text -> PomEdits.setPluginVersions(text, upgrades));
+                    upgrades.forEach((ga, v) ->
+                            output.appendOutput(this, tr("status.mavenProject.pluginUpdated", ga, v), false));
+                }
+                finishUpdate(projectDir, artifactId, upgrades.size());
+            });
+        });
+    }
+
+    private void finishUpdate(Path projectDir, String artifactId, int pluginUpdates) {
+        host.setStatus(tr("status.mavenProject.versionsUpdated", pluginUpdates));
+        onGenerated(projectDir, artifactId);
+    }
+
+    /** One {@code maven-metadata.xml}, or null when it cannot be had. HTTPS only, bounded, with a timeout. */
+    private String fetchMetadata(String repoPath) {
+        String url = CentralVersions.CENTRAL + repoPath;
+        if (!PluginRegistry.isHttps(url)) {
+            return null;
+        }
+        try {
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+                    .timeout(java.time.Duration.ofSeconds(15))
+                    .GET()
+                    .build();
+            java.net.http.HttpResponse<java.io.InputStream> response =
+                    metadataClient().send(request, java.net.http.HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() != 200) {
+                return null;
+            }
+            try (java.io.InputStream in = response.body()) {
+                return new String(PluginRegistry.readCapped(in, MAX_METADATA_BYTES), StandardCharsets.UTF_8);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (Exception e) {
+            return null; // unreachable, refused, malformed — all just "no answer"
+        }
+    }
+
+    /** A metadata file is a few KB; this bound is what stops a hostile mirror streaming forever. */
+    private static final long MAX_METADATA_BYTES = 4L * 1024 * 1024;
+
+    private java.net.http.HttpClient metadataClient() {
+        if (metadataClient == null) {
+            metadataClient = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(10))
+                    .followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
+                    .build();
+        }
+        return metadataClient;
+    }
+
+    private java.net.http.HttpClient metadataClient;
+
+    /** Reads, transforms and writes the pom, doing nothing at all if any part of that fails. */
+    private void editPom(Path projectDir, java.util.function.UnaryOperator<String> edit) {
+        Path pomFile = projectDir.resolve("pom.xml");
+        String pom = read(pomFile);
+        if (pom == null) {
+            return;
+        }
+        String out = edit.apply(pom);
+        if (out == null || out.equals(pom)) {
+            return;
+        }
+        try {
+            Files.writeString(pomFile, out, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            host.setError(tr("status.mavenProject.pomEditFailed", String.valueOf(e.getMessage())));
+        }
+    }
+
+    private String read(Path file) {
+        try {
+            return Files.isRegularFile(file) ? Files.readString(file, StandardCharsets.UTF_8) : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void onGenerated(Path projectDir, String name) {
