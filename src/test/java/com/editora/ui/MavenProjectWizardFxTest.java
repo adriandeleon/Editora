@@ -197,6 +197,12 @@ class MavenProjectWizardFxTest {
 
     /** Ops that always declines the archetype-consent prompt; everything else is inert. */
     private static final class DecliningOps implements MavenProjectCoordinator.Ops {
+
+        @Override
+        public boolean replaceOpenBuffer(java.nio.file.Path file, String text) {
+            return false; // nothing is open in this fixture, so callers fall back to writing the file
+        }
+
         @Override
         public Path defaultParentDir() {
             return null;

@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -23,6 +24,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
 import javafx.scene.layout.GridPane;
@@ -77,6 +79,15 @@ final class MavenProjectCoordinator {
         Path defaultParentDir();
 
         /**
+         * Replaces an open buffer's text as one undoable edit, or returns false when the file is not open.
+         *
+         * <p>Exists so a version update can be taken back with a plain Ctrl-Z. Writing the file on disk
+         * instead makes the change arrive through the external-change prompt, where the editor's undo
+         * history knows nothing about it and there is no way back short of git.
+         */
+        boolean replaceOpenBuffer(Path file, String text);
+
+        /**
          * Registers {@code root} as a project and opens it in its own window.
          *
          * @param main the entry point found in the generated sources, or null — when non-null the new
@@ -124,9 +135,149 @@ final class MavenProjectCoordinator {
         this.output = output;
     }
 
+    private CommandRegistry registry;
+
     void registerCommands(CommandRegistry registry) {
+        this.registry = registry;
         registry.register(Command.of("maven.newProject", () -> newProject(null)));
         registry.register(Command.of("maven.newProjectHere", this::newProjectHere));
+        registry.register(Command.of("maven.updateVersions", this::updateVersions));
+    }
+
+    /**
+     * Offers to bring the nearest {@code pom.xml}'s dependencies and plugins up to their latest stable
+     * versions, <b>showing what would change before anything is written</b>.
+     *
+     * <p>Both halves are resolved here rather than handing dependencies to
+     * {@code versions:use-latest-releases}: that rewrites the file directly, so there would be nothing to
+     * preview and no way to decline half of it. The wizard's creation-time option can afford the plugin
+     * because a brand-new project has nothing to lose; an existing pom does.
+     */
+    void updateVersions() {
+        if (!host.settings().isMavenSupport()) {
+            host.setError(tr("status.mavenProject.disabled"));
+            return;
+        }
+        Path pomFile = nearestPom(ops.defaultParentDir());
+        if (pomFile == null) {
+            host.setError(tr("status.mavenVersions.noPom"));
+            return;
+        }
+        String pom = read(pomFile);
+        Map<String, String> current = new LinkedHashMap<>();
+        if (pom != null) {
+            current.putAll(PomEdits.dependencyVersions(pom));
+            current.putAll(PomEdits.pluginVersions(pom));
+        }
+        if (current.isEmpty()) {
+            host.setStatus(tr("status.mavenVersions.nothingPinned"));
+            return;
+        }
+        host.setStatus(tr("status.mavenVersions.checking", current.size()));
+        fetchExecutor().execute(() -> {
+            Map<String, String> upgrades = CentralVersions.upgradesOnly(
+                    current, CentralVersions.latest(current.keySet(), this::fetchMetadata));
+            Platform.runLater(() -> showUpgrades(pomFile, current, upgrades));
+        });
+    }
+
+    /** The {@code pom.xml} at or above {@code from}, or null. */
+    private static Path nearestPom(Path from) {
+        for (Path dir = from; dir != null; dir = dir.getParent()) {
+            Path pom = dir.resolve("pom.xml");
+            if (Files.isRegularFile(pom)) {
+                return pom;
+            }
+        }
+        return null;
+    }
+
+    /** The preview: one row per artifact that has something newer, and nothing written until accepted. */
+    private void showUpgrades(Path pomFile, Map<String, String> current, Map<String, String> upgrades) {
+        if (upgrades.isEmpty()) {
+            host.setStatus(tr("status.mavenVersions.upToDate"));
+            return;
+        }
+        VBox rows = new VBox(4);
+        upgrades.forEach((ga, next) -> {
+            Label row = new Label(ga + "    " + current.get(ga) + "  →  " + next);
+            row.getStyleClass().add("maven-version-row");
+            rows.getChildren().add(row);
+        });
+        ScrollPane scroll = new ScrollPane(rows);
+        scroll.setFitToWidth(true);
+        scroll.setPrefViewportHeight(220);
+        VBox body = new VBox(8, new Label(tr("dialog.mavenVersions.summary", upgrades.size())), scroll);
+
+        OverlayInput.show(
+                host.overlayHost(),
+                tr("dialog.mavenVersions.title"),
+                body,
+                null,
+                tr("dialog.mavenVersions.apply"),
+                new SimpleBooleanProperty(true),
+                () -> applyUpgrades(pomFile, upgrades),
+                null,
+                false);
+    }
+
+    private void applyUpgrades(Path pomFile, Map<String, String> upgrades) {
+        String pom = read(pomFile);
+        if (pom == null) {
+            host.setError(tr("status.mavenVersions.noPom"));
+            return;
+        }
+        String out = PomEdits.setDependencyVersions(pom, upgrades);
+        out = PomEdits.setPluginVersions(out, upgrades);
+        if (out.equals(pom)) {
+            host.setStatus(tr("status.mavenVersions.upToDate"));
+            return;
+        }
+        try {
+            // Through the open buffer when there is one, so a plain undo takes the whole update back; only
+            // a closed pom is written on disk, where there is no undo history to belong to anyway.
+            if (!ops.replaceOpenBuffer(pomFile, out)) {
+                Files.writeString(pomFile, out, StandardCharsets.UTF_8);
+                ops.openPath(pomFile);
+            }
+            host.setStatus(tr("status.mavenVersions.updated", upgrades.size()));
+        } catch (Exception e) {
+            host.setError(tr("status.mavenProject.pomEditFailed", String.valueOf(e.getMessage())));
+        }
+    }
+
+    /**
+     * A <b>Maven</b> submenu of the commands that make sense for {@code context}, or null when none do.
+     *
+     * <p>Shared by the two surfaces that offer it — the editor's right-click on a {@code pom.xml} and the
+     * project tree's folder menu — so they cannot drift into offering different Maven actions. Returns null
+     * rather than an empty menu so a caller can simply skip it: Maven off, or a folder with no pom, means
+     * there is nothing here worth a menu entry.
+     */
+    javafx.scene.control.Menu mavenMenu(Path context) {
+        if (!host.settings().isMavenSupport() || context == null) {
+            return null;
+        }
+        Path pom = nearestPom(Files.isDirectory(context) ? context : context.getParent());
+        if (pom == null) {
+            return null; // no Maven project here — the New Maven Project entry lives elsewhere
+        }
+        javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("menu.maven"), Icons.maven());
+        menu.getItems()
+                .addAll(
+                        item("command.maven.updateVersions", Icons.refresh(), this::updateVersions),
+                        item("command.maven.showActions", Icons.run(), () -> registry.run("maven.showActions")),
+                        item("command.maven.runCustom", Icons.terminal(), () -> registry.run("maven.runCustom")),
+                        item("command.maven.rerunLast", Icons.refresh(), () -> registry.run("maven.rerunLast")),
+                        item("command.maven.stop", Icons.stopSquare(), () -> registry.run("maven.stop")));
+        return menu;
+    }
+
+    /** Labels reuse the commands' own titles, so the menu and the palette can never say different things. */
+    private static javafx.scene.control.MenuItem item(String titleKey, javafx.scene.Node icon, Runnable action) {
+        javafx.scene.control.MenuItem menuItem = new javafx.scene.control.MenuItem(tr(titleKey), icon);
+        menuItem.setOnAction(e -> action.run());
+        return menuItem;
     }
 
     /** Entry point for the project-tree folder menu — generate into {@code folder}. */

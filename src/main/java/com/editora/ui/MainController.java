@@ -2345,6 +2345,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 file -> historyCoordinator.captureBeforeDelete(file)); // snapshot to Local History before delete
         projectPanel.setOnNewFile(this::newFileOfType); // folder "New ▸ <type>"
         projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
+        projectPanel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
         projectPanel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         projectPanel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
         // An external program (a terminal `git`, another editor, a build) changed files under the repo while
@@ -3400,6 +3401,18 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public java.nio.file.Path defaultParentDir() {
                     return defaultNewDir();
+                }
+
+                @Override
+                public boolean replaceOpenBuffer(java.nio.file.Path file, String text) {
+                    EditorBuffer buffer = bufferOf(tabForPath(file));
+                    if (buffer == null) {
+                        return false;
+                    }
+                    // One replaceText, so the whole update is a single undo step rather than one per
+                    // artifact — and the buffer goes dirty, so it is the user who decides to save it.
+                    buffer.getArea().replaceText(text);
+                    return true;
                 }
 
                 @Override
@@ -6986,6 +6999,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setCompletionProvider(completion::complete);
         buffer.setAiCompletionProvider(aiCoordinator::inlineComplete);
         buffer.setAiCompletionEnabled(aiCoordinator.isInlineCompletionEnabled());
+        // A Maven submenu only on a pom.xml: the actions are about the project the file IS, and offering
+        // them on every buffer in the repo would say nothing about which pom.
+        buffer.setBuildMenuContributor(() -> {
+            java.nio.file.Path path = buffer.getPath();
+            if (path == null || !"pom.xml".equals(String.valueOf(path.getFileName()))) {
+                return List.of();
+            }
+            javafx.scene.control.Menu maven = mavenProjectCoordinator.mavenMenu(path);
+            return maven == null ? List.of() : List.of(maven);
+        });
         buffer.setMenuContributor(
                 () -> { // External Tools submenu + plugin-contributed right-click items
                     List<javafx.scene.control.MenuItem> extra =

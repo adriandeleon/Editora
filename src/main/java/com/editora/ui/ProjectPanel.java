@@ -91,6 +91,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private BiConsumer<Path, com.editora.template.NewFileType> onNewFile;
 
     private Consumer<Path> onNewMavenProject;
+
+    /** Supplies the Maven submenu for a folder, or null when that folder holds no Maven project. */
+    private java.util.function.Function<java.nio.file.Path, javafx.scene.control.Menu> mavenMenu;
+
+    /** The Maven submenu for a folder, or null — built fresh per right-click, since a folder gains or
+     *  loses its pom while the tree is open. */
+    javafx.scene.control.Menu mavenMenuFor(java.nio.file.Path dir) {
+        return mavenMenu == null ? null : mavenMenu.apply(dir);
+    }
+
+    public void setMavenMenu(java.util.function.Function<java.nio.file.Path, javafx.scene.control.Menu> supplier) {
+        this.mavenMenu = supplier;
+    }
     /** Injected by MainController: reveal a path in the OS file manager. Args: (path, isDirectory). */
     private BiConsumer<Path, Boolean> onReveal;
     /** Injected by MainController: open a terminal at a path's folder. Args: (path, isDirectory). */
@@ -1422,6 +1435,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             ContextMenu menu = new ContextMenu();
             if (isDir) {
                 menu.getItems().add(newMenu(treeItem));
+                // Built per right-click rather than once: a folder gains or loses its pom.xml while the
+                // tree is open, and mavenMenuFor answers null for a folder that has none.
+                javafx.scene.control.Menu maven = mavenMenuFor(treeItem.getValue());
+                if (maven != null) {
+                    menu.getItems().add(maven);
+                }
             }
             // Rename is offered on every file/folder EXCEPT the project root — renaming that would move the
             // whole project folder on disk and leave the project pointing at a path that no longer exists.

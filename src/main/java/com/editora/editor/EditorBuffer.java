@@ -1775,6 +1775,8 @@ public class EditorBuffer implements TabContent {
     private final ContextMenu contextMenu = new ContextMenu();
     /** Supplies extra right-click items (plugin contributions), injected by the controller; null = none. */
     private java.util.function.Supplier<List<MenuItem>> menuContributor;
+    /** Build-tool actions for this file, shown next to the LSP submenu rather than at the menu's foot. */
+    private java.util.function.Supplier<List<MenuItem>> buildMenuContributor;
 
     private void installContextMenu() {
         contextMenu.getStyleClass().add("editor-context-menu");
@@ -1817,6 +1819,15 @@ public class EditorBuffer implements TabContent {
                 int clickOffset = clickOffsetAt(e.getX(), e.getY());
                 items.add(lspMenu(clickOffset));
                 items.add(new SeparatorMenuItem());
+            }
+            // Beside the LSP submenu, not with the plugin-contributed items at the foot of the menu: both
+            // are "what this file's toolchain can do", and reading them together is the point.
+            if (buildMenuContributor != null) {
+                List<MenuItem> build = buildMenuContributor.get();
+                if (build != null && !build.isEmpty()) {
+                    items.addAll(build);
+                    items.add(new SeparatorMenuItem());
+                }
             }
             SpellHit hit = spellHitAt(e.getX(), e.getY());
             if (hit != null) {
@@ -1882,6 +1893,11 @@ public class EditorBuffer implements TabContent {
     /** Injects a supplier of extra right-click menu items (plugin contributions); null clears it. */
     public void setMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
         this.menuContributor = contributor;
+    }
+
+    /** Items placed immediately after the LSP submenu — see {@code installContextMenu}. */
+    public void setBuildMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
+        this.buildMenuContributor = contributor;
     }
 
     /** The document offset under a context-menu click (for caret-positioning LSP nav); caret if it misses. */
