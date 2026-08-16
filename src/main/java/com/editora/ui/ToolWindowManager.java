@@ -385,13 +385,13 @@ public class ToolWindowManager {
             ToolWindow src = dragSource(e.getDragboard());
             if (src != null) {
                 e.acceptTransferModes(TransferMode.MOVE);
-                stripe.getStyleClass().add(STRIPE_DROP_TARGET);
+                setStripeDropTarget(stripe, true);
             }
             e.consume();
         });
-        stripe.setOnDragExited(e -> stripe.getStyleClass().remove(STRIPE_DROP_TARGET));
+        stripe.setOnDragExited(e -> setStripeDropTarget(stripe, false));
         stripe.setOnDragDropped(e -> {
-            stripe.getStyleClass().remove(STRIPE_DROP_TARGET);
+            setStripeDropTarget(stripe, false);
             ToolWindow src = dragSource(e.getDragboard());
             if (src != null) {
                 dockToSideEnd(src, side);
@@ -405,11 +405,40 @@ public class ToolWindowManager {
     private static final String STRIPE_DROP_TARGET = "tool-stripe-drop-target";
 
     /**
+     * Adds or removes the drop-target highlight, idempotently.
+     *
+     * <p>Both halves matter. {@code DRAG_OVER} fires continuously while the cursor is over the stripe — tens
+     * of times a second — so an unguarded {@code add} stacks the class up dozens deep; and
+     * {@code ObservableList.remove} drops only the <em>first</em> occurrence, so one clear then leaves the
+     * stripe painted for the rest of the session.
+     */
+    private static void setStripeDropTarget(Pane stripe, boolean on) {
+        if (on) {
+            if (!stripe.getStyleClass().contains(STRIPE_DROP_TARGET)) {
+                stripe.getStyleClass().add(STRIPE_DROP_TARGET);
+            }
+        } else {
+            stripe.getStyleClass().removeAll(STRIPE_DROP_TARGET);
+        }
+    }
+
+    /**
      * Reveals the empty stripes for the duration of a drag, so a window can be dropped on a side that has
      * nothing on it yet — see {@link ToolWindowVisibility#stripeShown(boolean, boolean, boolean, boolean)}
      * for why an empty stripe is otherwise not merely invisible but unable to receive the drop at all.
      */
     private void setDraggingStripeButton(boolean dragging) {
+        // Cleared on ANY end-of-drag signal, ahead of the unchanged-state guard below: the end of the
+        // gesture is the one moment that always happens, so the highlight is not left to the stripe's own
+        // handlers. A drop onto a BUTTON is consumed by that button, so the stripe's DRAG_DROPPED never
+        // runs — and moving the cursor from stripe space onto one of the stripe's own buttons is not an
+        // exit from the stripe, so DRAG_EXITED does not run either. Reordering by dropping on a neighbour
+        // hit exactly that gap and left the dashed drop zone painted for the rest of the session.
+        if (!dragging) {
+            for (Pane stripe : List.of(leftStripe, rightStripe, bottomStripe)) {
+                setStripeDropTarget(stripe, false);
+            }
+        }
         if (draggingStripeButton == dragging) {
             return;
         }
