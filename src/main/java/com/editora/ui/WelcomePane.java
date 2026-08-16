@@ -24,6 +24,7 @@ import com.editora.command.KeymapManager;
 import com.editora.config.RecentFiles;
 import com.editora.editor.TabContent;
 import com.editora.vfs.RemoteConnection;
+import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -261,11 +262,16 @@ public final class WelcomePane extends Region implements TabContent {
     private VBox recentList() {
         VBox box = new VBox();
         box.getStyleClass().add("welcome-recent");
-        if (recentFiles == null || recentFiles.getList().isEmpty()) {
+        // Same filter as the toolbar dropdown: a file that has since been deleted must not be offered here
+        // either. Remote entries are kept unchecked — see RecentFiles.showable.
+        List<Path> shown = recentFiles == null
+                ? List.of()
+                : RecentFiles.showable(recentFiles.getList(), Vfs::isLocal, java.nio.file.Files::exists);
+        if (shown.isEmpty()) {
             box.getChildren().add(caption(tr("welcome.noRecent")));
             return box;
         }
-        for (Path p : recentFiles.getList()) {
+        for (Path p : shown) {
             Hyperlink link = new Hyperlink(p.getFileName().toString());
             link.getStyleClass().add("welcome-link");
             Label dir = new Label(parentText(p));
