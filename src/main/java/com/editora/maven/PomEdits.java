@@ -98,13 +98,18 @@ public final class PomEdits {
      * would change resolution rather than update it.
      */
     public static String setPluginVersions(String pom, Map<String, String> versions) {
+        return setVersions(pom, versions, "plugin", "org.apache.maven.plugins");
+    }
+
+    /** Shared by the plugin and dependency rewrites — they differ only in element name and group default. */
+    private static String setVersions(String pom, Map<String, String> versions, String element, String groupDefault) {
         if (blank(pom) || versions == null || versions.isEmpty()) {
             return pom;
         }
         StringBuilder out = new StringBuilder(pom);
         // Applied last-to-first so each splice leaves the offsets of the ones before it untouched.
-        for (int[] span : reversed(pluginSpans(pom))) {
-            String ga = pluginKey(pom, span);
+        for (int[] span : reversed(elementsNamed(pom, element))) {
+            String ga = coordinateKey(pom, span, groupDefault);
             String want = ga == null ? null : versions.get(ga);
             if (want == null || want.isBlank()) {
                 continue;
@@ -128,8 +133,8 @@ public final class PomEdits {
         if (blank(pom)) {
             return out;
         }
-        for (int[] span : pluginSpans(pom)) {
-            String ga = pluginKey(pom, span);
+        for (int[] span : elementsNamed(pom, "plugin")) {
+            String ga = coordinateKey(pom, span, "org.apache.maven.plugins");
             int[] version = ga == null ? null : findChild(pom, span[1], span[2], "version");
             if (version != null) {
                 String v = pom.substring(version[1], version[2]).trim();
@@ -165,31 +170,66 @@ public final class PomEdits {
         return value.isEmpty() ? "jar" : value;
     }
 
+    /**
+     * Every dependency the pom pins a version for, as {@code groupId:artifactId → version}.
+     *
+     * <p>A dependency whose version is a property reference ({@code ${junit.version}}) is omitted: rewriting
+     * the reference would replace the indirection the author chose, and rewriting the property is a
+     * different edit with different blast radius.
+     */
+    public static Map<String, String> dependencyVersions(String pom) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (blank(pom)) {
+            return out;
+        }
+        for (int[] span : elementsNamed(pom, "dependency")) {
+            String ga = coordinateKey(pom, span, null);
+            int[] version = ga == null ? null : findChild(pom, span[1], span[2], "version");
+            if (version != null) {
+                String v = pom.substring(version[1], version[2]).trim();
+                if (!v.isEmpty() && !v.startsWith("${")) {
+                    out.put(ga, v);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Rewrites the {@code <version>} of every {@code <dependency>} named in {@code versions}. */
+    public static String setDependencyVersions(String pom, Map<String, String> versions) {
+        return setVersions(pom, versions, "dependency", null);
+    }
+
     /** {@code groupId:artifactId} of a plugin element, defaulting the group as Maven does. */
-    private static String pluginKey(String pom, int[] span) {
+    private static String coordinateKey(String pom, int[] span, String groupDefault) {
         int[] artifact = findChild(pom, span[1], span[2], "artifactId");
         if (artifact == null) {
             return null;
         }
         int[] group = findChild(pom, span[1], span[2], "groupId");
-        String g = group == null
-                ? "org.apache.maven.plugins"
-                : pom.substring(group[1], group[2]).trim();
-        return g + ":" + pom.substring(artifact[1], artifact[2]).trim();
+        if (group == null) {
+            // A plugin with no groupId is org.apache.maven.plugins; a dependency without one is malformed.
+            if (groupDefault == null) {
+                return null;
+            }
+            return groupDefault + ":" + pom.substring(artifact[1], artifact[2]).trim();
+        }
+        return pom.substring(group[1], group[2]).trim() + ":"
+                + pom.substring(artifact[1], artifact[2]).trim();
     }
 
-    /** Every {@code <plugin>} element in the document, in document order. */
-    private static java.util.List<int[]> pluginSpans(String pom) {
+    /** Every element with this exact name in the document, in document order. */
+    private static java.util.List<int[]> elementsNamed(String pom, String element) {
         java.util.List<int[]> spans = new java.util.ArrayList<>();
         int i = 0;
         while (i < pom.length()) {
-            int open = pom.indexOf("<plugin", i);
+            int open = pom.indexOf("<" + element, i);
             if (open < 0) {
                 break;
             }
-            int after = open + "<plugin".length();
-            // "<plugins>" and "<pluginManagement>" both start with "<plugin" — only an element whose name
-            // ends right here is the one wanted.
+            int after = open + element.length() + 1;
+            // "<plugins>"/"<pluginManagement>" both start with "<plugin", and "<dependencies>" with
+            // "<dependency" — only an element whose name ends right here is the one wanted.
             if (after < pom.length() && (pom.charAt(after) == '>' || Character.isWhitespace(pom.charAt(after)))) {
                 int[] span = elementAt(pom, open);
                 if (span != null) {
