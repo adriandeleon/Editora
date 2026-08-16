@@ -108,7 +108,7 @@ public class SettingsWindow {
         EDITOR(tr("settings.cat.editor"), Group.EDITOR),
         COMPLETION(tr("settings.cat.completion"), Group.EDITOR),
         SNIPPETS(tr("settings.cat.snippets"), Group.EDITOR),
-        TEMPLATES(tr("settings.cat.templates"), Group.EDITOR, true),
+        TEMPLATES(tr("settings.cat.templates"), Group.EDITOR),
         TODO(tr("settings.cat.todo"), Group.EDITOR),
         SPELL_CHECK(tr("settings.cat.spellCheck"), Group.EDITOR),
         SEARCH(tr("settings.cat.search"), Group.EDITOR),
