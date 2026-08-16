@@ -20,6 +20,7 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.ScrollPane;
@@ -1814,7 +1815,7 @@ public class EditorBuffer implements TabContent {
             // right-clicked position first so go-to-definition/references/hover target that symbol.
             if (lspActive) {
                 int clickOffset = clickOffsetAt(e.getX(), e.getY());
-                items.addAll(lspMenuItems(clickOffset));
+                items.add(lspMenu(clickOffset));
                 items.add(new SeparatorMenuItem());
             }
             SpellHit hit = spellHitAt(e.getX(), e.getY());
@@ -1900,6 +1901,20 @@ public class EditorBuffer implements TabContent {
         } catch (RuntimeException ex) {
             return area.getCurrentParagraph();
         }
+    }
+
+    /**
+     * The language-server actions, gathered under one <b>LSP</b> submenu.
+     *
+     * <p>A submenu rather than the flat list they used to be: a served buffer contributes up to seven items,
+     * which pushed the editing actions everyone uses — cut/copy/paste, the spelling suggestions — far enough
+     * down the menu to hunt for. Grouping them also names what they are, which a bare "Go to Definition"
+     * sitting between "Paste" and a spelling suggestion does not.
+     */
+    private Menu lspMenu(int offset) {
+        Menu menu = new Menu(tr("editmenu.lsp"), MenuIcons.code());
+        menu.getItems().addAll(lspMenuItems(offset));
+        return menu;
     }
 
     /** Go to Definition / Find References / Show Documentation — each moves the caret to {@code offset}
