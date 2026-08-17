@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A file opened from the file manager now gets a window of its own** instead of landing as a tab in
+  whatever window you were working in.
+
+  Before the single-instance handoff, such a click started its own process and therefore its own window. The
+  handoff was meant to stop duplicating the *process* — a second JVM, a second set of language servers — not
+  to change what the click does; but it took over the window in front of you, and with the "Editora Expert
+  Mode" entry restyled that window's chrome as well. The requested focus mode now applies to the new window,
+  where it is unambiguous, rather than being imposed on one already in use.
+
+  **Unless the file is already open**, in which case the window holding it is brought forward instead. Two
+  independent buffers over one file loses edits — save one and the other is silently stale behind an
+  external-change prompt — and re-opening a file you already have open is an ordinary thing to do.
+
+  These windows are deliberately left out of the saved layout, so a file opened from the file manager does not
+  come back as an empty window on the next launch.
+
 ## [0.12.2] - 2026-08-17
 
 ### Fixed

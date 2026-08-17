@@ -51,6 +51,16 @@ public class WindowManager {
      *  one-window run never shrinks the saved multi-window layout). See {@link #reconcileOpenSet()}. */
     private boolean singleWindowSession;
 
+    /**
+     * Windows opened by an externally-delivered launch (a file-manager click routed here by
+     * {@code ipc.SingleInstance}). They are live windows in every other respect, but are deliberately kept
+     * out of the persisted restore set: before the single-instance handoff existed, such a launch was its own
+     * {@code --single-window --no-session} process, which never touched the saved layout. Without this, every
+     * file ever opened from the file manager would come back as a window on the next launch — and, since a
+     * {@code --no-session} window never writes a session file, come back empty.
+     */
+    private final java.util.Set<String> transientWindows = new java.util.HashSet<>();
+
     /** Set by {@code --no-session}: open only the command line's files, skipping the saved session's.
      *  Session-only — the saved session is never rewritten from a {@code --no-session} run. */
     private boolean noSession;
@@ -296,6 +306,73 @@ public class WindowManager {
      * no-op in the common case where the running window is already in that mode. All three flags false (the
      * plain overload, and every OS-delivered event) leaves the window's chrome exactly as it was.
      */
+    /**
+     * Opens an externally-delivered launch — a file-manager "Open With" click that {@code ipc.SingleInstance}
+     * handed to this already-running process — in a <b>new window of its own</b>.
+     *
+     * <p>A new window, not a tab in whatever the user was working in. Before the single-instance handoff, such
+     * a click started its own process and therefore its own window; the handoff was meant to stop duplicating
+     * the <em>process</em> (a second JVM, a second set of language servers), not to change what the click
+     * does. Landing the file as a tab in the current window silently took over the window the user was in the
+     * middle of using — and, with a launcher entry like "Editora Expert Mode", restyled its chrome as well.
+     * Giving the launch its own window also makes the requested focus mode unambiguous: it applies to the new
+     * window, at build time (so the first frame is already correct), instead of being imposed on an existing one.
+     *
+     * <p><b>Unless the file is already open somewhere</b>, in which case that window is focused instead. Two
+     * independent buffers over one file is an edit-loss hazard, not just clutter: save one and the other is
+     * silently stale behind an external-change prompt. Re-clicking a file you already have open is a normal
+     * thing to do, so this is the common case rather than a corner one.
+     *
+     * <p>The macOS Apple-Event path keeps the existing-window behaviour ({@link #openExternalFiles(List)}):
+     * that platform never duplicated a process, so nothing about it regressed and there is nothing to restore.
+     */
+    public void openExternalLaunchInNewWindow(
+            List<MainController.OpenTarget> files, boolean zen, boolean expert, boolean simple) {
+        if (files == null || files.isEmpty()) {
+            return;
+        }
+        Holder holding = holderWithAnyOf(files);
+        if (holding != null) {
+            presentForExternalLaunch(holding.stage());
+            holding.controller().openExternalFiles(files); // focuses the tab, honours a :line
+            return;
+        }
+        String key = WindowKeys.UNTITLED_PREFIX
+                + java.util.UUID.randomUUID().toString().substring(0, 8);
+        boolean restoreNoSession = noSession;
+        // This window shows the requested file and nothing else — restoring the saved session into it would
+        // reproduce exactly the tab-pile the user is trying to get away from. It also keeps the window from
+        // writing a session file of its own (persistSession returns early under --no-session).
+        noSession = true;
+        try {
+            Stage stage = buildWindow(key, null, untitledStateFile(key), files, zen, expert, null, simple);
+            transientWindows.add(key);
+            presentForExternalLaunch(stage);
+        } catch (RuntimeException | Error t) {
+            java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                    .log(java.util.logging.Level.WARNING, "Failed to open a window for an external launch", t);
+            // Fall back to the old behaviour rather than dropping the user's file on the floor.
+            openExternalFiles(files, zen, expert, simple);
+        } finally {
+            noSession = restoreNoSession;
+        }
+    }
+
+    /** The live window that already has any of {@code files} open, or {@code null} if none does. */
+    private Holder holderWithAnyOf(List<MainController.OpenTarget> files) {
+        for (Holder h : windows) {
+            if (h.controller() == null) {
+                continue;
+            }
+            for (MainController.OpenTarget t : files) {
+                if (t != null && h.controller().hasFileOpen(t.file())) {
+                    return h;
+                }
+            }
+        }
+        return null;
+    }
+
     public void openExternalFiles(List<MainController.OpenTarget> files, boolean zen, boolean expert, boolean simple) {
         if (files == null || files.isEmpty()) {
             return;
@@ -430,6 +507,7 @@ public class WindowManager {
         }
         controller.disposePlugins(); // stop() the window's plugins
         windows.remove(holder);
+        transientWindows.remove(holder.key);
         if (windows.isEmpty()) {
             pluginManager.closeAll(); // last window gone — close every plugin class loader, freeing jar handles (#442)
         }
@@ -497,7 +575,13 @@ public class WindowManager {
         }
         List<String> keys = new ArrayList<>();
         for (Holder h : windows) {
+            if (transientWindows.contains(h.key)) {
+                continue; // a file-manager launch's window; see transientWindows
+            }
             keys.add(h.key);
+        }
+        if (keys.isEmpty()) {
+            return; // only transient windows are live — leave the saved layout as it is
         }
         projects().setOpenWindows(keys);
         projects().save();

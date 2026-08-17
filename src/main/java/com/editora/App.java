@@ -157,7 +157,10 @@ public class App extends Application {
         try {
             // fileTargets, not a second parser: these are the argv the forwarding process would itself have
             // parsed, so they must resolve identically here.
-            windows.openExternalFiles(fileTargets(args), zenFlag(args), expertFlag(args), simpleFlag(args));
+            // In a NEW window: had this launch not been forwarded it would have started its own process, and
+            // so its own window. Reusing the process is the point of the handoff; reusing the window was not,
+            // and it silently took over whatever the user was working in.
+            windows.openExternalLaunchInNewWindow(fileTargets(args), zenFlag(args), expertFlag(args), simpleFlag(args));
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "Could not apply a forwarded launch", e);
         }
