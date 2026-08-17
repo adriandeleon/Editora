@@ -76,6 +76,13 @@ public class QuickOpen<T> {
     /** The live query, so a recycled cell can embolden the characters responsible for its row's rank. */
     private String currentQuery = "";
 
+    /** Optional live preview of the highlighted row, plus the undo for it when the picker is cancelled. */
+    private Consumer<T> onPreview;
+
+    private Runnable onPreviewCancelled;
+    /** Whether this showing ended in a choice — so cancelling restores and choosing does not. */
+    private boolean chosen;
+
     /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
     private OverlayHost overlayHost;
 
@@ -123,6 +130,23 @@ public class QuickOpen<T> {
     }
 
     /**
+     * Makes the picker preview the highlighted row: {@code onPreview} runs as the selection moves, and
+     * {@code onCancelled} runs if the picker is dismissed without choosing.
+     *
+     * <p>Preview is what turns a picker from "commit and hope" into something you can browse — but only
+     * if it is reversible, hence the second half. Without the undo, arrowing through a list and pressing
+     * Esc leaves you wherever the cursor happened to stop, which is worse than not previewing at all.
+     *
+     * <p>Nothing is previewed for the selection the picker makes when it opens — only for a selection the
+     * user moved to. Firing on open would yank the editor somewhere the instant the picker appears, before
+     * any intent has been expressed.
+     */
+    public void setPreview(Consumer<T> onPreview, Runnable onCancelled) {
+        this.onPreview = onPreview;
+        this.onPreviewCancelled = onCancelled;
+    }
+
+    /**
      * Marks one item as the current value, so opening the picker lands on it rather than on the first
      * row. Restores what a {@code ChoiceDialog} gave for free when these were native dialogs: for a
      * "change this setting" picker, the value in force is the useful starting point — the user is
@@ -162,6 +186,11 @@ public class QuickOpen<T> {
         list.setFixedCellSize(CELL_HEIGHT);
         items.addListener((javafx.collections.ListChangeListener<T>) c -> resizeList());
         list.setCellFactory(v -> new ItemCell());
+        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            if (showing && onPreview != null && now != null) {
+                onPreview.accept(now);
+            }
+        });
 
         input.textProperty().addListener((obs, old, now) -> filter(now));
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
@@ -254,6 +283,7 @@ public class QuickOpen<T> {
     private void chooseSelected() {
         T item = list.getSelectionModel().getSelectedItem();
         if (item != null) {
+            chosen = true; // must be set before hide(), which is what runs the cancel hook
             hide();
             onChoose.accept(item);
         }
@@ -312,8 +342,14 @@ public class QuickOpen<T> {
         all = itemsSupplier.get();
         input.clear();
         filter("");
+        chosen = false;
         showing = true;
-        overlayHost.show(content, input::requestFocus, () -> showing = false);
+        overlayHost.show(content, input::requestFocus, () -> {
+            showing = false;
+            if (!chosen && onPreviewCancelled != null) {
+                onPreviewCancelled.run();
+            }
+        });
     }
 
     public void hide() {

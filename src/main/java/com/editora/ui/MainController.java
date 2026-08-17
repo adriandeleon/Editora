@@ -1707,6 +1707,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // label alone would make "the line about X" unfindable; the row shows both, so both match.
                 loc -> loc.snippet() + " " + locationLabel(loc),
                 loc -> openAndGoto(loc.path(), loc.line(), loc.column()));
+        recentLocationsPalette.setPreview(this::previewLocation, this::restorePreviewOrigin);
         snippetPalette = new QuickOpen<>(
                 "Insert Snippet",
                 "Type to filter snippets…",
@@ -5188,7 +5189,38 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.nav.noRecentLocations"));
             return;
         }
+        previewOrigin = captureCurrent();
         recentLocationsPalette.show(stage);
+    }
+
+    /** Where the editor was when a previewing picker opened, so cancelling can put it back. */
+    private NavigationHistory.Location previewOrigin;
+
+    /**
+     * Shows a highlighted location in the editor without committing to it: no focus change, and nothing
+     * recorded in the jump list, so browsing the picker cannot itself become history.
+     *
+     * <p>A location whose file is <em>not</em> open is deliberately not previewed. Opening it would create
+     * a tab, and arrowing down a list of twenty locations would leave twenty tabs behind — the cost that
+     * makes preview a net loss until there are preview-tab semantics to hang it on. Enter still opens it.
+     */
+    private void previewLocation(NavigationHistory.Location loc) {
+        if (loc == null || tabForPath(loc.path()) == null) {
+            return;
+        }
+        suppressNavRecord = true;
+        try {
+            gotoInFile(loc.path(), loc.line() + 1, loc.column() + 1, false);
+        } finally {
+            suppressNavRecord = false;
+        }
+    }
+
+    /** Puts the editor back where it was before previewing — the picker was dismissed, not used. */
+    private void restorePreviewOrigin() {
+        NavigationHistory.Location origin = previewOrigin;
+        previewOrigin = null;
+        previewLocation(origin);
     }
 
     /** {@code file.java:214} — a location's file and 1-based line, for a picker's detail column. */
