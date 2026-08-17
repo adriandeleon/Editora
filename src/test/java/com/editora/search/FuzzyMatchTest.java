@@ -142,8 +142,27 @@ class FuzzyMatchTest {
         }
 
         @Test
-        void earlierMatchWinsAllElseEqual() {
-            beats("cfg", "cfg loader", "the cfg loader");
+        void positionInTheCandidateIsNotItselfAScore() {
+            // Two identical matches differing only in how much text precedes them score the SAME. Position
+            // is a caller-level tiebreak (shorter title, or the supplier's original index), not a signal
+            // here — scoring it made "Undo History" outrank "Edit: Undo" for `undo`, purely because the
+            // command palette names things "Category: Verb" and the verb is what was typed.
+            Match early = FuzzyMatch.of("cfg loader", "cfg");
+            Match late = FuzzyMatch.of("the cfg loader", "cfg");
+            assertNotNull(early);
+            assertNotNull(late);
+            assertEquals(early.score(), late.score());
+        }
+
+        @Test
+        void aWholeWordVerbTiesWithATitleThatMerelyStartsWithIt() {
+            // The regression this guards: the palette breaks the tie by the shorter title, which is what
+            // puts "Edit: Undo" above "Undo History". See CommandPaletteRankTest.
+            Match verb = FuzzyMatch.of("Edit: Undo", "undo");
+            Match prefix = FuzzyMatch.of("Undo History", "undo");
+            assertNotNull(verb);
+            assertNotNull(prefix);
+            assertEquals(verb.score(), prefix.score());
         }
 
         @Test

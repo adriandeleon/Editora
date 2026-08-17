@@ -45,6 +45,8 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.util.Duration;
 
+import com.editora.search.FuzzyMatch;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -678,8 +680,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         if (current.depth() + 1 < MAX_DEPTH && (includeHidden || !hidden)) {
                             queue.add(new Dir(p, current.depth() + 1)); // descend later — shallower first
                         }
-                    } else if ((includeHidden || !hidden)
-                            && name.toLowerCase(Locale.ROOT).contains(q)) {
+                    } else if ((includeHidden || !hidden) && FuzzyMatch.of(name, q) != null) {
                         matches.add(p);
                     }
                 }
@@ -687,8 +688,27 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 // Unreadable directory — skip it, keep searching the rest (best effort).
             }
         }
-        matches.sort(Comparator.comparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER));
-        return matches;
+        // Relevance, not the alphabet. Alphabetical order is arbitrary with respect to what was typed, so
+        // the file actually being looked for sat wherever its initial happened to fall. Scoring the whole
+        // relative path (rather than just the name) is what lets a query name a directory as well as a
+        // file, and ofPath keeps a basename hit above a file that merely lives in a folder of that name.
+        record Scored(Path path, int score, String name) {}
+        List<Scored> scored = new ArrayList<>(matches.size());
+        for (Path p : matches) {
+            Path rel = root.relativize(p);
+            FuzzyMatch.Match m = FuzzyMatch.ofPath(rel.toString().replace(java.io.File.separatorChar, '/'), q);
+            // The walk matched on the file name, so a path-level score can be absent (a name-only match
+            // whose characters don't line up across the whole path); such a row keeps a floor score and
+            // sorts alphabetically among its peers rather than dropping out of a list it belongs in.
+            scored.add(new Scored(
+                    p,
+                    m == null ? Integer.MIN_VALUE : m.score(),
+                    p.getFileName().toString()));
+        }
+        scored.sort(java.util.Comparator.comparingInt((Scored s) -> s.score())
+                .reversed()
+                .thenComparing(s -> s.name(), String.CASE_INSENSITIVE_ORDER));
+        return scored.stream().map(Scored::path).toList();
     }
 
     // --- keyboard navigation (mirrors StructurePanel) ---

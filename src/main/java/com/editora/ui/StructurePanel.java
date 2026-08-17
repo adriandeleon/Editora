@@ -37,6 +37,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.editor.FoldRegions.Region;
 import com.editora.editor.TextMateHighlighter.Symbol;
 import com.editora.lsp.SymbolNode;
+import com.editora.search.FuzzyMatch;
 import org.fxmisc.richtext.CodeArea;
 
 import static com.editora.i18n.Messages.tr;
@@ -738,8 +739,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
         }
         boolean kindVisible = node.kind() == null || !hiddenKinds.contains(node.kind());
-        boolean self = kindVisible
-                && (q.isEmpty() || CommandPalette.isSubsequence(q, node.label().toLowerCase(Locale.ROOT)));
+        boolean self = kindVisible && (q.isEmpty() || FuzzyMatch.of(node.label(), q) != null);
         if (!self && childItems.isEmpty()) {
             return null;
         }

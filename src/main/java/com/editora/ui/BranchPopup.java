@@ -22,6 +22,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
+import com.editora.search.FuzzyMatch;
+
 import static com.editora.i18n.Messages.tr;
 
 /**
@@ -233,7 +235,7 @@ public final class BranchPopup {
                 pending = h; // only emitted if a following row in its section matches
                 continue;
             }
-            if (q.isEmpty() || CommandPalette.isSubsequence(q, labelOf(r).toLowerCase(Locale.ROOT))) {
+            if (q.isEmpty() || FuzzyMatch.of(labelOf(r), q) != null) {
                 if (pending != null) {
                     out.add(pending);
                     pending = null;

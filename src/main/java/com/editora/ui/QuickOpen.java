@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
@@ -22,6 +23,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
+
+import com.editora.search.FuzzyMatch;
 
 /**
  * A generic fuzzy-filtered picker shown as a popup overlay — the keyboard-first counterpart to a list
@@ -69,6 +72,9 @@ public class QuickOpen<T> {
 
     private final ObservableList<T> items = FXCollections.observableArrayList();
     private List<T> all = List.of();
+
+    /** The live query, so a recycled cell can embolden the characters responsible for its row's rank. */
+    private String currentQuery = "";
 
     /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
     private OverlayHost overlayHost;
@@ -254,12 +260,30 @@ public class QuickOpen<T> {
     }
 
     private void filter(String query) {
-        String q = query.toLowerCase(Locale.ROOT).trim();
+        String q = query == null ? "" : query.trim();
+        currentQuery = q;
         List<T> matches = new ArrayList<>();
-        for (T item : all) {
-            if (q.isEmpty()
-                    || CommandPalette.isSubsequence(q, searchKey.apply(item).toLowerCase(Locale.ROOT))) {
-                matches.add(item);
+        if (q.isEmpty()) {
+            // With nothing typed the supplier's own order is the meaningful one — recency for recent
+            // files, document order for symbols — so it is passed through exactly as given.
+            matches.addAll(all);
+        } else {
+            record Scored<U>(U item, int score, int index) {}
+            List<Scored<T>> scored = new ArrayList<>();
+            for (int i = 0; i < all.size(); i++) {
+                T item = all.get(i);
+                FuzzyMatch.Match m = FuzzyMatch.of(searchKey.apply(item), q);
+                if (m != null) {
+                    scored.add(new Scored<>(item, m.score(), i));
+                }
+            }
+            // The supplier's index is the final tiebreak, so equal-scoring rows keep their original
+            // relative order instead of shuffling under the cursor between keystrokes.
+            scored.sort(Comparator.comparingInt((Scored<T> s) -> s.score())
+                    .reversed()
+                    .thenComparingInt(Scored::index));
+            for (Scored<T> s : scored) {
+                matches.add(s.item());
             }
         }
         items.setAll(matches);
@@ -303,12 +327,16 @@ public class QuickOpen<T> {
     }
 
     private final class ItemCell extends ListCell<T> {
-        private final Label title = new Label();
+        // A TextFlow rather than a Label, so the characters that matched can be emboldened. The icon
+        // therefore needs its own slot: a TextFlow has no graphic property to hang it off.
+        private final javafx.scene.text.TextFlow title = new javafx.scene.text.TextFlow();
+        private final HBox titleBox = new HBox(6, title);
         private final Label sub = new Label();
-        private final HBox box = new HBox(10, title, spacer(), sub);
+        private final HBox box = new HBox(10, titleBox, spacer(), sub);
         private String appliedClass;
 
         ItemCell() {
+            titleBox.setAlignment(Pos.CENTER_LEFT);
             box.setAlignment(Pos.CENTER_LEFT);
             sub.getStyleClass().add("keybinding"); // reuse the palette's muted right-detail style
             setOnMouseClicked(e -> {
@@ -332,14 +360,17 @@ public class QuickOpen<T> {
                 setGraphic(null);
                 return;
             }
-            title.setText(label.apply(item));
-            title.setGraphic(itemIcon == null ? null : itemIcon.apply(item));
-            if (appliedClass != null) {
-                title.getStyleClass().remove(appliedClass);
-            }
+            // A per-row treatment (an unsaved buffer's amber italic) replaces the plain run style rather
+            // than layering on top of it, so the two can't fight over the text colour; the matched runs
+            // keep their own accent either way.
             appliedClass = itemStyleClass == null ? null : itemStyleClass.apply(item);
-            if (appliedClass != null && !title.getStyleClass().contains(appliedClass)) {
-                title.getStyleClass().add(appliedClass);
+            String plainClass = appliedClass == null ? MatchText.PLAIN : appliedClass;
+            title.getChildren().setAll(MatchText.runs(label.apply(item), currentQuery, plainClass));
+            javafx.scene.Node icon = itemIcon == null ? null : itemIcon.apply(item);
+            if (icon == null) {
+                titleBox.getChildren().setAll(title);
+            } else {
+                titleBox.getChildren().setAll(icon, title);
             }
             String d = detail == null ? null : detail.apply(item);
             sub.setText(d == null ? "" : d);

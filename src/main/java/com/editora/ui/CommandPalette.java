@@ -28,6 +28,7 @@ import javafx.scene.layout.VBox;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
+import com.editora.search.FuzzyMatch;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -309,19 +310,32 @@ public class CommandPalette {
         // One snapshot of the live feature/context state for this whole pass — see enabledPolicy.
         enabledSnapshot = enabledPolicy.get();
         currentQuery = query == null ? "" : query.trim();
-        String q = query.toLowerCase(Locale.ROOT).trim();
-        List<Command> matches = new ArrayList<>();
-        for (Command command : registry.all()) {
+        String q = currentQuery;
+        if (q.isEmpty()) {
             // A command that fails the enabled predicate (a disabled feature) is still listed — grayed and
             // non-actionable — rather than hidden (#532).
-            if (q.isEmpty() || isSubsequence(q, command.title().toLowerCase(Locale.ROOT))) {
-                matches.add(command);
+            items.setAll(registry.all());
+            selectFirstEnabled();
+            return;
+        }
+        // Score every command and order by that score, so the best match leads rather than merely some
+        // match. Ties fall back to the shorter then alphabetical title, which keeps the order stable
+        // across keystrokes instead of letting equal-scoring rows shuffle under the cursor.
+        record Scored(Command command, int score) {}
+        List<Scored> scored = new ArrayList<>();
+        for (Command command : registry.all()) {
+            FuzzyMatch.Match m = FuzzyMatch.of(command.title(), q);
+            if (m != null) {
+                scored.add(new Scored(command, m.score()));
             }
         }
-        if (!q.isEmpty()) {
-            // Rank by relevance (exact > whole-word > word-start > substring > scattered subsequence) so the
-            // best match leads — e.g. "undo" puts "Edit: Undo" above "Unsplit Editor" (a scattered match).
-            matches.sort(Comparator.comparing(Command::title, byRelevance(q)));
+        scored.sort(Comparator.comparingInt(Scored::score)
+                .reversed()
+                .thenComparingInt((Scored s) -> s.command().title().length())
+                .thenComparing(s -> s.command().title(), String.CASE_INSENSITIVE_ORDER));
+        List<Command> matches = new ArrayList<>(scored.size());
+        for (Scored s : scored) {
+            matches.add(s.command());
         }
         items.setAll(matches);
         selectFirstEnabled();
@@ -337,51 +351,6 @@ public class CommandPalette {
             }
         }
         list.getSelectionModel().clearSelection(); // all matches are disabled
-    }
-
-    /** True if every char of {@code needle} appears in {@code haystack} in order (fuzzy match). */
-    /**
-     * Comparator that orders titles by how well they match {@code query} (best first), tie-broken by
-     * shorter title then case-insensitive alphabetical. Used to rank command-palette results so the most
-     * relevant command leads.
-     */
-    static Comparator<String> byRelevance(String query) {
-        String q = query.toLowerCase(Locale.ROOT).trim();
-        return Comparator.comparingInt((String t) -> -relevance(q, t))
-                .thenComparingInt(String::length)
-                .thenComparing(t -> t, String.CASE_INSENSITIVE_ORDER);
-    }
-
-    /**
-     * Relevance of {@code title} to the (already lowercased) {@code q}: exact (5) &gt; whole-word (4) &gt;
-     * word-start (3) &gt; substring anywhere (2) &gt; scattered subsequence / no substring (1).
-     */
-    static int relevance(String q, String title) {
-        String t = title.toLowerCase(Locale.ROOT);
-        if (t.equals(q)) {
-            return 5;
-        }
-        int idx = t.indexOf(q);
-        if (idx >= 0) {
-            boolean wordStart = idx == 0 || !Character.isLetterOrDigit(t.charAt(idx - 1));
-            int after = idx + q.length();
-            boolean wordEnd = after >= t.length() || !Character.isLetterOrDigit(t.charAt(after));
-            if (wordStart && wordEnd) {
-                return 4;
-            }
-            return wordStart ? 3 : 2;
-        }
-        return 1; // matched only as a scattered subsequence (the filter already guaranteed that)
-    }
-
-    static boolean isSubsequence(String needle, String haystack) {
-        int i = 0;
-        for (int j = 0; i < needle.length() && j < haystack.length(); j++) {
-            if (needle.charAt(i) == haystack.charAt(j)) {
-                i++;
-            }
-        }
-        return i == needle.length();
     }
 
     public void show() {
@@ -415,27 +384,13 @@ public class CommandPalette {
      * and it indexes the label directly (case folded per char) so highlights can't drift on a
      * length-changing lowercase mapping.
      */
+    /**
+     * The emboldened runs for a row. These are {@link FuzzyMatch}'s <em>own</em> ranges — the same call
+     * that scored the row — so the highlight can never point at different characters than the ranking
+     * reasoned about, which it could when the two came from separate matchers.
+     */
     private List<javafx.scene.text.Text> buildTitle(String text) {
-        int[][] ranges = com.editora.completion.MatchHighlighter.matchRanges(text, currentQuery);
-        List<javafx.scene.text.Text> parts = new ArrayList<>();
-        int pos = 0;
-        for (int[] r : ranges) {
-            if (r[0] > pos) {
-                parts.add(titleRun(text.substring(pos, r[0]), false));
-            }
-            parts.add(titleRun(text.substring(r[0], r[1]), true));
-            pos = r[1];
-        }
-        if (pos < text.length()) {
-            parts.add(titleRun(text.substring(pos), false));
-        }
-        return parts;
-    }
-
-    private javafx.scene.text.Text titleRun(String s, boolean matched) {
-        javafx.scene.text.Text t = new javafx.scene.text.Text(s);
-        t.getStyleClass().add(matched ? "palette-match" : "palette-cell-text");
-        return t;
+        return MatchText.runs(text, currentQuery);
     }
 
     private final class CommandCell extends ListCell<Command> {

@@ -67,8 +67,17 @@ public final class FuzzyMatch {
     static final int BONUS_BOUNDARY = 10;
     /** A camelCase hump, or the first digit of a run. */
     static final int BONUS_CAMEL = 8;
-    /** Extra for the very first character of the candidate, on top of the boundary bonus. */
-    static final int BONUS_FIRST_CHAR = 8;
+    /**
+     * The <em>first query character</em>'s bonus counts this many times, wherever in the candidate it
+     * lands — how strongly that character anchors the match matters more than any later one.
+     *
+     * <p>Note it is emphatically not a bonus for sitting at index 0 of the candidate. That was the first
+     * shape of this, and it is wrong for the command palette, whose titles are "Category: Verb": it made
+     * "Undo History" outrank "Edit: Undo" for the query {@code undo}, because the first title happens to
+     * begin with the word while the second merely contains it as its whole verb. There is no reason to
+     * believe the user meant the tool window.
+     */
+    static final int BONUS_FIRST_MULTIPLIER = 2;
     /** Continuing the run begun by the previous matched character. */
     static final int BONUS_CONSECUTIVE = 12;
     /** The typed character had the same case as the candidate's — a tiebreak, deliberately small. */
@@ -77,10 +86,6 @@ public final class FuzzyMatch {
     static final int PENALTY_GAP = -5;
     /** Per character of slack between the first and last matched character. */
     static final int PENALTY_SPREAD = -1;
-    /** Per character of the candidate preceding the first matched one, capped by {@link #MAX_LEAD}. */
-    static final int PENALTY_LEAD = -1;
-    /** Cap on the total lead-in penalty, so a deep path is not scored purely on its depth. */
-    static final int MAX_LEAD = -24;
     /** Awarded when a path's match lies wholly within its final segment. See {@link #ofPath}. */
     static final int BONUS_BASENAME = 48;
 
@@ -234,12 +239,14 @@ public final class FuzzyMatch {
                 if (!eq(sc, qc)) {
                     continue;
                 }
-                int gain = SCORE_MATCH + bonusAt(s, abs) + (sc == qc ? BONUS_EXACT_CASE : 0);
+                int bonus = bonusAt(s, abs);
+                int exact = sc == qc ? BONUS_EXACT_CASE : 0;
                 if (i == 0) {
-                    best[i][j] = gain + Math.max(MAX_LEAD, abs * PENALTY_LEAD);
+                    best[i][j] = SCORE_MATCH + bonus * BONUS_FIRST_MULTIPLIER + exact;
                     from[i][j] = -1;
                     continue;
                 }
+                int gain = SCORE_MATCH + bonus + exact;
                 // Either continue the run from j-1, or jump from the best earlier column (<= j-2).
                 int consec = j >= 1 && best[i - 1][j - 1] != UNREACHABLE
                         ? best[i - 1][j - 1] + BONUS_CONSECUTIVE
@@ -290,7 +297,7 @@ public final class FuzzyMatch {
     private static int bonusAt(String s, int j) {
         char c = s.charAt(j);
         if (j == 0) {
-            return BONUS_BOUNDARY + BONUS_FIRST_CHAR;
+            return BONUS_BOUNDARY;
         }
         char prev = s.charAt(j - 1);
         if (!Character.isLetterOrDigit(prev)) {

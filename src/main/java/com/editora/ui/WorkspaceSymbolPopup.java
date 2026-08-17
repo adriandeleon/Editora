@@ -22,6 +22,7 @@ import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
 import com.editora.lsp.LspManager.WorkspaceSymbolMatch;
+import com.editora.search.FuzzyMatch;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -178,8 +179,12 @@ final class WorkspaceSymbolPopup {
         ops.open(m.file(), m.line(), m.character());
     }
 
+    /** The query the in-flight request was issued for, so its results can be ranked when they land. */
+    private String lastQuery = "";
+
     private void runQuery() {
         String q = query.getText() == null ? "" : query.getText().trim();
+        lastQuery = q;
         if (q.isEmpty()) {
             rows.clear();
             status.setText("");
@@ -195,8 +200,33 @@ final class WorkspaceSymbolPopup {
         });
     }
 
+    /**
+     * Orders the server's results by how well each symbol <em>name</em> matches the query.
+     *
+     * <p>{@code workspace/symbol} decides what matches, and servers differ wildly in what order they hand
+     * it back — jdtls in particular returns something close to index order, so an exact name can sit below
+     * a dozen incidental hits. This does not re-filter (a symbol the server chose to return is kept even
+     * if the name alone doesn't match — the server may have matched on the container), it only sorts;
+     * anything unmatched keeps its server order at the end.
+     */
+    static List<WorkspaceSymbolMatch> rankByName(List<WorkspaceSymbolMatch> matches, String query) {
+        if (query == null || query.isBlank() || matches.size() < 2) {
+            return matches;
+        }
+        record Scored(WorkspaceSymbolMatch match, int score, int index) {}
+        List<Scored> scored = new java.util.ArrayList<>(matches.size());
+        for (int i = 0; i < matches.size(); i++) {
+            FuzzyMatch.Match m = FuzzyMatch.of(matches.get(i).name(), query);
+            scored.add(new Scored(matches.get(i), m == null ? Integer.MIN_VALUE : m.score(), i));
+        }
+        scored.sort(java.util.Comparator.comparingInt((Scored s) -> s.score())
+                .reversed()
+                .thenComparingInt(Scored::index));
+        return scored.stream().map(Scored::match).toList();
+    }
+
     private void populate(List<WorkspaceSymbolMatch> matches) {
-        rows.setAll(matches);
+        rows.setAll(rankByName(matches, lastQuery));
         if (!rows.isEmpty()) {
             list.getSelectionModel().select(0);
         }

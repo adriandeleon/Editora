@@ -1065,8 +1065,11 @@
 .pr-review-file-row.git-status-renamed .pr-review-file-status,
 .pr-review-file-row.git-status-renamed .toolbar-icon { -fx-text-fill: -state-violet; -fx-fill: -state-violet; }
 /* Unsaved/dirty buffer name in the pickers (Open Files palette + Switcher) — mirrors the dirty-tab
-   treatment (amber italic) so every surface that lists open files reads consistently. */
-.dirty-name { -fx-text-fill: -state-amber; -fx-font-style: italic; }
+   treatment (amber italic) so every surface that lists open files reads consistently.
+   Both colour properties on purpose: this class lands on a Label in the tab strip and the project tree,
+   and on the Text runs of a picker row (QuickOpen emboldens the matched characters, so its rows are a
+   TextFlow). A Label reads -fx-text-fill and ignores -fx-fill; a Text is the other way round. */
+.dirty-name { -fx-text-fill: -state-amber; -fx-fill: -state-amber; -fx-font-style: italic; }
 
 /* IntelliJ-style tool window stripes + panels. */
 .tool-stripe {
