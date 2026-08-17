@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Opening a file from the file manager now reuses the running Editora instead of starting a second one.**
+  On Linux and Windows a file manager delivers the path as a command-line argument, which by definition means
+  a new process — so clicking a file while Editora was already open paid a full cold start *and* left a second
+  editor resident (measured: two JVMs at 670 MB and 1707 MB, for what looked like one application). macOS never
+  had this problem, because Finder delivers an Apple Event that reaches the running app; this is the
+  cross-platform equivalent, and it hands the launch to the very same code path that event does.
+
+  A second launch now delivers its files over a loopback socket and exits — measured at ~735 ms (JVM startup,
+  which a new process cannot avoid) against ~1.5 s and a permanently resident second editor. The files open in
+  the focused window, and a focus mode the launcher asked for is applied, so the "Editora Expert Mode" entry
+  still means Expert Mode.
+
+  Deliberately narrow: only a launch that is purely "open these files" is handed over. `--project`,
+  `--new-file`, `--config-dir` and `--dev` shape how a *process* starts and have no honest reading inside a
+  running window, so those still get their own editor — as does `editora` with no files at all. **`--new-instance`**
+  forces a separate editor in any case. An instance is scoped to its config directory, so a `--dev` launch can
+  never hand off to your real editor.
+
+  The endpoint is loopback-only, `0600`, and carries a random token; it is removed on exit, and an endpoint
+  left behind by a crash is detected and reclaimed on the next launch. If anything about the handoff fails,
+  the launch simply starts its own editor — the behaviour before this existed.
+
 ### Changed
 
 - **Startup is ~180 ms faster to the first frame that shows your file** (measured on a packaged Linux build

@@ -422,6 +422,21 @@ public class ConfigManager {
         return resolveConfigDir(System.getenv("EDITORA_CONFIG_DIR"), System.getProperty("user.home", "."), dev);
     }
 
+    /**
+     * The config directory a launch will use, at the full documented precedence: the {@code --config-dir}
+     * CLI argument &gt; {@code EDITORA_CONFIG_DIR} &gt; {@code ~/.editora} (or {@code ~/.editora-dev} under
+     * {@code --dev}).
+     *
+     * <p>Exists so the two places that need it share one rule: the bootstrap {@code ConfigManager} in
+     * {@code App.start}, and the single-instance claim in {@code App.main} — which runs before any
+     * {@code ConfigManager} exists, yet has to name the directory in order to scope an instance to it. A
+     * second copy of this precedence that drifted would silently let a {@code --dev} launch hand off to the
+     * production editor.
+     */
+    public static Path configDirFor(String cliConfigDir, boolean dev) {
+        return cliConfigDir != null && !cliConfigDir.isBlank() ? Path.of(cliConfigDir.trim()) : defaultConfigDir(dev);
+    }
+
     static Path resolveConfigDir(String editoraHome, String userHome) {
         return resolveConfigDir(editoraHome, userHome, false);
     }

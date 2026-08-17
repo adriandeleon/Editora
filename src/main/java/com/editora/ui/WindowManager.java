@@ -283,6 +283,20 @@ public class WindowManager {
      * Event rather than a command-line argument, so {@code App.installMacOpenFilesHandler} routes it here.
      */
     public void openExternalFiles(List<MainController.OpenTarget> files) {
+        openExternalFiles(files, false, false, false);
+    }
+
+    /**
+     * As above, additionally applying a focus mode the delivering launch asked for — the single-instance path
+     * ({@code App.openForwardedLaunch}), where the user clicked a specific launcher entry such as "Editora
+     * Expert Mode" and a window already exists to receive it.
+     *
+     * <p>The mode is applied rather than ignored because the user picked that entry deliberately; a launcher
+     * named "Expert Mode" that silently opens a normal window is the more surprising outcome, and it is a
+     * no-op in the common case where the running window is already in that mode. All three flags false (the
+     * plain overload, and every OS-delivered event) leaves the window's chrome exactly as it was.
+     */
+    public void openExternalFiles(List<MainController.OpenTarget> files, boolean zen, boolean expert, boolean simple) {
         if (files == null || files.isEmpty()) {
             return;
         }
@@ -293,6 +307,9 @@ public class WindowManager {
         }
         if (target == null) {
             return;
+        }
+        if (zen || expert || simple) {
+            target.controller().applyStartupChrome(zen, expert, simple);
         }
         target.controller().openExternalFiles(files);
         focus(target.stage());

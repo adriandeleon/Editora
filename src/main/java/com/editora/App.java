@@ -5,6 +5,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.stage.Stage;
 
 import com.editora.command.KeymapManager;
@@ -27,6 +28,7 @@ public class App extends Application {
     // scope …") — benign noise from bundled-grammar regex quirks. Held in a static field so the JUL
     // logger isn't garbage-collected (which would silently drop the configured level). SEVERE still
     // surfaces real errors.
+    private static final Logger LOG = Logger.getLogger(App.class.getName());
     private static final Logger TM4E_LOG = Logger.getLogger("org.eclipse.tm4e");
 
     // Quiet LSP4J's "Unsupported notification method" WARNINGs — language servers (e.g. JDT LS) send
@@ -58,10 +60,10 @@ public class App extends Application {
         // (~/.editora, or ~/.editora-dev with --dev so a dev instance can't disturb production). The
         // bootstrap ConfigManager loads the shared config once; per-window ConfigManagers reuse it.
         var rawArgs = getParameters().getRaw();
-        String cliConfigDir = configDirArg(rawArgs);
-        ConfigManager bootstrap = cliConfigDir != null
-                ? new ConfigManager(java.nio.file.Path.of(cliConfigDir))
-                : new ConfigManager(devFlag(rawArgs));
+        // One shared resolver, so this can never disagree with the single-instance claim in main() about
+        // which directory (and therefore which instance) this launch belongs to.
+        ConfigManager bootstrap =
+                new ConfigManager(ConfigManager.configDirFor(configDirArg(rawArgs), devFlag(rawArgs)));
         Settings settings = bootstrap.load();
         SharedConfig shared = bootstrap.shared();
         com.editora.perf.Startup.mark(com.editora.perf.Startup.CONFIG_LOADED);
@@ -132,6 +134,32 @@ public class App extends Application {
         // reflection over App never eager-loads a com.sun.glass.ui subclass before start() runs.
         if (isMac()) {
             MacOpenFiles.install(windows);
+        }
+
+        // Serve launches forwarded by a second process (see SingleInstance). Wired here, after the windows
+        // exist, for the same reason the macOS handler is: a launch can arrive while this process is still
+        // starting, and SingleInstance buffers those until now rather than dropping them. The request lands
+        // on the accept thread, so hop to the FX thread before touching any window.
+        if (singleInstance != null && singleInstance.instance() != null) {
+            singleInstance.instance().setListener(args -> Platform.runLater(() -> openForwardedLaunch(windows, args)));
+        }
+    }
+
+    /**
+     * Applies a launch that arrived from another process: open its files in the running editor, honouring a
+     * focus-mode flag if it carried one.
+     *
+     * <p>Routed through the very same {@code WindowManager.openExternalFiles} that Finder's Apple Event uses
+     * on macOS, so a forwarded launch and an OS-delivered one cannot behave differently — the two paths
+     * having drifted is exactly the bug class that produced "opens the file but reports it failed" before.
+     */
+    private static void openForwardedLaunch(com.editora.ui.WindowManager windows, java.util.List<String> args) {
+        try {
+            // fileTargets, not a second parser: these are the argv the forwarding process would itself have
+            // parsed, so they must resolve identically here.
+            windows.openExternalFiles(fileTargets(args), zenFlag(args), expertFlag(args), simpleFlag(args));
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "Could not apply a forwarded launch", e);
         }
     }
 
@@ -248,8 +276,33 @@ public class App extends Application {
         // teardown — a plain `kill`/SIGTERM, an OS quit, or most crashes. Without this, killing the app
         // orphaned the external servers (e.g. jdtls), which then pile up and hold their workspace locks.
         com.editora.process.ProcessRegistry.installShutdownHook();
+        // Hand a plain "open these files" launch to an already-running Editora instead of starting a second
+        // one. This has to happen HERE, before launch(): the whole point is to skip building a second
+        // editor, and once the FX toolkit is up the cost has already been paid. On macOS the equivalent
+        // routing is done by the OS (Finder's openFiles Apple Event → MacOpenFiles), so this covers the
+        // platforms where a file manager can only pass argv.
+        java.util.List<String> argList = java.util.List.of(args);
+        java.nio.file.Path configDir = ConfigManager.configDirFor(configDirArg(argList), devFlag(argList));
+        singleInstance = com.editora.ipc.SingleInstance.start(configDir, argList, shouldForwardLaunch(argList));
+        if (singleInstance.forwarded()) {
+            System.exit(0); // delivered; exiting now is the entire saving (no second window, no second JVM)
+        }
+        if (singleInstance.instance() != null) {
+            // Drop the endpoint on the way out so the next launch claims it immediately rather than paying a
+            // connect timeout to discover we're gone. A crash skips this, which is why an unreachable
+            // endpoint is treated as stale rather than trusted.
+            com.editora.ipc.SingleInstance owned = singleInstance.instance();
+            Runtime.getRuntime().addShutdownHook(new Thread(owned::close, "single-instance-close"));
+        }
         launch(args);
     }
+
+    /**
+     * This process's single-instance endpoint when it is the primary — held statically because it is claimed
+     * in {@link #main} (before any {@code Application} instance exists) and wired to the UI in
+     * {@link #start}. Null when the claim did not happen or was declined.
+     */
+    private static com.editora.ipc.SingleInstance.Result singleInstance;
 
     static String helpText() {
         return """
@@ -265,6 +318,8 @@ public class App extends Application {
                   --single-window[=project]  Open just one window (the named project, else no-project)
                   --no-session          Open only the files given here; don't restore the saved session
                                         instead of restoring all windows; doesn't change the saved layout
+                  --new-instance        Start a separate editor instead of opening the files in the
+                                        already-running one (which is the default when only files are given)
                   --zen                 Start in Zen (distraction-free) mode (session only)
                   --expert              Start in Expert mode: like Zen, but keeps the editor
                                         view (line numbers, status bar) (session only)
@@ -286,6 +341,36 @@ public class App extends Application {
     /** True if {@code --dev} is present (dev mode: separate ~/.editora-dev config; future: more logging). */
     static boolean devFlag(java.util.List<String> args) {
         return args != null && args.contains("--dev");
+    }
+
+    /** True if {@code --new-instance} is present: start a separate editor rather than reusing a running one. */
+    static boolean newInstanceFlag(java.util.List<String> args) {
+        return args != null && args.contains("--new-instance");
+    }
+
+    /**
+     * Whether this launch should be handed to an already-running instance rather than starting a second
+     * editor. Pure, so the policy is unit-tested rather than inferred from behaviour.
+     *
+     * <p>Deliberately narrow: <b>only</b> a launch that is purely "open these files". That is exactly the
+     * file-manager click this exists for, and the one case whose meaning inside a running editor is
+     * unambiguous. The flags that shape how a <em>process</em> starts — {@code --project},
+     * {@code --new-file}, {@code --config-dir}, {@code --dev} — have no honest reading once a window already
+     * exists, so a launch carrying any of them gets its own process rather than a half-applied
+     * interpretation. ({@code --no-session} and {@code --single-window} exist only to make a cold start
+     * cheap; forwarding makes both moot, so they are ignored rather than disqualifying — which matters,
+     * because the packaged {@code .desktop} entry passes them on every click.) The focus-mode flags are
+     * forwarded and applied to the receiving window: the user picked "Expert Mode" deliberately, so honouring
+     * it is less surprising than a launcher that silently doesn't.
+     */
+    static boolean shouldForwardLaunch(java.util.List<String> args) {
+        if (args == null || newInstanceFlag(args)) {
+            return false;
+        }
+        if (projectArg(args) != null || newFileArg(args) != null || configDirArg(args) != null || devFlag(args)) {
+            return false;
+        }
+        return !fileTargets(args).isEmpty();
     }
 
     /** True if {@code --zen} is present (a session-only Zen override — the saved session is untouched). */
@@ -401,6 +486,7 @@ public class App extends Application {
             "--simple",
             "--no-session",
             "--new-file",
+            "--new-instance",
             "--single-window",
             "--version",
             "-V",

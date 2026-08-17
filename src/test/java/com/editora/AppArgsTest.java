@@ -294,6 +294,54 @@ class AppArgsTest {
         assertEquals(0, target.column());
     }
 
+    // --- single-instance forwarding policy ---------------------------------------------------------
+    //
+    // Getting these wrong is silent in both directions: forwarding too eagerly applies a launch inside a
+    // window where it has no clear meaning, and forwarding too rarely quietly reintroduces the second JVM
+    // this exists to avoid. The packaged desktop entry in particular MUST forward — it is the whole point.
+
+    @Test
+    void aPlainFileLaunchIsForwardedToTheRunningEditor() {
+        assertTrue(App.shouldForwardLaunch(List.of("/src/Foo.java")));
+        assertTrue(App.shouldForwardLaunch(List.of("--expert", "/src/Foo.java")));
+    }
+
+    @Test
+    void thePackagedDesktopEntrysLaunchIsForwarded() {
+        // Exactly what the .deb "Editora Expert Mode" entry passes. --no-session/--single-window exist only
+        // to make a *cold* start cheap, so they must not disqualify a handoff — forwarding makes both moot.
+        assertTrue(App.shouldForwardLaunch(List.of("--expert", "--single-window", "--no-session", "/src/README.md")));
+    }
+
+    @Test
+    void aLaunchWithNoFilesStartsItsOwnEditor() {
+        // Nothing to deliver; forwarding would silently turn "run Editora" into "focus the other one".
+        assertFalse(App.shouldForwardLaunch(List.of()));
+        assertFalse(App.shouldForwardLaunch(List.of("--expert")));
+    }
+
+    @Test
+    void newInstanceOptsOut() {
+        assertFalse(App.shouldForwardLaunch(List.of("--new-instance", "/src/Foo.java")));
+    }
+
+    @Test
+    void launchesThatShapeTheProcessItselfAreNotForwarded() {
+        // Each of these means something at *startup* that has no honest reading inside a running window, so
+        // they get their own process rather than a half-applied interpretation.
+        assertFalse(App.shouldForwardLaunch(List.of("--project=/src/app", "/src/Foo.java")));
+        assertFalse(App.shouldForwardLaunch(List.of("--new-file=notes.md", "/src/Foo.java")));
+        assertFalse(App.shouldForwardLaunch(List.of("--config-dir=/tmp/cfg", "/src/Foo.java")));
+        assertFalse(App.shouldForwardLaunch(List.of("--dev", "/src/Foo.java")));
+    }
+
+    @Test
+    void aLeakedForeignFlagValueIsNotMistakenForAFileToForward() {
+        // fileTargets already refuses a non-existent token sitting after a foreign flag (#791); the
+        // forwarding policy inherits that, so such a launch must not be treated as "open these files".
+        assertFalse(App.shouldForwardLaunch(List.of("--add-exports", "javafx.graphics/com.sun.glass.ui=com.editora")));
+    }
+
     @Test
     void aStringThatIsNoPathAtAllIsSkippedRatherThanThrown() {
         // Windows rejects characters a path may not contain, and an Apple Event is not something we
