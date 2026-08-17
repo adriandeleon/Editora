@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A file opened from the file manager now brings the running Editora to the front**, instead of leaving it
+  behind the file manager with a GNOME notification you have to click.
+
+  This was the cost of the single-instance handoff added in 0.12.1, and the cause is the compositor rather
+  than Editora. When a file manager launches a **new** process it hands that process an activation token, so
+  the window it maps counts as user-initiated and gets focused. Forwarding breaks the chain: the token goes to
+  the forwarder, which delivers the file and exits *without ever mapping a window*, while the process that
+  owns the window is an older one you have not touched recently — so its raise is an unsolicited focus request
+  from a background application, which GNOME refuses, flagging the window as demanding attention instead.
+
+  The window is now briefly pinned above the others to bring it forward — which the compositor honours,
+  because that is a window *state* rather than a focus request — and released straight after, so nothing stays
+  on top. The raise also happens *before* the file is opened rather than after, so it is immediate instead of
+  waiting on the file to load, and still happens if opening fails.
+
 ## [0.12.1] - 2026-08-17
 
 ### Added
