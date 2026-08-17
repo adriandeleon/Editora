@@ -308,11 +308,15 @@ public class WindowManager {
         if (target == null) {
             return;
         }
+        // Raise BEFORE opening, not after. Two reasons: the window should come forward the instant the click
+        // is delivered rather than after a file read, tab build and first highlight (on a busy FX thread that
+        // is visibly late); and if opening throws, the user would otherwise be left with a window that never
+        // came forward at all.
+        presentForExternalLaunch(target.stage());
         if (zen || expert || simple) {
             target.controller().applyStartupChrome(zen, expert, simple);
         }
         target.controller().openExternalFiles(files);
-        focus(target.stage());
     }
 
     /** The currently-focused window, else the most recently built one (null when no window is open). */
@@ -832,6 +836,48 @@ public class WindowManager {
         }
         stage.toFront();
         stage.requestFocus();
+    }
+
+    /** How long the window is pinned above others while the compositor settles the raise; see below. */
+    private static final Duration EXTERNAL_RAISE_PIN = Duration.millis(300);
+
+    /**
+     * Brings a window forward for a launch that arrived from <em>outside</em> the app — a file-manager click
+     * handed over by {@code ipc.SingleInstance}, or an OS open-files event.
+     *
+     * <p>{@link #focus} alone is not enough here, and the reason is the compositor rather than JavaFX. When a
+     * file manager launches a <b>new</b> process it hands it an activation token
+     * ({@code XDG_ACTIVATION_TOKEN} / {@code DESKTOP_STARTUP_ID}), so the window that process maps counts as
+     * user-initiated and is focused. A forwarded launch breaks that chain: the token goes to the forwarder,
+     * which delivers its files and exits <em>without ever mapping a window</em>, while the process that does
+     * own the window is an older one the user has not touched recently. Its {@code toFront()} is then an
+     * unsolicited focus request from a background application, and GNOME/Mutter refuses it — raising
+     * {@code _NET_WM_STATE_DEMANDS_ATTENTION} instead, which is the "click to bring it forward" notification,
+     * with the window still sitting under the file manager.
+     *
+     * <p>The workaround asks for something the compositor does not arbitrate: {@code alwaysOnTop} maps to
+     * {@code _NET_WM_STATE_ABOVE}, a window <em>state</em> rather than a focus request, so it is honoured from
+     * a background app. Pinning briefly puts the window physically in front, then it is released so it does
+     * not stay above everything else. {@code toFront}/{@code requestFocus} are still issued, because where
+     * they are permitted (macOS, and X11 sessions that allow it) they additionally give keyboard focus, which
+     * the ABOVE state alone does not.
+     *
+     * <p>Scoped deliberately to externally-delivered launches. Internal callers (switching project windows,
+     * {@code focusKey}) run while Editora is already the active application, where a plain focus request is
+     * granted and pinning a window above every other app would be an unpleasant surprise.
+     */
+    private static void presentForExternalLaunch(Stage stage) {
+        focus(stage);
+        try {
+            stage.setAlwaysOnTop(true);
+            PauseTransition release = new PauseTransition(EXTERNAL_RAISE_PIN);
+            // Unconditionally cleared: a window left permanently above every other application would be a
+            // far worse bug than the one this fixes.
+            release.setOnFinished(e -> stage.setAlwaysOnTop(false));
+            release.play();
+        } catch (RuntimeException e) {
+            stage.setAlwaysOnTop(false); // never leave it pinned
+        }
     }
 
     /** Restores a window's size/position/maximized state from its session (see {@code App} original). */
