@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import java.time.Duration;
 
+import javafx.animation.AnimationTimer;
 import javafx.application.Platform;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
@@ -59,6 +60,10 @@ final class Minimap extends Region {
     private boolean painting;
 
     private boolean redrawPending;
+    /** A content render is queued for this pulse; see {@link #renderContent}. */
+    private boolean renderPending;
+    /** False until the first content render has run, which is the one held back until after first paint. */
+    private boolean firstRenderDone;
     /** Visual width of a tab character, in columns. */
     private int tabSize = 4;
     /** LSP diagnostics drawn as colored stripes on the right edge (IntelliJ-style); never cached. */
@@ -215,8 +220,53 @@ final class Minimap extends Region {
         area.showParagraphAtTop((int) Math.round(fraction * (total - 1)));
     }
 
-    /** Renders the document content into the canvas, caches it, then draws the viewport on top. */
+    /**
+     * Requests a content render, coalesced to at most one per pulse — and, for the <b>first</b> one, held
+     * until the editor has actually painted.
+     *
+     * <p>Both halves exist because a content render is far from free: it iterates every paragraph and then
+     * calls {@code canvas.snapshot()}, which forces a synchronous full-scene layout, and finishes in
+     * {@link #drawViewport} whose {@code firstVisibleParToAllParIndex()} forces a {@code VirtualFlow} layout
+     * on top of that. At startup the triggers arrive in a burst — theme colors, tab size, and the content
+     * settling all fire one each — so the minimap used to run that whole sequence three times over
+     * <em>before</em> the editor's first frame. Measured on a packaged build, it was the single largest
+     * piece of app code on the path to first paint (~135–230 ms of a ~1.6 s startup).
+     *
+     * <p>The minimap is a secondary navigation aid: nothing about it needs to precede the text the user is
+     * waiting for. Deferring the first render by two animation frames guarantees the editor has painted
+     * first; later renders only coalesce (the 200 ms edit debounce already paces those), so typing is
+     * unaffected. Correctness is unchanged either way — every trigger still results in a render, and a
+     * render always draws from the current document.
+     */
     private void renderContent() {
+        if (renderPending) {
+            return; // a render is already queued for this pulse; it will pick up whatever changed
+        }
+        renderPending = true;
+        if (firstRenderDone) {
+            Platform.runLater(this::renderNow);
+            return;
+        }
+        // A pulse's handle() runs at the start of a pulse, before that pulse renders, so two ticks is what
+        // proves a frame carrying the editor's content actually completed. Same reasoning as the startup
+        // instrumentation's first-paint mark.
+        new AnimationTimer() {
+            private int ticks;
+
+            @Override
+            public void handle(long now) {
+                if (++ticks >= 2) {
+                    stop();
+                    renderNow();
+                }
+            }
+        }.start();
+    }
+
+    /** Runs a queued render, guarding against the nested paint {@code snapshot()}'s forced layout can cause. */
+    private void renderNow() {
+        renderPending = false;
+        firstRenderDone = true;
         if (painting) {
             return; // nested paint triggered by snapshot()'s forced layout — let the outer render finish
         }

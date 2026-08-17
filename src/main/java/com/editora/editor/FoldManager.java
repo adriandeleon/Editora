@@ -347,17 +347,25 @@ public final class FoldManager {
         // graphic factory reads the (now-updated) byStart when it lazily builds offscreen rows on scroll,
         // so recreating them eagerly is wasted work — and recreating thousands at once (e.g. the initial
         // recompute of a large file, which marks every fold header changed) froze the FX thread for seconds.
-        int first = 0;
-        int last = -1;
-        try {
-            first = Math.max(0, area.firstVisibleParToAllParIndex());
-            last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-        } catch (RuntimeException notLaidOutYet) {
-            last = -1; // no viewport yet (e.g. during open) — the factory builds correct graphics on layout
-        }
-        for (int line : changed) {
-            if (line >= first && line <= last) {
-                area.recreateParagraphGraphic(line);
+        // Ask where the viewport is ONLY when something actually has to be recreated. Both
+        // firstVisibleParToAllParIndex and lastVisibleParToAllParIndex force a VirtualFlow layout, so
+        // querying them unconditionally spent a synchronous layout pass to discover there was nothing to do
+        // — and that is the common case twice over: on the typing path most edits leave the fold structure
+        // untouched (this runs on every 250 ms settle), and at startup the recompute that setLanguage
+        // triggers runs against a still-empty document, measured at ~10 ms of pure forced layout.
+        if (!changed.isEmpty()) {
+            int first = 0;
+            int last = -1;
+            try {
+                first = Math.max(0, area.firstVisibleParToAllParIndex());
+                last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
+            } catch (RuntimeException notLaidOutYet) {
+                last = -1; // no viewport yet (e.g. during open) — the factory builds correct graphics on layout
+            }
+            for (int line : changed) {
+                if (line >= first && line <= last) {
+                    area.recreateParagraphGraphic(line);
+                }
             }
         }
         // The line-number gutter pads to the digit width of the line count (see formatLineNo). Since the

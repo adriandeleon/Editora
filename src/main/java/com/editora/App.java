@@ -43,6 +43,7 @@ public class App extends Application {
     @Override
     public void start(Stage stage) throws IOException {
         com.editora.perf.Startup.mark(com.editora.perf.Startup.FX_START);
+        com.editora.perf.Startup.startSampler(Thread.currentThread()); // inert unless EDITORA_PERF_SAMPLE=1
         com.editora.ui.Fonts.load(); // register bundled fonts before any UI/CSS uses them
 
         // On macOS the JavaFX/AppKit (FX application) thread's context classloader can be null, which

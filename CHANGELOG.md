@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Startup is ~180 ms faster to the first frame that shows your file** (measured on a packaged Linux build
+  opening a file with `--expert`: median 1683 ms → 1503 ms, ~11%). Three pieces of work were running on the
+  JavaFX thread *before* the editor had painted, none of which the first frame needs:
+
+  - The **minimap** was the largest single piece of app code on the path to first paint (~135–230 ms). Its
+    render iterates every paragraph and then calls `snapshot()`, which forces a synchronous full-scene
+    layout, and finishes by forcing a `VirtualFlow` layout on top of that — and at startup the triggers
+    arrive in a burst (theme colors, tab size, content settling), so the whole sequence ran three times over
+    before the text appeared. Renders now coalesce to one per pulse, and the first is held until the editor
+    has painted. The minimap is a secondary navigation aid; nothing about it needs to precede the text you
+    are waiting for. Typing is unaffected — the 200 ms edit debounce already paced those renders.
+
+  - The **debug adapter locations** for Python and JavaScript were resolved on the JavaFX thread at startup,
+    walking the VS Code / mason / plugin directories (~30–50 ms) for values not read until a debug session
+    actually launches — and they were resolved *again*, off-thread, moments later, by the existing
+    availability probes. Only the off-thread resolution remains. The Java bundle is still located
+    synchronously: it has to reach the LSP layer before any jdtls session starts.
+
+  - The **rest of the session restore** now yields a couple of frames before continuing. The file you asked
+    for is already front-loaded, but the remaining tabs were filled in the very pulses that lay out and
+    render it, so with a session of any size they pushed back the frame you were waiting for.
+
+  - **Fold recompute no longer forces a layout pass to discover it has nothing to do.** Locating the
+    viewport (`firstVisibleParToAllParIndex`) forces a `VirtualFlow` layout, and the recompute did it on
+    every run — including the ones whose fold structure was identical, where the loop it feeds does nothing
+    at all. That is the common case twice over: at startup the recompute triggered by setting a buffer's
+    language runs against a still-empty document (~10 ms of pure forced layout), and while **typing** this
+    runs on every 250 ms settle, where most edits leave the fold structure untouched. It also stops
+    perturbing `estimatedScrollY`, which that query does as a side effect, on runs that change nothing.
+
+  If a startup regression is ever suspected, measure it rather than reason about it: `scripts/measure-startup.sh`
+  reports the phase breakdown, and `EDITORA_PERF_SAMPLE=1` now adds a per-phase sample of what is holding the
+  JavaFX thread. Both of the costs above read as "rendering is slow" from the call graph, and neither was.
+
 ## [0.12.0] - 2026-08-16
 
 ### Added
