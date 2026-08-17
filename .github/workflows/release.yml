@@ -54,13 +54,23 @@ jobs:
           # Names this leg in the AOT step's job-summary row and, if the cache is missing, in its error
           # annotation — so "which target shipped uncached?" is answerable from the run page.
           EDITORA_TARGET: ${{ matrix.target }}
-          # Set to '1' to make a missing AOT cache FAIL the leg rather than only annotate it. Left off for
-          # now: macOS arm64 shipped uncached from v0.9.1 through v0.9.8 (JavaFX 26's Metal pipeline
-          # aborting on that runner's paravirtual GPU), and the fix cannot be verified anywhere except this
-          # runner — arming the gate before a green tag would risk blocking a release over a perf-only
-          # artifact. Once a release shows "AOT cache trained" for all five targets, flip this to '1' to
-          # keep it that way.
-          EDITORA_REQUIRE_AOT: '0'
+          # A missing AOT cache FAILS this leg rather than only annotating it, so the release cannot publish
+          # a silently ~28%-slower cold start. Armed after v0.12.1 trained on all five targets (72-73 MB
+          # each) — the green tag the previous, deliberately-unarmed version of this comment was waiting
+          # for. It stayed unarmed until then because macOS arm64 shipped uncached from v0.9.1 through
+          # v0.9.8 (JavaFX 26's Metal pipeline aborting on that runner's paravirtual GPU) and the fix is
+          # verifiable on no other machine, so arming it first risked blocking a release on an unproven fix.
+          #
+          # What it does when it fires: aot_build.java's reportNoCache exits 3, exec-maven-plugin turns that
+          # into a BUILD FAILURE, this matrix leg fails, and the Release job (which `needs` the matrix) never
+          # runs — so nothing is published, rather than a release where one platform is quietly slow. The
+          # annotation names the target. Verified end to end before arming, including that exit 3 really does
+          # fail Maven; the gate is worthless if it doesn't.
+          #
+          # If it ever fires on a legitimate release: the cache is a pure optimisation, so the fastest way
+          # out is to set this back to '0' for that tag and fix the trainer afterwards — do NOT weaken
+          # aot_build.java, whose whole job is to notice.
+          EDITORA_REQUIRE_AOT: '1'
         run: ./mvnw -B --no-transfer-progress clean -Pdist -DskipTests package
 
       # Portable single-file Linux build from the AOT-trained app-image (no sandbox — host tools work;
