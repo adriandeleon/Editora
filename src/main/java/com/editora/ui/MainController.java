@@ -298,6 +298,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private QuickOpen<ToolWindow> toolWindowPalette;
     private QuickOpen<ToolWindow> splitToolWindowPalette;
     private QuickOpen<com.editora.editor.UndoHistory.Checkpoint> undoHistoryPalette;
+    private QuickOpen<NavigationHistory.Location> recentLocationsPalette;
     private QuickOpen<com.editora.snippet.Snippet> snippetPalette;
     private com.editora.snippet.SnippetManager snippets;
     private com.editora.template.TemplateRegistry templates;
@@ -1257,6 +1258,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         openFilesPalette.setOverlayHost(overlayHost);
         toolWindowPalette.setOverlayHost(overlayHost);
         undoHistoryPalette.setOverlayHost(overlayHost);
+        recentLocationsPalette.setOverlayHost(overlayHost);
         bookmarkCoordinator.wireOverlayHost();
         notesCoordinator.wireOverlayHost();
         snippetPalette.setOverlayHost(overlayHost);
@@ -1695,6 +1697,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 c -> c.linePreview().isEmpty() ? tr("undoHistory.blankLine") : c.linePreview(),
                 MainController::undoCheckpointTime, // detail column = the capture time
                 this::restoreUndoCheckpoint);
+        recentLocationsPalette = new QuickOpen<>(
+                tr("nav.recentLocations.title"),
+                tr("nav.recentLocations.prompt"),
+                () -> new ArrayList<>(navHistory.recent()),
+                loc -> loc.snippet().isEmpty() ? tr("nav.recentLocations.blankLine") : loc.snippet(),
+                MainController::locationLabel, // detail column = file:line
+                // Matching the snippet alone would make "the file I was in" unfindable, and matching the
+                // label alone would make "the line about X" unfindable; the row shows both, so both match.
+                loc -> loc.snippet() + " " + locationLabel(loc),
+                loc -> openAndGoto(loc.path(), loc.line(), loc.column()));
         snippetPalette = new QuickOpen<>(
                 "Insert Snippet",
                 "Type to filter snippets…",
@@ -5109,9 +5121,37 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         if (origin != null) {
-            navHistory.record(origin);
+            navHistory.record(withSnippet(origin));
         }
-        navHistory.record(dest);
+        navHistory.record(withSnippet(dest));
+    }
+
+    /** Cap on a recorded line's text, so one minified line can't sit in the history at full length. */
+    private static final int MAX_LOCATION_SNIPPET = 120;
+
+    /**
+     * Attaches the location's line text, so a recent-locations list can show what is there rather than
+     * only where it is. Both call sites record after the target buffer is on screen, so the line is
+     * readable; a location whose file is not open keeps an empty snippet rather than putting a disk read
+     * on the navigation path.
+     */
+    private NavigationHistory.Location withSnippet(NavigationHistory.Location loc) {
+        if (loc == null || !loc.snippet().isEmpty()) {
+            return loc;
+        }
+        return new NavigationHistory.Location(loc.path(), loc.line(), loc.column(), lineTextAt(loc.path(), loc.line()));
+    }
+
+    /** The trimmed, length-capped text of {@code line} in an open buffer for {@code path}; "" if not open. */
+    private String lineTextAt(Path path, int line) {
+        Tab tab = tabForPath(path);
+        EditorBuffer buffer = tab == null ? null : bufferOf(tab);
+        CodeArea area = buffer == null ? null : buffer.getArea();
+        if (area == null || line < 0 || line >= area.getParagraphs().size()) {
+            return "";
+        }
+        String text = area.getParagraph(line).getText().strip();
+        return text.length() <= MAX_LOCATION_SNIPPET ? text : text.substring(0, MAX_LOCATION_SNIPPET) + "…";
     }
 
     /** {@code nav.back}: return to the previous location in the jump list. */
@@ -5134,6 +5174,26 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         navigating = true;
         openAndGoto(loc.path(), loc.line(), loc.column());
+    }
+
+    /**
+     * {@code nav.recentLocations}: a picker over the places visited in this session, newest first.
+     *
+     * <p>The counterpart to Recent Files, and a different question: recent files answers "which file",
+     * this answers "where in it" — which is what you actually lost when a jump took you elsewhere. It
+     * reads the same trail Back walks, so the two can never disagree about where you have been.
+     */
+    private void showRecentLocations() {
+        if (navHistory.recent().isEmpty()) {
+            setStatus(tr("status.nav.noRecentLocations"));
+            return;
+        }
+        recentLocationsPalette.show(stage);
+    }
+
+    /** {@code file.java:214} — a location's file and 1-based line, for a picker's detail column. */
+    private static String locationLabel(NavigationHistory.Location loc) {
+        return loc.path().getFileName() + ":" + (loc.line() + 1);
     }
 
     /** A stack-trace location double-clicked in the Run/Debug console: resolve + jump. An absolute
@@ -16290,6 +16350,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.selectToBracket", this::selectToBracket));
         registry.register(Command.of("nav.back", this::navBack));
         registry.register(Command.of("nav.forward", this::navForward));
+        registry.register(Command.of("nav.recentLocations", this::showRecentLocations));
         registry.register(
                 Command.of("nav.beginningOfDefun", () -> sexpMove(com.editora.editops.SexpNav::beginningOfDefun)));
         registry.register(Command.of("nav.endOfDefun", () -> sexpMove(com.editora.editops.SexpNav::endOfDefun)));
