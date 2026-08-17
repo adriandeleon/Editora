@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-08-17
+
 ### Added
 
 - **Opening a file from the file manager now reuses the running Editora instead of starting a second one.**
@@ -33,8 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Startup is ~180 ms faster to the first frame that shows your file** (measured on a packaged Linux build
-  opening a file with `--expert`: median 1683 ms → 1503 ms, ~11%). Three pieces of work were running on the
+- **Startup is ~225 ms faster to the first frame that shows your file** (measured on a packaged Linux build
+  opening a file with `--expert`: median 1702 ms → 1477 ms, ~13%). Four pieces of work were running on the
   JavaFX thread *before* the editor had painted, none of which the first frame needs:
 
   - The **minimap** was the largest single piece of app code on the path to first paint (~135–230 ms). Its
