@@ -8763,6 +8763,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         return buffer != null && buffer.isDirty();
     }
 
+    /**
+     * Whether this window already has {@code file} open. Used by {@link WindowManager} to route an
+     * externally-delivered launch to the window that already holds the file, rather than opening a second
+     * buffer on it in a new window — two independent buffers over one file is an edit-loss hazard rather than
+     * mere clutter, since saving one leaves the other stale behind an external-change prompt.
+     */
+    boolean hasFileOpen(Path file) {
+        return file != null && tabForPath(file) != null;
+    }
+
     private Tab tabForPath(Path file) {
         String target = pathKey(file);
         for (Tab tab : editorArea.tabs()) {
