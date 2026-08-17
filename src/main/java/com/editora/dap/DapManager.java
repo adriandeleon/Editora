@@ -137,9 +137,10 @@ public final class DapManager implements DapClient.Host {
     }
 
     /**
-     * Stores the master enable flag + every language's enable/command, re-resolves the java-debug bundle
-     * jar(s) and the python/js adapter locations (filesystem, cheap — like the existing java {@code locate}).
-     * Availability (which needs a subprocess probe) is set later by {@link #detectPython}/{@link #detectJs}.
+     * Stores the master enable flag + every language's enable/command and re-resolves the java-debug bundle
+     * jar(s) — that one synchronously, because it must reach the LSP layer before any jdtls session starts.
+     * The python/js adapter <em>locations</em> and their availability are both resolved later, off-thread, by
+     * {@link #detectPython}/{@link #detectJs}.
      */
     public void configure(
             boolean enabled,
@@ -155,16 +156,18 @@ public final class DapManager implements DapClient.Host {
         this.pythonCommand = pythonCommand == null ? "" : pythonCommand;
         this.jsEnabled = jsEnabled;
         this.jsPath = jsPath == null ? "" : jsPath;
-        this.debugpyDir = enabled && pythonEnabled
-                ? DebugAdapterLocator.locateDebugpy("", home()).orElse(null)
-                : null;
-        this.jsServer = enabled && jsEnabled
-                ? DebugAdapterLocator.locateJsDebugServer(this.jsPath, home()).orElse(null)
-                : null;
+        // The python/js adapter locations are deliberately NOT resolved here. Locating them walks the VS
+        // Code / mason / plugin directories, and the only caller (DebugCoordinator.applySupport) follows
+        // this immediately with detectPython/detectJs, which relocate them off-thread and assign these very
+        // fields. Resolving here as well duplicated that walk on the FX thread during startup — measured at
+        // ~30-50 ms on the path to first paint, for values not read until a debug session actually launches.
+        // Only the clearing has to happen synchronously: with the feature off, detect* never runs to null it.
         if (!enabled || !pythonEnabled) {
+            this.debugpyDir = null;
             this.pythonAvailable = false;
         }
         if (!enabled || !jsEnabled) {
+            this.jsServer = null;
             this.jsAvailable = false;
         }
     }

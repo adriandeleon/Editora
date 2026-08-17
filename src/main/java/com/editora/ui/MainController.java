@@ -6479,9 +6479,35 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // run it now rather than after the whole restore — a caret jump needs its content, nothing
                 // more. The remaining files keep filling behind it.
                 runPendingStartupAction(false);
+                // ...but not in the frames the visible file is still being painted in. Filling a background
+                // tab is cheap per file, yet it lands on the FX thread inside the very pulses that lay out
+                // and render the selected one, so with a session of any size it pushes back the frame the
+                // user is actually waiting for. Yielding a couple of frames first costs the full restore
+                // ~2 frames total and takes every background file off the path to first paint.
+                afterNextPaint(() -> fillSessionFiles(files, buffers, order, k + 1));
+                return;
             }
             fillSessionFiles(files, buffers, order, k + 1);
         });
+    }
+
+    /**
+     * Runs {@code action} once the current content has had a frame to paint. A pulse's {@code handle()} runs
+     * at the <em>start</em> of a pulse, before that pulse renders, so two ticks is what proves a frame
+     * completed — the same reasoning as the startup instrumentation's first-paint mark.
+     */
+    private static void afterNextPaint(Runnable action) {
+        new javafx.animation.AnimationTimer() {
+            private int ticks;
+
+            @Override
+            public void handle(long now) {
+                if (++ticks >= 2) {
+                    stop();
+                    action.run();
+                }
+            }
+        }.start();
     }
 
     /** A startup file to open, with an optional 1-based line/column ({@code 0} = unspecified). */

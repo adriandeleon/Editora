@@ -52,7 +52,15 @@ public final class Startup {
     /** Timing origin: the harness-supplied T0 if given, else the OS's process start (never null). */
     private static final Instant ORIGIN = origin();
 
+    /** Sample the FX thread's stack between marks; see {@link #startSampler}. Needs {@code EDITORA_PERF}. */
+    private static final boolean SAMPLE =
+            System.getProperty("editora.perfSample") != null || "1".equals(System.getenv("EDITORA_PERF_SAMPLE"));
+
+    /** Fine enough to attribute a ~100 ms stall, coarse enough not to perturb what it measures. */
+    private static final int SAMPLE_INTERVAL_MS = 5;
+
     private static final List<Mark> MARKS = new ArrayList<>();
+    private static final List<String> SAMPLES = new ArrayList<>();
     private static boolean reported;
 
     /** One phase and how long after process start it happened. */
@@ -97,6 +105,93 @@ public final class Startup {
         }
     }
 
+    /**
+     * Starts sampling the FX application thread's stack, so a long gap between two marks can be attributed
+     * rather than guessed at. Opt-in via {@code EDITORA_PERF_SAMPLE=1} on top of {@code EDITORA_PERF}.
+     *
+     * <p>This exists because the interesting gap is <em>not</em> rendering: the last stretch before
+     * {@link #FIRST_PAINT} is bounded by two animation-timer ticks (~33 ms of real frames), so anything
+     * longer means the FX thread was busy and pulses were not running at all. A sampler names the method
+     * that held it; reasoning from the call graph repeatedly names the wrong one.
+     *
+     * <p>Sampling a thread's stack is safe (no suspension, no instrumentation) and the sampler is a daemon,
+     * so it can never hold the JVM open. Frames are aggregated by their deepest {@code com.editora} frame —
+     * the app method responsible — with the raw leaf kept for context.
+     */
+    public static void startSampler(Thread fxThread) {
+        if (!ENABLED || !SAMPLE || fxThread == null) {
+            return;
+        }
+        Thread t = new Thread(
+                () -> {
+                    while (!Thread.currentThread().isInterrupted()) {
+                        StackTraceElement[] stack = fxThread.getStackTrace();
+                        if (stack.length > 0) {
+                            // Read the phase before taking the SAMPLES lock: report() holds MARKS and then
+                            // formats samples, so acquiring them in the other order here would invert the
+                            // lock order between the two threads.
+                            String phase;
+                            synchronized (MARKS) {
+                                phase = MARKS.isEmpty()
+                                        ? "?"
+                                        : MARKS.get(MARKS.size() - 1).phase();
+                            }
+                            String frame = attribute(stack);
+                            synchronized (SAMPLES) {
+                                SAMPLES.add(phase + " | " + frame);
+                            }
+                        }
+                        try {
+                            Thread.sleep(SAMPLE_INTERVAL_MS);
+                        } catch (InterruptedException e) {
+                            return;
+                        }
+                    }
+                },
+                "editora-perf-sampler");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /**
+     * The frame a sample is blamed on: the deepest {@code com.editora} frame, since a JDK/JavaFX leaf
+     * ({@code Object.wait}, a CSS lookup) says what is running but not which app code asked for it. Falls
+     * back to the leaf when no app frame is on the stack, which is itself the useful answer — it means the
+     * toolkit, not Editora, was busy.
+     */
+    private static String attribute(StackTraceElement[] stack) {
+        for (StackTraceElement e : stack) {
+            if (e.getClassName().startsWith("com.editora.")) {
+                return e.getClassName().substring("com.editora.".length()) + "." + e.getMethodName();
+            }
+        }
+        StackTraceElement leaf = stack[0];
+        return "(toolkit) " + leaf.getClassName() + "." + leaf.getMethodName();
+    }
+
+    /** Renders the sampler's tally, hottest first. Empty when sampling is off. */
+    public static String sampleReport() {
+        List<String> snapshot;
+        synchronized (SAMPLES) {
+            if (SAMPLES.isEmpty()) {
+                return "";
+            }
+            snapshot = List.copyOf(SAMPLES);
+        }
+        java.util.Map<String, Integer> tally = new java.util.HashMap<>();
+        for (String s : snapshot) {
+            tally.merge(s, 1, Integer::sum);
+        }
+        StringBuilder sb = new StringBuilder(
+                "[perf] FX-thread samples (" + snapshot.size() + " @ " + SAMPLE_INTERVAL_MS + "ms)\n");
+        tally.entrySet().stream()
+                .sorted(java.util.Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(40)
+                .forEach(e -> sb.append(
+                        String.format("[perf]   %5d ms  %s%n", e.getValue() * SAMPLE_INTERVAL_MS, e.getKey())));
+        return sb.toString();
+    }
+
     /** Prints the report to stderr (once). Also mirrored into the Debug Log by the caller if it wants. */
     public static void report() {
         if (!ENABLED) {
@@ -111,6 +206,7 @@ public final class Startup {
             snapshot = List.copyOf(MARKS);
         }
         System.err.print(format(snapshot));
+        System.err.print(sampleReport());
     }
 
     /**
