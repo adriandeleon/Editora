@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-08-17
+
 ### Fixed
 
 - **A file opened from the file manager now gets a window of its own** instead of landing as a tab in
