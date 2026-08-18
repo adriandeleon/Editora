@@ -1139,6 +1139,11 @@ public class EditorBuffer implements TabContent {
         return stickyLines;
     }
 
+    /** Package-visible for the FX test: the bar node itself, so a test can assert it is actually laid out. */
+    javafx.scene.Node stickyScrollNode() {
+        return stickyScroll.node();
+    }
+
     private java.util.List<Integer> stickyLines = java.util.List.of();
 
     private void updateStickyScroll() {
@@ -1170,6 +1175,12 @@ public class EditorBuffer implements TabContent {
      * result would otherwise be untestable.
      */
     void stickyLinesFor(int firstVisible) {
+        // Attach here rather than trusting attachControlToCodePane(). That runs from rebuildViewHost(),
+        // which only fires when the view mode or split CHANGES — and `viewHost` is built in a field
+        // initializer, so a plain buffer that never changes mode (i.e. every ordinary code file) never
+        // called it and the bar was never in the scene graph at all. This is the one place that is
+        // guaranteed to run right before the bar is needed, and placeStickyScroll is idempotent.
+        placeStickyScroll();
         CodeArea a = focusedArea;
         stickyLines = StickyScroll.headerLines(folds.regions(), firstVisible);
         stickyScroll.update(a, stickyLines, getTabSize(), this::jumpToLine);

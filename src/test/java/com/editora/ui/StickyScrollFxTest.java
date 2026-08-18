@@ -65,6 +65,19 @@ class StickyScrollFxTest {
         return (List<Integer>) FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "stickyLines"));
     }
 
+    /** Calls a package-private EditorBuffer member — this test lives in com.editora.ui. */
+    private static Object call(Object target, String method, Object... argsAndTypes) {
+        try {
+            java.lang.reflect.Method m = argsAndTypes.length == 0
+                    ? EditorBuffer.class.getDeclaredMethod(method)
+                    : EditorBuffer.class.getDeclaredMethod(method, (Class<?>) argsAndTypes[0]);
+            m.setAccessible(true);
+            return argsAndTypes.length == 0 ? m.invoke(target) : m.invoke(target, argsAndTypes[1]);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     /** Drives the buffer's own update path for a viewport starting at {@code firstVisible}. */
     private static List<Integer> pinnedFor(EditorBuffer b, int firstVisible) throws Exception {
         FxTestSupport.runOnFx(() -> {
@@ -98,6 +111,45 @@ class StickyScrollFxTest {
         assertFalse(pinnedFor(b, 100).isEmpty());
         FxTestSupport.runOnFx(() -> b.setStickyScrollEnabled(false));
         assertTrue(pinned(b).isEmpty(), "disabling must clear what is pinned, not leave it frozen on screen");
+    }
+
+    /**
+     * The bar is actually on screen: in the scene graph, visible, and with real width and height after a
+     * layout pass.
+     *
+     * <p>This is the test that was missing. Every other assertion here is about the model — which lines
+     * ought to be pinned — and the model was right while the feature was invisible, because the node was
+     * unmanaged and {@code AnchorPane} lays out only managed children. "Correct and not rendered" is the
+     * failure mode a model-level test cannot see, so this one measures the node.
+     */
+    @Test
+    void theBarIsLaidOutWithRealBoundsWhenSomethingIsPinned() throws Exception {
+        EditorBuffer b = buffer();
+        javafx.scene.Node bar = FxTestSupport.callOnFx(() -> {
+            javafx.scene.layout.StackPane host = new javafx.scene.layout.StackPane(b.getNode());
+            javafx.scene.Scene scene = new javafx.scene.Scene(host, 900, 600);
+            scene.getStylesheets()
+                    .add(EditorBuffer.class
+                            .getResource("/com/editora/styles/app.css")
+                            .toExternalForm());
+            host.applyCss();
+            host.layout();
+            call(b, "stickyLinesFor", int.class, 100);
+            host.applyCss();
+            host.layout();
+            return (javafx.scene.Node) call(b, "stickyScrollNode");
+        });
+        assertTrue(bar.getScene() != null, "the bar was never added to the scene graph");
+        assertTrue(bar.isVisible(), "the bar is in the graph but hidden");
+        // The REGION's own width/height, not getBoundsInParent. Bounds come from the children, so an
+        // unmanaged box still reports a non-zero box while the parent has never sized it — verified by
+        // re-introducing the bug: the bounds assertion passed, this one fails. Width and height are what
+        // AnchorPane actually sets, so they are what "is it laid out" means here.
+        javafx.scene.layout.Region region = (javafx.scene.layout.Region) bar;
+        double width = FxTestSupport.callOnFx(region::getWidth);
+        double height = FxTestSupport.callOnFx(region::getHeight);
+        assertTrue(width > 0, "the parent never sized the bar — it is anchored but not laid out");
+        assertTrue(height > 0, "the bar has no height, so its background and border draw nothing");
     }
 
     @Test

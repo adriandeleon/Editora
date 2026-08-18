@@ -37,7 +37,11 @@ final class StickyScrollBar {
     StickyScrollBar() {
         box.getStyleClass().add(STYLE_CLASS);
         box.setVisible(false);
-        box.setManaged(false); // free-positioned over the code pane, like the other floating controls
+        // MANAGED, deliberately. It looks like the other floating controls, which are free-positioned, but
+        // it is placed with AnchorPane constraints — and AnchorPane lays out only its *managed* children.
+        // Unmanaged, the anchors are ignored, the box stays 0x0 at the origin, and the feature is simply
+        // invisible while every model-level test still passes.
+        box.setManaged(true);
         // The bar explains the code behind it; it must never swallow a click meant for the editor. Rows
         // re-enable picking for themselves so their own click still works.
         box.setPickOnBounds(false);
