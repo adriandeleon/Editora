@@ -607,7 +607,7 @@
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>${javafx.plugin.version}</version>
                 <configuration>
-                    <mainClass>com.editora/com.editora.App</mainClass>
+                    <mainClass>com.editora/com.editora.Launcher</mainClass>
                     <options>
                         <option>--enable-native-access=javafx.graphics</option>
                         <!-- Let App.MacEventHandler reach the internal com.sun.glass.ui open-files hook (macOS
@@ -1390,7 +1390,7 @@
                                     <appVersion>${jpackage.appVersion}</appVersion>
                                     <vendor>Editora</vendor>
                                     <icon>${jpackage.icon}</icon>
-                                    <module>com.editora/com.editora.App</module>
+                                    <module>com.editora/com.editora.Launcher</module>
                                     <modulePaths>
                                         <modulePath>${project.build.directory}/mods</modulePath>
                                     </modulePaths>
@@ -1509,7 +1509,7 @@
                                         <argument>${jpackage.type}</argument>
                                         <argument>${jpackage.icon}</argument>
                                         <argument>${project.build.directory}/dist</argument>
-                                        <argument>com.editora/com.editora.App</argument>
+                                        <argument>com.editora/com.editora.Launcher</argument>
                                     </arguments>
                                 </configuration>
                             </execution>

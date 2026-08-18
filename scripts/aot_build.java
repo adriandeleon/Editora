@@ -15,7 +15,7 @@
 // actual deliverable, fails the build on error.
 //
 // Args: <imageDir> <appName> <appVersion> <publicVersion> <installerType> <iconPath|-> <destDir> <moduleMain>
-//   Run via:  java scripts/aot_build.java target/aot-image Editora 1.0.0 1.0.0 DMG branding/editora.icns target/dist com.editora/com.editora.App
+//   Run via:  java scripts/aot_build.java target/aot-image Editora 1.0.0 1.0.0 DMG branding/editora.icns target/dist com.editora/com.editora.Launcher
 //
 // <appVersion> is what's handed to jpackage's own --app-version flag on BOTH jpackage invocations (the
 // app-image build, already done by the time this runs, and this file's own DMG/MSI/DEB wrap below) —
