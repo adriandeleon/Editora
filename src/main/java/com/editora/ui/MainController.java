@@ -16034,6 +16034,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("bookmarks.previous", () -> bookmarkCoordinator.jump(false)));
         registry.register(Command.of("bookmarks.jump", bookmarkCoordinator::openJumpPalette));
         registry.register(Command.of("bookmarks.clearFile", bookmarkCoordinator::clearInFile));
+        registry.register(Command.of("bookmarks.setMnemonic", bookmarkCoordinator::setMnemonicAtCaret));
+        // One command per digit, so each is a single chord rather than a chord plus a prompt — which is
+        // the entire point of a mnemonic. Explicit titles from one parameterized string, the way the macro
+        // and external-tool commands avoid ten near-identical keys. The key deliberately sits OUTSIDE the
+        // command.* namespace: it is a template, not the title of a command called
+        // "bookmarks.gotoMnemonic", and every real command.* key is required to carry a .desc.
+        for (char digit : com.editora.config.BookmarkMnemonics.DIGITS.toCharArray()) {
+            String key = String.valueOf(digit);
+            registry.register(Command.of(
+                    "bookmarks.gotoMnemonic" + key,
+                    tr("bookmarks.mnemonic.gotoTitle", key),
+                    () -> bookmarkCoordinator.gotoMnemonic(key)));
+        }
         registry.register(Command.of("notes.add", () -> notesCoordinator.ifEnabled(notesCoordinator::addNoteAtCaret)));
         registry.register(
                 Command.of("notes.editNote", () -> notesCoordinator.ifEnabled(notesCoordinator::editNoteAtCaret)));

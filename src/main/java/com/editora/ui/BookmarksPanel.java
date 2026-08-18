@@ -547,15 +547,24 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         return name == null ? file.toString() : name.toString();
     }
 
-    /** Leaf label for a bookmark: the note, else the captured line text, else "line N". */
+    /**
+     * Leaf label for a bookmark: its mnemonic if it has one, then the note, else the captured line text,
+     * else "line N".
+     *
+     * <p>The mnemonic leads because it is the only part of a bookmark that is otherwise invisible — the
+     * note and the line text are already on screen in the editor, but a shortcut you cannot see is a
+     * shortcut you will not remember you assigned.
+     */
     private static String markLabel(Bookmark bm) {
+        String mnemonic = com.editora.config.BookmarkMnemonics.label(bm);
+        String prefix = mnemonic.isEmpty() ? "" : mnemonic + " ";
         if (!bm.note().isEmpty()) {
-            return bm.note();
+            return prefix + bm.note();
         }
         if (!bm.lineText().isEmpty()) {
-            return bm.lineText();
+            return prefix + bm.lineText();
         }
-        return "line " + (bm.line() + 1);
+        return prefix + "line " + (bm.line() + 1);
     }
 
     private final class BookmarkCell extends TreeCell<Row> {

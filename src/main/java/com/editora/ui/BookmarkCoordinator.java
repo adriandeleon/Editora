@@ -11,6 +11,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 
 import com.editora.config.Bookmark;
+import com.editora.config.BookmarkMnemonics;
 import com.editora.config.BookmarkStore;
 import com.editora.editor.EditorBuffer;
 
@@ -293,6 +294,59 @@ final class BookmarkCoordinator {
     }
 
     /** Opens the cross-file jump picker ({@code bookmarks.jump}). */
+    /**
+     * {@code bookmarks.setMnemonic}: give the bookmark at the caret a one-character shortcut, creating
+     * the bookmark first if there isn't one.
+     *
+     * <p>Creating it is right here and wrong in {@link BookmarkMnemonics#assign}: at this level the user
+     * has pointed at a line and asked for a shortcut to it, which plainly means "bookmark this"; down
+     * there it would be a side effect of relabelling.
+     */
+    void setMnemonicAtCaret() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || b.getPath() == null) {
+            host.setStatus(tr("status.bookmarks.noFile"));
+            return;
+        }
+        int line = b.getArea().getCurrentParagraph();
+        Path file = b.getPath();
+        ops.promptText(tr("dialog.bookmarkMnemonic.title"), tr("dialog.bookmarkMnemonic.content"), "", typed -> {
+            String m = BookmarkMnemonics.normalize(typed);
+            if (m.isEmpty() && !typed.strip().isEmpty()) {
+                host.setStatus(tr("status.bookmarks.badMnemonic"));
+                return;
+            }
+            var mgr = b.getBookmarkManager();
+            if (!mgr.isBookmarked(line)) {
+                mgr.add(line, "");
+                b.refreshGutterLine(line);
+            }
+            persistBookmarks(b); // the map must hold this bookmark before assign() can find it
+            var updated = BookmarkMnemonics.assign(ops.bookmarks(), file.toString(), line, m);
+            ops.bookmarks().clear();
+            ops.bookmarks().putAll(updated);
+            ops.saveBookmarks();
+            restoreBookmarks(b); // pull the mnemonic back into the live manager
+            panel.refresh();
+            host.setStatus(
+                    m.isEmpty()
+                            ? tr("status.bookmarks.mnemonicCleared")
+                            : tr("status.bookmarks.mnemonicSet", m.toUpperCase(java.util.Locale.ROOT)));
+        });
+    }
+
+    /** {@code bookmarks.gotoMnemonic<N>}: jump to whatever holds {@code mnemonic} in this project. */
+    void gotoMnemonic(String mnemonic) {
+        var found = BookmarkMnemonics.find(ops.bookmarks(), mnemonic);
+        if (found == null) {
+            host.setStatus(tr("status.bookmarks.noMnemonic", mnemonic.toUpperCase(java.util.Locale.ROOT)));
+            return;
+        }
+        ops.openPath(Path.of(found.file()));
+        javafx.application.Platform.runLater(
+                () -> ops.navigateToLine(found.bookmark().line()));
+    }
+
     void openJumpPalette() {
         jumpPalette.show(host.window());
     }
