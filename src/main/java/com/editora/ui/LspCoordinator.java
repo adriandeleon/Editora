@@ -1648,6 +1648,17 @@ final class LspCoordinator {
     }
 
     void gotoDefinition() {
+        gotoDefinition(null);
+    }
+
+    /**
+     * As {@link #gotoDefinition()}, running {@code afterJump} once the caret has landed.
+     *
+     * <p>The hook exists because the destination arrives from the server: a caller that wants to do
+     * something with the file the jump opened cannot simply run afterwards, since "afterwards" is before
+     * the answer has come back. It runs only on a jump that actually happened.
+     */
+    void gotoDefinition(Runnable afterJump) {
         EditorBuffer active = host.activeBuffer();
         LibrarySource lib = active == null ? null : librarySources.get(active);
         if (lib != null) {
@@ -1667,6 +1678,11 @@ final class LspCoordinator {
                 LspManager.Target t = targets.get(0);
                 if (t.file() != null) {
                     ops.openAndGoto(t.file(), t.line(), t.character());
+                    if (afterJump != null) {
+                        // openAndGoto finishes its work in a runLater of its own, so the hook has to queue
+                        // behind it or it would act on the tab we are leaving.
+                        javafx.application.Platform.runLater(afterJump);
+                    }
                 } else {
                     openLibraryDefinition(b.getPath(), t); // a jdt:// class-file target (library source) — #665
                 }

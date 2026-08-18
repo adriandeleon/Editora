@@ -5439,6 +5439,28 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private List<Path> relatedCandidates = List.of();
 
+    /**
+     * {@code lsp.gotoDefinitionInSplit}: open the definition beside the code that referenced it.
+     *
+     * <p>The pair you want on screen together is the call and the thing called — comparing them is the
+     * usual reason for going there at all. Splitting after the jump puts the definition in the new group
+     * and leaves the origin where it was.
+     *
+     * <p>A definition in the SAME file is jumped to without splitting: there is only one tab, so the split
+     * would move it and leave the group it came from empty.
+     */
+    private void gotoDefinitionInSplit() {
+        EditorBuffer origin = activeBuffer();
+        Path originPath = origin == null ? null : origin.getPath();
+        lspCoordinator.gotoDefinition(() -> {
+            EditorBuffer landed = activeBuffer();
+            Path landedPath = landed == null ? null : landed.getPath();
+            if (landedPath != null && !landedPath.equals(originPath)) {
+                splitEditorGroup(Orientation.HORIZONTAL);
+            }
+        });
+    }
+
     /** {@code file.java:214} — a location's file and 1-based line, for a picker's detail column. */
     private static String locationLabel(NavigationHistory.Location loc) {
         return loc.path().getFileName() + ":" + (loc.line() + 1);
@@ -16319,6 +16341,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         })));
         registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(lspCoordinator::gotoDefinition)));
         registry.register(Command.of("lsp.peekDefinition", () -> ifLsp(lspCoordinator::peekDefinition)));
+        registry.register(Command.of("lsp.gotoDefinitionInSplit", () -> ifLsp(this::gotoDefinitionInSplit)));
         registry.register(Command.of("lsp.findReferences", () -> ifLsp(lspCoordinator::findReferences)));
         registry.register(Command.of("lsp.gotoImplementation", () -> ifLsp(lspCoordinator::gotoImplementation)));
         registry.register(Command.of("lsp.gotoTypeDefinition", () -> ifLsp(lspCoordinator::gotoTypeDefinition)));
