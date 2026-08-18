@@ -3580,3 +3580,21 @@
 .sticky-scroll-row:hover {
     -fx-background-color: -color-bg-subtle;
 }
+
+/* Peek definition — the snippet shown in place of a jump. Reuses the palette card, so it inherits the
+   overlay's ground, border and radius; only the code body needs rules of its own. */
+.peek-popup .peek-body {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 6;
+    -fx-padding: 6 8 6 8;
+}
+.peek-row {
+    -fx-padding: 0;
+}
+/* The definition's own line, so the eye lands on it rather than on the middle of the snippet. */
+.peek-row-focus {
+    -fx-background-color: -color-accent-subtle;
+}
+.peek-line-number {
+    -fx-fill: -color-fg-muted;
+}
