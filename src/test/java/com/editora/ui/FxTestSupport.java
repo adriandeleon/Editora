@@ -97,6 +97,22 @@ final class FxTestSupport {
     }
 
     /** Invoke a private no-arg method by name (walks up the class hierarchy). */
+    /** Calls a private one-argument method, searching the class hierarchy like {@link #invoke}. */
+    static Object invokeWith(Object target, String method, Class<?> paramType, Object arg) {
+        for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                var m = c.getDeclaredMethod(method, paramType);
+                m.setAccessible(true);
+                return m.invoke(target, arg);
+            } catch (NoSuchMethodException e) {
+                // try the superclass
+            } catch (ReflectiveOperationException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        throw new IllegalArgumentException("no such method: " + method);
+    }
+
     static void invoke(Object target, String method) {
         for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {
             try {

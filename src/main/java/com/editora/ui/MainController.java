@@ -5303,13 +5303,28 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Shows a highlighted location in the editor without committing to it: no focus change, and nothing
      * recorded in the jump list, so browsing the picker cannot itself become history.
      *
-     * <p>A location whose file is <em>not</em> open is deliberately not previewed. Opening it would create
-     * a tab, and arrowing down a list of twenty locations would leave twenty tabs behind — the cost that
-     * makes preview a net loss until there are preview-tab semantics to hang it on. Enter still opens it.
+     * <p>A location whose file is not open is opened into the <em>preview slot</em>, so arrowing down a
+     * list of twenty locations leaves one tab rather than twenty. Before preview tabs existed this case
+     * was skipped entirely, which made the feature useless for exactly the locations you had navigated
+     * away from.
      */
     private void previewLocation(NavigationHistory.Location loc) {
-        if (loc == null || tabForPath(loc.path()) == null) {
+        if (loc == null) {
             return;
+        }
+        if (tabForPath(loc.path()) == null) {
+            if (!java.nio.file.Files.isReadable(loc.path())) {
+                return; // deleted or unreadable since it was visited
+            }
+            suppressNavRecord = true;
+            try {
+                openPathPreview(loc.path());
+            } finally {
+                suppressNavRecord = false;
+            }
+            if (tabForPath(loc.path()) == null) {
+                return;
+            }
         }
         suppressNavRecord = true;
         try {
@@ -7369,11 +7384,18 @@ public class MainController implements com.editora.mcp.McpBridge {
             updateWindowTitle();
         }
         boolean dirty = buffer.isDirty();
+        if (dirty) {
+            // Editing is the clearest possible statement that this file is not a passing glance.
+            promoteTab(tab);
+        }
         boolean isPinned = pinned.contains(tab);
         // The title lives in a graphic node (not tab.setText) so it can be a drag handle for
         // mouse reordering. Pinned tabs show an SVG pin graphic (matching the toolbar icons).
         Label title = new Label((dirty ? "• " : "") + buffer.getTitle());
         title.getStyleClass().add("tab-title");
+        if (tab == previewTab) {
+            title.getStyleClass().add("preview-tab-title"); // italic: this tab will be reused
+        }
         HBox header = new HBox(6);
         header.getStyleClass().add("tab-header");
         header.setAlignment(Pos.CENTER_LEFT);
@@ -7585,6 +7607,61 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setViewMode(true); // read-only: it's the bundled list, not user-editable
     }
 
+    /**
+     * The single tab reused for files being browsed rather than opened, or {@code null} when there is none.
+     *
+     * <p>Browsing is how navigation is actually used — arrowing a picker, following a definition to see
+     * what something is — and without this every glance costs a permanent tab, so the strip fills with
+     * files nobody chose to keep. One reusable slot bounds that at one.
+     */
+    private Tab previewTab;
+
+    /**
+     * Opens {@code file} in the preview slot: the previous preview tab is replaced rather than added to.
+     *
+     * <p>An already-open file is simply selected and is <em>not</em> demoted into the slot — it earned its
+     * place by some earlier deliberate open, and quietly making it disposable would lose it on the next
+     * glance at something else.
+     */
+    private void openPathPreview(Path file) {
+        Tab existing = tabForPath(file);
+        if (existing != null) {
+            editorArea.select(existing);
+            return;
+        }
+        Tab previous = previewTab;
+        previewTab = null; // cleared first: closing it runs listeners that would otherwise see a stale slot
+        if (previous != null && editorArea.tabs().contains(previous)) {
+            EditorBuffer b = bufferOf(previous);
+            // A dirty preview tab is not disposable — the edit already promoted it, but guard anyway
+            // rather than risk closing unsaved work on a keystroke.
+            if (b == null || !b.isDirty()) {
+                editorArea.remove(previous); // tabs() is unmodifiable by design; remove() is the seam
+            }
+        }
+        openPath(file, true);
+        Tab opened = tabForPath(file);
+        if (opened != null) {
+            previewTab = opened;
+            EditorBuffer b = bufferOf(opened);
+            if (b != null) {
+                updateTabMeta(opened, b); // re-render the header so it shows as italic
+            }
+        }
+    }
+
+    /** Makes {@code tab} permanent — it was chosen, not glanced at. No-op for any other tab. */
+    private void promoteTab(Tab tab) {
+        if (tab == null || tab != previewTab) {
+            return;
+        }
+        previewTab = null;
+        EditorBuffer b = bufferOf(tab);
+        if (b != null) {
+            updateTabMeta(tab, b); // drops the italic
+        }
+    }
+
     private void openPath(Path file) {
         openPath(file, false);
     }
@@ -7600,7 +7677,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void openPath(Path file, boolean quietIfOpen) {
         Tab existing = tabForPath(file);
         if (existing != null) {
-            // Already open — switch to its tab instead of opening a duplicate.
+            // Already open — switch to its tab instead of opening a duplicate. Asking for it explicitly
+            // is a choice, so if it was only being previewed it stops being disposable.
+            promoteTab(existing);
             editorArea.select(existing);
             EditorBuffer existingBuffer = bufferOf(existing);
             if (existingBuffer != null) {

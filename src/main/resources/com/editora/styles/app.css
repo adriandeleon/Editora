@@ -3611,3 +3611,9 @@
 .search-everywhere .list-cell.se-header:filled:selected {
     -fx-background-color: transparent;
 }
+
+/* A preview tab: the one slot reused while browsing, shown italic so it reads as provisional. The same
+   convention VS Code uses, and the same one .dirty-name uses for "not durable yet". */
+.tab-title.preview-tab-title {
+    -fx-font-style: italic;
+}
