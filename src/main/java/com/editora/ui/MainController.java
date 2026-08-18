@@ -1093,6 +1093,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 s.isCsvPreview(),
                 s.isStructuredPreview(),
                 s.isPomPreview(),
+                indexCoordinator.isEnabled(),
                 markdownLintEnabled(),
                 editorConfigEnabled(),
                 simpleModeActive());
@@ -1258,6 +1259,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         openFilesPalette.setOverlayHost(overlayHost);
         toolWindowPalette.setOverlayHost(overlayHost);
         undoHistoryPalette.setOverlayHost(overlayHost);
+        indexCoordinator.setOverlayHost(overlayHost);
         recentLocationsPalette.setOverlayHost(overlayHost);
         bookmarkCoordinator.wireOverlayHost();
         notesCoordinator.wireOverlayHost();
@@ -1419,6 +1421,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * project (not the globally last-focused one).
      */
     public void setWindowContext(WindowManager windowManager, Project project) {
+        indexCoordinator.onProjectChanged(); // the previous project's symbols mean nothing here
         this.windowManager = windowManager;
         this.windowProject = project;
         this.projectKey = project == null ? "" : project.id();
@@ -1532,6 +1535,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         dapManager.stop(); // end any debug session
         git.shutdown();
         github.shutdown(); // stop the gh worker thread
+        indexCoordinator.dispose(); // stop the symbol-index walker
         if (historyCoordinator != null) {
             historyCoordinator.shutdown();
         }
@@ -3647,6 +3651,23 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** TODO / highlight-pattern feature; owns the service/panel/scan/commands (the tool window stays here). */
+    private final IndexCoordinator indexCoordinator = new IndexCoordinator(coordinatorHost, new IndexCoordinator.Ops() {
+        @Override
+        public java.nio.file.Path projectRoot() {
+            return (windowProject != null && projectsEnabled()) ? java.nio.file.Path.of(windowProject.root()) : null;
+        }
+
+        @Override
+        public void openAndGoto(java.nio.file.Path file, int line, int column) {
+            MainController.this.openAndGoto(file, line, column);
+        }
+
+        @Override
+        public boolean respectGitignore() {
+            return config.getSettings().isSearchRespectGitignore();
+        }
+    });
+
     private final TodoCoordinator todoCoordinator = new TodoCoordinator(coordinatorHost, new TodoCoordinator.Ops() {
         @Override
         public java.nio.file.Path projectRoot() {
@@ -8254,6 +8275,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // LSP: a save-as of a new Java file opens it on the server; then notify didSave.
             lspCoordinator.syncBuffer(buffer);
             lspCoordinator.notifyDocumentSaved(buffer);
+            indexCoordinator.onBufferSaved(buffer); // rescan just this file, from the text already in memory
             return true;
         } catch (IOException e) {
             setStatus(tr("status.failedSave", e.getMessage()));
@@ -13412,6 +13434,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyAgentSupport();
         aiCoordinator.applySupport(); // re-probe connectivity + re-gate the floating selection Explain/Rewrite bar
         todoCoordinator.applyHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
+        indexCoordinator.applySupport(); // a disabled index must not retain a project's symbols
         csvCoordinator.applySupport(); // re-gate the in-editor CSV grid preview on every open buffer
         applyTestRunner(); // re-gate the Test Results window (off / Simple UI mode hides it)
         applyMarkdownLint(); // push Markdown-lint enabled state to every buffer
@@ -16022,6 +16045,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.problems", () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
         registry.register(Command.of("tool.references", () -> ifLsp(() -> toolWindows.toggle(referencesToolWindow))));
         registry.register(Command.of("tool.hierarchy", () -> ifLsp(() -> toolWindows.toggle(hierarchyToolWindow))));
+        registry.register(Command.of("index.gotoSymbol", indexCoordinator::gotoSymbol));
+        registry.register(Command.of("index.rebuild", indexCoordinator::rebuild));
+        registry.register(Command.of(
+                "view.toggleSymbolIndex",
+                () -> toggleSetting(
+                        "view.toggleSymbolIndex",
+                        () -> config.getSettings().isSymbolIndex(),
+                        config.getSettings()::setSymbolIndex,
+                        () -> {
+                            indexCoordinator.applySupport();
+                            settingsWindow.syncAll();
+                        })));
         registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(lspCoordinator::gotoDefinition)));
         registry.register(Command.of("lsp.peekDefinition", () -> ifLsp(lspCoordinator::peekDefinition)));
         registry.register(Command.of("lsp.findReferences", () -> ifLsp(lspCoordinator::findReferences)));

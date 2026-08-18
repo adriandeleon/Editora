@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 97;
+    public static final int SCHEMA_VERSION = 98;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -348,6 +348,11 @@ public class Settings {
      * default. Suppressed in large-file mode along with the other per-viewport work.
      */
     private boolean stickyScroll = true;
+    /**
+     * The server-free project symbol index behind "Go to Symbol in Project": on by default, but built
+     * lazily on first use, so an install that never asks it anything never pays for it.
+     */
+    private boolean symbolIndex = true;
     /** Auto-rename the paired HTML/XML tag when a tag name is edited: on by default. */
     private boolean autoRenameTag = true;
 
@@ -704,6 +709,14 @@ public class Settings {
 
     public void setGithubActionsPreview(boolean githubActionsPreview) {
         this.githubActionsPreview = githubActionsPreview;
+    }
+
+    public boolean isSymbolIndex() {
+        return symbolIndex;
+    }
+
+    public void setSymbolIndex(boolean symbolIndex) {
+        this.symbolIndex = symbolIndex;
     }
 
     public boolean isStickyScroll() {
