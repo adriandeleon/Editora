@@ -126,10 +126,13 @@ public class App extends Application {
                 noSessionFlag(rawArgs));
 
         // macOS: receive files opened via Finder's "Open With" (a CFBundleDocumentTypes association added by
-        // the packaged app — see packaging/mac/file-associations.properties). Finder delivers the path as an
-        // AppKit "openFiles" Apple Event, NOT as a command-line argument, so the argv path (fileTargets) never
-        // sees it. Registered after the window(s) are built so a cold-launch's buffered event lands in a real
-        // window. (Windows/Linux pass the file as argv, already handled by fileTargets — this is macOS-only.)
+        // the packaged app — written by scripts/aot_build.java's fixMacDocumentTypes, NOT jpackage's
+        // --file-associations, whose per-extension custom UTIs Launch Services never offers). Finder
+        // delivers the path as an AppKit "openFiles" Apple Event, NOT a command-line argument, so the
+        // argv path (fileTargets) never sees it. Registered after the window(s) are built so a
+        // cold-launch's buffered event lands in a real window. (Windows and Linux pass the file as argv,
+        // already handled by fileTargets; their installers register the association — see
+        // packaging/windows/file-associations.properties and packaging/linux/postinst.)
         // The handler lives in the standalone MacOpenFiles class (not nested here) so the FX launcher's
         // reflection over App never eager-loads a com.sun.glass.ui subclass before start() runs.
         if (isMac()) {

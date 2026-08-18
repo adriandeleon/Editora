@@ -306,6 +306,30 @@ public class aot_build {
         if (t.equals("MSI") || t.equals("EXE")) {
             cmd.addAll(List.of("--win-menu", "--win-menu-group", appName,
                     "--win-shortcut", "--win-dir-chooser"));
+            // Register Editora under Explorer's "Open with" for the text/source types it edits. Windows
+            // (like Linux) hands a file manager's chosen file to the app as argv, and nothing maps an
+            // extension to us unless the installer says so — without this the MSI installs an editor that
+            // no file manager can hand a file to. The Linux .deb gets the equivalent from its postinst
+            // (a richer job: it also sets Editora as the system default); this is the Windows half.
+            //
+            // Deliberately NOT applied to DEB/RPM, for a reason worth recording because the obvious guess
+            // is wrong: jpackage does NOT install a shared-mime-info XML on Linux (checked by building a
+            // .deb with this very file). What it does is emit one MimeType entry per extension, so a single
+            // text/plain umbrella comes out as "text/plain;" repeated 120 times. For the .deb that is moot
+            // anyway — our resource-dir template replaces jpackage's .desktop wholesale — and the postinst
+            // does the job properly, registering the real per-language MIME types and the default handler.
+            // The RPM, which does use jpackage's generated .desktop, is therefore still without an
+            // association: a known gap, since it also ignores the maintainer-script overrides.
+            Path assoc = Path.of(System.getProperty("user.dir"), "packaging", "windows",
+                    "file-associations.properties");
+            if (Files.isRegularFile(assoc)) {
+                cmd.add("--file-associations");
+                cmd.add(assoc.toString());
+            } else {
+                // Not fatal: an installer without "Open with" is worse than one with it, but far better
+                // than no installer at all.
+                System.err.println("[aot] no " + assoc + " — MSI will have no file associations");
+            }
         } else if (t.equals("DEB") || t.equals("RPM")) {
             cmd.add("--linux-shortcut");
             // DEB: a resource dir overriding jpackage's generated files (the RPM bundler uses a .spec
