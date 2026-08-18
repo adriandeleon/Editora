@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata — what a software centre (GNOME Software, KDE Discover, the "apt" front-ends)
+  reads to describe an installed application.
+
+  Without this file those tools fall back to the dpkg control fields, which jpackage fills with
+  defaults: the app page then reads "editora / Editora", "Unknown License" and "No details for this
+  release", with a generic gear for an icon. None of that is fixable from the .desktop entry — a
+  software centre deliberately prefers AppStream over it.
+
+  The postinst installs this to /usr/share/metainfo/ (and postrm removes it). It is NOT part of the
+  dpkg payload manifest directly: jpackage's resource dir only substitutes the template files it
+  knows about, so the file rides inside the app image (staged there by scripts/aot_build.java, the
+  same route the branding icon takes) and the maintainer script puts it in place — the pattern the
+  .desktop entries already use.
+
+  <id> must match the .desktop file the launcher installs, or a software centre treats the metadata
+  and the installed application as two unrelated things and shows neither properly. jpackage names
+  that file editora-Editora.desktop, hence the <launchable> below.
+
+  One thing this cannot fix: "Potentially Unsafe — Provided by a third party". That label is about
+  PROVENANCE, not metadata — a software centre applies it to anything not from a configured
+  repository, and no file inside a package can assert otherwise about itself.
+-->
+<component type="desktop-application">
+  <id>com.editora.Editora</id>
+  <launchable type="desktop-id">editora-Editora.desktop</launchable>
+
+  <name>Editora</name>
+  <summary>Keyboard-driven programmer's text editor</summary>
+
+  <developer id="dev.editora-project">
+    <name>Adrián Arturo De León Saldivar</name>
+  </developer>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      Editora is a keyboard-driven, cross-platform programmer's text editor. Every action is a
+      command you can reach from the palette or bind to a key, with Emacs, CUA, Sublime, VS Code and
+      IntelliJ keymaps included.
+    </p>
+    <p>Among its features:</p>
+    <ul>
+      <li>Syntax highlighting via TextMate grammars, with folding and structure outlines</li>
+      <li>Language Server Protocol support for over twenty languages</li>
+      <li>Debugging through the Debug Adapter Protocol for Java, Python and JavaScript</li>
+      <li>Git integration, including a commit tool window, inline blame, history and diffs</li>
+      <li>Live previews for Markdown, CSV, diagrams, Typst and structured data</li>
+      <li>Snippets, templates, macros, multiple cursors and project-wide search</li>
+    </ul>
+  </description>
+
+  <categories>
+    <category>Development</category>
+    <category>TextEditor</category>
+    <category>IDE</category>
+  </categories>
+
+  <keywords>
+    <keyword>editor</keyword>
+    <keyword>text</keyword>
+    <keyword>code</keyword>
+    <keyword>programming</keyword>
+    <keyword>ide</keyword>
+  </keywords>
+
+  <!-- Named rather than an absolute path: a software centre resolves a stock icon through the icon
+       theme, which the postinst populates under /usr/share/icons/hicolor. The .desktop entry keeps
+       its own absolute Icon= line, which is what the application menu already uses successfully. -->
+  <icon type="stock">editora</icon>
+
+  <url type="homepage">https://editora-project.dev</url>
+  <url type="bugtracker">https://github.com/adriandeleon/Editora/issues</url>
+  <url type="help">https://github.com/adriandeleon/Editora/blob/master/README.md</url>
+
+  <!-- Required by GNOME Software; an application with nothing to declare still states so explicitly,
+       and its absence is itself shown as a warning. -->
+  <content_rating type="oars-1.1"/>
+
+  <!-- Substituted by scripts/aot_build.java at package time (@VERSION@ / @DATE@ / @YEAR@).
+       Hand-maintaining this block is what makes a software centre say "No details for this release":
+       it would have to be edited on every release, in a file nobody touches, and the one time it is
+       forgotten the app page silently reverts to that message. Deriving it from the version being
+       built cannot drift. The notes themselves stay a link rather than a copy of the changelog —
+       duplicating release notes into a second file is the same rot in slower motion. -->
+  <releases>
+    <release version="@VERSION@" date="@DATE@">
+      <url>https://github.com/adriandeleon/Editora/releases/tag/v@VERSION@</url>
+      <description>
+        <p>Release notes for this version are published on the project's releases page.</p>
+      </description>
+    </release>
+  </releases>
+
+  <provides>
+    <binary>editora</binary>
+  </provides>
+</component>

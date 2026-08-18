@@ -46,6 +46,38 @@ case "$1" in
             break
         done
 
+        # 2b) AppStream metadata + themed icons, for the software centre.
+        #
+        # A software centre (GNOME Software, KDE Discover) describes an installed app from AppStream,
+        # NOT from the .desktop entry. With none present it falls back to the dpkg control fields that
+        # jpackage generates, and the app page reads "editora / Editora", "Unknown License" and "No
+        # details for this release" beside a generic gear. Both files ride in the .deb payload under
+        # /opt (staged into the app image by scripts/aot_build.java) because jpackage's resource dir
+        # can only override template files, not add payload; installing them from here is the same
+        # route the .desktop entries above already take.
+        #
+        # The icons are ADDITIVE: the .desktop keeps its own absolute Icon= line, which is what the
+        # application menu already resolves. These exist so the software centre, which resolves the
+        # metainfo's stock icon name through the theme, has something better than a generic glyph.
+        for src in /opt/*/lib/com.editora.Editora.metainfo.xml; do
+            [ -f "$src" ] || continue
+            mkdir -p /usr/share/metainfo
+            cp -f "$src" /usr/share/metainfo/com.editora.Editora.metainfo.xml
+            chmod 0644 /usr/share/metainfo/com.editora.Editora.metainfo.xml
+            break
+        done
+        for src in /opt/*/lib/icons/editora-*.png; do
+            [ -f "$src" ] || continue
+            size=$(basename "$src" .png | sed 's/^editora-//')
+            case "$size" in
+                ''|*[!0-9]*) continue ;;   # not a size-suffixed icon; skip rather than guess
+            esac
+            dir=/usr/share/icons/hicolor/${size}x${size}/apps
+            mkdir -p "$dir"
+            cp -f "$src" "$dir/editora.png"
+            chmod 0644 "$dir/editora.png"
+        done
+
         # 3) Second menu entry: "Editora Expert Mode" — the same app launched with
         #    --expert --single-window. Derived from the just-registered primary entry so it always
         #    tracks the real launcher path/icon. StartupWMClass is dropped: both entries launch the
@@ -119,6 +151,12 @@ esac
 # Refresh the desktop database so the launcher + icon show up without a re-login.
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database -q /usr/share/applications 2>/dev/null || true
+fi
+
+# Without this the freshly-installed hicolor icons are not picked up until something else rebuilds
+# the cache, so the software centre keeps showing the generic glyph for a while after installing.
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
 fi
 
 exit 0
