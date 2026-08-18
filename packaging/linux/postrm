@@ -30,11 +30,23 @@ case "$1" in
                 rm -f "$mimeapps" "$tmp"
             fi
         fi
+        # The AppStream metadata + themed icons the postinst installed. Like the .desktop entries they
+        # live outside the dpkg manifest (installed by the maintainer script, not unpacked), so nothing
+        # else will remove them — a left-behind metainfo file would keep advertising an application
+        # that is no longer installed.
+        rm -f /usr/share/metainfo/com.editora.Editora.metainfo.xml
+        for dir in /usr/share/icons/hicolor/*/apps; do
+            rm -f "$dir/editora.png"
+        done
         ;;
 esac
 
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database -q /usr/share/applications 2>/dev/null || true
+fi
+
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
 fi
 
 exit 0

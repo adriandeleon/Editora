@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Linux package now describes itself properly in GNOME Software** (and other software centres),
+  instead of showing "editora / Editora", "Unknown License", "No details for this release" and a generic
+  gear icon.
+
+  None of that came from the desktop entry, which was already correct — a software centre describes an
+  installed application from **AppStream** metadata, and the `.deb` shipped none, so it fell back to the
+  dpkg control fields that jpackage fills with defaults. The package now carries an AppStream metainfo
+  file (name, summary, description, MIT licence, homepage, categories, release notes) plus a themed icon
+  set, installed by the maintainer script and removed on uninstall. The control fields it *does* read are
+  filled in too: a real description, a homepage, and a maintainer address instead of `Editora <Unknown>`.
+
+  The release entry is filled in from the version being packaged rather than hand-written, because a
+  block that has to be edited on every release is one that eventually is not — and that failure looks
+  exactly like the "No details for this release" being fixed here.
+
+  The application menu icon is untouched: the desktop entry keeps the absolute path it already resolves
+  correctly, and the themed icons are additive, for the software centre only.
+
+  One thing this cannot fix: **"Potentially Unsafe — Provided by a third party"**. That label is about
+  where a package came from, not what it says about itself — a software centre applies it to anything not
+  installed from a configured repository, and no file inside a `.deb` can assert otherwise.
+
 ### Added
 
 - **The Windows installer now registers Editora under Explorer's "Open with"** for the text and source

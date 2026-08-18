@@ -128,6 +128,13 @@ public class aot_build {
             }
         }
 
+        // Stage the AppStream metadata + themed icons INTO the image, so they travel in the .deb payload
+        // (jpackage's resource dir only substitutes template files it knows about — it cannot add arbitrary
+        // payload). The postinst then installs them to /usr/share/metainfo and /usr/share/icons/hicolor.
+        if (linux) {
+            stageLinuxAppStream(imageRoot, publicVer);
+        }
+
         if ("APP_IMAGE".equalsIgnoreCase(type.trim())) {
             Path out = destDir.resolve(imageRoot.getFileName());
             deleteRecursive(out);
@@ -279,6 +286,63 @@ public class aot_build {
         }
     }
 
+    /**
+     * Copies the AppStream metainfo (version/date substituted) and the themed icon set into the app image,
+     * where the .deb payload will carry them for the postinst to install.
+     *
+     * <p><b>Why this exists:</b> a software centre describes an installed application from AppStream, not
+     * from the .desktop entry. With none shipped, GNOME Software falls back to the dpkg control fields —
+     * which jpackage fills with defaults — and the page reads "editora / Editora", "Unknown License" and
+     * "No details for this release" beside a generic icon.
+     *
+     * <p>The version and date are substituted rather than hand-written: a {@code <releases>} block that has
+     * to be edited on every release is one that eventually is not, and the failure mode is precisely the
+     * "No details for this release" being fixed here.
+     *
+     * <p>Best-effort throughout. Missing metadata makes for a poorly-described package, which is a far
+     * better outcome than a failed build — and it can never affect the application itself.
+     */
+    private static void stageLinuxAppStream(Path imageRoot, String version) {
+        Path lib = imageRoot.resolve("lib");
+        if (!Files.isDirectory(lib)) {
+            return;
+        }
+        Path pkg = Path.of(System.getProperty("user.dir"), "packaging", "linux");
+        try {
+            Path metaSrc = pkg.resolve("com.editora.Editora.metainfo.xml");
+            if (Files.isRegularFile(metaSrc)) {
+                String xml = Files.readString(metaSrc)
+                        .replace("@VERSION@", version)
+                        .replace("@DATE@", java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString())
+                        .replace("@YEAR@", String.valueOf(java.time.Year.now(java.time.ZoneOffset.UTC).getValue()));
+                Files.writeString(lib.resolve("com.editora.Editora.metainfo.xml"), xml);
+                System.out.println("[aot] staged AppStream metainfo (version " + version + ")");
+            }
+            // The themed icon set. The .desktop entry deliberately keeps its absolute Icon= line — that is
+            // what the application menu already resolves correctly — so these are purely additive, for the
+            // software centre, which resolves a stock icon name through the theme instead.
+            Path iconsSrc = Path.of(System.getProperty("user.dir"),
+                    "src", "main", "resources", "com", "editora", "icons");
+            if (Files.isDirectory(iconsSrc)) {
+                Path iconsDst = lib.resolve("icons");
+                Files.createDirectories(iconsDst);
+                int staged = 0;
+                for (String size : new String[] {"16", "32", "48", "128", "256", "512"}) {
+                    Path src = iconsSrc.resolve("icon-" + size + ".png");
+                    if (Files.isRegularFile(src)) {
+                        Files.copy(src, iconsDst.resolve("editora-" + size + ".png"),
+                                StandardCopyOption.REPLACE_EXISTING);
+                        staged++;
+                    }
+                }
+                System.out.println("[aot] staged " + staged + " themed icons");
+            }
+        } catch (IOException e) {
+            System.err.println("[aot] could not stage AppStream metadata (" + e + ") — package will be "
+                    + "described from the dpkg control fields only");
+        }
+    }
+
     /** jpackage --app-image <image> --type <installer> ... (build JDK's jpackage). Returns true on
      *  success; the caller decides whether a failure is fatal (it is for a single-type platform). */
     private static boolean wrapInstaller(Path imageRoot, String appName, String appVer, String type,
@@ -293,16 +357,27 @@ public class aot_build {
                 "--vendor", "Editora",
                 "--app-image", imageRoot.toString(),
                 "--dest", destDir.toString()));
+        String t0 = type.toUpperCase(Locale.ROOT);
         if (icon != null && !icon.isBlank() && !"-".equals(icon) && Files.exists(Path.of(icon))) {
             cmd.add("--icon");
             cmd.add(icon);
+        }
+        // Without these, jpackage defaults the package's own description to the application NAME, so a
+        // software centre (and `apt show`) reads "Description: Editora" — the app describing itself as
+        // itself — with no homepage and a maintainer of "Editora <Unknown>". They cost nothing and are
+        // the only source for those dpkg control fields.
+        cmd.addAll(List.of(
+                "--description", "A keyboard-driven, cross-platform programmer's text editor",
+                "--about-url", "https://editora-project.dev"));
+        if (t0.equals("DEB")) {
+            cmd.addAll(List.of("--linux-deb-maintainer", "editora@editora-project.dev"));
         }
         // Without these, a Windows MSI installs to Program Files but creates NO Start Menu entry,
         // NO desktop shortcut, and NO install wizard — so it looks like "nothing installed". Add a
         // real wizard (dir chooser) + a Start Menu group + a desktop shortcut. Linux .deb/.rpm
         // likewise need --linux-shortcut for an application-menu entry. macOS DMG needs nothing
         // (drag-to-Applications).
-        String t = type.toUpperCase(Locale.ROOT);
+        String t = t0;
         if (t.equals("MSI") || t.equals("EXE")) {
             cmd.addAll(List.of("--win-menu", "--win-menu-group", appName,
                     "--win-shortcut", "--win-dir-chooser"));
