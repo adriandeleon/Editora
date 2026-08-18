@@ -299,6 +299,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private QuickOpen<ToolWindow> splitToolWindowPalette;
     private QuickOpen<com.editora.editor.UndoHistory.Checkpoint> undoHistoryPalette;
     private QuickOpen<NavigationHistory.Location> recentLocationsPalette;
+    private QuickOpen<Path> relatedPalette;
     private QuickOpen<com.editora.snippet.Snippet> snippetPalette;
     private com.editora.snippet.SnippetManager snippets;
     private com.editora.template.TemplateRegistry templates;
@@ -1713,6 +1714,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                 loc -> loc.snippet() + " " + locationLabel(loc),
                 loc -> openAndGoto(loc.path(), loc.line(), loc.column()));
         recentLocationsPalette.setPreview(this::previewLocation, this::restorePreviewOrigin);
+        relatedPalette = new QuickOpen<>(
+                tr("related.title"),
+                tr("related.prompt"),
+                () -> new ArrayList<>(relatedCandidates),
+                path -> path.getFileName().toString(),
+                path -> homeCollapsed(path.toString()),
+                this::openPath);
+        relatedPalette.setOverlayHost(overlayHost);
         snippetPalette = new QuickOpen<>(
                 "Insert Snippet",
                 "Type to filter snippets…",
@@ -5367,6 +5376,68 @@ public class MainController implements com.editora.mcp.McpBridge {
         String selection = a.getSelectedText();
         return selection == null || selection.isBlank() || selection.contains("\n") ? "" : selection.strip();
     }
+
+    /**
+     * {@code nav.relatedFile}: jump between a file and its counterpart — a test and its subject, a header
+     * and its implementation, a component and its stylesheet.
+     *
+     * <p>The candidate names come from the pure {@link com.editora.search.RelatedFiles}; this half decides
+     * which of them exist. A counterpart rarely sits beside its partner (a test lives under
+     * {@code src/test}, a header under {@code include}), so the sibling directory is only the first place
+     * looked — the project index knows every file, and matching on name there finds the rest for free.
+     *
+     * <p>One match opens; several offer a picker, since {@code Foo.css} and {@code Foo.scss} can both
+     * exist and only the user knows which was meant.
+     */
+    private void gotoRelatedFile() {
+        EditorBuffer b = activeBuffer();
+        Path current = b == null ? null : b.getPath();
+        if (current == null) {
+            setStatus(tr("status.related.noFile"));
+            return;
+        }
+        List<String> names =
+                com.editora.search.RelatedFiles.candidates(current.getFileName().toString());
+        if (names.isEmpty()) {
+            setStatus(tr("status.related.none", current.getFileName()));
+            return;
+        }
+        indexCoordinator.ensureBuilt(() -> openRelated(current, names));
+    }
+
+    private void openRelated(Path current, List<String> names) {
+        List<Path> found = new ArrayList<>();
+        Path dir = current.getParent();
+        for (String name : names) {
+            // Beside the file first: when a counterpart IS a sibling that is nearly always the right one,
+            // and it costs a single exists() rather than a scan.
+            if (dir != null) {
+                Path sibling = dir.resolve(name);
+                if (java.nio.file.Files.isRegularFile(sibling) && !sibling.equals(current)) {
+                    found.add(sibling);
+                }
+            }
+            for (IndexCoordinator.FileHit hit : indexCoordinator.searchFiles(name, 20)) {
+                if (hit.file().getFileName().toString().equals(name)
+                        && !hit.file().equals(current)
+                        && !found.contains(hit.file())) {
+                    found.add(hit.file());
+                }
+            }
+        }
+        if (found.isEmpty()) {
+            setStatus(tr("status.related.none", current.getFileName()));
+            return;
+        }
+        if (found.size() == 1) {
+            openPath(found.get(0));
+            return;
+        }
+        relatedCandidates = found;
+        relatedPalette.show(stage);
+    }
+
+    private List<Path> relatedCandidates = List.of();
 
     /** {@code file.java:214} — a location's file and 1-based line, for a picker's detail column. */
     private static String locationLabel(NavigationHistory.Location loc) {
@@ -16619,6 +16690,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("nav.back", this::navBack));
         registry.register(Command.of("nav.forward", this::navForward));
         registry.register(Command.of("nav.recentLocations", this::showRecentLocations));
+        registry.register(Command.of("nav.relatedFile", this::gotoRelatedFile));
         registry.register(
                 Command.of("nav.beginningOfDefun", () -> sexpMove(com.editora.editops.SexpNav::beginningOfDefun)));
         registry.register(Command.of("nav.endOfDefun", () -> sexpMove(com.editora.editops.SexpNav::endOfDefun)));
