@@ -47,12 +47,34 @@ public final class UpdateService {
         return t;
     });
 
-    private final HttpClient client = HttpClient.newBuilder()
-            .connectTimeout(CONNECT_TIMEOUT)
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    /** Built on first use, never at construction: {@code HttpClient.newBuilder().build()} drags in the whole
+     *  {@code java.net.http} + TLS stack, and this service is constructed as a {@code MainController} field
+     *  initializer — i.e. inside {@code FXMLLoader.load()}, on the FX thread, during startup. Measured at ~30 ms
+     *  there, for a check that is throttled to once a day and runs after {@code init}. Both fields are touched
+     *  only from {@link #fetchSync}, which runs solely on the single-threaded {@link #exec}, so the lazy init is
+     *  confined to that one thread and needs no synchronization. */
+    private HttpClient client;
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    private ObjectMapper mapper;
+
+    /** Executor-thread-confined; see the field comment. */
+    private HttpClient client() {
+        if (client == null) {
+            client = HttpClient.newBuilder()
+                    .connectTimeout(CONNECT_TIMEOUT)
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .build();
+        }
+        return client;
+    }
+
+    /** Executor-thread-confined; see the field comment. */
+    private ObjectMapper mapper() {
+        if (mapper == null) {
+            mapper = new ObjectMapper();
+        }
+        return mapper;
+    }
 
     /** Checks off-thread whether a release newer than {@code currentVersion} exists; {@code onResult} runs on the
      *  FX thread. */
@@ -76,7 +98,7 @@ public final class UpdateService {
                     .header("User-Agent", "Editora/" + AppInfo.VERSION) // GitHub rejects a missing UA with 403
                     .GET()
                     .build();
-            HttpResponse<InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<InputStream> resp = client().send(req, HttpResponse.BodyHandlers.ofInputStream());
             if (resp.statusCode() / 100 != 2) {
                 resp.body().close();
                 return new Outcome(false, null, "HTTP " + resp.statusCode());
@@ -85,7 +107,7 @@ public final class UpdateService {
             try (InputStream in = resp.body()) {
                 body = PluginRegistry.readCapped(in, MAX_RELEASE_BYTES);
             }
-            ReleaseInfo latest = UpdateCheck.parseLatest(mapper, body);
+            ReleaseInfo latest = UpdateCheck.parseLatest(mapper(), body);
             if (latest == null) {
                 return new Outcome(false, null, "no usable release in response");
             }
