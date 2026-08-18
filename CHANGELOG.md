@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Windows installer now registers Editora under Explorer's "Open with"** for the text and source
+  types it edits. Windows hands a file manager's chosen file to an application as a command-line argument,
+  and nothing maps an extension to Editora unless the installer says so — so until now the MSI installed an
+  editor that no file manager could hand a file to. The Linux `.deb` already did the equivalent (and more:
+  it can also make Editora the default text editor).
+
+  It does not take over your existing defaults: on Windows 8+ the shell's per-user choice wins over anything
+  an installer writes, so a type you already open with something else keeps opening with it and Editora is
+  simply offered alongside. An extension nothing else claims does fall to Editora, which is the wanted
+  outcome for the likes of `.tfvars`.
+
+  The list is every extension Editora actually resolves to a language, minus `.html`/`.htm`/`.xhtml` and
+  `.svg` — left to the browser and the image viewer, mirroring the choice already made for the Linux
+  package so the two installers cannot drift apart in what they claim.
+
+  The `.rpm` remains without an association: it uses jpackage's own desktop entry and ignores the
+  maintainer-script overrides the `.deb` relies on. RPM users can still open files from within Editora.
+
 ## [0.12.3] - 2026-08-17
 
 ### Fixed
