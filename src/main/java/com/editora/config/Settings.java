@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 96;
+    public static final int SCHEMA_VERSION = 97;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -343,6 +343,11 @@ public class Settings {
     private boolean githubActionsPreview = true;
     /** Maven pom.xml summary preview (properties/dependencies/plugins, instead of the XML tree): on by default. */
     private boolean pomPreview = true;
+    /**
+     * Pin the enclosing scope headers above the viewport as you scroll (VS Code's sticky scroll): on by
+     * default. Suppressed in large-file mode along with the other per-viewport work.
+     */
+    private boolean stickyScroll = true;
     /** Auto-rename the paired HTML/XML tag when a tag name is edited: on by default. */
     private boolean autoRenameTag = true;
 
@@ -699,6 +704,14 @@ public class Settings {
 
     public void setGithubActionsPreview(boolean githubActionsPreview) {
         this.githubActionsPreview = githubActionsPreview;
+    }
+
+    public boolean isStickyScroll() {
+        return stickyScroll;
+    }
+
+    public void setStickyScroll(boolean stickyScroll) {
+        this.stickyScroll = stickyScroll;
     }
 
     public boolean isPomPreview() {

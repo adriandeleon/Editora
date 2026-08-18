@@ -13272,6 +13272,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setDockerfilePreviewEnabled(s.isDockerfilePreview()); // per-stage build digest
         buffer.setGithubActionsPreviewEnabled(s.isGithubActionsPreview()); // workflow triggers + jobs digest
         buffer.setPomPreviewEnabled(s.isPomPreview()); // Maven pom.xml summary (wins over the XML tree)
+        buffer.setStickyScrollEnabled(s.isStickyScroll()); // pinned enclosing-scope headers
         if (buffer.isStructured() || buffer.isXml() || buffer.isSvg()) {
             ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/XML/SVG gate flips
         }
@@ -15489,6 +15490,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                         "view.toggleStructuredPreview",
                         () -> config.getSettings().isStructuredPreview(),
                         config.getSettings()::setStructuredPreview,
+                        () -> {
+                            applyViewSettingsToAllBuffers(config.getSettings());
+                            settingsWindow.syncAll();
+                        })));
+        registry.register(Command.of(
+                "view.toggleStickyScroll",
+                () -> toggleSetting(
+                        "view.toggleStickyScroll",
+                        () -> config.getSettings().isStickyScroll(),
+                        config.getSettings()::setStickyScroll,
                         () -> {
                             applyViewSettingsToAllBuffers(config.getSettings());
                             settingsWindow.syncAll();

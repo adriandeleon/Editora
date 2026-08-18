@@ -3562,3 +3562,21 @@
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 2 10 4 10;
 }
+
+/* Sticky scroll — the enclosing scope headers pinned over the top of the code pane. It sits ON the
+   editor surface, so it takes the editor's own background rather than a panel colour; the bottom border
+   and shadow are what separate it from the real line directly beneath it. */
+.sticky-scroll {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: transparent transparent -color-border-muted transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 6, 0, 0, 2);
+    -fx-padding: 0;
+}
+.sticky-scroll-row {
+    -fx-padding: 1 6 1 6;
+    -fx-cursor: hand;
+}
+.sticky-scroll-row:hover {
+    -fx-background-color: -color-bg-subtle;
+}
