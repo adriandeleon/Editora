@@ -3598,3 +3598,16 @@
 .peek-line-number {
     -fx-fill: -color-fg-muted;
 }
+
+/* Search Everywhere — one picker over commands, files and symbols. The group headers are what keep the
+   three sources legible when they sit in one list, so they read as labels rather than as dimmed results. */
+.search-everywhere .list-cell.se-header {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.85em;
+    -fx-font-weight: bold;
+    -fx-padding: 2 0 0 4;
+    -fx-opacity: 1; /* the cell is disabled so it can't be selected; it must not look disabled */
+}
+.search-everywhere .list-cell.se-header:filled:selected {
+    -fx-background-color: transparent;
+}

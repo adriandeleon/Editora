@@ -76,6 +76,9 @@ final class IndexCoordinator {
     private Path indexedRoot;
     private boolean building;
 
+    /** Every file the last walk saw — the corpus behind Search Everywhere's file results. */
+    private List<Path> projectFiles = List.of();
+
     IndexCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
@@ -114,6 +117,7 @@ final class IndexCoordinator {
     void applySupport() {
         if (!isEnabled()) {
             index.clear();
+            projectFiles = List.of();
             indexedRoot = null;
         }
     }
@@ -122,6 +126,7 @@ final class IndexCoordinator {
     void onProjectChanged() {
         generation.incrementAndGet();
         index.clear();
+        projectFiles = List.of();
         indexedRoot = null;
     }
 
@@ -151,6 +156,7 @@ final class IndexCoordinator {
         }
         generation.incrementAndGet();
         index.clear();
+        projectFiles = List.of();
         indexedRoot = null;
         build(() -> host.setStatus(tr("status.index.built", index.symbolCount(), index.fileCount())));
     }
@@ -189,16 +195,17 @@ final class IndexCoordinator {
         long gen = generation.incrementAndGet();
         AutoCloseable task = host.startBackgroundTask(tr("status.index.building"));
         worker.submit(() -> {
-            List<Scanned> scanned = walk(root);
+            Walked walked = walk(root);
             Platform.runLater(() -> {
                 building = false;
                 close(task);
                 if (gen != generation.get()) {
                     return; // a project switch or a rebuild superseded this walk
                 }
-                for (Scanned s : scanned) {
+                for (Scanned s : walked.scanned()) {
                     index.put(s.file(), s.symbols());
                 }
+                projectFiles = walked.files();
                 indexedRoot = root;
                 if (then != null) {
                     then.run();
@@ -207,12 +214,19 @@ final class IndexCoordinator {
         });
     }
 
+    /** One walk's yield: the files it saw, and the symbols it found in them. */
+    private record Walked(List<Path> files, List<Scanned> scanned) {}
+
     private record Scanned(Path file, List<Symbol> symbols) {}
 
     /** The blocking half — runs on {@link #worker}, touches nothing that belongs to the FX thread. */
-    private List<Scanned> walk(Path root) {
+    private Walked walk(Path root) {
         GitignoreFilter ignore = ops.respectGitignore() ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
         List<Scanned> out = new ArrayList<>();
+        // Every file the walk sees, not only the ones with symbols: Search Everywhere needs to offer
+        // files too, and this walk is already paying for the traversal. Doing it separately would mean a
+        // second pass over the same tree for the same information.
+        List<Path> files = new ArrayList<>();
         int[] visited = {0};
         try (var stream = Files.walk(root)) {
             for (Path p : (Iterable<Path>) stream::iterator) {
@@ -226,6 +240,7 @@ final class IndexCoordinator {
                 if (rel.startsWith(".") || rel.contains("/.") || ignore.ignored(rel, false)) {
                     continue; // dot-dirs and .gitignore'd paths, matching Find in Files
                 }
+                files.add(p);
                 String language = LanguageRegistry.forFileName(p.getFileName().toString());
                 try {
                     if (Files.size(p) > MAX_FILE_BYTES) {
@@ -243,7 +258,7 @@ final class IndexCoordinator {
         } catch (IOException | RuntimeException ex) {
             // Same: a partial index beats none.
         }
-        return out;
+        return new Walked(List.copyOf(files), out);
     }
 
     private void promptForSymbol() {
@@ -270,6 +285,51 @@ final class IndexCoordinator {
             // The progress chip is cosmetic; failing to close it must not sink the result.
         }
     }
+
+    /** True once a walk has landed, so a caller can decide whether to trigger one. */
+    boolean isBuilt() {
+        return indexedRoot != null;
+    }
+
+    /** Builds if needed, then runs {@code then} — the entry point for a caller that wants results now. */
+    void ensureBuilt(Runnable then) {
+        if (!isEnabled()) {
+            return;
+        }
+        if (isBuilt()) {
+            then.run();
+        } else {
+            build(then);
+        }
+    }
+
+    /** Ranked symbol hits for {@code query}; empty when the index has not been built. */
+    List<SymbolIndex.Hit> searchSymbols(String query, int limit) {
+        return isEnabled() ? index.search(query, limit) : List.of();
+    }
+
+    /**
+     * Ranked project files for {@code query}, matched on the path relative to the root so a query can name
+     * a directory as well as a file name.
+     */
+    List<FileHit> searchFiles(String query, int limit) {
+        if (!isEnabled() || query == null || query.isBlank() || indexedRoot == null) {
+            return List.of();
+        }
+        List<FileHit> hits = new ArrayList<>();
+        for (Path file : projectFiles) {
+            String rel = indexedRoot.relativize(file).toString().replace(java.io.File.separatorChar, '/');
+            com.editora.search.FuzzyMatch.Match m = com.editora.search.FuzzyMatch.ofPath(rel, query);
+            if (m != null) {
+                hits.add(new FileHit(file, rel, m.score()));
+            }
+        }
+        hits.sort(java.util.Comparator.comparingInt(FileHit::score).reversed().thenComparing(FileHit::relativePath));
+        return hits.size() <= limit ? List.copyOf(hits) : List.copyOf(hits.subList(0, limit));
+    }
+
+    /** A project file that matched, with the path as it should be shown. */
+    record FileHit(Path file, String relativePath, int score) {}
 
     void dispose() {
         worker.shutdownNow();

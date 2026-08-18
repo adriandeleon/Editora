@@ -1260,6 +1260,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindowPalette.setOverlayHost(overlayHost);
         undoHistoryPalette.setOverlayHost(overlayHost);
         indexCoordinator.setOverlayHost(overlayHost);
+        searchEverywherePopup = new SearchEverywherePopup(overlayHost, searchEverywhereOps);
         recentLocationsPalette.setOverlayHost(overlayHost);
         bookmarkCoordinator.wireOverlayHost();
         notesCoordinator.wireOverlayHost();
@@ -3651,6 +3652,87 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** TODO / highlight-pattern feature; owns the service/panel/scan/commands (the tool window stays here). */
+    private SearchEverywherePopup searchEverywherePopup;
+
+    /**
+     * The three sources behind Search Everywhere. Commands come from the registry and cost nothing;
+     * files and symbols come from the lazily-built project index, so an unscoped query is what triggers
+     * the walk the first time.
+     */
+    private final SearchEverywherePopup.Ops searchEverywhereOps = new SearchEverywherePopup.Ops() {
+        @Override
+        public java.util.List<com.editora.search.SearchEverywhere.Item> commands(String query) {
+            java.util.List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+            var gates = paletteGates();
+            var context = paletteContext();
+            for (Command c : registry.all()) {
+                // A command the palette would gray out is not offered here at all: this list is short and
+                // mixed, so an inert row is pure noise rather than the discoverability aid it is there.
+                if (!Chrome.paletteEnabled(c.id(), gates, context)) {
+                    continue;
+                }
+                com.editora.search.FuzzyMatch.Match m = com.editora.search.FuzzyMatch.of(c.title(), query);
+                if (m != null) {
+                    out.add(new com.editora.search.SearchEverywhere.Item(
+                            com.editora.search.SearchEverywhere.Kind.COMMAND,
+                            c.title(),
+                            invertBindings().getOrDefault(c.id(), ""),
+                            m.score(),
+                            c));
+                }
+            }
+            return out;
+        }
+
+        @Override
+        public java.util.List<com.editora.search.SearchEverywhere.Item> files(String query) {
+            java.util.List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+            for (IndexCoordinator.FileHit hit : indexCoordinator.searchFiles(query, 40)) {
+                String name = hit.file().getFileName().toString();
+                String parent = hit.relativePath().contains("/")
+                        ? hit.relativePath().substring(0, hit.relativePath().lastIndexOf('/'))
+                        : "";
+                out.add(new com.editora.search.SearchEverywhere.Item(
+                        com.editora.search.SearchEverywhere.Kind.FILE, name, parent, hit.score(), hit.file()));
+            }
+            return out;
+        }
+
+        @Override
+        public java.util.List<com.editora.search.SearchEverywhere.Item> symbols(String query) {
+            java.util.List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+            for (com.editora.index.SymbolIndex.Hit hit : indexCoordinator.searchSymbols(query, 40)) {
+                String container = hit.symbol().container();
+                String where = hit.file().getFileName() + ":" + (hit.symbol().line() + 1);
+                out.add(new com.editora.search.SearchEverywhere.Item(
+                        com.editora.search.SearchEverywhere.Kind.SYMBOL,
+                        hit.symbol().name(),
+                        container.isEmpty() ? where : container + " — " + where,
+                        hit.score(),
+                        hit));
+            }
+            return out;
+        }
+
+        @Override
+        public void ensureIndex(Runnable then) {
+            indexCoordinator.ensureBuilt(then);
+        }
+
+        @Override
+        public void choose(com.editora.search.SearchEverywhere.Item item) {
+            switch (item.payload()) {
+                case Command c -> registry.run(c.id());
+                case java.nio.file.Path file -> openPath(file);
+                case com.editora.index.SymbolIndex.Hit hit ->
+                    openAndGoto(hit.file(), hit.symbol().line(), hit.symbol().column());
+                default -> {
+                    // Unreachable: every Item this window builds carries one of the three above.
+                }
+            }
+        }
+    };
+
     private final IndexCoordinator indexCoordinator = new IndexCoordinator(coordinatorHost, new IndexCoordinator.Ops() {
         @Override
         public java.nio.file.Path projectRoot() {
@@ -5242,6 +5324,33 @@ public class MainController implements com.editora.mcp.McpBridge {
         NavigationHistory.Location origin = previewOrigin;
         previewOrigin = null;
         previewLocation(origin);
+    }
+
+    /**
+     * {@code search.everywhere}: one picker over commands, project files and symbols.
+     *
+     * <p>Seeded from a single-line selection, like the find bar and Find in Files — if you have selected
+     * the thing you are looking for, retyping it is busywork.
+     */
+    private void showSearchEverywhere() {
+        if (searchEverywherePopup == null) {
+            return; // overlay host not installed yet (very early in init)
+        }
+        searchEverywherePopup.show(singleLineSelection());
+    }
+
+    /**
+     * The active buffer's selection when it is non-empty and on one line, else "". A multi-line selection
+     * is never a sensible search term, which is the same rule the find bar and Find in Files apply.
+     */
+    private String singleLineSelection() {
+        EditorBuffer b = activeBuffer();
+        CodeArea a = b == null ? null : b.getFocusedArea();
+        if (a == null) {
+            return "";
+        }
+        String selection = a.getSelectedText();
+        return selection == null || selection.isBlank() || selection.contains("\n") ? "" : selection.strip();
     }
 
     /** {@code file.java:214} — a location's file and 1-based line, for a picker's detail column. */
@@ -16045,6 +16154,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.problems", () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
         registry.register(Command.of("tool.references", () -> ifLsp(() -> toolWindows.toggle(referencesToolWindow))));
         registry.register(Command.of("tool.hierarchy", () -> ifLsp(() -> toolWindows.toggle(hierarchyToolWindow))));
+        registry.register(Command.of("search.everywhere", this::showSearchEverywhere));
         registry.register(Command.of("index.gotoSymbol", indexCoordinator::gotoSymbol));
         registry.register(Command.of("index.rebuild", indexCoordinator::rebuild));
         registry.register(Command.of(

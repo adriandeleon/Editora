@@ -47,6 +47,18 @@ final class FxTestSupport {
     }
 
     /** Run {@code task} on the FX thread and block until it finishes, rethrowing any failure. */
+    /**
+     * {@link #runOnFx} without the checked exception, for use inside a lambda that cannot declare one.
+     * A failure still fails the test — it is rethrown unchecked rather than swallowed.
+     */
+    static void runOnFxUnchecked(Runnable task) {
+        try {
+            runOnFx(task);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     static void runOnFx(Runnable task) throws Exception {
         if (Platform.isFxApplicationThread()) {
             task.run();
