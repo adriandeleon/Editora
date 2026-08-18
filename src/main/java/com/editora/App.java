@@ -1,6 +1,7 @@
 package com.editora;
 
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -62,9 +63,9 @@ public class App extends Application {
         var rawArgs = getParameters().getRaw();
         // One shared resolver, so this can never disagree with the single-instance claim in main() about
         // which directory (and therefore which instance) this launch belongs to.
-        ConfigManager bootstrap =
-                new ConfigManager(ConfigManager.configDirFor(configDirArg(rawArgs), devFlag(rawArgs)));
-        Settings settings = bootstrap.load();
+        Bootstrap boot = takeBootstrap(ConfigManager.configDirFor(configDirArg(rawArgs), devFlag(rawArgs)));
+        ConfigManager bootstrap = boot.manager();
+        Settings settings = boot.settings();
         SharedConfig shared = bootstrap.shared();
         com.editora.perf.Startup.mark(com.editora.perf.Startup.CONFIG_LOADED);
         // Flush any pending off-thread settings/session writes on exit, covering paths where persistSession()
@@ -300,7 +301,68 @@ public class App extends Application {
             com.editora.ipc.SingleInstance owned = singleInstance.instance();
             Runtime.getRuntime().addShutdownHook(new Thread(owned::close, "single-instance-close"));
         }
+        // Load the shared config on a background thread, then start the toolkit, so the two overlap.
+        // This is the whole reason com.editora.Launcher — not this class — is the module main class: when
+        // an Application subclass is the main class the FX launcher starts the toolkit BEFORE main(), so by
+        // the time we reach this line there is nothing left to overlap with. Entering through Launcher moves
+        // toolkit startup after main(), which measured (Linux app image) as a ~135 ms window; the config
+        // load is ~85 ms of file I/O and Jackson with no toolkit involvement, so it now finishes inside that
+        // window instead of running after it. start() takes whatever is ready.
+        configPrefetch = prefetchConfig(configDir);
         launch(args);
+    }
+
+    /** The shared config, loaded off-thread by {@link #prefetchConfig} and consumed once by {@link #start}. */
+    private record Bootstrap(ConfigManager manager, Settings settings) {}
+
+    private static volatile CompletableFuture<Bootstrap> configPrefetch;
+
+    /** Loads the config on a daemon thread while the caller starts the FX toolkit. Never throws: a failure
+     *  is handed to {@link #takeBootstrap}, which falls back to loading inline so the prefetch can only ever
+     *  make startup faster, never introduce a failure mode of its own. */
+    private static CompletableFuture<Bootstrap> prefetchConfig(java.nio.file.Path configDir) {
+        CompletableFuture<Bootstrap> future = new CompletableFuture<>();
+        Thread t = new Thread(
+                () -> {
+                    try {
+                        ConfigManager manager = new ConfigManager(configDir);
+                        future.complete(new Bootstrap(manager, manager.load()));
+                    } catch (Throwable e) { // NOSONAR: deliberately broad — see takeBootstrap
+                        future.completeExceptionally(e);
+                    }
+                },
+                "config-prefetch");
+        t.setDaemon(true);
+        t.start();
+        return future;
+    }
+
+    /**
+     * The prefetched config when {@link #main} started one for this same directory and it succeeded, else a
+     * plain inline load.
+     *
+     * <p>The fallback is what keeps this an optimization rather than a second code path: a prefetch that
+     * failed surfaces its error exactly where the inline load always did, and an entry point that does not
+     * run our {@code main} (a test harness constructing the app directly) still works. The directory is
+     * re-derived from the FX parameters and compared rather than assumed — both sides use the same resolver
+     * on the same arguments, so a mismatch should be impossible, and if it ever were possible, silently
+     * using another directory's settings is the worst outcome available.
+     */
+    private static Bootstrap takeBootstrap(java.nio.file.Path configDir) {
+        CompletableFuture<Bootstrap> future = configPrefetch;
+        configPrefetch = null; // one-shot: a second window must not reuse the first launch's load
+        if (future != null) {
+            try {
+                Bootstrap boot = future.join();
+                if (boot.manager().getConfigDir().equals(configDir)) {
+                    return boot;
+                }
+            } catch (RuntimeException ignored) {
+                // Prefetch failed; fall through so the inline load raises it the way it always has.
+            }
+        }
+        ConfigManager manager = new ConfigManager(configDir);
+        return new Bootstrap(manager, manager.load());
     }
 
     /**
