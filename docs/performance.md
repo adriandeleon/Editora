@@ -119,8 +119,26 @@ See the recipe in [extending.md](extending.md#add-a-canvas-overlay), and `SpellC
 
 ## Packaged-runtime tuning
 
-The dist `<javaOptions>` (mirrored into `javafx:run` so dev == prod) cap heap and GC: `-Xmx2g`
-(predictable across the release matrix), `-XX:+UseSerialGC` (lowest idle RSS for a mostly-idle
-single-user editor on a small heap). The jlinked runtime is stripped for size. An AOT cache
-(JDK 25 Leyden) shaves ~300–480 ms off cold start. None of this changes behavior — but if you
-touch startup or large-file handling, measure against these settings, since they're what ships.
+The dist `<javaOptions>` (mirrored into `javafx:run` so dev == prod) pin heap and GC:
+
+- **`-Xmx2g`** — predictable across the release matrix, and safe for a 50 MB file (the huge-file
+  read cap) with deep undo.
+- **`-Xms64m`** — set explicitly, because the default initial heap is 1/64 of physical RAM
+  *clamped up to `-Xmx`*: on a big-RAM machine that equals `-Xmx`, so the whole 2 GB heap is
+  committed before `main` runs. Measured on Linux with a 4-file session: peak RSS median 908 MB
+  (n=4), held ~58 s until the periodic GC uncommits, versus 653 MB (n=6) with `-Xms64m`, and no
+  startup cost (5 interleaved pairs, mean −27 ms). The live heap is only 63–75 MB idle.
+- **`-XX:+UseG1GC -XX:G1PeriodicGCInterval=30000`** — G1, *not* SerialGC: measured on a real
+  session, SerialGC cost 434 MB more RSS and a 186 ms max pause against G1's 35 ms. The periodic
+  interval is what returns idle memory to the OS. The full measurement notes live in the pom
+  beside the options.
+
+The jlinked runtime is stripped for size. An AOT cache (JDK 25 Leyden) shaves ~300–480 ms off cold
+start and costs ~71 MB of resident, file-backed, shared mapping. None of this changes behavior —
+but if you touch startup or large-file handling, measure against these settings, since they're
+what ships.
+
+Two things to know before measuring memory yourself: **settled RSS has a ±90 MB run-to-run noise
+floor** (two runs of an identical config landed at 552 MB and 688 MB — the variance is how much of
+the heap region stays resident after an uncommit), so judge changes on **peak RSS and NMT category
+totals**, which are stable, and never on a single settled reading.

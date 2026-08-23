@@ -63,7 +63,9 @@ public final class PreviewImageLoader {
     }
 
     /** Cap on cached decoded images. Each holds a GPU texture, so the cache is bounded (LRU) instead
-     *  of growing unbounded as more Markdown files with images/badges are previewed. */
+     *  of growing unbounded as more Markdown files with images/badges are previewed. Entry count is only
+     *  half the bound — see {@link ImageCacheBudget} for the byte cap that backs it up, since a preview
+     *  image is user content of any size. */
     private static final int MAX_CACHED_IMAGES = 64;
 
     private static final Map<String, Loaded> CACHE =
@@ -104,6 +106,10 @@ public final class PreviewImageLoader {
             }
             FAILED.remove(url);
             CACHE.put(url, loaded);
+            synchronized (CACHE) { // byte cap behind the count cap: one huge image is not 1/64th of a budget
+                ImageCacheBudget.trim(
+                        CACHE, l -> ImageCacheBudget.footprint(l.image()), ImageCacheBudget.PREVIEW_BUDGET_BYTES);
+            }
             Platform.runLater(() -> apply(view, loaded, maxWidth));
         });
     }

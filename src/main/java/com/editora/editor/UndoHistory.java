@@ -18,6 +18,20 @@ public final class UndoHistory {
     /** Max checkpoints kept (oldest evicted); bounds memory since each holds a full document snapshot. */
     public static final int MAX = 50;
 
+    /**
+     * Total document text retained across all checkpoints, in chars. A count cap alone is not a memory
+     * bound when the entries vary in size by three orders of magnitude: {@link #MAX} snapshots of a
+     * just-under-{@code UNDO_HISTORY_MAX_BYTES} document is ~50 MB <em>per buffer</em>, and several edited
+     * buffers multiply it. Whichever cap binds first wins, so a small file still gets its full 50 steps
+     * (the common case) while a large one keeps fewer, deeper-in-time steps instead of a fixed 50.
+     *
+     * <p>Chars, not bytes, because that is what a snapshot's {@code String} actually costs to hold:
+     * ~1 byte/char for the Latin-1 text that dominates source files (compact strings), 2 for the rest —
+     * so this is a close approximation from above for code and a factor-of-two one for CJK prose. The
+     * same lesson as the Typst page cache (#461), which bounds pages rather than entries.
+     */
+    static final int MAX_RETAINED_CHARS = 16_000_000;
+
     private static final int PREVIEW_MAX = 80;
 
     /** One captured document state. {@code linePreview} is the caret line at capture (for the row label). */
@@ -25,6 +39,7 @@ public final class UndoHistory {
 
     private final ArrayDeque<Checkpoint> entries = new ArrayDeque<>(); // oldest first, newest last
     private long seq = 0;
+    private long retainedChars = 0; // sum of entries' text lengths, kept in step with the deque
 
     /**
      * Records the current document state, unless it equals the most recent checkpoint. Returns true when a
@@ -39,10 +54,19 @@ public final class UndoHistory {
             return false; // editing settled but the text is unchanged (e.g. type-then-delete)
         }
         entries.addLast(new Checkpoint(++seq, epochMillis, lineAt(text, caret), text, clamp(caret, text.length())));
-        while (entries.size() > MAX) {
-            entries.removeFirst();
+        retainedChars += text.length();
+        // Evict oldest-first until BOTH caps hold. The newest checkpoint is never evicted, even when it
+        // alone exceeds the char budget: it is the state the user just left, and dropping it would make
+        // a large file silently have no history at all rather than a short one.
+        while (entries.size() > MAX || (retainedChars > MAX_RETAINED_CHARS && entries.size() > 1)) {
+            retainedChars -= entries.removeFirst().text().length();
         }
         return true;
+    }
+
+    /** Total document text currently retained across all checkpoints, in chars (for tests/diagnostics). */
+    long retainedChars() {
+        return retainedChars;
     }
 
     /** Checkpoints newest-first (the order the panel lists them). */
@@ -58,6 +82,7 @@ public final class UndoHistory {
 
     public void clear() {
         entries.clear();
+        retainedChars = 0;
     }
 
     /** Clamps {@code v} into {@code [0, len]} (pure). */

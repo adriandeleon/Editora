@@ -626,6 +626,7 @@
                              (the huge-file read cap) with deep undo. See the dist profile for why
                              G1 rather than SerialGC. -->
                         <option>-Xmx2g</option>
+                        <option>-Xms64m</option>
                         <option>-XX:+UseG1GC</option>
                         <option>-XX:G1PeriodicGCInterval=30000</option>
                     </options>
@@ -1434,8 +1435,36 @@
                                              memory is released after a burst. Idle CPU vs SerialGC is
                                              +0.15pp (0.25 -> 0.40%), the price of the 434 MB. -->
                                         <javaOption>-Xmx2g</javaOption>
+                                        <!-- -Xms is set EXPLICITLY rather than left to ergonomics: the
+                                             default initial heap is 1/64 of physical RAM CLAMPED UP TO
+                                             -Xmx, so on a 128 GB machine it equals -Xmx and the WHOLE 2 GB
+                                             heap is committed before main runs. Measured (Linux, installed
+                                             .deb, 4-file session): peak RSS median 908 MB (888/888/929/927,
+                                             n=4), held ~58 s until G1PeriodicGCInterval uncommits, vs
+                                             653 MB (662/644/552/688/641/684, n=6) with -Xms64m — the two
+                                             ranges do not overlap. Startup is unaffected: 5 interleaved
+                                             pairs, mean -27 ms. The live heap is only 63-75 MB idle, so
+                                             64m costs nothing to grow from. It scales with the HOST's RAM
+                                             (a 16 GB laptop gets 256 MB initial and never sees this), which
+                                             is exactly the "predictable across the release matrix"
+                                             argument that already pins -Xmx. -->
+                                        <javaOption>-Xms64m</javaOption>
                                         <javaOption>-XX:+UseG1GC</javaOption>
                                         <javaOption>-XX:G1PeriodicGCInterval=30000</javaOption>
+                                        <!-- GC THREAD COUNTS ARE DELIBERATELY NOT PINNED. Ergonomics sizes
+                                             them from the core count, so a 24-core box gets 18 parallel /
+                                             18 refinement / 5 concurrent threads to manage a ~65 MB live
+                                             set, and G1's structures cost ~1.5 MB per thread: measured NMT
+                                             "GC" committed 76 MB, falling to 56 MB at 8/2/8 with pauses
+                                             unchanged (median 4.2 -> 3.8 ms, max 9.0 -> 10.1 ms). Tempting,
+                                             but a fixed value is a FLOOR as well as a ceiling:
+                                             -XX:ParallelGCThreads=8 on a 4-core laptop RAISES it from 4 to
+                                             8 and costs memory on exactly the machines that can least
+                                             afford it, and the flag has no cap-only form. Worth ~20 MB on
+                                             big-core machines only; revisit if a per-core expression ever
+                                             appears. (-Xms64m above is what actually fixed the pauses:
+                                             19.6 -> 4.2 ms median, 31.7 -> 9.0 ms max, because a small
+                                             young gen collects far less per pause.) -->
                                         <!-- AOT cache (JDK 25 Leyden) — ~28% faster cold start (measured:
                                              first-frame ~1060ms -> ~760ms on macOS). The cache is TRAINED
                                              after this image is built (see the aot_build exec step below):

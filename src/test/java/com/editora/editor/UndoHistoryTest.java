@@ -44,6 +44,50 @@ class UndoHistoryTest {
     }
 
     @Test
+    void evictsBeyondTheCharBudgetEvenWhenUnderTheCountCap() {
+        UndoHistory h = new UndoHistory();
+        String big = "x".repeat(UndoHistory.MAX_RETAINED_CHARS / 4);
+        for (int i = 0; i < 10; i++) {
+            h.add(big + i, 0, i); // ten of these is 2.5x the budget, but only 10 of 50 checkpoints
+        }
+        assertTrue(h.retainedChars() <= UndoHistory.MAX_RETAINED_CHARS, "budget exceeded: " + h.retainedChars());
+        List<UndoHistory.Checkpoint> e = h.entriesNewestFirst();
+        assertTrue(e.size() < 10, "nothing was evicted: " + e.size());
+        assertEquals(big + 9, e.get(0).text()); // the newest survives; the oldest went first
+    }
+
+    @Test
+    void keepsTheNewestCheckpointEvenWhenItAloneExceedsTheBudget() {
+        UndoHistory h = new UndoHistory();
+        h.add("small", 0, 1);
+        String huge = "y".repeat(UndoHistory.MAX_RETAINED_CHARS + 1);
+        h.add(huge, 0, 2);
+        List<UndoHistory.Checkpoint> e = h.entriesNewestFirst();
+        assertEquals(1, e.size()); // the small one is evicted, the newest is never dropped
+        assertEquals(huge, e.get(0).text());
+    }
+
+    @Test
+    void smallDocumentsStillGetTheFullCountOfCheckpoints() {
+        UndoHistory h = new UndoHistory();
+        for (int i = 0; i < UndoHistory.MAX; i++) {
+            h.add("line " + i, 0, i); // ordinary edits: the char budget must not bind here
+        }
+        assertEquals(UndoHistory.MAX, h.entriesNewestFirst().size());
+    }
+
+    @Test
+    void retainedCharsTracksTheDequeAcrossEvictionAndClear() {
+        UndoHistory h = new UndoHistory();
+        h.add("abc", 0, 1);
+        h.add("de", 0, 2);
+        assertEquals(5, h.retainedChars());
+        h.clear();
+        assertEquals(0, h.retainedChars());
+        assertTrue(h.isEmpty());
+    }
+
+    @Test
     void clampKeepsCaretInRange() {
         assertEquals(0, UndoHistory.clamp(-5, 10));
         assertEquals(10, UndoHistory.clamp(99, 10));
