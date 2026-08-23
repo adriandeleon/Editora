@@ -5045,11 +5045,10 @@ public class EditorBuffer implements TabContent {
      */
     public void dispose() {
         disposed = true; // reject any LATER dispatch (see below) — the gen bumps only cover in-flight work
-        // Drop the undo checkpoints eagerly. They are session-only and go with the buffer on GC anyway, but
-        // they are the single largest thing hanging off it (up to MAX whole-document snapshots), and a
-        // closed buffer is measurably not collected immediately — rapid open/edit/close cycling leaves
-        // several reachable at once before they all go. Releasing the history at the moment the tab closes
-        // makes that window cost one document each instead of one document plus its whole edit history.
+        // Drop the undo checkpoints eagerly. They go with the buffer on GC (BufferReleasedOnCloseFxTest
+        // pins that the whole buffer becomes collectable when its tab closes), but they are the single
+        // largest thing hanging off it -- up to MAX whole-document snapshots -- and releasing them at the
+        // moment the tab closes returns that memory now rather than at the next collection.
         undoHistory.clear();
         unsubscribePreview();
         disposeMultiCaret();

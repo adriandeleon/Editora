@@ -138,7 +138,15 @@ start and costs ~71 MB of resident, file-backed, shared mapping. None of this ch
 but if you touch startup or large-file handling, measure against these settings, since they're
 what ships.
 
-Two things to know before measuring memory yourself: **settled RSS has a ±90 MB run-to-run noise
+When measuring memory yourself, know that **`jcmd GC.run` + `GC.heap_info` does not report the live
+set** — `heap_info` prints *used*, which a few seconds after a forced GC can still be twice the live
+bytes (measured 216 MB against 103 MB live). Use `GC.class_histogram`'s total, which forces its own
+stop-the-world full GC. A `Concurrent Mark Cycle` line in the GC log is likewise **not a pause** — grep
+`GC(n) Pause`. And if you take a heap dump to chase a suspected leak, make sure the diagnostic itself
+holds no reference to the object: a live local slot makes it a "Java frame" GC root and the dump then
+shows a retention that is purely your own doing.
+
+Two more things to know before measuring memory yourself: **settled RSS has a ±90 MB run-to-run noise
 floor** (two runs of an identical config landed at 552 MB and 688 MB — the variance is how much of
 the heap region stays resident after an uncommit), so judge changes on **peak RSS and NMT category
 totals**, which are stable, and never on a single settled reading.
