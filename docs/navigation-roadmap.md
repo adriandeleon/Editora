@@ -16,7 +16,7 @@ This file keeps only the sequencing, the rejected alternatives, and the items st
 | 2 — symbol index | **shipped** (lazy build, incremental on save) | [§ The symbol index](subsystems/navigation.md#the-symbol-index) |
 | 3 — Search Everywhere | **shipped** | [§ Search Everywhere](subsystems/navigation.md#search-everywhere) |
 | 4 — flow | **shipped** | [§ Flow](subsystems/navigation.md#flow--not-losing-your-place) |
-| 5 — polish | shipped bar the code lens; symbol breadcrumb dropped as redundant | below |
+| 5 — polish | **shipped**; symbol breadcrumb dropped as redundant | below |
 
 ## The thesis
 
@@ -72,6 +72,12 @@ Recorded because each one explains why a piece is shaped the way it is.
   which picker is muscle memory, and the substitution is only safe because Search Everywhere was made
   a strict superset first — an empty query lists every command, gated commands are listed grayed with
   an explanation, and the description line and `C-h` docs are both present.
+- **The code lens needed a fork change, as predicted.** The spike measured both existing mechanisms
+  and ruled them out: `Inlay` is a string at a column, and a 44px gutter graphic leaves a 19px row at
+  19px, because it is resized down to the line rather than growing it. richtextfx `0.11.7-lens.2`
+  adds `lensFactory`, the vertical counterpart of `paragraphGraphicFactory` — the same 44px node as a
+  lens takes the row to 63px. Off by default: every lens costs the language server a project-wide
+  search to resolve.
 - **The symbol breadcrumb was dropped.** It answers the same question as sticky scroll, which answers
   it with the actual source lines. The one thing a breadcrumb adds is clickable sibling dropdowns,
   and `structure.jump` already covers that. Worth revisiting only if that dropdown turns out to be
@@ -80,12 +86,6 @@ Recorded because each one explains why a piece is shaped the way it is.
 
 ## Still open
 
-- **Reference-count code lens.** It needs an editor decoration layer *above* a line, which nothing in
-  the codebase has: every existing overlay (whitespace, spell, search, diagnostics, TODO, inline
-  values) draws over the text or beside it in the gutter, and none of them insert vertical space. The
-  RichTextFX fork gained `Inlay` for inline hints, which displaces glyphs horizontally — a lens needs
-  the vertical equivalent. That is a rendering capability, not a feature, and it should be scoped and
-  looked at before much is built on it.
 - **One "go to symbol".** `lsp.gotoSymbol` and `index.gotoSymbol` are still separate commands rather
   than a single prefer-server-then-fall-back-to-index dispatch.
 
