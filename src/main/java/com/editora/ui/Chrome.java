@@ -128,6 +128,7 @@ final class Chrome {
             boolean csv,
             boolean structured,
             boolean pomPreview,
+            boolean symbolIndex,
             boolean markdownLint,
             boolean editorConfig,
             /** Simple UI mode, which forces several features off on top of their own setting. Not a gate of
@@ -176,6 +177,7 @@ final class Chrome {
      */
     private static final java.util.List<FeatureRule> FEATURE_RULES = java.util.List.of(
             rule(PaletteGates::projects, "project.", "view.toggleProjects", "tool.project"),
+            simpleRule(PaletteGates::symbolIndex, "index.", "view.toggleSymbolIndex"),
             simpleRule(PaletteGates::git, "git.", "view.toggleGit", "tool.commit", "tool.gitLog"),
             simpleRule(PaletteGates::github, "github.", "view.toggleGithub", "tool.github"),
             rule(PaletteGates::notes, "notes.", "view.toggleNotes", "tool.notes"),

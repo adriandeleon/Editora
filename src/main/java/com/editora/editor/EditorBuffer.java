@@ -579,6 +579,12 @@ public class EditorBuffer implements TabContent {
     private String lspTooltipText;
 
     private final FoldManager folds = new FoldManager(area);
+
+    /** Pinned enclosing-scope headers over the top of the code pane; see {@link StickyScroll}. */
+    private final StickyScrollBar stickyScroll = new StickyScrollBar();
+
+    private boolean stickyScrollEnabled;
+    private boolean stickyScrollPending;
     private final BookmarkManager bookmarks = new BookmarkManager(area);
     /** Handles a bookmark add/remove request for a line (from the right-click menu): the controller adds,
      *  or confirms a removal. Default: toggle. */
@@ -1008,6 +1014,7 @@ public class EditorBuffer implements TabContent {
             scheduleFormatBar();
             scheduleAiActionsBar();
         });
+        a.estimatedScrollYProperty().addListener((obs, old, now) -> scheduleStickyScroll());
         a.estimatedScrollXProperty().addListener((obs, old, now) -> {
             scheduleFormatBar();
             scheduleAiActionsBar();
@@ -1094,6 +1101,89 @@ public class EditorBuffer implements TabContent {
         }
         formatBarUpdatePending = true;
         Platform.runLater(this::updateFormatBar);
+    }
+
+    private void scheduleStickyScroll() {
+        if (stickyScrollPending || !stickyScrollEnabled) {
+            return;
+        }
+        stickyScrollPending = true;
+        Platform.runLater(this::updateStickyScroll);
+    }
+
+    /**
+     * Turns the pinned scope headers on or off for this buffer. Off in large-file mode along with the
+     * other per-viewport work, and off for a buffer with no fold regions to speak of — there is nothing
+     * to pin in prose.
+     */
+    public void setStickyScrollEnabled(boolean enabled) {
+        boolean effective = enabled && !largeFile;
+        if (effective == stickyScrollEnabled) {
+            return;
+        }
+        stickyScrollEnabled = effective;
+        if (effective) {
+            scheduleStickyScroll();
+        } else {
+            stickyScroll.hide();
+            stickyLines = java.util.List.of(); // clear the state too, or the bar and the model disagree
+        }
+    }
+
+    public boolean isStickyScrollEnabled() {
+        return stickyScrollEnabled;
+    }
+
+    /** Package-visible for the FX test: what is pinned right now, as 0-based lines. */
+    java.util.List<Integer> stickyScrollLines() {
+        return stickyLines;
+    }
+
+    /** Package-visible for the FX test: the bar node itself, so a test can assert it is actually laid out. */
+    javafx.scene.Node stickyScrollNode() {
+        return stickyScroll.node();
+    }
+
+    private java.util.List<Integer> stickyLines = java.util.List.of();
+
+    private void updateStickyScroll() {
+        stickyScrollPending = false;
+        if (!stickyScrollEnabled) {
+            stickyScroll.hide();
+            stickyLines = java.util.List.of();
+            return;
+        }
+        CodeArea a = focusedArea;
+        if (a == null) {
+            return;
+        }
+        int first;
+        try {
+            first = Math.max(0, a.firstVisibleParToAllParIndex());
+        } catch (RuntimeException ex) {
+            return; // not laid out yet; the next scroll or edit will bring us back
+        }
+        stickyLinesFor(first);
+    }
+
+    /**
+     * Recomputes and renders the pinned headers for a viewport starting at {@code firstVisible}.
+     *
+     * <p>Split from {@link #updateStickyScroll()} so the first visible line is a parameter rather than a
+     * reading of a live viewport: under the headless test platform nothing is laid out, so the real
+     * reading is meaningless there and the wiring between the buffer's fold regions and the pinned
+     * result would otherwise be untestable.
+     */
+    void stickyLinesFor(int firstVisible) {
+        // Attach here rather than trusting attachControlToCodePane(). That runs from rebuildViewHost(),
+        // which only fires when the view mode or split CHANGES — and `viewHost` is built in a field
+        // initializer, so a plain buffer that never changes mode (i.e. every ordinary code file) never
+        // called it and the bar was never in the scene graph at all. This is the one place that is
+        // guaranteed to run right before the bar is needed, and placeStickyScroll is idempotent.
+        placeStickyScroll();
+        CodeArea a = focusedArea;
+        stickyLines = StickyScroll.headerLines(folds.regions(), firstVisible);
+        stickyScroll.update(a, stickyLines, getTabSize(), this::jumpToLine);
     }
 
     private void hideFormatBar() {
@@ -6163,6 +6253,22 @@ public class EditorBuffer implements TabContent {
         placeCornerControl(viewModeControl);
         placeCornerControl(htmlPreviewControl);
         placeCornerControl(logControl);
+        placeStickyScroll();
+    }
+
+    /**
+     * Anchors the sticky-scroll bar across the top of the code pane. Unlike the corner controls it spans
+     * the width, so it clears the scrollbar gutter on the right and the minimap beyond it — a pinned line
+     * running under either would be clipped mid-token.
+     */
+    private void placeStickyScroll() {
+        Node bar = stickyScroll.node();
+        if (!root.getChildren().contains(bar)) {
+            root.getChildren().add(bar);
+        }
+        AnchorPane.setTopAnchor(bar, 0d);
+        AnchorPane.setLeftAnchor(bar, 0d);
+        AnchorPane.setRightAnchor(bar, codePaneControlInset());
     }
 
     private void placeCornerControl(Node control) {
@@ -6261,6 +6367,7 @@ public class EditorBuffer implements TabContent {
         }
         whitespace.setFont(family, size);
         inlineValues.setFont(family, size);
+        stickyScroll.setFont(family, size);
         if (blameLines != null) {
             // The blame annotation column width is font-relative — recompute + rebuild so it stays aligned.
             blameColumnWidth = measureBlameColumnWidth(blameLines);

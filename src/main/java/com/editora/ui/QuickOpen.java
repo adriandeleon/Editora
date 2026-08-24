@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
@@ -22,6 +23,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
+
+import com.editora.search.FuzzyMatch;
 
 /**
  * A generic fuzzy-filtered picker shown as a popup overlay — the keyboard-first counterpart to a list
@@ -70,6 +73,16 @@ public class QuickOpen<T> {
     private final ObservableList<T> items = FXCollections.observableArrayList();
     private List<T> all = List.of();
 
+    /** The live query, so a recycled cell can embolden the characters responsible for its row's rank. */
+    private String currentQuery = "";
+
+    /** Optional live preview of the highlighted row, plus the undo for it when the picker is cancelled. */
+    private Consumer<T> onPreview;
+
+    private Runnable onPreviewCancelled;
+    /** Whether this showing ended in a choice — so cancelling restores and choosing does not. */
+    private boolean chosen;
+
     /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
     private OverlayHost overlayHost;
 
@@ -117,6 +130,23 @@ public class QuickOpen<T> {
     }
 
     /**
+     * Makes the picker preview the highlighted row: {@code onPreview} runs as the selection moves, and
+     * {@code onCancelled} runs if the picker is dismissed without choosing.
+     *
+     * <p>Preview is what turns a picker from "commit and hope" into something you can browse — but only
+     * if it is reversible, hence the second half. Without the undo, arrowing through a list and pressing
+     * Esc leaves you wherever the cursor happened to stop, which is worse than not previewing at all.
+     *
+     * <p>Nothing is previewed for the selection the picker makes when it opens — only for a selection the
+     * user moved to. Firing on open would yank the editor somewhere the instant the picker appears, before
+     * any intent has been expressed.
+     */
+    public void setPreview(Consumer<T> onPreview, Runnable onCancelled) {
+        this.onPreview = onPreview;
+        this.onPreviewCancelled = onCancelled;
+    }
+
+    /**
      * Marks one item as the current value, so opening the picker lands on it rather than on the first
      * row. Restores what a {@code ChoiceDialog} gave for free when these were native dialogs: for a
      * "change this setting" picker, the value in force is the useful starting point — the user is
@@ -156,6 +186,11 @@ public class QuickOpen<T> {
         list.setFixedCellSize(CELL_HEIGHT);
         items.addListener((javafx.collections.ListChangeListener<T>) c -> resizeList());
         list.setCellFactory(v -> new ItemCell());
+        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            if (showing && onPreview != null && now != null) {
+                onPreview.accept(now);
+            }
+        });
 
         input.textProperty().addListener((obs, old, now) -> filter(now));
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
@@ -248,18 +283,37 @@ public class QuickOpen<T> {
     private void chooseSelected() {
         T item = list.getSelectionModel().getSelectedItem();
         if (item != null) {
+            chosen = true; // must be set before hide(), which is what runs the cancel hook
             hide();
             onChoose.accept(item);
         }
     }
 
     private void filter(String query) {
-        String q = query.toLowerCase(Locale.ROOT).trim();
+        String q = query == null ? "" : query.trim();
+        currentQuery = q;
         List<T> matches = new ArrayList<>();
-        for (T item : all) {
-            if (q.isEmpty()
-                    || CommandPalette.isSubsequence(q, searchKey.apply(item).toLowerCase(Locale.ROOT))) {
-                matches.add(item);
+        if (q.isEmpty()) {
+            // With nothing typed the supplier's own order is the meaningful one — recency for recent
+            // files, document order for symbols — so it is passed through exactly as given.
+            matches.addAll(all);
+        } else {
+            record Scored<U>(U item, int score, int index) {}
+            List<Scored<T>> scored = new ArrayList<>();
+            for (int i = 0; i < all.size(); i++) {
+                T item = all.get(i);
+                FuzzyMatch.Match m = FuzzyMatch.of(searchKey.apply(item), q);
+                if (m != null) {
+                    scored.add(new Scored<>(item, m.score(), i));
+                }
+            }
+            // The supplier's index is the final tiebreak, so equal-scoring rows keep their original
+            // relative order instead of shuffling under the cursor between keystrokes.
+            scored.sort(Comparator.comparingInt((Scored<T> s) -> s.score())
+                    .reversed()
+                    .thenComparingInt(Scored::index));
+            for (Scored<T> s : scored) {
+                matches.add(s.item());
             }
         }
         items.setAll(matches);
@@ -288,8 +342,14 @@ public class QuickOpen<T> {
         all = itemsSupplier.get();
         input.clear();
         filter("");
+        chosen = false;
         showing = true;
-        overlayHost.show(content, input::requestFocus, () -> showing = false);
+        overlayHost.show(content, input::requestFocus, () -> {
+            showing = false;
+            if (!chosen && onPreviewCancelled != null) {
+                onPreviewCancelled.run();
+            }
+        });
     }
 
     public void hide() {
@@ -303,12 +363,16 @@ public class QuickOpen<T> {
     }
 
     private final class ItemCell extends ListCell<T> {
-        private final Label title = new Label();
+        // A TextFlow rather than a Label, so the characters that matched can be emboldened. The icon
+        // therefore needs its own slot: a TextFlow has no graphic property to hang it off.
+        private final javafx.scene.text.TextFlow title = new javafx.scene.text.TextFlow();
+        private final HBox titleBox = new HBox(6, title);
         private final Label sub = new Label();
-        private final HBox box = new HBox(10, title, spacer(), sub);
+        private final HBox box = new HBox(10, titleBox, spacer(), sub);
         private String appliedClass;
 
         ItemCell() {
+            titleBox.setAlignment(Pos.CENTER_LEFT);
             box.setAlignment(Pos.CENTER_LEFT);
             sub.getStyleClass().add("keybinding"); // reuse the palette's muted right-detail style
             setOnMouseClicked(e -> {
@@ -332,14 +396,17 @@ public class QuickOpen<T> {
                 setGraphic(null);
                 return;
             }
-            title.setText(label.apply(item));
-            title.setGraphic(itemIcon == null ? null : itemIcon.apply(item));
-            if (appliedClass != null) {
-                title.getStyleClass().remove(appliedClass);
-            }
+            // A per-row treatment (an unsaved buffer's amber italic) replaces the plain run style rather
+            // than layering on top of it, so the two can't fight over the text colour; the matched runs
+            // keep their own accent either way.
             appliedClass = itemStyleClass == null ? null : itemStyleClass.apply(item);
-            if (appliedClass != null && !title.getStyleClass().contains(appliedClass)) {
-                title.getStyleClass().add(appliedClass);
+            String plainClass = appliedClass == null ? MatchText.PLAIN : appliedClass;
+            title.getChildren().setAll(MatchText.runs(label.apply(item), currentQuery, plainClass));
+            javafx.scene.Node icon = itemIcon == null ? null : itemIcon.apply(item);
+            if (icon == null) {
+                titleBox.getChildren().setAll(title);
+            } else {
+                titleBox.getChildren().setAll(icon, title);
             }
             String d = detail == null ? null : detail.apply(item);
             sub.setText(d == null ? "" : d);

@@ -298,6 +298,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private QuickOpen<ToolWindow> toolWindowPalette;
     private QuickOpen<ToolWindow> splitToolWindowPalette;
     private QuickOpen<com.editora.editor.UndoHistory.Checkpoint> undoHistoryPalette;
+    private QuickOpen<NavigationHistory.Location> recentLocationsPalette;
+    private QuickOpen<Path> relatedPalette;
     private QuickOpen<com.editora.snippet.Snippet> snippetPalette;
     private com.editora.snippet.SnippetManager snippets;
     private com.editora.template.TemplateRegistry templates;
@@ -1092,6 +1094,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 s.isCsvPreview(),
                 s.isStructuredPreview(),
                 s.isPomPreview(),
+                indexCoordinator.isEnabled(),
                 markdownLintEnabled(),
                 editorConfigEnabled(),
                 simpleModeActive());
@@ -1257,6 +1260,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         openFilesPalette.setOverlayHost(overlayHost);
         toolWindowPalette.setOverlayHost(overlayHost);
         undoHistoryPalette.setOverlayHost(overlayHost);
+        indexCoordinator.setOverlayHost(overlayHost);
+        searchEverywherePopup = new SearchEverywherePopup(overlayHost, searchEverywhereOps);
+        recentLocationsPalette.setOverlayHost(overlayHost);
         bookmarkCoordinator.wireOverlayHost();
         notesCoordinator.wireOverlayHost();
         snippetPalette.setOverlayHost(overlayHost);
@@ -1417,6 +1423,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * project (not the globally last-focused one).
      */
     public void setWindowContext(WindowManager windowManager, Project project) {
+        indexCoordinator.onProjectChanged(); // the previous project's symbols mean nothing here
         this.windowManager = windowManager;
         this.windowProject = project;
         this.projectKey = project == null ? "" : project.id();
@@ -1530,6 +1537,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         dapManager.stop(); // end any debug session
         git.shutdown();
         github.shutdown(); // stop the gh worker thread
+        indexCoordinator.dispose(); // stop the symbol-index walker
         if (historyCoordinator != null) {
             historyCoordinator.shutdown();
         }
@@ -1695,6 +1703,25 @@ public class MainController implements com.editora.mcp.McpBridge {
                 c -> c.linePreview().isEmpty() ? tr("undoHistory.blankLine") : c.linePreview(),
                 MainController::undoCheckpointTime, // detail column = the capture time
                 this::restoreUndoCheckpoint);
+        recentLocationsPalette = new QuickOpen<>(
+                tr("nav.recentLocations.title"),
+                tr("nav.recentLocations.prompt"),
+                () -> new ArrayList<>(navHistory.recent()),
+                loc -> loc.snippet().isEmpty() ? tr("nav.recentLocations.blankLine") : loc.snippet(),
+                MainController::locationLabel, // detail column = file:line
+                // Matching the snippet alone would make "the file I was in" unfindable, and matching the
+                // label alone would make "the line about X" unfindable; the row shows both, so both match.
+                loc -> loc.snippet() + " " + locationLabel(loc),
+                loc -> openAndGoto(loc.path(), loc.line(), loc.column()));
+        recentLocationsPalette.setPreview(this::previewLocation, this::restorePreviewOrigin);
+        relatedPalette = new QuickOpen<>(
+                tr("related.title"),
+                tr("related.prompt"),
+                () -> new ArrayList<>(relatedCandidates),
+                path -> path.getFileName().toString(),
+                path -> homeCollapsed(path.toString()),
+                this::openPath);
+        relatedPalette.setOverlayHost(overlayHost);
         snippetPalette = new QuickOpen<>(
                 "Insert Snippet",
                 "Type to filter snippets…",
@@ -3638,6 +3665,104 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** TODO / highlight-pattern feature; owns the service/panel/scan/commands (the tool window stays here). */
+    private SearchEverywherePopup searchEverywherePopup;
+
+    /**
+     * The three sources behind Search Everywhere. Commands come from the registry and cost nothing;
+     * files and symbols come from the lazily-built project index, so an unscoped query is what triggers
+     * the walk the first time.
+     */
+    private final SearchEverywherePopup.Ops searchEverywhereOps = new SearchEverywherePopup.Ops() {
+        @Override
+        public java.util.List<com.editora.search.SearchEverywhere.Item> commands(String query) {
+            java.util.List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+            var gates = paletteGates();
+            var context = paletteContext();
+            for (Command c : registry.all()) {
+                // A command the palette would gray out is not offered here at all: this list is short and
+                // mixed, so an inert row is pure noise rather than the discoverability aid it is there.
+                if (!Chrome.paletteEnabled(c.id(), gates, context)) {
+                    continue;
+                }
+                com.editora.search.FuzzyMatch.Match m = com.editora.search.FuzzyMatch.of(c.title(), query);
+                if (m != null) {
+                    out.add(new com.editora.search.SearchEverywhere.Item(
+                            com.editora.search.SearchEverywhere.Kind.COMMAND,
+                            c.title(),
+                            invertBindings().getOrDefault(c.id(), ""),
+                            m.score(),
+                            c));
+                }
+            }
+            return out;
+        }
+
+        @Override
+        public java.util.List<com.editora.search.SearchEverywhere.Item> files(String query) {
+            java.util.List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+            for (IndexCoordinator.FileHit hit : indexCoordinator.searchFiles(query, 40)) {
+                String name = hit.file().getFileName().toString();
+                String parent = hit.relativePath().contains("/")
+                        ? hit.relativePath().substring(0, hit.relativePath().lastIndexOf('/'))
+                        : "";
+                out.add(new com.editora.search.SearchEverywhere.Item(
+                        com.editora.search.SearchEverywhere.Kind.FILE, name, parent, hit.score(), hit.file()));
+            }
+            return out;
+        }
+
+        @Override
+        public java.util.List<com.editora.search.SearchEverywhere.Item> symbols(String query) {
+            java.util.List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+            for (com.editora.index.SymbolIndex.Hit hit : indexCoordinator.searchSymbols(query, 40)) {
+                String container = hit.symbol().container();
+                String where = hit.file().getFileName() + ":" + (hit.symbol().line() + 1);
+                out.add(new com.editora.search.SearchEverywhere.Item(
+                        com.editora.search.SearchEverywhere.Kind.SYMBOL,
+                        hit.symbol().name(),
+                        container.isEmpty() ? where : container + " — " + where,
+                        hit.score(),
+                        hit));
+            }
+            return out;
+        }
+
+        @Override
+        public void ensureIndex(Runnable then) {
+            indexCoordinator.ensureBuilt(then);
+        }
+
+        @Override
+        public void choose(com.editora.search.SearchEverywhere.Item item) {
+            switch (item.payload()) {
+                case Command c -> registry.run(c.id());
+                case java.nio.file.Path file -> openPath(file);
+                case com.editora.index.SymbolIndex.Hit hit ->
+                    openAndGoto(hit.file(), hit.symbol().line(), hit.symbol().column());
+                default -> {
+                    // Unreachable: every Item this window builds carries one of the three above.
+                }
+            }
+        }
+    };
+
+    private final IndexCoordinator indexCoordinator = new IndexCoordinator(coordinatorHost, new IndexCoordinator.Ops() {
+        @Override
+        public java.nio.file.Path projectRoot() {
+            return (windowProject != null && projectsEnabled()) ? java.nio.file.Path.of(windowProject.root()) : null;
+        }
+
+        @Override
+        public void openAndGoto(java.nio.file.Path file, int line, int column) {
+            MainController.this.openAndGoto(file, line, column);
+        }
+
+        @Override
+        public boolean respectGitignore() {
+            return config.getSettings().isSearchRespectGitignore();
+        }
+    });
+
     private final TodoCoordinator todoCoordinator = new TodoCoordinator(coordinatorHost, new TodoCoordinator.Ops() {
         @Override
         public java.nio.file.Path projectRoot() {
@@ -5113,9 +5238,37 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         if (origin != null) {
-            navHistory.record(origin);
+            navHistory.record(withSnippet(origin));
         }
-        navHistory.record(dest);
+        navHistory.record(withSnippet(dest));
+    }
+
+    /** Cap on a recorded line's text, so one minified line can't sit in the history at full length. */
+    private static final int MAX_LOCATION_SNIPPET = 120;
+
+    /**
+     * Attaches the location's line text, so a recent-locations list can show what is there rather than
+     * only where it is. Both call sites record after the target buffer is on screen, so the line is
+     * readable; a location whose file is not open keeps an empty snippet rather than putting a disk read
+     * on the navigation path.
+     */
+    private NavigationHistory.Location withSnippet(NavigationHistory.Location loc) {
+        if (loc == null || !loc.snippet().isEmpty()) {
+            return loc;
+        }
+        return new NavigationHistory.Location(loc.path(), loc.line(), loc.column(), lineTextAt(loc.path(), loc.line()));
+    }
+
+    /** The trimmed, length-capped text of {@code line} in an open buffer for {@code path}; "" if not open. */
+    private String lineTextAt(Path path, int line) {
+        Tab tab = tabForPath(path);
+        EditorBuffer buffer = tab == null ? null : bufferOf(tab);
+        CodeArea area = buffer == null ? null : buffer.getArea();
+        if (area == null || line < 0 || line >= area.getParagraphs().size()) {
+            return "";
+        }
+        String text = area.getParagraph(line).getText().strip();
+        return text.length() <= MAX_LOCATION_SNIPPET ? text : text.substring(0, MAX_LOCATION_SNIPPET) + "…";
     }
 
     /** {@code nav.back}: return to the previous location in the jump list. */
@@ -5138,6 +5291,183 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         navigating = true;
         openAndGoto(loc.path(), loc.line(), loc.column());
+    }
+
+    /**
+     * {@code nav.recentLocations}: a picker over the places visited in this session, newest first.
+     *
+     * <p>The counterpart to Recent Files, and a different question: recent files answers "which file",
+     * this answers "where in it" — which is what you actually lost when a jump took you elsewhere. It
+     * reads the same trail Back walks, so the two can never disagree about where you have been.
+     */
+    private void showRecentLocations() {
+        if (navHistory.recent().isEmpty()) {
+            setStatus(tr("status.nav.noRecentLocations"));
+            return;
+        }
+        previewOrigin = captureCurrent();
+        recentLocationsPalette.show(stage);
+    }
+
+    /** Where the editor was when a previewing picker opened, so cancelling can put it back. */
+    private NavigationHistory.Location previewOrigin;
+
+    /**
+     * Shows a highlighted location in the editor without committing to it: no focus change, and nothing
+     * recorded in the jump list, so browsing the picker cannot itself become history.
+     *
+     * <p>A location whose file is not open is opened into the <em>preview slot</em>, so arrowing down a
+     * list of twenty locations leaves one tab rather than twenty. Before preview tabs existed this case
+     * was skipped entirely, which made the feature useless for exactly the locations you had navigated
+     * away from.
+     */
+    private void previewLocation(NavigationHistory.Location loc) {
+        if (loc == null) {
+            return;
+        }
+        if (tabForPath(loc.path()) == null) {
+            if (!java.nio.file.Files.isReadable(loc.path())) {
+                return; // deleted or unreadable since it was visited
+            }
+            suppressNavRecord = true;
+            try {
+                openPathPreview(loc.path());
+            } finally {
+                suppressNavRecord = false;
+            }
+            if (tabForPath(loc.path()) == null) {
+                return;
+            }
+        }
+        suppressNavRecord = true;
+        try {
+            gotoInFile(loc.path(), loc.line() + 1, loc.column() + 1, false);
+        } finally {
+            suppressNavRecord = false;
+        }
+    }
+
+    /** Puts the editor back where it was before previewing — the picker was dismissed, not used. */
+    private void restorePreviewOrigin() {
+        NavigationHistory.Location origin = previewOrigin;
+        previewOrigin = null;
+        previewLocation(origin);
+    }
+
+    /**
+     * {@code search.everywhere}: one picker over commands, project files and symbols.
+     *
+     * <p>Seeded from a single-line selection, like the find bar and Find in Files — if you have selected
+     * the thing you are looking for, retyping it is busywork.
+     */
+    private void showSearchEverywhere() {
+        if (searchEverywherePopup == null) {
+            return; // overlay host not installed yet (very early in init)
+        }
+        searchEverywherePopup.show(singleLineSelection());
+    }
+
+    /**
+     * The active buffer's selection when it is non-empty and on one line, else "". A multi-line selection
+     * is never a sensible search term, which is the same rule the find bar and Find in Files apply.
+     */
+    private String singleLineSelection() {
+        EditorBuffer b = activeBuffer();
+        CodeArea a = b == null ? null : b.getFocusedArea();
+        if (a == null) {
+            return "";
+        }
+        String selection = a.getSelectedText();
+        return selection == null || selection.isBlank() || selection.contains("\n") ? "" : selection.strip();
+    }
+
+    /**
+     * {@code nav.relatedFile}: jump between a file and its counterpart — a test and its subject, a header
+     * and its implementation, a component and its stylesheet.
+     *
+     * <p>The candidate names come from the pure {@link com.editora.search.RelatedFiles}; this half decides
+     * which of them exist. A counterpart rarely sits beside its partner (a test lives under
+     * {@code src/test}, a header under {@code include}), so the sibling directory is only the first place
+     * looked — the project index knows every file, and matching on name there finds the rest for free.
+     *
+     * <p>One match opens; several offer a picker, since {@code Foo.css} and {@code Foo.scss} can both
+     * exist and only the user knows which was meant.
+     */
+    private void gotoRelatedFile() {
+        EditorBuffer b = activeBuffer();
+        Path current = b == null ? null : b.getPath();
+        if (current == null) {
+            setStatus(tr("status.related.noFile"));
+            return;
+        }
+        List<String> names =
+                com.editora.search.RelatedFiles.candidates(current.getFileName().toString());
+        if (names.isEmpty()) {
+            setStatus(tr("status.related.none", current.getFileName()));
+            return;
+        }
+        indexCoordinator.ensureBuilt(() -> openRelated(current, names));
+    }
+
+    private void openRelated(Path current, List<String> names) {
+        List<Path> found = new ArrayList<>();
+        Path dir = current.getParent();
+        for (String name : names) {
+            // Beside the file first: when a counterpart IS a sibling that is nearly always the right one,
+            // and it costs a single exists() rather than a scan.
+            if (dir != null) {
+                Path sibling = dir.resolve(name);
+                if (java.nio.file.Files.isRegularFile(sibling) && !sibling.equals(current)) {
+                    found.add(sibling);
+                }
+            }
+            for (IndexCoordinator.FileHit hit : indexCoordinator.searchFiles(name, 20)) {
+                if (hit.file().getFileName().toString().equals(name)
+                        && !hit.file().equals(current)
+                        && !found.contains(hit.file())) {
+                    found.add(hit.file());
+                }
+            }
+        }
+        if (found.isEmpty()) {
+            setStatus(tr("status.related.none", current.getFileName()));
+            return;
+        }
+        if (found.size() == 1) {
+            openPath(found.get(0));
+            return;
+        }
+        relatedCandidates = found;
+        relatedPalette.show(stage);
+    }
+
+    private List<Path> relatedCandidates = List.of();
+
+    /**
+     * {@code lsp.gotoDefinitionInSplit}: open the definition beside the code that referenced it.
+     *
+     * <p>The pair you want on screen together is the call and the thing called — comparing them is the
+     * usual reason for going there at all. Splitting after the jump puts the definition in the new group
+     * and leaves the origin where it was.
+     *
+     * <p>A definition in the SAME file is jumped to without splitting: there is only one tab, so the split
+     * would move it and leave the group it came from empty.
+     */
+    private void gotoDefinitionInSplit() {
+        EditorBuffer origin = activeBuffer();
+        Path originPath = origin == null ? null : origin.getPath();
+        lspCoordinator.gotoDefinition(() -> {
+            EditorBuffer landed = activeBuffer();
+            Path landedPath = landed == null ? null : landed.getPath();
+            if (landedPath != null && !landedPath.equals(originPath)) {
+                splitEditorGroup(Orientation.HORIZONTAL);
+            }
+        });
+    }
+
+    /** {@code file.java:214} — a location's file and 1-based line, for a picker's detail column. */
+    private static String locationLabel(NavigationHistory.Location loc) {
+        return loc.path().getFileName() + ":" + (loc.line() + 1);
     }
 
     /** A stack-trace location double-clicked in the Run/Debug console: resolve + jump. An absolute
@@ -7151,11 +7481,18 @@ public class MainController implements com.editora.mcp.McpBridge {
             updateWindowTitle();
         }
         boolean dirty = buffer.isDirty();
+        if (dirty) {
+            // Editing is the clearest possible statement that this file is not a passing glance.
+            promoteTab(tab);
+        }
         boolean isPinned = pinned.contains(tab);
         // The title lives in a graphic node (not tab.setText) so it can be a drag handle for
         // mouse reordering. Pinned tabs show an SVG pin graphic (matching the toolbar icons).
         Label title = new Label((dirty ? "• " : "") + buffer.getTitle());
         title.getStyleClass().add("tab-title");
+        if (tab == previewTab) {
+            title.getStyleClass().add("preview-tab-title"); // italic: this tab will be reused
+        }
         HBox header = new HBox(6);
         header.getStyleClass().add("tab-header");
         header.setAlignment(Pos.CENTER_LEFT);
@@ -7367,6 +7704,61 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setViewMode(true); // read-only: it's the bundled list, not user-editable
     }
 
+    /**
+     * The single tab reused for files being browsed rather than opened, or {@code null} when there is none.
+     *
+     * <p>Browsing is how navigation is actually used — arrowing a picker, following a definition to see
+     * what something is — and without this every glance costs a permanent tab, so the strip fills with
+     * files nobody chose to keep. One reusable slot bounds that at one.
+     */
+    private Tab previewTab;
+
+    /**
+     * Opens {@code file} in the preview slot: the previous preview tab is replaced rather than added to.
+     *
+     * <p>An already-open file is simply selected and is <em>not</em> demoted into the slot — it earned its
+     * place by some earlier deliberate open, and quietly making it disposable would lose it on the next
+     * glance at something else.
+     */
+    private void openPathPreview(Path file) {
+        Tab existing = tabForPath(file);
+        if (existing != null) {
+            editorArea.select(existing);
+            return;
+        }
+        Tab previous = previewTab;
+        previewTab = null; // cleared first: closing it runs listeners that would otherwise see a stale slot
+        if (previous != null && editorArea.tabs().contains(previous)) {
+            EditorBuffer b = bufferOf(previous);
+            // A dirty preview tab is not disposable — the edit already promoted it, but guard anyway
+            // rather than risk closing unsaved work on a keystroke.
+            if (b == null || !b.isDirty()) {
+                editorArea.remove(previous); // tabs() is unmodifiable by design; remove() is the seam
+            }
+        }
+        openPath(file, true);
+        Tab opened = tabForPath(file);
+        if (opened != null) {
+            previewTab = opened;
+            EditorBuffer b = bufferOf(opened);
+            if (b != null) {
+                updateTabMeta(opened, b); // re-render the header so it shows as italic
+            }
+        }
+    }
+
+    /** Makes {@code tab} permanent — it was chosen, not glanced at. No-op for any other tab. */
+    private void promoteTab(Tab tab) {
+        if (tab == null || tab != previewTab) {
+            return;
+        }
+        previewTab = null;
+        EditorBuffer b = bufferOf(tab);
+        if (b != null) {
+            updateTabMeta(tab, b); // drops the italic
+        }
+    }
+
     private void openPath(Path file) {
         openPath(file, false);
     }
@@ -7382,7 +7774,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void openPath(Path file, boolean quietIfOpen) {
         Tab existing = tabForPath(file);
         if (existing != null) {
-            // Already open — switch to its tab instead of opening a duplicate.
+            // Already open — switch to its tab instead of opening a duplicate. Asking for it explicitly
+            // is a choice, so if it was only being previewed it stops being disposable.
+            promoteTab(existing);
             editorArea.select(existing);
             EditorBuffer existingBuffer = bufferOf(existing);
             if (existingBuffer != null) {
@@ -8166,6 +8560,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // LSP: a save-as of a new Java file opens it on the server; then notify didSave.
             lspCoordinator.syncBuffer(buffer);
             lspCoordinator.notifyDocumentSaved(buffer);
+            indexCoordinator.onBufferSaved(buffer); // rescan just this file, from the text already in memory
             return true;
         } catch (IOException e) {
             setStatus(tr("status.failedSave", e.getMessage()));
@@ -13184,6 +13579,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setDockerfilePreviewEnabled(s.isDockerfilePreview()); // per-stage build digest
         buffer.setGithubActionsPreviewEnabled(s.isGithubActionsPreview()); // workflow triggers + jobs digest
         buffer.setPomPreviewEnabled(s.isPomPreview()); // Maven pom.xml summary (wins over the XML tree)
+        buffer.setStickyScrollEnabled(s.isStickyScroll()); // pinned enclosing-scope headers
         if (buffer.isStructured() || buffer.isXml() || buffer.isSvg()) {
             ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/XML/SVG gate flips
         }
@@ -13323,6 +13719,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         applyAgentSupport();
         aiCoordinator.applySupport(); // re-probe connectivity + re-gate the floating selection Explain/Rewrite bar
         todoCoordinator.applyHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
+        indexCoordinator.applySupport(); // a disabled index must not retain a project's symbols
         csvCoordinator.applySupport(); // re-gate the in-editor CSV grid preview on every open buffer
         applyTestRunner(); // re-gate the Test Results window (off / Simple UI mode hides it)
         applyMarkdownLint(); // push Markdown-lint enabled state to every buffer
@@ -15405,6 +15802,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                             applyViewSettingsToAllBuffers(config.getSettings());
                             settingsWindow.syncAll();
                         })));
+        registry.register(Command.of(
+                "view.toggleStickyScroll",
+                () -> toggleSetting(
+                        "view.toggleStickyScroll",
+                        () -> config.getSettings().isStickyScroll(),
+                        config.getSettings()::setStickyScroll,
+                        () -> {
+                            applyViewSettingsToAllBuffers(config.getSettings());
+                            settingsWindow.syncAll();
+                        })));
         registry.register(Command.of("pom.toggleView", this::togglePomView));
         registry.register(Command.of(
                 "view.togglePomPreview",
@@ -15631,6 +16038,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("bookmarks.previous", () -> bookmarkCoordinator.jump(false)));
         registry.register(Command.of("bookmarks.jump", bookmarkCoordinator::openJumpPalette));
         registry.register(Command.of("bookmarks.clearFile", bookmarkCoordinator::clearInFile));
+        registry.register(Command.of("bookmarks.setMnemonic", bookmarkCoordinator::setMnemonicAtCaret));
+        // One command per digit, so each is a single chord rather than a chord plus a prompt — which is
+        // the entire point of a mnemonic. Explicit titles from one parameterized string, the way the macro
+        // and external-tool commands avoid ten near-identical keys. The key deliberately sits OUTSIDE the
+        // command.* namespace: it is a template, not the title of a command called
+        // "bookmarks.gotoMnemonic", and every real command.* key is required to carry a .desc.
+        for (char digit : com.editora.config.BookmarkMnemonics.DIGITS.toCharArray()) {
+            String key = String.valueOf(digit);
+            registry.register(Command.of(
+                    "bookmarks.gotoMnemonic" + key,
+                    tr("bookmarks.mnemonic.gotoTitle", key),
+                    () -> bookmarkCoordinator.gotoMnemonic(key)));
+        }
         registry.register(Command.of("notes.add", () -> notesCoordinator.ifEnabled(notesCoordinator::addNoteAtCaret)));
         registry.register(
                 Command.of("notes.editNote", () -> notesCoordinator.ifEnabled(notesCoordinator::editNoteAtCaret)));
@@ -15923,7 +16343,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.problems", () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
         registry.register(Command.of("tool.references", () -> ifLsp(() -> toolWindows.toggle(referencesToolWindow))));
         registry.register(Command.of("tool.hierarchy", () -> ifLsp(() -> toolWindows.toggle(hierarchyToolWindow))));
+        registry.register(Command.of("search.everywhere", this::showSearchEverywhere));
+        registry.register(Command.of("index.gotoSymbol", indexCoordinator::gotoSymbol));
+        registry.register(Command.of("index.rebuild", indexCoordinator::rebuild));
+        registry.register(Command.of(
+                "view.toggleSymbolIndex",
+                () -> toggleSetting(
+                        "view.toggleSymbolIndex",
+                        () -> config.getSettings().isSymbolIndex(),
+                        config.getSettings()::setSymbolIndex,
+                        () -> {
+                            indexCoordinator.applySupport();
+                            settingsWindow.syncAll();
+                        })));
         registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(lspCoordinator::gotoDefinition)));
+        registry.register(Command.of("lsp.peekDefinition", () -> ifLsp(lspCoordinator::peekDefinition)));
+        registry.register(Command.of("lsp.gotoDefinitionInSplit", () -> ifLsp(this::gotoDefinitionInSplit)));
         registry.register(Command.of("lsp.findReferences", () -> ifLsp(lspCoordinator::findReferences)));
         registry.register(Command.of("lsp.gotoImplementation", () -> ifLsp(lspCoordinator::gotoImplementation)));
         registry.register(Command.of("lsp.gotoTypeDefinition", () -> ifLsp(lspCoordinator::gotoTypeDefinition)));
@@ -16294,6 +16729,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("edit.selectToBracket", this::selectToBracket));
         registry.register(Command.of("nav.back", this::navBack));
         registry.register(Command.of("nav.forward", this::navForward));
+        registry.register(Command.of("nav.recentLocations", this::showRecentLocations));
+        registry.register(Command.of("nav.relatedFile", this::gotoRelatedFile));
         registry.register(
                 Command.of("nav.beginningOfDefun", () -> sexpMove(com.editora.editops.SexpNav::beginningOfDefun)));
         registry.register(Command.of("nav.endOfDefun", () -> sexpMove(com.editora.editops.SexpNav::endOfDefun)));

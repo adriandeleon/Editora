@@ -260,6 +260,8 @@ public class SettingsWindow {
     private CheckBox dockerfilePreviewCheck;
     private CheckBox githubActionsPreviewCheck;
     private CheckBox pomPreviewCheck;
+    private CheckBox stickyScrollCheck;
+    private CheckBox symbolIndexCheck;
     private CheckBox csvRainbowCheck;
     private CheckBox bracketColorsCheck;
     private CheckBox autoRenameTagCheck;
@@ -1184,6 +1186,8 @@ public class SettingsWindow {
         dockerfilePreviewCheck = viewCheck(tr("settings.dockerfilePreview"), Settings::setDockerfilePreview);
         githubActionsPreviewCheck = viewCheck(tr("settings.githubActionsPreview"), Settings::setGithubActionsPreview);
         pomPreviewCheck = viewCheck(tr("settings.pomPreview"), Settings::setPomPreview);
+        stickyScrollCheck = viewCheck(tr("settings.stickyScroll"), Settings::setStickyScroll);
+        symbolIndexCheck = viewCheck(tr("settings.symbolIndex"), Settings::setSymbolIndex);
         csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
         bracketColorsCheck = viewCheck(tr("settings.bracketColors"), Settings::setBracketColors);
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
@@ -2314,6 +2318,18 @@ public class SettingsWindow {
         checkRow(display, Category.EDITOR, lineHighlightCheck, null, "highlight current line caret");
         checkRow(display, Category.EDITOR, lineNumbersCheck, null, "line numbers gutter");
         checkRow(display, Category.EDITOR, minimapCheck, null, "minimap overview");
+        checkRow(
+                display,
+                Category.EDITOR,
+                stickyScrollCheck,
+                null,
+                "sticky scroll pinned scope headers class method context");
+        checkRow(
+                display,
+                Category.EDITOR,
+                symbolIndexCheck,
+                null,
+                "symbol index go to symbol project declarations without language server");
         checkRow(
                 display,
                 Category.EDITOR,
@@ -6858,6 +6874,8 @@ public class SettingsWindow {
             dockerfilePreviewCheck.setSelected(settings.isDockerfilePreview());
             githubActionsPreviewCheck.setSelected(settings.isGithubActionsPreview());
             pomPreviewCheck.setSelected(settings.isPomPreview());
+            stickyScrollCheck.setSelected(settings.isStickyScroll());
+            symbolIndexCheck.setSelected(settings.isSymbolIndex());
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
             bracketColorsCheck.setSelected(settings.isBracketColors());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
@@ -7507,6 +7525,8 @@ public class SettingsWindow {
             dockerfilePreviewCheck.setSelected(s.isDockerfilePreview());
             githubActionsPreviewCheck.setSelected(s.isGithubActionsPreview());
             pomPreviewCheck.setSelected(s.isPomPreview());
+            stickyScrollCheck.setSelected(s.isStickyScroll());
+            symbolIndexCheck.setSelected(s.isSymbolIndex());
             csvRainbowCheck.setSelected(s.isCsvRainbow());
             bracketColorsCheck.setSelected(s.isBracketColors());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());

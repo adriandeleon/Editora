@@ -124,6 +124,7 @@ class ChromeTest {
                 on.test("csv"),
                 on.test("structured"),
                 on.test("pomPreview"),
+                on.test("symbolIndex"),
                 on.test("markdownLint"),
                 on.test("editorConfig"),
                 simpleMode);

@@ -18,6 +18,12 @@ are the readable distillation of it — when they disagree with the code, the co
 - [gotchas.md](gotchas.md) — the non-obvious traps (JPMS opens, macOS classloader, the
   headless-AWT guard, the texture-pool black window, …) with symptom and fix.
 
+## Roadmaps
+
+- [navigation-roadmap.md](navigation-roadmap.md) — where code navigation stands, the four gaps
+  that matter (ranking, a server-free symbol index, a unified finder, non-destructive jumps), and
+  the order to close them in.
+
 ## How-to
 
 - [extending.md](extending.md) — recipes: add a command, a setting, an LSP server, a DAP

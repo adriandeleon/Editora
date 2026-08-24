@@ -73,4 +73,42 @@ class NavigationHistoryTest {
         assertFalse(h.canBack());
         assertFalse(h.canForward());
     }
+
+    @Test
+    void recentListsTheTrailNewestFirst() {
+        NavigationHistory h = new NavigationHistory();
+        h.record(loc("a", 1));
+        h.record(loc("b", 2));
+        h.record(loc("c", 3));
+        assertEquals(
+                java.util.List.of("c:3", "b:2", "a:1"),
+                h.recent().stream()
+                        .map(l -> l.path().getFileName() + ":" + l.line())
+                        .toList());
+    }
+
+    @Test
+    void recentKeepsOnlyTheNewestVisitOfALine() {
+        // Passing back through a spot must not push everything else off the list.
+        NavigationHistory h = new NavigationHistory();
+        h.record(loc("a", 1));
+        h.record(loc("b", 2));
+        h.record(loc("a", 1));
+        assertEquals(2, h.recent().size());
+        assertEquals("a", h.recent().get(0).path().getFileName().toString());
+    }
+
+    @Test
+    void recentIsEmptyForAFreshHistory() {
+        assertEquals(java.util.List.of(), new NavigationHistory().recent());
+    }
+
+    @Test
+    void aLocationCarriesItsLineText() {
+        NavigationHistory.Location l = new NavigationHistory.Location(java.nio.file.Path.of("a"), 3, 0, "int x = 1;");
+        assertEquals("int x = 1;", l.snippet());
+        // The 3-arg form is for callers with no buffer to read from; the snippet is never null.
+        assertEquals("", new NavigationHistory.Location(java.nio.file.Path.of("a"), 3, 0).snippet());
+        assertEquals("", new NavigationHistory.Location(java.nio.file.Path.of("a"), 3, 0, null).snippet());
+    }
 }

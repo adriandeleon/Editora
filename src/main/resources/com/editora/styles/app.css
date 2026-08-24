@@ -1065,8 +1065,11 @@
 .pr-review-file-row.git-status-renamed .pr-review-file-status,
 .pr-review-file-row.git-status-renamed .toolbar-icon { -fx-text-fill: -state-violet; -fx-fill: -state-violet; }
 /* Unsaved/dirty buffer name in the pickers (Open Files palette + Switcher) — mirrors the dirty-tab
-   treatment (amber italic) so every surface that lists open files reads consistently. */
-.dirty-name { -fx-text-fill: -state-amber; -fx-font-style: italic; }
+   treatment (amber italic) so every surface that lists open files reads consistently.
+   Both colour properties on purpose: this class lands on a Label in the tab strip and the project tree,
+   and on the Text runs of a picker row (QuickOpen emboldens the matched characters, so its rows are a
+   TextFlow). A Label reads -fx-text-fill and ignores -fx-fill; a Text is the other way round. */
+.dirty-name { -fx-text-fill: -state-amber; -fx-fill: -state-amber; -fx-font-style: italic; }
 
 /* IntelliJ-style tool window stripes + panels. */
 .tool-stripe {
@@ -3558,4 +3561,59 @@
     -fx-font-size: 11px;
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 2 10 4 10;
+}
+
+/* Sticky scroll — the enclosing scope headers pinned over the top of the code pane. It sits ON the
+   editor surface, so it takes the editor's own background rather than a panel colour; the bottom border
+   and shadow are what separate it from the real line directly beneath it. */
+.sticky-scroll {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: transparent transparent -color-border-muted transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 6, 0, 0, 2);
+    -fx-padding: 0;
+}
+.sticky-scroll-row {
+    -fx-padding: 1 6 1 6;
+    -fx-cursor: hand;
+}
+.sticky-scroll-row:hover {
+    -fx-background-color: -color-bg-subtle;
+}
+
+/* Peek definition — the snippet shown in place of a jump. Reuses the palette card, so it inherits the
+   overlay's ground, border and radius; only the code body needs rules of its own. */
+.peek-popup .peek-body {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 6;
+    -fx-padding: 6 8 6 8;
+}
+.peek-row {
+    -fx-padding: 0;
+}
+/* The definition's own line, so the eye lands on it rather than on the middle of the snippet. */
+.peek-row-focus {
+    -fx-background-color: -color-accent-subtle;
+}
+.peek-line-number {
+    -fx-fill: -color-fg-muted;
+}
+
+/* Search Everywhere — one picker over commands, files and symbols. The group headers are what keep the
+   three sources legible when they sit in one list, so they read as labels rather than as dimmed results. */
+.search-everywhere .list-cell.se-header {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.85em;
+    -fx-font-weight: bold;
+    -fx-padding: 2 0 0 4;
+    -fx-opacity: 1; /* the cell is disabled so it can't be selected; it must not look disabled */
+}
+.search-everywhere .list-cell.se-header:filled:selected {
+    -fx-background-color: transparent;
+}
+
+/* A preview tab: the one slot reused while browsing, shown italic so it reads as provisional. The same
+   convention VS Code uses, and the same one .dirty-name uses for "not durable yet". */
+.tab-title.preview-tab-title {
+    -fx-font-style: italic;
 }

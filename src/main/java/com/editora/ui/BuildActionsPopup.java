@@ -26,6 +26,7 @@ import javafx.stage.Window;
 
 import com.editora.build.BuildAction;
 import com.editora.build.BuildActionsProvider;
+import com.editora.search.FuzzyMatch;
 
 /**
  * A build tool's toolbar-button dropdown: a search field over a sectioned {@link ListView} of runnable
@@ -250,7 +251,7 @@ public final class BuildActionsPopup {
                 pending = h;
                 continue;
             }
-            if (q.isEmpty() || CommandPalette.isSubsequence(q, labelOf(r).toLowerCase(Locale.ROOT))) {
+            if (q.isEmpty() || FuzzyMatch.of(labelOf(r), q) != null) {
                 if (pending != null) {
                     out.add(pending);
                     pending = null;

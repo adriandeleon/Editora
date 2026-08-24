@@ -1572,7 +1572,93 @@ final class LspCoordinator {
         return b;
     }
 
+    /** Reads a peeked file off the FX thread; peek is user-initiated, so one lazy thread is plenty. */
+    private static final java.util.concurrent.ExecutorService PEEK_READ =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "peek-read");
+                t.setDaemon(true);
+                return t;
+            });
+
+    private PeekPopup peekPopup;
+
+    /**
+     * {@code lsp.peekDefinition}: show the definition here rather than going to it.
+     *
+     * <p>The same request as {@link #gotoDefinition()}, answered without moving. Most uses of
+     * go-to-definition are a question — what is this, what does it take — and the answer does not justify
+     * losing your place, your scroll position and usually a tab. Enter in the popup still commits to the
+     * real jump, so nothing is taken away.
+     */
+    void peekDefinition() {
+        EditorBuffer b = activeLspBuffer();
+        if (b == null) {
+            return;
+        }
+        CodeArea area = b.getFocusedArea();
+        lspManager.changeDocument(b.getPath(), b.text());
+        lspManager.definition(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+            if (targets.isEmpty()) {
+                host.setStatus(tr("status.lsp.noDefinition"));
+                return;
+            }
+            LspManager.Target t = targets.get(0);
+            if (t.file() == null) {
+                // A jdt:// class-file target has no file to read a snippet out of, so peek degrades to
+                // the thing it is a lighter version of rather than reporting a failure.
+                openLibraryDefinition(b.getPath(), t);
+                return;
+            }
+            peekTarget(t);
+        });
+    }
+
+    private void peekTarget(LspManager.Target t) {
+        EditorBuffer open = ops.bufferForPath(t.file());
+        if (open != null) {
+            // Already open: its text is authoritative (it may hold unsaved edits) and free to read here.
+            showPeek(t, open.text());
+            return;
+        }
+        PEEK_READ.submit(() -> {
+            String text;
+            try {
+                text = java.nio.file.Files.readString(t.file());
+            } catch (java.io.IOException | RuntimeException ex) {
+                javafx.application.Platform.runLater(() -> host.setStatus(tr("status.lsp.peekUnreadable")));
+                return;
+            }
+            javafx.application.Platform.runLater(() -> showPeek(t, text));
+        });
+    }
+
+    private void showPeek(LspManager.Target t, String text) {
+        if (peekPopup == null) {
+            peekPopup = new PeekPopup(host.overlayHost());
+        }
+        String name = t.file().getFileName().toString();
+        String language = com.editora.editor.LanguageRegistry.forFileName(name);
+        String title = tr("lsp.peek.title", name, t.line() + 1);
+        // The editor's own font, so the peeked lines wrap and align the way the file does.
+        peekPopup.show(
+                PeekPopup.build(title, text, t.line(), language),
+                host.settings().getFontFamily(),
+                host.settings().getFontSize(),
+                () -> ops.openAndGoto(t.file(), t.line(), t.character()));
+    }
+
     void gotoDefinition() {
+        gotoDefinition(null);
+    }
+
+    /**
+     * As {@link #gotoDefinition()}, running {@code afterJump} once the caret has landed.
+     *
+     * <p>The hook exists because the destination arrives from the server: a caller that wants to do
+     * something with the file the jump opened cannot simply run afterwards, since "afterwards" is before
+     * the answer has come back. It runs only on a jump that actually happened.
+     */
+    void gotoDefinition(Runnable afterJump) {
         EditorBuffer active = host.activeBuffer();
         LibrarySource lib = active == null ? null : librarySources.get(active);
         if (lib != null) {
@@ -1592,6 +1678,11 @@ final class LspCoordinator {
                 LspManager.Target t = targets.get(0);
                 if (t.file() != null) {
                     ops.openAndGoto(t.file(), t.line(), t.character());
+                    if (afterJump != null) {
+                        // openAndGoto finishes its work in a runLater of its own, so the hook has to queue
+                        // behind it or it would act on the tab we are leaving.
+                        javafx.application.Platform.runLater(afterJump);
+                    }
                 } else {
                     openLibraryDefinition(b.getPath(), t); // a jdt:// class-file target (library source) — #665
                 }
