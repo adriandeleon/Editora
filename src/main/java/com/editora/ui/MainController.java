@@ -2264,8 +2264,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 if (c.wasRemoved() && !reordering && !editorArea.isRelocating()) {
                     mru.removeAll(c.getRemoved());
                     pinned.removeAll(c.getRemoved());
-                    // Release each closed buffer's daemon executor threads (markdown-preview +
-                    // editor-highlighter); otherwise they accumulate one pair per opened file.
+                    // Tear down each closed buffer. dispose() bumps the generation guards so any
+                    // in-flight preview/highlight/TODO task discards its result instead of touching a
+                    // dead buffer, and drops the preview subscription. It does NOT stop threads: the
+                    // preview/highlight executors are shared app-lifetime pools, not one pair per
+                    // buffer (measured: 4 highlighter threads with 24 files open). See
+                    // EditorBuffer.dispose.
                     for (Tab removed : c.getRemoved()) {
                         EditorBuffer closed = bufferOf(removed);
                         if (closed != null) {

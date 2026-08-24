@@ -236,7 +236,11 @@ public class aot_build {
                     // Mirroring is still correct: the cache should archive the collector the app actually
                     // runs, and a flag that can diverge silently here is the class of bug worth a guard,
                     // whatever this particular one turned out to cost. Do not cite it as a perf win.
-                    "-Xmx2g", "-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=30000",
+                    // -Xms mirrors the launcher too. It is not merely cosmetic here: ergonomics would
+                    // otherwise start the TRAINING run with a 1/64-of-RAM initial heap (2 GB on a big
+                    // builder, 256 MB on a small one), so the trainer's heap layout would depend on which
+                    // machine built the release. AotTrainerOptionsTest fails the build if this drifts.
+                    "-Xmx2g", "-Xms64m", "-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=30000",
                     "--enable-native-access=javafx.graphics",
                     // Mirror the packaged launcher's javaOptions (see pom.xml dist profile): lets the macOS
                     // "Open With" handler reach the internal com.sun.glass.ui API. Harmless on other OSes.

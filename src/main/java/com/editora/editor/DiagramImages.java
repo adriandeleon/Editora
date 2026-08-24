@@ -142,6 +142,14 @@ public final class DiagramImages {
                 result = new Cached(null, r.error());
             }
             CACHE.put(key, result);
+            synchronized (CACHE) {
+                ImageCacheBudget.trim(
+                        CACHE,
+                        c -> c.loaded() == null
+                                ? 0
+                                : ImageCacheBudget.footprint(c.loaded().image()),
+                        ImageCacheBudget.DIAGRAM_BUDGET_BYTES);
+            }
             Platform.runLater(() -> applyCached(host, result, sizer));
         });
     }

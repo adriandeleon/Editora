@@ -105,6 +105,9 @@ public final class MathImages {
         BufferedImage bi = (BufferedImage) formula.createBufferedImage(style, size, fg, null);
         Image img = PreviewImageLoader.toFxImage(bi);
         CACHE.put(key, img);
+        synchronized (CACHE) {
+            ImageCacheBudget.trim(CACHE, ImageCacheBudget::footprint, ImageCacheBudget.MATH_BUDGET_BYTES);
+        }
         return img;
     }
 }

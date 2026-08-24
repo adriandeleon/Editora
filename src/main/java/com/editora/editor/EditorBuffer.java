@@ -5045,6 +5045,11 @@ public class EditorBuffer implements TabContent {
      */
     public void dispose() {
         disposed = true; // reject any LATER dispatch (see below) — the gen bumps only cover in-flight work
+        // Drop the undo checkpoints eagerly. They go with the buffer on GC (BufferReleasedOnCloseFxTest
+        // pins that the whole buffer becomes collectable when its tab closes), but they are the single
+        // largest thing hanging off it -- up to MAX whole-document snapshots -- and releasing them at the
+        // moment the tab closes returns that memory now rather than at the next collection.
+        undoHistory.clear();
         unsubscribePreview();
         disposeMultiCaret();
         previewGen++; // discard any in-flight preview result for this (now closed) buffer
@@ -6314,7 +6319,11 @@ public class EditorBuffer implements TabContent {
 
     /** Snapshots the current document state into the history (no-op for huge/oversized files). */
     public void captureUndoCheckpoint() {
-        if (largeFile || area.getLength() > UNDO_HISTORY_MAX_BYTES) {
+        // The capture rides a debounced (UndoMerge.PAUSE) subscription that is still live when the tab
+        // closes, so an edit made just before closing would otherwise snapshot a whole document INTO a
+        // buffer that dispose() has already emptied — pointless work that also undoes the clear. Same
+        // reason applyHighlighting() checks this flag.
+        if (disposed || largeFile || area.getLength() > UNDO_HISTORY_MAX_BYTES) {
             return;
         }
         if (undoHistory.add(area.getText(), area.getCaretPosition(), System.currentTimeMillis())
