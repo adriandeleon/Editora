@@ -364,6 +364,9 @@ final class LanguageServerSession implements LanguageClient {
         td.setDocumentHighlight(new org.eclipse.lsp4j.DocumentHighlightCapabilities()); // occurrences (#675)
         td.setInlayHint(new org.eclipse.lsp4j.InlayHintCapabilities()); // parameter/type hints (#681)
         td.setCallHierarchy(new org.eclipse.lsp4j.CallHierarchyCapabilities()); // who-calls-this (#682)
+        // Declaring this is what makes a server offer codeLens at all; without it jdtls reports no
+        // codeLensProvider and every request comes back empty, indistinguishable from "no lenses here".
+        td.setCodeLens(new org.eclipse.lsp4j.CodeLensCapabilities());
         td.setTypeHierarchy(new org.eclipse.lsp4j.TypeHierarchyCapabilities()); // super/subtypes (#682)
         // Rename (#676): prepareSupport lets the server validate the position + hand us the placeholder.
         var rename = new org.eclipse.lsp4j.RenameCapabilities();
@@ -1007,6 +1010,38 @@ final class LanguageServerSession implements LanguageClient {
                 .prepareCallHierarchy(params)
                 .<List<org.eclipse.lsp4j.CallHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
+    }
+
+    /**
+     * {@code textDocument/codeLens} — the annotations a server wants shown above lines.
+     *
+     * <p>The lenses come back <em>unresolved</em> by design: a server returns ranges cheaply and fills in
+     * each title only when asked, because computing "how many references" for every declaration in a file
+     * is the expensive part and most of them scroll past unseen.
+     */
+    CompletableFuture<List<org.eclipse.lsp4j.CodeLens>> codeLenses(String uri) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        var params = new org.eclipse.lsp4j.CodeLensParams(new TextDocumentIdentifier(uri));
+        return server.getTextDocumentService()
+                .codeLens(params)
+                .<List<org.eclipse.lsp4j.CodeLens>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
+    }
+
+    /** {@code codeLens/resolve} — fills in one lens's command, i.e. the text actually shown. */
+    CompletableFuture<org.eclipse.lsp4j.CodeLens> resolveCodeLens(org.eclipse.lsp4j.CodeLens lens) {
+        if (!ready() || lens == null) {
+            return CompletableFuture.completedFuture(lens);
+        }
+        return server.getTextDocumentService().resolveCodeLens(lens).exceptionally(t -> lens);
+    }
+
+    /** True when the server advertises {@code codeLensProvider}. */
+    boolean supportsCodeLens() {
+        ServerCapabilities caps = capabilities();
+        return caps != null && caps.getCodeLensProvider() != null;
     }
 
     /** Incoming calls (callers) of a call-hierarchy item (#682). */

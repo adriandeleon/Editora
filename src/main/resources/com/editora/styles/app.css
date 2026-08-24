@@ -3659,3 +3659,14 @@
 .tab-title.preview-tab-title {
     -fx-font-style: italic;
 }
+
+/* Code lens — the reference-count row above a declaration. Muted and small: it annotates the line below
+   it and must not compete with the code for attention, which is also why it carries no background. */
+.code-lens-row {
+    -fx-padding: 1 0 0 0;
+}
+.code-lens {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.85em;
+    -fx-font-style: italic;
+}

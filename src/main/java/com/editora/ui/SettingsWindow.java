@@ -263,6 +263,7 @@ public class SettingsWindow {
     private CheckBox pomPreviewCheck;
     private CheckBox stickyScrollCheck;
     private CheckBox symbolIndexCheck;
+    private CheckBox codeLensCheck;
     private CheckBox csvRainbowCheck;
     private CheckBox bracketColorsCheck;
     private CheckBox autoRenameTagCheck;
@@ -1191,6 +1192,7 @@ public class SettingsWindow {
         pomPreviewCheck = viewCheck(tr("settings.pomPreview"), Settings::setPomPreview);
         stickyScrollCheck = viewCheck(tr("settings.stickyScroll"), Settings::setStickyScroll);
         symbolIndexCheck = viewCheck(tr("settings.symbolIndex"), Settings::setSymbolIndex);
+        codeLensCheck = viewCheck(tr("settings.codeLens"), Settings::setCodeLens);
         csvRainbowCheck = viewCheck(tr("settings.csvRainbow"), Settings::setCsvRainbow);
         bracketColorsCheck = viewCheck(tr("settings.bracketColors"), Settings::setBracketColors);
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
@@ -2333,6 +2335,7 @@ public class SettingsWindow {
                 symbolIndexCheck,
                 null,
                 "symbol index go to symbol project declarations without language server");
+        checkRow(display, Category.EDITOR, codeLensCheck, null, "code lens reference count above declarations lsp");
         checkRow(
                 display,
                 Category.EDITOR,
@@ -6887,6 +6890,7 @@ public class SettingsWindow {
             pomPreviewCheck.setSelected(settings.isPomPreview());
             stickyScrollCheck.setSelected(settings.isStickyScroll());
             symbolIndexCheck.setSelected(settings.isSymbolIndex());
+            codeLensCheck.setSelected(settings.isCodeLens());
             csvRainbowCheck.setSelected(settings.isCsvRainbow());
             bracketColorsCheck.setSelected(settings.isBracketColors());
             autoRenameTagCheck.setSelected(settings.isAutoRenameTag());
@@ -7538,6 +7542,7 @@ public class SettingsWindow {
             pomPreviewCheck.setSelected(s.isPomPreview());
             stickyScrollCheck.setSelected(s.isStickyScroll());
             symbolIndexCheck.setSelected(s.isSymbolIndex());
+            codeLensCheck.setSelected(s.isCodeLens());
             csvRainbowCheck.setSelected(s.isCsvRainbow());
             bracketColorsCheck.setSelected(s.isBracketColors());
             autoRenameTagCheck.setSelected(s.isAutoRenameTag());

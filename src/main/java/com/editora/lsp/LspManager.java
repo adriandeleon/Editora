@@ -1447,6 +1447,66 @@ public final class LspManager {
         });
     }
 
+    // --- code lenses (reference counts above a declaration) ------------------------------------------
+
+    /** One resolved lens: the 0-based line it belongs above, and the text to show. */
+    public record Lens(int line, String title) {}
+
+    /**
+     * Requests this file's code lenses and resolves each one's title, delivering them on the FX thread.
+     *
+     * <p>Resolution is the expensive half — for a reference lens it is a project-wide search per
+     * declaration — so it is bounded by {@code max}. A file with two hundred methods would otherwise fire
+     * two hundred searches to fill a viewport showing thirty lines, which is how a code lens earns its
+     * reputation for making an editor crawl.
+     *
+     * <p>A lens whose title is still empty after resolving is dropped rather than shown blank: the server
+     * declined to say anything, and an empty band above a line is worse than no band.
+     */
+    public void codeLenses(Path file, int max, Consumer<List<Lens>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || !s.supportsCodeLens()) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        s.codeLenses(uri(file)).whenComplete((lenses, error) -> {
+            if (error != null || lenses == null || lenses.isEmpty()) {
+                Platform.runLater(() -> cb.accept(List.of()));
+                return;
+            }
+            List<org.eclipse.lsp4j.CodeLens> capped = lenses.size() <= max ? lenses : lenses.subList(0, max);
+            List<java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.CodeLens>> resolved =
+                    new java.util.ArrayList<>(capped.size());
+            for (org.eclipse.lsp4j.CodeLens lens : capped) {
+                resolved.add(
+                        lens.getCommand() != null ? CompletableFuture.completedFuture(lens) : s.resolveCodeLens(lens));
+            }
+            CompletableFuture.allOf(resolved.toArray(new CompletableFuture[0])).whenComplete((ignored, err2) -> {
+                List<Lens> out = new java.util.ArrayList<>();
+                for (var f : resolved) {
+                    org.eclipse.lsp4j.CodeLens lens = f.getNow(null);
+                    Lens mapped = toLens(lens);
+                    if (mapped != null) {
+                        out.add(mapped);
+                    }
+                }
+                Platform.runLater(() -> cb.accept(List.copyOf(out)));
+            });
+        });
+    }
+
+    /** Pure: an lsp4j lens with a resolved, non-blank command title becomes a {@link Lens}; else null. */
+    static Lens toLens(org.eclipse.lsp4j.CodeLens lens) {
+        if (lens == null || lens.getRange() == null || lens.getRange().getStart() == null) {
+            return null;
+        }
+        String title = lens.getCommand() == null ? null : lens.getCommand().getTitle();
+        if (title == null || title.isBlank()) {
+            return null;
+        }
+        return new Lens(lens.getRange().getStart().getLine(), title.strip());
+    }
+
     // --- folding ranges (#738) / selection ranges (#739) ---------------------------------------------
 
     /** Pure: whether a server's capabilities include {@code foldingRangeProvider} (null-safe). */
@@ -2156,6 +2216,10 @@ public final class LspManager {
     private static Map<String, Object> javaSettings() {
         Map<String, Object> java = new java.util.HashMap<>();
         java.put("autobuild", Map.of("enabled", false));
+        // jdtls ships reference code lenses DISABLED. Declaring the client capability is not enough: with
+        // this off it advertises no codeLensProvider and every codeLens request returns empty, which reads
+        // exactly like "this file has no lenses" rather than "the server was told not to look".
+        java.put("referencesCodeLens", Map.of("enabled", true));
         List<Map<String, Object>> runtimes = JavaRuntimes.runtimes(JavaRuntimes.discover());
         if (!runtimes.isEmpty()) {
             java.put("configuration", Map.of("runtimes", runtimes));
