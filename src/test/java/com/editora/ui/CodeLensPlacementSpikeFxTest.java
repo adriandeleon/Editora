@@ -119,6 +119,96 @@ class CodeLensPlacementSpikeFxTest {
         assertEquals(plain.length(), tall.length(), "the graphic changed the document length");
     }
 
+    /** Lays out an area whose paragraph {@link #TARGET} carries a {@code TALL} LENS, and measures. */
+    private Probe lensProbe() throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            CodeArea area = new CodeArea();
+            area.replaceText(TEXT);
+            area.setLensFactory(i -> {
+                if (i != TARGET) {
+                    return null;
+                }
+                VBox box = new VBox(new Label("3 references"));
+                box.setMinHeight(TALL);
+                box.setPrefHeight(TALL);
+                return box;
+            });
+            StackPane host = new StackPane(area);
+            Scene scene = new Scene(host, 900, 600);
+            javafx.stage.Stage stage = new javafx.stage.Stage();
+            stage.setScene(scene);
+            stage.show();
+            area.requestFollowCaret();
+            host.applyCss();
+            host.layout();
+            double target = height(area, TARGET);
+            double plain = height(area, 0);
+            stage.hide();
+            return new Probe(target, plain, area.getText(), area.getLength());
+        });
+    }
+
+    @Test
+    void aLensDoesGrowTheRow() throws Exception {
+        // The whole point of the fork change: unlike a gutter graphic, a lens adds height.
+        Probe lens = lensProbe();
+        System.out.printf(
+                "[spike] with a %.0fpx LENS: target row=%.1f  neighbour row=%.1f%n",
+                TALL, lens.targetHeight(), lens.plainHeight());
+        assertTrue(
+                lens.targetHeight() > lens.plainHeight() + TALL / 2,
+                "a lens must actually make the row taller; got " + lens.targetHeight() + " vs " + lens.plainHeight());
+    }
+
+    @Test
+    void aLensLeavesTheDocumentAlone() throws Exception {
+        // The invariant a decoration must never break: it annotates a file, it does not alter one.
+        Probe lens = lensProbe();
+        assertEquals(TEXT, lens.text(), "the lens changed the document text");
+        assertEquals(TEXT.length(), lens.length(), "the lens changed the document length");
+    }
+
+    /**
+     * The invariant that separates annotating a file from corrupting it: a click below a lens must still
+     * land on the character under the pointer.
+     *
+     * <p>This is the half of the fork change most likely to be wrong. {@code ParagraphBox.hit(x, y)}
+     * converts through screen coordinates and so is offset-safe for free, but {@code hitText} is handed a
+     * y relative to the box and forwards it straight to the text — without subtracting the lens band, a
+     * click lands one lens-height too low and the caret silently goes to the wrong line.
+     */
+    @Test
+    void aClickBelowALensLandsOnTheRightLine() throws Exception {
+        int landed = FxTestSupport.callOnFx(() -> {
+            CodeArea area = new CodeArea();
+            area.replaceText(TEXT);
+            area.setLensFactory(i -> {
+                if (i != TARGET) {
+                    return null;
+                }
+                VBox box = new VBox(new Label("3 references"));
+                box.setMinHeight(TALL);
+                box.setPrefHeight(TALL);
+                return box;
+            });
+            StackPane host = new StackPane(area);
+            javafx.stage.Stage stage = new javafx.stage.Stage();
+            stage.setScene(new Scene(host, 900, 600));
+            stage.show();
+            area.requestFollowCaret();
+            host.applyCss();
+            host.layout();
+            // Aim at the vertical middle of the TARGET paragraph's own text, in the area's coordinates.
+            Bounds target = area.getParagraphBoundsOnScreen(TARGET).orElseThrow();
+            javafx.geometry.Point2D local = area.screenToLocal(target.getMinX() + 4, target.getMaxY() - 4);
+            int index = area.hit(local.getX(), local.getY()).getInsertionIndex();
+            stage.hide();
+            return area.offsetToPosition(index, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                    .getMajor();
+        });
+        assertEquals(TARGET, landed, "a click on the lensed line's text landed on paragraph " + landed);
+    }
+
     @Test
     void theGrowthIsRecordedAsAConcreteRatio() throws Exception {
         Probe tall = probe(true);
