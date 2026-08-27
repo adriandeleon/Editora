@@ -38,6 +38,8 @@ are the readable distillation of it — when they disagree with the code, the co
   the five keymaps + per-OS variants, `KeyDispatcher`, the keybinding editor.
 - [subsystems/config-and-migrations.md](subsystems/config-and-migrations.md) — the config dir,
   `SharedConfig`/`ConfigManager`, `ConfigWriter`, and schema versioning + migrations.
+- [subsystems/navigation.md](subsystems/navigation.md) — ranking (`FuzzyMatch`), the server-free
+  symbol index, Search Everywhere, and the flow features (recent locations, peek, sticky scroll).
 - [subsystems/lsp-and-dap.md](subsystems/lsp-and-dap.md) — Language Server + Debug Adapter
   integration, and the `process/ProcessRegistry` lifecycle that owns spawned servers.
 
