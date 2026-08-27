@@ -41,6 +41,29 @@ Editora is built with the help of AI coding tools.
 - **Command-driven core** — every action is a `Command`; bind it to a chord or run it
   from the M-x command palette, which shows each command's one-line description and opens its online
   docs with `C-h`.
+- **Search Everywhere** (`M-S-x`; `Ctrl`/`Cmd`+`Shift`+`E` in the other keymaps) — one picker over
+  **commands, project files and symbols**, so you type the *name* of the thing instead of first
+  choosing which finder it lives in. `>` narrows to commands, `#` to files, `@` to symbols. Results
+  stay grouped by source rather than interleaved, so the thousands of symbols in a project cannot
+  bury the one command you meant. Opening it with nothing typed lists every command, a command whose
+  feature is switched off is shown grayed with a note about what would enable it, and `C-h` opens the
+  highlighted command's docs — so it can stand in for the palette entirely if you want it to
+  (Settings → Interface → Pickers).
+- **Go to Symbol with no language server** — Editora carries its own symbol scanner, so "where is
+  this declared?" works on a first run and in every language that ships a grammar but has no server
+  installed (16 languages: C, C++, C#, Go, Java, JavaScript/JSX, Kotlin, Lua, PHP, Python, Ruby,
+  Rust, shell, TypeScript/TSX). A running language server is always the better answer and still
+  wins; this is what there is when there isn't one. The index is built **on first use**, not when you
+  open a project, so an install that never asks it anything never pays for it.
+- **Ranked, not just filtered** — every picker scores matches instead of merely testing whether they
+  matched, with the matched characters emboldened. `mcon` finds `MainController`; the best answer
+  leads.
+- **Don't-lose-your-place navigation** — back/forward through your jumps, a **recent locations**
+  picker that shows the *line you were on* rather than just a file and number, **peek definition**
+  in an overlay instead of a jump, **sticky scroll** pinning the enclosing scope above the viewport,
+  and **preview tabs** (italic, single-slot) so browsing doesn't shred the tab strip. Plus
+  **related-file jump** between a test and its subject, a header and its implementation, or a
+  component and its stylesheet.
 - **Keyboard "Jump to…" popups** — fuzzy pickers for recent files (`C-x C-r`), the active file's
   structure/symbols (`M-g i`), open files/tabs (`C-x b`), and tool windows (`M-g t`) — keyboard-first
   alternatives to their list/tool-window UIs.
