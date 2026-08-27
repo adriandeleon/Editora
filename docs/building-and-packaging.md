@@ -49,11 +49,14 @@ a full-GUI cache against the image's own runtime (a real window renders, settles
 `System.exit` via `-Deditora.aotTrainExit`), writes `editora.aot`, strips `bin/`, and either
 copies the image or wraps it into the installer.
 
-It is **failure-tolerant** — on a display-less machine training is skipped and the build ships
-without the cache (a missing `-XX:AOTCache` just starts normally under `AOTMode=auto`). On Linux
-CI the helper auto-wraps training in `xvfb-run`. The win is ~28% / ≈300–480 ms faster cold start
-(it's JavaFX scene/control/CSS class loading, which is why a *headless* trainer gives ≈0). Cost:
-the cache is ~60 MB.
+It is **failure-tolerant by default** — on a display-less machine training is skipped and the build
+ships without the cache (a missing `-XX:AOTCache` just starts normally under `AOTMode=auto`) — but
+never *silently*: `aot_build.java` reports the trainer's exit code on stderr, raises a GitHub
+`::error` annotation naming the target, and writes a row into the job summary. **`EDITORA_REQUIRE_AOT=1`
+turns that report into a build failure**, and `release.yml` sets it, so a release tag never ships an
+uncached target. On Linux CI the helper auto-wraps training in `xvfb-run`. The win is ~28% /
+≈300–480 ms faster cold start (it's JavaFX scene/control/CSS class loading, which is why a *headless*
+trainer gives ≈0). Cost: the cache is ~72 MB.
 
 ### Per-OS Prism pipeline
 

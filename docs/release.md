@@ -101,6 +101,10 @@ CI uses the BellSoft **Liberica** JDK 25 for full arch coverage (incl. linux aar
   26 (the old vendored Monocle rebuild is gone; see
   [dependencies.md](dependencies.md#the-headless-test-backend-no-vendored-dependency)). Do
   re-run the device tests, since the per-OS Prism pipeline matters.
-- The AOT cache adds ~60 MB to the installed image (compressed in the DMG/MSI/DEB); it's
-  failure-tolerant, so a runner without a usable display still ships, just without the cache —
-  see [building-and-packaging.md](building-and-packaging.md#aot-cache-jdk-25-leyden).
+- The AOT cache adds ~72 MB to the installed image (compressed in the DMG/MSI/DEB). On a **release
+  tag it is mandatory**: `release.yml` sets `EDITORA_REQUIRE_AOT=1`, so a leg that tries to train and
+  ends up with no cache fails, and the `Release` job — which `needs` the matrix — never runs. Nothing
+  publishes, rather than one platform shipping quietly slow. Local builds and dry runs leave the
+  variable unset and stay failure-tolerant. If it ever fires on a legitimate release, set it back to
+  `'0'` for that tag and fix the trainer — don't weaken `aot_build.java`, whose job is to notice. See
+  [building-and-packaging.md](building-and-packaging.md#aot-cache-jdk-25-leyden).
