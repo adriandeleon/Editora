@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 98;
+    public static final int SCHEMA_VERSION = 99;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -353,6 +353,12 @@ public class Settings {
      * lazily on first use, so an install that never asks it anything never pays for it.
      */
     private boolean symbolIndex = true;
+    /**
+     * Make the command palette's chord open Search Everywhere instead: off by default. Search Everywhere
+     * is a superset of the palette, but which picker {@code M-x} opens is muscle memory, so the swap is
+     * something a user opts into rather than something a release does to them.
+     */
+    private boolean paletteUsesSearchEverywhere = false;
     /** Auto-rename the paired HTML/XML tag when a tag name is edited: on by default. */
     private boolean autoRenameTag = true;
 
@@ -717,6 +723,14 @@ public class Settings {
 
     public void setSymbolIndex(boolean symbolIndex) {
         this.symbolIndex = symbolIndex;
+    }
+
+    public boolean isPaletteUsesSearchEverywhere() {
+        return paletteUsesSearchEverywhere;
+    }
+
+    public void setPaletteUsesSearchEverywhere(boolean paletteUsesSearchEverywhere) {
+        this.paletteUsesSearchEverywhere = paletteUsesSearchEverywhere;
     }
 
     public boolean isStickyScroll() {

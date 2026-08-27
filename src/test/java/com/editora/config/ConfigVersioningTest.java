@@ -42,12 +42,16 @@ class ConfigVersioningTest {
 
     @Test
     void tooNewSettingsAreBackedUpAndDefaultsLoaded(@TempDir Path dir) throws Exception {
-        Files.writeString(dir.resolve("settings.toml"), "schemaVersion = 99\nfontFamily = \"FromTheFuture\"\n");
+        // Derived from the current version, never written as a literal: a hardcoded "future" version stops
+        // being in the future the moment the schema is bumped, and the test then asserts nothing.
+        int future = Settings.SCHEMA_VERSION + 1;
+        Files.writeString(
+                dir.resolve("settings.toml"), "schemaVersion = " + future + "\nfontFamily = \"FromTheFuture\"\n");
         ConfigManager cfg = new ConfigManager(dir);
         Settings s = cfg.load();
         assertEquals(new Settings().getFontFamily(), s.getFontFamily(), "defaults used, not the future font");
         assertFalse(Files.exists(dir.resolve("settings.toml")), "too-new file moved aside");
-        assertTrue(Files.exists(dir.resolve("settings.toml.v99.bak")), "backed up for safety");
+        assertTrue(Files.exists(dir.resolve("settings.toml.v" + future + ".bak")), "backed up for safety");
     }
 
     @Test

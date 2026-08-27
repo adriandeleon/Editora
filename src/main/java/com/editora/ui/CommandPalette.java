@@ -274,7 +274,15 @@ public class CommandPalette {
             return;
         }
         hide();
-        docsOpener.accept(DOCS_BASE + command.id());
+        docsOpener.accept(docsUrl(command.id()));
+    }
+
+    /**
+     * The online-docs URL for a command. Shared with Search Everywhere so the two pickers can never point
+     * at different pages — the version in the path is the subtlety worth having in one place.
+     */
+    static String docsUrl(String commandId) {
+        return DOCS_BASE + commandId;
     }
 
     private void move(int delta) {

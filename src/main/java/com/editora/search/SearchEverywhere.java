@@ -29,6 +29,14 @@ public final class SearchEverywhere {
     /** Rows overall — a picker shows a screenful. */
     public static final int DEFAULT_TOTAL = 24;
 
+    /**
+     * The cap to pass when only one source is in play — a sigil-scoped query, or the empty query that
+     * lists commands alone. The caps exist so a big source cannot drown a small one; with nothing to
+     * drown, trimming would only hide answers, and it would make a scoped search strictly worse than the
+     * single-purpose picker it replaces.
+     */
+    public static final int UNCAPPED = Integer.MAX_VALUE;
+
     /** What a result is. The order here is the tie-break order when two groups score equally. */
     public enum Kind {
         /** A registered command. Listed first on a tie: it is the only source that acts rather than navigates. */
@@ -42,8 +50,21 @@ public final class SearchEverywhere {
     /**
      * One result. {@code payload} is the caller's own object (a {@code Command}, a {@code Path}, a
      * {@code SymbolIndex.Hit}) carried through untouched, so this class needs to know nothing about them.
+     *
+     * <p>{@code description} is the longer explanation shown for the highlighted row only, so it costs one
+     * label rather than a column. {@code enabled} is false for a row that is listed but cannot be acted on
+     * — a command whose feature is switched off. Such a row is kept deliberately: in a picker that stands
+     * in for the command palette, a grayed row with an explanation is how a user learns the command exists
+     * and what would turn it on, which is exactly what hiding it destroys.
      */
-    public record Item(Kind kind, String label, String detail, int score, Object payload) {}
+    public record Item(
+            Kind kind, String label, String detail, String description, int score, boolean enabled, Object payload) {
+
+        /** An actionable result with no long description — what a file or symbol row is. */
+        public Item(Kind kind, String label, String detail, int score, Object payload) {
+            this(kind, label, detail, "", score, true, payload);
+        }
+    }
 
     /** A source's results, in rank order. */
     public record Group(Kind kind, List<Item> items) {}
@@ -101,8 +122,11 @@ public final class SearchEverywhere {
         List<Group> groups = new ArrayList<>();
         for (Map.Entry<Kind, List<Item>> e : byKind.entrySet()) {
             List<Item> ranked = new ArrayList<>(e.getValue());
-            ranked.sort(Comparator.comparingInt(Item::score)
-                    .reversed()
+            // Actionable rows first, then by score. A disabled row is worth listing but never worth
+            // outranking something the user can actually run, and this ordering also keeps a group's
+            // best-item score (which decides group order below) from being set by a row nobody can pick.
+            ranked.sort(Comparator.comparing((Item i) -> !i.enabled())
+                    .thenComparing(Comparator.comparingInt(Item::score).reversed())
                     .thenComparingInt((Item i) -> i.label().length())
                     .thenComparing(Item::label));
             if (ranked.size() > perGroup) {
@@ -128,7 +152,16 @@ public final class SearchEverywhere {
         return List.copyOf(out);
     }
 
+    /**
+     * The score a group competes on: its best <em>actionable</em> item. A group of nothing but disabled
+     * rows still competes, on its best row, so it does not silently sink below an empty-handed source.
+     */
     private static int bestScore(Group g) {
+        for (Item i : g.items()) {
+            if (i.enabled()) {
+                return i.score();
+            }
+        }
         return g.items().isEmpty() ? Integer.MIN_VALUE : g.items().get(0).score();
     }
 

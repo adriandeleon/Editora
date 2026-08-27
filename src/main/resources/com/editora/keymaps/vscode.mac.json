@@ -20,6 +20,7 @@
   "Cmd-S-f": "search.inFiles",
   "Cmd-p": "file.find",
   "Cmd-S-p": "palette.show",
+  "Cmd-S-e": "search.everywhere",
   "f1": "palette.show",
   "C-g": "nav.goToLine",
   "Cmd-S-o": "structure.jump",
