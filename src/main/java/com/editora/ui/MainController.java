@@ -3678,19 +3678,24 @@ public class MainController implements com.editora.mcp.McpBridge {
             java.util.List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
             var gates = paletteGates();
             var context = paletteContext();
+            // Hoisted: inverting the keymap allocates a map of every binding, so doing it per matching
+            // command turned a one-character query into hundreds of rebuilds of the same map.
+            java.util.Map<String, String> chords = invertBindings();
+            boolean all = query == null || query.isBlank();
             for (Command c : registry.all()) {
-                // A command the palette would gray out is not offered here at all: this list is short and
-                // mixed, so an inert row is pure noise rather than the discoverability aid it is there.
-                if (!Chrome.paletteEnabled(c.id(), gates, context)) {
-                    continue;
-                }
-                com.editora.search.FuzzyMatch.Match m = com.editora.search.FuzzyMatch.of(c.title(), query);
-                if (m != null) {
+                // A command whose feature is off is listed, grayed, with an explanation — the same choice
+                // the palette makes (#532). Hiding it means the user never learns it exists, which matters
+                // most here precisely because this picker can stand in for the palette.
+                boolean enabled = Chrome.paletteEnabled(c.id(), gates, context);
+                com.editora.search.FuzzyMatch.Match m = all ? null : com.editora.search.FuzzyMatch.of(c.title(), query);
+                if (all || m != null) {
                     out.add(new com.editora.search.SearchEverywhere.Item(
                             com.editora.search.SearchEverywhere.Kind.COMMAND,
                             c.title(),
-                            invertBindings().getOrDefault(c.id(), ""),
-                            m.score(),
+                            chords.getOrDefault(c.id(), ""),
+                            c.description(),
+                            all ? 0 : m.score(),
+                            enabled,
                             c));
                 }
             }
@@ -3730,6 +3735,21 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void ensureIndex(Runnable then) {
             indexCoordinator.ensureBuilt(then);
+        }
+
+        @Override
+        public String disabledReason(com.editora.search.SearchEverywhere.Item item) {
+            // Only a command can be listed-but-inert; a file or symbol row is always actionable.
+            return item.payload() instanceof Command c ? disabledCommandReason(c.id()) : null;
+        }
+
+        @Override
+        public void openDocs(com.editora.search.SearchEverywhere.Item item) {
+            if (item.payload() instanceof Command c) {
+                openExternalUrl(CommandPalette.docsUrl(c.id()));
+            } else {
+                setStatus(tr("status.searchEverywhere.noDocs"));
+            }
         }
 
         @Override
@@ -10006,8 +10026,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         return s == null ? "" : s;
     }
 
+    /**
+     * The palette button and {@code palette.show}. Opens Search Everywhere instead when the user has asked
+     * for that (off by default): it is a superset — an empty query lists every command exactly as the
+     * palette does, and typing reaches files and symbols too — so the substitution takes nothing away.
+     *
+     * <p>Opened empty rather than seeded from the selection, because this is the palette's entry point and
+     * the palette has never pre-filled itself.
+     */
     @FXML
     private void onPalette() {
+        if (config.getSettings().isPaletteUsesSearchEverywhere() && searchEverywherePopup != null) {
+            searchEverywherePopup.show("");
+            return;
+        }
         palette.show();
     }
 
@@ -16344,6 +16376,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("tool.references", () -> ifLsp(() -> toolWindows.toggle(referencesToolWindow))));
         registry.register(Command.of("tool.hierarchy", () -> ifLsp(() -> toolWindows.toggle(hierarchyToolWindow))));
         registry.register(Command.of("search.everywhere", this::showSearchEverywhere));
+        registry.register(Command.of(
+                "view.togglePaletteSearchEverywhere",
+                () -> toggleSetting(
+                        "view.togglePaletteSearchEverywhere",
+                        () -> config.getSettings().isPaletteUsesSearchEverywhere(),
+                        config.getSettings()::setPaletteUsesSearchEverywhere,
+                        null))); // nothing to re-apply: onPalette() reads the setting when it runs
         registry.register(Command.of("index.gotoSymbol", indexCoordinator::gotoSymbol));
         registry.register(Command.of("index.rebuild", indexCoordinator::rebuild));
         registry.register(Command.of(

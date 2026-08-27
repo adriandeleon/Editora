@@ -242,6 +242,7 @@ public class SettingsWindow {
     private CheckBox breadcrumbCheck;
     private CheckBox simpleModeCheck;
     private CheckBox toolStripeCheck;
+    private CheckBox paletteSearchEverywhereCheck;
     private CheckBox projectHiddenCheck;
     private CheckBox markdownFormatBarCheck;
     private CheckBox lspInstallPromptsCheck;
@@ -1168,6 +1169,8 @@ public class SettingsWindow {
         breadcrumbCheck = viewCheck(tr("settings.showBreadcrumb"), Settings::setShowBreadcrumb);
         simpleModeCheck = viewCheck(tr("settings.simpleMode"), Settings::setSimpleMode);
         toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
+        paletteSearchEverywhereCheck =
+                viewCheck(tr("settings.paletteSearchEverywhere"), Settings::setPaletteUsesSearchEverywhere);
         projectHiddenCheck = viewCheck(tr("settings.projectShowHidden"), Settings::setProjectShowHidden);
         markdownFormatBarCheck = viewCheck(tr("settings.markdownFormatBar"), Settings::setMarkdownFormatBar);
         lspInstallPromptsCheck = viewCheck(tr("settings.lspInstallPrompts"), Settings::setLspInstallPrompts);
@@ -2825,6 +2828,13 @@ public class SettingsWindow {
                 toolStripeCheck,
                 tr("settings.toolWindows.stripeNote"),
                 "tool stripe tool windows buttons show hide precedence");
+        Card pickers = card(p, tr("settings.section.pickers"));
+        checkRow(
+                pickers,
+                Category.INTERFACE,
+                paletteSearchEverywhereCheck,
+                tr("settings.paletteSearchEverywhere.note"),
+                "command palette search everywhere m-x picker replace commands files symbols");
         Card modes = card(p, tr("settings.section.modes"));
         checkRow(
                 modes,
@@ -6856,6 +6866,7 @@ public class SettingsWindow {
             simpleModeCheck.setSelected(settings.isSimpleMode());
             templateAuthorField.setText(settings.getAuthorNameRaw());
             toolStripeCheck.setSelected(settings.isShowToolStripe());
+            paletteSearchEverywhereCheck.setSelected(settings.isPaletteUsesSearchEverywhere());
             projectHiddenCheck.setSelected(settings.isProjectShowHidden());
             markdownFormatBarCheck.setSelected(settings.isMarkdownFormatBar());
             lspInstallPromptsCheck.setSelected(settings.isLspInstallPrompts());

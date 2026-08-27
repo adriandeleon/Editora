@@ -160,7 +160,9 @@ public enum ConfigSchema {
                     Map.entry(94, (Migration) ConfigMigrations::identity), // v94→95: + inlayHintMode (additive)
                     Map.entry(95, (Migration) ConfigMigrations::identity), // v95→96: + pomPreview (additive)
                     Map.entry(96, (Migration) ConfigMigrations::identity), // v96→97: + stickyScroll (additive)
-                    Map.entry(97, (Migration) ConfigMigrations::identity))), // v97→98: + symbolIndex (additive)
+                    Map.entry(97, (Migration) ConfigMigrations::identity), // v97→98: + symbolIndex (additive)
+                    // v98→99: + paletteUsesSearchEverywhere (additive)
+                    Map.entry(98, (Migration) ConfigMigrations::identity))),
     // v1 → v2 added the editor-group layout + OpenFile.group. Both default to the old single-group
     // behaviour, so the step is identity.
     // v1→v2 editor-group layout, v2→v3 RunConfiguration type/target, v3→v4 selectedRunConfig — all additive

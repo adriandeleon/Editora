@@ -19,6 +19,7 @@
   "C-S-f": "search.inFiles",
   "C-g": "nav.goToLine",
   "C-S-p": "palette.show",
+  "C-S-e": "search.everywhere",
   "C-,": "view.settings",
   "f11": "window.fullScreen",
   "C-=": "view.textZoomIn",

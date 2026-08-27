@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Search Everywhere can take over the palette's shortcut.** Off by default, under Settings ▸ Interface ▸
+  Pickers (or the `View: Toggle Palette Opens Search Everywhere` command). With it on, the chord you have
+  always pressed for the command palette opens Search Everywhere instead. Nothing is lost by switching:
+  an empty query lists every command exactly as the palette does, and typing reaches project files and
+  symbols as well. Which picker that chord opens is muscle memory, so this is something you turn on rather
+  than something a release does to you, and Search Everywhere keeps its own shortcut either way.
+
+- **Search Everywhere has a keybinding.** It shipped in 0.13.0 as a registered command with no chord in
+  any of the bundled keymaps, so the only way to reach the picker that replaces the other pickers was to
+  open the command palette and type its name. It is now `M-S-x` in the Emacs keymap, sitting beside `M-x`
+  where the mnemonic explains itself, and `Ctrl`/`Cmd`+`Shift`+`E` in the CUA, Sublime, VS Code and
+  IntelliJ keymaps.
+
+### Changed
+
+- **Search Everywhere now teaches the way the command palette does.** Three things it was missing, all of
+  which matter more now that it can stand in for the palette:
+
+  A command whose feature is switched off is **listed, grayed, with an explanation naming the setting that
+  would enable it**, instead of being omitted. Omitting it is tidier in a mixed list, which is why it was
+  built that way, but it also means you never learn the command exists — and a picker you cannot learn the
+  product from is a worse palette than the one it replaces. Grayed rows sort after everything you can
+  actually run, and the cursor steps over them.
+
+  The **highlighted row's description** appears under the list, and **`Ctrl+H` opens its documentation** in
+  your browser, both matching the palette exactly.
+
+  An **empty query lists every command** rather than showing a blank box, and a single-source query — an
+  empty one, or a `>`/`#`/`@` scoped one — is **no longer capped**. A `>` search used to return at most
+  eight commands, which made the scoped mode strictly worse than the picker it stands in for. The cap
+  exists so a large source cannot drown a small one; with one source in play there is nothing to drown.
+
+### Fixed
+
+- **Typing in Search Everywhere rebuilt the whole keymap once per matching command.** Each result carries
+  the chord bound to it, and the lookup that produces it inverts the entire binding table into a fresh
+  map. That call sat inside the match loop, so a one-character query against roughly six hundred commands
+  built the same map hundreds of times before a single row was drawn, on the FX thread, on every
+  keystroke. It is now built once per query, which is what the command palette had always done.
+
+- **Two config tests could not fail.** Each wrote a schema version as a literal to stand for "newer than
+  this build understands", so both quietly stopped testing anything the moment the schema was bumped past
+  it — which this release does. They now derive the version from the current one.
+
 ## [0.13.1] - 2026-08-27
 
 ### Fixed

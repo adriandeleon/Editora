@@ -67,11 +67,14 @@ class ConfigMigrationsTest {
 
     @Test
     void upgradeThrowsWhenFileIsNewerThanSupported() {
-        ObjectNode tooNew = mapper.createObjectNode().put("schemaVersion", 99);
+        // Derived from the current version rather than written as a literal: a hardcoded "newer" version
+        // stops being newer the moment someone bumps the schema, and the test then passes by not throwing.
+        int tooNewVersion = ConfigSchema.SETTINGS.currentVersion() + 1;
+        ObjectNode tooNew = mapper.createObjectNode().put("schemaVersion", tooNewVersion);
         NewerThanSupportedException ex = assertThrows(
                 NewerThanSupportedException.class,
                 () -> ConfigMigrations.upgrade(ConfigSchema.SETTINGS, tooNew, mapper));
-        assertEquals(99, ex.storedVersion());
+        assertEquals(tooNewVersion, ex.storedVersion());
         assertEquals(ConfigSchema.SETTINGS, ex.schema());
     }
 

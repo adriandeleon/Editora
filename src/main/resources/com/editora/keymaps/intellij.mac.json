@@ -16,6 +16,7 @@
   "Cmd-r": "find.replace",
   "Cmd-S-f": "search.inFiles",
   "Cmd-S-a": "palette.show",
+  "Cmd-S-e": "search.everywhere",
   "Cmd-l": "nav.goToLine",
   "Cmd-b": "lsp.gotoDefinition",
   "M-f7": "lsp.findReferences",

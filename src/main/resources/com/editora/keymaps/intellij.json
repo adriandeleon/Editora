@@ -16,6 +16,7 @@
   "C-r": "find.replace",
   "C-S-f": "search.inFiles",
   "C-S-a": "palette.show",
+  "C-S-e": "search.everywhere",
   "C-g": "nav.goToLine",
   "C-b": "lsp.gotoDefinition",
   "M-f7": "lsp.findReferences",

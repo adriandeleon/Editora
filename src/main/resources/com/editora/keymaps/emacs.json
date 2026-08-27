@@ -27,6 +27,7 @@
   "C-x o": "window.other",
   "C-x g": "git.commit",
   "M-x": "palette.show",
+  "M-S-x": "search.everywhere",
   "M-1": "tool.project",
   "M-2": "tool.bookmarks",
   "M-3": "tool.fileInformation",

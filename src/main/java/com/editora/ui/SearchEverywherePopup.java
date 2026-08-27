@@ -62,6 +62,15 @@ final class SearchEverywherePopup {
 
         /** Acts on the chosen result: run the command, open the file, jump to the symbol. */
         void choose(Item item);
+
+        /**
+         * Why {@code item} is listed but cannot be run, or null. Called only for a <em>visible</em>
+         * disabled row, so deriving it can be as expensive as the palette's equivalent.
+         */
+        String disabledReason(Item item);
+
+        /** Opens {@code item}'s online documentation, if it has any. */
+        void openDocs(Item item);
     }
 
     private static final double CELL_HEIGHT = 26;
@@ -75,6 +84,9 @@ final class SearchEverywherePopup {
     private final ListView<Row> list = new ListView<>();
     private final ObservableList<Row> rows = FXCollections.observableArrayList();
     private final Label status = new Label();
+    /** The highlighted row's longer explanation — one fixed line, so the card cannot jitter. */
+    private final Label desc = new Label();
+
     private final VBox card;
 
     /** Typing is cheap, but a query can trigger the first project walk; debounce so it happens once. */
@@ -103,10 +115,14 @@ final class SearchEverywherePopup {
         rows.addListener((javafx.collections.ListChangeListener<Row>) c -> resizeList());
 
         status.getStyleClass().add("fif-status");
+        desc.getStyleClass().add("palette-desc");
+        desc.setMaxWidth(Double.MAX_VALUE);
+        desc.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
+        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> updateDescription(now));
         Label hint = new Label(tr("searchEverywhere.hint"));
         hint.getStyleClass().add("palette-hint");
 
-        VBox box = new VBox(6, input, list, status, hint);
+        VBox box = new VBox(6, input, list, status, desc, hint);
         box.getStyleClass().addAll("command-palette", "search-everywhere");
         box.setPrefWidth(CARD_WIDTH);
         box.setMaxSize(CARD_WIDTH, Region.USE_PREF_SIZE);
@@ -166,12 +182,21 @@ final class SearchEverywherePopup {
                 chooseSelected();
                 e.consume();
             }
+            case H -> {
+                if (e.isControlDown()) {
+                    openDocs();
+                    e.consume();
+                }
+            }
             default -> {}
             // Escape and C-g belong to the host, as with every other in-scene overlay.
         }
     }
 
-    /** Moves to the next selectable row, stepping over group headers rather than landing on them. */
+    /**
+     * Moves to the next <em>selectable</em> row, stepping over group headers and over rows that are
+     * listed but cannot be run, so the cursor never rests somewhere Enter would do nothing.
+     */
     private void move(int delta) {
         int size = rows.size();
         if (size == 0) {
@@ -180,7 +205,7 @@ final class SearchEverywherePopup {
         int cur = list.getSelectionModel().getSelectedIndex();
         for (int step = 1; step <= size; step++) {
             int idx = Math.floorMod((cur < 0 ? 0 : cur) + delta * step, size);
-            if (rows.get(idx) instanceof ItemRow) {
+            if (isSelectable(rows.get(idx))) {
                 list.getSelectionModel().select(idx);
                 list.scrollTo(idx);
                 return;
@@ -188,24 +213,47 @@ final class SearchEverywherePopup {
         }
     }
 
+    private static boolean isSelectable(Row row) {
+        return row instanceof ItemRow r && r.item().enabled();
+    }
+
     private void chooseSelected() {
-        if (list.getSelectionModel().getSelectedItem() instanceof ItemRow row) {
+        if (list.getSelectionModel().getSelectedItem() instanceof ItemRow row
+                && row.item().enabled()) {
             overlayHost.hide();
             ops.choose(row.item());
         }
+    }
+
+    /** C-h: the highlighted row's online documentation, mirroring the command palette. */
+    private void openDocs() {
+        if (list.getSelectionModel().getSelectedItem() instanceof ItemRow row) {
+            overlayHost.hide();
+            ops.openDocs(row.item());
+        }
+    }
+
+    private void updateDescription(Row row) {
+        String d = row instanceof ItemRow r ? r.item().description() : "";
+        desc.setText(d == null || d.isEmpty() ? " " : d); // one line tall always, so the card never jitters
     }
 
     /** Re-queries every in-scope source and rebuilds the list. */
     private void refresh() {
         Scope scope = SearchEverywhere.scopeOf(input.getText());
         currentQuery = scope.query();
-        if (currentQuery.isEmpty()) {
+        if (currentQuery.isEmpty() && scope.kind() != null && scope.kind() != Kind.COMMAND) {
+            // A file or symbol sigil with nothing typed after it yet: name what it scopes to rather than
+            // walking the project on behalf of an empty query.
             rows.clear();
-            status.setText(scope.kind() == null ? "" : tr("searchEverywhere.scoped", labelFor(scope.kind())));
+            status.setText(tr("searchEverywhere.scoped", labelFor(scope.kind())));
+            updateDescription(null);
             return;
         }
-        // Files and symbols both need the project corpus; a command-scoped query must not trigger a walk.
-        if (scope.kind() == Kind.COMMAND) {
+        // An empty query lists every command and touches no corpus. That is what lets this stand in for
+        // the command palette: opening it shows the same browsable list rather than a blank box.
+        // Otherwise: files and symbols need the corpus, so a command-scoped query must not trigger a walk.
+        if (currentQuery.isEmpty() || scope.kind() == Kind.COMMAND) {
             populate(scope);
         } else {
             ops.ensureIndex(() -> {
@@ -217,17 +265,24 @@ final class SearchEverywherePopup {
     }
 
     private void populate(Scope scope) {
+        // The corpus sources answer nothing useful for an empty query, and asking would build the index.
+        boolean corpus = !scope.query().isEmpty();
         List<Item> all = new ArrayList<>();
         if (scope.kind() == null || scope.kind() == Kind.COMMAND) {
             all.addAll(ops.commands(scope.query()));
         }
-        if (scope.kind() == null || scope.kind() == Kind.FILE) {
+        if (corpus && (scope.kind() == null || scope.kind() == Kind.FILE)) {
             all.addAll(ops.files(scope.query()));
         }
-        if (scope.kind() == null || scope.kind() == Kind.SYMBOL) {
+        if (corpus && (scope.kind() == null || scope.kind() == Kind.SYMBOL)) {
             all.addAll(ops.symbols(scope.query()));
         }
-        List<Group> groups = SearchEverywhere.merge(all);
+        // With one source in play there is nothing to drown, so nothing is trimmed: a `>` search must not
+        // return fewer commands than the palette would, and the empty query must list them all.
+        boolean single = scope.kind() != null || !corpus;
+        List<Group> groups = single
+                ? SearchEverywhere.merge(all, SearchEverywhere.UNCAPPED, SearchEverywhere.UNCAPPED)
+                : SearchEverywhere.merge(all);
 
         List<Row> built = new ArrayList<>();
         for (Group g : groups) {
@@ -243,13 +298,14 @@ final class SearchEverywherePopup {
 
     private void selectFirstItem() {
         for (int i = 0; i < rows.size(); i++) {
-            if (rows.get(i) instanceof ItemRow) {
+            if (isSelectable(rows.get(i))) {
                 list.getSelectionModel().select(i);
                 list.scrollTo(i);
                 return;
             }
         }
-        list.getSelectionModel().clearSelection();
+        list.getSelectionModel().clearSelection(); // nothing here can be run
+        updateDescription(null);
     }
 
     private static String labelFor(Kind kind) {
@@ -264,8 +320,9 @@ final class SearchEverywherePopup {
         RowCell() {
             box.setAlignment(Pos.CENTER_LEFT);
             detail.getStyleClass().add("keybinding");
+            // A grayed row is inert to the mouse too, exactly as in the command palette.
             setOnMouseClicked(e -> {
-                if (e.getButton() == MouseButton.PRIMARY && getItem() instanceof ItemRow) {
+                if (e.getButton() == MouseButton.PRIMARY && isSelectable(getItem())) {
                     getListView().getSelectionModel().select(getItem());
                     chooseSelected();
                 }
@@ -300,6 +357,21 @@ final class SearchEverywherePopup {
             Item it = ((ItemRow) item).item();
             label.getChildren().setAll(MatchText.runs(it.label(), currentQuery));
             detail.setText(it.detail());
+            box.getStyleClass().remove("palette-disabled");
+            setTooltip(null); // cells are recycled — never leave a previous row's explanation behind
+            if (!it.enabled()) {
+                box.getStyleClass().add("palette-disabled");
+                // Say why, and which command would fix it: a gray row with no explanation reads as a bug
+                // rather than a state, and the explanation is the whole reason it is listed at all.
+                String why = ops.disabledReason(it);
+                if (why != null && !why.isBlank()) {
+                    javafx.scene.control.Tooltip tip = new javafx.scene.control.Tooltip(why);
+                    tip.setWrapText(true);
+                    tip.setMaxWidth(380);
+                    tip.getStyleClass().add("palette-disabled-tooltip");
+                    setTooltip(tip);
+                }
+            }
             setGraphic(box);
         }
     }

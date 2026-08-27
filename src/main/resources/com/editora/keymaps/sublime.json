@@ -22,6 +22,7 @@
   "C-S-f": "search.inFiles",
   "C-p": "file.find",
   "C-S-p": "palette.show",
+  "C-S-e": "search.everywhere",
   "C-r": "structure.jump",
   "C-g": "nav.goToLine",
   "f12": "lsp.gotoDefinition",

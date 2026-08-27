@@ -25,6 +25,10 @@ class SearchEverywhereTest {
         return new Item(kind, label, "", score, label);
     }
 
+    private static Item disabled(Kind kind, String label, int score) {
+        return new Item(kind, label, "", "", score, false, label);
+    }
+
     private static List<Item> many(Kind kind, int count, int baseScore) {
         List<Item> out = new ArrayList<>();
         for (int i = 0; i < count; i++) {
@@ -146,6 +150,40 @@ class SearchEverywhereTest {
                     SearchEverywhere.flatten(SearchEverywhere.merge(items)).stream()
                             .map(Item::label)
                             .toList());
+        }
+
+        @Test
+        void theConvenienceConstructorMakesAnActionableRowWithNoDescription() {
+            Item i = item(Kind.FILE, "a", 1);
+            assertTrue(i.enabled());
+            assertEquals("", i.description());
+        }
+
+        @Test
+        void aDisabledRowNeverOutranksOneTheUserCanRun() {
+            // The disabled row scores higher, so only the enabled-first rule can put "run" ahead of it.
+            List<Item> items = List.of(disabled(Kind.COMMAND, "gray", 90), item(Kind.COMMAND, "run", 10));
+            assertEquals(
+                    List.of("run", "gray"),
+                    SearchEverywhere.flatten(SearchEverywhere.merge(items)).stream()
+                            .map(Item::label)
+                            .toList());
+        }
+
+        @Test
+        void aGroupCompetesOnItsBestActionableRow() {
+            // COMMAND's top row is disabled and outscores everything; FILE's best is a row you can open,
+            // so FILE must lead. Ranking groups on the raw first row would put COMMAND first.
+            List<Item> items =
+                    List.of(disabled(Kind.COMMAND, "gray", 99), item(Kind.COMMAND, "cmd", 5), item(Kind.FILE, "f", 50));
+            assertEquals(List.of(Kind.FILE, Kind.COMMAND), kinds(SearchEverywhere.merge(items)));
+        }
+
+        @Test
+        void aGroupOfNothingButDisabledRowsStillAppears() {
+            List<Item> items = List.of(disabled(Kind.COMMAND, "gray", 99), item(Kind.FILE, "f", 1));
+            List<Group> groups = SearchEverywhere.merge(items);
+            assertTrue(kinds(groups).contains(Kind.COMMAND));
         }
 
         @Test
