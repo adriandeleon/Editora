@@ -7,6 +7,163 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-26
+
+A code-navigation release. Navigation had four gaps that mattered: nothing was ranked, symbols existed
+only with a language server installed, five separate finders each asked you to decide *what kind* of thing
+you wanted before you could type its name, and every jump cost you your place. This closes all four.
+
+### Added
+
+- **Search Everywhere** — one picker over commands, files and symbols, so you can type the *name* of the
+  thing instead of first choosing which finder it lives in. A leading `>`, `#` or `@` restricts to
+  commands, files or symbols for when you do already know; those are VS Code's sigils rather than invented
+  ones, since the muscle memory already exists.
+
+  Results stay **grouped by source** rather than interleaved on raw score. The sources differ in size by
+  orders of magnitude — tens of thousands of symbols, thousands of files, a few hundred commands — so a
+  flat merge hands the whole list to whichever is biggest and the other two effectively disappear. Each
+  source gets a guaranteed share, the groups compete on their best result rather than their bulk, and the
+  overall cap trims a group's tail instead of dropping a source outright.
+
+  A command the palette would gray out is omitted here rather than shown inert: in the palette a disabled
+  row is the point — you learn the command exists and what would enable it — but in a short mixed list it
+  is just noise.
+
+- **Go to Symbol in Project, with no language server.** Editora now carries its own symbol scanner, so
+  the question works on a first run and in every language that ships a grammar but has no server — 16
+  language ids' worth of declaration rules. A running language server remains the better answer and still
+  takes precedence; this is what there is when there isn't one.
+
+  The index is built **lazily, on first use**, not when a project opens: walking every file the moment a
+  project opens spends real work for someone who may never ask it anything, and asking for a symbol is the
+  justification. The first query pays for the walk — under a second on a 650-file project — and after that
+  it is incremental, rescanning exactly the file you saved from the text already in memory. There is no
+  second filesystem watcher; the Project tree already runs one, and files changed outside the editor are
+  handled by `index.rebuild`.
+
+  The scanner **under-reports on purpose**. A missing declaration costs you one fallback to search; an
+  invented one sends you somewhere that does not exist and teaches you not to trust the feature.
+
+  It is deliberately not built on the TextMate grammars, whose `entity.name.*` scopes are the obvious
+  source: tm4e grammars are not thread-safe and the registry is shared with the editor's background
+  highlighters, so an indexer walking a project would race them.
+
+- **Every picker now ranks what you typed, and shows why a row matched.** The pickers only ever asked
+  whether a candidate matched, never how well, so a scattered accidental hit ranked alongside a clean
+  prefix one — and recent files, open buffers, bookmarks, snippets, projects, themes and LSP references
+  were not ranked at all, showing matches in source order.
+
+  The new matcher scores contiguity, word and camelCase boundaries, exact case and compactness, matches
+  whitespace-separated terms in any order (`toggle git` finds *Git: Toggle Blame*), and knows a path's
+  basename from its directories. The alignment is computed by dynamic programming rather than greedily,
+  which is the difference between `mc` meaning the two humps of `MainController` and meaning whichever
+  `c` happens to come first.
+
+  Rows embolden the characters actually responsible for the match. The command palette previously ranked
+  with one algorithm and emboldened with another, so the highlight could point at characters the ranking
+  had never considered.
+
+  The Project tree's filename filter now scores the whole relative path, so a query can name a directory
+  as well as a file. Grouped and structural lists — build actions, branches, the Structure tree — take the
+  better matcher but keep their own order, because a tree that reorders under a filter is worse, not
+  better.
+
+- **Sticky scroll** pins the enclosing scope headers above the viewport, so deep in a long method you can
+  still see what it belongs to. A header already on screen is not pinned — that would cover the real line
+  with a copy of itself — and when the chain is deeper than the cap the **outermost** entries are kept:
+  the innermost scope is the one you can infer from the code in front of you, while the file-level type
+  has been off screen longest. Clicking a pinned row jumps to it. Settings → Editor → Display, or
+  `view.toggleStickyScroll`.
+
+- **Peek Definition** shows a definition over the editor and leaves your place, scroll position and tab
+  count where they were. Go-to-definition answers "what is this" by moving you, and most of the time the
+  question is only a signature and a few lines of body — an answer that does not justify the move. Enter
+  still commits to the real jump, so nothing is taken away. A library target with no file to read degrades
+  to the full go-to-definition rather than reporting a failure.
+
+- **Preview tabs.** Browsing now costs one tab, not one per glance. Arrowing through a picker or following
+  a definition to see what something is reuses a single slot, whose title is italic — the same "not
+  durable yet" convention the unsaved marker uses. Editing the file, or opening it explicitly, promotes it
+  to a permanent tab. An already-open file is never demoted into the slot: it earned its place by an
+  earlier deliberate open, and quietly making it disposable would lose it on the next glance at something
+  else.
+
+- **Recent Locations** lists the session's trail newest-first with **the line you were on**, which is the
+  thing you actually lost when a jump took you elsewhere. `Foo.java:214` says nothing about why you were
+  there; the line usually says it at a glance. It reads the same trail that Back walks rather than keeping
+  a second log, so the picker and Back can never disagree about where you have been.
+
+- **Picker preview.** The highlighted row is shown in the editor as the selection moves, and dismissing
+  the picker puts everything back. The undo is half the feature — without it, arrowing through a list and
+  pressing Escape leaves you wherever the cursor stopped, which is worse than not previewing at all.
+  Preview navigates without taking focus and without recording history, so browsing a picker cannot itself
+  become something to navigate back through.
+
+- **Go to Related File** pairs a file with its counterpart — a test and the class it tests, a header and
+  its implementation, a component and its stylesheet. These are conventions rather than facts, so Editora
+  proposes candidate names in preference order and offers only the ones that exist; a convention being
+  wrong therefore costs nothing, which is what lets the list be generous. Coming from a test, the subject
+  leads. Several matches offer a picker, since `Foo.css` and `Foo.scss` can both exist and only you know
+  which was meant.
+
+- **Go to Definition in a Split** puts the definition in a new editor group and leaves the origin where it
+  was — the pair you usually want on screen together is the call and the thing called. A definition in the
+  same file jumps without splitting, since there is only one tab and the split would move it, leaving the
+  group it came from empty.
+
+- **Bookmark mnemonics.** A bookmark can carry a single character, and that character is a chord that
+  jumps to it from anywhere in the project. A mnemonic is **unique within a project** — `3` means one
+  place, not one place per file — because the chord is a name for a location, and a name resolving to
+  several locations is a menu, not a shortcut. Assigning one that is already taken moves it. The panel
+  shows the mnemonic first on the row: it is the only part of a bookmark that is otherwise invisible, and
+  a shortcut you cannot see is one you will not remember assigning.
+
+- **The Windows installer now registers Editora under Explorer's "Open with"** for the text and source
+  types it edits. Windows hands a file manager's chosen file to an application as a command-line argument,
+  and nothing maps an extension to Editora unless the installer says so — so until now the MSI installed an
+  editor that no file manager could hand a file to. The Linux `.deb` already did the equivalent (and more:
+  it can also make Editora the default text editor).
+
+  It does not take over your existing defaults: on Windows 8+ the shell's per-user choice wins over anything
+  an installer writes, so a type you already open with something else keeps opening with it and Editora is
+  simply offered alongside. An extension nothing else claims does fall to Editora, which is the wanted
+  outcome for the likes of `.tfvars`.
+
+  The list is every extension Editora actually resolves to a language, minus `.html`/`.htm`/`.xhtml` and
+  `.svg` — left to the browser and the image viewer, mirroring the choice already made for the Linux
+  package so the two installers cannot drift apart in what they claim.
+
+  The `.rpm` remains without an association: it uses jpackage's own desktop entry and ignores the
+  maintainer-script overrides the `.deb` relies on. RPM users can still open files from within Editora.
+
+### Performance
+
+- **Peak memory is down from ~908 MB to ~653 MB** on a four-file session, measured on the installed
+  package against a copy of a real configuration.
+
+  The initial heap was never pinned, and the JVM's default for it is 1/64 of physical RAM *clamped up to*
+  the maximum heap — so on a large-RAM machine the whole 2 GB heap was committed before the application
+  started, and memory sat there for the best part of a minute until the periodic collector gave it back.
+  The live heap is 63–75 MB when idle, so starting at 64 MB costs nothing to grow from. Startup is
+  unaffected, and stop-the-world pauses get *better* rather than worse — 19.6 → 4.2 ms median, 31.7 → 9.0
+  ms worst — because a small young generation copies far less per collection. This only ever affected
+  large-RAM machines, which is why a 16 GB laptop never saw it.
+
+- **The undo history and the three decoded-image caches are now bounded by size, not by count.** Keeping
+  50 whole-document snapshots is not a memory bound when the entries differ in size by three orders of
+  magnitude, and a preview image is user content of any size. Both now carry a byte budget behind the
+  count, whichever binds first winning — so ordinary files still get all 50 undo steps and a large one
+  keeps fewer, deeper-in-time ones. On a 472 KB file, 50 edits cost 50 MB before and 34 MB after. Closing
+  a tab releases its checkpoints immediately rather than at the next collection.
+
+- **Startup reaches its first frame ~46 ms sooner.** When the main class extends `Application`, the
+  JavaFX toolkit starts *before* `main` runs, leaving nothing to overlap it with. Editora now enters
+  through a plain launcher instead, and spends the window while the toolkit starts loading the
+  configuration on a background thread. The update checker's HTTP client is also built lazily rather than
+  during window construction — it serves a check that is throttled to once a day and runs off-thread, so
+  none of it belonged on the startup path.
+
 ### Fixed
 
 - **The Linux package now describes itself properly in GNOME Software** (and other software centres),
@@ -31,25 +188,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   where a package came from, not what it says about itself — a software centre applies it to anything not
   installed from a configured repository, and no file inside a `.deb` can assert otherwise.
 
-### Added
+### Internal
 
-- **The Windows installer now registers Editora under Explorer's "Open with"** for the text and source
-  types it edits. Windows hands a file manager's chosen file to an application as a command-line argument,
-  and nothing maps an extension to Editora unless the installer says so — so until now the MSI installed an
-  editor that no file manager could hand a file to. The Linux `.deb` already did the equivalent (and more:
-  it can also make Editora the default text editor).
-
-  It does not take over your existing defaults: on Windows 8+ the shell's per-user choice wins over anything
-  an installer writes, so a type you already open with something else keeps opening with it and Editora is
-  simply offered alongside. An extension nothing else claims does fall to Editora, which is the wanted
-  outcome for the likes of `.tfvars`.
-
-  The list is every extension Editora actually resolves to a language, minus `.html`/`.htm`/`.xhtml` and
-  `.svg` — left to the browser and the image viewer, mirroring the choice already made for the Linux
-  package so the two installers cannot drift apart in what they claim.
-
-  The `.rpm` remains without an association: it uses jpackage's own desktop entry and ignores the
-  maintainer-script overrides the `.deb` relies on. RPM users can still open files from within Editora.
+- [`docs/navigation-roadmap.md`](docs/navigation-roadmap.md) records where navigation stood before this
+  release, the four gaps that mattered, and the order they were closed in. It is kept as a roadmap rather
+  than folded into the architecture notes because most of its value is the reasoning that did *not* survive
+  contact — the decisions reversed along the way (the symbol index ended up on by default but lazy, rather
+  than opt-in), and the one item dropped outright (a symbol breadcrumb, which sticky scroll subsumed).
 
 ## [0.12.3] - 2026-08-17
 
