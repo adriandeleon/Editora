@@ -6,7 +6,7 @@
 
     <groupId>com.editora</groupId>
     <artifactId>editora</artifactId>
-    <version>0.13.1-SNAPSHOT</version>
+    <version>0.13.1</version>
     <packaging>jar</packaging>
 
     <name>Editora</name>
@@ -1475,6 +1475,30 @@
                                              display on a runner) and editora.aot is absent/invalid, the
                                              default AOTMode=auto logs to stderr (invisible in the packaged
                                              app) and starts normally — a missing cache never breaks launch. -->
+                                        <!-- ADAPTER CACHING OFF (do not remove without re-reading this).
+                                             The AOT cache archives generated machine code, not just class
+                                             metadata, and the i2c/c2i adapters among it are compiled for the
+                                             CPU that TRAINED the cache. GitHub's Linux runners are Xeons with
+                                             AVX-512, so v0.13.0 shipped adapters whose register-spill sequence
+                                             switches to EVEX encodings partway through (xmm16-31 exist only
+                                             with AVX-512). The JVM maps such an archive without complaint —
+                                             its CPU-feature validation does not catch this for cached
+                                             adapters — and the first thread to execute one dies with SIGILL /
+                                             ILL_ILLOPN. Measured on a 13th-gen Core i7 (Raptor Lake, AVX-512
+                                             fused off): 4 of 6 launches aborted, on whichever thread reached
+                                             a poisoned adapter first.
+                                             This is a lottery on the builder's CPU, not on our code, so it
+                                             can silently affect any release: CI is green because the code is
+                                             legal on the machine that generated it.
+                                             The adapters are worth nothing anyway. Measured on the same
+                                             machine, first paint: 1024 ms with them off vs 1704 ms with the
+                                             whole cache off — i.e. dropping just the adapters keeps the
+                                             entire AOT win. The trainer passes these too, so a cache built
+                                             from now on contains no adapter code to begin with; this flag is
+                                             what protects a user still holding an older, poisoned one.
+                                             Diagnostic flags, hence the unlock, which must precede them. -->
+                                        <javaOption>-XX:+UnlockDiagnosticVMOptions</javaOption>
+                                        <javaOption>-XX:-AOTAdapterCaching</javaOption>
                                         <javaOption>-XX:AOTCache=$APPDIR/editora.aot</javaOption>
 
                                         <!-- ===== Opt-in tunings below: DEVICE-TEST per platform on the

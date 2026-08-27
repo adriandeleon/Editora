@@ -76,6 +76,38 @@ class AotTrainerOptionsTest {
     }
 
     /**
+     * Adapter caching must stay off on BOTH sides, and the diagnostic unlock must precede it.
+     *
+     * <p>The AOT cache archives generated machine code, and the i2c/c2i adapters in it are compiled for
+     * the CPU that trained the cache. v0.13.0 shipped adapters carrying EVEX (AVX-512) register spills
+     * from an AVX-512-capable CI runner; on a machine without AVX-512 the first thread to execute one
+     * died with SIGILL. The JVM maps such an archive without complaint, CI is green because the code is
+     * legal where it was generated, and the adapters buy no measurable startup — so nothing but this
+     * test would notice the flags being tidied away, and the symptom would be a crash on other people's
+     * hardware.
+     */
+    @Test
+    void neitherTheLauncherNorTheTrainerCachesAotAdapters() throws IOException {
+        for (Map.Entry<String, Set<String>> side : Map.of(
+                        "the packaged launcher (pom.xml dist javaOptions)",
+                        shippedJavaOptions(),
+                        "the AOT trainer (scripts/aot_build.java)",
+                        trainerOptions())
+                .entrySet()) {
+            assertTrue(
+                    side.getValue().contains("-XX:-AOTAdapterCaching"),
+                    side.getKey() + " must pass -XX:-AOTAdapterCaching: archived adapters are compiled for "
+                            + "the BUILDER's CPU and crash with SIGILL on a machine lacking its instruction-set "
+                            + "extensions (v0.13.0, AVX-512 runner vs a Raptor Lake desktop). Got "
+                            + side.getValue());
+            assertTrue(
+                    side.getValue().contains("-XX:+UnlockDiagnosticVMOptions"),
+                    side.getKey() + " must also pass -XX:+UnlockDiagnosticVMOptions — AOTAdapterCaching is a "
+                            + "diagnostic flag and the VM refuses to start without the unlock preceding it");
+        }
+    }
+
+    /**
      * The GC specifically, since that is the one that drifted and the one whose name is a whole option
      * rather than a key=value pair (so a set comparison of KEYS alone would not catch -XX:+UseSerialGC
      * against -XX:+UseG1GC).

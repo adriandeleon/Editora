@@ -267,6 +267,12 @@ public class aot_build {
                     "-Dprism.order=es2,sw",
                     "-Dprism.maxvram=2G", "-Dprism.maxTextureSize=16384",
                     "-Deditora.aotTrainExit=true",
+                    // Mirror the launcher's adapter-caching opt-out (pom.xml dist javaOptions, where the
+                    // full reasoning lives). Training with it means the cache never CONTAINS adapter code
+                    // compiled for this builder's CPU, so a machine lacking the builder's instruction-set
+                    // extensions -- an AVX-512-less desktop against an AVX-512 CI runner -- has nothing to
+                    // trip over. The launcher flag covers users still holding a cache built before this.
+                    "-XX:+UnlockDiagnosticVMOptions", "-XX:-AOTAdapterCaching",
                     "-XX:AOTCacheOutput=" + aot,
                     "-m", module,
                     "--config-dir", tmpCfg.toString(), "--new-file"));

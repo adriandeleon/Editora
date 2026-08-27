@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-08-27
+
+### Fixed
+
+- **Editora 0.13.0 crashed on startup on any CPU without AVX-512** — most consumer Intel from 12th
+  generation onward, and every AMD before Zen 4. The JVM aborted with `SIGILL` a fraction of a second
+  in, on whichever thread got there first, so the crash landed somewhere different each time and
+  sometimes not at all: measured on a 13th-generation Core i7, four launches in six.
+
+  The cause is the AOT cache that makes cold start ~40% faster. It archives generated machine code as
+  well as class metadata, and the call adapters among that code are compiled for the **CPU that built
+  the release**. GitHub's Linux runners are Xeons with AVX-512, so the shipped adapters spilled the
+  first sixteen vector registers with ordinary AVX instructions and then continued into AVX-512
+  encodings for registers that only exist on such a chip. The JVM maps an archive like that without
+  complaint — its CPU-feature validation does not cover cached adapters — and the first thread to
+  execute one hits an instruction its processor refuses.
+
+  Adapter caching is now off, in the packaged launcher and in the training step both, so a cache built
+  from here on contains no such code and a user still holding a poisoned one no longer executes it.
+  **The startup win is kept in full**: on the affected machine, first paint measured 1024 ms with the
+  adapters off against 1704 ms with the whole cache disabled — they were contributing nothing.
+
+  Worth stating plainly, because it shapes how much to trust a green build: **this was a lottery on
+  which runner built the release, not a bug in Editora's own code.** CI passed because the archived
+  instructions are perfectly legal on the machine that generated them, and no test could have run the
+  result on different silicon. A guard now fails the build if either flag is dropped, since the
+  symptom would once again appear only on other people's hardware.
+
 ## [0.13.0] - 2026-08-26
 
 A code-navigation release. Navigation had four gaps that mattered: nothing was ranked, symbols existed

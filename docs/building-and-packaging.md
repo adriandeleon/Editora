@@ -58,6 +58,15 @@ uncached target. On Linux CI the helper auto-wraps training in `xvfb-run`. The w
 ≈300–480 ms faster cold start (it's JavaFX scene/control/CSS class loading, which is why a *headless*
 trainer gives ≈0). Cost: the cache is ~72 MB.
 
+**Adapter caching is deliberately off** (`-XX:+UnlockDiagnosticVMOptions -XX:-AOTAdapterCaching`, on
+the packaged launcher *and* the trainer — `AotTrainerOptionsTest` fails the build if either side drops
+them). The cache archives generated machine code, and the call adapters in it are compiled for the CPU
+that trained it: v0.13.0 shipped adapters carrying AVX-512 (EVEX) register spills from a Xeon runner,
+which any CPU without AVX-512 refuses with `SIGILL` — 4 launches in 6 on a Raptor Lake desktop, on a
+different thread each time. The JVM maps such an archive without complaint, so **CI cannot catch this**;
+the instructions are legal on the machine that generated them. Turning the adapters off costs nothing
+measurable (first paint 1024 ms without them, against 1704 ms with the whole cache disabled).
+
 ### Per-OS Prism pipeline
 
 Set via the `${prism.pipeline}` property in the `os-mac`/`os-windows`/`os-linux` profiles and
