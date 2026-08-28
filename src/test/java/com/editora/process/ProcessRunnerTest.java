@@ -20,7 +20,7 @@ class ProcessRunnerTest {
     @Test
     void ignoresShellBannerNoiseAroundMarkers() {
         // An interactive rc may print a banner/prompt before and after; markers fence the PATH off.
-        String out = "Welcome to zsh!\n[32mprompt[0m " + B + "/a:/b" + E + "\n% ";
+        String out = "Welcome to zsh!\n\u001B[32mprompt\u001B[0m " + B + "/a:/b" + E + "\n% ";
         assertEquals("/a:/b", ProcessRunner.extractMarked(out, B, E));
     }
 
