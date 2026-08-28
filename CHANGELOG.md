@@ -34,7 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually run, and the cursor steps over them.
 
   The **highlighted row's description** appears under the list, and **`Ctrl+H` opens its documentation** in
-  your browser, both matching the palette exactly.
+  your browser, both matching the palette exactly. The hint line along the bottom names them, along with
+  `C-n`/`C-p` — it had been advertising three of the keys the picker accepts and staying quiet about the
+  rest, which in a keyboard-first editor is where those keys go to be discovered or not at all.
 
   An **empty query lists every command** rather than showing a blank box, and a single-source query — an
   empty one, or a `>`/`#`/`@` scoped one — is **no longer capped**. A `>` search used to return at most
