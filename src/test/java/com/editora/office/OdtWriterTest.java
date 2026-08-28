@@ -100,6 +100,6 @@ class OdtWriterTest {
     void legalCharactersAreNotStripped() {
         assertEquals("a\tb\nc", OdtWriter.stripInvalidXml("a\tb\nc"));
         assertEquals("emoji 😀 ok", OdtWriter.stripInvalidXml("emoji 😀 ok"), "surrogate pair");
-        assertEquals("a�b", OdtWriter.stripInvalidXml("ab"), "a control char is replaced, not kept");
+        assertEquals("a�b", OdtWriter.stripInvalidXml("a\u000Bb"), "a control char is replaced, not kept");
     }
 }
