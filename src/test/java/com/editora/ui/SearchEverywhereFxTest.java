@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -196,6 +197,55 @@ class SearchEverywhereFxTest {
         assertTrue(seen[1], "a gray row with no explanation reads as a bug rather than a state");
         assertFalse(seen[2], "the graying must not survive onto a recycled cell");
         assertFalse(seen[3], "the previous row's explanation must not survive onto a recycled cell");
+        hide();
+    }
+
+    /** The index the cursor sits on right now, or -1. */
+    private int cursor() throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            javafx.scene.control.ListView<?> list = FxTestSupport.field(popup(), "list");
+            return list.getSelectionModel().getSelectedIndex();
+        });
+    }
+
+    @Test
+    void theCursorLandsOnTheFirstRunnableRowOnEveryOpen() throws Exception {
+        // The first open of a session used to differ from every later one: its populate runs before the
+        // ListView has a skin, so the selection could not paint and scrollTo() no-opped, while re-opening
+        // with a stale query queued a second populate after layout and quietly fixed itself.
+        FxTestSupport.runOnFxUnchecked(() -> popup().show(""));
+        FxTestSupport.runOnFx(() -> {}); // let the deferred re-assert run
+        int first = cursor();
+
+        FxTestSupport.runOnFxUnchecked(() -> {
+            javafx.scene.control.TextField input = FxTestSupport.field(popup(), "input");
+            input.setText("undo");
+        });
+        hide();
+
+        FxTestSupport.runOnFxUnchecked(() -> popup().show(""));
+        FxTestSupport.runOnFx(() -> {});
+        int second = cursor();
+
+        assertEquals(first, second, "the first open must land the cursor where every later open does");
+        assertTrue(first > 0, "the cursor sits on the first runnable row, which is below the group header");
+        assertTrue(
+                itemOf(rows().get(first)) != null && itemOf(rows().get(first)).enabled());
+        hide();
+    }
+
+    @Test
+    void theDeferredReassertDoesNotOverrideAKeystrokeThatBeatItToIt() throws Exception {
+        // reassertCursor runs a pulse after the card is shown. If the user has already moved within that
+        // window, putting the cursor back would be the picker fighting them over their own keystroke.
+        FxTestSupport.runOnFxUnchecked(() -> popup().show(""));
+        FxTestSupport.runOnFx(() -> {});
+        int landed = cursor();
+        FxTestSupport.runOnFxUnchecked(() -> FxTestSupport.call(popup(), "move", new Class<?>[] {int.class}, 1));
+        int moved = cursor();
+        assertTrue(moved != landed, "sanity: the move actually moved the cursor");
+        FxTestSupport.runOnFxUnchecked(() -> FxTestSupport.invoke(popup(), "reassertCursor"));
+        assertEquals(moved, cursor(), "a cursor the user has already moved must be left alone");
         hide();
     }
 
