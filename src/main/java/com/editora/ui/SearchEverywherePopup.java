@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Locale;
 
 import javafx.animation.PauseTransition;
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Pos;
@@ -94,6 +95,8 @@ final class SearchEverywherePopup {
 
     private String currentQuery = "";
     private boolean showing;
+    /** The row {@link #selectFirstItem} last put the cursor on; see {@link #reassertCursor}. */
+    private int cursorAtOpen = -1;
 
     SearchEverywherePopup(OverlayHost overlayHost, Ops ops) {
         this.overlayHost = overlayHost;
@@ -148,8 +151,26 @@ final class SearchEverywherePopup {
                     input.requestFocus();
                     input.selectAll();
                     refresh();
+                    // Re-assert the cursor once the pulse that laid the card out has run. The first
+                    // populate happens before the ListView has a skin, so it has no cells: the selection
+                    // cannot paint and scrollTo() silently no-ops. Every *later* open was accidentally
+                    // getting this for free — setText() only fires the debounce when the text actually
+                    // changes, so re-opening with a stale query queued a second populate 120 ms later,
+                    // by which time the list was laid out. That is why the first open of a session looked
+                    // different from every one after it.
+                    Platform.runLater(this::reassertCursor);
                 },
                 () -> showing = false);
+    }
+
+    /**
+     * Puts the cursor back on the first runnable row after layout — but only if nothing has moved it
+     * since, so a keystroke landing in the intervening pulse is never overridden.
+     */
+    private void reassertCursor() {
+        if (showing && list.getSelectionModel().getSelectedIndex() == cursorAtOpen) {
+            selectFirstItem();
+        }
     }
 
     boolean isShown() {
@@ -300,11 +321,16 @@ final class SearchEverywherePopup {
         for (int i = 0; i < rows.size(); i++) {
             if (isSelectable(rows.get(i))) {
                 list.getSelectionModel().select(i);
-                list.scrollTo(i);
+                // Scroll to the top rather than to the row: the first runnable row sits directly under
+                // its group header, and scrolling *to* it puts it flush at the top with the header pushed
+                // out of sight — so the list opened without the label that says what it is listing.
+                list.scrollTo(0);
+                cursorAtOpen = i;
                 return;
             }
         }
         list.getSelectionModel().clearSelection(); // nothing here can be run
+        cursorAtOpen = -1;
         updateDescription(null);
     }
 
