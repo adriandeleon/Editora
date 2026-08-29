@@ -817,7 +817,7 @@
     -fx-background-radius: 8;
     -fx-padding: 2;
     -fx-spacing: 2;
-    -fx-opacity: 0.92;
+    -fx-opacity: 0.8;
 }
 .md-viewmode-segment {
     -fx-padding: 3 9 3 9;
@@ -826,6 +826,9 @@
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-muted;
 }
+/* Sits over the first line or two of the file, so it recedes until reached for — matching the HTML
+   globe, which already restored to full opacity on hover while this one did not. */
+.md-viewmode-toggle:hover { -fx-opacity: 1; }
 .md-viewmode-segment:hover { -fx-text-fill: -color-fg-default; }
 .md-viewmode-segment:selected { -fx-background-color: -state-sel; -fx-text-fill: -color-accent-fg; }
 
@@ -1607,10 +1610,7 @@
    the icons ("Project:", the run-configuration and recent-files pickers), and at root size they read as
    an afterthought next to the glyphs. Set on the bar so every item inherits it. */
 .tool-bar {
-    /* The right inset is 1, not 6, so the right-pinned Quit glyph's centre lands in the same vertical
-       column as the right tool stripe's icons directly below it (the stripe is 30px wide with its icons
-       centred, i.e. ~14.8px in from the window edge; Quit's own half-width accounts for the rest).
-       ToolWindowStripeAlignmentFxTest pins the two centres together. */
+    /* The right inset of 1 (rather than 6) belongs to .toolbar-tail now — see the note there. */
     /* Deliberately asymmetric: below the bar the tab strip contributes its own 3px inset plus the gap
        above the tab, while above it there is nothing at all between the controls and the window's title
        bar — so equal insets read as top-heavy. The bordered controls (the project and run-configuration
@@ -1620,6 +1620,26 @@
     /* A little air between every item. The combos in particular sat flush against the icon beside them,
        which read as one control with a stray glyph attached. */
     -fx-spacing: 5;
+}
+
+/* The toolbar is one visual bar made of two containers: the ToolBar (the customizable icon cluster,
+   which overflows into its own chevron) and this pinned tail. Both paint the same ground, so the seam
+   between them is invisible; the row exists only to hold them side by side. See
+   MainController.appendFixedTail for why the tail is not simply the last items of the ToolBar. */
+.toolbar-row {
+    -fx-background-color: -color-bg-subtle;
+}
+.toolbar-tail {
+    -fx-background-color: -color-bg-subtle;
+    /* The right inset is 1, not 6, so the right-pinned Settings glyph's centre lands in the same vertical
+       column as the right tool stripe's icons directly below it (the stripe is 30px wide with its icons
+       centred, i.e. ~14.8px in from the window edge; the glyph's own half-width accounts for the rest).
+       ToolWindowStripeAlignmentFxTest pins the two centres together. The other three insets match
+       .tool-bar's, so the two containers sit on one baseline. */
+    -fx-padding: 5 1 2 0;
+    -fx-spacing: 5;
+    /* Inherited by the tail's controls, exactly as .tool-bar's is by the cluster's. */
+    -fx-font-size: 18px;
 }
 
 .toolbar-button {
@@ -1633,7 +1653,9 @@
    through it. Pinned rather than merely padded down: the height has to be the button's, whatever the
    font does. The inner cell/arrow insets go to zero so the text still fits inside the smaller box. */
 .tool-bar .combo-box-base,
-.tool-bar .menu-button {
+.tool-bar .menu-button,
+.toolbar-tail .combo-box-base,
+.toolbar-tail .menu-button {
     -fx-min-height: 28px;
     -fx-pref-height: 28px;
     -fx-max-height: 28px;
@@ -1645,11 +1667,15 @@
     -fx-font-size: 14px;
 }
 .tool-bar .combo-box-base > .list-cell,
-.tool-bar .combo-box-base > .text-field {
+.tool-bar .combo-box-base > .text-field,
+.toolbar-tail .combo-box-base > .list-cell,
+.toolbar-tail .combo-box-base > .text-field {
     -fx-padding: 0 10 0 10;
 }
 .tool-bar .combo-box-base > .arrow-button,
-.tool-bar .menu-button > .arrow-button {
+.tool-bar .menu-button > .arrow-button,
+.toolbar-tail .combo-box-base > .arrow-button,
+.toolbar-tail .menu-button > .arrow-button {
     -fx-padding: 0 6 0 4;
 }
 
@@ -1911,6 +1937,22 @@
 
 .lsp-install-bar .lsp-install-title {
     -fx-text-fill: -color-fg-default;
+}
+
+/* File-format group in the status bar: Tab 4 · LF · UTF-8 read as one segment. Mirrors .text-zoom —
+   the group carries the divider and its members drop their own, so no dividers appear between the parts. */
+.status-bar .status-format-group {
+    -fx-alignment: center;
+    -fx-border-color: transparent transparent transparent -color-border-muted;
+    -fx-border-width: 0 0 0 1;
+}
+.status-bar .status-format-group .status-format-part {
+    -fx-border-width: 0;
+    -fx-padding: 3 4 3 4;
+}
+.status-bar .status-format-sep {
+    -fx-text-fill: -color-fg-subtle;
+    -fx-padding: 3 0 3 0;
 }
 
 /* Text-zoom control in the status bar: a tight − % + group. */

@@ -930,7 +930,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         if (onNewFromTemplate != null) {
             MenuItem fromTemplate = new MenuItem(tr("project.menu.newFromTemplate"));
-            fromTemplate.setGraphic(Icons.fileSheet());
+            fromTemplate.setGraphic(Icons.template());
             fromTemplate.setOnAction(e -> onNewFromTemplate.accept(dir));
             newMenu.getItems().add(fromTemplate);
         }

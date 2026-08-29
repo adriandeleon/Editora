@@ -221,8 +221,8 @@ final class DoctorPane extends Region implements TabContent {
         line.setAlignment(Pos.CENTER_LEFT);
 
         String home = System.getProperty("user.home", "");
-        String command = DoctorText.collapseHome(c.command(), home);
-        String detail = DoctorText.collapseHome(c.detail(), home);
+        String command = com.editora.config.PathDisplay.collapseHome(c.command(), home);
+        String detail = com.editora.config.PathDisplay.collapseHome(c.detail(), home);
         if (DoctorText.detailRepeatsCommand(command, detail)) {
             detail = ""; // a command configured as an absolute path resolves to itself
         } else if (DoctorText.commandRepeatsDetail(command, detail)) {

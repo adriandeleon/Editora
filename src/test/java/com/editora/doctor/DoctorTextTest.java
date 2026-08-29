@@ -2,7 +2,6 @@ package com.editora.doctor;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,25 +19,6 @@ class DoctorTextTest {
         assertFalse(DoctorText.isPathLike("npx -y @probelabs/maid"));
         assertFalse(DoctorText.isPathLike(""));
         assertFalse(DoctorText.isPathLike(null));
-    }
-
-    @Test
-    void collapsesHomeOnlyOnAWholeSegment() {
-        assertEquals(
-                "~/.cargo/bin/rust-analyzer",
-                DoctorText.collapseHome("/home/adl/.cargo/bin/rust-analyzer", "/home/adl"));
-        assertEquals("~", DoctorText.collapseHome("/home/adl", "/home/adl"));
-        // A trailing separator on the home property must not defeat the match.
-        assertEquals("~/bin/gopls", DoctorText.collapseHome("/home/adl/bin/gopls", "/home/adl/"));
-        // A sibling directory that merely shares the prefix is left alone.
-        assertEquals("/home/adl2/bin/gopls", DoctorText.collapseHome("/home/adl2/bin/gopls", "/home/adl"));
-        // Windows separators.
-        assertEquals(
-                "~\\AppData\\node.exe", DoctorText.collapseHome("C:\\Users\\adl\\AppData\\node.exe", "C:\\Users\\adl"));
-
-        assertEquals("", DoctorText.collapseHome(null, "/home/adl"));
-        assertEquals("/usr/bin/git", DoctorText.collapseHome("/usr/bin/git", ""));
-        assertEquals("/usr/bin/git", DoctorText.collapseHome("/usr/bin/git", "/"));
     }
 
     @Test

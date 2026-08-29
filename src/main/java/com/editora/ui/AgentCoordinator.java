@@ -598,13 +598,7 @@ final class AgentCoordinator implements AcpClient.Host {
     /** Pure: home-collapses an absolute path for compact display (mirrors the identical private helper
      *  already duplicated in {@code MainController}/{@code SearchCoordinator}). */
     static String homeCollapsed(String full) {
-        if (full == null) {
-            return "";
-        }
-        String home = System.getProperty("user.home", "");
-        return !home.isEmpty() && (full.equals(home) || full.startsWith(home + java.io.File.separator))
-                ? "~" + full.substring(home.length())
-                : full;
+        return com.editora.config.PathDisplay.collapseHome(full);
     }
 
     /** Pushes the current agent/model/mode display state to the panel header (after a fresh session starts). */

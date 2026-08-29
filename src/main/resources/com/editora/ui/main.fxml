@@ -7,6 +7,7 @@
 <?import javafx.scene.control.TabPane?>
 <?import javafx.scene.control.ToolBar?>
 <?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.VBox?>
 
 <BorderPane fx:id="root" xmlns="http://javafx.com/javafx"
@@ -15,7 +16,14 @@
     <top>
         <VBox fx:id="topBox">
             <children>
-                <ToolBar fx:id="toolBar">
+                <!-- One visual bar, two containers. The ToolBar holds the customizable icon cluster and
+                     overflows into its own chevron when the window is narrow; the tail is pinned beside it,
+                     so a narrow window hides an icon (also in the menus and the palette) rather than the
+                     project switcher and Settings. A ToolBar overflows from its END, so with everything in
+                     one bar the priority was exactly backwards. -->
+                <HBox fx:id="toolbarRow" styleClass="toolbar-row" alignment="CENTER_LEFT">
+                    <children>
+                <ToolBar fx:id="toolBar" HBox.hgrow="ALWAYS">
                     <items>
                         <Button fx:id="newButton" onAction="#onNew"/>
                         <Button fx:id="newFromTemplateButton" onAction="#onNewFromTemplate"/>
@@ -53,12 +61,11 @@
                         <Button fx:id="simpleModeButton" onAction="#onToggleSimpleMode"/>
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="settingsButton" onAction="#onSettings"/>
-                        <Separator orientation="VERTICAL"/>
-                        <Button fx:id="aboutButton" onAction="#onAbout"/>
-                        <Separator orientation="VERTICAL"/>
-                        <Button fx:id="quitButton" onAction="#onQuit"/>
                     </items>
                 </ToolBar>
+                        <HBox fx:id="toolbarTail" styleClass="toolbar-tail" alignment="CENTER_LEFT"/>
+                    </children>
+                </HBox>
             </children>
         </VBox>
     </top>

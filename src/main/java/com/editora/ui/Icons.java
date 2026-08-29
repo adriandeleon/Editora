@@ -191,17 +191,20 @@ final class Icons {
                 + "12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H5V5h14v10z");
     }
 
+    /** Open (a file): the universal open-folder, drawn as a line glyph so it sits in the same family as the
+     *  icons beside it — it was the one solid, filled shape in a row of outlines. The angled front panel is
+     *  what tells it apart from the closed folder that means "project" ({@link #project()}). */
     static Node open() {
-        return of("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z");
+        return line("M2 12.5V3.5h4.2l1.5 2h5.8v2M2 12.5l2.2-5h10.3l-2.2 5z");
     }
 
     static Node save() {
         return line("M2.5 2.5h9l2 2v9h-11zM5 2.5v3.5h5V2.5M5 13.5V9.5h6v4");
     }
 
+    /** Save As: the same tray-and-down-arrow this has always shown, as a line glyph. */
     static Node saveAs() {
-        return of("M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67 2.59-2.58L17 "
-                + "11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z");
+        return line("M3.5 10.6v2.4h9v-2.4M8 3v6.3M5.8 7.1l2.2 2.2 2.2-2.2");
     }
 
     static Node undo() {
@@ -439,10 +442,15 @@ final class Icons {
         return line("M1.5 3.5h4.2l1.5 2h7.3v7H1.5z");
     }
 
+    /**
+     * Open Folder — the project one, sitting beside the project combo.
+     *
+     * <p>Deliberately the same closed folder as {@link #project()}: they mean the same thing on two
+     * surfaces (this opens a project, that is the project tree), so matching is coherent rather than
+     * confusing. It is {@link #open()} — a different action — that carries the distinct open-folder shape.
+     */
     static Node openFolder() {
-        // Material "folder_open" — opening a project folder.
-        return of("M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 "
-                + "2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z");
+        return line("M1.5 3.5h4.2l1.5 2h7.3v7H1.5z");
     }
 
     static Node bookmark() {
@@ -496,6 +504,16 @@ final class Icons {
     }
 
     /** A plain page. Same 11-unit height as the other toolbar glyphs — see {@link #newFile()}. */
+    /**
+     * New From Template: a page that already has content on it.
+     *
+     * <p>Its own glyph because it used to borrow {@link #fileSheet()}, whose path is {@link #newFile()}'s
+     * minus the little plus — so the two adjacent "new file" buttons on the toolbar differed by one cross.
+     */
+    static Node template() {
+        return line("M4.5 2.5h4.6l2.9 2.9v8.1h-7.5zM9.1 2.5v2.9h2.9M6.3 8.4h4M6.3 10.6h4");
+    }
+
     static Node fileSheet() {
         return line("M4.5 2.5h4.6l2.9 2.9v8.1h-7.5zM9.1 2.5v2.9h2.9");
     }

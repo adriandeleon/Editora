@@ -37,7 +37,12 @@ public final class StatusBar extends HBox {
     private final CommandRegistry registry;
     private final Supplier<Settings> settings;
 
-    private final Label echo = new Label(tr("statusbar.ready"));
+    /**
+     * The echo line. Deliberately <b>empty</b> when idle rather than showing a standing "Ready": a
+     * placeholder that is present on every frame but says nothing trains the eye to skip the one region of
+     * the bar that real messages land in.
+     */
+    private final Label echo = new Label();
     /** In-memory, session-only history of echo messages, shown by clicking the echo area. */
     private final MessageLog messageLog = new MessageLog();
 
@@ -95,6 +100,17 @@ public final class StatusBar extends HBox {
     private final Label endings = segment("buffer.convertLineEndings", tr("statusbar.tip.convertEndings"));
     private final Label size = new Label();
     private final Label encoding = new Label("UTF-8");
+
+    /**
+     * Indent, line endings and encoding as ONE segment ({@code Tab 4 · LF · UTF-8}).
+     *
+     * <p>Three facts about how the same file is written to disk, which were three separately-divided
+     * segments of an eleven-segment bar. Grouped, they read as the one thing they are and the eye has two
+     * fewer boundaries to cross — while each part keeps its own click target and tooltip, so nothing is
+     * traded away for the compaction (which is why this is a group and not a single relabelled segment
+     * behind a menu: they run three different commands).
+     */
+    private final HBox formatGroup = formatGroup();
     /** Shown when an {@code .editorconfig} governs the active buffer; clickable → open that file. */
     private final Label editorConfig = segment("editorConfig.openActive", tr("statusbar.tip.editorConfig"));
 
@@ -233,9 +249,7 @@ public final class StatusBar extends HBox {
                         language,
                         narrowed,
                         editorConfig,
-                        indent,
-                        endings,
-                        encoding,
+                        formatGroup,
                         size);
         pinSegmentWidths();
         refresh();
@@ -260,6 +274,28 @@ public final class StatusBar extends HBox {
                 region.setMinWidth(Region.USE_PREF_SIZE); // never shrink a state segment
             }
         }
+    }
+
+    /**
+     * Builds the file-format group: {@code Tab 4 · LF · UTF-8}.
+     *
+     * <p>Mirrors {@link #zoomGroup()}: the group carries the segment divider and the members drop their
+     * own, so the three read as one segment. The separators are plain labels rather than {@code Separator}
+     * controls — they are punctuation between words on one line, not a structural division.
+     */
+    private HBox formatGroup() {
+        for (Label part : new Label[] {indent, endings, encoding}) {
+            part.getStyleClass().add("status-format-part");
+        }
+        HBox group = new HBox(indent, formatSeparator(), endings, formatSeparator(), encoding);
+        group.getStyleClass().add("status-format-group");
+        return group;
+    }
+
+    private Label formatSeparator() {
+        Label dot = new Label("\u00b7");
+        dot.getStyleClass().add("status-format-sep");
+        return dot;
     }
 
     /** The text-zoom control: {@code [ −  100%  + ]}, dispatching the zoom commands. */
@@ -597,17 +633,13 @@ public final class StatusBar extends HBox {
         // Ln/Col and the file size follow buffer presence even in Simple mode (kept visible there).
         size.setVisible(hasBuffer);
         size.setManaged(hasBuffer);
-        // Simple UI mode hides these segments; otherwise they follow buffer presence.
-        for (Label seg : new Label[] {language, endings}) {
-            boolean vis = hasBuffer && !simpleMode;
-            seg.setVisible(vis);
-            seg.setManaged(vis);
-        }
-        // These are normally always shown; Simple mode hides them.
-        for (Label seg : new Label[] {indent, encoding}) {
-            seg.setVisible(!simpleMode);
-            seg.setManaged(!simpleMode);
-        }
+        // Simple UI mode hides these; otherwise they follow buffer presence. The format group goes with
+        // them: indent and encoding used to show with no buffer open, where they described the global
+        // default rather than any file on screen — two segments of the Welcome tab that meant nothing.
+        language.setVisible(hasBuffer && !simpleMode);
+        language.setManaged(hasBuffer && !simpleMode);
+        formatGroup.setVisible(hasBuffer && !simpleMode);
+        formatGroup.setManaged(hasBuffer && !simpleMode);
         // The git segment has its own gate (feature on + active file in a repo + not Simple mode).
         applyGitVisibility();
         // The read-only segment is a toggle: always shown (when there's a buffer), reflecting and
@@ -630,7 +662,7 @@ public final class StatusBar extends HBox {
         // Indent + encoding reflect the active buffer's effective values (an .editorconfig can override
         // the global tab size / charset per file), else the global default.
         indent.setText(tr(
-                "statusbar.tabSize",
+                "statusbar.tabSizeShort",
                 hasBuffer ? buffer.getTabSize() : settings.get().getTabSize()));
         encoding.setText(
                 hasBuffer

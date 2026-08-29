@@ -195,6 +195,14 @@ public class MainController implements com.editora.mcp.McpBridge {
     @FXML
     private ToolBar toolBar;
 
+    /** The row holding the toolbar: the overflowing cluster plus the pinned tail. */
+    @FXML
+    private HBox toolbarRow;
+
+    /** The pinned right end of the bar — never part of the ToolBar, so it never overflows. */
+    @FXML
+    private HBox toolbarTail;
+
     @FXML
     private Button newButton;
 
@@ -251,12 +259,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     @FXML
     private Button settingsButton;
-
-    @FXML
-    private Button aboutButton;
-
-    @FXML
-    private Button quitButton;
 
     @FXML
     private MenuButton recentButton;
@@ -322,7 +324,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private QuickOpen<Project> projectPicker;
     private ProjectCombo toolbarProjectCombo;
-    private Label projectToolbarLabel;
     private Region projectToolbarGap;
     /** Tracks the last-applied project-support state to detect off→on transitions (reveal the panel). */
     private boolean projectSupportApplied;
@@ -714,8 +715,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         topBox.getChildren().add(findBar);
         this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
         this.breadcrumb = new FileBreadcrumb(this::openPath);
-        // Breadcrumb sits just above the status bar at the bottom (IntelliJ-style).
-        bottomBox.getChildren().setAll(breadcrumb, statusBar);
+        // The breadcrumb is NOT part of the bottom bar stack — see setupToolWindows, which hangs it under
+        // the editor area itself.
+        bottomBox.getChildren().setAll(statusBar);
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(
                 config,
@@ -1885,8 +1887,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         openFolderButton.setManaged(showProjectGroup);
         toolbarProjectCombo.setVisible(showProjectGroup);
         toolbarProjectCombo.setManaged(showProjectGroup);
-        projectToolbarLabel.setVisible(showProjectGroup);
-        projectToolbarLabel.setManaged(showProjectGroup);
         projectToolbarGap.setVisible(showProjectGroup);
         projectToolbarGap.setManaged(showProjectGroup);
         // Project tool window: force-hide when off; reveal once on the off→on transition; otherwise
@@ -2359,6 +2359,26 @@ public class MainController implements com.editora.mcp.McpBridge {
         return ordered;
     }
 
+    /**
+     * The editor area with the breadcrumb hung beneath it, as one node for the tool-window layout.
+     *
+     * <p>The breadcrumb names the <em>active file</em>, so it belongs to the editor rather than to the
+     * window frame. Stacked in the bottom bar it sat between the bottom tool stripe and the status bar —
+     * spanning the whole window, sandwiched between two full-width bars, and reading as a second status
+     * bar describing the window rather than a path bar describing the file. Inside the horizontal split it
+     * is only as wide as the editor, sits directly under the text it describes, and no longer crosses under
+     * the left/right tool windows.
+     *
+     * <p>Wrapping is safe for the stripe alignment {@link ToolWindowManager} does on this node: it looks the
+     * tab header up by style class through the whole subtree, and the breadcrumb is added at the bottom, so
+     * the top edge it measures from is unchanged.
+     */
+    private javafx.scene.Node editorFooter() {
+        BorderPane withBreadcrumb = new BorderPane(editorArea.node());
+        withBreadcrumb.setBottom(breadcrumb);
+        return withBreadcrumb;
+    }
+
     private void setupToolWindows() {
         editorArea.setDraggedTabSource(() -> draggedTab); // drops onto a group body move/split it
         // The menu bar sits above the toolbar. Built from the registry, so it needs no per-command wiring.
@@ -2368,7 +2388,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         topBox.getChildren().add(0, menuBar.node());
-        toolWindows = new ToolWindowManager(workspace, editorArea.node(), config, keymap);
+        toolWindows = new ToolWindowManager(workspace, editorFooter(), config, keymap);
         projectPanel = new ProjectPanel(
                 this::openPath, this::onProjectFileRenamed, this::onProjectFileDeleted, this::isPathModified);
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
@@ -6353,7 +6373,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void setupToolbar() {
         setupButton(newButton, Icons.newFile(), tr("tooltip.new"), "file.new");
-        setupButton(newFromTemplateButton, Icons.fileSheet(), tr("tooltip.newFromTemplate"), "template.new");
+        setupButton(newFromTemplateButton, Icons.template(), tr("tooltip.newFromTemplate"), "template.new");
         setupButton(openButton, Icons.open(), tr("tooltip.open"), "file.find");
         setupButton(openFolderButton, Icons.openFolder(), tr("tooltip.openFolder"), "project.open");
         setupButton(saveButton, Icons.save(), tr("tooltip.save"), "file.save");
@@ -6380,26 +6400,32 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupButton(closeTabButton, Icons.closeTab(), tr("tooltip.closeTab"), "buffer.close");
         setupButton(simpleModeButton, Icons.simpleMode(), tr("tooltip.simpleMode"), "view.toggleSimpleMode");
         setupButton(settingsButton, Icons.settings(), tr("tooltip.settings"), "view.settings");
-        setupButton(aboutButton, Icons.about(), tr("tooltip.about"), "help.about");
-        setupButton(quitButton, Icons.quit(), tr("tooltip.quit"), "app.quit");
 
         // Reflect open/closed state of the palette and find bar in their toolbar buttons.
         palette.showingProperty().addListener((obs, was, now) -> paletteButton.pseudoClassStateChanged(OPEN, now));
         findBar.visibleProperty().addListener((obs, was, now) -> findButton.pseudoClassStateChanged(OPEN, now));
-        // Project switcher (placed right of the Settings icon by arrangeToolbarTail); shown when enabled.
+        // Project switcher (placed after the customizable icon cluster by appendFixedTail); shown when enabled.
         toolbarProjectCombo = new ProjectCombo(this::switchToProject);
         toolbarProjectCombo.setPrefWidth(184); // 15% longer than the previous 160
-        projectToolbarLabel = new Label(tr("toolbar.projectLabel"));
-        projectToolbarLabel.getStyleClass().add("toolbar-hint");
-        projectToolbarLabel.setTooltip(
-                new Tooltip("Projects are single-folder workspaces, each remembering its own open files and layout. "
-                        + "Pick one to switch; \"No Project\" returns to the global session."));
+        // No "Project:" label: it is the only labelled control on a bar of unlabelled icons, and the combo
+        // already reads "No Project" or the project's name. Its explanation moves onto the combo itself —
+        // where it was also the one hardcoded English string on the toolbar.
+        toolbarProjectCombo.setTooltip(new Tooltip(tr("toolbar.project.tip")));
         toolbarProjectCombo.setOnDeleteProject(this::deleteProject); // per-item delete in the dropdown
         projectToolbarGap = new Region();
-        projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between Settings and the combo
+        projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between the icon cluster and the combo
         projectToolbarGap.setPrefWidth(78);
-        // The customizable left icon cluster is built data-driven from the persisted layout; the fixed tail
-        // (project combo + About/Quit) is re-appended after each rebuild by appendFixedTail().
+        // The ToolBar is the one that gives when the window narrows: it takes whatever width the pinned tail
+        // leaves and moves the icons it cannot fit into its own overflow chevron. Without a zero minimum an
+        // HBox would squeeze the tail instead, which is the behaviour this split exists to prevent.
+        toolBar.setMinWidth(0);
+        // ...and the tail is the one that doesn't. An HBox short of space shrinks EVERY resizable child
+        // toward its minimum, sharing the deficit out, so without this the tail would be squeezed alongside
+        // the ToolBar instead of the ToolBar absorbing all of it. (Same fix, and the same reason, as
+        // StatusBar.pinSegmentWidths.)
+        toolbarTail.setMinWidth(Region.USE_PREF_SIZE);
+        // The customizable icon cluster is built data-driven from the persisted layout; the fixed tail
+        // (project group + Settings) is refilled after each rebuild by appendFixedTail().
         toolbarCoordinator = new ToolbarCoordinator(coordinatorHost, registry, keymap, toolbarOps());
         toolbarCoordinator.rebuild();
         refreshSplitButtons();
@@ -6418,37 +6444,44 @@ public class MainController implements com.editora.mcp.McpBridge {
      * for any taller child. No-op until the combo has a valid preferred height (after the first layout).
      */
     private void stabilizeToolbarHeight() {
-        if (toolBar == null || toolbarProjectCombo == null) {
+        if (toolbarRow == null || toolbarTail == null || toolbarProjectCombo == null) {
             return;
         }
         double comboH = toolbarProjectCombo.prefHeight(-1); // independent of the combo's current visibility
         if (comboH <= 0) {
             return;
         }
-        javafx.geometry.Insets in = toolBar.getInsets();
-        toolBar.setMinHeight(Math.ceil(comboH + in.getTop() + in.getBottom()));
+        javafx.geometry.Insets in = toolbarTail.getInsets();
+        // The row, not the ToolBar: the combo lives in the tail now, so the ToolBar's own height no longer
+        // moves when it is hidden — the row's does.
+        toolbarRow.setMinHeight(Math.ceil(comboH + in.getTop() + in.getBottom()));
     }
 
     /**
-     * Appends the fixed, non-customizable toolbar tail — the project-combo group (a Switcher hint gap, the
-     * label + combo, and the Open-Folder icon), a flexible spacer, an optional {@code --dev} badge, and the
-     * right-pinned About + Quit buttons — to the already-populated bar. Called by {@link ToolbarCoordinator}
-     * after it lays out the customizable left cluster, so the tail always sits to the right of it and stays
-     * pinned regardless of how the user customizes the left cluster. Re-adds the same field instances (the
-     * coordinator cleared the bar first), so their show/hide state from Simple mode / Projects is preserved.
+     * Fills the fixed, non-customizable toolbar tail — the project-combo group (a gap, the combo, and the
+     * Open-Folder icon), Recent, an optional {@code snapshot}/{@code --dev} badge, and the right-pinned
+     * Settings button. Called by {@link ToolbarCoordinator} after it lays out the customizable cluster.
+     *
+     * <p>The tail is its <b>own container</b> beside the {@link javafx.scene.control.ToolBar}, not items in
+     * it: a ToolBar overflows from its END, so with everything in one bar a narrow window pushed Settings
+     * and the project switcher into the chevron while keeping fourteen icons — exactly backwards. The
+     * ToolBar now takes the leftover width and overflows its own icons, every one of which is also in the
+     * menus and the palette.
+     *
+     * <p>Re-uses the same field instances, so their show/hide state from Simple mode / Projects survives a
+     * rebuild.
      */
     private void appendFixedTail() {
-        var items = toolBar.getItems();
+        // Cleared here: the coordinator calls this after every rebuild, and the tail is no longer emptied
+        // for us by the ToolBar being cleared.
+        var items = toolbarTail.getChildren();
+        items.clear();
 
-        // Project switcher just right of the Settings icon (a ~3-icon gap), with the open-folder icon
-        // immediately to the right of the combobox, before the flexible spacer.
+        // Project switcher just right of the customizable icon cluster (a ~3-icon gap), with the
+        // open-folder icon immediately to the right of the combobox.
         // Recent sits with the project controls rather than with New/Open: it is a "where have I been"
         // dropdown, and beside the file actions it read as one of them.
-        items.addAll(projectToolbarGap, projectToolbarLabel, toolbarProjectCombo, openFolderButton, recentButton);
-
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        items.add(spacer);
+        items.addAll(projectToolbarGap, toolbarProjectCombo, openFolderButton, recentButton);
 
         // Snapshot badge when the pom carries -SNAPSHOT, i.e. this was built off master between
         // releases rather than from a release tag — so a test build is obvious without opening About.
@@ -6459,8 +6492,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             items.addAll(toolbarGap(), snapshotBadge);
         }
 
-        // Dev-mode badge (just left of the About icon) when running with --dev, so a development
-        // instance is visually distinct from the production one.
+        // Dev-mode badge (just left of Settings) when running with --dev, so a development instance is
+        // visually distinct from the production one.
         if (config.isDev()) {
             Label devBadge = new Label(tr("badge.devMode"));
             devBadge.getStyleClass().add("dev-mode-badge");
@@ -6469,8 +6502,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             items.addAll(toolbarGap(), devBadge);
         }
 
-        // Settings pairs with About: both are "about the app", not about the document.
-        items.addAll(toolbarGap(), settingsButton, aboutButton, toolbarGap(), quitButton);
+        // Settings is the only app-level control left on the bar. About and Quit were removed: both live in
+        // the Help/File menus and the palette, neither is an action anyone takes mid-edit, and Quit in
+        // particular sat in the top-right corner directly under the window's own close button — a
+        // one-icon-high miss between "minimise this window" and "exit the application".
+        items.addAll(toolbarGap(), settingsButton);
     }
 
     /** Id → the existing {@code @FXML} toolbar widget backing each default/special customizable item. */
@@ -7816,7 +7852,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
-            setStatus(tr("status.opened", file));
+            setStatus(tr("status.opened", com.editora.config.PathDisplay.of(file)));
             return;
         }
         // A PDF opens in the read-only PDF viewer (rasterized pages) instead of the hex viewer.
@@ -7825,7 +7861,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
-            setStatus(tr("status.opened", file));
+            setStatus(tr("status.opened", com.editora.config.PathDisplay.of(file)));
             return;
         }
         // A binary file opens in the read-only hex viewer instead of dumping its bytes as garbage text.
@@ -7834,7 +7870,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
-            setStatus(tr("status.opened", file));
+            setStatus(tr("status.opened", com.editora.config.PathDisplay.of(file)));
             return;
         }
         openTextBuffer(file);
@@ -7862,7 +7898,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
-            setStatus(note.isEmpty() ? tr("status.opened", file) : note);
+            setStatus(note.isEmpty() ? tr("status.opened", com.editora.config.PathDisplay.of(file)) : note);
         } catch (IOException e) {
             setStatus(tr("status.failedOpen", e.getMessage()));
             if (recentFiles != null) {
@@ -7946,7 +7982,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         openHexTab(p, true);
-        setStatus(tr("status.opened", p));
+        setStatus(tr("status.opened", com.editora.config.PathDisplay.of(p)));
     }
 
     /**
@@ -8362,7 +8398,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         byte[] bytes = saveBytes(buffer); // pure transform + encode on the FX thread
-        setStatus(tr("status.admin.saving", target));
+        setStatus(tr("status.admin.saving", com.editora.config.PathDisplay.of(target)));
         new Thread(
                         () -> {
                             Path tmp = null;
@@ -8416,7 +8452,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             historyCoordinator.record(buffer, HistoryRevision.REASON_SAVE);
             buffer.markClean();
             buffer.setDiskSnapshot(lastModifiedMillis(target), fileSize(target));
-            setStatus(tr("status.admin.saved", target));
+            setStatus(tr("status.admin.saved", com.editora.config.PathDisplay.of(target)));
             git.refresh();
             lspCoordinator.notifyDocumentSaved(buffer);
             Tab tab = tabForBuffer(buffer);
@@ -8574,7 +8610,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             historyCoordinator.record(buffer, HistoryRevision.REASON_SAVE); // snapshot the just-saved version
             buffer.markClean();
             buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our own write isn't "external"
-            setStatus(tr("status.saved", file));
+            setStatus(tr("status.saved", com.editora.config.PathDisplay.of(file)));
             git.refresh(); // a save changes the working tree → update gutter + status
             refreshBuildTools(); // a saved marker file (or a project-root change) may change the detected model
             // LSP: a save-as of a new Java file opens it on the server; then notify didSave.
@@ -9240,7 +9276,6 @@ public class MainController implements com.editora.mcp.McpBridge {
      * unsaved buffers and their whole session. {@link WindowManager#confirmCloseAllWindows} does that (and
      * disposes each window's services); the null case is the unit-test/standalone controller.
      */
-    @FXML
     private void onQuit() {
         if (!confirmQuit()) {
             return;
@@ -10053,7 +10088,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         toggleSimpleMode();
     }
 
-    @FXML
     private void onAbout() {
         SettingsWindow.showAbout(
                 stage,

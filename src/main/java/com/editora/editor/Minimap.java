@@ -381,9 +381,35 @@ final class Minimap extends Region {
             double vh = Math.max(rowHeight, (last - first + 1) * rowHeight);
             g.setFill(viewportColor);
             g.fillRect(0, vy, w, vh);
+            // The wash alone is ~14% alpha on a light theme, which disappears over a dense minimap — the
+            // whole overview then reads as noise with no "you are here". The EDGES are what make a block
+            // read as a slider (VS Code and IntelliJ both outline theirs), and deriving them from the same
+            // colour keeps one per-theme entry rather than thirty more to hold in step.
+            g.setStroke(viewportEdge(viewportColor));
+            g.setLineWidth(1);
+            // Half-pixel offsets: a 1px stroke on an integer coordinate straddles two device pixels and
+            // renders as a 2px blur.
+            g.strokeRect(0.5, vy + 0.5, Math.max(0, w - 1), Math.max(0, vh - 1));
         } catch (RuntimeException ignored) {
             // Viewport not laid out yet (e.g. before first render) — skip the indicator.
         }
+    }
+
+    /** How much more opaque the viewport outline is than its fill. */
+    private static final double EDGE_ALPHA_FACTOR = 3.0;
+
+    /** Floor for the outline's alpha, so a theme with a very faint fill still gets a visible edge. */
+    private static final double MIN_EDGE_ALPHA = 0.35;
+
+    /**
+     * The outline colour for a viewport fill: the same hue, opaque enough to read as an edge.
+     *
+     * <p>Pure so the derivation is testable — a wrong factor here is invisible in a screenshot until
+     * someone notices the overview has no slider on one theme.
+     */
+    static Color viewportEdge(Color fill) {
+        double alpha = Math.max(MIN_EDGE_ALPHA, Math.min(1.0, fill.getOpacity() * EDGE_ALPHA_FACTOR));
+        return new Color(fill.getRed(), fill.getGreen(), fill.getBlue(), alpha);
     }
 
     /**

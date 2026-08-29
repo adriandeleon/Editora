@@ -32,7 +32,8 @@ import com.editora.vfs.Vfs;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * IntelliJ-style file navigation bar: shows the active file's absolute path as clickable segments.
+ * IntelliJ-style file navigation bar: shows the active file's path as clickable segments (with the home
+ * directory collapsed to a single {@code ~} crumb — see {@link BreadcrumbTrail}).
  * Clicking a segment opens a dropdown of that folder's contents (sub-folders first, then files);
  * choosing a folder drills in — it becomes the new trailing crumb and the dropdown reopens on it —
  * and choosing a file opens it via the {@code onOpenFile} callback. Opening a file selects its tab,
@@ -68,6 +69,25 @@ public class FileBreadcrumb extends StackPane {
      *  Rebuilt on each {@link #showPath}. (The AtlantaFX skin owns each crumb button's {@code onAction} —
      *  it overrides any handler the crumb factory sets — so clicks are caught via {@code onCrumbAction}.) */
     private final Map<Path, ButtonBase> crumbNodes = new HashMap<>();
+
+    /** Crumb path → the text to show on it, so the collapsed home crumb reads "~" and not "adl". Rebuilt
+     *  alongside {@link #crumbNodes} on each {@link #showPath}. */
+    private final Map<Path, String> crumbLabels = new HashMap<>();
+
+    /**
+     * The user's home directory, collapsed to a single "~" crumb. Read once: it cannot change while the
+     * process runs, and the trail is rebuilt on every tab switch.
+     */
+    private static final Path HOME = userHome();
+
+    private static Path userHome() {
+        try {
+            String home = System.getProperty("user.home");
+            return home == null || home.isBlank() ? null : Path.of(home);
+        } catch (RuntimeException e) {
+            return null; // no home, or an unparseable one: show the path in full
+        }
+    }
 
     /** The bar is shown only when enabled (the user setting) and a file is active. */
     private boolean enabled;
@@ -124,7 +144,7 @@ public class FileBreadcrumb extends StackPane {
         updateVisibility();
     }
 
-    /** Points the bar at {@code file} (shown as its absolute path), or clears it when {@code null}. */
+    /** Points the bar at {@code file} (shown as its home-collapsed path), or clears it when {@code null}. */
     public void setActiveFile(Path file) {
         this.currentFile = file;
         if (file != null) {
@@ -144,20 +164,18 @@ public class FileBreadcrumb extends StackPane {
     }
 
     /**
-     * Rebuilds the crumb trail as the cumulative segments of {@code path}, starting at the first real
-     * segment — the filesystem root ("/" or "C:\\") is not shown as its own crumb.
+     * Rebuilds the crumb trail from {@link BreadcrumbTrail}: the cumulative segments of {@code path}, with
+     * the filesystem root ("/" or "C:\\") left out and the home directory collapsed to one {@code ~} crumb.
      */
     private void showPath(Path path) {
-        List<Path> cumulative = new ArrayList<>();
-        Path acc = path.getRoot();
-        for (Path seg : path) {
-            acc = acc == null ? seg : acc.resolve(seg);
-            cumulative.add(acc);
-        }
-        if (cumulative.isEmpty()) {
-            cumulative.add(path);
-        }
+        List<BreadcrumbTrail.Crumb> trail = BreadcrumbTrail.of(path, HOME);
         crumbNodes.clear(); // rebuilt by the crumb factory as setSelectedCrumb lays out the new trail
+        crumbLabels.clear();
+        List<Path> cumulative = new ArrayList<>(trail.size());
+        for (BreadcrumbTrail.Crumb crumb : trail) {
+            cumulative.add(crumb.path());
+            crumbLabels.put(crumb.path(), crumb.label());
+        }
         breadcrumbs.setSelectedCrumb(Breadcrumbs.buildTreeModel(cumulative.toArray(new Path[0])));
     }
 
@@ -185,9 +203,9 @@ public class FileBreadcrumb extends StackPane {
         showCrumbMenu(p, anchor);
     }
 
-    private static String crumbLabel(Path p) {
-        Path name = p.getFileName();
-        return name == null ? p.toString() : name.toString();
+    /** The trail's label for {@code p} ("~" for the collapsed home crumb), else its plain file name. */
+    private String crumbLabel(Path p) {
+        return crumbLabels.getOrDefault(p, BreadcrumbTrail.label(p));
     }
 
     private void showCrumbMenu(Path crumbPath, Node anchor) {
@@ -245,7 +263,7 @@ public class FileBreadcrumb extends StackPane {
             }
         }
         if (!menu.getItems().isEmpty()) {
-            // The bar sits at the bottom, so the menu drops upward from the crumb.
+            // The bar sits under the editor, so the menu drops upward from the crumb.
             menu.show(anchor, Side.TOP, 0, 0);
         }
     }
