@@ -126,6 +126,7 @@ final class MenuBarIcons {
         add("git.pull", Icons::arrowDown);
         add("git.stash", Icons::stash);
         add("git.stashPop", Icons::stash);
+        add("tool.gitLog", Icons::gitLog);
         add("git.fileHistory", Icons::history);
         add("diff.vsHead", Icons::diff);
         add("diff.compareWith", Icons::diff);

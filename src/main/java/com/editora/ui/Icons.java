@@ -313,9 +313,25 @@ final class Icons {
     }
 
     /** Debug: Material "bug_report" — for the Debug tool window + status segment. */
+    /**
+     * Debug: a bug.
+     *
+     * <p>It was a circle with eight rays — a sun, which is what it read as everywhere it appeared: the
+     * toolbar's run cluster, the Run menu, the test panel, all beside a CSS class named
+     * {@code .run-config-bug}. The editor's own right-click Debug item already showed a bug
+     * ({@code MenuIcons.debug}), so the app disagreed with itself about what debugging looks like.
+     *
+     * <p>Head band rather than a wing seam: at the ~19px this is actually drawn at, a vertical seam fills
+     * the body in and the glyph reads as a dark blob, while the band leaves it open. Judged by rendering
+     * both at real size, not at the magnification that flatters either.
+     */
     static Node debug() {
-        return line(
-                "M4.2 9.0a3.8 3.8 0 1 0 7.6 0a3.8 3.8 0 1 0 -7.6 0M8 5.2V3.4M4.8 6.4L3.3 4.9M11.2 6.4l1.5-1.5M4.2 9H2M14 9h-2.2M4.8 11.6l-1.5 1.5M11.2 11.6l1.5 1.5");
+        return line("M5.2 8.4 C5.2 6.2 6.5 4.8 8 4.8 C9.5 4.8 10.8 6.2 10.8 8.4"
+                + " L10.8 10.2 C10.8 12.1 9.5 13.3 8 13.3 C6.5 13.3 5.2 12.1 5.2 10.2 Z"
+                + "M6.5 5.2 L5.3 3.4M9.5 5.2 L10.7 3.4"
+                + "M5.3 7.8 L3.1 6.6M5.2 9.9 L2.9 9.9M5.3 11.8 L3.1 13.1"
+                + "M10.7 7.8 L12.9 6.6M10.8 9.9 L13.1 9.9M10.7 11.8 L12.9 13.1"
+                + "M6.0 7.0 L10.0 7.0");
     }
 
     /** Debug "stop" — a filled square (Material "stop"). */
