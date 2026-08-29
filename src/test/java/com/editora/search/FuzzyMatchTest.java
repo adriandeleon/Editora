@@ -3,6 +3,7 @@ package com.editora.search;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Random;
 
 import com.editora.search.FuzzyMatch.Match;
 import org.junit.jupiter.api.DisplayName;
@@ -330,6 +331,107 @@ class FuzzyMatchTest {
         @Test
         void repeatedCharactersDoNotConfuseTheBacktrack() {
             assertEquals("aaa", matched("aaaa", "aaa"));
+        }
+    }
+
+    /**
+     * {@link FuzzyMatch#scoreOf} exists only so the corpus-wide scans can skip building highlight ranges
+     * they discard (#876). Its entire contract is that it agrees with {@link FuzzyMatch#of} — so that is
+     * asserted exhaustively rather than by sampling a few cases, because the two are separate entry points
+     * into shared code and a future change to one could silently stop covering the other.
+     *
+     * <p>The candidates deliberately include the awkward shapes: the empty string, a single character, a
+     * name longer than {@link FuzzyMatch#MAX_SCAN} (which is matched on its tail, so the offset logic has
+     * to agree too), mixed case, digits, separators and paths.
+     */
+    @Nested
+    @DisplayName("scoreOf agrees with of")
+    class ScoreOnly {
+
+        private final List<String> candidates = new ArrayList<>(List.of(
+                "",
+                "a",
+                "getUserName",
+                "GETUSERNAME",
+                "get_user_name",
+                "get-user-name",
+                "HTMLParser",
+                "parse2HTML",
+                "ui/MainController.java",
+                "src/main/java/com/editora/index/SymbolIndex.java",
+                "a/b/c/d/e/f.java",
+                "MyMacController",
+                "listAll",
+                "list"));
+
+        private final List<String> queries = new ArrayList<>(List.of(
+                "",
+                " ",
+                "a",
+                "g",
+                "gu",
+                "gun",
+                "getuser",
+                "GetUser",
+                "GUN",
+                "ui main",
+                "main ui",
+                "index symbol",
+                "zzz",
+                "2h",
+                "_",
+                "-",
+                "/",
+                "list",
+                "listall",
+                "mc",
+                "java"));
+
+        ScoreOnly() {
+            candidates.add("x".repeat(FuzzyMatch.MAX_SCAN + 40) + "SymbolIndex");
+            Random rnd = new Random(7);
+            String alphabet = "abcABC_-/2 ";
+            for (int i = 0; i < 300; i++) {
+                StringBuilder sb = new StringBuilder();
+                for (int n = rnd.nextInt(14); n > 0; n--) {
+                    sb.append(alphabet.charAt(rnd.nextInt(alphabet.length())));
+                }
+                candidates.add(sb.toString());
+            }
+        }
+
+        @Test
+        void scoreOfMatchesOfOnEveryPair() {
+            for (String c : candidates) {
+                for (String q : queries) {
+                    Match m = FuzzyMatch.of(c, q);
+                    int expected = m == null ? FuzzyMatch.NO_SCORE : m.score();
+                    assertEquals(
+                            expected, FuzzyMatch.scoreOf(c, q), "of/scoreOf disagree on \"" + c + "\" ~ \"" + q + "\"");
+                }
+            }
+        }
+
+        @Test
+        void scoreOfPathMatchesOfPathOnEveryPair() {
+            for (String c : candidates) {
+                for (String q : queries) {
+                    Match m = FuzzyMatch.ofPath(c, q);
+                    int expected = m == null ? FuzzyMatch.NO_SCORE : m.score();
+                    assertEquals(
+                            expected,
+                            FuzzyMatch.scoreOfPath(c, q),
+                            "ofPath/scoreOfPath disagree on \"" + c + "\" ~ \"" + q + "\"");
+                }
+            }
+        }
+
+        @Test
+        void aNullCandidateOrQueryScoresAsNoMatchRatherThanThrowing() {
+            assertEquals(FuzzyMatch.NO_SCORE, FuzzyMatch.scoreOf(null, "a"));
+            assertEquals(FuzzyMatch.NO_SCORE, FuzzyMatch.scoreOf("a", null));
+            assertEquals(FuzzyMatch.NO_SCORE, FuzzyMatch.scoreOfPath(null, "a"));
+            assertEquals(FuzzyMatch.NO_SCORE, FuzzyMatch.scoreOfPath("a", null));
         }
     }
 }

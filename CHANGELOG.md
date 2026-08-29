@@ -52,6 +52,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Search Everywhere did a corpus-sized sort on every keystroke.** Both of its big sources — project files
+  and symbols — scored every candidate, sorted *all* the matches, and then threw away everything past the
+  fortieth. A one- or two-character query matches most of a corpus, so that sort was over nearly everything,
+  on the FX thread, between one keypress and the next. Each source now keeps a bounded heap of the best
+  forty as it scans, so the cost no longer grows with how much of your project happens to match.
+
+  The scan itself was also building the highlight ranges for every candidate — the bold characters showing
+  *why* a row matched — when only the visible rows need them, and the picker recomputes those at draw time
+  anyway. They are no longer computed during the scan. The file source additionally rebuilt every path
+  string relative to the project root on each keystroke; those are now kept from the walk that found them.
+
+  Measured on a generated corpus, for the worst case (a one-character query, which matches nearly
+  everything): at roughly this project's size **7.2 ms → 2.0 ms**, at ten times its size **102 ms → 23 ms**,
+  and at the index's cap **316 ms → 59 ms**. A frame is 16.7 ms, so the first of those was about 40% of a
+  frame per keystroke and is now closer to 12%.
+
+  **Results are unchanged** — same rows, same order. That is the whole basis for the change, so it is
+  pinned by tests that compare against the previous algorithm directly rather than by asserting properties
+  of the new one, over corpora built full of ties, which is the only place a bounded selection can differ.
+
+  Very large projects will still want this off the FX thread entirely; this makes the picker usable at a
+  scale where it was not, rather than settling the question.
+
 - **Zen and Expert mode left half the toolbar on screen.** The bar is two containers on one row — the icon
   cluster, which overflows into its own chevron, and a pinned tail holding the run controls, the project
   switcher, Open Folder, Recent, the build badges and Settings. Only the first was ever hidden, so a focus
