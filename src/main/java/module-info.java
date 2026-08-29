@@ -18,6 +18,9 @@ module com.editora {
     requires org.commonmark;
     // SVG rasterizer for the Markdown preview's badge images (renders via AWT → java.desktop).
     requires com.github.weisj.jsvg;
+    // Native FX rendering for the standalone .svg preview; the AWT path above still serves
+    // Markdown badges and the PNG-bytes consumers (PDF/print/office).
+    requires com.github.weisj.jsvg.javafx;
     requires jlatexmath; // pure-Java LaTeX math rendering for the Markdown preview/PDF
     requires java.desktop;
     requires java.net.http; // built-in HTTP client for .http request execution

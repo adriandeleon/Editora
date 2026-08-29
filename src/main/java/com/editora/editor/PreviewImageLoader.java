@@ -314,6 +314,23 @@ public final class PreviewImageLoader {
         }
     }
 
+    /**
+     * Parses SVG bytes into a JSVG document, or {@code null} when it cannot be read.
+     *
+     * <p>Split out so the standalone {@code .svg} preview can render the document natively through
+     * {@code FXSVGCanvas} instead of rasterizing it — the parse is the expensive half and is toolkit-free,
+     * so it stays off the FX thread either way. {@link LoaderContext#createDefault()} is what refuses the
+     * external references an SVG can carry; keep it, or a previewed document can fetch a URL of its
+     * choosing (its policy is embedded-data-only, verified against jsvg 2.1.0).
+     */
+    public static SVGDocument parseSvg(byte[] bytes) {
+        try {
+            return new SVGLoader().load(new ByteArrayInputStream(bytes), null, LoaderContext.createDefault());
+        } catch (RuntimeException | LinkageError e) {
+            return null;
+        }
+    }
+
     private static Loaded rasterizeSvg(byte[] bytes, String url) {
         SVGDocument doc =
                 new SVGLoader().load(new ByteArrayInputStream(bytes), uriOrNull(url), LoaderContext.createDefault());

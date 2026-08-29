@@ -180,6 +180,14 @@
             <artifactId>jsvg</artifactId>
             <version>${jsvg.version}</version>
         </dependency>
+        <!-- Native JavaFX renderer for the standalone .svg preview (FXSVGCanvas): resolution-
+             independent zoom instead of a fixed 2x raster. A real JPMS module, so no moditect.
+             The AWT rasterizer stays for Markdown badges and every PNG-bytes consumer. -->
+        <dependency>
+            <groupId>com.github.weisj</groupId>
+            <artifactId>jsvg-javafx</artifactId>
+            <version>${jsvg.version}</version>
+        </dependency>
         <!-- JLaTeXMath: pure-Java LaTeX math rendering for the Markdown preview/PDF. Renders to a
              java.awt BufferedImage (headless Java2D, like the JSVG path) → JavaFX Image. Automatic module
              (filename-derived name: jlatexmath); moditect injects a descriptor for the jlink dist build. -->

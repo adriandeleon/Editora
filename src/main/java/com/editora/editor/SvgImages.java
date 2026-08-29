@@ -10,25 +10,41 @@ import java.util.concurrent.Executors;
 import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
-import javafx.scene.image.ImageView;
 import javafx.scene.layout.StackPane;
 
 import com.editora.i18n.Messages;
+import com.github.weisj.jsvg.SVGDocument;
+import com.github.weisj.jsvg.ui.jfx.FXSVGCanvas;
+import com.github.weisj.jsvg.view.ViewBox;
 
 /**
  * Renders standalone {@code .svg} files to JavaFX nodes for the 3-mode preview, asynchronously — the
- * in-process analogue of {@link MermaidImages}/{@code DiagramImages}, but rasterizing via JSVG
- * ({@link PreviewImageLoader#rasterizeSvg}) rather than an external CLI, so it needs no tool and no theme.
- * A daemon executor + an LRU cache keyed by a hash of the source, so the debounced whole-document
- * re-render doesn't re-rasterize an unchanged SVG (and a zoom is a cheap re-fit of the cached image).
- * The {@code editor} package already owns the JSVG rasterizer (for Markdown badge images), so no new
- * dependency.
+ * in-process analogue of {@link MermaidImages}/{@code DiagramImages}, but drawn by JSVG rather than an
+ * external CLI, so it needs no tool and no theme. A daemon executor + an LRU cache keyed by a hash of the
+ * source, so the debounced whole-document re-render doesn't re-parse an unchanged SVG.
+ *
+ * <p><b>Rendered natively through {@code FXSVGCanvas}, not rasterized.</b> The preview used to draw the SVG
+ * once into a 2x bitmap and scale that, which is blurry the moment the zoom passes 2x — on the one preview
+ * whose entire content is vector art. The canvas redraws from the document at whatever size it is given, so
+ * zoom stays crisp at any level, and a transparent SVG gets a checkerboard behind it instead of sitting
+ * invisibly on the pane's background.
+ *
+ * <p><b>Only this preview moved.</b> Markdown badge images stay on {@link PreviewImageLoader#rasterizeSvg}
+ * because that cache hands the same {@code Image} to every occurrence and a {@code Node} cannot be shared
+ * between two parents; PDF, print and the office writers stay on
+ * {@link PreviewImageLoader#svgToPng} because they need bytes, off the FX thread, which a scene-graph
+ * control cannot give them.
+ *
+ * <p>The cache holds the parsed {@link SVGDocument} rather than a rendered image — cheaper, and it pins no
+ * GPU texture, so the bound here is now about parse work rather than video memory. A document is treated as
+ * immutable render input and may back more than one canvas (the same file previewed in two windows);
+ * animation is deliberately left off, which is what keeps that true.
  */
 public final class SvgImages {
 
-    private record Cached(PreviewImageLoader.Loaded loaded, String error) {}
+    private record Cached(SVGDocument document, double width, double height, String error) {}
 
-    /** Cap on cached rendered SVGs (each successful entry pins a GPU texture — bounded LRU). */
+    /** Cap on cached parsed SVGs (bounded LRU; a document is plain heap, unlike the images this replaced). */
     private static final int MAX_CACHED = 48;
 
     private static final Map<String, Cached> CACHE =
@@ -47,9 +63,9 @@ public final class SvgImages {
     private SvgImages() {}
 
     /**
-     * A node for the SVG {@code source}, filled asynchronously: a centered {@link ImageView} on success, or
-     * a {@code .svg-error} label on a parse/render failure. Cache hits apply immediately. {@code sizer} maps
-     * the SVG's logical width to the displayed fit width (a standalone preview multiplies by the zoom).
+     * A node for the SVG {@code source}, filled asynchronously: a centered {@code FXSVGCanvas} on success,
+     * or a {@code .svg-error} label on a parse failure. Cache hits apply immediately. {@code sizer} maps the
+     * SVG's logical width to the displayed width (a standalone preview multiplies by the zoom).
      */
     public static Node node(String source, java.util.function.DoubleUnaryOperator sizer) {
         StackPane host = new StackPane();
@@ -67,24 +83,63 @@ public final class SvgImages {
         }
         host.getChildren().setAll(placeholder(Messages.tr("svg.rendering")));
         EXEC.submit(() -> {
-            PreviewImageLoader.Loaded loaded = PreviewImageLoader.rasterizeSvg(source.getBytes(StandardCharsets.UTF_8));
-            Cached result =
-                    loaded != null ? new Cached(loaded, null) : new Cached(null, Messages.tr("svg.renderFailed"));
+            SVGDocument doc = PreviewImageLoader.parseSvg(source.getBytes(StandardCharsets.UTF_8));
+            Cached result = cachedFor(doc);
             CACHE.put(key, result);
             Platform.runLater(() -> applyCached(host, result, sizer));
         });
     }
 
-    private static void applyCached(StackPane host, Cached c, java.util.function.DoubleUnaryOperator sizer) {
-        if (c.loaded() != null) {
-            ImageView view = new ImageView(c.loaded().image());
-            view.setPreserveRatio(true);
-            view.setSmooth(true);
-            view.setFitWidth(Math.max(1, sizer.applyAsDouble(c.loaded().logicalWidth())));
-            host.getChildren().setAll(view);
-        } else {
-            host.getChildren().setAll(errorNode(c.error()));
+    /** A parsed document plus the size to draw it at, or the error to show instead. */
+    private static Cached cachedFor(SVGDocument doc) {
+        if (doc == null) {
+            return new Cached(null, 0, 0, Messages.tr("svg.renderFailed"));
         }
+        // An SVG need not declare a size; fall back to the same defaults the rasterizer used so a
+        // dimensionless document still gets a sane box rather than collapsing to nothing.
+        var size = doc.size();
+        double w = size.width > 0 ? size.width : DEFAULT_WIDTH;
+        double h = size.height > 0 ? size.height : DEFAULT_HEIGHT;
+        return new Cached(doc, w, h, null);
+    }
+
+    /** Fallbacks for an SVG that declares no intrinsic size (mirrors the rasterizer's). */
+    private static final double DEFAULT_WIDTH = 100;
+
+    private static final double DEFAULT_HEIGHT = 20;
+
+    private static void applyCached(StackPane host, Cached c, java.util.function.DoubleUnaryOperator sizer) {
+        if (c.document() == null) {
+            host.getChildren().setAll(errorNode(c.error()));
+            return;
+        }
+        host.getChildren().setAll(canvasFor(c, sizer));
+    }
+
+    /**
+     * The canvas for a cached document at the caller's width, aspect preserved.
+     *
+     * <p>Sized explicitly: {@code FXSVGCanvas} is a {@code Control} whose skin computes no preferred size,
+     * so left alone it lays out at zero and the preview looks empty. Max is pinned to pref as well as min —
+     * the host is a centering {@code StackPane}, which would otherwise stretch the canvas to fill the pane
+     * and distort the drawing.
+     */
+    private static FXSVGCanvas canvasFor(Cached c, java.util.function.DoubleUnaryOperator sizer) {
+        FXSVGCanvas canvas = new FXSVGCanvas();
+        canvas.setDocument(c.document());
+        canvas.setViewBox(new ViewBox(0, 0, (float) c.width(), (float) c.height()));
+        // A checkerboard behind transparency, so a white-on-transparent icon is visible rather than
+        // appearing blank against a light preview background.
+        canvas.setShowTransparentPattern(true);
+        // Left off deliberately: an animated document drives a per-frame tick, and nothing here stops it
+        // when the tab goes to the background or closes. Turning it on needs that lifecycle first.
+        canvas.setAnimated(false);
+        double w = Math.max(1, sizer.applyAsDouble(c.width()));
+        double h = Math.max(1, w * (c.height() / c.width()));
+        canvas.setPrefSize(w, h);
+        canvas.setMinSize(w, h);
+        canvas.setMaxSize(w, h);
+        return canvas;
     }
 
     private static Label placeholder(String text) {
