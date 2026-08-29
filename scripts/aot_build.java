@@ -265,6 +265,10 @@ public class aot_build {
                     // weight in the cache, not a correctness problem, and any class not archived simply
                     // loads normally.
                     "-Dprism.order=es2,sw",
+                    // Mirror the launcher's JavaFX-preview flag (pom.xml dist javaOptions): the app
+                    // can be started with StageStyle.EXTENDED, so the trainer must be able to as
+                    // well or the cache is trained under a configuration the app never runs under.
+                    "-Djavafx.enablePreview=true",
                     "-Dprism.maxvram=2G", "-Dprism.maxTextureSize=16384",
                     "-Deditora.aotTrainExit=true",
                     // Mirror the launcher's adapter-caching opt-out (pom.xml dist javaOptions, where the

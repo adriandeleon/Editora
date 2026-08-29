@@ -242,6 +242,8 @@ public class SettingsWindow {
     private CheckBox breadcrumbCheck;
     private CheckBox simpleModeCheck;
     private CheckBox toolStripeCheck;
+
+    private CheckBox extendedWindowCheck;
     private CheckBox paletteSearchEverywhereCheck;
     private CheckBox projectHiddenCheck;
     private CheckBox markdownFormatBarCheck;
@@ -1169,6 +1171,10 @@ public class SettingsWindow {
         breadcrumbCheck = viewCheck(tr("settings.showBreadcrumb"), Settings::setShowBreadcrumb);
         simpleModeCheck = viewCheck(tr("settings.simpleMode"), Settings::setSimpleMode);
         toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
+        extendedWindowCheck = viewCheck(tr("settings.extendedWindow"), Settings::setExtendedWindow);
+        // Not offered on macOS: the menu belongs to the system menu bar there, so the setting could only
+        // ever be a switch that does nothing. Disabled rather than hidden, so its note still explains why.
+        extendedWindowCheck.setDisable(!ExtendedWindow.supportedOn(System.getProperty("os.name")));
         paletteSearchEverywhereCheck =
                 viewCheck(tr("settings.paletteSearchEverywhere"), Settings::setPaletteUsesSearchEverywhere);
         projectHiddenCheck = viewCheck(tr("settings.projectShowHidden"), Settings::setProjectShowHidden);
@@ -2828,6 +2834,12 @@ public class SettingsWindow {
                 toolStripeCheck,
                 tr("settings.toolWindows.stripeNote"),
                 "tool stripe tool windows buttons show hide precedence");
+        checkRow(
+                chrome,
+                Category.INTERFACE,
+                extendedWindowCheck,
+                tr("settings.extendedWindow.note"),
+                "title bar menu bar merge extended window header chrome row experimental linux");
         Card pickers = card(p, tr("settings.section.pickers"));
         checkRow(
                 pickers,
@@ -6866,6 +6878,7 @@ public class SettingsWindow {
             simpleModeCheck.setSelected(settings.isSimpleMode());
             templateAuthorField.setText(settings.getAuthorNameRaw());
             toolStripeCheck.setSelected(settings.isShowToolStripe());
+            extendedWindowCheck.setSelected(settings.isExtendedWindow());
             paletteSearchEverywhereCheck.setSelected(settings.isPaletteUsesSearchEverywhere());
             projectHiddenCheck.setSelected(settings.isProjectShowHidden());
             markdownFormatBarCheck.setSelected(settings.isMarkdownFormatBar());

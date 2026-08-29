@@ -629,6 +629,15 @@
                         <option>-Xms64m</option>
                         <option>-XX:+UseG1GC</option>
                         <option>-XX:G1PeriodicGCInterval=30000</option>
+                        <!-- StageStyle.EXTENDED (the menu-bar-in-the-title-bar setting, ui/ExtendedWindow)
+                             is a JavaFX 26 PREVIEW feature: Stage.initStyle THROWS without this flag, and
+                             thrown out of window construction that means starting with no window at all.
+                             Mirrored in the dist javaOptions and in scripts/aot_build.java's trainer, so
+                             the setting works in a packaged build and the cache is trained under the same
+                             configuration the app runs (AotTrainerOptionsTest fails the build on drift).
+                             It enables JavaFX preview APIs generally; EXTENDED is the only one used, and
+                             ExtendedWindow.previewEnabled() is what gates on it. -->
+                        <option>-Djavafx.enablePreview=true</option>
                     </options>
                     <launcher>editora</launcher>
                     <jlinkImageName>editora</jlinkImageName>
@@ -1404,6 +1413,13 @@
                                              could be exhausted by many open files' GPU textures, after
                                              which JavaFX NPEs in the render thread (black screen). These
                                              are harmless ceilings, not reservations. -->
+                                        <!-- JavaFX preview APIs. Required by StageStyle.EXTENDED, which
+                                             backs the menu-bar-in-the-title-bar setting (ui/ExtendedWindow):
+                                             Stage.initStyle throws without it, so without this the setting
+                                             could not work in a packaged build at all. Mirrored in
+                                             scripts/aot_build.java's trainer — AotTrainerOptionsTest fails
+                                             the build if the two drift. -->
+                                        <javaOption>-Djavafx.enablePreview=true</javaOption>
                                         <javaOption>-Dprism.maxvram=2G</javaOption>
                                         <javaOption>-Dprism.maxTextureSize=16384</javaOption>
                                         <!-- Prism pipeline order, per-OS (see the os-* profiles): macOS =

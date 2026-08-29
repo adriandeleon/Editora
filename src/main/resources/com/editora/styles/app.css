@@ -1622,6 +1622,20 @@
     -fx-spacing: 5;
 }
 
+/* The window header that replaces the system title bar (StageStyle.EXTENDED — see ui/ExtendedWindow).
+   It sits on the same ground as the menu bar and toolbar below it, so the whole top of the window reads
+   as one band rather than as a title bar with chrome stacked under it. */
+.window-header {
+    -fx-background-color: -color-bg-subtle;
+    -fx-padding: 0 4 0 0;
+}
+/* The window title. The OS is no longer painting one, so this is it — muted, because the file it names
+   is already the loud thing on screen. */
+.window-header .window-header-title {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 12px;
+}
+
 /* The toolbar is one visual bar made of two containers: the ToolBar (the customizable icon cluster,
    which overflows into its own chevron) and this pinned tail. Both paint the same ground, so the seam
    between them is invisible; the row exists only to hold them side by side. See

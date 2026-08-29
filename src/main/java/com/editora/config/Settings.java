@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 99;
+    public static final int SCHEMA_VERSION = 100;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -343,6 +343,13 @@ public class Settings {
     private boolean githubActionsPreview = true;
     /** Maven pom.xml summary preview (properties/dependencies/plugins, instead of the XML tree): on by default. */
     private boolean pomPreview = true;
+    /**
+     * Draw the menu bar inside the window's own title bar ({@code StageStyle.EXTENDED}), reclaiming a
+     * whole row of chrome. Off by default and <b>experimental</b>: it changes how the window is decorated,
+     * which is the most platform-specific thing an app does, and it is currently gated to Linux — see
+     * {@code ui/ExtendedWindow}. Read once per window at construction, so it applies on restart.
+     */
+    private boolean extendedWindow = false;
     /**
      * Pin the enclosing scope headers above the viewport as you scroll (VS Code's sticky scroll): on by
      * default. Suppressed in large-file mode along with the other per-viewport work.
@@ -731,6 +738,14 @@ public class Settings {
 
     public void setPaletteUsesSearchEverywhere(boolean paletteUsesSearchEverywhere) {
         this.paletteUsesSearchEverywhere = paletteUsesSearchEverywhere;
+    }
+
+    public boolean isExtendedWindow() {
+        return extendedWindow;
+    }
+
+    public void setExtendedWindow(boolean extendedWindow) {
+        this.extendedWindow = extendedWindow;
     }
 
     public boolean isStickyScroll() {

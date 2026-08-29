@@ -2387,7 +2387,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                 registry.run(id);
             }
         });
-        topBox.getChildren().add(0, menuBar.node());
+        // An extended window has no system title bar, so the menu bar takes its place; asking the stage
+        // rather than re-reading the setting means the two can never disagree for a window already built.
+        topBox.getChildren()
+                .add(
+                        0,
+                        stage != null && stage.getStyle() == javafx.stage.StageStyle.EXTENDED
+                                ? ExtendedWindow.header(menuBar.node(), stage)
+                                : menuBar.node());
         toolWindows = new ToolWindowManager(workspace, editorFooter(), config, keymap);
         projectPanel = new ProjectPanel(
                 this::openPath, this::onProjectFileRenamed, this::onProjectFileDeleted, this::isPathModified);
@@ -2898,10 +2905,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Home-collapses an absolute folder path for a scope label (e.g. {@code ~/proj}). */
     private static String homeCollapsed(String full) {
-        String home = System.getProperty("user.home", "");
-        return !home.isEmpty() && (full.equals(home) || full.startsWith(home + java.io.File.separator))
-                ? "~" + full.substring(home.length())
-                : full;
+        return com.editora.config.PathDisplay.collapseHome(full);
     }
 
     /** Starts AceJump on the active buffer: type a character, then a label, to jump the caret. */
@@ -15877,6 +15881,17 @@ public class MainController implements com.editora.mcp.McpBridge {
                         () -> {
                             applyViewSettingsToAllBuffers(config.getSettings());
                             settingsWindow.syncAll();
+                        })));
+        registry.register(Command.of(
+                "view.toggleExtendedWindow",
+                () -> toggleSetting(
+                        "view.toggleExtendedWindow",
+                        () -> config.getSettings().isExtendedWindow(),
+                        config.getSettings()::setExtendedWindow,
+                        () -> {
+                            settingsWindow.syncAll();
+                            // Nothing to re-apply live: a stage's style is fixed once it has been shown.
+                            setStatus(tr("status.extendedWindow.restart"));
                         })));
         registry.register(Command.of("pom.toggleView", this::togglePomView));
         registry.register(Command.of(
