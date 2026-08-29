@@ -629,6 +629,14 @@
                         <option>-Xms64m</option>
                         <option>-XX:+UseG1GC</option>
                         <option>-XX:G1PeriodicGCInterval=30000</option>
+                        <!-- StageStyle.EXTENDED (the menu-bar-in-the-title-bar setting, ui/ExtendedWindow)
+                             is a JavaFX 26 PREVIEW feature: Stage.initStyle throws without this flag.
+                             Set for the dev run only, NOT for the packaged app — a preview API may be
+                             removed in a future JavaFX, and adding it to the dist launcher would also mean
+                             mirroring it in scripts/aot_build.java's trainer (AotTrainerOptionsTest). So in
+                             a packaged build the setting stays inert and the window stays decorated, which
+                             is what ExtendedWindow.previewEnabled() reports. -->
+                        <option>-Djavafx.enablePreview=true</option>
                     </options>
                     <launcher>editora</launcher>
                     <jlinkImageName>editora</jlinkImageName>

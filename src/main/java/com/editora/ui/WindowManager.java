@@ -13,6 +13,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import javafx.util.Duration;
 
 import com.editora.command.CommandRegistry;
@@ -680,6 +681,24 @@ public class WindowManager {
         try {
             Stage stage = primaryStage != null ? primaryStage : new Stage();
             primaryStage = null; // only the first window reuses the JavaFX primary stage
+            // Before anything else touches the stage: initStyle throws once a stage has been shown, and
+            // this is read per window at construction, which is why the setting applies on restart.
+            if (ExtendedWindow.enabled(
+                    shared.getSettings().isExtendedWindow(),
+                    System.getProperty("os.name"),
+                    ExtendedWindow.previewEnabled())) {
+                try {
+                    stage.initStyle(StageStyle.EXTENDED);
+                } catch (RuntimeException e) {
+                    // Belt as well as braces: the gate above already checks the preview flag, but a window
+                    // is not something a chrome preference gets to prevent. Fall back to a decorated one.
+                    java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                            .log(
+                                    java.util.logging.Level.WARNING,
+                                    "Extended window unavailable; using a decorated window",
+                                    e);
+                }
+            }
             CommandRegistry registry = new CommandRegistry();
             // A no-project window normally uses the default workspace-state.json (stateFile null); a project
             // OR an extra "untitled" no-project window passes its own session file so windows never clobber.
