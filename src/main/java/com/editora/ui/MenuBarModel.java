@@ -193,6 +193,7 @@ final class MenuBarModel {
                                 SEPARATOR,
                                 "diff.vsHead",
                                 "diff.compareWith",
+                                "tool.gitLog",
                                 "git.fileHistory",
                                 SEPARATOR,
                                 "git.stash",
