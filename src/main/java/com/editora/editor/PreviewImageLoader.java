@@ -24,10 +24,10 @@ import javafx.scene.image.PixelFormat;
 import javafx.scene.image.WritableImage;
 
 import com.github.weisj.jsvg.SVGDocument;
-import com.github.weisj.jsvg.attributes.ViewBox;
-import com.github.weisj.jsvg.geometry.size.FloatSize;
 import com.github.weisj.jsvg.parser.LoaderContext;
 import com.github.weisj.jsvg.parser.SVGLoader;
+import com.github.weisj.jsvg.view.FloatSize;
+import com.github.weisj.jsvg.view.ViewBox;
 
 /**
  * Loads images for the Markdown preview off the FX thread, adding support JavaFX's own decoder lacks:
