@@ -7852,7 +7852,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
-            setStatus(tr("status.opened", file));
+            setStatus(tr("status.opened", com.editora.config.PathDisplay.of(file)));
             return;
         }
         // A PDF opens in the read-only PDF viewer (rasterized pages) instead of the hex viewer.
@@ -7861,7 +7861,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
-            setStatus(tr("status.opened", file));
+            setStatus(tr("status.opened", com.editora.config.PathDisplay.of(file)));
             return;
         }
         // A binary file opens in the read-only hex viewer instead of dumping its bytes as garbage text.
@@ -7870,7 +7870,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
-            setStatus(tr("status.opened", file));
+            setStatus(tr("status.opened", com.editora.config.PathDisplay.of(file)));
             return;
         }
         openTextBuffer(file);
@@ -7898,7 +7898,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (recentFiles != null) {
                 recentFiles.add(file);
             }
-            setStatus(note.isEmpty() ? tr("status.opened", file) : note);
+            setStatus(note.isEmpty() ? tr("status.opened", com.editora.config.PathDisplay.of(file)) : note);
         } catch (IOException e) {
             setStatus(tr("status.failedOpen", e.getMessage()));
             if (recentFiles != null) {
@@ -7982,7 +7982,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         openHexTab(p, true);
-        setStatus(tr("status.opened", p));
+        setStatus(tr("status.opened", com.editora.config.PathDisplay.of(p)));
     }
 
     /**
@@ -8398,7 +8398,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         byte[] bytes = saveBytes(buffer); // pure transform + encode on the FX thread
-        setStatus(tr("status.admin.saving", target));
+        setStatus(tr("status.admin.saving", com.editora.config.PathDisplay.of(target)));
         new Thread(
                         () -> {
                             Path tmp = null;
@@ -8452,7 +8452,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             historyCoordinator.record(buffer, HistoryRevision.REASON_SAVE);
             buffer.markClean();
             buffer.setDiskSnapshot(lastModifiedMillis(target), fileSize(target));
-            setStatus(tr("status.admin.saved", target));
+            setStatus(tr("status.admin.saved", com.editora.config.PathDisplay.of(target)));
             git.refresh();
             lspCoordinator.notifyDocumentSaved(buffer);
             Tab tab = tabForBuffer(buffer);
@@ -8610,7 +8610,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             historyCoordinator.record(buffer, HistoryRevision.REASON_SAVE); // snapshot the just-saved version
             buffer.markClean();
             buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our own write isn't "external"
-            setStatus(tr("status.saved", file));
+            setStatus(tr("status.saved", com.editora.config.PathDisplay.of(file)));
             git.refresh(); // a save changes the working tree → update gutter + status
             refreshBuildTools(); // a saved marker file (or a project-root change) may change the detected model
             // LSP: a save-as of a new Java file opens it on the server; then notify didSave.

@@ -25,30 +25,6 @@ public final class DoctorText {
                 && (text.charAt(2) == '\\' || text.charAt(2) == '/');
     }
 
-    /**
-     * Collapses a leading {@code $HOME} to {@code ~} so a probed path costs fewer columns. Only a whole path
-     * segment matches ({@code /home/adrian2} is left alone next to a home of {@code /home/adrian}).
-     */
-    public static String collapseHome(String text, String home) {
-        if (text == null || text.isEmpty()) {
-            return "";
-        }
-        String h = stripTrailingSeparator(home);
-        if (h.isEmpty() || h.equals("/")) {
-            return text;
-        }
-        if (text.equals(h)) {
-            return "~";
-        }
-        if (text.startsWith(h) && text.length() > h.length()) {
-            char next = text.charAt(h.length());
-            if (next == '/' || next == '\\') {
-                return "~" + text.substring(h.length());
-            }
-        }
-        return text;
-    }
-
     /** True when the probed detail is the configured command verbatim (a command set to an absolute path). */
     public static boolean detailRepeatsCommand(String command, String detail) {
         if (command == null || detail == null) {
@@ -78,16 +54,5 @@ public final class DoctorText {
     private static String fileName(String path) {
         int cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
         return cut < 0 ? path : path.substring(cut + 1);
-    }
-
-    private static String stripTrailingSeparator(String path) {
-        if (path == null) {
-            return "";
-        }
-        String p = path;
-        while (p.length() > 1 && (p.endsWith("/") || p.endsWith("\\"))) {
-            p = p.substring(0, p.length() - 1);
-        }
-        return p;
     }
 }

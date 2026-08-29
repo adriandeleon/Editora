@@ -1,6 +1,5 @@
 package com.editora.ui;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -227,10 +226,7 @@ final class SearchCoordinator {
 
     /** Home-collapses an absolute folder path for a scope label (e.g. {@code ~/proj}). */
     private static String homeCollapsed(String full) {
-        String home = System.getProperty("user.home", "");
-        return !home.isEmpty() && (full.equals(home) || full.startsWith(home + File.separator))
-                ? "~" + full.substring(home.length())
-                : full;
+        return com.editora.config.PathDisplay.collapseHome(full);
     }
 
     /** Toggles the Find-in-Files tool window: opens it (focusing its query field) when closed, closes it
