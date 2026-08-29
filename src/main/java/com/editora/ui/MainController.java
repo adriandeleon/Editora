@@ -195,6 +195,14 @@ public class MainController implements com.editora.mcp.McpBridge {
     @FXML
     private ToolBar toolBar;
 
+    /** The row holding the toolbar: the overflowing cluster plus the pinned tail. */
+    @FXML
+    private HBox toolbarRow;
+
+    /** The pinned right end of the bar — never part of the ToolBar, so it never overflows. */
+    @FXML
+    private HBox toolbarTail;
+
     @FXML
     private Button newButton;
 
@@ -6407,8 +6415,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         projectToolbarGap = new Region();
         projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between the icon cluster and the combo
         projectToolbarGap.setPrefWidth(78);
-        // The customizable left icon cluster is built data-driven from the persisted layout; the fixed tail
-        // (project combo + About/Quit) is re-appended after each rebuild by appendFixedTail().
+        // The ToolBar is the one that gives when the window narrows: it takes whatever width the pinned tail
+        // leaves and moves the icons it cannot fit into its own overflow chevron. Without a zero minimum an
+        // HBox would squeeze the tail instead, which is the behaviour this split exists to prevent.
+        toolBar.setMinWidth(0);
+        // ...and the tail is the one that doesn't. An HBox short of space shrinks EVERY resizable child
+        // toward its minimum, sharing the deficit out, so without this the tail would be squeezed alongside
+        // the ToolBar instead of the ToolBar absorbing all of it. (Same fix, and the same reason, as
+        // StatusBar.pinSegmentWidths.)
+        toolbarTail.setMinWidth(Region.USE_PREF_SIZE);
+        // The customizable icon cluster is built data-driven from the persisted layout; the fixed tail
+        // (project group + Settings) is refilled after each rebuild by appendFixedTail().
         toolbarCoordinator = new ToolbarCoordinator(coordinatorHost, registry, keymap, toolbarOps());
         toolbarCoordinator.rebuild();
         refreshSplitButtons();
@@ -6427,37 +6444,44 @@ public class MainController implements com.editora.mcp.McpBridge {
      * for any taller child. No-op until the combo has a valid preferred height (after the first layout).
      */
     private void stabilizeToolbarHeight() {
-        if (toolBar == null || toolbarProjectCombo == null) {
+        if (toolbarRow == null || toolbarTail == null || toolbarProjectCombo == null) {
             return;
         }
         double comboH = toolbarProjectCombo.prefHeight(-1); // independent of the combo's current visibility
         if (comboH <= 0) {
             return;
         }
-        javafx.geometry.Insets in = toolBar.getInsets();
-        toolBar.setMinHeight(Math.ceil(comboH + in.getTop() + in.getBottom()));
+        javafx.geometry.Insets in = toolbarTail.getInsets();
+        // The row, not the ToolBar: the combo lives in the tail now, so the ToolBar's own height no longer
+        // moves when it is hidden — the row's does.
+        toolbarRow.setMinHeight(Math.ceil(comboH + in.getTop() + in.getBottom()));
     }
 
     /**
-     * Appends the fixed, non-customizable toolbar tail — the project-combo group (a Switcher hint gap, the
-     * label + combo, and the Open-Folder icon), a flexible spacer, an optional {@code --dev} badge, and the
-     * right-pinned About + Quit buttons — to the already-populated bar. Called by {@link ToolbarCoordinator}
-     * after it lays out the customizable left cluster, so the tail always sits to the right of it and stays
-     * pinned regardless of how the user customizes the left cluster. Re-adds the same field instances (the
-     * coordinator cleared the bar first), so their show/hide state from Simple mode / Projects is preserved.
+     * Fills the fixed, non-customizable toolbar tail — the project-combo group (a gap, the combo, and the
+     * Open-Folder icon), Recent, an optional {@code snapshot}/{@code --dev} badge, and the right-pinned
+     * Settings button. Called by {@link ToolbarCoordinator} after it lays out the customizable cluster.
+     *
+     * <p>The tail is its <b>own container</b> beside the {@link javafx.scene.control.ToolBar}, not items in
+     * it: a ToolBar overflows from its END, so with everything in one bar a narrow window pushed Settings
+     * and the project switcher into the chevron while keeping fourteen icons — exactly backwards. The
+     * ToolBar now takes the leftover width and overflows its own icons, every one of which is also in the
+     * menus and the palette.
+     *
+     * <p>Re-uses the same field instances, so their show/hide state from Simple mode / Projects survives a
+     * rebuild.
      */
     private void appendFixedTail() {
-        var items = toolBar.getItems();
+        // Cleared here: the coordinator calls this after every rebuild, and the tail is no longer emptied
+        // for us by the ToolBar being cleared.
+        var items = toolbarTail.getChildren();
+        items.clear();
 
         // Project switcher just right of the customizable icon cluster (a ~3-icon gap), with the
-        // open-folder icon immediately to the right of the combobox, before the flexible spacer.
+        // open-folder icon immediately to the right of the combobox.
         // Recent sits with the project controls rather than with New/Open: it is a "where have I been"
         // dropdown, and beside the file actions it read as one of them.
         items.addAll(projectToolbarGap, toolbarProjectCombo, openFolderButton, recentButton);
-
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        items.add(spacer);
 
         // Snapshot badge when the pom carries -SNAPSHOT, i.e. this was built off master between
         // releases rather than from a release tag — so a test build is obvious without opening About.
@@ -6468,8 +6492,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             items.addAll(toolbarGap(), snapshotBadge);
         }
 
-        // Dev-mode badge (just left of the About icon) when running with --dev, so a development
-        // instance is visually distinct from the production one.
+        // Dev-mode badge (just left of Settings) when running with --dev, so a development instance is
+        // visually distinct from the production one.
         if (config.isDev()) {
             Label devBadge = new Label(tr("badge.devMode"));
             devBadge.getStyleClass().add("dev-mode-badge");

@@ -14,8 +14,9 @@ import java.util.Map;
  * coordinator maps to its existing {@code @FXML} field). The {@code id} of a command button is its command
  * id; special widgets use a {@code toolbar.*} synthetic id.
  *
- * <p>The customizable region is the toolbar's <em>left icon cluster</em>. The fixed tail is not part of this
- * catalog and stays pinned — the project-combo group, the Open-Folder icon and Recent beside it, the dev
+ * <p>The customizable region is the toolbar's <em>left icon cluster</em> — literally the {@code ToolBar},
+ * which is what overflows into a chevron when the window is narrow. The fixed tail is a separate
+ * container beside it, so it is not part of this catalog and cannot be pushed into that overflow — the project-combo group, the Open-Folder icon and Recent beside it, the dev
  * badge, then Settings. Recent and Settings live there rather than here because their position is relative
  * to tail items (Recent belongs beside the project controls; Settings is pinned to the right end, where its
  * glyph lines up with the right tool stripe), which a customizable-cluster entry cannot express — see

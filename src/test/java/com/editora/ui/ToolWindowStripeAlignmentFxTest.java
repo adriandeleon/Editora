@@ -229,13 +229,9 @@ class ToolWindowStripeAlignmentFxTest {
     @Test
     void theLastToolbarGlyphSharesAVerticalCentreLineWithTheStripeIcons() throws Exception {
         FxTestSupport.runOnFx(() -> {
-            javafx.scene.control.ToolBar toolBar = FxTestSupport.field(fx.controller, "toolBar");
-            Node lastGlyph = null;
-            for (int i = toolBar.getItems().size() - 1; i >= 0 && lastGlyph == null; i--) {
-                if (toolBar.getItems().get(i) instanceof Button b && b.getGraphic() != null) {
-                    lastGlyph = b.getGraphic();
-                }
-            }
+            // The whole row, not just the ToolBar: the right-pinned controls live in the tail beside it.
+            javafx.scene.layout.HBox row = FxTestSupport.field(fx.controller, "toolbarRow");
+            Node lastGlyph = lastGlyphIn(row);
             Node stripeGlyph = firstRightStripeButton().getGraphic();
             assertNotNull(lastGlyph, "the toolbar should end in a glyph button");
             assertNotNull(stripeGlyph, "a stripe button should carry a glyph");
@@ -246,5 +242,30 @@ class ToolWindowStripeAlignmentFxTest {
                     TOLERANCE,
                     "the last toolbar icon should sit directly above the right stripe's icons");
         });
+    }
+
+    /** Depth-first from the right: the last button carrying a glyph anywhere under {@code node}. */
+    private static Node lastGlyphIn(Node node) {
+        if (node instanceof javafx.scene.control.ToolBar bar) {
+            return lastGlyphOf(bar.getItems());
+        }
+        if (node instanceof javafx.scene.Parent parent) {
+            return lastGlyphOf(parent.getChildrenUnmodifiable());
+        }
+        return null;
+    }
+
+    private static Node lastGlyphOf(java.util.List<Node> children) {
+        for (int i = children.size() - 1; i >= 0; i--) {
+            Node child = children.get(i);
+            if (child instanceof Button b && b.getGraphic() != null && b.isVisible()) {
+                return b.getGraphic();
+            }
+            Node nested = lastGlyphIn(child);
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return null;
     }
 }
