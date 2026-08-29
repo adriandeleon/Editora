@@ -964,6 +964,36 @@ final class LspCoordinator {
      * falls back to the TextMate/fold heuristic. Only acts for the active buffer; an empty result also
      * falls back to the heuristic.
      */
+    /** Cap on lenses resolved per file — resolution is a project-wide search each, see LspManager. */
+    private static final int MAX_LENSES = 60;
+
+    /**
+     * Asks the server for this buffer's code lenses and shows them.
+     *
+     * <p>Rides the existing debounced didChange pulse rather than adding one: a lens is worth showing but
+     * never worth a timer of its own. A stale reply is dropped by comparing the document version, because
+     * a lens carries a line number measured against the text that was sent — applying it after an edit
+     * would put "3 references" above the wrong declaration.
+     */
+    void requestCodeLenses(EditorBuffer buffer) {
+        if (buffer == null || buffer.getPath() == null || !buffer.isCodeLensEnabled()) {
+            return;
+        }
+        long version = buffer.docVersion();
+        lspManager.codeLenses(buffer.getPath(), MAX_LENSES, lenses -> {
+            if (buffer.docVersion() != version) {
+                return; // the document moved under the request; its line numbers are no longer ours
+            }
+            java.util.Map<Integer, String> byLine = new java.util.HashMap<>();
+            for (LspManager.Lens lens : lenses) {
+                // A line can carry several lenses (references AND implementations); one row, joined, since
+                // stacking bands would push the code further from itself with every extra provider.
+                byLine.merge(lens.line(), lens.title(), (a, b) -> a + "  ·  " + b);
+            }
+            buffer.setCodeLenses(byLine);
+        });
+    }
+
     void requestStructureSymbols(EditorBuffer buffer) {
         if (buffer == null || buffer != host.activeBuffer()) {
             return;
@@ -1259,6 +1289,7 @@ final class LspCoordinator {
             if (buffer.getPath() != null) {
                 lspManager.pullDiagnostics(buffer.getPath());
                 requestFoldingRanges(buffer); // #738 — rides the same debounce, no extra pulse
+                requestCodeLenses(buffer); // same debounce again; resolution is capped, see LspManager
             }
         });
         // Semantic tokens re-request (fired on the same debounce as didChange + on scroll-settle).

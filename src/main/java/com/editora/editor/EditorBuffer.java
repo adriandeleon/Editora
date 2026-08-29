@@ -580,6 +580,17 @@ public class EditorBuffer implements TabContent {
 
     private final FoldManager folds = new FoldManager(area);
 
+    /**
+     * Code-lens text by 0-based line — an annotation given its own row above that line.
+     *
+     * <p>Read live by the lens factory rather than pushed cell by cell, so updating the lenses is a map
+     * swap plus a refresh, and a recycled paragraph box picks up the right lens for whatever line it is
+     * handed. Same shape as the inlay-hint map next to it.
+     */
+    private java.util.Map<Integer, String> codeLenses = java.util.Map.of();
+
+    private boolean codeLensEnabled;
+
     /** Pinned enclosing-scope headers over the top of the code pane; see {@link StickyScroll}. */
     private final StickyScrollBar stickyScroll = new StickyScrollBar();
 
@@ -1132,6 +1143,72 @@ public class EditorBuffer implements TabContent {
 
     public boolean isStickyScrollEnabled() {
         return stickyScrollEnabled;
+    }
+
+    /**
+     * Shows {@code lenses} (0-based line → text) as rows above their lines, replacing any previous set.
+     *
+     * <p>The factory is installed once and reads the live map, so this is a swap and a refresh rather than
+     * a rebind. An empty map removes every row.
+     */
+    public void setCodeLenses(java.util.Map<Integer, String> lenses) {
+        this.codeLenses = lenses == null ? java.util.Map.of() : java.util.Map.copyOf(lenses);
+        installLensFactory();
+        // The factory object never changes — it reads this live map — so the property would not fire on
+        // its own and a swapped map would never reach the cells. refreshLenses bounces it, exactly as
+        // refreshInlays does for the same reason.
+        area.refreshLenses();
+        if (area2 != null) {
+            area2.refreshLenses();
+        }
+    }
+
+    /** Turns code lenses off for this buffer, clearing whatever is shown. */
+    public void setCodeLensEnabled(boolean enabled) {
+        boolean effective = enabled && !largeFile;
+        if (effective == codeLensEnabled) {
+            return;
+        }
+        codeLensEnabled = effective;
+        if (!effective) {
+            setCodeLenses(java.util.Map.of());
+        }
+    }
+
+    public boolean isCodeLensEnabled() {
+        return codeLensEnabled;
+    }
+
+    /** Package-visible for the FX test: the lens text currently shown for {@code line}, or null. */
+    String codeLensAt(int line) {
+        return codeLenses.get(line);
+    }
+
+    private boolean lensFactoryInstalled;
+
+    private void installLensFactory() {
+        if (lensFactoryInstalled) {
+            return;
+        }
+        lensFactoryInstalled = true;
+        java.util.function.IntFunction<javafx.scene.Node> factory = line -> {
+            String text = codeLenses.get(line);
+            return text == null || text.isBlank() ? null : lensNode(text);
+        };
+        area.setLensFactory(factory);
+        if (area2 != null) {
+            area2.setLensFactory(factory);
+        }
+    }
+
+    /** The row itself: muted, indented to the code it annotates, and not a click target. */
+    private javafx.scene.Node lensNode(String text) {
+        javafx.scene.control.Label label = new javafx.scene.control.Label(text);
+        label.getStyleClass().add("code-lens");
+        javafx.scene.layout.HBox row = new javafx.scene.layout.HBox(label);
+        row.getStyleClass().add("code-lens-row");
+        row.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        return row;
     }
 
     /** Package-visible for the FX test: what is pinned right now, as 0-based lines. */

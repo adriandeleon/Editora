@@ -13646,6 +13646,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setGithubActionsPreviewEnabled(s.isGithubActionsPreview()); // workflow triggers + jobs digest
         buffer.setPomPreviewEnabled(s.isPomPreview()); // Maven pom.xml summary (wins over the XML tree)
         buffer.setStickyScrollEnabled(s.isStickyScroll()); // pinned enclosing-scope headers
+        buffer.setCodeLensEnabled(s.isCodeLens() && lspEnabled()); // reference counts need a server
         if (buffer.isStructured() || buffer.isXml() || buffer.isSvg()) {
             ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/XML/SVG gate flips
         }
@@ -16431,6 +16432,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                         })));
         registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(lspCoordinator::gotoDefinition)));
         registry.register(Command.of("lsp.peekDefinition", () -> ifLsp(lspCoordinator::peekDefinition)));
+        registry.register(Command.of(
+                "view.toggleCodeLens",
+                () -> toggleSetting(
+                        "view.toggleCodeLens",
+                        () -> config.getSettings().isCodeLens(),
+                        config.getSettings()::setCodeLens,
+                        () -> {
+                            applyViewSettingsToAllBuffers(config.getSettings());
+                            settingsWindow.syncAll();
+                        })));
         registry.register(Command.of("lsp.gotoDefinitionInSplit", () -> ifLsp(this::gotoDefinitionInSplit)));
         registry.register(Command.of("lsp.findReferences", () -> ifLsp(lspCoordinator::findReferences)));
         registry.register(Command.of("lsp.gotoImplementation", () -> ifLsp(lspCoordinator::gotoImplementation)));

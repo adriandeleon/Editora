@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 99;
+    public static final int SCHEMA_VERSION = 100;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -359,6 +359,11 @@ public class Settings {
      * something a user opts into rather than something a release does to them.
      */
     private boolean paletteUsesSearchEverywhere = false;
+    /**
+     * Reference-count code lenses above declarations: off by default. Each lens costs the language server
+     * a project-wide search to resolve, so this is the one navigation aid that should be asked for.
+     */
+    private boolean codeLens = false;
     /** Auto-rename the paired HTML/XML tag when a tag name is edited: on by default. */
     private boolean autoRenameTag = true;
 
@@ -715,6 +720,14 @@ public class Settings {
 
     public void setGithubActionsPreview(boolean githubActionsPreview) {
         this.githubActionsPreview = githubActionsPreview;
+    }
+
+    public boolean isCodeLens() {
+        return codeLens;
+    }
+
+    public void setCodeLens(boolean codeLens) {
+        this.codeLens = codeLens;
     }
 
     public boolean isSymbolIndex() {
