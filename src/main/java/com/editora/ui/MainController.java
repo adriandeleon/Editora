@@ -1029,6 +1029,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean toolbarOn = Chrome.toolbar(s.isShowToolbar(), focus);
         toolBar.setVisible(toolbarOn);
         toolBar.setManaged(toolbarOn);
+        // The bar is TWO containers on one row (see appendFixedTail): the ToolBar's icon cluster and the
+        // pinned toolbarTail (project combo, Open Folder, Recent, the snapshot/--dev badges, Settings).
+        // Hiding only the ToolBar left the tail's icons stranded on an otherwise-stripped window in Zen and
+        // Expert, so the row that holds both is what gets hidden. Unmanaged too, or the row's pinned
+        // minHeight (stabilizeToolbarHeight) would keep reserving a bar-height strip of empty space.
+        if (toolbarRow != null) {
+            toolbarRow.setVisible(toolbarOn);
+            toolbarRow.setManaged(toolbarOn);
+        }
         // The status bar is hidden by Zen but KEPT by Expert, so it keys on the real zen flag, not focus.
         boolean statusOn = Chrome.statusBar(s.isShowStatusBar(), zen);
         statusBar.setVisible(statusOn);

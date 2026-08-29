@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import javafx.scene.Node;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.ToolBar;
 
@@ -55,6 +56,13 @@ class ZenModeFxTest {
         FxTestSupport.runOnFx(() -> fx.controller.setZenMode(true));
         assertFalse(FxTestSupport.callOnFx(toolBar::isVisible), "toolbar hidden in Zen");
         assertFalse(FxTestSupport.callOnFx(toolBar::isManaged), "toolbar unmanaged in Zen");
+        // The bar is two containers: the ToolBar's icons AND the pinned tail (project combo, Recent,
+        // badges, Settings). Assert a tail button is effectively invisible — node plus every ancestor —
+        // so the check holds whichever container ends up carrying the flag.
+        Node settingsButton = FxTestSupport.field(fx.controller, "settingsButton");
+        assertFalse(
+                FxTestSupport.callOnFx(() -> effectivelyVisible(settingsButton)),
+                "the fixed toolbar tail (Settings) is hidden in Zen too");
         assertFalse(FxTestSupport.callOnFx(statusBar::isVisible), "status bar hidden in Zen");
         assertTrue(
                 FxTestSupport.callOnFx(() -> tabPane.getStyleClass().contains("no-tab-header")),
@@ -72,5 +80,18 @@ class ZenModeFxTest {
                 FxTestSupport.callOnFx(() -> tabPane.getStyleClass().contains("no-tab-header")),
                 "tab header restored after Zen");
         assertFalse(FxTestSupport.callOnFx(() -> config.getWorkspaceState().isZenMode()), "Zen flag cleared");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> effectivelyVisible(settingsButton)),
+                "the toolbar tail is restored after Zen");
+    }
+
+    /** A node is only on screen when it and every ancestor is visible — hiding any one of them suffices. */
+    private static boolean effectivelyVisible(Node node) {
+        for (Node n = node; n != null; n = n.getParent()) {
+            if (!n.isVisible()) {
+                return false;
+            }
+        }
+        return true;
     }
 }

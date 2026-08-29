@@ -1,7 +1,9 @@
 package com.editora.ui;
 
+import javafx.scene.Node;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.ToolBar;
+import javafx.scene.layout.HBox;
 
 import com.editora.config.ConfigManager;
 import org.junit.jupiter.api.AfterAll;
@@ -65,6 +67,43 @@ class ExpertModeFxTest {
         FxTestSupport.runOnFx(() -> fx.controller.setExpertMode(false));
         assertTrue(FxTestSupport.callOnFx(toolBar::isVisible), "toolbar restored after Expert");
         assertFalse(FxTestSupport.callOnFx(() -> config.getWorkspaceState().isExpertMode()), "Expert flag cleared");
+    }
+
+    /**
+     * The toolbar is two containers on one row — the {@code ToolBar} icon cluster and the pinned
+     * {@code toolbarTail} (project combo, Open Folder, Recent, badges, Settings). Hiding only the ToolBar
+     * left the tail's icons stranded on an otherwise-stripped Expert window, so this asserts the tail's own
+     * buttons are <em>effectively</em> invisible (the node and every ancestor), not merely that some
+     * particular container was flagged — the property the user sees, whichever node ends up carrying it.
+     */
+    @Test
+    void expertHidesTheFixedToolbarTailToo() throws Exception {
+        HBox tail = FxTestSupport.field(fx.controller, "toolbarTail");
+        HBox row = FxTestSupport.field(fx.controller, "toolbarRow");
+        Node settings = FxTestSupport.field(fx.controller, "settingsButton");
+        Node recent = FxTestSupport.field(fx.controller, "recentButton");
+
+        // Guard the guard: an empty tail would make every assertion below vacuously true.
+        assertFalse(FxTestSupport.callOnFx(() -> tail.getChildren().isEmpty()), "the tail holds the fixed icons");
+        assertTrue(FxTestSupport.callOnFx(() -> effectivelyVisible(settings)), "Settings visible by default");
+
+        FxTestSupport.runOnFx(() -> fx.controller.setExpertMode(true));
+        assertFalse(FxTestSupport.callOnFx(() -> effectivelyVisible(settings)), "Settings hidden in Expert");
+        assertFalse(FxTestSupport.callOnFx(() -> effectivelyVisible(recent)), "Recent hidden in Expert");
+        assertFalse(FxTestSupport.callOnFx(row::isManaged), "the toolbar row reserves no layout space in Expert");
+
+        FxTestSupport.runOnFx(() -> fx.controller.setExpertMode(false));
+        assertTrue(FxTestSupport.callOnFx(() -> effectivelyVisible(settings)), "Settings restored after Expert");
+    }
+
+    /** A node is only on screen when it and every ancestor is visible — hiding any one of them suffices. */
+    private static boolean effectivelyVisible(Node node) {
+        for (Node n = node; n != null; n = n.getParent()) {
+            if (!n.isVisible()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Test
