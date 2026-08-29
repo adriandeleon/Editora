@@ -1913,6 +1913,22 @@
     -fx-text-fill: -color-fg-default;
 }
 
+/* File-format group in the status bar: Tab 4 · LF · UTF-8 read as one segment. Mirrors .text-zoom —
+   the group carries the divider and its members drop their own, so no dividers appear between the parts. */
+.status-bar .status-format-group {
+    -fx-alignment: center;
+    -fx-border-color: transparent transparent transparent -color-border-muted;
+    -fx-border-width: 0 0 0 1;
+}
+.status-bar .status-format-group .status-format-part {
+    -fx-border-width: 0;
+    -fx-padding: 3 4 3 4;
+}
+.status-bar .status-format-sep {
+    -fx-text-fill: -color-fg-subtle;
+    -fx-padding: 3 0 3 0;
+}
+
 /* Text-zoom control in the status bar: a tight − % + group. */
 .status-bar .text-zoom {
     -fx-alignment: center;

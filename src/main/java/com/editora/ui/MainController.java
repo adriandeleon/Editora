@@ -253,12 +253,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Button settingsButton;
 
     @FXML
-    private Button aboutButton;
-
-    @FXML
-    private Button quitButton;
-
-    @FXML
     private MenuButton recentButton;
 
     @FXML
@@ -714,8 +708,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         topBox.getChildren().add(findBar);
         this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
         this.breadcrumb = new FileBreadcrumb(this::openPath);
-        // Breadcrumb sits just above the status bar at the bottom (IntelliJ-style).
-        bottomBox.getChildren().setAll(breadcrumb, statusBar);
+        // The breadcrumb is NOT part of the bottom bar stack — see setupToolWindows, which hangs it under
+        // the editor area itself.
+        bottomBox.getChildren().setAll(statusBar);
         setupToolWindows();
         this.settingsWindow = new SettingsWindow(
                 config,
@@ -2359,6 +2354,26 @@ public class MainController implements com.editora.mcp.McpBridge {
         return ordered;
     }
 
+    /**
+     * The editor area with the breadcrumb hung beneath it, as one node for the tool-window layout.
+     *
+     * <p>The breadcrumb names the <em>active file</em>, so it belongs to the editor rather than to the
+     * window frame. Stacked in the bottom bar it sat between the bottom tool stripe and the status bar —
+     * spanning the whole window, sandwiched between two full-width bars, and reading as a second status
+     * bar describing the window rather than a path bar describing the file. Inside the horizontal split it
+     * is only as wide as the editor, sits directly under the text it describes, and no longer crosses under
+     * the left/right tool windows.
+     *
+     * <p>Wrapping is safe for the stripe alignment {@link ToolWindowManager} does on this node: it looks the
+     * tab header up by style class through the whole subtree, and the breadcrumb is added at the bottom, so
+     * the top edge it measures from is unchanged.
+     */
+    private javafx.scene.Node editorFooter() {
+        BorderPane withBreadcrumb = new BorderPane(editorArea.node());
+        withBreadcrumb.setBottom(breadcrumb);
+        return withBreadcrumb;
+    }
+
     private void setupToolWindows() {
         editorArea.setDraggedTabSource(() -> draggedTab); // drops onto a group body move/split it
         // The menu bar sits above the toolbar. Built from the registry, so it needs no per-command wiring.
@@ -2368,7 +2383,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         topBox.getChildren().add(0, menuBar.node());
-        toolWindows = new ToolWindowManager(workspace, editorArea.node(), config, keymap);
+        toolWindows = new ToolWindowManager(workspace, editorFooter(), config, keymap);
         projectPanel = new ProjectPanel(
                 this::openPath, this::onProjectFileRenamed, this::onProjectFileDeleted, this::isPathModified);
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
@@ -6380,8 +6395,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupButton(closeTabButton, Icons.closeTab(), tr("tooltip.closeTab"), "buffer.close");
         setupButton(simpleModeButton, Icons.simpleMode(), tr("tooltip.simpleMode"), "view.toggleSimpleMode");
         setupButton(settingsButton, Icons.settings(), tr("tooltip.settings"), "view.settings");
-        setupButton(aboutButton, Icons.about(), tr("tooltip.about"), "help.about");
-        setupButton(quitButton, Icons.quit(), tr("tooltip.quit"), "app.quit");
 
         // Reflect open/closed state of the palette and find bar in their toolbar buttons.
         palette.showingProperty().addListener((obs, was, now) -> paletteButton.pseudoClassStateChanged(OPEN, now));
@@ -6469,8 +6482,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             items.addAll(toolbarGap(), devBadge);
         }
 
-        // Settings pairs with About: both are "about the app", not about the document.
-        items.addAll(toolbarGap(), settingsButton, aboutButton, toolbarGap(), quitButton);
+        // Settings is the only app-level control left on the bar. About and Quit were removed: both live in
+        // the Help/File menus and the palette, neither is an action anyone takes mid-edit, and Quit in
+        // particular sat in the top-right corner directly under the window's own close button — a
+        // one-icon-high miss between "minimise this window" and "exit the application".
+        items.addAll(toolbarGap(), settingsButton);
     }
 
     /** Id → the existing {@code @FXML} toolbar widget backing each default/special customizable item. */
@@ -9240,7 +9256,6 @@ public class MainController implements com.editora.mcp.McpBridge {
      * unsaved buffers and their whole session. {@link WindowManager#confirmCloseAllWindows} does that (and
      * disposes each window's services); the null case is the unit-test/standalone controller.
      */
-    @FXML
     private void onQuit() {
         if (!confirmQuit()) {
             return;
@@ -10053,7 +10068,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         toggleSimpleMode();
     }
 
-    @FXML
     private void onAbout() {
         SettingsWindow.showAbout(
                 stage,

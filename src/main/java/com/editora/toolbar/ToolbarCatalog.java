@@ -16,10 +16,10 @@ import java.util.Map;
  *
  * <p>The customizable region is the toolbar's <em>left icon cluster</em>. The fixed tail is not part of this
  * catalog and stays pinned — the project-combo group, the Open-Folder icon and Recent beside it, the dev
- * badge, then Settings, About and Quit. Recent and Settings live there rather than here because their
- * position is relative to tail items (Recent belongs beside the project controls; Settings reads as a pair
- * with About), which a customizable-cluster entry cannot express — see {@code
- * MainController.appendFixedTail}.
+ * badge, then Settings. Recent and Settings live there rather than here because their position is relative
+ * to tail items (Recent belongs beside the project controls; Settings is pinned to the right end, where its
+ * glyph lines up with the right tool stripe), which a customizable-cluster entry cannot express — see
+ * {@code MainController.appendFixedTail}.
  */
 public final class ToolbarCatalog {
 
@@ -118,14 +118,14 @@ public final class ToolbarCatalog {
         l.add("file.save");
         l.add("file.saveAs");
         l.add(SEPARATOR);
-        // History, then clipboard — two distinct ideas that used to share one group of five.
         l.add("edit.undo");
         l.add("edit.redo");
         l.add(SEPARATOR);
-        l.add("edit.cut");
-        l.add("edit.copy");
-        l.add("edit.paste");
-        l.add(SEPARATOR);
+        // Cut/copy/paste are deliberately NOT here. In a keyboard-driven editor they are the three actions
+        // nobody reaches for with the mouse — they already sit on the standard chord, in the Edit menu and
+        // in the editor's own context menu — so on the default bar they were three icons of pure noise
+        // between two groups that are actually used. They remain catalog items, one drag away in
+        // Settings → Toolbar for anyone who wants them back.
         l.add("find.show");
         l.add("search.inFiles");
         l.add(SEPARATOR);

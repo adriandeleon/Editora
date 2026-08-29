@@ -218,20 +218,33 @@ class ToolWindowStripeAlignmentFxTest {
         });
     }
 
+    /**
+     * The right-pinned end of the toolbar and the right tool stripe form one icon column, so the last
+     * toolbar glyph must sit directly above the stripe's.
+     *
+     * <p>Found by walking the toolbar rather than by naming a button: which control ends the fixed tail is
+     * a layout decision that changes (it was Quit until About and Quit moved to the menus), and the
+     * invariant is about the column, not about any particular icon.
+     */
     @Test
-    void quitGlyphSharesAVerticalCentreLineWithTheStripeIcons() throws Exception {
+    void theLastToolbarGlyphSharesAVerticalCentreLineWithTheStripeIcons() throws Exception {
         FxTestSupport.runOnFx(() -> {
-            Button quit = FxTestSupport.field(fx.controller, "quitButton");
-            Node quitGlyph = quit.getGraphic();
+            javafx.scene.control.ToolBar toolBar = FxTestSupport.field(fx.controller, "toolBar");
+            Node lastGlyph = null;
+            for (int i = toolBar.getItems().size() - 1; i >= 0 && lastGlyph == null; i--) {
+                if (toolBar.getItems().get(i) instanceof Button b && b.getGraphic() != null) {
+                    lastGlyph = b.getGraphic();
+                }
+            }
             Node stripeGlyph = firstRightStripeButton().getGraphic();
-            assertNotNull(quitGlyph, "the Quit button should carry a glyph");
+            assertNotNull(lastGlyph, "the toolbar should end in a glyph button");
             assertNotNull(stripeGlyph, "a stripe button should carry a glyph");
 
             assertEquals(
                     inScene(stripeGlyph).getCenterX(),
-                    inScene(quitGlyph).getCenterX(),
+                    inScene(lastGlyph).getCenterX(),
                     TOLERANCE,
-                    "Quit should sit directly above the right stripe's icons");
+                    "the last toolbar icon should sit directly above the right stripe's icons");
         });
     }
 }

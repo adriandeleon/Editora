@@ -53,10 +53,6 @@
                         <Button fx:id="simpleModeButton" onAction="#onToggleSimpleMode"/>
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="settingsButton" onAction="#onSettings"/>
-                        <Separator orientation="VERTICAL"/>
-                        <Button fx:id="aboutButton" onAction="#onAbout"/>
-                        <Separator orientation="VERTICAL"/>
-                        <Button fx:id="quitButton" onAction="#onQuit"/>
                     </items>
                 </ToolBar>
             </children>
