@@ -101,6 +101,67 @@ class TypingLatencyBenchmarkTest {
         }
     }
 
+    /**
+     * The same guard for the <em>caret-anchored popups</em>, which measured the caret the leaking way.
+     *
+     * <p>{@code showCodeActions} and both completion-popup paths anchored themselves with the zero-width
+     * {@code getCharacterBoundsOnScreen(caret, caret)} form, so each open leaked one blink {@code Timeline}.
+     * Rarer than the ruler's every-keystroke leak, but permanent and cumulative in exactly the same way, and
+     * the completion popup opens on the debounced trigger for as long as the session lasts. They now ask the
+     * area for the real caret's screen bounds, which allocates nothing.
+     *
+     * <p>Driven through {@code showCodeActions} because it is synchronous and needs no server, dictionary or
+     * debounce to open — the completion paths were fixed with it and share the same one-line measurement.
+     */
+    @Test
+    void openingACaretAnchoredPopupDoesNotLeakPulseReceivers() throws Exception {
+        final int OPENS = 60;
+        Path file = Files.createTempFile("editora-popupleak-", ".java");
+        Files.writeString(file, sample(200));
+        try {
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, file));
+            EditorBuffer b = FxTestSupport.callOnFx(
+                    () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
+            assertNotNull(b, "the file opened into a buffer");
+            FxTestSupport.runOnFx(() -> {
+                b.getFocusedArea().requestFocus();
+                b.getFocusedArea().moveTo(10);
+            });
+            for (int i = 0; i < 8; i++) {
+                FxTestSupport.runOnFx(() -> {});
+                Thread.sleep(20);
+            }
+            List<com.editora.editor.CodeAction> actions =
+                    List.of(new com.editora.editor.CodeAction("Fix it", "quickfix", true, null));
+
+            // Open once before the baseline: the first open builds the popup and its cells, whose own
+            // one-off nodes would otherwise be counted as a leak.
+            FxTestSupport.runOnFx(() -> {
+                b.showCodeActions(actions, a -> {});
+                b.hideCodeActions();
+            });
+            FxTestSupport.runOnFx(() -> {});
+
+            int before = pulseReceiverCount();
+            assertTrue(before >= 0, "pulse-receiver introspection works on this JDK");
+            for (int i = 0; i < OPENS; i++) {
+                FxTestSupport.runOnFx(() -> {
+                    b.showCodeActions(actions, a -> {});
+                    b.hideCodeActions();
+                });
+            }
+            double perOpen = (pulseReceiverCount() - before) / (double) OPENS;
+            assertTrue(
+                    perOpen < 0.1,
+                    "opening a caret-anchored popup must not leak JavaFX pulse receivers, but leaked " + perOpen
+                            + " per open — most likely a zero-width getCharacterBoundsOnScreen(caret, caret)"
+                            + " call was reintroduced; measure a one-character range instead"
+                            + " (see EditorBuffer.caretAnchorBounds)");
+        } finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
     @Test
     @Disabled(
             "measurement harness, not a check; run explicitly with -Dtest=TypingLatencyBenchmarkTest#bareCodeAreaControl")

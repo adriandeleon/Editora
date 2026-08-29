@@ -8835,13 +8835,58 @@ public class EditorBuffer implements TabContent {
      * <p>Focus stays in the editor — the popup is focus-less and this buffer's key filter drives it — which
      * is why the caret keeps blinking where the fix will land while the list is open.
      */
+    /**
+     * Screen bounds to anchor a caret-following popup to, or {@code null} if the area isn't on screen.
+     *
+     * <p><b>Never the zero-width {@code getCharacterBoundsOnScreen(caret, caret)} form</b>, which is what
+     * all three callers used to do: for an empty range {@code GenericStyledArea} allocates a throwaway
+     * {@link org.fxmisc.richtext.CaretNode} to measure with, and a {@code CaretNode} starts a 500 ms blink
+     * timer that nothing ever stops — so each call permanently registers a running {@code Timeline} as a
+     * JavaFX pulse receiver. Measured at <b>exactly one leaked timer per popup open</b>, which for the
+     * completion list means one per debounced trigger, all session. Same fault, same fix as
+     * {@link #caretBounds} — measure a <em>one-character</em> range, which takes a different path and
+     * allocates nothing.
+     *
+     * <p><b>The fallbacks are not defensive padding; each covers a case the leaking form silently handled.</b>
+     * That form measured through a caret it had just created, so it answered even when nothing was rendered.
+     * A character can only be measured once its paragraph has been laid out, so it comes back empty whenever
+     * the flow has no cell for that line — the caret scrolled out of view, or the area not yet laid out at
+     * all. Returning {@code null} there means the popup <em>silently does not open</em>, which is how this
+     * first shipped and what {@code CodeActionPopupFxTest} caught in the full suite (it passes alone, where
+     * the area happens to be laid out). So: the character, then the rendered caret, then the area's own
+     * top-left — anchoring a popup at the corner of the editor is far better than declining to show it.
+     *
+     * <p>{@code CodeArea.getCaretBounds()} is second rather than first because it reports the
+     * <em>rendered</em> caret and is empty whenever the area isn't focused.
+     */
+    private static Bounds caretAnchorBounds(CodeArea a) {
+        int caret = a.getCaretPosition();
+        var pos = a.offsetToPosition(caret, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+        int len = a.getParagraphLength(pos.getMajor());
+        Bounds measured = null;
+        if (pos.getMinor() < len) {
+            measured = a.getCharacterBoundsOnScreen(caret, caret + 1).orElse(null);
+        } else if (caret > 0 && len > 0) {
+            // End of a non-empty line: no glyph at the caret, so take the last character's right edge —
+            // the same x the caret sits at.
+            Bounds last = a.getCharacterBoundsOnScreen(caret - 1, caret).orElse(null);
+            if (last != null) {
+                measured = new javafx.geometry.BoundingBox(last.getMaxX(), last.getMinY(), 0, last.getHeight());
+            }
+        }
+        if (measured != null) {
+            return measured;
+        }
+        Bounds rendered = a.getCaretBounds().orElse(null);
+        return rendered != null ? rendered : a.localToScreen(a.getBoundsInLocal());
+    }
+
     public void showCodeActions(List<CodeAction> actions, java.util.function.Consumer<CodeAction> onAccept) {
         CodeArea a = getFocusedArea();
         if (a == null || actions == null || actions.isEmpty()) {
             return;
         }
-        Bounds caretScreen = a.getCharacterBoundsOnScreen(a.getCaretPosition(), a.getCaretPosition())
-                .orElse(null);
+        Bounds caretScreen = caretAnchorBounds(a);
         if (caretScreen == null) {
             return;
         }
@@ -9230,7 +9275,7 @@ public class EditorBuffer implements TabContent {
             hidePopup();
             return;
         }
-        Bounds caretScreen = a.getCharacterBoundsOnScreen(caret, caret).orElse(null);
+        Bounds caretScreen = caretAnchorBounds(a);
         if (caretScreen == null) {
             return;
         }
@@ -9440,7 +9485,7 @@ public class EditorBuffer implements TabContent {
                 hidePopup();
                 return;
             }
-            Bounds cs = a.getCharacterBoundsOnScreen(caret, caret).orElse(null);
+            Bounds cs = caretAnchorBounds(a);
             if (cs == null) {
                 return;
             }
