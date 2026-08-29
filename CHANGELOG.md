@@ -52,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **JSVG 1.7.2 → 2.1.0**, which had been pinned since 2.0.0 could not be linked into the native build. That
+  is fixed upstream, and the two classes 2.x relocated are a straight import change on our side — no new
+  dependency and no behaviour change. SVG badges in the Markdown preview, and the SVG file preview, render
+  as before; the loader still refuses to fetch anything the SVG points at, which is what stops a document
+  reaching the network on your behalf.
+
 - **Dependency currency sweep.** Jackson 2.22.1 → 2.22.2, Lucene 10.5.0 → 10.5.1, PDFBox 3.0.5 → 3.0.8,
   Apache POI 5.4.1 → 5.5.1, commonmark 0.28.0 → 0.30.0, plus the two build plugins that produce the native
   installers (moditect 1.2.2 → 1.3.0, jpackage-maven-plugin 1.6.6 → 1.8.0). Nothing user-visible, but two
