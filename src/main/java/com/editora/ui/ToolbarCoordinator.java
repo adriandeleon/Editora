@@ -87,11 +87,26 @@ final class ToolbarCoordinator {
     private Scene escScene;
     private javafx.event.EventHandler<KeyEvent> escFilter;
 
+    /**
+     * The one right-click menu, reused across right-clicks. Building a fresh {@link ContextMenu} per click
+     * left the previous one standing whenever the platform's own auto-hide did not fire, so two identical
+     * menus sat on screen at once; a single instance cannot stack, since showing it again just moves it.
+     */
+    private final ContextMenu contextMenu = new ContextMenu();
+
+    private Scene dismissScene;
+    private javafx.event.EventHandler<MouseEvent> dismissFilter;
+
     ToolbarCoordinator(CoordinatorHost host, CommandRegistry registry, KeymapManager keymap, Ops ops) {
         this.host = host;
         this.registry = registry;
         this.keymap = keymap;
         this.ops = ops;
+        // A popup inherits the font of the node it is shown from, and the toolbar runs at 18px so its own
+        // labels read beside the glyphs — without this the menu rendered a third larger than every other
+        // menu in the app. See `.toolbar-context-menu` in app.css.
+        contextMenu.getStyleClass().add("toolbar-context-menu");
+        contextMenu.setOnHidden(e -> removeDismissFilter());
     }
 
     // ---- Rebuild -------------------------------------------------------------------------------------
@@ -229,11 +244,7 @@ final class ToolbarCoordinator {
     }
 
     private void showContextMenu(double screenX, double screenY) {
-        ContextMenu m = new ContextMenu();
-        // A popup inherits the font of the node it is shown from, and the toolbar runs at 18px so its own
-        // labels read beside the glyphs — without this the menu rendered a third larger than every other
-        // menu in the app. See `.toolbar-context-menu` in app.css.
-        m.getStyleClass().add("toolbar-context-menu");
+        // Rebuilt per show: the first item names what the click will do, which depends on customize mode.
         MenuItem toggle = new MenuItem(customizing ? tr("toolbar.menu.done") : tr("toolbar.menu.customize"));
         toggle.setGraphic(Icons.tools());
         toggle.setOnAction(e -> toggleCustomizeMode());
@@ -243,8 +254,48 @@ final class ToolbarCoordinator {
         MenuItem restore = new MenuItem(tr("toolbar.menu.restoreDefault"));
         restore.setGraphic(Icons.refresh());
         restore.setOnAction(e -> restoreDefault());
-        m.getItems().setAll(toggle, new SeparatorMenuItem(), configure, restore);
-        m.show(ops.toolBar(), screenX, screenY);
+        contextMenu.getItems().setAll(toggle, new SeparatorMenuItem(), configure, restore);
+        contextMenu.show(ops.toolBar(), screenX, screenY);
+        installDismissFilter();
+    }
+
+    /**
+     * Closes the menu on the next mouse press anywhere in the window.
+     *
+     * <p>A {@link ContextMenu} is auto-hiding, but that hide is driven by the platform's popup grab and it
+     * demonstrably did not fire here: two of these menus were seen standing open side by side, which can
+     * only happen if the press that opened the second one never dismissed the first. Rather than depend on
+     * working out why the grab was missed, the menu carries its own dismissal, so a click outside closes it
+     * on every platform. Where auto-hide does work this filter never runs — the popup consumes that press.
+     *
+     * <p>Installed a pulse late, deliberately: this runs inside the dispatch of the click that opened the
+     * menu, and the platforms differ on whether the context-menu event precedes or follows that gesture's
+     * own press. Deferring puts the filter in place after the opening gesture is over, so the click that
+     * asked for the menu can never be the click that closes it.
+     */
+    private void installDismissFilter() {
+        Scene sc = ops.toolBar().getScene();
+        if (sc == null) {
+            return;
+        }
+        removeDismissFilter();
+        javafx.event.EventHandler<MouseEvent> filter = ev -> contextMenu.hide();
+        Platform.runLater(() -> {
+            if (!contextMenu.isShowing()) {
+                return; // dismissed again within the pulse — nothing to arm
+            }
+            dismissScene = sc;
+            dismissFilter = filter;
+            sc.addEventFilter(MouseEvent.MOUSE_PRESSED, filter);
+        });
+    }
+
+    private void removeDismissFilter() {
+        if (dismissScene != null && dismissFilter != null) {
+            dismissScene.removeEventFilter(MouseEvent.MOUSE_PRESSED, dismissFilter);
+        }
+        dismissScene = null;
+        dismissFilter = null;
     }
 
     // ---- Drag-and-drop (mirrors MainController.enableTabDrag) -----------------------------------------
