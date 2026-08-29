@@ -33,31 +33,31 @@
              Source: https://github.com/adriandeleon/RichTextFX (feat/multi-caret-box-selection). -->
         <richtextfx.version>0.11.7-inlay.1</richtextfx.version>
         <atlantafx.version>2.1.0</atlantafx.version>
-        <jackson.version>2.22.1</jackson.version>
+        <jackson.version>2.22.2</jackson.version>
         <junit.version>5.14.4</junit.version>
         <tm4e.version>RELEASE260</tm4e.version>
         <joni.version>2.2.7</joni.version>
         <jcodings.version>1.0.64</jcodings.version>
         <gson.version>2.14.0</gson.version>
         <lsp4j.version>0.23.1</lsp4j.version>
-        <commonmark.version>0.28.0</commonmark.version>
+        <commonmark.version>0.30.0</commonmark.version>
         <autolink.version>0.12.0</autolink.version>
         <!-- 1.7.2, not 2.0.0: 2.0.0's module-info exports an empty package (com.github.weisj.jsvg.provider)
              which jlink rejects in the native `dist` build ("exported package not present"). -->
         <jsvg.version>1.7.2</jsvg.version>
         <jlatexmath.version>1.0.7</jlatexmath.version>
-        <pdfbox.version>3.0.5</pdfbox.version>
-        <poi.version>5.4.1</poi.version>
-        <lucene.version>10.5.0</lucene.version>
+        <pdfbox.version>3.0.8</pdfbox.version>
+        <poi.version>5.5.1</poi.version>
+        <lucene.version>10.5.1</lucene.version>
         <javadiffutils.version>4.17</javadiffutils.version>
         <sshd.version>2.15.0</sshd.version>
         <slf4j.version>2.0.17</slf4j.version>
-        <moditect.version>1.2.2.Final</moditect.version>
+        <moditect.version>1.3.0.Final</moditect.version>
         <spotless.version>3.6.0</spotless.version>
         <palantir.version>2.92.0</palantir.version>
         <jacoco.version>0.8.13</jacoco.version>
         <testfx.version>4.0.18</testfx.version>
-        <jpackage.plugin.version>1.6.6</jpackage.plugin.version>
+        <jpackage.plugin.version>1.8.0</jpackage.plugin.version>
         <maven-javadoc-plugin.version>3.11.2</maven-javadoc-plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
         <!-- App icon for the native installer; overridden per OS (.icns/.ico/.png). -->
@@ -910,11 +910,18 @@
                                         }
                                     </moduleInfoSource>
                                 </module>
-                                <!-- Apache POI (.docx export). POI 5.4.x + xmlbeans + commons-compress/io/codec
-                                     already ship real module descriptors and link directly; only these four
+                                <!-- Apache POI (.docx export). POI + xmlbeans + commons-compress/io/codec/lang3
+                                     already ship real module descriptors and link directly; only these THREE
                                      leaf deps are automatic modules needing a jdeps-generated descriptor. POI's
                                      optional batik/bouncycastle/santuario/xmlgraphics deps are `requires static`,
-                                     so jlink doesn't pull them. Names match POI's own module-info `requires`. -->
+                                     so jlink doesn't pull them. Names match POI's own module-info `requires`.
+
+                                     commons-collections4 was a fourth entry until POI 5.5.1, which brings 4.5.0 —
+                                     that release added a multi-release module-info (4.4 had none), so moditect
+                                     must NOT patch it any more. Watch for this whenever a POI bump moves one of
+                                     these: the descriptor lives at META-INF/versions/9/module-info.class, so a
+                                     jar listing that looks descriptor-less at the root is not, and the failure
+                                     only ever shows up in `-Pdist`, never in `mvn test`. -->
                                 <module>
                                     <artifact>
                                         <groupId>com.zaxxer</groupId>
@@ -933,16 +940,6 @@
                                     </artifact>
                                     <moduleInfo>
                                         <name>commons.math3</name>
-                                    </moduleInfo>
-                                </module>
-                                <module>
-                                    <artifact>
-                                        <groupId>org.apache.commons</groupId>
-                                        <artifactId>commons-collections4</artifactId>
-                                        <version>4.4</version>
-                                    </artifact>
-                                    <moduleInfo>
-                                        <name>org.apache.commons.collections4</name>
                                     </moduleInfo>
                                 </module>
                                 <module>

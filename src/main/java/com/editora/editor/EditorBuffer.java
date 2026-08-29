@@ -5728,16 +5728,24 @@ public class EditorBuffer implements TabContent {
         Path baseDir = path == null ? null : path.getParent();
         long gen = ++previewGen;
         PREVIEW_POOL.submit(() -> {
-            org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(md);
-            Platform.runLater(() -> {
-                if (gen != previewGen) {
-                    return; // a newer render superseded this one
-                }
-                double v = previewPane().getVvalue();
-                previewPane().setContent(MarkdownRenderer.renderDocument(ast, baseDir, openUrlHandler));
-                applyPreviewScale(); // keep the current zoom on the freshly rendered content
-                Platform.runLater(() -> previewPane().setVvalue(v)); // best-effort scroll preserve
-            });
+            // Guarded like every other preview branch. commonmark 0.30.0 added input limits that *throw*
+            // rather than degrade — a table over a million cells is the reachable one (the nesting limits
+            // fall back to plain text instead). Unguarded, submit() parks that in a Future nobody reads, so
+            // the preview would sit blank with nothing logged and no way to tell it apart from a slow render.
+            try {
+                org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(md);
+                Platform.runLater(() -> {
+                    if (gen != previewGen) {
+                        return; // a newer render superseded this one
+                    }
+                    double v = previewPane().getVvalue();
+                    previewPane().setContent(MarkdownRenderer.renderDocument(ast, baseDir, openUrlHandler));
+                    applyPreviewScale(); // keep the current zoom on the freshly rendered content
+                    Platform.runLater(() -> previewPane().setVvalue(v)); // best-effort scroll preserve
+                });
+            } catch (Throwable t) {
+                surfaceMarkdownPreviewError(gen, t);
+            }
         });
     }
 
@@ -5879,6 +5887,22 @@ public class EditorBuffer implements TabContent {
      * Error-swallowing trap the project conventions warn about — as a logged warning + a visible error label
      * in the shared holder, so a failed render is diagnosable rather than a blank pane.
      */
+    /** The {@link #surfaceTreePreviewError} counterpart for the Markdown preview, which has its own pane. */
+    private void surfaceMarkdownPreviewError(long gen, Throwable t) {
+        java.util.logging.Logger.getLogger(EditorBuffer.class.getName())
+                .log(java.util.logging.Level.WARNING, "markdown preview render failed", t);
+        String msg = t.getMessage() != null ? t.getMessage() : t.toString();
+        Platform.runLater(() -> {
+            if (gen != previewGen) {
+                return;
+            }
+            Label err = new Label(msg);
+            err.getStyleClass().add("structured-error");
+            err.setWrapText(true);
+            previewPane().setContent(err);
+        });
+    }
+
     private void surfaceTreePreviewError(long gen, Throwable t) {
         java.util.logging.Logger.getLogger(EditorBuffer.class.getName())
                 .log(java.util.logging.Level.WARNING, "tree preview render failed", t);
