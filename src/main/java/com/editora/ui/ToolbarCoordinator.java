@@ -230,6 +230,10 @@ final class ToolbarCoordinator {
 
     private void showContextMenu(double screenX, double screenY) {
         ContextMenu m = new ContextMenu();
+        // A popup inherits the font of the node it is shown from, and the toolbar runs at 18px so its own
+        // labels read beside the glyphs — without this the menu rendered a third larger than every other
+        // menu in the app. See `.toolbar-context-menu` in app.css.
+        m.getStyleClass().add("toolbar-context-menu");
         MenuItem toggle = new MenuItem(customizing ? tr("toolbar.menu.done") : tr("toolbar.menu.customize"));
         toggle.setGraphic(Icons.tools());
         toggle.setOnAction(e -> toggleCustomizeMode());
