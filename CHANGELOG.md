@@ -45,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The toolbar's right-click menu rendered a third larger than every other menu.** A menu popup inherits
+  the font of the node it is shown from, and the toolbar deliberately runs at a larger size so the labels
+  beside its glyphs are readable. That size followed the popup out: the Customize Toolbar menu came up at
+  18px against 14px for every other menu in the app. It is pinned back to the standard size.
+
+- **A second right-click on the toolbar opened a second menu beside the first.** Each right-click built a
+  new menu, so when the platform did not dismiss the old one it simply stayed on screen — two identical
+  Customize Toolbar menus, side by side. There is now one menu, which moves rather than multiplies, and it
+  closes on a click anywhere else in the window without relying on the platform to do it.
+
 - **Typing in Search Everywhere rebuilt the whole keymap once per matching command.** Each result carries
   the chord bound to it, and the lookup that produces it inverts the entire binding table into a fresh
   map. That call sat inside the match loop, so a one-character query against roughly six hundred commands
