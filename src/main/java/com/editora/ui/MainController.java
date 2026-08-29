@@ -316,7 +316,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private QuickOpen<Project> projectPicker;
     private ProjectCombo toolbarProjectCombo;
-    private Label projectToolbarLabel;
     private Region projectToolbarGap;
     /** Tracks the last-applied project-support state to detect off→on transitions (reveal the panel). */
     private boolean projectSupportApplied;
@@ -1880,8 +1879,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         openFolderButton.setManaged(showProjectGroup);
         toolbarProjectCombo.setVisible(showProjectGroup);
         toolbarProjectCombo.setManaged(showProjectGroup);
-        projectToolbarLabel.setVisible(showProjectGroup);
-        projectToolbarLabel.setManaged(showProjectGroup);
         projectToolbarGap.setVisible(showProjectGroup);
         projectToolbarGap.setManaged(showProjectGroup);
         // Project tool window: force-hide when off; reveal once on the off→on transition; otherwise
@@ -6399,17 +6396,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Reflect open/closed state of the palette and find bar in their toolbar buttons.
         palette.showingProperty().addListener((obs, was, now) -> paletteButton.pseudoClassStateChanged(OPEN, now));
         findBar.visibleProperty().addListener((obs, was, now) -> findButton.pseudoClassStateChanged(OPEN, now));
-        // Project switcher (placed right of the Settings icon by arrangeToolbarTail); shown when enabled.
+        // Project switcher (placed after the customizable icon cluster by appendFixedTail); shown when enabled.
         toolbarProjectCombo = new ProjectCombo(this::switchToProject);
         toolbarProjectCombo.setPrefWidth(184); // 15% longer than the previous 160
-        projectToolbarLabel = new Label(tr("toolbar.projectLabel"));
-        projectToolbarLabel.getStyleClass().add("toolbar-hint");
-        projectToolbarLabel.setTooltip(
-                new Tooltip("Projects are single-folder workspaces, each remembering its own open files and layout. "
-                        + "Pick one to switch; \"No Project\" returns to the global session."));
+        // No "Project:" label: it is the only labelled control on a bar of unlabelled icons, and the combo
+        // already reads "No Project" or the project's name. Its explanation moves onto the combo itself —
+        // where it was also the one hardcoded English string on the toolbar.
+        toolbarProjectCombo.setTooltip(new Tooltip(tr("toolbar.project.tip")));
         toolbarProjectCombo.setOnDeleteProject(this::deleteProject); // per-item delete in the dropdown
         projectToolbarGap = new Region();
-        projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between Settings and the combo
+        projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between the icon cluster and the combo
         projectToolbarGap.setPrefWidth(78);
         // The customizable left icon cluster is built data-driven from the persisted layout; the fixed tail
         // (project combo + About/Quit) is re-appended after each rebuild by appendFixedTail().
@@ -6453,11 +6449,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void appendFixedTail() {
         var items = toolBar.getItems();
 
-        // Project switcher just right of the Settings icon (a ~3-icon gap), with the open-folder icon
-        // immediately to the right of the combobox, before the flexible spacer.
+        // Project switcher just right of the customizable icon cluster (a ~3-icon gap), with the
+        // open-folder icon immediately to the right of the combobox, before the flexible spacer.
         // Recent sits with the project controls rather than with New/Open: it is a "where have I been"
         // dropdown, and beside the file actions it read as one of them.
-        items.addAll(projectToolbarGap, projectToolbarLabel, toolbarProjectCombo, openFolderButton, recentButton);
+        items.addAll(projectToolbarGap, toolbarProjectCombo, openFolderButton, recentButton);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);

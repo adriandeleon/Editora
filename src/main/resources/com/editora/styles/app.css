@@ -817,7 +817,7 @@
     -fx-background-radius: 8;
     -fx-padding: 2;
     -fx-spacing: 2;
-    -fx-opacity: 0.92;
+    -fx-opacity: 0.8;
 }
 .md-viewmode-segment {
     -fx-padding: 3 9 3 9;
@@ -826,6 +826,9 @@
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-muted;
 }
+/* Sits over the first line or two of the file, so it recedes until reached for — matching the HTML
+   globe, which already restored to full opacity on hover while this one did not. */
+.md-viewmode-toggle:hover { -fx-opacity: 1; }
 .md-viewmode-segment:hover { -fx-text-fill: -color-fg-default; }
 .md-viewmode-segment:selected { -fx-background-color: -state-sel; -fx-text-fill: -color-accent-fg; }
 
