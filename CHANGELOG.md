@@ -50,6 +50,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   eight commands, which made the scoped mode strictly worse than the picker it stands in for. The cap
   exists so a large source cannot drown a small one; with one source in play there is nothing to drown.
 
+### Changed
+
+- **Dependency currency sweep.** Jackson 2.22.1 → 2.22.2, Lucene 10.5.0 → 10.5.1, PDFBox 3.0.5 → 3.0.8,
+  Apache POI 5.4.1 → 5.5.1, commonmark 0.28.0 → 0.30.0, plus the two build plugins that produce the native
+  installers (moditect 1.2.2 → 1.3.0, jpackage-maven-plugin 1.6.6 → 1.8.0). Nothing user-visible, but two
+  consequences are worth recording.
+
+  **commonmark 0.30.0 adds limits on pathological input** — a cap on table cells, on block nesting and on
+  inline nesting — which is the right default for an editor that renders whatever file you open. The nesting
+  limits degrade to plain text, but the table cap *throws*, and at a million cells that is reachable by a
+  legitimate file: a 2.3 MB Markdown table trips it, well under the 5 MB point where the preview switches
+  off anyway. The Markdown preview now reports that instead of going blank, which is what it would have done
+  — the parse runs on a background pool whose exceptions nothing was reading.
+
+  **POI 5.5.1 brings commons-collections4 4.5.0**, which unlike 4.4 ships its own module descriptor, so the
+  hand-written one for the native build was removed. Left in place it would have failed the packaged build
+  only — the test suite stays green either way.
+
 ### Fixed
 
 - **Search Everywhere did a corpus-sized sort on every keystroke.** Both of its big sources — project files
