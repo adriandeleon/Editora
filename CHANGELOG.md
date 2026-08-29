@@ -52,6 +52,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Zen and Expert mode left half the toolbar on screen.** The bar is two containers on one row — the icon
+  cluster, which overflows into its own chevron, and a pinned tail holding the run controls, the project
+  switcher, Open Folder, Recent, the build badges and Settings. Only the first was ever hidden, so a focus
+  mode whose whole point is that the chrome goes away stripped the icons and left the tail sitting there,
+  over a bar-height strip of reserved empty space. The row that holds both is now what gets hidden, and the
+  tests assert a tail button is invisible *through its ancestors* rather than naming a container, so the
+  check survives the next change to how that row is built.
+
+- **Opening the quick-fix or completion list leaked a timer, permanently.** Both anchored themselves to the
+  caret by asking for the bounds of an empty range, and for an empty range RichTextFX allocates a throwaway
+  caret to measure with — one whose 500 ms blink timer nothing ever stops. Every open registered another
+  running timer with JavaFX's frame loop, for the life of the process: measured at exactly one per open, so
+  a session that leans on completion accumulated them all day and slowly paid for it on every frame. This
+  is the same fault the 80-column ruler had, and the fix is the same one — measure a real character rather
+  than an empty span, which allocates nothing. The regression guard now covers the popups as well as typing.
+
 - **The toolbar's right-click menu rendered a third larger than every other menu.** A menu popup inherits
   the font of the node it is shown from, and the toolbar deliberately runs at a larger size so the labels
   beside its glyphs are readable. That size followed the popup out: the Customize Toolbar menu came up at

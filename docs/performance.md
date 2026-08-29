@@ -71,6 +71,10 @@ For text-driven work, debounce on the RichTextFX stream rather than per-change:
   (`firstVisibleParToAllParIndex … lastVisibleParToAllParIndex`) and skip folded lines.
 - Avoid O(document) work on an edit or a scroll.
 - **Never** call `getCharacterBoundsOnScreen` synchronously inside a layout/viewport event.
+- **Never** ask `getCharacterBoundsOnScreen` for an **empty** range — it allocates a blinking
+  `CaretNode` whose timer is never stopped, permanently leaking a pulse receiver. Measure a
+  **one-character** range instead (`getCaretBounds()` is focus-dependent and not a substitute). See
+  [gotchas.md](gotchas.md#never-ask-getcharacterboundsonscreen-for-an-empty-range).
 
 ### 4. Don't defeat the per-node CSS style cache
 

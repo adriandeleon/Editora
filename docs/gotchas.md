@@ -131,6 +131,40 @@ destroying only the wrapper orphans the real server. `dispose()` calls
 `ProcessRegistry.killTree(process)` ([`ProcessRegistry.java`](../src/main/java/com/editora/process/ProcessRegistry.java))
 to kill the whole descendant tree (children first, escalating to a force-kill) and untrack it.
 
+## Never ask `getCharacterBoundsOnScreen` for an *empty* range
+
+**Symptom:** typing (or some repeated action) gets slower the longer the editor is open, and never
+recovers — the slowdown outlives the window that caused it. Nothing looks wrong in a profile of any
+single operation.
+
+**Why/fix:** for an **empty** range (`getCharacterBoundsOnScreen(x, x)`) `GenericStyledArea` allocates a
+throwaway `CaretNode` to measure with, and a `CaretNode` starts a 500 ms `restartableTicks` blink timer
+that **nothing ever stops**. Each call therefore registers a running `Timeline` as a JavaFX pulse receiver
+**permanently**. Measuring a *one-character* range takes a different path and allocates nothing.
+
+Measure a **one-character** range instead: `(abs, abs + 1)`, and at end-of-paragraph measure the last
+character and take its right edge — the same x the caret sits at. See `EditorBuffer.caretBounds` (root-local,
+for overlays) and `EditorBuffer.caretAnchorBounds` (screen, for caret-following popups).
+
+**Anchoring a popup needs a fallback chain, and this is the part that bites.** The leaking form measured
+through a caret it had just created, so it answered even when nothing was rendered; a *character* can only be
+measured once its paragraph is laid out, so it comes back empty whenever the flow has no cell for that line —
+the caret scrolled out of view, or the area not laid out yet. Return `null` there and the popup **silently
+does not open**. `caretAnchorBounds` therefore falls back: the character, then `getCaretBounds()`, then the
+area's own top-left. A popup at the corner of the editor beats no popup.
+
+`CodeArea.getCaretBounds()` is second, not first, and is **not a substitute** for measuring: it reports the
+*rendered* caret and is empty whenever the area isn't focused.
+
+Both failure modes are easy to miss because they are **order-dependent** — `CodeActionPopupFxTest` passes on
+its own (the area happens to be laid out) and fails only in the full suite. Verify a change here against
+`./mvnw test`, not the one test class.
+
+The 80-column ruler did this on every edit and leaked **+2 timers per keystroke**, degrading typing from
+5.6 ms to 28 ms over 2000 keystrokes. The completion popup, its LSP variant and the quick-fix list each
+leaked **exactly one per open**. Guarded by `TypingLatencyBenchmarkTest`, which counts pulse receivers for
+both typing and popup opens.
+
 ## Don't call `getCharacterBoundsOnScreen` synchronously inside a layout/viewport event
 
 **Symptom:** layout thrash / re-entrancy when positioning an overlay or popup from a viewport
