@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.PriorityQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
@@ -79,6 +80,16 @@ final class IndexCoordinator {
     /** Every file the last walk saw — the corpus behind Search Everywhere's file results. */
     private List<Path> projectFiles = List.of();
 
+    /**
+     * {@link #projectFiles} as root-relative display strings, parallel by index.
+     *
+     * <p>Held rather than derived per query because {@link #searchFiles} runs on the FX thread on every
+     * keystroke: relativizing and stringifying every path there allocated a {@code Path} and a
+     * {@code String} per file per keystroke — up to {@link #MAX_VISIT} of each — for values that only
+     * change when the walk does (#876).
+     */
+    private List<String> projectRelPaths = List.of();
+
     IndexCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
@@ -118,6 +129,7 @@ final class IndexCoordinator {
         if (!isEnabled()) {
             index.clear();
             projectFiles = List.of();
+            projectRelPaths = List.of();
             indexedRoot = null;
         }
     }
@@ -127,6 +139,7 @@ final class IndexCoordinator {
         generation.incrementAndGet();
         index.clear();
         projectFiles = List.of();
+        projectRelPaths = List.of();
         indexedRoot = null;
     }
 
@@ -157,6 +170,7 @@ final class IndexCoordinator {
         generation.incrementAndGet();
         index.clear();
         projectFiles = List.of();
+        projectRelPaths = List.of();
         indexedRoot = null;
         build(() -> host.setStatus(tr("status.index.built", index.symbolCount(), index.fileCount())));
     }
@@ -206,6 +220,7 @@ final class IndexCoordinator {
                     index.put(s.file(), s.symbols());
                 }
                 projectFiles = walked.files();
+                projectRelPaths = relativize(root, projectFiles);
                 indexedRoot = root;
                 if (then != null) {
                     then.run();
@@ -311,21 +326,56 @@ final class IndexCoordinator {
     /**
      * Ranked project files for {@code query}, matched on the path relative to the root so a query can name
      * a directory as well as a file name.
+     *
+     * <p>Bounded selection over cached relative paths, for the reasons spelled out on
+     * {@code SymbolIndex.search}: this runs on the FX thread per keystroke, and sorting every match to
+     * discard all but {@code limit} was the part that scaled worst (#876). The ranking is a total order
+     * already — two files cannot share a relative path — so unlike the symbol side it needs no scan-index
+     * key to reproduce the old output exactly.
      */
     List<FileHit> searchFiles(String query, int limit) {
-        if (!isEnabled() || query == null || query.isBlank() || indexedRoot == null) {
+        if (!isEnabled() || query == null || query.isBlank() || indexedRoot == null || limit <= 0) {
             return List.of();
         }
-        List<FileHit> hits = new ArrayList<>();
-        for (Path file : projectFiles) {
-            String rel = indexedRoot.relativize(file).toString().replace(java.io.File.separatorChar, '/');
-            com.editora.search.FuzzyMatch.Match m = com.editora.search.FuzzyMatch.ofPath(rel, query);
-            if (m != null) {
-                hits.add(new FileHit(file, rel, m.score()));
+        // Ordered worst-first, so the head is the entry a better candidate evicts.
+        PriorityQueue<FileHit> keep = new PriorityQueue<>(FILE_RANK.reversed());
+        for (int i = 0; i < projectRelPaths.size(); i++) {
+            String rel = projectRelPaths.get(i);
+            // scoreOfPath, not ofPath: a FileHit carries only a score, and the picker re-derives the
+            // highlight at render time for the rows it draws.
+            int score = com.editora.search.FuzzyMatch.scoreOfPath(rel, query);
+            if (score == com.editora.search.FuzzyMatch.NO_SCORE) {
+                continue;
             }
+            if (keep.size() == limit) {
+                FileHit worst = keep.peek();
+                // >= 0, not > 0: on an exact tie the incumbent stays, which is what the stable sort this
+                // replaces did. Paths are unique in practice, so this only ever matters if a walk were to
+                // yield one twice — but "first seen wins" is then still the old behaviour rather than a coin
+                // flip.
+                if (score < worst.score() || (score == worst.score() && rel.compareTo(worst.relativePath()) >= 0)) {
+                    continue;
+                }
+                keep.poll();
+            }
+            keep.add(new FileHit(projectFiles.get(i), rel, score));
         }
-        hits.sort(java.util.Comparator.comparingInt(FileHit::score).reversed().thenComparing(FileHit::relativePath));
-        return hits.size() <= limit ? List.copyOf(hits) : List.copyOf(hits.subList(0, limit));
+        List<FileHit> best = new ArrayList<>(keep);
+        best.sort(FILE_RANK);
+        return List.copyOf(best);
+    }
+
+    /** Display order for file hits: best score first, then path, which together are already total. */
+    private static final java.util.Comparator<FileHit> FILE_RANK =
+            java.util.Comparator.comparingInt(FileHit::score).reversed().thenComparing(FileHit::relativePath);
+
+    /** The root-relative display form of each file, in the same order. */
+    private static List<String> relativize(Path root, List<Path> files) {
+        List<String> rels = new ArrayList<>(files.size());
+        for (Path f : files) {
+            rels.add(root.relativize(f).toString().replace(java.io.File.separatorChar, '/'));
+        }
+        return List.copyOf(rels);
     }
 
     /** A project file that matched, with the path as it should be shown. */

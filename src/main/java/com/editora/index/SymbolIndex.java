@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 
 import com.editora.search.FuzzyMatch;
 
@@ -111,25 +112,82 @@ public final class SymbolIndex {
      * scoring the container too would let a long package path outweigh the thing actually being looked
      * for. A blank query returns nothing — "every symbol in the project" is not a useful answer, and the
      * caller has {@link #symbolsIn} when it wants a file's outline.
+     *
+     * <p><b>Bounded selection, not a full sort.</b> This runs on the FX thread on every keystroke, and a
+     * short query matches a large fraction of the corpus — so sorting every match to then discard all but
+     * {@code limit} of them was the single worst-scaling thing here: measured at 57–70% of the call for a
+     * one- or two-character query, and growing with corpus size (#876). Instead a heap of at most
+     * {@code limit} entries keeps the running best, so the cost is linear in the corpus with a
+     * {@code log(limit)} factor on the few candidates good enough to get in.
+     *
+     * <p>The output is <b>identical</b> to sorting everything and truncating, which is the property that
+     * makes this safe to swap in. That relies on {@link #RANK} being a <em>total</em> order: the display
+     * keys (score, then name length, then name) leave genuine ties, and {@code List.sort} is stable, so
+     * the old code broke those ties by scan order. {@code RANK} therefore ends in the scan index, which is
+     * what a stable sort of the full list was doing implicitly. Drop that key and a tie is resolved by
+     * heap accident instead — the results stay plausible, so nothing looks wrong, and the row order for a
+     * broad query quietly stops being reproducible from one keystroke to the next.
      */
     public List<Hit> search(String query, int limit) {
         if (query == null || query.isBlank() || limit <= 0) {
             return List.of();
         }
-        List<Hit> hits = new ArrayList<>();
+        // Ordered worst-first, so the head is the entry a better candidate evicts.
+        PriorityQueue<Ranked> keep = new PriorityQueue<>(RANK.reversed());
+        int seq = 0;
         for (Map.Entry<Path, List<Symbol>> entry : byFile.entrySet()) {
             for (Symbol symbol : entry.getValue()) {
-                FuzzyMatch.Match m = FuzzyMatch.of(symbol.name(), query);
-                if (m != null) {
-                    hits.add(new Hit(entry.getKey(), symbol, m.score()));
+                // scoreOf, not of: the highlight ranges of() builds are discarded here (a Hit carries only
+                // a score) and re-derived at render time for the handful of rows actually drawn.
+                int score = FuzzyMatch.scoreOf(symbol.name(), query);
+                if (score == FuzzyMatch.NO_SCORE) {
+                    continue;
                 }
+                int at = seq++;
+                // Once full, reject before allocating: the comparison needs only the score and the name,
+                // both already in hand, and the overwhelming majority of matches lose it.
+                if (keep.size() == limit && !beats(score, symbol.name(), at, keep.peek())) {
+                    continue;
+                }
+                if (keep.size() == limit) {
+                    keep.poll();
+                }
+                keep.add(new Ranked(entry.getKey(), symbol, score, at));
             }
         }
-        hits.sort(Comparator.comparingInt(Hit::score)
-                .reversed()
-                // Shorter names first among equals: for `list`, `list` is likelier wanted than `listAll`.
-                .thenComparingInt((Hit h) -> h.symbol().name().length())
-                .thenComparing(h -> h.symbol().name()));
-        return hits.size() <= limit ? List.copyOf(hits) : List.copyOf(hits.subList(0, limit));
+        List<Ranked> best = new ArrayList<>(keep);
+        best.sort(RANK);
+        List<Hit> out = new ArrayList<>(best.size());
+        for (Ranked r : best) {
+            out.add(new Hit(r.file(), r.symbol(), r.score()));
+        }
+        return List.copyOf(out);
+    }
+
+    /** A candidate mid-selection: a {@link Hit} plus the scan index that makes {@link #RANK} total. */
+    private record Ranked(Path file, Symbol symbol, int score, int seq) {}
+
+    /**
+     * Display order, made a total order by the scan index — see {@link #search(String, int)} for why that
+     * last key is load-bearing rather than tidiness.
+     */
+    private static final Comparator<Ranked> RANK = Comparator.comparingInt(Ranked::score)
+            .reversed()
+            // Shorter names first among equals: for `list`, `list` is likelier wanted than `listAll`.
+            .thenComparingInt((Ranked r) -> r.symbol().name().length())
+            .thenComparing(r -> r.symbol().name())
+            .thenComparingInt(Ranked::seq);
+
+    /** Whether a candidate outranks {@code worst}, without building a {@link Ranked} to ask. */
+    private static boolean beats(int score, String name, int seq, Ranked worst) {
+        if (score != worst.score()) {
+            return score > worst.score();
+        }
+        int len = worst.symbol().name().length();
+        if (name.length() != len) {
+            return name.length() < len;
+        }
+        int byName = name.compareTo(worst.symbol().name());
+        return byName != 0 ? byName < 0 : seq < worst.seq();
     }
 }

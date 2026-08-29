@@ -99,20 +99,48 @@ public final class FuzzyMatch {
      * decision, and every current caller already special-cases the empty field before filtering.
      */
     public static Match of(String candidate, String query) {
-        if (candidate == null || candidate.isEmpty() || query == null) {
+        List<int[]> spans = new ArrayList<>();
+        int total = run(candidate, query, spans);
+        if (total == NO_MATCH) {
             return null;
+        }
+        return new Match(total, coalesce(spans, tailOffset(candidate)));
+    }
+
+    /**
+     * The score {@link #of} would report, or {@link #NO_SCORE} when it would not match — without building
+     * the highlight ranges.
+     *
+     * <p>Exists because the ranges are the expensive part and the bulk callers <em>throw them away</em>:
+     * {@code SymbolIndex.Hit} and the file-search hit both carry a score and nothing else, and the picker
+     * re-derives the highlight at render time (see {@code MatchText}) for the ~40 rows it actually draws.
+     * So a corpus-wide scan was allocating a span list, a per-character {@code int[]}, a coalesced
+     * {@code int[][]} and a {@link Match} for every one of tens of thousands of candidates, to serve
+     * forty (#876).
+     *
+     * <p>Scores are identical to {@code of(...).score()} by construction — same code path, spans simply not
+     * collected — and {@code FuzzyMatchTest} pins that against drift.
+     */
+    public static int scoreOf(String candidate, String query) {
+        return run(candidate, query, null);
+    }
+
+    /** Scoring core shared by {@link #of} and {@link #scoreOf}; fills {@code spans} when it is non-null. */
+    private static int run(String candidate, String query, List<int[]> spans) {
+        if (candidate == null || candidate.isEmpty() || query == null) {
+            return NO_MATCH;
         }
         String q = query.strip();
         if (q.isEmpty()) {
-            return null;
+            return NO_MATCH;
         }
         // A candidate longer than the scan cap is matched on its tail: for the two things that get long —
         // a path and a symbol's qualified name — the distinguishing part is at the end.
-        int offset = Math.max(0, candidate.length() - MAX_SCAN);
+        int offset = tailOffset(candidate);
         String s = offset == 0 ? candidate : candidate.substring(offset);
 
         int total = 0;
-        List<int[]> spans = new ArrayList<>();
+        boolean matched = false;
         int from = 0;
         while (from < q.length()) {
             while (from < q.length() && Character.isWhitespace(q.charAt(from))) {
@@ -127,15 +155,18 @@ public final class FuzzyMatch {
             }
             int termScore = matchTerm(s, q, from, to, spans);
             if (termScore == NO_MATCH) {
-                return null; // every term must match
+                return NO_MATCH; // every term must match
             }
             total += termScore;
+            matched = true;
             from = to;
         }
-        if (spans.isEmpty()) {
-            return null;
-        }
-        return new Match(total, coalesce(spans, offset));
+        return matched ? total : NO_MATCH;
+    }
+
+    /** Where the matched window starts in {@code candidate} once the {@link #MAX_SCAN} cap is applied. */
+    private static int tailOffset(String candidate) {
+        return Math.max(0, candidate.length() - MAX_SCAN);
     }
 
     /**
@@ -165,8 +196,29 @@ public final class FuzzyMatch {
         return of(path, query);
     }
 
+    /**
+     * The score {@link #ofPath} would report, or {@link #NO_SCORE} — the {@link #scoreOf} counterpart, and
+     * the one the project-file scan runs per keystroke.
+     */
+    public static int scoreOfPath(String path, String query) {
+        if (path == null || path.isEmpty()) {
+            return NO_MATCH;
+        }
+        int cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        if (cut >= 0 && cut + 1 < path.length()) {
+            int base = scoreOf(path.substring(cut + 1), query);
+            if (base != NO_MATCH) {
+                return base + BONUS_BASENAME;
+            }
+        }
+        return scoreOf(path, query);
+    }
+
     /** Returned by {@link #matchTerm} when the term is not present in the candidate at all. */
     private static final int NO_MATCH = Integer.MIN_VALUE;
+
+    /** What {@link #scoreOf} and {@link #scoreOfPath} return for a candidate that does not match. */
+    public static final int NO_SCORE = NO_MATCH;
 
     /**
      * A matrix cell no path reaches. Never added to — every use is guarded by an equality check first —
@@ -180,6 +232,7 @@ public final class FuzzyMatch {
      * {@code spans} untouched — when the term does not match.
      */
     private static int matchTerm(String s, String query, int qStart, int qEnd, List<int[]> spans) {
+        // spans may be null — the scoreOf path wants the score without paying for the ranges.
         int m = qEnd - qStart;
         int n = s.length();
         if (m > n) {
@@ -282,8 +335,10 @@ public final class FuzzyMatch {
             cols[i] = j;
             j = from[i][j];
         }
-        for (int i = 0; i < m; i++) {
-            spans.add(new int[] {lo + cols[i], lo + cols[i] + 1});
+        if (spans != null) {
+            for (int i = 0; i < m; i++) {
+                spans.add(new int[] {lo + cols[i], lo + cols[i] + 1});
+            }
         }
         int spread = cols[m - 1] - cols[0] + 1 - m;
         return endScore + spread * PENALTY_SPREAD;
