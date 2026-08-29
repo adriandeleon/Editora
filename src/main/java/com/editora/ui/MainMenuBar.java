@@ -6,6 +6,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
@@ -127,7 +128,7 @@ final class MainMenuBar {
                     menu.getItems().add(new SeparatorMenuItem());
                     continue;
                 }
-                Row row = newRow();
+                Row row = newRow(entry);
                 row.item().setOnAction(e -> run.accept(entry));
                 items.put(entry, row);
                 group.add(row);
@@ -142,9 +143,14 @@ final class MainMenuBar {
         refresh();
     }
 
-    /** A menu row: a laid-out title/chord pair in-window, or a plain text item on the system menu bar. */
-    private Row newRow() {
+    /** Width of the leading icon column. Wide enough for a glyph (~19px drawn) plus a hair of air. */
+    private static final double ICON_COLUMN = 22;
+
+    /** A menu row: a laid-out icon/title/chord triple in-window, or plain text on the system menu bar. */
+    private Row newRow(String commandId) {
         if (systemMenu) {
+            // The system menu bar owns rendering and shows no item graphics — which is also the macOS
+            // convention, so there is nothing to add here.
             return new Row(new MenuItem(), null, null);
         }
         Label title = new Label();
@@ -153,7 +159,11 @@ final class MainMenuBar {
         chord.getStyleClass().add("menu-item-chord");
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS); // pushes the chord to the item's right edge
-        HBox box = new HBox(18, title, spacer, chord);
+        // Spacing 0 with explicit margins: one gap belongs between the icon and its title (small) and a
+        // different one before the chord column (wide), which a single spacing value cannot express.
+        HBox box = new HBox(iconColumn(commandId), title, spacer, chord);
+        HBox.setMargin(title, new javafx.geometry.Insets(0, 0, 0, 8));
+        HBox.setMargin(chord, new javafx.geometry.Insets(0, 0, 0, 18));
         box.setAlignment(Pos.CENTER_LEFT);
         // The popup sizes itself to its widest item and stretches the rest; without this the row would
         // hug its content and every chord would sit at a different x.
@@ -161,6 +171,27 @@ final class MainMenuBar {
         CustomMenuItem item = new CustomMenuItem(box);
         item.setHideOnClick(true);
         return new Row(item, title, chord);
+    }
+
+    /**
+     * The leading icon column: the command's glyph, or an empty box of the same width.
+     *
+     * <p>Fixed width either way, which is the point. Around half the entries have a glyph, and JavaFX does
+     * not reserve a graphic gutter for the ones that do not — so without this the titles of icon-less items
+     * would start further left than their neighbours and each menu would read as two ragged columns.
+     */
+    private static javafx.scene.layout.StackPane iconColumn(String commandId) {
+        javafx.scene.layout.StackPane holder = new javafx.scene.layout.StackPane();
+        holder.setMinWidth(ICON_COLUMN);
+        holder.setPrefWidth(ICON_COLUMN);
+        holder.setMaxWidth(ICON_COLUMN);
+        holder.setAlignment(Pos.CENTER);
+        holder.getStyleClass().add("menu-item-icon");
+        Node glyph = MenuBarIcons.forCommand(commandId);
+        if (glyph != null) {
+            holder.getChildren().add(glyph);
+        }
+        return holder;
     }
 
     /**
