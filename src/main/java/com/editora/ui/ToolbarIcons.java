@@ -15,6 +15,7 @@ final class ToolbarIcons {
         return switch (iconKey == null ? "" : iconKey) {
             case "newFile" -> Icons.newFile();
             case "fileSheet" -> Icons.fileSheet();
+            case "template" -> Icons.template();
             case "open" -> Icons.open();
             case "closeTab" -> Icons.closeTab();
             case "save" -> Icons.save();

@@ -6373,7 +6373,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void setupToolbar() {
         setupButton(newButton, Icons.newFile(), tr("tooltip.new"), "file.new");
-        setupButton(newFromTemplateButton, Icons.fileSheet(), tr("tooltip.newFromTemplate"), "template.new");
+        setupButton(newFromTemplateButton, Icons.template(), tr("tooltip.newFromTemplate"), "template.new");
         setupButton(openButton, Icons.open(), tr("tooltip.open"), "file.find");
         setupButton(openFolderButton, Icons.openFolder(), tr("tooltip.openFolder"), "project.open");
         setupButton(saveButton, Icons.save(), tr("tooltip.save"), "file.save");

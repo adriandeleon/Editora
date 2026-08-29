@@ -48,6 +48,10 @@ class IconsFxTest {
     @Test
     void everyKitLineGlyphRendersANonEmptyShape() throws Exception {
         assertRenders("fileSheet", Icons::fileSheet);
+        assertRenders("template", Icons::template);
+        assertRenders("open", Icons::open);
+        assertRenders("openFolder", Icons::openFolder);
+        assertRenders("saveAs", Icons::saveAs);
         assertRenders("newFile", Icons::newFile);
         assertRenders("newFolder", Icons::newFolder);
         assertRenders("project", Icons::project);

@@ -51,7 +51,7 @@ public final class ToolbarCatalog {
     static {
         // --- Default toolbar buttons (mapped to existing @FXML fields by the coordinator's widget pool) ---
         add("file.new", "newFile", "file.new");
-        add("template.new", "fileSheet", "template.new");
+        add("template.new", "template", "template.new");
         add("file.find", "open", "file.find"); // the "Open File" finder button
         add("buffer.close", "closeTab", "buffer.close");
         add("file.save", "save", "file.save");
