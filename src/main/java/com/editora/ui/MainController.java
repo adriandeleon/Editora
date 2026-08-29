@@ -6462,9 +6462,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Fills the fixed, non-customizable toolbar tail — the project-combo group (a gap, the combo, and the
-     * Open-Folder icon), Recent, an optional {@code snapshot}/{@code --dev} badge, and the right-pinned
-     * Settings button. Called by {@link ToolbarCoordinator} after it lays out the customizable cluster.
+     * Fills the fixed, non-customizable toolbar tail — the run-configuration group, the project-combo group
+     * (a gap, the combo, and the Open-Folder icon), Recent, an optional {@code snapshot}/{@code --dev}
+     * badge, and the right-pinned Settings button. Called by {@link ToolbarCoordinator} after it lays out
+     * the customizable cluster.
      *
      * <p>The tail is its <b>own container</b> beside the {@link javafx.scene.control.ToolBar}, not items in
      * it: a ToolBar overflows from its END, so with everything in one bar a narrow window pushed Settings
@@ -6481,8 +6482,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         var items = toolbarTail.getChildren();
         items.clear();
 
-        // Project switcher just right of the customizable icon cluster (a ~3-icon gap), with the
-        // open-folder icon immediately to the right of the combobox.
+        // Run configurations lead the tail: the selector and its Run/Debug/Stop buttons sit at the right
+        // end of the bar, across the ToolBar's slack from the icon cluster, the way an IDE pins its run
+        // widget. Here rather than in the customizable cluster because the cluster is what overflows into
+        // the chevron when the window narrows, and starting a run is not something to lose to a window
+        // width; the group hides itself when there is nothing to launch (refreshRunConfigToolbar).
+        items.addAll(runConfigCombo, runConfigRunButton, runConfigDebugButton, runConfigStopButton);
+
+        // Project switcher next (a ~3-icon gap keeps it clear of the run controls), with the open-folder
+        // icon immediately to the right of the combobox.
         // Recent sits with the project controls rather than with New/Open: it is a "where have I been"
         // dropdown, and beside the file actions it read as one of them.
         items.addAll(projectToolbarGap, toolbarProjectCombo, openFolderButton, recentButton);
@@ -6535,10 +6543,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             m.put("view.splitHorizontal", splitHorizontalButton);
             m.put("palette.show", paletteButton);
             m.put("view.toggleSimpleMode", simpleModeButton);
-            m.put("toolbar.runConfig", runConfigCombo);
-            m.put("toolbar.runConfig.run", runConfigRunButton);
-            m.put("toolbar.runConfig.debug", runConfigDebugButton);
-            m.put("toolbar.runConfig.stop", runConfigStopButton);
             toolbarBaseWidgets = m;
         }
         return toolbarBaseWidgets;
@@ -10573,7 +10577,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      *
      * <p>Re-run whenever any of its inputs can have moved: a build tool detected or lost (the
      * {@code BuildCoordinator.Ops} hook), the configuration list edited, the project switched, and every
-     * chrome pass (which is also every toolbar rebuild, so a customized layout keeps the rule).
+     * chrome pass (which is also every toolbar rebuild, which re-adds the group to the tail).
      */
     private void refreshRunConfigToolbar() {
         if (runConfigCombo == null) {
@@ -10589,8 +10593,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 n.setManaged(show);
             }
         }
-        // Hiding the group orphans the separators around it; the pass is self-correcting, so re-running it
-        // when applySimpleMode is about to as well costs one cheap walk of the toolbar.
+        // The group lives in the tail, which has no separators to orphan — but this runs on the same passes
+        // that hide other icons, and the walk is cheap and self-correcting.
         collapseToolbarSeparators();
     }
 
