@@ -54,6 +54,37 @@ class ToolbarLayoutTest {
         assertEquals(List.of("a", "b"), ToolbarLayout.move(List.of("a", "b"), 5, 0));
     }
 
+    /**
+     * The upgrade path for a toolbar saved by an older build. The run-configuration group used to be four
+     * catalog items in the icon cluster and is now pinned in the fixed tail, so those ids are simply gone
+     * from the catalog — {@code sanitize} drops them on load, which is what moves an existing user's bar
+     * without a migration step. Everything they arranged around it survives, and the separators that
+     * bracketed the group collapse to one instead of leaving a double rule where it stood.
+     */
+    @Test
+    void aLayoutSavedWithTheOldRunConfigurationGroupLosesItAndKeepsTheRest() {
+        List<String> saved = List.of(
+                "file.new",
+                ToolbarCatalog.SEPARATOR,
+                "toolbar.runConfig",
+                "toolbar.runConfig.run",
+                "toolbar.runConfig.debug",
+                "toolbar.runConfig.stop",
+                ToolbarCatalog.SEPARATOR,
+                "palette.show");
+
+        assertEquals(List.of("file.new", ToolbarCatalog.SEPARATOR, "palette.show"), ToolbarLayout.sanitize(saved));
+    }
+
+    /** A bar that was nothing but the group does not come back as a stray separator. */
+    @Test
+    void aLayoutOfNothingButTheOldGroupSanitizesToEmpty() {
+        assertEquals(
+                List.of(),
+                ToolbarLayout.sanitize(
+                        List.of(ToolbarCatalog.SEPARATOR, "toolbar.runConfig", "toolbar.runConfig.run")));
+    }
+
     @Test
     void removeAndInsert() {
         assertEquals(List.of("a", "c"), ToolbarLayout.remove(List.of("a", "b", "c"), 1));

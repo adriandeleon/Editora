@@ -16,7 +16,8 @@ import java.util.Map;
  *
  * <p>The customizable region is the toolbar's <em>left icon cluster</em> — literally the {@code ToolBar},
  * which is what overflows into a chevron when the window is narrow. The fixed tail is a separate
- * container beside it, so it is not part of this catalog and cannot be pushed into that overflow — the project-combo group, the Open-Folder icon and Recent beside it, the dev
+ * container beside it, so it is not part of this catalog and cannot be pushed into that overflow — the
+ * run-configuration group, the project-combo group, the Open-Folder icon and Recent beside it, the dev
  * badge, then Settings. Recent and Settings live there rather than here because their position is relative
  * to tail items (Recent belongs beside the project controls; Settings is pinned to the right end, where its
  * glyph lines up with the right tool stripe), which a customizable-cluster entry cannot express — see
@@ -34,9 +35,12 @@ public final class ToolbarCatalog {
      * <p>Declared explicitly because forgetting the mapping is invisible — the item is simply left out when
      * the toolbar is rebuilt, and the control never appears. That happened with the run-configuration
      * selector, which was declared in the FXML but never registered here, so every rebuild dropped it.
+     *
+     * <p><b>Currently empty.</b> The run-configuration group was the only entry and now lives in the fixed
+     * tail beside the project switcher, so no catalog item is command-less today. The declaration and the
+     * invariants over it are kept because the trap is silent and the next special widget would walk into it.
      */
-    public static final java.util.Set<String> SPECIAL_WIDGET_IDS = java.util.Set.of(
-            "toolbar.runConfig", "toolbar.runConfig.run", "toolbar.runConfig.debug", "toolbar.runConfig.stop");
+    public static final java.util.Set<String> SPECIAL_WIDGET_IDS = java.util.Set.of();
 
     /** A customizable toolbar item. {@code commandId} is null for a non-command widget (the Recent button). */
     public record Item(String id, String iconKey, String commandId) {}
@@ -68,14 +72,6 @@ public final class ToolbarCatalog {
         add("view.splitHorizontal", "splitHorizontal", "view.splitHorizontal");
         add("palette.show", "palette", "palette.show");
         add("view.toggleSimpleMode", "simpleMode", "view.toggleSimpleMode");
-        // Run configurations: special widgets, like the Recent MenuButton — the selector is a ComboBox and
-        // the three buttons act on whatever it has selected rather than dispatching a fixed command, so the
-        // coordinator maps all four to their existing @FXML fields.
-        add("toolbar.runConfig", "run", null);
-        add("toolbar.runConfig.run", "run", null);
-        add("toolbar.runConfig.debug", "debug", null);
-        add("toolbar.runConfig.stop", "stopSquare", null);
-
         // --- Extra command-backed icons (addable, not on the default toolbar) ---
         add("git.commit", "git", "git.commit");
         add("tool.gitLog", "gitLog", "tool.gitLog");
@@ -130,11 +126,9 @@ public final class ToolbarCatalog {
         l.add("find.show");
         l.add("search.inFiles");
         l.add(SEPARATOR);
-        l.add("toolbar.runConfig");
-        l.add("toolbar.runConfig.run");
-        l.add("toolbar.runConfig.debug");
-        l.add("toolbar.runConfig.stop");
-        l.add(SEPARATOR);
+        // The run-configuration group is NOT here: it is pinned in the fixed tail beside the project
+        // switcher (MainController.appendFixedTail), where it sits at the right end of the bar and cannot
+        // be pushed into the overflow chevron — starting a run is not something to lose to a narrow window.
         // View — the three chrome/layout toggles together rather than scattered behind lone separators.
         l.add("view.splitVertical");
         l.add("view.splitHorizontal");

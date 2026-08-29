@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The run-configuration group moved to the right end of the toolbar.** The selector and its Run, Debug
+  and Stop buttons now sit beside the project switcher rather than in the middle of the icons, the way an
+  IDE pins its run widget. They are pinned there: the icon cluster is what collapses into the overflow
+  chevron on a narrow window, and the control that starts a run is the wrong thing to lose to a window
+  width. The trade is that the four are no longer draggable in Settings ▸ Toolbar; a bar you have already
+  arranged keeps everything else exactly as you left it.
+
 - **Search Everywhere now teaches the way the command palette does.** Three things it was missing, all of
   which matter more now that it can stand in for the palette:
 

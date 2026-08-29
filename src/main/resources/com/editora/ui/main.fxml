@@ -44,10 +44,10 @@
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="findButton" onAction="#onFind"/>
                         <Button fx:id="findInFilesButton" onAction="#onFindInFiles"/>
-                        <Separator orientation="VERTICAL"/>
                         <!-- The run-configuration widgets are declared here only so FXML creates and injects
-                             them; their position on the bar comes from ToolbarCatalog's layout, like every
-                             other customizable item. -->
+                             them. They are NOT items of this bar: appendFixedTail moves all four into the
+                             pinned tail beside the project switcher, so a narrow window cannot push the Run
+                             button into the overflow chevron. -->
                         <ComboBox fx:id="runConfigCombo"/>
                         <Button fx:id="runConfigRunButton" onAction="#onRunSelectedConfig"/>
                         <Button fx:id="runConfigDebugButton" onAction="#onDebugSelectedConfig"/>

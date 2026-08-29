@@ -134,23 +134,35 @@ class RunConfigToolbarFxTest {
     }
 
     /**
-     * The controls must actually be in the toolbar — not merely injected.
+     * The controls must actually be on the toolbar row — not merely injected.
      *
      * <p>Added after a report that the selector was nowhere on screen. Everything else here passes with the
      * fields injected and wired, which is exactly the state that would still show nothing if the controls
-     * never made it into the toolbar's items. Membership is unconditional; whether they are <em>shown</em> is
-     * the separate gate below.
+     * never made it onto the bar. Membership is unconditional; whether they are <em>shown</em> is the
+     * separate gate below.
+     *
+     * <p>Deliberately asks "somewhere under the toolbar row" rather than naming a container: which half of
+     * the row they belong to is {@code RunConfigToolbarPlacementFxTest}'s business (today the pinned tail),
+     * and this guard should survive that being revisited.
      */
     @Test
-    void theControlsAreInTheToolbar() throws Exception {
-        javafx.scene.control.ToolBar bar = FxTestSupport.field(fx.controller, "toolBar");
+    void theControlsAreOnTheToolbarRow() throws Exception {
         ComboBox<RunConfiguration> combo = combo();
         javafx.scene.control.Button run = FxTestSupport.field(fx.controller, "runConfigRunButton");
 
-        assertTrue(
-                FxTestSupport.callOnFx(() -> bar.getItems().contains(combo)),
-                "the selector is one of the toolbar's items");
-        assertTrue(FxTestSupport.callOnFx(() -> bar.getItems().contains(run)), "and so is the Run button");
+        assertTrue(FxTestSupport.callOnFx(() -> onToolbarRow(combo)), "the selector is on the toolbar row");
+        assertTrue(FxTestSupport.callOnFx(() -> onToolbarRow(run)), "and so is the Run button");
+    }
+
+    /** Whether {@code n} is anywhere under the toolbar row (the ToolBar or the pinned tail beside it). */
+    private boolean onToolbarRow(javafx.scene.Node n) {
+        javafx.scene.layout.HBox row = FxTestSupport.field(fx.controller, "toolbarRow");
+        for (javafx.scene.Node p = n; p != null; p = p.getParent()) {
+            if (p == row) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
