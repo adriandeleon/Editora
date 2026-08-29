@@ -1172,6 +1172,9 @@ public class SettingsWindow {
         simpleModeCheck = viewCheck(tr("settings.simpleMode"), Settings::setSimpleMode);
         toolStripeCheck = viewCheck(tr("settings.showToolStripe"), Settings::setShowToolStripe);
         extendedWindowCheck = viewCheck(tr("settings.extendedWindow"), Settings::setExtendedWindow);
+        // Not offered on macOS: the menu belongs to the system menu bar there, so the setting could only
+        // ever be a switch that does nothing. Disabled rather than hidden, so its note still explains why.
+        extendedWindowCheck.setDisable(!ExtendedWindow.supportedOn(System.getProperty("os.name")));
         paletteSearchEverywhereCheck =
                 viewCheck(tr("settings.paletteSearchEverywhere"), Settings::setPaletteUsesSearchEverywhere);
         projectHiddenCheck = viewCheck(tr("settings.projectShowHidden"), Settings::setProjectShowHidden);

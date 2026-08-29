@@ -29,15 +29,24 @@ final class ExtendedWindow {
     private ExtendedWindow() {}
 
     /**
-     * Whether the extended window may be used on this OS.
+     * Whether the extended window may be used on this OS: <b>Linux and Windows</b>.
+     *
+     * <p>macOS is excluded, and not because the API is missing there — it is the one platform where this
+     * is the wrong idea. The menu belongs to the system menu bar at the top of the screen, so drawing it
+     * inside the window would be a worse window, not a taller-value one.
+     *
+     * <p>An unrecognised {@code os.name} is refused rather than assumed to work: this decides how the
+     * window is decorated, and the failure mode of guessing wrong is a window that will not open.
      *
      * <p>Pure, and takes the OS name, so the gate is testable off the platform it gates.
      */
     static boolean supportedOn(String osName) {
         String os = osName == null ? "" : osName.toLowerCase(Locale.ROOT);
-        // Not mac (the menu belongs in the system bar) and not Windows (untested); everything else here
-        // means Linux and the BSDs, where the desktop draws client-side decorations anyway.
-        return !os.contains("mac") && !os.contains("win") && !os.isEmpty();
+        if (os.contains("mac") || os.contains("darwin")) {
+            return false;
+        }
+        // Windows, plus Linux and the BSDs, where the desktop draws client-side decorations anyway.
+        return os.contains("win") || os.contains("linux") || os.contains("bsd") || os.contains("unix");
     }
 
     /** The system property JavaFX requires before any preview API may be used. */

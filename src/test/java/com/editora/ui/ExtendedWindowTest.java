@@ -20,15 +20,17 @@ class ExtendedWindowTest {
     }
 
     @Test
-    void windowsIsExcludedUntilItHasBeenDeviceTested() {
-        assertFalse(ExtendedWindow.supportedOn("Windows 11"));
-        assertFalse(ExtendedWindow.supportedOn("Windows Server 2022"));
+    void windowsMayUseItToo() {
+        assertTrue(ExtendedWindow.supportedOn("Windows 11"));
+        assertTrue(ExtendedWindow.supportedOn("Windows Server 2022"));
     }
 
     @Test
     void anUnknownOsIsNotAssumedToWork() {
+        // This decides how the window is decorated, and guessing wrong means a window that will not open.
         assertFalse(ExtendedWindow.supportedOn(""));
         assertFalse(ExtendedWindow.supportedOn(null));
+        assertFalse(ExtendedWindow.supportedOn("Some Future OS"));
     }
 
     @Test
@@ -36,6 +38,7 @@ class ExtendedWindowTest {
         assertTrue(ExtendedWindow.enabled(true, "Linux", true));
         assertFalse(ExtendedWindow.enabled(false, "Linux", true), "off is off even where it would work");
         assertFalse(ExtendedWindow.enabled(true, "Mac OS X", true), "and on is not enough where it should not");
+        assertTrue(ExtendedWindow.enabled(true, "Windows 11", true));
     }
 
     /**
