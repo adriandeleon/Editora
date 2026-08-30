@@ -95,4 +95,41 @@ class StructurePanelFxTest {
                 FxTestSupport.callOnFx(() -> tree(p).getRoot().getChildren().size()),
                 "outline unchanged for a non-attached buffer");
     }
+
+    /**
+     * A Typst buffer outlines by its heading sections, nested by level.
+     *
+     * <p>It used to fall through to the generic fold-region path, which for Typst meant its brace pairs
+     * labelled by whatever TextMate symbol sat on the header line: a three-section report showed a single
+     * entry reading {@code #align()}. Asserted through the panel rather than through
+     * {@code TypstOutline} so it pins the dispatch, which is where the gap actually was.
+     */
+    @Test
+    void aTypstBufferOutlinesByItsHeadings() throws Exception {
+        StructurePanel p = FxTestSupport.callOnFx(StructurePanelFxTest::shownPanel);
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("typst");
+            b.setContent(
+                    "#align(center)[\n  Title\n]\n\n= Introduction\nprose\n\n== A list\n- one\n\n= Second\ntail\n");
+            return b;
+        });
+        FxTestSupport.runOnFx(() -> p.attach(buffer));
+
+        TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
+        List<String> top = FxTestSupport.callOnFx(
+                () -> root.getChildren().stream().map(i -> label(i)).toList());
+        assertEquals(List.of("Introduction", "Second"), top, "the two top-level sections");
+
+        List<String> nested = FxTestSupport.callOnFx(() -> root.getChildren().get(0).getChildren().stream()
+                .map(i -> label(i))
+                .toList());
+        assertEquals(List.of("A list"), nested, "== nests under the = above it");
+    }
+
+    /** The rendered text of an outline row, whatever node type the panel puts in the tree. */
+    private static String label(TreeItem<Object> item) {
+        Object v = item.getValue();
+        return String.valueOf(FxTestSupport.<String>field(v, "label"));
+    }
 }

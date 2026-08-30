@@ -595,6 +595,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (buffer.isMarkdown()) {
             return markdownHeadingNodes(area.getText());
         }
+        if (buffer.isTypst()) {
+            return typstHeadingNodes(area.getText());
+        }
         int paras = area.getParagraphs().size();
         List<Region> regions =
                 new ArrayList<>(new LinkedHashSet<>(buffer.getFoldManager().regions()));
@@ -679,6 +682,36 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         Deque<StructureNode> stack = new ArrayDeque<>();
         Deque<Integer> levels = new ArrayDeque<>();
         for (com.editora.markdown.MarkdownOutline.Heading h : com.editora.markdown.MarkdownOutline.headings(text)) {
+            StructureNode node =
+                    new StructureNode(null, h.title().isBlank() ? "(untitled)" : h.title(), "heading", h.line());
+            while (!levels.isEmpty() && levels.peek() >= h.level()) {
+                stack.pop();
+                levels.pop();
+            }
+            if (stack.isEmpty()) {
+                roots.add(node);
+            } else {
+                stack.peek().children().add(node);
+            }
+            stack.push(node);
+            levels.push(h.level());
+        }
+        return roots;
+    }
+
+    /**
+     * Builds the heading outline for a Typst buffer, nested by level — the Markdown branch's twin.
+     *
+     * <p>Without it a {@code .typ} file fell through to the generic fold-region path, which for Typst meant
+     * its brace pairs labelled by whatever TextMate symbol sat on the header line: a report with three
+     * sections showed one entry reading {@code #align()}. Sections are what a Typst document is navigated
+     * by, and nothing else in the outline was worth keeping alongside them.
+     */
+    private static List<StructureNode> typstHeadingNodes(String text) {
+        List<StructureNode> roots = new ArrayList<>();
+        Deque<StructureNode> stack = new ArrayDeque<>();
+        Deque<Integer> levels = new ArrayDeque<>();
+        for (com.editora.typst.TypstOutline.Heading h : com.editora.typst.TypstOutline.headings(text)) {
             StructureNode node =
                     new StructureNode(null, h.title().isBlank() ? "(untitled)" : h.title(), "heading", h.line());
             while (!levels.isEmpty() && levels.peek() >= h.level()) {

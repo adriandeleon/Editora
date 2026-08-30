@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.editora.typst.TypstOutline;
+
 /**
  * Detects foldable regions in a document. A {@link Region} spans two or more lines and is collapsed
  * "into" its first line (the header stays visible; the lines after it are hidden), mirroring the way
@@ -72,8 +74,8 @@ public final class FoldRegions {
                     "typescript",
                     "javascriptreact",
                     "typescriptreact",
-                    "typst",
                     "dot" -> braces(text);
+            case "typst" -> typst(text);
             // plaintext and line/indentation-based languages have no delimiter folding.
             default -> List.of();
         };
@@ -395,6 +397,44 @@ public final class FoldRegions {
             }
             if (end > i) {
                 out.add(new Region(i, end));
+            }
+        }
+        return out;
+    }
+
+    // --- Typst (= heading sections, plus the brace/bracket pairs of its code mode) ---
+
+    /**
+     * Typst folds on <em>both</em> its heading sections and its delimiter pairs.
+     *
+     * <p>It was brace-only, which meant a document folded at {@code #align(center)[…]} and {@code #table(…)}
+     * but not at a single one of its sections — the structure a reader actually navigates by. Headings are
+     * the Markdown rule with Typst's marker: a heading folds down to the line before the next heading of the
+     * same or higher level, trailing blank lines trimmed off so the fold does not swallow the gap before the
+     * next section.
+     *
+     * <p>The heading scan is {@link TypstOutline#headings} rather than a second copy of the rule, so folding
+     * and the Structure outline can never disagree about what a section is — and folding inherits its
+     * skipping of raw blocks and (nesting) block comments for free.
+     */
+    private static List<Region> typst(String text) {
+        String[] lines = text.split("\n", -1);
+        List<Region> out = new ArrayList<>(braces(text));
+        List<TypstOutline.Heading> heads = TypstOutline.headings(text);
+        for (int k = 0; k < heads.size(); k++) {
+            TypstOutline.Heading h = heads.get(k);
+            int end = lines.length - 1;
+            for (int j = k + 1; j < heads.size(); j++) {
+                if (heads.get(j).level() <= h.level()) {
+                    end = heads.get(j).line() - 1;
+                    break;
+                }
+            }
+            while (end > h.line() && lines[end].isBlank()) {
+                end--;
+            }
+            if (end > h.line()) {
+                out.add(new Region(h.line(), end));
             }
         }
         return out;
