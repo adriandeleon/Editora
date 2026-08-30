@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-30
+
+### Added
+
+- **Typst documents fold and outline by section.** A `.typ` file folded at its brace pairs and nowhere
+  else, and the Structure window listed a single entry — `#align()` — for a report with three sections,
+  because Typst was being routed through the generic paths that know nothing about `= Introduction`.
+  Headings now drive both, so the outline reads as the document's own table of contents and a section
+  collapses like one. Folding at `#align`/`#table` brackets still works alongside it.
+
+  The hard part is telling a section marker from every other use of `=` in a Typst file — an assignment
+  in `#let x = 1`, an equality inside math, a rule of `=` characters — and from anything written inside a
+  raw block, a line comment or one of Typst's nesting block comments. Folding and the outline share one
+  parser rather than each carrying a copy of that rule, so the two surfaces cannot disagree about where a
+  section begins.
+
+- **`#let` and `#show` bindings join the Typst outline, and raw blocks fold.** A template file can be
+  almost entirely bindings, so outlining headings alone left exactly those files with an empty Structure
+  window. Bindings now appear in document order, each nested under the section it is written in, with one
+  above the first heading staying at the root.
+
+  Three things are deliberately left out, because each would be noise rather than navigation: `#set`
+  (which configures the document rather than defining anything, and a run of `#set page` / `#set text`
+  would top most files), an indented `#let` (inside a function body, naming something that means nothing
+  outside it), and destructuring or `#show:` forms, which name nothing you could jump to. Separately, a
+  long embedded listing — the thing a reader most wants out of the way — can now be collapsed at its
+  ` ``` ` fence.
+
+- **The Maven tasks tree lists every goal a plugin actually offers**, read from the plugin's own
+  descriptor. Until now it could only show a goal written inside an explicit `<execution>`, because the
+  tree is built from a literal reading of `pom.xml`. A plugin declared for direct invocation —
+  javafx-maven-plugin, spring-boot-maven-plugin, exec-maven-plugin — carries only `<configuration>`, so it
+  contributed no row at all: **`javafx:run` could be reached only by typing it into "Run custom…"**, even
+  though running it is the entire reason the plugin is in the pom.
+
+  Each plugin gets a collapsed section listing its goals, with each goal's own description as its tooltip.
+  Reading the descriptor rather than keeping a table of well-known goals means it covers whatever is in
+  your pom instead of whatever somebody remembered. It reads the **local repository only, never the
+  network**, so opening a project never fetches anything and a plugin you have not downloaded simply
+  contributes nothing; results are cached, since this re-runs on every save and tab switch.
+
+- **The Help menu links to the documentation.** It offered the palette, updates, the logs and About, but
+  no way to reach the docs — the one entry that helps someone who does not yet know what the editor can
+  do. The link is versioned, so a build lands on the documentation for what it actually is rather than on
+  whatever is current. It is in Simple UI mode's shorter Help menu too, where it belongs most, and is
+  reachable from the palette as `Documentation`.
+
 ### Changed
 
 - **Upgraded Eclipse LSP4J from 0.23.1 to 1.0.0**, which implements LSP 3.18 and DAP 1.70. Language-server
@@ -17,6 +64,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text would write the placeholder markup into the file — which is the same all-or-nothing rule that already
   covers file creates and deletes. In practice no server sends one, since Editora does not advertise the
   capability.
+
+- **Each markup language's actions sit under one submenu in the editor's right-click menu.** A Typst
+  buffer spliced eight flat `Typst: …` entries into it and a Markdown one seven, which pushed cut, copy,
+  paste and the spelling suggestions far enough down to hunt for, and made file-type actions read as
+  ordinary editing ones. They are grouped now, the way Maven's and the language server's actions already
+  were; Markdown's Table submenu stays nested inside. **Run and Debug deliberately stay at the top
+  level** — they are the two entries reached without reading the menu.
+
+- **The branch dropdown is drawn like the VCS menu it duplicates.** It offers the same commands — Commit,
+  Push, Pull, Fetch, New Branch, Stash, Unstash — and drew them as bare text at a smaller size while the
+  menu drew each with a glyph, so one set of actions read as two unrelated lists. Rows now take their
+  icons from the same table the menu uses, at the same size and with the same layout, and the current
+  branch's check mark moves into the icon column instead of pushing its own name out of line.
+
+  New Branch also gets an icon of its own. It had been drawn identically to Switch Branch in the VCS menu,
+  and had been spelling its icon as a fullwidth `＋` inside the label text in all six translations.
+
+- **Recent Files moved into the customizable part of the toolbar**, between Save As and Undo. It is a file
+  action — one of the ways to get a file on screen — and sitting beside the project switcher it read as a
+  project control. It is now a real catalog item, so it can also be dragged or removed in Settings ▸
+  Toolbar. **A toolbar you have already customized keeps the button**: a saved layout is used verbatim, so
+  a migration inserts Recent after Save As rather than letting it silently disappear from both halves.
+
+- **The editor's right-click icons match the rest of the application again.** The menu draws from a
+  hand-maintained twin of the main icon set, and the icon-family migration moved Undo, Redo, Cut, Copy,
+  Paste, Bookmark, Personal Note, Find, Info and Debug to the outline family on one side only — so
+  `Edit ▸ Undo` and right-click ▸ Undo showed two different icons for the same command. The two sets are
+  now checked against each other rather than by eye, so redrawing an icon in one place cannot silently
+  leave the other behind.
+
+### Performance
+
+- **Print pagination is roughly twice as fast.** It was 94% layout: the search for how many blocks fit a
+  page laid out a candidate group per step of a binary search, per piece emitted — on this repository's
+  CLAUDE.md, 16.1 of 17.1 seconds, laying out 1.31 million cumulative nodes.
+
+  A vertical group's height is arithmetic rather than something to measure: it stacks its children at
+  their preferred heights, so measuring each child once makes every prefix a sum. That is a property of
+  that one container — wrapped text and side-by-side rows are still measured for real, because summing
+  them would be meaningless — and the arithmetic is treated as a hint, with every emitted page still
+  verified once against a real layout. A page that overflows is the exact bug the splitter exists to
+  prevent, so it is not taken on trust.
+
+      CLAUDE.md      409 pages   17.1s → 9.2s     (nodes laid out 1.31M → 643K)
+      CHANGELOG      333 pages    3.4s → 2.4s
+      README          46 pages    1.6s → 1.2s
+      CONTRIBUTING     2 pages   247ms → 215ms
+
+### Fixed
+
+- **Printing a long Markdown file produced a handful of pages, most nearly blank and a few shrunk to
+  illegibility.** A block taller than a page was given a page of its own and scaled uniformly to fit —
+  right for an oversized image, catastrophic for text, because a Markdown list is *one* top-level block
+  however long it is. Measured on this repository's CLAUDE.md: of 19 top-level blocks six were over-tall,
+  one of them a 296-page list rendered onto a single page at **0.3% scale**. Fourteen pages for a document
+  that is really 382.
+
+  An over-tall container is now regrouped into copies of itself holding as many children as fit — a list
+  becomes several lists, a long paragraph several paragraphs — each carrying the original's styling so it
+  renders identically. The text stays vector rather than being sliced as an image, so it is crisp on
+  paper; the cost is a seam that does not hang-indent. Uniform scaling survives only for a genuinely
+  atomic over-tall block, where it is the right answer. A plain paragraph is a single run with no
+  emphasis to split at, so long runs are cut at whitespace and no word is broken. Result on the same
+  file: 382 pages, none scaled.
+
+  A separate, older overflow surfaced alongside it: the page container's own padding and the gaps between
+  blocks were not counted, so blocks summing to exactly the page height spilled over it — six of eight
+  pages on a 200-item list, the worst by 31 pixels. Invisible on screen, because the preview clips.
+
+- **The SVG preview showed a correctly-sized checkerboard and no artwork** in packaged builds. jsvg 2.1.0
+  ships a broken module boundary: its JavaFX bridge reads a logging class the main module does not expose
+  to it, so the first paint fails and what survives is the transparency pattern drawn just before it —
+  a checkerboard the exact size the drawing should have been.
+
+  It reproduces **only** on the module path, which is every real installation, and not on the classpath —
+  so the fat jar was fine and so was every test in this repository. Four other explanations were measured
+  and ruled out first. There is no upstream fix available, 2.1.0 being the only release of that module, so
+  the export is opened at launch on all three modular paths, with a test asserting all three carry it.
+
+- **The main menu's greyed-out items never un-greyed.** The VCS menu came up almost entirely disabled
+  *inside* a Git repository — Commit, Push, Pull, Fetch, Switch and New Branch, Git Log, file history and
+  both stash entries — while the status bar an inch below showed the branch and its ahead/behind counts.
+
+  The gate was right; it was simply never re-run. Repository detection is asynchronous, so at the moment
+  the window is built the answer is always "not in a repo", and nothing re-evaluated it for the life of
+  the window. That froze every context-dependent item, not only the Git ones: the preview, CSV, `.http`
+  and Typst entries never followed a tab switch, and the debug step commands never followed a session
+  suspending. The enabled state is now re-evaluated when a menu opens, and pushed from the three places
+  the context actually moves — which is what keeps the macOS system menu bar honest, since AppKit owns the
+  popup there and may not tell us it is opening.
+
+- **Switching a build tool back on in Settings left it dead.** Re-enabling Maven — or npm, Cargo, Go,
+  Gradle — gave no stripe button and no tasks tree, and the status row on the very same Settings page went
+  on reading "No Maven project detected", which is what made it look unfixable from the interface.
+  Detection had been cleared while the tool was off and only the palette command re-ran it; the Settings
+  checkbox did not, though the documented behaviour is that every settings apply re-detects. The status
+  row is also re-read when detection finishes rather than immediately, since asking synchronously always
+  answers "not detected".
 
 ## [0.14.0] - 2026-08-29
 
