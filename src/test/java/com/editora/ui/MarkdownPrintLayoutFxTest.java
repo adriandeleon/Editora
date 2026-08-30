@@ -108,6 +108,7 @@ class MarkdownPrintLayoutFxTest {
         org.junit.jupiter.api.Assumptions.assumeTrue(pages != null, "no printer available");
         assertTrue(pages.size() > 3, "a 200-item list should need several pages, got " + pages.size());
         assertNoPageIsScaled(pages);
+        assertNoPageOverflows(pages);
     }
 
     /** The same for a single paragraph longer than a page: it splits at its inline runs. */
@@ -120,6 +121,7 @@ class MarkdownPrintLayoutFxTest {
         List<Node> pages = paginate(md.toString());
         org.junit.jupiter.api.Assumptions.assumeTrue(pages != null, "no printer available");
         assertNoPageIsScaled(pages);
+        assertNoPageOverflows(pages);
     }
 
     /**
@@ -141,6 +143,7 @@ class MarkdownPrintLayoutFxTest {
         List<Node> pages = paginate(md.toString());
         org.junit.jupiter.api.Assumptions.assumeTrue(pages != null, "no printer available");
         assertNoPageIsScaled(pages);
+        assertNoPageOverflows(pages);
     }
 
     /** Short input still produces exactly one page — the split path must not fragment what already fits. */
@@ -150,6 +153,7 @@ class MarkdownPrintLayoutFxTest {
         org.junit.jupiter.api.Assumptions.assumeTrue(pages != null, "no printer available");
         assertEquals(1, pages.size());
         assertNoPageIsScaled(pages);
+        assertNoPageOverflows(pages);
     }
 
     private static List<Node> paginate(String md) throws Exception {
@@ -183,5 +187,73 @@ class MarkdownPrintLayoutFxTest {
                     "page " + (i + 1) + " of " + pages.size() + " was shrunk to " + content.getScaleY()
                             + " instead of being split across pages");
         }
+    }
+
+    /**
+     * No page's content is taller than the page.
+     *
+     * <p>The complement of {@link #assertNoPageIsScaled}: scaling is one way a too-tall block can reach a
+     * page, overflowing is the other, and only both together say the split actually worked. It also guards
+     * the arithmetic fast path — a {@code VBox}'s group height is predicted from its children's rather than
+     * laid out, and a prediction that ran slightly optimistic would show up here and nowhere else.
+     */
+    private static void assertNoPageOverflows(List<Node> pages) {
+        for (int i = 0; i < pages.size(); i++) {
+            StackPane page = (StackPane) pages.get(i);
+            double limit = page.getPrefHeight();
+            double content = page.getChildren().get(0).getLayoutBounds().getHeight();
+            assertTrue(
+                    content <= limit + 1.0,
+                    "page " + (i + 1) + " of " + pages.size() + " holds " + content + "px of content on a " + limit
+                            + "px page");
+        }
+    }
+
+    /**
+     * The arithmetic path predicts a {@code VBox} group's height exactly.
+     *
+     * <p>Pagination is 94% layout, so a group's height is computed from its children's measured heights
+     * rather than laid out — valid because a VBox stacks children at their preferred heights and the clone
+     * is pinned to the printable width, so a child measured alone is the height it will be in a group. That
+     * reasoning is what this checks, against a real layout, rather than trusting it.
+     *
+     * <p>Padding and spacing are read back <em>after</em> CSS rather than assumed: {@code .markdown-preview}
+     * sets both, and overrides whatever the code set. Writing this test with the values it had passed in was
+     * wrong by 60px.
+     */
+    @Test
+    void aVBoxGroupIsAsTallAsItsChildrenStacked() throws Exception {
+        double[] measured = FxTestSupport.callOnFx(() -> {
+            List<javafx.scene.text.Text> kids = new java.util.ArrayList<>();
+            for (int i = 0; i < 5; i++) {
+                kids.add(new javafx.scene.text.Text("child " + i + " with a line of text on it"));
+            }
+            VBox group = styledBox();
+            group.getChildren().addAll(kids);
+            double whole = MarkdownPrintLayout.measureOne(group, 400, 800);
+            double padding = group.getPadding().getTop() + group.getPadding().getBottom();
+            double spacing = group.getSpacing();
+            group.getChildren().clear();
+
+            double sum = 0;
+            for (javafx.scene.text.Text kid : kids) {
+                VBox solo = styledBox();
+                solo.getChildren().add(kid);
+                sum += MarkdownPrintLayout.measureOne(solo, 400, 800) - padding;
+                solo.getChildren().clear();
+            }
+            return new double[] {whole, padding + sum + spacing * (kids.size() - 1)};
+        });
+        assertEquals(
+                measured[0],
+                measured[1],
+                0.5,
+                "a VBox's height must be its children stacked, or the split's fast path mispredicts");
+    }
+
+    private static VBox styledBox() {
+        VBox box = new VBox();
+        box.getStyleClass().add("markdown-preview");
+        return box;
     }
 }

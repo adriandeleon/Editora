@@ -43,4 +43,36 @@ class PrintLayoutTest {
     void packBlocksAlwaysReturnsAtLeastOnePage() {
         assertEquals(List.of(List.of()), MarkdownPrintLayout.packBlocks(List.of(), 100));
     }
+
+    /**
+     * Packing charges the gap between blocks.
+     *
+     * <p>The page's container is a {@code VBox} with CSS spacing, and packing used to ignore it: blocks
+     * summing to exactly the page height then overflowed it by the gaps between them. Measured on a
+     * 200-item list, six of eight pages were over the page, the worst by 31px — invisible to a "was
+     * anything scaled?" check and invisible on screen, because the preview clips.
+     */
+    @Test
+    void packBlocksChargesTheSpacingBetweenBlocks() {
+        // Three 30px blocks fit a 100px page only if the two 10px gaps between them are free; they are not.
+        assertEquals(
+                List.of(List.of(0, 1), List.of(2)), MarkdownPrintLayout.packBlocks(List.of(30.0, 30.0, 30.0), 100, 10));
+        // The same blocks with no spacing still share one page.
+        assertEquals(
+                List.of(List.of(0, 1, 2)), MarkdownPrintLayout.packBlocks(List.of(30.0, 30.0, 30.0), 100, 10 - 10));
+    }
+
+    /** The first block on a page pays no leading gap — otherwise every page would lose one gap of room. */
+    @Test
+    void theFirstBlockOnAPageIsNotChargedAGap() {
+        assertEquals(List.of(List.of(0)), MarkdownPrintLayout.packBlocks(List.of(100.0), 100, 25));
+    }
+
+    /** Negative or absent spacing is treated as none, so the two-argument form keeps its old behaviour. */
+    @Test
+    void spacingIsClampedAndTheTwoArgumentFormIsUnchanged() {
+        assertEquals(
+                MarkdownPrintLayout.packBlocks(List.of(40.0, 40.0), 100),
+                MarkdownPrintLayout.packBlocks(List.of(40.0, 40.0), 100, -5));
+    }
 }
