@@ -5891,15 +5891,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         git.service().branches(git.repoRoot(), branches -> {
             List<BranchPopup.MenuAction> actions = List.of(
-                    new BranchPopup.MenuAction(tr("branch.newBranch"), "", git::newBranch),
+                    // Each row names its command so the popup takes the VCS menu's own glyph for it.
+                    new BranchPopup.MenuAction(tr("branch.newBranch"), "", "git.newBranch", git::newBranch),
                     new BranchPopup.MenuAction(
-                            tr("branch.pull"), "", () -> git.gitSync(tr("gitlabel.pull"), "pull", "--ff-only")),
+                            tr("branch.pull"),
+                            "",
+                            "git.pull",
+                            () -> git.gitSync(tr("gitlabel.pull"), "pull", "--ff-only")),
                     new BranchPopup.MenuAction(
-                            tr("branch.fetch"), "", () -> git.gitSync(tr("gitlabel.fetch"), "fetch", "--all")),
-                    new BranchPopup.MenuAction(tr("branch.push"), "", git::gitPush),
-                    new BranchPopup.MenuAction(tr("branch.stash"), "", git::gitStash),
-                    new BranchPopup.MenuAction(tr("branch.unstash"), "", git::gitUnstash),
-                    new BranchPopup.MenuAction(tr("branch.commit"), "C-x g", git::gitCommitFocus));
+                            tr("branch.fetch"),
+                            "",
+                            "git.fetch",
+                            () -> git.gitSync(tr("gitlabel.fetch"), "fetch", "--all")),
+                    new BranchPopup.MenuAction(tr("branch.push"), "", "git.push", git::gitPush),
+                    new BranchPopup.MenuAction(tr("branch.stash"), "", "git.stash", git::gitStash),
+                    new BranchPopup.MenuAction(tr("branch.unstash"), "", "git.unstash", git::gitUnstash),
+                    new BranchPopup.MenuAction(tr("branch.commit"), "C-x g", "git.commit", git::gitCommitFocus));
             branchPopup.show(
                     stage,
                     statusBar.gitSegmentNode(),

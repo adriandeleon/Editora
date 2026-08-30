@@ -120,12 +120,13 @@ final class MenuBarIcons {
         add("test.rerunFailed", Icons::refresh);
         add("git.commit", Icons::git);
         add("git.switchBranch", Icons::git);
-        add("git.newBranch", Icons::git);
+        add("git.newBranch", Icons::plus);
         add("git.clone", Icons::git);
         add("git.push", Icons::gitPush);
         add("git.pull", Icons::arrowDown);
         add("git.stash", Icons::stash);
         add("git.stashPop", Icons::stash);
+        add("git.unstash", Icons::stash);
         add("tool.gitLog", Icons::gitLog);
         add("git.fileHistory", Icons::history);
         add("diff.vsHead", Icons::diff);

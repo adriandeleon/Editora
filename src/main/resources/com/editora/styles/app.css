@@ -360,6 +360,24 @@
     -fx-font-family: "JetBrains Mono", "monospace";
     -fx-font-size: 12px;
 }
+/* Branch dropdown (BranchPopup): reads as the VCS menu it duplicates, not as the command palette whose
+   card chrome it borrows. The popup carries BOTH classes, so this needs the higher specificity to beat
+   `.command-palette .list-cell`'s 12.5px wherever the two rules sit in this file. */
+.command-palette.branch-popup .list-cell {
+    -fx-font-size: 14px;
+}
+/* The title/chord pair is shared with the menu bar, so both surfaces are styled from ONE rule and cannot
+   drift. The menu's half stays scoped to `.menu-item` on purpose: unscoped it would lose to AtlantaFX's
+   own `.menu-item .label` text-fill. */
+.menu-item .menu-item-title,
+.command-palette.branch-popup .menu-item-title {
+    -fx-text-fill: -color-fg-default;
+}
+.menu-item .menu-item-chord,
+.command-palette.branch-popup .menu-item-chord {
+    -fx-text-fill: -state-key;
+    -fx-font-size: 11px;
+}
 /* Branch dropdown (BranchPopup): section headers + current-branch marker. */
 .branch-popup-header {
     -fx-text-fill: -color-fg-muted;
@@ -3547,13 +3565,6 @@
    theme's `.menu-item:focused > .label` only reaches a DIRECT child label, which these are not, so the
    two labels carry their own colours. Periwinkle for the chord — the keyboard's one hue, as everywhere
    else a binding is shown. */
-.menu-item .menu-item-title {
-    -fx-text-fill: -color-fg-default;
-}
-.menu-item .menu-item-chord {
-    -fx-text-fill: -state-key;
-    -fx-font-size: 11px;
-}
 
 /* ---- Settings: no internal rules -----------------------------------------------------------------
    Matches the palette and the tool windows: the nav rail, the card rows and the footer are separated
