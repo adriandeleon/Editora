@@ -72,7 +72,11 @@ class MenuBarFxTest {
                 wired++;
             }
         }
-        assertEquals(MenuBarModel.allCommandIds().size(), wired, "every modelled command became an item");
+        long modelled = MenuBarModel.menus().stream()
+                .flatMap(m -> m.entries().stream())
+                .filter(e -> !MenuBarModel.SEPARATOR.equals(e))
+                .count();
+        assertEquals(modelled, wired, "every modelled command became an item");
     }
 
     /**
@@ -105,17 +109,26 @@ class MenuBarFxTest {
         setFlag(s -> s.setGitSupport(true));
     }
 
-    /** Simple UI mode strips chrome to a minimum, and the menu bar goes with it. */
+    /**
+     * Simple UI mode strips chrome to a minimum, but the menu bar <em>stays</em> — it is the browsable map,
+     * which a beginner-facing mode needs most. What changes is its contents: the reduced table, whose entries
+     * are all still actionable in a mode with no LSP, VCS, debugging or tool windows.
+     */
     @Test
-    void simpleModeHidesTheMenuBar() throws Exception {
+    void simpleModeReducesTheMenuBarRatherThanHidingIt() throws Exception {
         MenuBar bar = bar();
         assertTrue(FxTestSupport.callOnFx(bar::isVisible), "visible by default");
+        int full = FxTestSupport.callOnFx(() -> bar.getMenus().size());
 
         setFlag(s -> s.setSimpleMode(true));
-        assertFalse(FxTestSupport.callOnFx(bar::isVisible), "hidden in Simple UI mode");
+        assertTrue(FxTestSupport.callOnFx(bar::isVisible), "still visible in Simple UI mode");
+        assertEquals(
+                MenuBarModel.menus(true).size(),
+                (int) FxTestSupport.callOnFx(() -> bar.getMenus().size()),
+                "rebuilt from the Simple-mode table");
 
         setFlag(s -> s.setSimpleMode(false));
-        assertTrue(FxTestSupport.callOnFx(bar::isVisible), "and back again");
+        assertEquals(full, (int) FxTestSupport.callOnFx(() -> bar.getMenus().size()), "and back again");
     }
 
     /** Flips a setting on the controller's own config and re-applies the chrome, as a settings apply does. */

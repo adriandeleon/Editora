@@ -23,16 +23,20 @@ final class Chrome {
     private Chrome() {}
 
     // --- Effective chrome visibility. The "focus modes" (Zen and Expert) hide all of these; Simple
-    //     additionally hides the breadcrumb + tool stripes (the toolbar/status/tab bar stay under Simple).
+    //     additionally hides the breadcrumb + tool stripes (the toolbar/status/tab/menu bar stay under
+    //     Simple — the menu bar keeps a reduced set of entries instead, see MenuBarModel#menus).
     //     {@code focusMode} = Zen OR Expert. The exceptions are {@link #statusBar} and {@link #lineNumbers},
     //     which Zen hides but Expert deliberately KEEPS, so those two stay keyed on the real {@code zen}. ---
 
     /**
-     * The menu bar follows the toolbar's rule — the user's preference, suppressed by a focus mode — but is
-     * also dropped in Simple UI mode, whose whole point is a minimal surface.
+     * The menu bar follows the toolbar's rule: the user's preference, suppressed by a focus mode.
+     *
+     * <p>Simple UI mode deliberately does <em>not</em> hide it. The menu is the browsable map of what the
+     * editor can do, which a beginner-facing mode needs most; what Simple mode changes is the map's
+     * <em>contents</em>, via {@link MenuBarModel#menus(boolean)}.
      */
-    static boolean menuBar(boolean showMenuBar, boolean focusMode, boolean simpleMode) {
-        return showMenuBar && !focusMode && !simpleMode;
+    static boolean menuBar(boolean showMenuBar, boolean focusMode) {
+        return showMenuBar && !focusMode;
     }
 
     static boolean toolbar(boolean showToolbar, boolean focusMode) {

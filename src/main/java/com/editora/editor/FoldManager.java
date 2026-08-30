@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -562,6 +563,9 @@ public final class FoldManager {
     }
 
     public void unfoldAll() {
+        if (!hasCollapsedParagraph()) {
+            return; // nothing folded: skip firstVisiblePar() (a forced VirtualFlow layout) and the shade sweep
+        }
         int topPar = firstVisiblePar();
         int n = area.getParagraphs().size();
         for (int p = 0; p + 1 < n; p++) {
@@ -576,6 +580,18 @@ public final class FoldManager {
         if (!restoring) {
             onFoldStateChanged.run();
         }
+    }
+
+    /** Whether any paragraph is currently collapsed. A plain style read per paragraph — no layout, unlike
+     *  {@link #firstVisiblePar()} — so it is safe to use as an early-out on a hot path. */
+    private boolean hasCollapsedParagraph() {
+        int n = area.getParagraphs().size();
+        for (int p = 0; p < n; p++) {
+            if (area.isFolded(p)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -911,11 +927,26 @@ public final class FoldManager {
         }
     }
 
-    /** Shades (or clears) the folded region's header line so a collapsed block is visible at a glance. */
+    /**
+     * Shades (or clears) the folded region's header line so a collapsed block is visible at a glance.
+     *
+     * <p>No-ops when the line already carries the wanted style. {@code setParagraphStyle} is a styled-document
+     * mutation (it rebuilds the paragraph and emits a rich change), not a cheap property write, and the
+     * fold-all/unfold-all commands clear the shade on <em>every</em> region in the file — thousands in a large
+     * source file, almost none of which were ever shaded. Measured on {@code EditorBuffer.java}, the unguarded
+     * clear was the single biggest cost of {@code unfoldAll} (and so of entering Simple UI mode, which unfolds
+     * every open buffer).
+     */
     private void shadeHeader(int line, boolean folded) {
-        if (line >= 0 && line < area.getParagraphs().size()) {
-            area.setParagraphStyle(line, folded ? List.of("fold-header-line") : List.of());
+        if (line < 0 || line >= area.getParagraphs().size()) {
+            return;
         }
+        Collection<String> want = folded ? List.of("fold-header-line") : List.of();
+        Collection<String> have = area.getParagraph(line).getParagraphStyle();
+        if (have != null && have.size() == want.size() && have.containsAll(want)) {
+            return;
+        }
+        area.setParagraphStyle(line, want);
     }
 
     /**

@@ -35,6 +35,22 @@ final class MenuBarModel {
      * Visual Studio, so someone arriving from any of them finds things where they expect.
      */
     static List<MenuSpec> menus() {
+        return menus(false);
+    }
+
+    /**
+     * The menu bar for the current UI mode. Simple UI mode gets the {@link #simpleMenus() reduced} table
+     * rather than losing the menu bar altogether: the menu is the browsable map of what the editor can do,
+     * and a beginner-facing mode is exactly where that map matters most. What Simple mode strips is the
+     * <em>content</em> — its whole point is a minimal surface, and it also switches off LSP, debugging, Git,
+     * HTTP, plugins, external tools and the test runner, so the Code/Run/VCS/Tools menus would otherwise
+     * stand there fully grayed out, which is worse than not offering them.
+     */
+    static List<MenuSpec> menus(boolean simple) {
+        return simple ? simpleMenus() : fullMenus();
+    }
+
+    private static List<MenuSpec> fullMenus() {
         return List.of(
                 new MenuSpec(
                         "menubar.file",
@@ -242,9 +258,58 @@ final class MenuBarModel {
                                 "help.about")));
     }
 
-    /** Every command id referenced by the menu bar, separators excluded. */
+    /**
+     * The Simple UI mode menu: the handful of actions that still do something in a mode with no language
+     * servers, no VCS, no tool windows and no gutter. Every entry is either a plain editing action or a way
+     * back out — {@code view.toggleSimpleMode} is deliberately present, so the mode is never a one-way door
+     * reachable only from the toolbar.
+     */
+    private static List<MenuSpec> simpleMenus() {
+        return List.of(
+                new MenuSpec(
+                        "menubar.file",
+                        List.of(
+                                "file.new",
+                                "file.open",
+                                SEPARATOR,
+                                "file.save",
+                                "file.saveAs",
+                                SEPARATOR,
+                                "buffer.close",
+                                SEPARATOR,
+                                "app.quit")),
+                new MenuSpec(
+                        "menubar.edit",
+                        List.of(
+                                "edit.undo",
+                                "edit.redo",
+                                SEPARATOR,
+                                "edit.cut",
+                                "edit.copy",
+                                "edit.paste",
+                                SEPARATOR,
+                                "edit.selectAll",
+                                "edit.toggleComment")),
+                new MenuSpec("menubar.find", List.of("find.show", "find.next", "find.previous", "find.replace")),
+                new MenuSpec(
+                        "menubar.view",
+                        List.of(
+                                "view.toggleWordWrap",
+                                "view.toggleStatusBar",
+                                SEPARATOR,
+                                "view.settings",
+                                SEPARATOR,
+                                "view.toggleSimpleMode",
+                                "view.welcome")),
+                new MenuSpec("menubar.help", List.of("palette.show", SEPARATOR, "help.about")));
+    }
+
+    /**
+     * Every command id either menu bar references, separators excluded — the union, so the tests that check
+     * each id exists, is localized and has an icon cover the Simple mode table too.
+     */
     static List<String> allCommandIds() {
-        return menus().stream()
+        return java.util.stream.Stream.concat(fullMenus().stream(), simpleMenus().stream())
                 .flatMap(m -> m.entries().stream())
                 .filter(e -> !SEPARATOR.equals(e))
                 .distinct()
