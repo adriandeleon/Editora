@@ -325,6 +325,49 @@ public final class ConfigMigrations {
         return o;
     }
 
+    /**
+     * v100→101: puts {@code toolbar.recent} back into a <em>saved</em> toolbar layout.
+     *
+     * <p>Recent moved out of the toolbar's fixed tail and into the customizable icon cluster, where it is now
+     * part of {@code ToolbarCatalog.defaultLayout}. A user who never customized the toolbar has an empty
+     * saved layout and picks the default up for free — but a saved layout is used verbatim, so for anyone who
+     * had rearranged their bar the button would simply have vanished from both halves. Nothing sheds an item
+     * <em>in</em> the way {@code ToolbarLayout.sanitize} sheds unknown ids out, so it has to be inserted here.
+     *
+     * <p>Inserted directly after {@code file.saveAs}, its position in the shipped default; appended if the
+     * layout has no Save As (someone can have removed it). A layout that already names it — and an empty one,
+     * which means "use the default" — is left exactly as it is, so the step is idempotent and never disturbs a
+     * user who has already placed Recent somewhere of their own choosing.
+     */
+    static JsonNode restoreRecentToToolbarLayout(JsonNode input) {
+        if (!(input instanceof ObjectNode o)) {
+            return input;
+        }
+        JsonNode layout = o.get("toolbarLayout");
+        if (!(layout instanceof ArrayNode arr) || arr.isEmpty()) {
+            return o; // never customized ⇒ the default layout applies, which already has Recent
+        }
+        for (JsonNode n : arr) {
+            if (n.isTextual() && "toolbar.recent".equals(n.asText())) {
+                return o; // already there — do not move what the user placed
+            }
+        }
+        ArrayNode out = o.arrayNode();
+        boolean inserted = false;
+        for (JsonNode n : arr) {
+            out.add(n);
+            if (!inserted && n.isTextual() && "file.saveAs".equals(n.asText())) {
+                out.add("toolbar.recent");
+                inserted = true;
+            }
+        }
+        if (!inserted) {
+            out.add("toolbar.recent");
+        }
+        o.set("toolbarLayout", out);
+        return o;
+    }
+
     static JsonNode splitAiApiKeyByProvider(JsonNode input) {
         if (!(input instanceof ObjectNode o)) {
             return input;

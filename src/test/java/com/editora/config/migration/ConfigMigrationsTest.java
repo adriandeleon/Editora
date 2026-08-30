@@ -292,4 +292,54 @@ class ConfigMigrationsTest {
         assertEquals("sk-real", out.get("aiApiKeyOpenai").asText());
         assertEquals("stale", out.get("aiApiKey").asText());
     }
+
+    // ---- v100→101: Recent moved from the toolbar's fixed tail into the customizable cluster -----------
+
+    private java.util.List<String> layoutAfterMigration(String json) throws Exception {
+        ObjectNode out = (ObjectNode) ConfigMigrations.restoreRecentToToolbarLayout(mapper.readTree(json));
+        java.util.List<String> l = new java.util.ArrayList<>();
+        out.path("toolbarLayout").forEach(n -> l.add(n.asText()));
+        return l;
+    }
+
+    @Test
+    void restoreRecentInsertsItAfterSaveAsInACustomizedLayout() throws Exception {
+        assertEquals(
+                java.util.List.of("file.new", "file.save", "file.saveAs", "toolbar.recent", "|", "edit.undo"),
+                layoutAfterMigration(
+                        "{\"toolbarLayout\":[\"file.new\",\"file.save\",\"file.saveAs\",\"|\",\"edit.undo\"]}"),
+                "a saved layout is used verbatim, so Recent has to be put back where the default puts it");
+    }
+
+    @Test
+    void restoreRecentAppendsWhenTheUserRemovedSaveAs() throws Exception {
+        assertEquals(
+                java.util.List.of("file.new", "|", "edit.undo", "toolbar.recent"),
+                layoutAfterMigration("{\"toolbarLayout\":[\"file.new\",\"|\",\"edit.undo\"]}"),
+                "no anchor to insert after, but the button must still be reachable");
+    }
+
+    @Test
+    void restoreRecentLeavesAnUncustomizedOrAlreadyCorrectLayoutAlone() throws Exception {
+        // Empty means "use the shipped default", which already contains Recent — inserting would pin the
+        // whole default into the user's settings and freeze it against future changes.
+        assertTrue(layoutAfterMigration("{\"toolbarLayout\":[]}").isEmpty());
+        // Idempotent, and it never MOVES a Recent the user has already placed somewhere of their own.
+        assertEquals(
+                java.util.List.of("toolbar.recent", "file.saveAs"),
+                layoutAfterMigration("{\"toolbarLayout\":[\"toolbar.recent\",\"file.saveAs\"]}"));
+    }
+
+    @Test
+    void restoreRecentToleratesAMissingOrMalformedLayout() throws Exception {
+        assertFalse(((ObjectNode) ConfigMigrations.restoreRecentToToolbarLayout(mapper.readTree("{\"x\":1}")))
+                .has("toolbarLayout"));
+        // A non-array under the key must be passed through, not crash the whole settings read.
+        assertEquals(
+                "nope",
+                ((ObjectNode) ConfigMigrations.restoreRecentToToolbarLayout(
+                                mapper.readTree("{\"toolbarLayout\":\"nope\"}")))
+                        .get("toolbarLayout")
+                        .asText());
+    }
 }
