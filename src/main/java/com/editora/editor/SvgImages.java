@@ -119,23 +119,31 @@ public final class SvgImages {
     /**
      * The canvas for a cached document at the caller's width, aspect preserved.
      *
-     * <p>Sized explicitly: {@code FXSVGCanvas} is a {@code Control} whose skin computes no preferred size,
-     * so left alone it lays out at zero and the preview looks empty. Max is pinned to pref as well as min —
-     * the host is a centering {@code StackPane}, which would otherwise stretch the canvas to fill the pane
-     * and distort the drawing.
+     * <p>Two things here are load-bearing and neither is obvious from the API.
+     *
+     * <p><b>The view box is the TARGET rectangle, not the source.</b> Setting it to the document's own size
+     * makes the canvas draw at natural size in the corner of whatever box it is given — the control grows
+     * with the zoom and the artwork does not, which is the exact opposite of the point. It is therefore set
+     * to the display size. Measured while getting this wrong: a 200x50 SVG in a 400x100 canvas painted 25%
+     * of its box, the artwork sitting at 1:1.
+     *
+     * <p><b>The size must be pinned, max included.</b> {@code FXSVGCanvas} is a {@code Control} whose skin
+     * computes no preferred size, so unsized it lays out at zero; and pinning only pref lets the centering
+     * {@code StackPane} stretch it to fill the pane, distorting the drawing (measured: 800x600 for a box
+     * that should be 800x200).
      */
     private static FXSVGCanvas canvasFor(Cached c, java.util.function.DoubleUnaryOperator sizer) {
+        double w = Math.max(1, sizer.applyAsDouble(c.width()));
+        double h = Math.max(1, w * (c.height() / c.width()));
         FXSVGCanvas canvas = new FXSVGCanvas();
         canvas.setDocument(c.document());
-        canvas.setViewBox(new ViewBox(0, 0, (float) c.width(), (float) c.height()));
+        canvas.setViewBox(new ViewBox(0, 0, (float) w, (float) h));
         // A checkerboard behind transparency, so a white-on-transparent icon is visible rather than
         // appearing blank against a light preview background.
         canvas.setShowTransparentPattern(true);
         // Left off deliberately: an animated document drives a per-frame tick, and nothing here stops it
         // when the tab goes to the background or closes. Turning it on needs that lifecycle first.
         canvas.setAnimated(false);
-        double w = Math.max(1, sizer.applyAsDouble(c.width()));
-        double h = Math.max(1, w * (c.height() / c.width()));
         canvas.setPrefSize(w, h);
         canvas.setMinSize(w, h);
         canvas.setMaxSize(w, h);

@@ -5,7 +5,10 @@ import java.util.function.DoubleUnaryOperator;
 
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.SnapshotParameters;
+import javafx.scene.image.WritableImage;
 import javafx.scene.layout.StackPane;
+import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 
 import com.editora.editor.SvgImages;
@@ -112,5 +115,49 @@ class SvgPreviewCanvasFxTest {
         }
         assertInstanceOf(StackPane.class, host);
         throw new AssertionError("expected an .svg-error label for unparseable input");
+    }
+
+    /**
+     * It actually draws. Every other assertion here passes for a canvas that is present, carries a document
+     * and occupies the right box while rendering nothing at all — which is precisely the failure a native
+     * renderer swap can produce, and it would look like an empty preview.
+     *
+     * <p>Snapshots the laid-out canvas and counts pixels matching the SVG's fill. Deliberately a colour
+     * count rather than an image comparison: the exact rasterization is the library's business and will
+     * differ across versions and platforms, whereas "did the green rectangle get painted" is the property
+     * being claimed.
+     */
+    @Test
+    void theCanvasActuallyPaintsTheDocument() throws Exception {
+        Node host = laidOut(SVG, w -> w * 2); // 200x50 -> 400x100
+        FXSVGCanvas canvas = FxTestSupport.callOnFx(() -> canvasIn(host));
+        assertNotNull(canvas, "canvas present");
+        // Let the skin's first paint land before sampling.
+        for (int i = 0; i < 10; i++) {
+            FxTestSupport.runOnFx(() -> {});
+            TimeUnit.MILLISECONDS.sleep(20);
+        }
+        WritableImage shot = FxTestSupport.callOnFx(() -> canvas.snapshot(new SnapshotParameters(), null));
+        assertNotNull(shot, "snapshot taken");
+        int w = (int) shot.getWidth();
+        int h = (int) shot.getHeight();
+        assertTrue(w > 1 && h > 1, "snapshot has real dimensions, got " + w + "x" + h);
+        int painted = 0;
+        var reader = shot.getPixelReader();
+        for (int y = 0; y < h; y += 2) {
+            for (int x = 0; x < w; x += 2) {
+                Color c = reader.getColor(x, y);
+                // The SVG fills itself #4c1 — a strongly green, opaque pixel.
+                if (c.getOpacity() > 0.9 && c.getGreen() > 0.5 && c.getRed() < 0.5 && c.getBlue() < 0.5) {
+                    painted++;
+                }
+            }
+        }
+        int sampled = ((h + 1) / 2) * ((w + 1) / 2);
+        assertTrue(
+                painted > sampled / 2,
+                "expected the canvas to paint the SVG's green fill over most of its box, but only " + painted
+                        + " of " + sampled + " sampled pixels matched — a canvas that lays out correctly and"
+                        + " draws nothing passes every other assertion in this class");
     }
 }
