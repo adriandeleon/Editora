@@ -638,6 +638,15 @@
                              Finder "Open With"). Harmless on other OSes. Mirrored in the dist launcher. -->
                         <option>--add-exports</option>
                         <option>javafx.graphics/com.sun.glass.ui=com.editora</option>
+                        <!-- jsvg 2.1.0 ships a broken JPMS boundary: jsvg-javafx's FXPaintBridge reads
+                             com.github.weisj.jsvg.logging.impl.LogFactory, which the jsvg module does not
+                             export to it. On the CLASSPATH there is no boundary, so the fat jar and every
+                             test pass; on the module path the first paint dies with an IllegalAccessError
+                             on the FX thread and the SVG preview renders only its transparency checkerboard.
+                             No upstream fix exists (2.1.0 is the only release). Mirrored in the dist
+                             javaOptions and in scripts/aot_build.java's trainer. -->
+                        <option>--add-exports</option>
+                        <option>com.github.weisj.jsvg/com.github.weisj.jsvg.logging.impl=com.github.weisj.jsvg.javafx</option>
                         <!-- Prism pipeline order, per-OS (see the os-* profiles): macOS gets Metal first
                              (es2/sw fallback), Windows keeps Direct3D, Linux es2. Mirrors the dist build so
                              dev == prod; on macOS this is what fixes the M-series es2 RTT glitches. -->
@@ -1430,6 +1439,10 @@
                                         <!-- Let App.MacEventHandler reach the internal com.sun.glass.ui
                                              open-files hook (macOS Finder "Open With"). Harmless elsewhere. -->
                                         <javaOption>--add-exports=javafx.graphics/com.sun.glass.ui=com.editora</javaOption>
+                                        <!-- jsvg 2.1.0's jsvg-javafx reads a package the jsvg module does not
+                                             export to it; without this the SVG preview paints nothing but its
+                                             checkerboard in every modular build. See the javafx:run options. -->
+                                        <javaOption>--add-exports=com.github.weisj.jsvg/com.github.weisj.jsvg.logging.impl=com.github.weisj.jsvg.javafx</javaOption>
                                         <!-- Raise the Prism texture caps: the default 512 MB VRAM pool
                                              could be exhausted by many open files' GPU textures, after
                                              which JavaFX NPEs in the render thread (black screen). These

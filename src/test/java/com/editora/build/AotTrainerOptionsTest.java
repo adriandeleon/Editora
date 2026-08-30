@@ -140,6 +140,45 @@ class AotTrainerOptionsTest {
                         + "heap and GC");
     }
 
+    /**
+     * The jsvg JPMS workaround must be on every modular launch path.
+     *
+     * <p>jsvg 2.1.0 ships a broken module boundary: {@code jsvg-javafx}'s {@code FXPaintBridge} reads
+     * {@code com.github.weisj.jsvg.logging.impl.LogFactory}, which the {@code jsvg} module does not export
+     * to it. On the CLASSPATH there is no boundary at all, so the fat jar runs fine and <em>every test in
+     * this repo passes</em> — surefire sets {@code useModulePath=false}. On the module path the first paint
+     * throws {@code IllegalAccessError} on the FX thread, and because the skin has already drawn its
+     * transparency pattern by then, the SVG preview shows a correctly-sized checkerboard with no artwork.
+     * Nothing else reports it.
+     *
+     * <p>That is unfixable from our side without the flag (2.1.0 is the only release), and it has to be on
+     * three lists that no compiler connects: {@code javafx:run}, the packaged launcher, and the AOT trainer.
+     * Dropping it from any one of them breaks SVG previews in that configuration only.
+     */
+    @Test
+    void everyModularLaunchPathExportsJsvgLoggingToTheJavaFxBridge() throws IOException {
+        String expected = "com.github.weisj.jsvg/com.github.weisj.jsvg.logging.impl=com.github.weisj.jsvg.javafx";
+        String pom = stripXmlComments(Files.readString(REPO.resolve("pom.xml"), StandardCharsets.UTF_8));
+
+        // Read the raw element bodies, not values(): that filters to options starting with "-", and
+        // javafx:run splits a flag across two <option> elements, so the value half never starts with one.
+        assertTrue(
+                allValues(pom, "javaOption").stream().anyMatch(o -> o.contains(expected)),
+                "the packaged launcher (dist <javaOptions>) must --add-exports " + expected
+                        + ", or the installed app's SVG preview draws only its checkerboard");
+        assertTrue(
+                allValues(pom, "option").stream().anyMatch(o -> o.contains(expected)),
+                "mvn javafx:run must --add-exports " + expected + ", or the dev loop cannot render an SVG");
+
+        String trainer =
+                stripJavaComments(Files.readString(REPO.resolve("scripts/aot_build.java"), StandardCharsets.UTF_8));
+        assertTrue(
+                trainer.contains(expected),
+                "scripts/aot_build.java must --add-exports " + expected + ": the trainer renders a real "
+                        + "window, so without it the training run logs an FX-thread error and trains the "
+                        + "cache under a configuration the app does not run under");
+    }
+
     // --- sources -------------------------------------------------------------------------------
 
     /** The active {@code <javaOption>} values from the dist profile, XML comments removed. */
@@ -180,6 +219,16 @@ class AotTrainerOptionsTest {
     }
 
     // --- pure helpers --------------------------------------------------------------------------
+
+    /** Every {@code <tag>} body, unfiltered — {@link #values} keeps only the ones that look like flags. */
+    private static Set<String> allValues(String xml, String tag) {
+        Set<String> out = new LinkedHashSet<>();
+        Matcher m = Pattern.compile("<" + tag + ">([^<]*)</" + tag + ">").matcher(xml);
+        while (m.find()) {
+            out.add(m.group(1).trim());
+        }
+        return out;
+    }
 
     private static Set<String> values(String xml, String tag) {
         Set<String> out = new LinkedHashSet<>();

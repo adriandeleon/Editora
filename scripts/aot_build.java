@@ -247,6 +247,9 @@ public class aot_build {
                     // (com.editora.MacOpenFiles degrades gracefully without it, but include it so the cache
                     // matches the shipped app and covers the handler's classes.)
                     "--add-exports=javafx.graphics/com.sun.glass.ui=com.editora",
+                    // jsvg 2.1.0's jsvg-javafx reads a package the jsvg module does not export to it, so
+                    // without this the SVG preview draws nothing on the module path (see the pom).
+                    "--add-exports=com.github.weisj.jsvg/com.github.weisj.jsvg.logging.impl=com.github.weisj.jsvg.javafx",
                     // Training must not depend on the host having a REAL GPU. CI runners present
                     // virtualized ones, and JavaFX 26 made Metal the default macOS pipeline (pom.xml's
                     // os-mac ${prism.pipeline} = mtl,es2,sw) — on the macOS ARM runner's paravirtual GPU
