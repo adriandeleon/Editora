@@ -214,6 +214,9 @@ final class MenuBarModel {
                                 SEPARATOR,
                                 "git.stash",
                                 "git.stashPop",
+                                // The picker, beside pop-latest: both are listed in the branch dropdown,
+                                // and the menu offered only one of the two.
+                                "git.unstash",
                                 SEPARATOR,
                                 "git.clone")),
                 new MenuSpec(

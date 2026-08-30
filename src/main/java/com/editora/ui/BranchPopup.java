@@ -38,13 +38,20 @@ import static com.editora.i18n.Messages.tr;
 public final class BranchPopup {
 
     /** A non-branch action shown at the top (label + optional shortcut hint + handler). */
-    public record MenuAction(String label, String accel, Runnable run) {}
+    /**
+     * One of the popup's command rows.
+     *
+     * <p>{@code commandId} is carried so the row can take its glyph from {@link MenuBarIcons} — the same
+     * table the VCS menu draws from — rather than naming a glyph here. The two surfaces offer the same
+     * actions, so picking icons independently would let them drift apart for no reason.
+     */
+    public record MenuAction(String label, String accel, String commandId, Runnable run) {}
 
     private sealed interface Row permits Header, ActionRow, BranchRow {}
 
     private record Header(String title) implements Row {}
 
-    private record ActionRow(String label, String accel, Runnable run) implements Row {}
+    private record ActionRow(String label, String accel, String commandId, Runnable run) implements Row {}
     /** A branch row: {@code upstream}/{@code ahead}/{@code behind} are the tracking info (locals only). */
     private record BranchRow(
             String name,
@@ -99,7 +106,7 @@ public final class BranchPopup {
         Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ select  ·  esc / C-g cancel");
         hint.getStyleClass().add("palette-hint");
         content = new VBox(6, header, search, list, hint);
-        content.getStyleClass().add("command-palette");
+        content.getStyleClass().addAll("command-palette", "branch-popup");
         content.setPrefWidth(480);
         content.setMaxSize(480, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep C-n/C-p for the picker
@@ -137,7 +144,7 @@ public final class BranchPopup {
             Consumer<String> onCheckoutRemote) {
         List<Row> rows = new ArrayList<>();
         for (MenuAction a : actions) {
-            rows.add(new ActionRow(a.label(), a.accel(), a.run()));
+            rows.add(new ActionRow(a.label(), a.accel(), a.commandId(), a.run()));
         }
         rows.add(new Header(tr("branchpopup.local")));
         List<com.editora.git.GitService.BranchInfo> locals = new ArrayList<>(local);
@@ -186,7 +193,7 @@ public final class BranchPopup {
     public void showNoVcs(Window owner, Node anchor, Runnable onClone) {
         titleLabel.setText(tr("branchpopup.noVcs"));
         remoteUrlLabel.setText("");
-        all = List.of(new ActionRow(tr("branchpopup.clone"), "", onClone));
+        all = List.of(new ActionRow(tr("branchpopup.clone"), "", "git.clone", onClone));
         present(owner, anchor);
     }
 
@@ -325,6 +332,9 @@ public final class BranchPopup {
         }
     }
 
+    /** Width of the leading icon column — the menu bar's {@code ICON_COLUMN}, so both read alike. */
+    private static final double ICON_COLUMN = 22;
+
     private final class RowCell extends ListCell<Row> {
         @Override
         protected void updateItem(Row item, boolean empty) {
@@ -344,12 +354,11 @@ public final class BranchPopup {
             } else if (item instanceof ActionRow a) {
                 setDisable(false);
                 Label label = new Label(a.label());
+                label.getStyleClass().add("menu-item-title");
                 Label accel = new Label(a.accel() == null ? "" : a.accel());
-                // A real chord, so it wears the periwinkle chip (the "keybinding" class alone has no
-                // rule outside .command-palette). See the state language in app.css.
-                accel.getStyleClass().addAll("keybinding", "chord-chip");
+                accel.getStyleClass().add("menu-item-chord");
                 setText(null);
-                setGraphic(row(label, accel));
+                setGraphic(row(iconColumn(a.commandId()), label, accel));
             } else if (item instanceof BranchRow br) {
                 setDisable(false);
                 setText(null);
@@ -357,17 +366,44 @@ public final class BranchPopup {
             }
         }
 
-        private HBox row(Label left, Label right) {
+        private HBox row(Node icon, Label left, Label right) {
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
-            HBox box = new HBox(10, left, spacer, right);
+            HBox box = new HBox(0, icon, left, spacer, right);
+            // The same two gaps the menu uses: a small one after the glyph, a wide one before the chord.
+            HBox.setMargin(left, new javafx.geometry.Insets(0, 0, 0, 8));
+            HBox.setMargin(right, new javafx.geometry.Insets(0, 0, 0, 18));
             box.setAlignment(Pos.CENTER_LEFT);
             return box;
         }
 
+        /**
+         * The fixed-width leading column, mirroring {@code MainMenuBar.iconColumn}.
+         *
+         * <p>Fixed width whether or not there is a glyph, and present on <em>every</em> row including the
+         * branches: JavaFX reserves no icon gutter of its own, so a column only some rows carry would start
+         * each label at a different x and read as two ragged lists.
+         */
+        private javafx.scene.layout.StackPane iconColumn(Node glyph) {
+            javafx.scene.layout.StackPane holder = new javafx.scene.layout.StackPane();
+            holder.setMinWidth(ICON_COLUMN);
+            holder.setPrefWidth(ICON_COLUMN);
+            holder.setMaxWidth(ICON_COLUMN);
+            holder.setAlignment(Pos.CENTER);
+            if (glyph != null) {
+                holder.getChildren().add(glyph);
+            }
+            return holder;
+        }
+
+        private javafx.scene.layout.StackPane iconColumn(String commandId) {
+            return iconColumn(MenuBarIcons.forCommand(commandId));
+        }
+
         /** A branch row: name (+ incoming/outgoing badge) on the left, the upstream on the right. */
         private HBox branchRow(BranchRow br) {
-            Label name = new Label((br.current() ? "✓ " : "") + br.name());
+            Label name = new Label(br.name());
+            name.getStyleClass().add("menu-item-title");
             if (br.current()) {
                 name.getStyleClass().add("branch-current");
             }
@@ -389,7 +425,12 @@ public final class BranchPopup {
             Label up = new Label(detail);
             up.getStyleClass().add("branch-upstream");
 
-            HBox box = new HBox(10, left, spacer, up);
+            // The check moves into the shared leading column: as a "✓ " text prefix it shifted the current
+            // branch's name out of line with every other row's.
+            Node mark = br.current() ? Icons.check() : null;
+            HBox box = new HBox(0, iconColumn(mark), left, spacer, up);
+            HBox.setMargin(left, new javafx.geometry.Insets(0, 0, 0, 8));
+            HBox.setMargin(up, new javafx.geometry.Insets(0, 0, 0, 18));
             box.setAlignment(Pos.CENTER_LEFT);
             setTooltip(new Tooltip(branchTooltip(br)));
             return box;

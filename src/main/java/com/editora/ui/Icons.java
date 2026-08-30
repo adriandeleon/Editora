@@ -721,6 +721,18 @@ final class Icons {
     }
 
     /** Material "check" / done — "Resolve" note context-menu item. */
+    /**
+     * UI Kit line "plus" — New Branch, on the VCS menu and in the branch dropdown.
+     *
+     * <p>The dropdown used to spell this as a fullwidth {@code ＋} at the head of the label, which a real
+     * icon column makes redundant. Mapping the command to a plus rather than to the generic git node keeps
+     * that distinction and gives it to the menu too, where New Branch was drawn identically to Switch
+     * Branch.
+     */
+    static Node plus() {
+        return line("M8 3.4v9.2M3.4 8h9.2");
+    }
+
     static Node check() {
         return line("M3 8.6l3.2 3.2L13 4.6");
     }

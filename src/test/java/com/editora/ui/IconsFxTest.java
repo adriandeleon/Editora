@@ -58,6 +58,7 @@ class IconsFxTest {
         assertRenders("closeTab", Icons::closeTab);
         assertRenders("save", Icons::save);
         assertRenders("recent", Icons::recent); // circle → arc
+        assertRenders("plus", Icons::plus);
         assertRenders("undo", Icons::undo);
         assertRenders("redo", Icons::redo);
         assertRenders("cut", Icons::cut); // two circles → arcs
