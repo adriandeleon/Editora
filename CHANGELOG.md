@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **SVG files preview as vector art instead of a scaled bitmap.** The `.svg` preview drew the file once into
+  a fixed 2×-resolution image and scaled that, so zooming past 200% went soft — on the one preview whose
+  entire content is vector. It now draws through JSVG's JavaFX canvas and redraws at whatever size it is
+  shown at, so it stays sharp at any zoom. Transparent SVGs get a checkerboard behind them, so a white icon
+  on a transparent background is visible rather than looking like an empty pane.
+
+  Nothing else changed renderer: Markdown badges and every export path (PDF, print, Word, ODF) still
+  rasterize exactly as before.
+
+
 - **The run-configuration group moved to the right end of the toolbar.** The selector and its Run, Debug
   and Stop buttons now sit beside the project switcher rather than in the middle of the icons, the way an
   IDE pins its run widget. They are pinned there: the icon cluster is what collapses into the overflow
