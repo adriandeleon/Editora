@@ -101,6 +101,19 @@
             <artifactId>javafx-fxml</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+        <!-- Editora itself never touches javafx.swing (the SVG rasterizer copies into a WritableImage
+             via a PixelWriter rather than going through SwingFXUtils). It is here because jsvg-javafx's
+             module-info carries a hard `requires javafx.swing`, and it is here EXPLICITLY because that
+             dependency drags in javafx-swing 17.0.15 otherwise: OpenJFX publishes no `linux-aarch64`
+             classifier for 17.0.15, so the linux arm64 release leg cannot resolve it and the whole
+             release fails (it did, on v0.14.0's first attempt). The other four legs resolved it happily
+             and would have linked a JavaFX 17 javafx.swing into an otherwise-26 runtime image, which is
+             the worse half of the same bug. Pinning it to ${javafx.version} fixes both. -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-swing</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
         <dependency>
             <groupId>io.github.adriandeleon</groupId>
             <artifactId>richtextfx</artifactId>

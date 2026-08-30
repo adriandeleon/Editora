@@ -147,6 +147,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as before; the loader still refuses to fetch anything the SVG points at, which is what stops a document
   reaching the network on your behalf.
 
+  The vector preview above does add one: `jsvg-javafx`, the companion module holding the JavaFX canvas.
+  Its module declaration requires `javafx.swing` — Editora itself never touches it — and left alone it
+  resolves that to JavaFX **17.0.15**, for which OpenJFX publishes no Linux ARM64 build at all. So the
+  Linux ARM64 package could not be built, and the other four would have linked a JavaFX 17 module into an
+  otherwise-26 runtime, which is the worse half of the same problem. It is pinned to the JavaFX version
+  everything else uses.
+
 - **Dependency currency sweep.** Jackson 2.22.1 → 2.22.2, Lucene 10.5.0 → 10.5.1, PDFBox 3.0.5 → 3.0.8,
   Apache POI 5.4.1 → 5.5.1, commonmark 0.28.0 → 0.30.0, plus the two build plugins that produce the native
   installers (moditect 1.2.2 → 1.3.0, jpackage-maven-plugin 1.6.6 → 1.8.0). Nothing user-visible, but two
