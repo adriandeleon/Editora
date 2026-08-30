@@ -738,6 +738,12 @@ public class EditorBuffer implements TabContent {
     private boolean gutterVisible = true;
     /** Coalesces ruler re-measurement onto a later pulse (see {@link #scheduleRulerMeasure}). */
     private boolean rulerMeasurePending;
+    /** Viewport width at the last scheduled ruler measure, so a viewport-dirty event that did not
+     *  resize the area (a vertical scroll, an edit) doesn't pay for a re-measure. */
+    private double lastRulerViewportWidth = -1;
+    /** Set when something the ruler's x depends on changed other than the viewport width or the
+     *  horizontal scroll — the gutter, the font, wrap, the ruler column. Cleared by the measure. */
+    private boolean rulerInputsDirty = true;
 
     /** Max undo entries kept per view; caps undo memory (RichTextFX defaults to unlimited). */
     private static final int UNDO_HISTORY = 300;
@@ -1780,7 +1786,19 @@ public class EditorBuffer implements TabContent {
         // runLater so we never query character bounds synchronously inside the layout pass — doing
         // that re-enters layout and blanks the editor.
         area.estimatedScrollXProperty().addListener((obs, old, now) -> scheduleRulerMeasure());
-        area.viewportDirtyEvents().subscribe(ignore -> scheduleRulerMeasure());
+        // viewportDirtyEvents fires for a vertical scroll and for every edit, neither of which can move the
+        // ruler: its x is (glyph advance, gutter width, horizontal scroll), and the visibility test needs the
+        // viewport width. Each measure costs TWO forced VirtualFlow layouts plus character-bounds queries, so
+        // measuring on every dirty event was ~6-7 full measures per chrome toggle and a needless one per
+        // keystroke. Horizontal scroll has its own listener above; the rest arrive as a width change or via
+        // markRulerInputsDirty().
+        area.viewportDirtyEvents().subscribe(ignore -> {
+            double w = area.getWidth();
+            if (rulerInputsDirty || w != lastRulerViewportWidth) {
+                lastRulerViewportWidth = w;
+                scheduleRulerMeasure();
+            }
+        });
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
         // is docked to the right edge; the column ruler floats on top of everything.
@@ -6408,7 +6426,7 @@ public class EditorBuffer implements TabContent {
             blameColumnWidth = measureBlameColumnWidth(blameLines);
             refreshGutter();
         }
-        scheduleRulerMeasure();
+        markRulerInputsDirty(); // the glyph advance changed
     }
 
     /** Show/hide the column-80 ruler overlay. */
@@ -6418,7 +6436,7 @@ public class EditorBuffer implements TabContent {
         }
         this.rulerVisible = visible;
         if (visible) {
-            scheduleRulerMeasure();
+            markRulerInputsDirty();
         } else {
             columnRuler.setVisible(false);
         }
@@ -6588,6 +6606,7 @@ public class EditorBuffer implements TabContent {
     /** Rebuilds the gutter graphic factory (line numbers + fold chevrons + markers) from current state, or
      *  removes the gutter entirely (null factory) when {@link #gutterVisible} is off. */
     public void refreshGutter() {
+        markRulerInputsDirty(); // the gutter's width is where column 0 starts
         noteOverlay.refresh();
         area.setParagraphGraphicFactory(gutterVisible ? folds.gutterFactory(lineNumbersVisible) : null);
         applyNoGutterStyle(area);
@@ -7084,6 +7103,9 @@ public class EditorBuffer implements TabContent {
 
     /** Toggles soft word wrap on the editor surface (and the split view); the 80-column ruler stays visible. */
     public void setWordWrap(boolean wrap) {
+        if (wrap != area.isWrapText()) {
+            markRulerInputsDirty(); // wrapping changes how the advance is derived (see columnRulerX)
+        }
         area.setWrapText(wrap);
         if (area2 != null) {
             area2.setWrapText(wrap);
@@ -7112,6 +7134,16 @@ public class EditorBuffer implements TabContent {
      * must not happen synchronously inside a layout/viewport event (it re-enters layout and blanks the
      * editor), so we always defer it via {@link Platform#runLater}.
      */
+    /**
+     * Records that an input to the ruler's position changed other than the viewport width or the horizontal
+     * scroll (the gutter, the font, wrap, the ruler column), and schedules the re-measure. The flag survives
+     * until a measure actually runs, so a change made before the area has been laid out is not lost.
+     */
+    private void markRulerInputsDirty() {
+        rulerInputsDirty = true;
+        scheduleRulerMeasure();
+    }
+
     private void scheduleRulerMeasure() {
         // Measuring queries the viewport (a forced VirtualFlow layout) + character bounds. A background tab
         // is not on screen, so doing that for it is pure cost — and a settings apply dirties every open
@@ -7133,14 +7165,34 @@ public class EditorBuffer implements TabContent {
      * is exact regardless of which glyphs are present. The ruler is hidden when column 80 falls outside
      * the visible text width (e.g. the window is too narrow, or the text is scrolled past it).
      */
+    /**
+     * How many times the ruler has been measured, app-wide. A test seam, not state the editor reads: how
+     * often this runs is a measured property (each measure is two forced {@code VirtualFlow} layouts plus
+     * character-bounds queries), and without a counter a regression to the old measure-on-every-viewport-event
+     * subscription would be invisible — the ruler would still land in the right place, just far more often.
+     * See {@code ColumnRulerFxTest}.
+     */
+    static final java.util.concurrent.atomic.AtomicInteger RULER_MEASURES_FOR_TEST =
+            new java.util.concurrent.atomic.AtomicInteger();
+
     private void measureAndPlaceRuler() {
+        RULER_MEASURES_FOR_TEST.incrementAndGet();
+        lastRulerViewportWidth = area.getWidth();
         if (!rulerVisible
                 || rulerColumnOverride != null
                         && rulerColumnOverride == com.editora.editorconfig.EditorConfigProperties.OFF) {
             columnRuler.setVisible(false);
+            rulerInputsDirty = false; // nothing to place; a later show() re-marks via setColumnRulerVisible
             return;
         }
         Double x = columnRulerX();
+        // Clear the pending flag only on a measure that actually produced a position. Before the area's
+        // first layout the geometry is unmeasurable and columnRulerX returns null; clearing the flag there
+        // would leave the gate waiting for a viewport WIDTH change that may never come, and the ruler would
+        // stay hidden for the life of the buffer.
+        if (x != null) {
+            rulerInputsDirty = false;
+        }
         double viewportWidth = scrollPane.getWidth();
         boolean show = x != null && x >= 0 && x <= viewportWidth;
         columnRuler.setVisible(show);
@@ -7436,8 +7488,12 @@ public class EditorBuffer implements TabContent {
 
     /** The ruler column (EditorConfig {@code max_line_length}); null = default, OFF = hide; re-measures. */
     public void setRulerColumn(Integer column) {
+        if (java.util.Objects.equals(column, rulerColumnOverride)) {
+            return; // unchanged: this runs for every buffer on every settings apply (applyEditorConfig)
+        }
         this.rulerColumnOverride = column;
-        measureAndPlaceRuler();
+        markRulerInputsDirty(); // deferred, not a synchronous measure: character bounds must never be
+        // queried inside a layout pass, and the caller may be mid-apply
     }
 
     public void setDetectedCharset(String charset) {

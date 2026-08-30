@@ -67,6 +67,37 @@ class SimpleModeFxTest {
     }
 
     /**
+     * The toolbar button reads as "on" while the mode is — the same {@code :open} pseudo-class the find,
+     * palette and split toggles use. Asserted through the pseudo-class rather than a rendered colour, since
+     * that is the contract {@code app.css} styles against.
+     */
+    @Test
+    void theToolbarButtonReadsAsSelectedWhileSimpleModeIsOn() throws Exception {
+        Button simpleButton = FxTestSupport.field(fx.controller, "simpleModeButton");
+        javafx.css.PseudoClass open = javafx.css.PseudoClass.getPseudoClass("open");
+
+        assertFalse(
+                FxTestSupport.callOnFx(() -> simpleButton.getPseudoClassStates().contains(open)),
+                "not selected while Simple mode is off");
+
+        FxTestSupport.runOnFx(() -> {
+            settings.setSimpleMode(true);
+            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+        });
+        assertTrue(
+                FxTestSupport.callOnFx(() -> simpleButton.getPseudoClassStates().contains(open)),
+                "selected while Simple mode is on");
+
+        FxTestSupport.runOnFx(() -> {
+            settings.setSimpleMode(false);
+            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+        });
+        assertFalse(
+                FxTestSupport.callOnFx(() -> simpleButton.getPseudoClassStates().contains(open)),
+                "and clears again when it is switched off");
+    }
+
+    /**
      * Simple mode simplifies the menu instead of removing it. The menu bar stays visible and switches to the
      * reduced table — and must still offer the way back out, or the mode is a one-way door for anyone who
      * reaches it from the menu.
