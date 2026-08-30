@@ -198,4 +198,47 @@ class FoldRegionsTest {
         List<Region> natural = FoldRegions.detect(java, "java");
         assertEquals(FoldRegions.canonicalOrder(natural), natural);
     }
+
+    // --- Typst: heading sections as well as the brace pairs of its code mode ------------------------
+
+    /**
+     * Typst folded on braces only, so a document folded at {@code #align(center)[…]} but not at a single one
+     * of its sections — the structure a reader navigates by.
+     */
+    @Test
+    void typstFoldsHeadingSections() {
+        String text = "= Introduction\nprose\nmore\n\n== A list\n- one\n- two\n\n= Second\ntail\n";
+        List<FoldRegions.Region> regions = FoldRegions.detect(text, "typst");
+
+        // "= Introduction" runs to the line before "= Second", with the blank line before it trimmed off.
+        assertTrue(regions.contains(new FoldRegions.Region(0, 6)), "= Introduction should fold to line 7: " + regions);
+        // "== A list" nests inside it and ends at the same place.
+        assertTrue(regions.contains(new FoldRegions.Region(4, 6)), "== A list should fold: " + regions);
+        // The last section runs to the end of the document.
+        assertTrue(regions.contains(new FoldRegions.Region(8, 9)), "= Second should fold to EOF: " + regions);
+    }
+
+    /** The brace/bracket folding Typst already had must survive alongside the heading sections. */
+    @Test
+    void typstStillFoldsItsDelimiterPairs() {
+        String text = "#align(center)[\n  hello\n]\n\n= Section\nbody\n";
+        List<FoldRegions.Region> regions = FoldRegions.detect(text, "typst");
+        assertTrue(regions.contains(new FoldRegions.Region(0, 2)), "the #align bracket pair should fold: " + regions);
+        assertTrue(regions.contains(new FoldRegions.Region(4, 5)), "the heading should fold too: " + regions);
+    }
+
+    /** A one-line section has nothing to hide, so it must not offer a chevron. */
+    @Test
+    void typstDoesNotFoldASectionWithNoBody() {
+        assertTrue(FoldRegions.detect("= One\n= Two\n", "typst").isEmpty());
+    }
+
+    /** Folding and the outline share one heading scan, so a raw block cannot fold as a section either. */
+    @Test
+    void typstIgnoresHeadingsInsideRawBlocks() {
+        String text = "```\n= Not a heading\nstill code\n```\n";
+        assertTrue(
+                FoldRegions.detect(text, "typst").stream().noneMatch(r -> r.startLine() == 1),
+                "a heading inside a raw block must not fold");
+    }
 }
