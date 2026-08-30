@@ -132,4 +132,35 @@ class StructurePanelFxTest {
         Object v = item.getValue();
         return String.valueOf(FxTestSupport.<String>field(v, "label"));
     }
+
+    /**
+     * {@code #let} / {@code #show} bindings join the outline, nested under the section they are written in.
+     *
+     * <p>A Typst document's definitions are as navigable as its sections, and a template file can be almost
+     * entirely bindings — outlining only headings left those files with an empty Structure window.
+     */
+    @Test
+    void typstBindingsAppearUnderTheirSection() throws Exception {
+        StructurePanel p = FxTestSupport.callOnFx(StructurePanelFxTest::shownPanel);
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("typst");
+            b.setContent("#let brand = \"x\"\n\n= Setup\n#let accent = red\n#show heading: it => it\n");
+            return b;
+        });
+        FxTestSupport.runOnFx(() -> p.attach(buffer));
+
+        TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
+        List<String> top = FxTestSupport.callOnFx(
+                () -> root.getChildren().stream().map(i -> label(i)).toList());
+        assertEquals(
+                List.of("brand", "Setup"),
+                top,
+                "a binding above the first heading stays at the root, in document order");
+
+        List<String> under = FxTestSupport.callOnFx(() -> root.getChildren().get(1).getChildren().stream()
+                .map(i -> label(i))
+                .toList());
+        assertEquals(List.of("accent", "heading"), under, "bindings written inside a section nest under it");
+    }
 }

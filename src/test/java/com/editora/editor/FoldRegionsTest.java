@@ -241,4 +241,17 @@ class FoldRegionsTest {
                 FoldRegions.detect(text, "typst").stream().noneMatch(r -> r.startLine() == 1),
                 "a heading inside a raw block must not fold");
     }
+
+    /** A multi-line raw block folds like Markdown's fenced code; braces() cannot see one. */
+    @Test
+    void typstFoldsRawBlocks() {
+        List<FoldRegions.Region> regions = FoldRegions.detect("intro\n```\ncode\nmore\n```\n", "typst");
+        assertTrue(regions.contains(new FoldRegions.Region(1, 4)), "the raw block should fold: " + regions);
+    }
+
+    /** A one-line raw block has nothing to hide. */
+    @Test
+    void typstDoesNotFoldASingleLineRawBlock() {
+        assertTrue(FoldRegions.detect("`x`\n", "typst").isEmpty());
+    }
 }

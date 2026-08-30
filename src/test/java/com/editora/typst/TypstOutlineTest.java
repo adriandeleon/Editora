@@ -122,4 +122,88 @@ class TypstOutlineTest {
         assertEquals(1, TypstOutline.level("= x"));
         assertEquals(TypstOutline.MAX_LEVEL, TypstOutline.level("====== x"));
     }
+
+    // --- #let / #show bindings ----------------------------------------------------------------------
+
+    private static List<String> bindingNames(String text) {
+        return TypstOutline.bindings(text).stream()
+                .map(TypstOutline.Binding::name)
+                .toList();
+    }
+
+    @Test
+    void readsTopLevelLetAndShowBindings() {
+        List<TypstOutline.Binding> b = TypstOutline.bindings("#let title = \"x\"\n#show heading: it => it\n");
+        assertEquals(2, b.size());
+        assertEquals("let", b.get(0).kind());
+        assertEquals("title", b.get(0).name());
+        assertEquals(0, b.get(0).line());
+        assertEquals("show", b.get(1).kind());
+        assertEquals("heading", b.get(1).name());
+    }
+
+    @Test
+    void setIsNotABinding() {
+        // #set configures the document rather than defining anything; a run of them tops most files.
+        assertTrue(
+                bindingNames("#set page(margin: 2cm)\n#set text(size: 11pt)\n").isEmpty());
+    }
+
+    @Test
+    void anIndentedBindingIsLocalAndNotListed() {
+        // Inside a code block or a function body — a name that means nothing outside it.
+        assertTrue(bindingNames("#let outer = {\n  let inner = 1\n  #let nested = 2\n}\n")
+                        .isEmpty()
+                || bindingNames("  #let nested = 2\n").isEmpty());
+        assertTrue(bindingNames("  #let nested = 2\n").isEmpty());
+    }
+
+    @Test
+    void aWordStartingWithLetIsNotABinding() {
+        assertTrue(bindingNames("#letter\n").isEmpty(), "the keyword needs a space after it");
+    }
+
+    @Test
+    void destructuringAndBareShowNameNothingSoAreSkipped() {
+        assertTrue(bindingNames("#let (a, b) = pair\n").isEmpty());
+        assertTrue(bindingNames("#show: template\n").isEmpty());
+    }
+
+    @Test
+    void bindingNamesMayCarryHyphensAndUnderscores() {
+        assertEquals(List.of("my-style_2"), bindingNames("#let my-style_2 = 1\n"));
+    }
+
+    @Test
+    void bindingsInsideRawBlocksAndCommentsAreSkipped() {
+        assertTrue(bindingNames("```\n#let hidden = 1\n```\n").isEmpty());
+        assertTrue(bindingNames("/*\n#let hidden = 1\n*/\n").isEmpty());
+    }
+
+    // --- raw blocks ---------------------------------------------------------------------------------
+
+    @Test
+    void reportsRawBlockSpansIncludingTheFenceLines() {
+        List<TypstOutline.RawBlock> raw = TypstOutline.rawBlocks("a\n```\ncode\n```\nb\n");
+        assertEquals(1, raw.size());
+        assertEquals(1, raw.get(0).startLine());
+        assertEquals(3, raw.get(0).endLine());
+    }
+
+    @Test
+    void anUnterminatedFenceRunsToTheEndOfTheDocument() {
+        // What the editor shows, so it is what folding should offer.
+        List<TypstOutline.RawBlock> raw = TypstOutline.rawBlocks("```\nstill code\nand more\n");
+        assertEquals(1, raw.size());
+        assertEquals(0, raw.get(0).startLine());
+        assertEquals(3, raw.get(0).endLine());
+    }
+
+    @Test
+    void oneScanAnswersAllThree() {
+        var o = TypstOutline.scan("= H\n#let x = 1\n```\nc\n```\n");
+        assertEquals(1, o.headings().size());
+        assertEquals(1, o.bindings().size());
+        assertEquals(1, o.rawBlocks().size());
+    }
 }

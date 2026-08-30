@@ -711,20 +711,39 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         List<StructureNode> roots = new ArrayList<>();
         Deque<StructureNode> stack = new ArrayDeque<>();
         Deque<Integer> levels = new ArrayDeque<>();
-        for (com.editora.typst.TypstOutline.Heading h : com.editora.typst.TypstOutline.headings(text)) {
-            StructureNode node =
-                    new StructureNode(null, h.title().isBlank() ? "(untitled)" : h.title(), "heading", h.line());
-            while (!levels.isEmpty() && levels.peek() >= h.level()) {
-                stack.pop();
-                levels.pop();
+        var outline = com.editora.typst.TypstOutline.scan(text);
+
+        // Headings and bindings are merged by line so the outline reads in document order, and each
+        // binding nests under whichever section it is written in — a #let below "= Setup" belongs to it.
+        // A binding above the first heading stays at the root, which is where such definitions live.
+        record Entry(int line, int level, String label, String kind) {}
+        List<Entry> entries = new ArrayList<>();
+        for (var h : outline.headings()) {
+            entries.add(new Entry(h.line(), h.level(), h.title().isBlank() ? "(untitled)" : h.title(), "heading"));
+        }
+        for (var b : outline.bindings()) {
+            // Level 0 = "not a section": it never becomes a parent and never closes one.
+            entries.add(new Entry(b.line(), 0, b.name(), "let".equals(b.kind()) ? "function" : "property"));
+        }
+        entries.sort(java.util.Comparator.comparingInt(Entry::line));
+
+        for (Entry e : entries) {
+            StructureNode node = new StructureNode(null, e.label(), e.kind(), e.line());
+            if (e.level() > 0) {
+                while (!levels.isEmpty() && levels.peek() >= e.level()) {
+                    stack.pop();
+                    levels.pop();
+                }
             }
             if (stack.isEmpty()) {
                 roots.add(node);
             } else {
                 stack.peek().children().add(node);
             }
-            stack.push(node);
-            levels.push(h.level());
+            if (e.level() > 0) {
+                stack.push(node);
+                levels.push(e.level());
+            }
         }
         return roots;
     }
