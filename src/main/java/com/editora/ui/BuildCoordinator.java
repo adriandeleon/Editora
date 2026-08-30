@@ -182,6 +182,10 @@ final class BuildCoordinator {
      *  (generation-guarded). Runs at startup, on tab switch, on window focus-regain, on save, and on every
      *  settings apply — cheap to over-call. */
     void refresh() {
+        // Bumped before the guards below, not just for the async path: a detect started by an earlier call is
+        // still running, and without a new generation its (now stale) result would land on top of the null
+        // these early returns apply — leaving the stripe up for a tool that was just switched off.
+        int gen = ++detectGeneration;
         if (!isEnabled()) {
             applyDetected(null, null, null);
             return;
@@ -191,7 +195,6 @@ final class BuildCoordinator {
             applyDetected(null, null, null);
             return;
         }
-        int gen = ++detectGeneration;
         Thread t = new Thread(
                 () -> {
                     // filesOnly: every build marker is a file (pom.xml/package.json/go.mod/…), so a directory
