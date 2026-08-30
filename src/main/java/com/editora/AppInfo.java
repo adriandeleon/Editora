@@ -19,6 +19,18 @@ public final class AppInfo {
     private static final String SNAPSHOT_SUFFIX = "-SNAPSHOT";
     /** Project home page (the website's custom domain). */
     public static final String HOMEPAGE = "https://editora-project.dev";
+
+    /**
+     * The documentation site for THIS build — {@code <homepage>/docs/v-<version>}.
+     *
+     * <p>Versioned rather than a bare {@code /docs} link, so a build never points at documentation for a
+     * different release. Lives here rather than in the UI because both the Help menu and the command
+     * palette's per-command help need the same base, and a second copy of the path is a second thing to
+     * update when the site moves.
+     */
+    public static String docsUrl() {
+        return HOMEPAGE + "/docs/v-" + releaseVersion();
+    }
     /** Copyright notice (matches the bundled {@code LICENSE} file). */
     public static final String COPYRIGHT = "© 2026 Adrián Arturo De León Saldivar";
     /** Short license name; full terms are in the bundled {@code LICENSE} file. */

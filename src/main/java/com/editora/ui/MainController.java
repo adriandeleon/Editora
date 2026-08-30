@@ -6565,6 +6565,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         items.addAll(toolbarGap(), settingsButton);
     }
 
+    /**
+     * Opens the documentation site in the user's browser.
+     *
+     * <p>Versioned, via {@link com.editora.AppInfo#releaseVersion()} — the same path the command palette's
+     * per-command help uses — so a running build lands on the docs for what it actually is rather than on
+     * whatever is current, which for a snapshot build would describe features it does not have.
+     */
+    private void openDocumentation() {
+        openExternalUrl(com.editora.AppInfo.docsUrl());
+    }
+
     /** Id → the existing {@code @FXML} toolbar widget backing each default/special customizable item. */
     private java.util.Map<String, javafx.scene.Node> toolbarBaseWidgets() {
         if (toolbarBaseWidgets == null) {
@@ -16317,6 +16328,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("window.fullScreen", () -> stage.setFullScreen(!stage.isFullScreen())));
         registry.register(Command.of("file.clearRecent", this::onClearRecent));
         registry.register(Command.of("help.about", this::onAbout));
+        registry.register(Command.of("help.documentation", this::openDocumentation));
         registry.register(Command.of("help.checkForUpdates", this::checkForUpdatesNow));
         registry.register(Command.of("update.openDownloadPage", this::openUpdateDownloadPage));
         registry.register(Command.of(

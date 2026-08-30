@@ -81,4 +81,24 @@ class MenuBarModelTest {
             }
         }
     }
+
+    /**
+     * The documentation link is in Help, in <b>both</b> menu tables.
+     *
+     * <p>Simple UI mode's Help is a deliberately short list, and this is the one entry that most belongs
+     * there: it is what helps someone who does not yet know what the editor can do.
+     */
+    @Test
+    void bothHelpMenusLinkToTheDocumentation() {
+        for (boolean simple : new boolean[] {false, true}) {
+            List<String> help = MenuBarModel.menus(simple).stream()
+                    .filter(m -> "menubar.help".equals(m.titleKey()))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("no Help menu, simple=" + simple))
+                    .entries();
+            assertTrue(
+                    help.contains("help.documentation"),
+                    "Help should link to the docs (simple=" + simple + "), got " + help);
+        }
+    }
 }
