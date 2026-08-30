@@ -7,7 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-29
+
 ### Added
+
+- **The menu bar can share the window's title bar.** Off by default, under Settings ▸ Interface; it applies
+  on restart, since a window's style is fixed once it has been shown. With it on, the window is drawn
+  without a system title bar and the menus, the window title and the system buttons share that one row —
+  a full bar of vertical space back for the editor. Minimise, maximise, close, drag-to-move,
+  double-click-to-maximise, edge resize and snapping all remain the platform's own, so nothing about how
+  the window behaves changes; only where the menus sit.
+
+  Linux and Windows. macOS is excluded and not for want of API — the menu belongs to the system bar at the
+  top of the screen there, so drawing it inside the window would be a worse window rather than a taller
+  one. The checkbox is disabled on macOS rather than hidden, so its note still explains why.
+
+- **Every main-menu item that can carry an icon now does.** Right-click menus have carried glyphs
+  throughout, while the menu bar carried none; Save is now the same icon wherever you reach it from.
+
+  Partial on purpose: about 90 of the roughly 135 entries have one, and the rest are left blank rather
+  than given an invented glyph — a picture that does not depict the thing beside it has to be read and
+  then discounted, which is worse than an empty space. The File menu's export block is the clearest case,
+  where one tray-and-arrow would have meant "PDF", "Word" and "HTML" equally, and so meant nothing. The
+  icon column is reserved whether or not a row fills it, so the titles still line up. macOS is unaffected:
+  the system menu bar owns rendering there and shows no item graphics, which is the platform convention.
 
 - **Search Everywhere can take over the palette's shortcut.** Off by default, under Settings ▸ Interface ▸
   Pickers (or the `View: Toggle Palette Opens Search Everywhere` command). With it on, the chord you have
@@ -32,7 +55,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Nothing else changed renderer: Markdown badges and every export path (PDF, print, Word, ODF) still
   rasterize exactly as before.
-
 
 - **The run-configuration group moved to the right end of the toolbar.** The selector and its Run, Debug
   and Stop buttons now sit beside the project switcher rather than in the middle of the icons, the way an
@@ -60,7 +82,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   eight commands, which made the scoped mode strictly worse than the picker it stands in for. The cap
   exists so a large source cannot drown a small one; with one source in play there is nothing to drown.
 
-### Changed
+- **Simple UI mode keeps a menu bar — simplified, not hidden.** It now shows File, Edit, Find, View and
+  Help. The menus that go are exactly the ones Simple mode switches off — code intelligence, running and
+  debugging, version control, tool windows — which would otherwise have stood there entirely grayed out,
+  worse than not being offered. A menu is the browsable map of what the editor can do, which the mode
+  aimed at someone new to it needs most. Toggling Simple UI mode is deliberately kept in the reduced View
+  menu, so the mode is never a one-way door for anyone who entered it from there.
+
+- **The window spends fewer horizontal bars on chrome.** Three changes with one theme:
+
+  The **breadcrumb** names the active file but lived in the bottom bar stack, spanning the whole window
+  between the tool stripe and the status bar, where it read as a second status bar describing the window.
+  It now hangs under the editor area itself — as wide as the editor, directly under the text it names —
+  and collapses your home directory to a single `~` crumb that still navigates there. Spelled out, every
+  file under `$HOME` opened with two crumbs identical on every file you will ever have open, so the
+  segments that actually distinguish this one began a third of the way along a bar that scrolls.
+
+  In the **status bar**, indent, line endings and encoding are one segment (`Tab 4 · LF · UTF-8`) — three
+  facts about how the same file is written to disk that were three separately divided segments of an
+  eleven-segment bar. They stay three click targets with three tooltips, because they run three different
+  commands, and they now follow whether a file is open at all, so the Welcome tab no longer reports a tab
+  size and a charset describing nothing. The echo line starts empty rather than on a standing "Ready": a
+  placeholder present on every frame that says nothing trains the eye to skip the one region real messages
+  land in.
+
+  The **toolbar** loses cut, copy and paste from the default layout — in a keyboard-driven editor they are
+  the three actions nobody reaches for with the mouse — and About and Quit entirely. Both of those are in
+  the Help and File menus and the palette, neither is a mid-edit action, and Quit sat in the top-right
+  corner directly beneath the window's own close button. Cut, copy and paste remain catalog items, one
+  drag away in Settings ▸ Toolbar; an already-customized bar is untouched.
+
+- **The default toolbar is one icon family, and New From Template has a glyph of its own.** Open, Open
+  Folder and Save As were still filled icons in a row of outlines — the Open folder in particular being
+  the single solid shape there, which draws the eye for no reason. Open now takes the open-folder
+  silhouette and Open Folder the closed one, deliberately the same closed folder as the Project rail,
+  since those two mean the same thing on two surfaces. New From Template had been borrowing the generic
+  document icon, which is the New File glyph minus its little plus — two adjacent buttons, both "new
+  file", telling themselves apart by one cross. It is now a page that already has content on it.
+
+- **The minimap's visible-range block is outlined rather than washed.** It was a fill at about 14% alpha,
+  which over a dense overview is invisible — the minimap then reads as noise with no "you are here" in it
+  at all. The outline is derived from the same per-theme colour, so themes need no new entry, and it is
+  stroked on half-pixel coordinates because a one-pixel stroke on an integer coordinate straddles two
+  device pixels and renders as a two-pixel blur.
+
+- **The floating Editor/Split/Preview toggle dims at rest and restores on hover**, matching the HTML
+  preview button already sitting in the same corner. Both float over the file's first line or two, so
+  they should recede until reached for.
+
+- **The debug icon is a bug.** It was a circle with eight rays — a sun — and that is how it read
+  everywhere it appeared: the toolbar's run cluster, the Run menu, the test panel, in every case beside a
+  style class named for a bug. The editor's own right-click Debug item already showed one, so the
+  application disagreed with itself about what debugging looks like.
+
+- **Status messages write your home directory as `~`.** The echo line printed `Opened /home/you/src/…`
+  directly beneath a breadcrumb and a window title that both wrote the same path as `~/src/…`. Three
+  implementations of that collapse already existed in the codebase and none of them reached the status
+  bar; there is one now, and it is the one they all use. Messages that carried a whole path keep it —
+  when several open files share a name, the path is the part that says which one.
 
 - **JSVG 1.7.2 → 2.1.0**, which had been pinned since 2.0.0 could not be linked into the native build. That
   is fixed upstream, and the two classes 2.x relocated are a straight import change on our side — no new
@@ -84,7 +163,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hand-written one for the native build was removed. Left in place it would have failed the packaged build
   only — the test suite stays green either way.
 
-### Fixed
+### Performance
+
+- **Toggling Simple UI mode blocked the interface for 230–550 ms; it is now 48–108 ms** (median 233 → 55),
+  measured over five open source files. Four causes, none of them work that needed doing:
+
+  Collapsing every fold cleared the fold shading on **every region in the file**, unconditionally — a
+  styled-document rewrite rather than a property set, so thousands of paragraphs were rebuilt in a large
+  source file, almost none of which had ever been shaded. The 80-column **ruler** was re-measured for
+  every open buffer including background tabs, each measure forcing two layout passes. The **gutter** was
+  rebuilt twice per buffer per settings apply. And applying the editor **theme** removed and re-added the
+  same stylesheet every time, forcing a full restyle of the window. All four are guarded now, which helps
+  every settings apply — a theme change, a checkbox, any toggle — not only this one.
+
+  Then the ruler again, from the other direction: it had been listening for viewport changes, which fire
+  on every vertical scroll and **every edit**, neither of which can move a ruler whose position depends
+  only on glyph width, gutter width and horizontal scroll. It now recomputes on a width change and when
+  something that genuinely moves it says so — six or seven measures per toggle down to one or two.
+  Leaving Simple mode went from a median of 57 ms to 18, and since every keystroke was paying a measure
+  it could never need, this is a typing win as much as a chrome one.
 
 - **Search Everywhere did a corpus-sized sort on every keystroke.** Both of its big sources — project files
   and symbols — scored every candidate, sorted *all* the matches, and then threw away everything past the
@@ -108,6 +205,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Very large projects will still want this off the FX thread entirely; this makes the picker usable at a
   scale where it was not, rather than settling the question.
+
+- **Typing in Search Everywhere rebuilt the whole keymap once per matching command.** Each result carries
+  the chord bound to it, and the lookup that produces it inverts the entire binding table into a fresh
+  map. That call sat inside the match loop, so a one-character query against roughly six hundred commands
+  built the same map hundreds of times before a single row was drawn, on the FX thread, on every
+  keystroke. It is now built once per query, which is what the command palette had always done.
+
+### Fixed
+
+- **Dragging the minimap moved the document in whole-line steps.** The drag scrolled to a paragraph, and a
+  paragraph is the smallest thing it could land on, so on a long file the document lurched a line at a
+  time with stalls in between: measured on a 592-line file in a 900-pixel column, consecutive pixels of
+  mouse travel produced scroll deltas of `16, 0, 16, 16, 0, …` where the mapping wanted about two-thirds
+  of a line per pixel. It scrolls in document pixels now — the same continuous mechanism the split
+  Markdown preview already used — and the same travel gives `10, 9, 10, 9, …`. It got worse the longer the
+  file, since each column pixel then covers more lines.
+
+  Two adjacent faults the same gesture exposed. Pressing on the viewport box put its **top** under the
+  cursor, so grabbing it anywhere but the very top threw the document most of a viewport (measured 679
+  pixels, about 42 lines) before it began tracking; a press on the box now takes hold of it and scrolls
+  nothing, while a press elsewhere in the column is still a "go here". The box's hit area has a minimum
+  height, because the box is the viewport's share of the whole document — a pixel or two on a long file,
+  which is to say unhittable on exactly the files where dragging it matters. And the **mouse wheel over
+  the minimap did nothing at all**: the column is a sibling of the scroll area rather than a child, so the
+  event reached nothing scrollable. It now scrolls the editor exactly as a wheel over the text does.
+
+- **A narrow window hid the project switcher and Settings before any of the icons.** A toolbar overflows
+  from its end, and the fixed group — project switcher, Recent, the build badges, Settings — was the last
+  thing on the bar, so those went into the overflow chevron while fourteen icons stayed. That is exactly
+  backwards: every icon in the cluster is also in the menus and the palette, and the project switcher and
+  Settings are not. Measured at about 1250 logical pixels, i.e. an ordinary 1280-wide laptop, where the
+  whole group collapsed to a `»`. The group is pinned now, and a window short of space takes the icons.
+
+- **The Simple UI toolbar button looked identical whether or not the mode was on.** It now reads as
+  engaged, the same way the find, palette and split toggles do. Simple mode is a state you are *in*, and
+  its own button is the most likely way back out of it. A `--simple` launch shows it engaged too.
+
+- **The first Search Everywhere of a session opened with no row selected.** Every later open highlighted
+  the first row, but had scrolled the group header out of sight doing it, so neither was quite right. The
+  first was different only because re-opening the picker clears a query box that still holds the previous
+  query, and that change starts a second pass which lands after the list has been laid out and quietly
+  fixes the selection — so an open was correct only if you had typed something the time before. Both now
+  open with the first row selected and the header still visible, so the picker no longer comes up without
+  the label saying what it is listing.
+
+- **The Git Log tool window was missing from the VCS menu.** The menu offered Show File History but never
+  the whole-repository log, though it exists and has a keybinding. It sits with the compare and history
+  group now.
 
 - **Zen and Expert mode left half the toolbar on screen.** The bar is two containers on one row — the icon
   cluster, which overflows into its own chevron, and a pinned tail holding the run controls, the project
@@ -134,12 +279,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new menu, so when the platform did not dismiss the old one it simply stayed on screen — two identical
   Customize Toolbar menus, side by side. There is now one menu, which moves rather than multiplies, and it
   closes on a click anywhere else in the window without relying on the platform to do it.
-
-- **Typing in Search Everywhere rebuilt the whole keymap once per matching command.** Each result carries
-  the chord bound to it, and the lookup that produces it inverts the entire binding table into a fresh
-  map. That call sat inside the match loop, so a one-character query against roughly six hundred commands
-  built the same map hundreds of times before a single row was drawn, on the FX thread, on every
-  keystroke. It is now built once per query, which is what the command palette had always done.
 
 - **Two config tests could not fail.** Each wrote a schema version as a literal to stand for "newer than
   this build understands", so both quietly stopped testing anything the moment the schema was bumped past
