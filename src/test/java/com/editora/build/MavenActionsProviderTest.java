@@ -3,10 +3,12 @@ package com.editora.build;
 import java.util.List;
 import java.util.Set;
 
+import com.editora.maven.MavenPluginGoals;
 import com.editora.maven.PomModel;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Pure coverage of the Maven action provider: the lifecycle/profile/plugin sections, the profile-reveal of
@@ -69,5 +71,38 @@ class MavenActionsProviderTest {
         assertEquals(List.of("-Pdist"), p.toggleArgs(Set.of("dist")));
         assertEquals(
                 List.of("-Pdist,release"), p.toggleArgs(new java.util.LinkedHashSet<>(List.of("dist", "release"))));
+    }
+
+    /**
+     * The gap this closes: {@code javafx-maven-plugin} is declared for direct invocation (configuration only,
+     * no {@code <executions>}), so the pom-derived Plugins section can offer nothing for it — the tasks tree
+     * had no way at all to run {@code javafx:run}. Its descriptor's goals become their own group.
+     */
+    @Test
+    void directlyInvokedPluginGoalsAreOfferedEvenWithNoBoundExecution() {
+        PomModel.Plugin javafx = new PomModel.Plugin("org.openjfx", "javafx-maven-plugin", "0.0.8", List.of());
+        PomModel model = new PomModel("g", "a", "1.0", "jar", List.of(javafx), List.of());
+        var descriptor = new MavenPluginGoals.Descriptor(
+                "javafx",
+                List.of(new MavenPluginGoals.Goal("run", "Runs the project"), new MavenPluginGoals.Goal("jlink", "")));
+
+        assertFalse(
+                taskLabels(new MavenActionsProvider(model).sections(Set.of())).contains("javafx:run"));
+
+        var sections = new MavenActionsProvider(model, List.of(descriptor)).sections(Set.of());
+        assertTrue(taskLabels(sections).contains("javafx:run"));
+        BuildAction.Section group = sections.get(sections.size() - 1);
+        assertEquals("javafx", group.title());
+        assertTrue(group.collapsed(), "a full goal list must not bury the lifecycle above it");
+        assertEquals(List.of("javafx:run"), ((BuildAction.Task) group.rows().get(0)).args());
+        assertEquals("Runs the project", ((BuildAction.Task) group.rows().get(0)).tooltip());
+    }
+
+    /** No local repository / nothing downloaded: the tree is exactly what it was before this feature. */
+    @Test
+    void noResolvedDescriptorsLeavesTheSectionsUnchanged() {
+        assertEquals(
+                new MavenActionsProvider(pom()).sections(Set.of()),
+                new MavenActionsProvider(pom(), List.of()).sections(Set.of()));
     }
 }

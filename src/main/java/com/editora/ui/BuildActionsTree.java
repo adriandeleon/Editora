@@ -257,7 +257,9 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         TreeItem<Item> root = new TreeItem<>(null);
         for (BuildAction.Section section : visible) {
             TreeItem<Item> sectionItem = new TreeItem<>(new SectionItem(section.title()));
-            sectionItem.setExpanded(true);
+            // A collapsed-by-default group (Maven's per-plugin goal lists) still expands while a filter is
+            // active — a match the user just typed for must not stay hidden inside a folded node.
+            sectionItem.setExpanded(!section.collapsed() || !query.isEmpty());
             for (BuildAction.Row row : section.rows()) {
                 Item item = row instanceof BuildAction.Task task
                         ? new TaskItem(task)
@@ -295,7 +297,10 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
                 }
             }
             if (!rows.isEmpty()) {
-                out.add(new BuildAction.Section(section.title(), List.copyOf(rows)));
+                // Carry `collapsed` across: dropping it here would leave the expand decision to a side effect
+                // of which filter branch ran (a title match passes the section through untouched, a row match
+                // rebuilt it), so a group found by name stayed folded while one found by goal opened.
+                out.add(new BuildAction.Section(section.title(), List.copyOf(rows), section.collapsed()));
             }
         }
         return out;

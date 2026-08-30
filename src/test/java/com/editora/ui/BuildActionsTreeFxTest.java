@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -341,5 +342,63 @@ class BuildActionsTreeFxTest {
             return first.getValue().toString();
         });
         assertTrue(label.contains("verify"), "a changed provider must re-render");
+    }
+
+    /**
+     * A Maven plugin's full goal list is a browse-on-demand group: rendering it expanded would bury the
+     * Lifecycle section above it under dozens of goals. It must still open while a filter is active, or a
+     * match the user just typed for stays hidden inside a folded node.
+     */
+    @Test
+    void aCollapsedSectionIsFoldedUntilAFilterMatchesInsideIt() throws Exception {
+        BuildActionsTree panel = FxTestSupport.callOnFx(BuildActionsTree::new);
+        BuildActionsProvider provider = new BuildActionsProvider() {
+            @Override
+            public List<BuildAction.Section> sections(Set<String> active) {
+                return List.of(
+                        new BuildAction.Section(
+                                "Lifecycle", List.of(new BuildAction.Task("package", List.of("package")))),
+                        new BuildAction.Section(
+                                "javafx", List.of(new BuildAction.Task("javafx:run", List.of("javafx:run"))), true));
+            }
+
+            @Override
+            public List<String> toggleArgs(Set<String> active) {
+                return List.of();
+            }
+        };
+        FxTestSupport.runOnFx(() -> panel.setProvider(provider));
+        FxTestSupport.runOnFx(() -> {
+            List<TreeItem<Object>> sections = treeOf(panel).getRoot().getChildren();
+            assertTrue(sections.get(0).isExpanded(), "Lifecycle stays open");
+            assertFalse(sections.get(1).isExpanded(), "the goal group is folded");
+        });
+
+        // Both filter branches: "run" matches a row (filtered() rebuilds the section), "javafx" matches the
+        // section title (it is passed through untouched, still collapsed). Either way the group the user
+        // searched for must open.
+        for (String query : new String[] {"run", "javafx"}) {
+            FxTestSupport.runOnFx(() -> filterOf(panel).setText(query));
+            FxTestSupport.runOnFx(() -> assertTrue(
+                    treeOf(panel).getRoot().getChildren().get(0).isExpanded(), "a filter opens it: " + query));
+        }
+    }
+
+    /**
+     * {@code filtered()} narrows a section's rows by rebuilding it, which is exactly where a record component
+     * gets silently dropped. Nothing on screen would show it today (the tree expands every section while a
+     * filter is active regardless), so assert the transform's own contract rather than a symptom.
+     */
+    @Test
+    void narrowingASectionsRowsKeepsItsCollapsedFlag() {
+        BuildAction.Section group = new BuildAction.Section(
+                "javafx",
+                List.of(
+                        new BuildAction.Task("javafx:run", List.of("javafx:run")),
+                        new BuildAction.Task("javafx:jlink", List.of("javafx:jlink"))),
+                true);
+        List<BuildAction.Section> out = BuildActionsTree.filtered(List.of(group), "run");
+        assertEquals(1, out.get(0).rows().size(), "narrowed to the matching row");
+        assertTrue(out.get(0).collapsed());
     }
 }
