@@ -1505,6 +1505,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     public void reapplyAfterSharedSettingsChange(Settings settings) {
         applyViewSettingsToAllBuffers(settings);
         updateBufferToolWindows(); // a feature toggle (Markdown lint, external tools, …) may re-gate a window
+        // A build tool may have just been switched back on in Settings. Its cached detection was cleared the
+        // last time refresh() ran while it was off, and every other apply path only re-derives the stripe from
+        // that cache — so without a real re-detect the tool stays "not detected" (no stripe, no tasks tree)
+        // until an unrelated tab switch or focus-regain happens to run one. The palette toggle command always
+        // did this; the Settings checkbox did not.
+        refreshBuildTools();
         // The keymap may have switched (it's shared); refresh every chord hint so none stays frozen to the
         // old keymap. Cheap (~25 tooltips + one palette/welcome relabel) and only on a settings/keymap apply.
         refreshToolbarTooltips();
@@ -1537,6 +1543,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             windowManager.broadcastExternalToolsChanged(); // re-sync externalTool.run.* after a Settings edit
         } else {
             applyViewSettingsToAllBuffers(settings);
+            refreshBuildTools(); // as in reapplyAfterSharedSettingsChange: a re-enabled tool must re-detect
             refreshExternalToolCommands();
         }
     }
@@ -3613,6 +3620,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                             if (tool == BuildTool.MAVEN || tool == BuildTool.GRADLE) {
                                 coordinatorHost.forEachBuffer(MainController.this::applyTestGutter);
                                 coordinatorHost.forEachBuffer(MainController.this::applyMainGutter);
+                            }
+                            // Detection is async, so an open Settings page read its status row before this
+                            // landed — restate it now rather than leaving a stale "not detected".
+                            if (settingsWindow != null) {
+                                settingsWindow.refreshBuildToolStatus();
                             }
                         }
 

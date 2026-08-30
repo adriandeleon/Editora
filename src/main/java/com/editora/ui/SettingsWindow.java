@@ -5875,8 +5875,13 @@ public class SettingsWindow {
     }
 
     /** Reads each build coordinator's currently-cached detection (no subprocess probe needed — "found" just
-     *  means the marker file parsed for the active context) and colors that tool's status row green/red. */
-    private void refreshBuildToolStatus() {
+     *  means the marker file parsed for the active context) and colors that tool's status row green/red.
+     *
+     * <p>Public because detection is asynchronous: the checkbox that enables a tool applies (and re-reads this)
+     * before the re-detect it triggers has landed, so {@code MainController} calls this again from the
+     * coordinator's detection callback — otherwise the row keeps saying "not detected" until Settings is
+     * reopened. A no-op before the page is built (the label map is empty). */
+    public void refreshBuildToolStatus() {
         for (BuildCoordinator c : buildCoordinators) {
             Label label = buildToolStatusLabels.get(c.tool());
             if (label == null) {
