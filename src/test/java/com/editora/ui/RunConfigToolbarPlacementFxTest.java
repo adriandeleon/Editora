@@ -144,4 +144,32 @@ class RunConfigToolbarPlacementFxTest {
                         .anyMatch(t -> t.startsWith("toolbar.runConfig")),
                 "the shipped default layout still places the run-configuration group in the icon cluster");
     }
+
+    /**
+     * Recent sits in the icon cluster's file group, between Save As and Undo.
+     *
+     * <p>It used to be pinned in the fixed tail beside the project switcher, where it read as a project
+     * control rather than as one of the ways to get a file on screen. Asserted on the live bar for the same
+     * reason the run group above is: the FXML and the catalog both merely <em>declare</em>, and it is
+     * {@code appendFixedTail} plus the layout rebuild that decide where a widget actually lands — a
+     * regression that put it back in the tail would leave a catalog-only assertion perfectly happy.
+     */
+    @Test
+    void recentSitsBetweenSaveAsAndUndoInTheIconCluster() throws Exception {
+        ToolBar bar = FxTestSupport.field(fx.controller, "toolBar");
+        HBox tail = FxTestSupport.field(fx.controller, "toolbarTail");
+        Node recent = widget("recentButton");
+
+        List<Node> items = bar.getItems();
+        assertTrue(items.contains(recent), "Recent is not in the customizable cluster");
+        assertFalse(tail.getChildren().contains(recent), "Recent is still pinned in the fixed tail");
+
+        int saveAs = items.indexOf(widget("saveAsButton"));
+        int undo = items.indexOf(widget("undoButton"));
+        int at = items.indexOf(recent);
+        assertTrue(saveAs >= 0 && undo >= 0, "the default layout lost Save As or Undo");
+        assertTrue(
+                saveAs < at && at < undo,
+                "Recent is at index " + at + ", outside Save As (" + saveAs + ") … Undo (" + undo + ")");
+    }
 }

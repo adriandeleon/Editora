@@ -1030,7 +1030,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolBar.setVisible(toolbarOn);
         toolBar.setManaged(toolbarOn);
         // The bar is TWO containers on one row (see appendFixedTail): the ToolBar's icon cluster and the
-        // pinned toolbarTail (project combo, Open Folder, Recent, the snapshot/--dev badges, Settings).
+        // pinned toolbarTail (project combo, Open Folder, the snapshot/--dev badges, Settings).
         // Hiding only the ToolBar left the tail's icons stranded on an otherwise-stripped window in Zen and
         // Expert, so the row that holds both is what gets hidden. Unmanaged too, or the row's pinned
         // minHeight (stabilizeToolbarHeight) would keep reserving a bar-height strip of empty space.
@@ -6507,9 +6507,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         // Project switcher next (a ~3-icon gap keeps it clear of the run controls), with the open-folder
         // icon immediately to the right of the combobox.
-        // Recent sits with the project controls rather than with New/Open: it is a "where have I been"
-        // dropdown, and beside the file actions it read as one of them.
-        items.addAll(projectToolbarGap, toolbarProjectCombo, openFolderButton, recentButton);
+        // Recent is NOT here any more: it is a file action, so it lives in the customizable cluster's file
+        // group between Save As and Undo (ToolbarCatalog.defaultLayout), not beside the project controls.
+        items.addAll(projectToolbarGap, toolbarProjectCombo, openFolderButton);
 
         // Snapshot badge when the pom carries -SNAPSHOT, i.e. this was built off master between
         // releases rather than from a release tag — so a test build is obvious without opening About.
@@ -6548,6 +6548,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             m.put("file.save", saveButton);
             m.put("file.saveAs", saveAsButton);
             m.put("file.clearRecent", clearRecentButton);
+            m.put("toolbar.recent", recentButton);
             m.put("edit.undo", undoButton);
             m.put("edit.redo", redoButton);
             m.put("edit.cut", cutButton);

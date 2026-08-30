@@ -17,11 +17,12 @@ import java.util.Map;
  * <p>The customizable region is the toolbar's <em>left icon cluster</em> — literally the {@code ToolBar},
  * which is what overflows into a chevron when the window is narrow. The fixed tail is a separate
  * container beside it, so it is not part of this catalog and cannot be pushed into that overflow — the
- * run-configuration group, the project-combo group, the Open-Folder icon and Recent beside it, the dev
- * badge, then Settings. Recent and Settings live there rather than here because their position is relative
- * to tail items (Recent belongs beside the project controls; Settings is pinned to the right end, where its
- * glyph lines up with the right tool stripe), which a customizable-cluster entry cannot express — see
- * {@code MainController.appendFixedTail}.
+ * run-configuration group, the project-combo group with the Open-Folder icon, the dev badge, then Settings.
+ * Settings lives there rather than here because its position is relative to tail items — pinned to the right
+ * end, where its glyph lines up with the right tool stripe — which a customizable-cluster entry cannot
+ * express (see {@code MainController.appendFixedTail}). Recent used to be pinned there too, beside the
+ * project controls; it is a file action ("open one I had open before"), so it now sits with New/Open/Save in
+ * the file group where its neighbours are the other ways to get a file on screen.
  */
 public final class ToolbarCatalog {
 
@@ -36,11 +37,10 @@ public final class ToolbarCatalog {
      * the toolbar is rebuilt, and the control never appears. That happened with the run-configuration
      * selector, which was declared in the FXML but never registered here, so every rebuild dropped it.
      *
-     * <p><b>Currently empty.</b> The run-configuration group was the only entry and now lives in the fixed
-     * tail beside the project switcher, so no catalog item is command-less today. The declaration and the
-     * invariants over it are kept because the trap is silent and the next special widget would walk into it.
+     * <p>Recent is the only one: it is a {@code MenuButton} that drops a list of paths, not a button that
+     * dispatches a command, so the coordinator cannot build it generically the way it builds the rest.
      */
-    public static final java.util.Set<String> SPECIAL_WIDGET_IDS = java.util.Set.of();
+    public static final java.util.Set<String> SPECIAL_WIDGET_IDS = java.util.Set.of("toolbar.recent");
 
     /** A customizable toolbar item. {@code commandId} is null for a non-command widget (the Recent button). */
     public record Item(String id, String iconKey, String commandId) {}
@@ -60,6 +60,7 @@ public final class ToolbarCatalog {
         add("buffer.close", "closeTab", "buffer.close");
         add("file.save", "save", "file.save");
         add("file.saveAs", "saveAs", "file.saveAs");
+        add("toolbar.recent", "recent", null); // the Recent MenuButton — see SPECIAL_WIDGET_IDS
         add("file.clearRecent", "trash", "file.clearRecent");
         add("edit.undo", "undo", "edit.undo");
         add("edit.redo", "redo", "edit.redo");
@@ -114,6 +115,10 @@ public final class ToolbarCatalog {
         l.add("file.find");
         l.add("file.save");
         l.add("file.saveAs");
+        // Recent closes the file group, between Save As and Undo. It was pinned in the fixed tail beside the
+        // project switcher, which read as a project control; it is a file action, and the mouse reaches for
+        // it in the same sweep as New/Open.
+        l.add("toolbar.recent");
         l.add(SEPARATOR);
         l.add("edit.undo");
         l.add("edit.redo");
@@ -135,7 +140,7 @@ public final class ToolbarCatalog {
         l.add("view.toggleSimpleMode");
         l.add(SEPARATOR);
         l.add("palette.show");
-        // Recent and Settings are appended by the fixed tail, not listed here.
+        // Settings is appended by the fixed tail, not listed here.
         return l;
     }
 }

@@ -5,14 +5,26 @@ import javafx.scene.Node;
 import javafx.scene.shape.SVGPath;
 
 /**
- * Material Design 24dp single-path glyphs for the editor's right-click context menus (the editor
- * surface menu + the Markdown preview menu). A package-local mirror of {@code com.editora.ui.Icons}
- * so the {@code editor} package keeps its independence from {@code ui} — the editor must not depend
- * on the UI package, yet its menus still want icons.
+ * Glyphs for the editor's right-click context menus (the editor surface menu + the Markdown preview
+ * menu). A package-local mirror of {@code com.editora.ui.Icons} so the {@code editor} package keeps its
+ * independence from {@code ui} — the editor must not depend on the UI package, yet its menus still want
+ * icons.
  *
- * <p>Each call returns a fresh {@link Node} (a JavaFX node can only have one parent). Color is
- * controlled via the {@code toolbar-icon} style class on the inner {@link SVGPath} (see app.css),
- * matching every other icon in the app.
+ * <p><b>Two families, mirroring {@code ui/Icons} exactly.</b> {@link #line} renders the UI Kit's 16-unit
+ * outline glyphs (stroked, {@code icon-line} class); {@link #of} renders the older Material 24dp filled
+ * single-path glyphs ({@code toolbar-icon} class). Which family an action uses is <b>not</b> a local
+ * choice: an action reached from both the main menu / toolbar (which draw it through {@code ui/Icons})
+ * and this menu must look the same in both places, so every glyph here that has a twin in
+ * {@code ui/Icons} copies that twin's family and path data verbatim. Undo, Redo, Cut, Copy, Paste,
+ * Bookmark and Personal Note were filled here while their toolbar and menu-bar counterparts had already
+ * moved to the line family, so the same action wore two different icons depending on how it was reached.
+ * The glyphs with no {@code ui/Icons} twin (bold, table, spellcheck, …) stay Material, which is the
+ * documented mid-migration state of the icon set as a whole.
+ *
+ * <p>Each call returns a fresh {@link Node} (a JavaFX node can only have one parent). A filled glyph is
+ * coloured through {@code -fx-fill} on {@code .toolbar-icon}; a line glyph through {@code -fx-stroke} on
+ * {@code .icon-line} — which is why a line glyph must never also carry {@code toolbar-icon}, or a
+ * {@code X .toolbar-icon} fill rule would paint the outline solid (see {@code Icons.line}).
  */
 final class MenuIcons {
 
@@ -29,36 +41,55 @@ final class MenuIcons {
         return new Group(svg);
     }
 
+    /** Scale for a kit line glyph: its 16-unit box rendered at the same visual size as a 24dp Material one. */
+    private static final double LINE_SCALE = ICON_SCALE * 24.0 / 16.0;
+
+    /**
+     * A UI Kit line glyph — the {@code editor}-package twin of {@code Icons.line}, kept byte-identical to it
+     * so a glyph shared with the toolbar renders the same on both surfaces.
+     *
+     * <p>Deliberately <em>not</em> tagged {@code toolbar-icon}: that class is the fill-based colouring
+     * convention, and an outline glyph must be stroked with the colour and filled with nothing. The base
+     * {@code .icon-line} rule in app.css already strokes it {@code -color-fg-muted}, which is the same
+     * colour a context-menu {@code .toolbar-icon} takes, so this needs no context-specific CSS.
+     */
+    private static Node line(String content) {
+        SVGPath svg = new SVGPath();
+        svg.setContent(content);
+        svg.getStyleClass().add("icon-line");
+        svg.setScaleX(LINE_SCALE);
+        svg.setScaleY(LINE_SCALE);
+        return new Group(svg);
+    }
+
     // ---- Cut / Copy / Paste / Undo / Redo / Select All ----
 
+    /** UI Kit line "scissors" — mirrors {@code Icons.cut} (toolbar + Edit menu). */
     static Node cut() {
-        return of("M9.64 7.64c.23-.5.36-1.05.36-1.64 0-2.21-1.79-4-4-4S2 3.79 2 6s1.79 4 4 4c.59 0 "
-                + "1.14-.13 1.64-.36L10 12l-2.36 2.36C7.14 14.13 6.59 14 6 14c-2.21 0-4 1.79-4 4s1.79 "
-                + "4 4 4 4-1.79 4-4c0-.59-.13-1.14-.36-1.64L12 14l7 7h3v-1L9.64 7.64zM6 8c-1.1 "
-                + "0-2-.89-2-2s.9-2 2-2 2 .89 2 2-.9 2-2 2zm0 12c-1.1 0-2-.89-2-2s.9-2 2-2 2 .89 2 "
-                + "2-.9 2-2 2zm6-7.5c-.28 0-.5-.22-.5-.5s.22-.5.5-.5.5.22.5.5-.22.5-.5.5zM19 3l-6 6 2 "
-                + "2 7-7V3z");
+        return line(
+                "M2.5000000000000004 11.6a1.9 1.9 0 1 0 3.8 0a1.9 1.9 0 1 0 -3.8 0M9.7 11.6a1.9 1.9 0 1 0 3.8 0a1.9 1.9 0 1 0 -3.8 0M5.8 10.2L12.6 2.4M10.2 10.2L3.4 2.4");
     }
 
+    /** UI Kit line "copy" — mirrors {@code Icons.copy} (toolbar + Edit menu). */
     static Node copy() {
-        return of("M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 "
-                + "0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z");
+        return line(
+                "M7.0 5.5h5.0a1.5 1.5 0 0 1 1.5 1.5v5.0a1.5 1.5 0 0 1 -1.5 1.5h-5.0a1.5 1.5 0 0 1 -1.5 -1.5v-5.0a1.5 1.5 0 0 1 1.5 -1.5zM3 10.5V3.6A1.1 1.1 0 0 1 4.1 2.5H11");
     }
 
+    /** UI Kit line "paste" — mirrors {@code Icons.paste} (toolbar + Edit menu). */
     static Node paste() {
-        return of("M19 2h-4.18C14.4.84 13.3 0 12 0c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 "
-                + "2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 "
-                + ".45-1 1-1zm7 18H5V4h2v3h10V4h2v16z");
+        return line(
+                "M5.0 3.0h6.0a1.5 1.5 0 0 1 1.5 1.5v8.0a1.5 1.5 0 0 1 -1.5 1.5h-6.0a1.5 1.5 0 0 1 -1.5 -1.5v-8.0a1.5 1.5 0 0 1 1.5 -1.5zM7.0 1.6h2.0a1.0 1.0 0 0 1 1.0 1.0v0.7999999999999998a1.0 1.0 0 0 1 -1.0 1.0h-2.0a1.0 1.0 0 0 1 -1.0 -1.0v-0.7999999999999998a1.0 1.0 0 0 1 1.0 -1.0z");
     }
 
+    /** UI Kit line "undo" — mirrors {@code Icons.undo} (toolbar + Edit menu). */
     static Node undo() {
-        return of("M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 "
-                + "3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z");
+        return line("M6 3.2L3.2 6 6 8.8M3.2 6h6.3a3.7 3.7 0 0 1 0 7.4H7");
     }
 
+    /** UI Kit line "redo" — mirrors {@code Icons.redo} (toolbar + Edit menu). */
     static Node redo() {
-        return of("M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 "
-                + "4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z");
+        return line("M10 3.2L12.8 6 10 8.8M12.8 6H6.5a3.7 3.7 0 0 0 0 7.4H9");
     }
 
     /** Material "select_all". */
@@ -178,17 +209,14 @@ final class MenuIcons {
                 + "5-5s5 2.24 5 5c0 1.63-.8 3.16-2.15 4.1z");
     }
 
-    /** Material "search" — "Find References". */
+    /** UI Kit line "search" — "Find References"; mirrors {@code Icons.find}. */
     static Node find() {
-        return of("M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 "
-                + "9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 "
-                + "0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z");
+        return line("M2.5999999999999996 7.0a4.4 4.4 0 1 0 8.8 0a4.4 4.4 0 1 0 -8.8 0M10.4 10.4L14 14");
     }
 
-    /** Material "info" — "Show Documentation" (hover). */
+    /** UI Kit line "info" — "Show Documentation" (hover); mirrors {@code Icons.about}. */
     static Node about() {
-        return of("M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 "
-                + "2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z");
+        return line("M1.7000000000000002 8.0a6.3 6.3 0 1 0 12.6 0a6.3 6.3 0 1 0 -12.6 0M8 7.4V11M8 5.1v.2");
     }
 
     // ---- Spell check ----
@@ -218,23 +246,24 @@ final class MenuIcons {
         return FoldManager.runGlyph();
     }
 
-    /** Material "bug_report" — "Debug Main Class". */
+    /** UI Kit line "bug" — "Debug Main Class"; mirrors {@code Icons.debug} (toolbar + Run menu). */
     static Node debug() {
-        return of(
-                "M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 "
-                        + "5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05"
-                        + ".33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 "
-                        + "5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z");
+        return line("M5.2 8.4 C5.2 6.2 6.5 4.8 8 4.8 C9.5 4.8 10.8 6.2 10.8 8.4"
+                + " L10.8 10.2 C10.8 12.1 9.5 13.3 8 13.3 C6.5 13.3 5.2 12.1 5.2 10.2 Z"
+                + "M6.5 5.2 L5.3 3.4M9.5 5.2 L10.7 3.4"
+                + "M5.3 7.8 L3.1 6.6M5.2 9.9 L2.9 9.9M5.3 11.8 L3.1 13.1"
+                + "M10.7 7.8 L12.9 6.6M10.8 9.9 L13.1 9.9M10.7 11.8 L12.9 13.1"
+                + "M6.0 7.0 L10.0 7.0");
     }
 
-    /** Material "comment" — "Add Personal Note". */
+    /** UI Kit line "note" — "Add Personal Note"; mirrors {@code Icons.notes} (tool stripe). */
     static Node note() {
-        return of("M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z");
+        return line("M3 2.5h10v8l-3 3H3zM10 13.5v-3h3");
     }
 
-    /** Material "bookmark" — "Add/Remove Bookmark" (matches the gutter bookmark marker). */
+    /** UI Kit line "bookmark" — "Add/Remove Bookmark"; mirrors {@code Icons.bookmark} (tool stripe). */
     static Node bookmark() {
-        return of("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z");
+        return line("M4.5 2h7v12L8 10.6 4.5 14z");
     }
 
     /** Material "file_download" — "Export to PDF". */

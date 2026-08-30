@@ -48,10 +48,13 @@ public final class RunConfigToolbar {
      * under the project root, or a makefile at the root itself. A folder of notes is not launchable just
      * because a sibling checkout above it has a {@code pom.xml}.
      *
-     * <p>With no project, any detected marker counts. The Projects feature is off by default, so requiring a
-     * project would hide the group permanently for everyone who never turned it on — including in a Maven
-     * checkout, where it is exactly the thing they want. With nothing to anchor to, the build tool's own
-     * notion of context is the best available, and it is already what the build tool windows gate on.
+     * <p>With no project, any detected marker counts — the build tool's own notion of context is the best
+     * available when there is nothing to anchor to, and it is already what the build tool windows gate on.
+     * (This was originally justified by the Projects feature being off by default; it now ships on, but the
+     * branch still carries the no-project window, {@code --single-window}/{@code --no-session} launches and
+     * anyone who opens a Maven checkout as loose files rather than as a project, where the group is exactly
+     * what they want. It is the one path by which the group can appear for a folder that is not itself a
+     * project: a build file <em>above</em> the open file is enough.)
      *
      * @param projectRoot the window's project root, or null when it has none
      * @param markerRoot where a build tool's marker file was detected, or null when none was
