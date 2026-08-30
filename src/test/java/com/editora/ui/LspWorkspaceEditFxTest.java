@@ -136,7 +136,7 @@ class LspWorkspaceEditFxTest {
     private static TextDocumentEdit edit(Path file, int line, int startCol, int endCol, String newText) {
         var id = new VersionedTextDocumentIdentifier(file.toUri().toString(), 1);
         var te = new TextEdit(new Range(new Position(line, startCol), new Position(line, endCol)), newText);
-        return new TextDocumentEdit(id, List.of(te));
+        return new TextDocumentEdit(id, List.of(Either.forLeft(te)));
     }
 
     /** Applies a workspace edit the way the manager's registered handler does. */

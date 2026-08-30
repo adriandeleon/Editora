@@ -6,6 +6,7 @@ import java.util.List;
 import com.editora.editor.LspDiagnostic;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Range;
 
 /** Pure mapping from LSP {@link Diagnostic}s to the editor's flat {@link LspDiagnostic} value type. */
@@ -45,7 +46,7 @@ public final class DiagnosticMapper {
                     r.getEnd().getLine(),
                     r.getEnd().getCharacter(),
                     severity(d.getSeverity()),
-                    d.getMessage() == null ? "" : d.getMessage(),
+                    message(d),
                     code(d),
                     d.getSource()));
         }
@@ -63,6 +64,24 @@ public final class DiagnosticMapper {
             case Information -> LspDiagnostic.Severity.INFO;
             case Hint -> LspDiagnostic.Severity.HINT;
         };
+    }
+
+    /**
+     * The diagnostic's text. LSP 3.18 widened {@code message} to an
+     * {@code Either<String, MarkupContent>}; the editor renders diagnostics as plain text (tooltip,
+     * Problems row, stripe), so a markup message contributes its raw {@code value} rather than being
+     * dropped — losing the text entirely would leave a squiggle with nothing to explain it.
+     */
+    private static String message(Diagnostic d) {
+        var m = d.getMessage();
+        if (m == null) {
+            return "";
+        }
+        if (m.isLeft()) {
+            return m.getLeft() == null ? "" : m.getLeft();
+        }
+        MarkupContent mc = m.getRight();
+        return mc == null || mc.getValue() == null ? "" : mc.getValue();
     }
 
     /** The diagnostic code as a string (LSP code is an Either&lt;String,Integer&gt;), or null. */

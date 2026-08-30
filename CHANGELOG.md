@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Upgraded Eclipse LSP4J from 0.23.1 to 1.0.0**, which implements LSP 3.18 and DAP 1.70. Language-server
+  and debug-adapter behaviour is unchanged; this is the protocol library catching up. Two fields Editora
+  reads were widened by 3.18: a diagnostic's message may now be markup rather than plain text (the markup's
+  text is used, so a squiggle always has its explanation), and a document edit may now be a *snippet* edit
+  carrying `${1:name}` placeholders. A snippet edit is refused rather than applied — inserting it as plain
+  text would write the placeholder markup into the file — which is the same all-or-nothing rule that already
+  covers file creates and deletes. In practice no server sends one, since Editora does not advertise the
+  capability.
+
 ## [0.14.0] - 2026-08-29
 
 ### Added
