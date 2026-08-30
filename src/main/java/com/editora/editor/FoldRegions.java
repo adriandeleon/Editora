@@ -420,7 +420,15 @@ public final class FoldRegions {
     private static List<Region> typst(String text) {
         String[] lines = text.split("\n", -1);
         List<Region> out = new ArrayList<>(braces(text));
-        List<TypstOutline.Heading> heads = TypstOutline.headings(text);
+        TypstOutline.Outline outline = TypstOutline.scan(text);
+        // Raw blocks fold like Markdown's fenced code: braces() cannot see them, and a long embedded
+        // listing is exactly the thing a reader wants out of the way.
+        for (TypstOutline.RawBlock r : outline.rawBlocks()) {
+            if (r.endLine() > r.startLine()) {
+                out.add(new Region(r.startLine(), r.endLine()));
+            }
+        }
+        List<TypstOutline.Heading> heads = outline.headings();
         for (int k = 0; k < heads.size(); k++) {
             TypstOutline.Heading h = heads.get(k);
             int end = lines.length - 1;
