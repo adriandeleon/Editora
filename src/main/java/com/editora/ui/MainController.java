@@ -1141,6 +1141,20 @@ public class MainController implements com.editora.mcp.McpBridge {
      * that simply have nothing to operate on (no buffer, no repo, no suspended debug session), so their
      * commands would no-op with a status message if run.
      */
+    /**
+     * Re-evaluates the main menu's enabled/disabled state for the context as it stands now.
+     *
+     * <p>Cheap (a pure lookup per item, no relabel, no re-measure) and pushed from the places the context
+     * can move: a tab switch, Git reporting whether we are in a repo, and a debug session changing state.
+     * The menu also recomputes on open, which is exact — but on the macOS system menu bar AppKit owns the
+     * popup and that hook may not fire, so these pushes are what keep it honest there.
+     */
+    private void refreshMenuEnablement() {
+        if (menuBar != null) {
+            menuBar.refreshEnablement();
+        }
+    }
+
     private Chrome.PaletteContext paletteContext() {
         EditorBuffer b = activeBuffer();
         boolean debugActive = dapManager.isActive();
@@ -2287,6 +2301,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             httpClient.refreshFor(activeBuffer()); // …and the .http response preview
             historyCoordinator.refresh(); // re-gate + reload the Local File History list for the new active file
             maybeOfferInstall(activeBuffer()); // offer to install this language's LSP/DAP if it's missing
+            refreshMenuEnablement(); // buffer-shaped menu items (preview, CSV, .http, Typst) follow the tab
         });
         editorArea.addTabsListener((ListChangeListener<Tab>) c -> {
             while (c.next()) {
@@ -2694,6 +2709,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                     @Override
                     public void setToolWindowAvailable(boolean available) {
                         toolWindows.setAvailable(debugToolWindow, available);
+                        // Called on every DapManager state change (including SUSPENDED), which is what the
+                        // step/evaluate menu items are gated on.
+                        refreshMenuEnablement();
                     }
 
                     @Override
@@ -3220,6 +3238,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             // Also require an open buffer: these act on the active file/tab, so they hide on Welcome
             // (and any non-buffer tab) even inside a repo.
             toolWindows.setAvailable(commitToolWindow, available && activeBuffer() != null);
+            // Git's answer to "are we in a repo" has just landed, and it arrives asynchronously well after
+            // the window (and its menu) were built — this is the signal that ungreys the VCS menu.
+            refreshMenuEnablement();
         }
 
         @Override

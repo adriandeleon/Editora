@@ -152,6 +152,12 @@ final class MainMenuBar {
                 group.add(row);
                 menu.getItems().add(row.item());
             }
+            // Recompute enablement as the menu opens, so it can never show a stale answer. The context
+            // half of the gate (a repo, an open buffer, a suspended debug session) moves constantly and
+            // asynchronously — Git detection alone lands well after the window is built — while refresh()
+            // runs only on a settings/keymap apply. On the macOS system menu bar AppKit owns the popup and
+            // this may not fire, which is why the state-change sites push refreshEnablement() as well.
+            menu.setOnShowing(e -> refreshEnablement());
             bar.getMenus().add(menu);
             menuGroups.add(group);
         }
@@ -249,8 +255,6 @@ final class MainMenuBar {
      */
     void refresh() {
         Map<String, String> chords = chordsByCommand.get();
-        Chrome.PaletteGates g = gates.get();
-        Chrome.PaletteContext ctx = context.get();
         for (Map.Entry<String, Row> e : items.entrySet()) {
             String id = e.getKey();
             Row row = e.getValue();
@@ -266,12 +270,35 @@ final class MainMenuBar {
             } else {
                 item.setText(bound ? title + "   " + chord : title);
             }
-            // A command whose feature is switched off, or that has nothing to act on, is shown disabled
-            // rather than hidden: the point of a menu is to be a stable map, and an entry that vanishes
-            // teaches nothing about why.
-            item.setDisable(!Chrome.paletteEnabled(id, g, ctx));
         }
+        refreshEnablement();
         alignChordColumns();
+    }
+
+    /**
+     * Re-evaluates only which items are enabled, for the state as it stands right now.
+     *
+     * <p>Split out of {@link #refresh()} because the two run on completely different cadences. Titles and
+     * chords move only on a keymap switch or a locale change; <em>enablement</em> moves whenever the window
+     * does — a tab switch, a repo being detected, a debug session suspending. This pass is a pure map lookup
+     * per item with no relabelling and no {@link #alignChordColumns()} re-measure, so it is cheap enough to
+     * run on those events and on every menu open.
+     *
+     * <p>The context half of the gate used to be frozen at window-build time, when Git detection (which is
+     * asynchronous and off-thread) had not yet reported a repo: the entire VCS menu came up greyed out and
+     * stayed that way until some unrelated settings apply happened to call {@link #refresh()}. The status bar
+     * beside it showed the branch the whole time.
+     *
+     * <p>A command whose feature is switched off, or that has nothing to act on, is shown disabled rather
+     * than hidden: the point of a menu is to be a stable map, and an entry that vanishes teaches nothing
+     * about why.
+     */
+    void refreshEnablement() {
+        Chrome.PaletteGates g = gates.get();
+        Chrome.PaletteContext ctx = context.get();
+        for (Map.Entry<String, Row> e : items.entrySet()) {
+            e.getValue().item().setDisable(!Chrome.paletteEnabled(e.getKey(), g, ctx));
+        }
     }
 
     /**
