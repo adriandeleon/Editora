@@ -55,8 +55,22 @@ public final class MarkdownPrintLayout {
      * block indices for each page (always at least one page).
      */
     public static List<List<Integer>> packBlocks(List<Double> heights, double pageHeight) {
+        return packBlocks(heights, pageHeight, 0);
+    }
+
+    /**
+     * As {@link #packBlocks(List, double)}, but charging {@code spacing} between consecutive blocks.
+     *
+     * <p>The page's own container is a {@code VBox} with CSS padding and spacing, and packing ignored both:
+     * blocks summing to exactly the page height then overflowed it by the gaps between them. Measured on a
+     * 200-item list before this: six of eight pages over the page, the worst by 31px. Invisible to a "was
+     * anything scaled?" check, which is what the over-tall rule is guarded by, and invisible on screen
+     * because the preview clips.
+     */
+    public static List<List<Integer>> packBlocks(List<Double> heights, double pageHeight, double spacing) {
         List<List<Integer>> pages = new ArrayList<>();
         boolean validPage = pageHeight > 0 && Double.isFinite(pageHeight);
+        double gap = Math.max(0, spacing);
         List<Integer> cur = new ArrayList<>();
         double used = 0;
         for (int i = 0; i < heights.size(); i++) {
@@ -70,13 +84,15 @@ public final class MarkdownPrintLayout {
                 pages.add(new ArrayList<>(List.of(i)));
                 continue;
             }
-            if (validPage && !cur.isEmpty() && used + h > pageHeight) {
+            double cost = cur.isEmpty() ? h : gap + h;
+            if (validPage && !cur.isEmpty() && used + cost > pageHeight) {
                 pages.add(cur);
                 cur = new ArrayList<>();
                 used = 0;
+                cost = h;
             }
             cur.add(i);
-            used += h;
+            used += cost;
         }
         if (!cur.isEmpty()) {
             pages.add(cur);
@@ -105,15 +121,25 @@ public final class MarkdownPrintLayout {
         // Detach the blocks so they can be re-parented — into split pieces first, then into pages.
         content.getChildren().clear();
 
+        // The page's own container costs padding above and below and a gap between each pair of blocks, so
+        // the height available to content is less than the printable height. Read from CSS rather than
+        // assumed, because both come from the .markdown-preview rule.
+        VBox probe = new VBox();
+        probe.getStyleClass().add("markdown-preview");
+        measureBlockHeights(probe, pw, ph); // applies CSS, which is what resolves padding/spacing
+        double pagePadding = probe.getPadding().getTop() + probe.getPadding().getBottom();
+        double pageSpacing = probe.getSpacing();
+        double contentHeight = Math.max(1, ph - pagePadding);
+
         List<Node> pieces = new ArrayList<>();
         for (int i = 0; i < blocks.size(); i++) {
-            pieces.addAll(splitToFit(blocks.get(i), heights.get(i), pw, ph));
+            pieces.addAll(splitToFit(blocks.get(i), heights.get(i), pw, contentHeight));
         }
         List<Double> pieceHeights = new ArrayList<>();
         for (Node piece : pieces) {
             pieceHeights.add(measureOne(piece, pw, ph));
         }
-        List<List<Integer>> packed = packBlocks(pieceHeights, ph);
+        List<List<Integer>> packed = packBlocks(pieceHeights, contentHeight, pageSpacing);
         blocks = pieces;
         heights = pieceHeights;
 
@@ -216,10 +242,13 @@ public final class MarkdownPrintLayout {
 
         List<Node> children = new ArrayList<>(pane.getChildren());
         pane.getChildren().clear();
+        // For a VBox the height of a group is arithmetic (see ownHeights), so measure each child once here
+        // and spend no layout at all on the search. Null for every other container, where it is not.
+        double[] own = ownHeights(pane, chain, children, pw, ph);
         List<Node> out = new ArrayList<>();
         int from = 0;
         while (from < children.size()) {
-            int take = largestPrefixThatFits(pane, chain, children, from, pw, ph);
+            int take = largestPrefixThatFits(pane, chain, children, from, own, pw, ph);
             if (take == 0) {
                 // Even one child overflows: recurse into it, then carry on after it.
                 Node child = children.get(from);
@@ -341,24 +370,90 @@ public final class MarkdownPrintLayout {
      */
     private record Wrapper(Pane template, double leadWidth) {}
 
-    /** The largest number of children from {@code from} whose piece still fits {@code ph}; 0 if none do. */
+    /**
+     * Each child's own height inside {@code pane}, or null when the container's height is not the sum of
+     * them — which is the whole point of the distinction.
+     *
+     * <p>A {@code VBox} stacks its children at their preferred heights, and every child is laid out at the
+     * same width whatever its siblings are (the clone is pinned to the printable width), so a child measured
+     * alone is the same height it will be in a group: the group's height is arithmetic. A {@code TextFlow}
+     * is the opposite — its runs <em>wrap</em>, so summing them is meaningless — and an {@code HBox} puts
+     * its children side by side. Both of those keep measuring for real.
+     *
+     * <p>This is the difference between measuring each child once and laying out a candidate group per step
+     * of a binary search, per emitted piece. Measured on this repo's CLAUDE.md, where pagination is 94%
+     * layout: 3,728 measurements over 1.31M cumulative nodes.
+     */
+    private static double[] ownHeights(Pane pane, List<Wrapper> chain, List<Node> children, double pw, double ph) {
+        if (!(pane instanceof VBox)) {
+            return null;
+        }
+        double padding = pane.getPadding().getTop() + pane.getPadding().getBottom();
+        double[] own = new double[children.size()];
+        for (int i = 0; i < children.size(); i++) {
+            Pane solo = cloneShell(pane, pw);
+            solo.getChildren().add(children.get(i));
+            own[i] = measureWrapped(solo, chain, pw, ph) - padding;
+            solo.getChildren().clear();
+            if (!(own[i] > 0)) {
+                return null; // not the shape assumed above; measure for real instead of guessing
+            }
+        }
+        return own;
+    }
+
+    /** The predicted height of children {@code [from, from+count)} stacked in {@code pane}. */
+    private static double stackedHeight(Pane pane, double[] own, int from, int count) {
+        double h = pane.getPadding().getTop() + pane.getPadding().getBottom();
+        for (int i = from; i < from + count; i++) {
+            h += own[i];
+        }
+        return h + Math.max(0, count - 1) * ((VBox) pane).getSpacing();
+    }
+
+    /**
+     * The largest number of children from {@code from} whose piece still fits {@code ph}; 0 if none do.
+     *
+     * <p>With {@code own} heights available the count is arithmetic, and then <b>verified once</b> against a
+     * real layout, backing off while it overflows. The arithmetic is a hint, not an oracle: a piece that
+     * overflowed the page is precisely the bug this whole splitter exists to fix, so it is not something to
+     * take on trust from a model of how VBox lays out. Without {@code own} it is a binary search, each step
+     * a real layout of the candidate group.
+     */
     private static int largestPrefixThatFits(
-            Pane template, List<Wrapper> chain, List<Node> children, int from, double pw, double ph) {
+            Pane template, List<Wrapper> chain, List<Node> children, int from, double[] own, double pw, double ph) {
+        int remaining = children.size() - from;
+        if (own != null) {
+            int lo = 0;
+            while (lo < remaining && stackedHeight(template, own, from, lo + 1) <= ph) {
+                lo++;
+            }
+            while (lo > 0 && measurePrefix(template, chain, children, from, lo, pw, ph) > ph) {
+                lo--; // the estimate was optimistic — step back until it really fits
+            }
+            return lo;
+        }
         int lo = 0;
-        int hi = children.size() - from;
+        int hi = remaining;
         while (lo < hi) {
             int mid = (lo + hi + 1) / 2;
-            Pane probe = cloneShell(template, pw);
-            probe.getChildren().addAll(children.subList(from, from + mid));
-            double h = measureWrapped(probe, chain, pw, ph);
-            probe.getChildren().clear(); // hand the children back for the next probe
-            if (h <= ph) {
+            if (measurePrefix(template, chain, children, from, mid, pw, ph) <= ph) {
                 lo = mid;
             } else {
                 hi = mid - 1;
             }
         }
         return lo;
+    }
+
+    /** Lays out {@code count} children in a clone of {@code template} and hands them back detached. */
+    private static double measurePrefix(
+            Pane template, List<Wrapper> chain, List<Node> children, int from, int count, double pw, double ph) {
+        Pane probe = cloneShell(template, pw);
+        probe.getChildren().addAll(children.subList(from, from + count));
+        double h = measureWrapped(probe, chain, pw, ph);
+        probe.getChildren().clear();
+        return h;
     }
 
     /**
@@ -452,7 +547,7 @@ public final class MarkdownPrintLayout {
     }
 
     /** The laid-out height of one detached node at the printable width; leaves it detached. */
-    static double measureOne(Node node, double pw, double ph) {
+    public static double measureOne(Node node, double pw, double ph) {
         VBox holder = new VBox(node);
         holder.getStyleClass().add("markdown-preview");
         List<Double> h = measureBlockHeights(holder, pw, ph);
