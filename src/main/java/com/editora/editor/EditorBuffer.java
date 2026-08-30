@@ -308,6 +308,9 @@ public class EditorBuffer implements TabContent {
     public static final long HUGE_FILE_BYTES = 50L * 1024 * 1024;
     /** Whether the minimap is shown; applied to every split pane's minimap. */
     private boolean minimapVisible = true;
+    /** Whether this buffer is the visible tab (see {@link #setRenderingActive}); starts true because a
+     *  freshly built buffer measures itself before the controller marks background tabs inactive. */
+    private boolean renderingActive = true;
     /** Large-file mode: syntax highlighting and the minimap are disabled regardless of settings. */
     private boolean largeFile;
     /** Intermediate "large source file" tier (below the 5 MB hard mode): the minimap and LSP are
@@ -704,6 +707,10 @@ public class EditorBuffer implements TabContent {
 
     private String fontFamily = "monospace";
     private int fontSize = 14;
+    /** Whether {@link #setFont} has run at least once. The fields above are only *assumed* defaults — the
+     *  area's inline style and the overlays' fonts are set by that call, so the first one must always
+     *  apply even when it happens to match them. */
+    private boolean fontApplied;
     /** Current-line highlight fill; varies per editor theme (see {@link #setLineHighlightColor}). */
     private Color lineHighlightColor = Color.web("#dfe7f0");
     /** Minimap block + viewport colors; vary per editor theme (see {@link #setMinimapColors}). */
@@ -6382,6 +6389,10 @@ public class EditorBuffer implements TabContent {
 
     /** Applies the editor font, overriding the stylesheet defaults. */
     public void setFont(String family, int size) {
+        if (fontApplied && java.util.Objects.equals(family, fontFamily) && size == fontSize) {
+            return; // unchanged: skip the area-wide restyle + the ruler re-measure (a forced VirtualFlow layout)
+        }
+        fontApplied = true;
         this.fontFamily = family;
         this.fontSize = size;
         String style = "-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;";
@@ -6402,6 +6413,9 @@ public class EditorBuffer implements TabContent {
 
     /** Show/hide the column-80 ruler overlay. */
     public void setColumnRulerVisible(boolean visible) {
+        if (visible == rulerVisible) {
+            return; // unchanged: measuring the ruler forces a VirtualFlow layout, so don't re-do it for nothing
+        }
         this.rulerVisible = visible;
         if (visible) {
             scheduleRulerMeasure();
@@ -6507,6 +6521,11 @@ public class EditorBuffer implements TabContent {
      * tab selection and when a tab is added in the background.
      */
     public void setRenderingActive(boolean active) {
+        boolean wasInactive = !renderingActive;
+        renderingActive = active;
+        if (active && wasInactive) {
+            scheduleRulerMeasure(); // catch up on measures skipped while the tab was hidden
+        }
         minimap.setRenderingActive(active);
         if (minimap2 != null) {
             minimap2.setRenderingActive(active);
@@ -6550,12 +6569,18 @@ public class EditorBuffer implements TabContent {
 
     /** Show/hide the line-number gutter. The fold-chevron column is always present. */
     public void setLineNumbersVisible(boolean visible) {
+        if (visible == lineNumbersVisible) {
+            return; // unchanged: refreshGutter() rebuilds every visible row's graphic, so don't re-do it
+        }
         this.lineNumbersVisible = visible;
         refreshGutter();
     }
 
     /** Show/hide the entire gutter (Simple UI mode removes it completely). */
     public void setGutterVisible(boolean visible) {
+        if (visible == gutterVisible) {
+            return; // unchanged: see setLineNumbersVisible
+        }
         this.gutterVisible = visible;
         refreshGutter();
     }
@@ -7088,7 +7113,11 @@ public class EditorBuffer implements TabContent {
      * editor), so we always defer it via {@link Platform#runLater}.
      */
     private void scheduleRulerMeasure() {
-        if (!rulerVisible || rulerMeasurePending) {
+        // Measuring queries the viewport (a forced VirtualFlow layout) + character bounds. A background tab
+        // is not on screen, so doing that for it is pure cost — and a settings apply dirties every open
+        // buffer's viewport at once, which is what made a Simple-mode toggle scale with the number of tabs.
+        // setRenderingActive re-schedules when the tab is shown again, so nothing is left stale.
+        if (!rulerVisible || rulerMeasurePending || !renderingActive) {
             return;
         }
         rulerMeasurePending = true;

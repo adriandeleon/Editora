@@ -109,6 +109,11 @@ final class MainMenuBar {
     /** True when the native menu bar owns rendering, so items must carry plain text (see the class javadoc). */
     private final boolean systemMenu = KeymapManager.isMac();
 
+    private final Consumer<String> run;
+
+    /** Which table is currently built — the full menu, or Simple UI mode's reduced one. */
+    private boolean simple;
+
     MainMenuBar(
             CommandRegistry registry,
             Supplier<Map<String, String>> chordsByCommand,
@@ -119,8 +124,21 @@ final class MainMenuBar {
         this.chordsByCommand = chordsByCommand;
         this.gates = gates;
         this.context = context;
+        this.run = run;
 
-        for (MenuBarModel.MenuSpec spec : MenuBarModel.menus()) {
+        build();
+        // On macOS the menu belongs at the top of the screen, not inside the window. JavaFX moves it there
+        // wholesale; the in-window bar then renders as nothing, which is why the chrome toggle still works.
+        bar.setUseSystemMenuBar(systemMenu);
+        refresh();
+    }
+
+    /** (Re)builds every menu from the table for the current mode. */
+    private void build() {
+        bar.getMenus().clear();
+        items.clear();
+        menuGroups.clear();
+        for (MenuBarModel.MenuSpec spec : MenuBarModel.menus(simple)) {
             Menu menu = new Menu(tr(spec.titleKey()));
             java.util.List<Row> group = new java.util.ArrayList<>();
             for (String entry : spec.entries()) {
@@ -137,9 +155,18 @@ final class MainMenuBar {
             bar.getMenus().add(menu);
             menuGroups.add(group);
         }
-        // On macOS the menu belongs at the top of the screen, not inside the window. JavaFX moves it there
-        // wholesale; the in-window bar then renders as nothing, which is why the chrome toggle still works.
-        bar.setUseSystemMenuBar(systemMenu);
+    }
+
+    /**
+     * Switches between the full and the Simple UI mode menu. Rebuilds only when the mode actually changed —
+     * this is called from every chrome apply, and re-creating ~130 menu items each time would be pure waste.
+     */
+    void setSimple(boolean simple) {
+        if (simple == this.simple) {
+            return;
+        }
+        this.simple = simple;
+        build();
         refresh();
     }
 

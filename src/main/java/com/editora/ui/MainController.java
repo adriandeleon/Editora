@@ -1044,9 +1044,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         statusBar.setManaged(statusOn);
         editorArea.setTabHeaderVisible(Chrome.tabBar(s.isShowTabBar(), focus));
         if (menuBar != null) {
-            boolean menuOn = Chrome.menuBar(s.isShowMenuBar(), focus, simple);
+            boolean menuOn = Chrome.menuBar(s.isShowMenuBar(), focus);
             menuBar.node().setVisible(menuOn);
             menuBar.node().setManaged(menuOn);
+            // Simple UI mode keeps the menu bar but swaps in the reduced table (a no-op when unchanged).
+            menuBar.setSimple(simple);
             menuBar.refresh(); // features and keybindings may have moved since the last apply
         }
         breadcrumb.setEnabled(Chrome.breadcrumb(s.isShowBreadcrumb(), focus, simple));
@@ -13898,12 +13900,18 @@ public class MainController implements com.editora.mcp.McpBridge {
     public void applyEditorTheme(String themeName) {
         if (stage != null && stage.getScene() != null) {
             ObservableList<String> sheets = stage.getScene().getStylesheets();
-            if (currentEditorThemeCss != null) {
-                sheets.remove(currentEditorThemeCss);
-            }
-            currentEditorThemeCss = EditorThemes.stylesheetFor(themeName);
-            if (currentEditorThemeCss != null && !sheets.contains(currentEditorThemeCss)) {
-                sheets.add(currentEditorThemeCss);
+            String wanted = EditorThemes.stylesheetFor(themeName);
+            // Removing and re-adding the same sheet forces a full scene CSS reapply. This runs on every
+            // settings apply (most of which don't touch the theme), so only swap when it actually changed.
+            if (!java.util.Objects.equals(wanted, currentEditorThemeCss)
+                    || (wanted != null && !sheets.contains(wanted))) {
+                if (currentEditorThemeCss != null) {
+                    sheets.remove(currentEditorThemeCss);
+                }
+                currentEditorThemeCss = wanted;
+                if (wanted != null && !sheets.contains(wanted)) {
+                    sheets.add(wanted);
+                }
             }
         }
         Color highlight = EditorThemes.lineHighlightFor(themeName);
