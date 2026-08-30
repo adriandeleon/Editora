@@ -8,9 +8,11 @@ import java.util.List;
 import java.util.Map;
 
 import com.editora.editor.LspTextEdit;
+import org.eclipse.lsp4j.SnippetTextEdit;
 import org.eclipse.lsp4j.TextDocumentEdit;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 /**
  * Maps an LSP {@link WorkspaceEdit} — a quick fix's changes, possibly across several files — into neutral
@@ -20,10 +22,11 @@ import org.eclipse.lsp4j.WorkspaceEdit;
  * {@code workspaceEdit.documentChanges}).
  *
  * <p><b>All-or-nothing:</b> returns {@code null} when the edit contains anything that can't be applied
- * faithfully — a create/delete resource operation, a non-{@code file:} URI, or a text edit trailing a
- * {@code RenameFile} — because applying <i>half</i> a refactoring corrupts the workspace; the caller then
- * answers {@code applied=false} so the server knows nothing happened. {@code RenameFile} ops <em>are</em>
- * supported (#676) when they follow the text edits. Pure of JavaFX; unit-tested.
+ * faithfully — a create/delete resource operation, a non-{@code file:} URI, a {@link SnippetTextEdit}, or
+ * a text edit trailing a {@code RenameFile} — because applying <i>half</i> a refactoring corrupts the
+ * workspace; the caller then answers {@code applied=false} so the server knows nothing happened.
+ * {@code RenameFile} ops <em>are</em> supported (#676) when they follow the text edits. Pure of JavaFX;
+ * unit-tested.
  */
 public final class WorkspaceEditMapper {
 
@@ -42,9 +45,9 @@ public final class WorkspaceEditMapper {
     /**
      * See the class doc: per-file batches (insertion-ordered, same-file entries merged) plus trailing file
      * renames, or {@code null} when any part is unsupported — a create/delete resource operation, a
-     * non-{@code file:} URI, or a text edit appearing <b>after</b> a rename (its URI would address the
-     * post-rename world; supporting that means path remapping mid-apply, refused instead — jdtls and
-     * friends emit renames last). An empty/absent edit maps to empty lists (a valid no-op).
+     * non-{@code file:} URI, a snippet edit, or a text edit appearing <b>after</b> a rename (its URI would
+     * address the post-rename world; supporting that means path remapping mid-apply, refused instead —
+     * jdtls and friends emit renames last). An empty/absent edit maps to empty lists (a valid no-op).
      */
     public static Mapped map(WorkspaceEdit edit) {
         if (edit == null) {
@@ -62,8 +65,10 @@ public final class WorkspaceEditMapper {
                         return null; // a text edit AFTER a rename addresses the post-rename world — refused
                     }
                     TextDocumentEdit tde = change.getLeft();
+                    List<TextEdit> plain = plainEdits(tde.getEdits());
                     if (tde.getTextDocument() == null
-                            || !addEdits(byFile, tde.getTextDocument().getUri(), tde.getEdits())) {
+                            || plain == null
+                            || !addEdits(byFile, tde.getTextDocument().getUri(), plain)) {
                         return null;
                     }
                 } else if (change.getRight() instanceof org.eclipse.lsp4j.RenameFile rf) {
@@ -89,6 +94,33 @@ public final class WorkspaceEditMapper {
         List<FileEdit> out = new ArrayList<>(byFile.size());
         byFile.forEach((file, edits) -> out.add(new FileEdit(file, List.copyOf(edits))));
         return new Mapped(out, List.copyOf(renames));
+    }
+
+    /**
+     * Unwraps LSP 3.18's {@code Either<TextEdit, SnippetTextEdit>} document edits to plain ones, or
+     * {@code null} if any is a {@link SnippetTextEdit}.
+     *
+     * <p>A snippet edit's text carries tab-stop syntax ({@code ${1:name}}) that the editor's
+     * {@code applyLspEdits} would insert <em>verbatim</em>, so treating one as plain text writes the
+     * placeholder markup into the user's file. Refusing the whole edit is the class's all-or-nothing rule.
+     * In practice this never fires: a server may only send snippet edits once the client advertises the
+     * capability, which Editora does not.
+     */
+    private static List<TextEdit> plainEdits(List<Either<TextEdit, SnippetTextEdit>> edits) {
+        if (edits == null) {
+            return List.of();
+        }
+        List<TextEdit> out = new ArrayList<>(edits.size());
+        for (Either<TextEdit, SnippetTextEdit> e : edits) {
+            if (e == null) {
+                continue; // tolerated like a null TextEdit below
+            }
+            if (!e.isLeft()) {
+                return null;
+            }
+            out.add(e.getLeft());
+        }
+        return out;
     }
 
     /** Accumulates one document's edits under its resolved file; false when the URI isn't a local file. */

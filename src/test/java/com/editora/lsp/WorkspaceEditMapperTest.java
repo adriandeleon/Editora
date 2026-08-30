@@ -3,11 +3,14 @@ package com.editora.lsp;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import org.eclipse.lsp4j.CreateFile;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.ResourceOperation;
+import org.eclipse.lsp4j.SnippetTextEdit;
+import org.eclipse.lsp4j.StringValue;
 import org.eclipse.lsp4j.TextDocumentEdit;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
@@ -31,6 +34,13 @@ class WorkspaceEditMapperTest {
         return Path.of(name).toUri().toString();
     }
 
+    /** A {@code documentChanges} entry. LSP 3.18 widened an edit to {@code Either<TextEdit, SnippetTextEdit>}. */
+    private static TextDocumentEdit docEdit(String path, TextEdit... edits) {
+        return new TextDocumentEdit(
+                new VersionedTextDocumentIdentifier(uri(path), 1),
+                Stream.of(edits).map(Either::<TextEdit, SnippetTextEdit>forLeft).toList());
+    }
+
     @Test
     void legacyChangesMapShapeMaps() {
         WorkspaceEdit we = new WorkspaceEdit(Map.of(uri("/tmp/A.java"), List.of(edit(0, 0, 0, 1, "x"))));
@@ -48,10 +58,8 @@ class WorkspaceEditMapperTest {
     void documentChangesShapeMapsAndMergesSameFile() {
         // jdtls's modern shape: TextDocumentEdit[] — two batches touching the same file merge into one
         // FileEdit so the whole file's change is a single undo unit.
-        TextDocumentEdit first = new TextDocumentEdit(
-                new VersionedTextDocumentIdentifier(uri("/tmp/A.java"), 1), List.of(edit(0, 0, 0, 0, "import x;\n")));
-        TextDocumentEdit second = new TextDocumentEdit(
-                new VersionedTextDocumentIdentifier(uri("/tmp/A.java"), 1), List.of(edit(5, 0, 5, 3, "y")));
+        TextDocumentEdit first = docEdit("/tmp/A.java", edit(0, 0, 0, 0, "import x;\n"));
+        TextDocumentEdit second = docEdit("/tmp/A.java", edit(5, 0, 5, 3, "y"));
         WorkspaceEdit we = new WorkspaceEdit(List.of(Either.forLeft(first), Either.forLeft(second)));
         var files = WorkspaceEditMapper.map(we).edits();
         assertEquals(1, files.size(), "same-file batches merge");
@@ -72,8 +80,7 @@ class WorkspaceEditMapperTest {
         // A create/delete can't be applied faithfully — the whole edit must be refused, not the
         // text half applied around a file that was never created. (Renames ARE supported — below.)
         WorkspaceEdit we = new WorkspaceEdit(List.of(
-                Either.forLeft(new TextDocumentEdit(
-                        new VersionedTextDocumentIdentifier(uri("/tmp/A.java"), 1), List.of(edit(0, 0, 0, 1, "a")))),
+                Either.forLeft(docEdit("/tmp/A.java", edit(0, 0, 0, 1, "a"))),
                 Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/New.java")))));
         assertNull(WorkspaceEditMapper.map(we));
     }
@@ -98,8 +105,7 @@ class WorkspaceEditMapperTest {
         // jdtls's class-rename shape: the references' text edits, then the RenameFile — supported.
         org.eclipse.lsp4j.RenameFile rf = new org.eclipse.lsp4j.RenameFile(uri("/tmp/A.java"), uri("/tmp/B.java"));
         WorkspaceEdit we = new WorkspaceEdit(List.of(
-                Either.forLeft(new TextDocumentEdit(
-                        new VersionedTextDocumentIdentifier(uri("/tmp/A.java"), 1), List.of(edit(0, 0, 0, 1, "B")))),
+                Either.forLeft(docEdit("/tmp/A.java", edit(0, 0, 0, 1, "B"))),
                 Either.<TextDocumentEdit, ResourceOperation>forRight(rf)));
         var mapped = WorkspaceEditMapper.map(we);
         assertEquals(1, mapped.edits().size());
@@ -115,8 +121,7 @@ class WorkspaceEditMapperTest {
         org.eclipse.lsp4j.RenameFile rf = new org.eclipse.lsp4j.RenameFile(uri("/tmp/A.java"), uri("/tmp/B.java"));
         WorkspaceEdit we = new WorkspaceEdit(List.of(
                 Either.<TextDocumentEdit, ResourceOperation>forRight(rf),
-                Either.forLeft(new TextDocumentEdit(
-                        new VersionedTextDocumentIdentifier(uri("/tmp/B.java"), 1), List.of(edit(0, 0, 0, 1, "x"))))));
+                Either.forLeft(docEdit("/tmp/B.java", edit(0, 0, 0, 1, "x")))));
         assertNull(WorkspaceEditMapper.map(we));
     }
 
@@ -126,5 +131,21 @@ class WorkspaceEditMapperTest {
         rf.setOptions(new org.eclipse.lsp4j.RenameFileOptions(true, false));
         WorkspaceEdit we = new WorkspaceEdit(List.of(Either.<TextDocumentEdit, ResourceOperation>forRight(rf)));
         assertTrue(WorkspaceEditMapper.map(we).renames().get(0).overwrite());
+    }
+
+    // --- LSP 3.18 snippet edits -----------------------------------------------------------------
+
+    @Test
+    void aSnippetEditRefusesTheWholeEdit() {
+        // A SnippetTextEdit's text carries tab-stop syntax the editor would insert verbatim, writing
+        // "${1:name}" into the user's file. Refuse the whole edit rather than corrupt it.
+        TextDocumentEdit tde = new TextDocumentEdit(
+                new VersionedTextDocumentIdentifier(uri("/tmp/A.java"), 1),
+                List.of(
+                        Either.forLeft(edit(0, 0, 0, 1, "a")),
+                        Either.forRight(new SnippetTextEdit(
+                                new Range(new Position(1, 0), new Position(1, 1)),
+                                new StringValue("snippet", "${1:name}")))));
+        assertNull(WorkspaceEditMapper.map(new WorkspaceEdit(List.of(Either.forLeft(tde)))));
     }
 }
