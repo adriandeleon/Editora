@@ -9,6 +9,7 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.image.WritableImage;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
@@ -18,7 +19,8 @@ import org.fxmisc.richtext.CodeArea;
 /**
  * A lightweight document overview ("minimap") drawn beside the editor. Each paragraph is rendered
  * as scaled-down blocks representing its non-whitespace runs, with a translucent rectangle marking
- * the currently visible viewport. Clicking or dragging scrolls the editor to that position.
+ * the currently visible viewport. Clicking jumps there, dragging the viewport box slides it, and the
+ * mouse wheel over the column scrolls the editor exactly as it does over the text.
  *
  * <p>The (relatively expensive) content rendering is cached as an image and only regenerated when
  * the text or size changes; scrolling just re-blits the cached image plus the viewport rectangle.
@@ -98,8 +100,11 @@ final class Minimap extends Region {
         area.multiPlainChanges().successionEnds(Duration.ofMillis(200)).subscribe(ignore -> renderContent());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
 
-        canvas.addEventHandler(MouseEvent.MOUSE_PRESSED, this::scrollToEvent);
-        canvas.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::scrollToEvent);
+        canvas.addEventHandler(MouseEvent.MOUSE_PRESSED, this::beginDrag);
+        canvas.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::continueDrag);
+        // On the Region rather than the canvas, so the wheel works over the whole column even in the
+        // moments the canvas is smaller than it (see CanvasGuards / layoutChildren).
+        addEventHandler(ScrollEvent.SCROLL, this::wheelScroll);
     }
 
     /** Sets the visual tab width (columns) and re-renders if it changed. */
@@ -211,13 +216,145 @@ final class Minimap extends Region {
         canvas.relocate(0, 0);
     }
 
-    private void scrollToEvent(MouseEvent e) {
+    /**
+     * Maps a minimap column pixel back to a document scroll offset, in pixels. Pure.
+     *
+     * <p>The overview draws document line {@code i} at {@code i * rowHeight}, so a column pixel converts to
+     * a document pixel by the ratio of the two line heights ({@code totalHeight / totalLines} in the editor,
+     * {@code rowHeight} here). Returns the offset that puts the grabbed line at the <b>top</b> of the
+     * viewport — the same anchoring {@code showParagraphAtTop} gave — but continuously.
+     *
+     * <p>Deliberately in document pixels rather than a paragraph index: a paragraph index quantises the
+     * result to a whole line, which is what made a drag stair-step (see {@link #scrollToEvent}).
+     *
+     * @return the unclamped scroll offset, or -1 when the geometry isn't measurable yet
+     */
+    static double documentScrollY(double minimapY, double rowHeight, int totalLines, double totalHeight) {
+        if (rowHeight <= 0 || totalLines <= 0 || totalHeight <= 0) {
+            return -1;
+        }
+        return Math.max(0, minimapY) * (totalHeight / totalLines) / rowHeight;
+    }
+
+    /**
+     * Scrolls the editor to the grabbed position — <b>continuously</b>, by setting the estimated scroll
+     * offset in pixels rather than by jumping to a paragraph index.
+     *
+     * <p>{@code showParagraphAtTop} can only land on a line boundary, so a drag moved the document in whole
+     * lines with stalls in between. Measured on this repo's {@code CLAUDE.md} (592 lines, 16 px per line, a
+     * 900 px column): consecutive pixels of mouse travel produced deltas of {@code 16, 0, 16, 16, 0, …} —
+     * roughly two thirds of a line per pixel, delivered as a full-line jump or nothing at all. That is the
+     * choppiness; it is worst on a long file, where each column pixel covers more lines. Setting
+     * {@code estimatedScrollY} instead gives {@code 10, 9, 10, 9, …} over the same travel.
+     *
+     * <p>Falls back to the paragraph jump only when the height estimate isn't available yet (before the
+     * first layout), where an approximate landing beats not scrolling at all.
+     */
+    /**
+     * Minimum height at which the viewport box can be grabbed, in column pixels. The box is as tall as the
+     * viewport is <i>as a share of the document</i>, so on a long file it is a pixel or two — not something
+     * a mouse can reliably land on, which is exactly the file where dragging it matters most.
+     */
+    private static final double MIN_GRAB_HEIGHT = 10;
+
+    /** Whether a press at column pixel {@code y} grabbed the viewport box, allowing for {@link
+     *  #MIN_GRAB_HEIGHT}. Pure. */
+    static boolean withinBox(double y, double boxTop, double boxHeight) {
+        double pad = Math.max(0, MIN_GRAB_HEIGHT - boxHeight) / 2;
+        return y >= boxTop - pad && y <= boxTop + boxHeight + pad;
+    }
+
+    /**
+     * Column-pixel offset from the viewport box's top to the point a drag grabbed it, so the box slides
+     * under the cursor rather than teleporting its top there. Zero for a press <em>outside</em> the box,
+     * which does jump — that press is a "go here", and the line clicked becomes the top of the viewport.
+     */
+    private double grabOffset;
+
+    /** The viewport box as {@link #drawViewport} draws it: {@code {top, height}} in column pixels, or null
+     *  when the viewport isn't laid out yet. Package-visible so the FX test can grab the box it draws. */
+    double[] viewportBox() {
+        int total = area.getParagraphs().size();
+        if (total == 0) {
+            return null;
+        }
+        double rowHeight = rowHeight(getHeight(), total);
+        try {
+            int first = clamp(area.firstVisibleParToAllParIndex(), total);
+            int last = clamp(area.lastVisibleParToAllParIndex(), total);
+            return new double[] {first * rowHeight, Math.max(rowHeight, (last - first + 1) * rowHeight)};
+        } catch (RuntimeException ignored) {
+            return null; // viewport not laid out yet (e.g. before first render)
+        }
+    }
+
+    /** Grabs the viewport box if the press landed on it, else jumps to the pressed position. */
+    private void beginDrag(MouseEvent e) {
+        double y = Math.max(0, Math.min(getHeight(), e.getY()));
+        double[] box = viewportBox();
+        if (box != null && withinBox(y, box[0], box[1])) {
+            // Grabbing the slider must not move the document: remember where it was taken hold of and
+            // let the drag carry it from there. Jumping the box's top to the cursor (what a press used to
+            // do unconditionally) threw the document half a screen the moment you touched the middle of it.
+            grabOffset = y - box[0];
+            return;
+        }
+        grabOffset = 0;
+        scrollToBoxTop(y);
+    }
+
+    private void continueDrag(MouseEvent e) {
+        scrollToBoxTop(Math.max(0, Math.min(getHeight(), e.getY())) - grabOffset);
+    }
+
+    /**
+     * Scrolls so the viewport box's top sits at {@code boxTop} — <b>continuously</b>, by setting the
+     * estimated scroll offset in pixels rather than by jumping to a paragraph index.
+     *
+     * <p>{@code showParagraphAtTop} can only land on a line boundary, so a drag moved the document in whole
+     * lines with stalls in between. Measured on this repo's {@code CLAUDE.md} (592 lines, 16 px per line, a
+     * 900 px column): consecutive pixels of mouse travel produced deltas of {@code 16, 0, 16, 16, 0, …} —
+     * roughly two thirds of a line per pixel, delivered as a full-line jump or nothing at all. That is the
+     * choppiness; it is worst on a long file, where each column pixel covers more lines. Setting
+     * {@code estimatedScrollY} instead gives {@code 10, 9, 10, 9, …} over the same travel.
+     *
+     * <p>Falls back to the paragraph jump only when the height estimate isn't available yet (before the
+     * first layout), where an approximate landing beats not scrolling at all.
+     */
+    private void scrollToBoxTop(double boxTop) {
         int total = area.getParagraphs().size();
         if (total == 0 || getHeight() <= 0) {
             return;
         }
-        double fraction = Math.max(0, Math.min(1, e.getY() / getHeight()));
-        area.showParagraphAtTop((int) Math.round(fraction * (total - 1)));
+        Double totalHeight = area.totalHeightEstimateProperty().getValue();
+        double scrollY =
+                totalHeight == null ? -1 : documentScrollY(boxTop, rowHeight(getHeight(), total), total, totalHeight);
+        if (scrollY < 0) {
+            double fraction = Math.max(0, Math.min(1, boxTop / getHeight()));
+            area.showParagraphAtTop((int) Math.round(fraction * (total - 1)));
+            return;
+        }
+        double scrollable = totalHeight - area.getHeight();
+        if (scrollable <= 0) {
+            return; // whole document already fits: nothing to scroll
+        }
+        area.estimatedScrollYProperty().setValue(Math.min(scrollable, scrollY));
+    }
+
+    /**
+     * Scrolls the editor from a wheel over the column. The minimap is a sibling of the scroll pane, not a
+     * child of it, so a wheel event here reaches no scrollable ancestor and used to do nothing at all —
+     * the one part of the editor surface the wheel was dead over.
+     *
+     * <p>Deliberately the same two lines {@code VirtualFlow}'s own SCROLL handler runs, so the gesture is
+     * indistinguishable from a wheel over the text (including a horizontal/shift wheel) rather than a
+     * second, subtly different scroll speed. Ctrl+wheel never arrives: the scene-level text-zoom filter
+     * consumes it first.
+     */
+    private void wheelScroll(ScrollEvent e) {
+        area.scrollXBy(-e.getDeltaX());
+        area.scrollYBy(-e.getDeltaY());
+        e.consume();
     }
 
     /**
@@ -319,7 +456,7 @@ final class Minimap extends Region {
             // refresh(), or the next edit) re-caches once a cell is laid out.
             contentImage = null;
         }
-        drawViewport(g, w, h, total, rowHeight);
+        drawViewport(g, w);
         drawDiagnosticStripes(g, w, h, total, rowHeight);
         drawLintStripes(g, w, h, total, rowHeight);
         drawTodoStripes(g, h, total, rowHeight);
@@ -362,7 +499,7 @@ final class Minimap extends Region {
         }
         g.drawImage(contentImage, 0, 0);
         double rowHeight = rowHeight(h, total);
-        drawViewport(g, w, h, total, rowHeight);
+        drawViewport(g, w);
         drawDiagnosticStripes(g, w, h, total, rowHeight);
         drawLintStripes(g, w, h, total, rowHeight);
         drawTodoStripes(g, h, total, rowHeight);
@@ -373,12 +510,13 @@ final class Minimap extends Region {
         return Math.min(MAX_ROW_HEIGHT, h / total);
     }
 
-    private void drawViewport(GraphicsContext g, double w, double h, int total, double rowHeight) {
-        try {
-            int first = clamp(area.firstVisibleParToAllParIndex(), total);
-            int last = clamp(area.lastVisibleParToAllParIndex(), total);
-            double vy = first * rowHeight;
-            double vh = Math.max(rowHeight, (last - first + 1) * rowHeight);
+    private void drawViewport(GraphicsContext g, double w) {
+        // One source of truth with the drag's hit test: a box you can see but not grab (or vice versa) is
+        // worse than either alone.
+        double[] box = viewportBox();
+        if (box != null) {
+            double vy = box[0];
+            double vh = box[1];
             g.setFill(viewportColor);
             g.fillRect(0, vy, w, vh);
             // The wash alone is ~14% alpha on a light theme, which disappears over a dense minimap — the
@@ -390,8 +528,6 @@ final class Minimap extends Region {
             // Half-pixel offsets: a 1px stroke on an integer coordinate straddles two device pixels and
             // renders as a 2px blur.
             g.strokeRect(0.5, vy + 0.5, Math.max(0, w - 1), Math.max(0, vh - 1));
-        } catch (RuntimeException ignored) {
-            // Viewport not laid out yet (e.g. before first render) — skip the indicator.
         }
     }
 
