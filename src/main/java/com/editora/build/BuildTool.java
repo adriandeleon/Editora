@@ -11,6 +11,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import com.editora.config.Settings;
+import com.editora.maven.MavenPluginGoals;
 import com.editora.maven.PomModel;
 import com.editora.maven.PomParser;
 import com.editora.process.ProcessRunner;
@@ -41,7 +42,15 @@ public enum BuildTool {
         @Override
         public Detected parse(Path root) throws Exception {
             PomModel model = PomParser.parseFile(root.resolve("pom.xml"));
-            return new Detected(new MavenActionsProvider(model), model.artifactId());
+            // Local repository only, and best-effort: a plugin that isn't downloaded yet simply contributes
+            // no goal group. Never let that sink the detection — the lifecycle/profile sections don't need it.
+            List<MavenPluginGoals.Descriptor> goals;
+            try {
+                goals = MavenPluginGoals.readAll(model, MavenPluginGoals.localRepository(userHome()));
+            } catch (RuntimeException e) {
+                goals = List.of();
+            }
+            return new Detected(new MavenActionsProvider(model, goals), model.artifactId());
         }
 
         @Override
@@ -306,6 +315,11 @@ public enum BuildTool {
     /** The build tools wired into the UI (each gets a toolbar button + console), in toolbar order. */
     public static List<BuildTool> enabled() {
         return List.of(MAVEN, NPM, CARGO, GO, GRADLE);
+    }
+
+    /** The user's home directory — where Maven's {@code ~/.m2} local repository lives. */
+    private static Path userHome() {
+        return Path.of(System.getProperty("user.home", "."));
     }
 
     /** Timeout for the on-demand {@code gradle tasks} enumeration (a fresh Gradle daemon can be slow). */

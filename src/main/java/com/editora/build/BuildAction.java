@@ -20,8 +20,16 @@ public final class BuildAction {
 
     private BuildAction() {}
 
-    /** A titled group of rows (e.g. "Lifecycle", "Scripts", "Targets"). */
-    public record Section(String title, List<Row> rows) {}
+    /**
+     * A titled group of rows (e.g. "Lifecycle", "Scripts", "Targets"). {@code collapsed} asks the tree to
+     * render the group folded — for a long, browse-on-demand group (a Maven plugin's full goal list) that
+     * would otherwise bury the sections above it. The searchable popup ignores it (it has no folding).
+     */
+    public record Section(String title, List<Row> rows, boolean collapsed) {
+        public Section(String title, List<Row> rows) {
+            this(title, rows, false);
+        }
+    }
 
     /** A row: either a runnable {@link Task} or a checkable {@link Toggle}. */
     public sealed interface Row permits Task, Toggle {}
