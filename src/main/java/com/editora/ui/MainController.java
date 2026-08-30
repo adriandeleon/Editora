@@ -1182,6 +1182,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         // folds in !simpleModeActive()) may have changed, rather than forcing it shown.
         buildCoordinators.forEach(BuildCoordinator::reapplyVisibility);
         collapseToolbarSeparators();
+        // The toolbar button reads as "on" while the mode is, like the find/palette/split toggles — Simple
+        // mode is a state you are IN, and its own button is the most likely way back out, so it must not look
+        // identical whether or not it is engaged. Driven from here rather than from toggleSimpleMode() because
+        // this is the one place the effective state is computed (the setting OR the --simple session flag).
+        simpleModeButton.pseudoClassStateChanged(OPEN, simple);
         statusBar.setSimpleMode(simple);
     }
 
