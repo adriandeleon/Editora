@@ -256,6 +256,18 @@ final class MenuIcons {
                 + "M6.0 7.0 L10.0 7.0");
     }
 
+    /**
+     * Material "text_format" — the markup-formatting submenus (Markdown, Typst).
+     *
+     * <p>Deliberately not either language's brand mark: the submenu already names the language, and what the
+     * glyph has to say is what is <em>inside</em> it, which for both is text formatting. It is also the one
+     * choice that stays honest as more markup languages get a submenu.
+     */
+    static Node textFormat() {
+        return of("M5 17v2h14v-2H5zm4.5-4.2h5l.9 2.2h2.1L12.75 4h-1.5L6.5 15h2.1l.9-2.2zM12 5.98L13.87 11h-3.74L12 "
+                + "5.98z");
+    }
+
     /** UI Kit line "note" — "Add Personal Note"; mirrors {@code Icons.notes} (tool stripe). */
     static Node note() {
         return line("M3 2.5h10v8l-3 3H3zM10 13.5v-3h3");

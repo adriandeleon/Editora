@@ -1959,11 +1959,15 @@ public class EditorBuffer implements TabContent {
                 items.addAll(spellMenuItems(hit));
                 items.add(new SeparatorMenuItem());
             }
+            // One submenu per markup language, the way the LSP and build-tool actions are already grouped:
+            // eight flat "Typst: …" entries pushed cut/copy/paste and the spelling suggestions down the menu
+            // and made the file-type actions indistinguishable from the editing ones. Run/Debug stay at the
+            // top level above — they are the actions you reach for without reading the menu.
             if (canFormatMarkdown()) {
-                items.addAll(markdownMenuItems());
+                items.add(markupMenu(tr("editmenu.markdown"), markdownMenuItems()));
                 items.add(new SeparatorMenuItem());
             } else if (isTypst() && isEditable()) {
-                items.addAll(typstMenuItems());
+                items.add(markupMenu(tr("editmenu.typst"), typstMenuItems()));
                 items.add(new SeparatorMenuItem());
             }
             if (supportsComments()) {
@@ -2052,6 +2056,20 @@ public class EditorBuffer implements TabContent {
      * down the menu to hunt for. Grouping them also names what they are, which a bare "Go to Definition"
      * sitting between "Paste" and a spelling suggestion does not.
      */
+    /**
+     * Wraps a markup language's formatting actions in one titled submenu — the {@link #lspMenu} shape.
+     *
+     * <p>The items keep their palette titles ("Markdown: Bold"), matching the Maven submenu rather than the
+     * LSP one: those titles are the command titles, shared with the palette and the keybinding editor, and
+     * duplicating them purely to drop a prefix inside the submenu would mean a second set of strings in six
+     * catalogs that could then drift from the commands they name.
+     */
+    private Menu markupMenu(String title, List<MenuItem> actions) {
+        Menu menu = new Menu(title, MenuIcons.textFormat());
+        menu.getItems().addAll(actions);
+        return menu;
+    }
+
     private Menu lspMenu(int offset) {
         Menu menu = new Menu(tr("editmenu.lsp"), MenuIcons.code());
         menu.getItems().addAll(lspMenuItems(offset));
