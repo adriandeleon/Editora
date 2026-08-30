@@ -109,6 +109,7 @@ final class MenuBarIcons {
         add("debug.continue", Icons::run);
         add("run.rerun", Icons::refresh);
         add("help.checkForUpdates", Icons::refresh);
+        add("help.documentation", Icons::about);
         add("git.fetch", Icons::refresh);
         add("run.stop", Icons::stopSquare);
         add("debug.start", Icons::debug);

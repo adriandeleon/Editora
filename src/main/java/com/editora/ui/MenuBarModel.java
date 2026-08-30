@@ -254,6 +254,7 @@ final class MenuBarModel {
                         List.of(
                                 "palette.show",
                                 SEPARATOR,
+                                "help.documentation",
                                 "help.checkForUpdates",
                                 "view.messageLog",
                                 "view.debugLog",
@@ -304,7 +305,7 @@ final class MenuBarModel {
                                 SEPARATOR,
                                 "view.toggleSimpleMode",
                                 "view.welcome")),
-                new MenuSpec("menubar.help", List.of("palette.show", SEPARATOR, "help.about")));
+                new MenuSpec("menubar.help", List.of("palette.show", "help.documentation", SEPARATOR, "help.about")));
     }
 
     /**

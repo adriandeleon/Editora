@@ -52,8 +52,7 @@ public class CommandPalette {
      * {@code -SNAPSHOT} suffix is never a published docs path, so it would always 404 — the release it is
      * working toward at least resolves once that version ships.
      */
-    private static final String DOCS_BASE =
-            com.editora.AppInfo.HOMEPAGE + "/docs/v-" + com.editora.AppInfo.releaseVersion() + "/commands/";
+    private static final String DOCS_BASE = com.editora.AppInfo.docsUrl() + "/commands/";
 
     private final CommandRegistry registry;
     private final KeymapManager keymap;
