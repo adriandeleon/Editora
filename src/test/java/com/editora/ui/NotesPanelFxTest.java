@@ -7,6 +7,7 @@ import java.util.Map;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.layout.StackPane;
 
 import com.editora.config.FileIdentity;
 import com.editora.config.NoteScope;
@@ -19,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Headless-FX coverage of {@link NotesPanel#refresh}: grouping the active bucket (file → notes) into the
@@ -87,6 +90,39 @@ class NotesPanelFxTest {
                 .mapToInt(f -> f.getChildren().size())
                 .sum());
         assertEquals(3, totalNotes, "all notes rendered under their file");
+    }
+
+    @Test
+    void groupsEveryProjectByDefaultAndFoldsNonCurrentProjects() throws Exception {
+        Map<String, Map<String, List<PersonalNote>>> byProject = new LinkedHashMap<>();
+        byProject.put("", Map.of("/g/gen.txt", List.of(note("general"))));
+        byProject.put("p1", Map.of("/p1/Foo.java", List.of(note("current"))));
+        byProject.put("p2", Map.of("/p2/Bar.py", List.of(note("other"))));
+
+        NotesPanel p = FxTestSupport.callOnFx(
+                () -> new NotesPanel(() -> new NotesPanel.Scope(byProject, "p1", k -> k), NOOP));
+        TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
+
+        assertEquals(3, root.getChildren().size(), "all project groups are shown by default");
+        assertFalse(root.getChildren().get(0).isExpanded(), "General is folded when it is not current");
+        assertTrue(root.getChildren().get(1).isExpanded(), "the current project is expanded");
+        assertFalse(root.getChildren().get(2).isExpanded(), "other projects are folded");
+    }
+
+    @Test
+    void emptyCurrentProjectKeepsPlaceholderAlongsideOtherProjectGroups() throws Exception {
+        Map<String, Map<String, List<PersonalNote>>> byProject = new LinkedHashMap<>();
+        byProject.put("p1", Map.of());
+        byProject.put("p2", Map.of("/p2/Bar.py", List.of(note("other"))));
+
+        NotesPanel p = FxTestSupport.callOnFx(
+                () -> new NotesPanel(() -> new NotesPanel.Scope(byProject, "p1", k -> k), NOOP));
+        TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
+        StackPane placeholder = FxTestSupport.field(p, "placeholderPane");
+
+        assertEquals(1, root.getChildren().size(), "the other project's group remains visible");
+        assertFalse(root.getChildren().get(0).isExpanded(), "the other project starts folded");
+        assertTrue(FxTestSupport.callOnFx(placeholder::isVisible), "the current-project empty label remains visible");
     }
 
     @Test
