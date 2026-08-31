@@ -116,15 +116,20 @@ public class KeyDispatcher {
     public void install(Scene scene) {
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handle);
         scene.addEventFilter(KeyEvent.KEY_TYPED, this::handleTyped);
+        scene.addEventFilter(KeyEvent.KEY_RELEASED, this::handleReleased);
+    }
+
+    /**
+     * Drops a stale typed-event swallow once the handled physical key is released. Control/Command
+     * shortcuts commonly emit no {@code KEY_TYPED} at all (notably on macOS); without this reset the first
+     * ordinary character typed into a picker opened by such a shortcut is mistaken for the missing paired
+     * event and disappears. An Option chord that does produce a glyph delivers KEY_TYPED before release,
+     * so it is still swallowed by {@link #handleTyped} as intended.
+     */
+    void handleReleased(KeyEvent event) {
+        consumedPress = false;
         if (!IS_MAC) {
-            // Windows/Linux: a bare Alt (or an unbound Alt+<key>) is treated by the OS as menu/mnemonic
-            // activation, which puts the native window into "menu mode" — that freezes KEY_TYPED and
-            // breaks every Alt-based (M-) chord (the keymap is full of them: M-x, M-g, M-1…M-9, …). The
-            // user-visible symptom is "most keybindings stopped working and the keyboard locks up until
-            // restart". We consume bare Alt (press in handle(), release here) and any unbound plain-Alt
-            // key (in handle()) so the toolkit never enters menu mode. AltGr (reported as Ctrl+Alt) is
-            // never consumed, so international layouts keep composing characters.
-            scene.addEventFilter(KeyEvent.KEY_RELEASED, KeyDispatcher::suppressMenuAlt);
+            suppressMenuAlt(event);
         }
     }
 

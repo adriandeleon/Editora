@@ -28,6 +28,7 @@
   "C-x g": "git.commit",
   "M-x": "palette.show",
   "M-S-x": "search.everywhere",
+  "Cmd-S-e": "search.everywhere",
   "M-1": "tool.project",
   "M-2": "tool.bookmarks",
   "M-3": "tool.fileInformation",

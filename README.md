@@ -41,7 +41,7 @@ Editora is built with the help of AI coding tools.
 - **Command-driven core** — every action is a `Command`; bind it to a chord or run it
   from the M-x command palette, which shows each command's one-line description and opens its online
   docs with `C-h`.
-- **Search Everywhere** (`M-S-x`; `Ctrl`/`Cmd`+`Shift`+`E` in the other keymaps) — one picker over
+- **Search Everywhere** (`M-S-x`; also `Cmd`+`Shift`+`E` on macOS, and `Ctrl`/`Cmd`+`Shift`+`E` in the other keymaps) — one picker over
   **commands, project files and symbols**, so you type the *name* of the thing instead of first
   choosing which finder it lives in. `>` narrows to commands, `#` to files, `@` to symbols. Results
   stay grouped by source rather than interleaved, so the thousands of symbols in a project cannot

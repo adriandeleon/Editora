@@ -191,8 +191,9 @@ prefer-server-then-fall-back dispatch.
 - **Bookmark mnemonics** — `bookmarks.setMnemonic` plus ten `bookmarks.gotoMnemonic<N>` chords,
   unique per project and shown on the panel row.
 
-Most of these are **palette-only**; `search.everywhere` is the exception, bound to `M-S-x` (Emacs)
-and `C-S-e` / `Cmd-S-e` in the four GUI keymaps. Everything else is bindable from Settings ▸ Keymaps.
+Most of these are **palette-only**; `search.everywhere` is the exception, bound to `M-S-x` (Emacs),
+with a `Cmd-S-e` macOS fallback, and `C-S-e` / `Cmd-S-e` in the four GUI keymaps. Everything else is
+bindable from Settings ▸ Keymaps.
 
 ## Two things deliberately absent
 
