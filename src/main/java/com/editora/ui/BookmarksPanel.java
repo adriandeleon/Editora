@@ -40,8 +40,8 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The Bookmarks tool window: every bookmark (across all files, open or closed) grouped by <b>project</b> then
  * by file, in a tree. It always shows the <b>General</b> (no-project) bucket and the <b>current</b> project's
- * bucket; a "Show all projects" toggle additionally reveals every other project's bookmarks, so nothing
- * appears/disappears when switching projects. Enter / double-click opens the file and jumps to the line; a
+ * bucket plus every other project's bucket (folded by default); a scope toggle can narrow the tree back to
+ * General + current. Enter / double-click opens the file and jumps to the line; a
  * right-click menu edits the note or deletes bookmarks.
  *
  * <p>It reads the persisted bookmark map directly (so it includes files that aren't open) and routes mutations
@@ -92,6 +92,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
     private final HBox header;
     private final TreeView<Row> tree = new TreeView<>();
     private final StackPane placeholderPane;
+    private final StackPane treePane;
 
     /** This window's project key, updated on each {@link #refresh()} — reordering is allowed only within it. */
     private String currentKey = "";
@@ -131,11 +132,13 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         clearFilter.visibleProperty().bind(filterField.textProperty().isEmpty().not());
         clearFilter.managedProperty().bind(clearFilter.visibleProperty());
 
-        // "Show all projects" toggle — off by default (General + current project only); on reveals every project.
+        // Bookmarks from every project are visible by default. Non-current project groups remain collapsed,
+        // so this gives cross-project awareness without expanding their contents into the active project view.
         showAll.setGraphic(Icons.project());
         showAll.getStyleClass().addAll("flat", "scope-toggle");
         showAll.setFocusTraversable(false);
         showAll.setTooltip(new Tooltip(tr("bookmarks.showAllTip")));
+        showAll.setSelected(true);
         showAll.selectedProperty().addListener((o, w, n) -> refresh());
 
         // An info badge explaining that bookmarks are scoped per project.
@@ -163,14 +166,16 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         placeholder.getStyleClass().add("tool-window-placeholder");
         placeholder.setWrapText(true);
         placeholderPane = new StackPane(placeholder);
-        VBox.setVgrow(placeholderPane, Priority.ALWAYS);
+        placeholderPane.setMouseTransparent(true);
+        treePane = new StackPane(tree, placeholderPane);
+        VBox.setVgrow(treePane, Priority.ALWAYS);
 
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         refresh();
     }
 
     /**
-     * Rebuilds the tree grouped by project (General, current, and — when {@link #showAll} is on — others), then by
+     * Rebuilds the tree grouped by project (General, current, and, by default, all others), then by
      * file. Each bucket's file order and each file's bookmark order are preserved verbatim (the user's drag/move
      * order), matching {@link com.editora.ui.MainController#allBookmarkEntries()} so the panel and the {@code M-g b}
      * jump picker agree.
@@ -227,11 +232,10 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             }
         }
         tree.setRoot(root);
-        if (root.getChildren().isEmpty()) {
-            getChildren().setAll(header, placeholderPane);
-        } else {
-            getChildren().setAll(header, tree);
-        }
+        // The empty state describes the current project, not the entire shared bookmark store. Keep it when
+        // another project has bookmarks, while leaving those collapsed project headers visible behind it.
+        placeholderPane.setVisible(!hasAnyBookmark(byProject.get(currentKey)));
+        getChildren().setAll(header, treePane);
         applyPendingSelection();
     }
 

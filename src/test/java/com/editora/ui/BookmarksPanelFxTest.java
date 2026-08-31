@@ -7,9 +7,9 @@ import java.util.Map;
 import java.util.function.Function;
 
 import javafx.scene.control.TextField;
-import javafx.scene.control.ToggleButton;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.layout.StackPane;
 
 import com.editora.config.Bookmark;
 import org.junit.jupiter.api.BeforeAll;
@@ -18,6 +18,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Headless-FX coverage of {@link BookmarksPanel#refresh}: grouping the active bucket (file → bookmarks)
@@ -87,7 +89,7 @@ class BookmarksPanelFxTest {
     }
 
     @Test
-    void groupsByProjectAndShowAllRevealsOtherProjects() throws Exception {
+    void groupsEveryProjectByDefaultAndFoldsNonCurrentProjects() throws Exception {
         Map<String, Map<String, List<Bookmark>>> byProject = new LinkedHashMap<>();
         byProject.put("", Map.of("/g/gen.txt", List.of(new Bookmark(1, "g", "g"))));
         byProject.put("p1", Map.of("/p1/Foo.java", List.of(new Bookmark(2, "cur", "cur"))));
@@ -98,19 +100,30 @@ class BookmarksPanelFxTest {
             default -> "Other";
         };
 
-        // In project p1: default shows General + current (p1) only — not p2.
+        // In project p1 every bucket is present immediately, but only the current project is expanded.
         BookmarksPanel p = FxTestSupport.callOnFx(
                 () -> new BookmarksPanel(() -> new BookmarksPanel.Scope(byProject, "p1", nameFor), NOOP));
         TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
-        assertEquals(2, root.getChildren().size(), "General + current project only by default");
+        assertEquals(3, root.getChildren().size(), "all project groups are shown by default");
+        assertFalse(root.getChildren().get(0).isExpanded(), "General is folded when it is not current");
+        assertTrue(root.getChildren().get(1).isExpanded(), "the current project is expanded");
+        assertFalse(root.getChildren().get(2).isExpanded(), "other projects are folded");
+    }
 
-        // Toggle "Show all projects" → the other project (p2) now appears.
-        ToggleButton showAll = FxTestSupport.field(p, "showAll");
-        FxTestSupport.runOnFx(() -> showAll.setSelected(true));
-        assertEquals(
-                3,
-                FxTestSupport.callOnFx(() -> tree(p).getRoot().getChildren().size()),
-                "all three project groups with Show all on");
+    @Test
+    void emptyCurrentProjectKeepsPlaceholderAlongsideOtherProjectGroups() throws Exception {
+        Map<String, Map<String, List<Bookmark>>> byProject = new LinkedHashMap<>();
+        byProject.put("p1", Map.of());
+        byProject.put("p2", Map.of("/p2/Bar.py", List.of(new Bookmark(3, "other", "other"))));
+
+        BookmarksPanel p = FxTestSupport.callOnFx(
+                () -> new BookmarksPanel(() -> new BookmarksPanel.Scope(byProject, "p1", k -> k), NOOP));
+        TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
+        StackPane placeholder = FxTestSupport.field(p, "placeholderPane");
+
+        assertEquals(1, root.getChildren().size(), "the other project's group remains visible");
+        assertFalse(root.getChildren().get(0).isExpanded(), "the other project starts folded");
+        assertTrue(FxTestSupport.callOnFx(placeholder::isVisible), "the current-project empty label remains visible");
     }
 
     @Test

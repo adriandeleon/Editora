@@ -33,8 +33,8 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The Personal Notes tool window: every note (across all files, open or closed) grouped by <b>project</b> then
  * by file, in a tree. It always shows the <b>General</b> (no-project) bucket and the <b>current</b> project's
- * bucket; a "Show all projects" toggle additionally reveals every other project's notes, so nothing
- * appears/disappears when switching projects. Enter / double-click opens the file and jumps to the note; a
+ * bucket plus every other project's bucket (folded by default); a scope toggle can narrow the tree back to
+ * General + current. Enter / double-click opens the file and jumps to the note; a
  * right-click menu edits the body, resolves/reopens, or deletes. Reads the persisted notes map directly (so it
  * includes closed files) and routes mutations back through {@link Actions}. Mirrors {@link BookmarksPanel}.
  */
@@ -79,6 +79,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
     private final HBox header;
     private final TreeView<Row> tree = new TreeView<>();
     private final StackPane placeholderPane;
+    private final StackPane treePane;
 
     private String currentKey = "";
 
@@ -106,11 +107,13 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         clear.managedProperty().bind(clear.visibleProperty());
         HBox.setHgrow(filterField, Priority.ALWAYS);
 
-        // "Show all projects" toggle — off by default (General + current project only); on reveals every project.
+        // Notes from every project are visible by default. Non-current project groups remain collapsed,
+        // matching the Bookmarks panel without expanding unrelated content into the active project view.
         showAll.setGraphic(Icons.project());
         showAll.getStyleClass().addAll("flat", "scope-toggle");
         showAll.setFocusTraversable(false);
         showAll.setTooltip(new Tooltip(tr("notes.showAllTip")));
+        showAll.setSelected(true);
         showAll.selectedProperty().addListener((o, w, n) -> refresh());
 
         header = new HBox(6, filterField, clear, showAll);
@@ -137,9 +140,11 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         placeholder.getStyleClass().add("tool-window-placeholder");
         placeholder.setWrapText(true);
         placeholderPane = new StackPane(placeholder);
-        VBox.setVgrow(placeholderPane, Priority.ALWAYS);
+        placeholderPane.setMouseTransparent(true);
+        treePane = new StackPane(tree, placeholderPane);
+        VBox.setVgrow(treePane, Priority.ALWAYS);
 
-        getChildren().addAll(header, tree);
+        getChildren().addAll(header, treePane);
         refresh();
     }
 
@@ -150,7 +155,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         filterField.requestFocus();
     }
 
-    /** Rebuilds the tree grouped by project (General, current, and — when {@link #showAll} is on — others). */
+    /** Rebuilds the tree grouped by project (General, current, and, by default, all others). */
     public void refresh() {
         String filter = filterField.getText() == null
                 ? ""
@@ -201,11 +206,10 @@ public class NotesPanel extends VBox implements ToolWindowContent {
             }
         }
         tree.setRoot(root);
-        if (root.getChildren().isEmpty()) {
-            getChildren().setAll(header, placeholderPane);
-        } else {
-            getChildren().setAll(header, tree);
-        }
+        // The empty state describes the current project, not the entire shared notes store. Keep it visible
+        // while other projects' folded groups remain available in the tree behind it.
+        placeholderPane.setVisible(!hasAnyNote(byProject.get(currentKey)));
+        getChildren().setAll(header, treePane);
     }
 
     private static boolean hasAnyNote(Map<String, List<PersonalNote>> bucket) {
