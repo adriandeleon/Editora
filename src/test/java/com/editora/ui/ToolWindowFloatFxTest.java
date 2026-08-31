@@ -151,7 +151,12 @@ class ToolWindowFloatFxTest {
             assertFalse(r.manager().isFloating(r.a()));
             assertTrue(r.stages().isEmpty());
             assertFalse(r.panels().containsKey(r.a()), "the panel should have been dropped with the window");
-            assertEquals("FLOATING", r.config().getWorkspaceState().getToolWindowPresentationModes().get("alpha"));
+            assertEquals(
+                    "FLOATING",
+                    r.config()
+                            .getWorkspaceState()
+                            .getToolWindowPresentationModes()
+                            .get("alpha"));
             close(r);
         });
     }
@@ -184,7 +189,12 @@ class ToolWindowFloatFxTest {
             r.manager().open(r.a());
 
             assertFalse(r.manager().isFloating(r.a()));
-            assertEquals("DOCKED", r.config().getWorkspaceState().getToolWindowPresentationModes().get("alpha"));
+            assertEquals(
+                    "DOCKED",
+                    r.config()
+                            .getWorkspaceState()
+                            .getToolWindowPresentationModes()
+                            .get("alpha"));
             close(r);
         });
     }

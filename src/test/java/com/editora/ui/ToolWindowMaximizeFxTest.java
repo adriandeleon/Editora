@@ -191,7 +191,10 @@ class ToolWindowMaximizeFxTest {
             assertTrue(r.manager().isMaximized(r.right()));
             assertEquals(
                     "MAXIMIZED",
-                    r.config().getWorkspaceState().getToolWindowPresentationModes().get("alpha"));
+                    r.config()
+                            .getWorkspaceState()
+                            .getToolWindowPresentationModes()
+                            .get("alpha"));
             assertEquals(0.0, r.hSplit().getDividerPositions()[0], AT_END);
         });
     }
@@ -211,7 +214,10 @@ class ToolWindowMaximizeFxTest {
             assertFalse(r.manager().isMaximized(r.right()));
             assertEquals(
                     "DOCKED",
-                    r.config().getWorkspaceState().getToolWindowPresentationModes().get("alpha"));
+                    r.config()
+                            .getWorkspaceState()
+                            .getToolWindowPresentationModes()
+                            .get("alpha"));
         });
     }
 

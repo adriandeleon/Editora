@@ -776,9 +776,7 @@ public class ToolWindowManager {
         for (ToolWindow.Side side : ToolWindow.Side.values()) {
             docked.put(
                     side,
-                    List.copyOf(config.getWorkspaceState()
-                            .getOpenToolWindows()
-                            .getOrDefault(side.name(), List.of())));
+                    List.copyOf(config.getWorkspaceState().getOpenToolWindows().getOrDefault(side.name(), List.of())));
         }
         ToolWindow maximizeAfterOpen = null;
         for (ToolWindow.Side side : ToolWindow.Side.values()) {
@@ -1414,7 +1412,8 @@ public class ToolWindowManager {
     }
 
     private String presentationMode(ToolWindow tw) {
-        String mode = config.getWorkspaceState().getToolWindowPresentationModes().get(tw.getId());
+        String mode =
+                config.getWorkspaceState().getToolWindowPresentationModes().get(tw.getId());
         return MODE_MAXIMIZED.equals(mode) || MODE_FLOATING.equals(mode) ? mode : MODE_DOCKED;
     }
 
