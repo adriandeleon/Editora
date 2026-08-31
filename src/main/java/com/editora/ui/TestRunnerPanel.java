@@ -1,6 +1,8 @@
 package com.editora.ui;
 
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -13,6 +15,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.SplitPane;
+import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
@@ -26,6 +29,8 @@ import javafx.scene.layout.VBox;
 
 import com.editora.run.StackTraceLinks;
 import com.editora.test.TestCounts;
+import com.editora.test.TestFilter;
+import com.editora.test.TestFilter.Bucket;
 import com.editora.test.TestNode;
 import com.editora.test.TestNodeKind;
 import com.editora.test.TestRun;
@@ -43,20 +48,27 @@ import static com.editora.i18n.Messages.tr;
  * clickable frames, via {@link RunPanel#installLinkClicks}) and captured output. The coordinator drives it on
  * the FX thread; tree updates reuse the same {@link TestNode} instances and only repaint visible cells
  * ({@link TreeView#refresh()}), so a live run stays cheap and keeps expansion + selection.
+ *
+ * <p><b>Filtering.</b> The three count chips double as status toggles and a filter field narrows by name,
+ * both folded into one pure {@link TestFilter}. A suite whose tests are all filtered out is hidden with
+ * them — that, not the chips, is what makes a single failure findable in a four-thousand-test run; the old
+ * show-passed toggle hid the leaves but left every class row on screen. The tree is reconciled
+ * <em>minimally</em> against the filtered model (append what's new, remove what's gone) rather than rebuilt,
+ * so a live run never drops the row the user has selected or collapses what they expanded.
  */
 final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
     private final Label status = new Label();
     private final ProgressBar progress = new ProgressBar(0);
-    private final Label passedChip = chip("test-chip-pass");
-    private final Label failedChip = chip("test-chip-fail");
-    private final Label skippedChip = chip("test-chip-skip");
+    private final ToggleButton passedChip = chip("test-chip-pass", "testrunner.filter.passed");
+    private final ToggleButton failedChip = chip("test-chip-fail", "testrunner.filter.failed");
+    private final ToggleButton skippedChip = chip("test-chip-skip", "testrunner.filter.skipped");
     private final Label elapsed = new Label();
+    private final TextField filterField = new TextField();
 
     private final Button rerunButton = iconButton(Icons.run(), "testrunner.rerun");
     private final Button rerunFailedButton = iconButton(Icons.testFailed(), "testrunner.rerunFailed");
     private final Button stopButton = iconButton(Icons.stopSquare(), "testrunner.stop");
-    private final ToggleButton showPassedToggle = new ToggleButton();
     private final ToggleButton followToggle = new ToggleButton();
 
     private final TreeItem<TestNode> rootItem = new TreeItem<>(null);
@@ -68,6 +80,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
     private TestNode lastRoot;
     private TestRun lastRun; // for the no-selection run summary in the detail pane
+    private TestCounts lastCounts = TestCounts.ZERO; // drives the chip-visibility rule on a filter change
     private String runLabel = "";
     private Runnable onRerun;
     private Runnable onRerunFailed;
@@ -91,11 +104,6 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         rerunButton.setOnAction(e -> run(onRerun));
         rerunFailedButton.setOnAction(e -> run(onRerunFailed));
         stopButton.setOnAction(e -> run(onStop));
-        showPassedToggle.setGraphic(Icons.testPassed());
-        showPassedToggle.getStyleClass().add("toolbar-restore");
-        showPassedToggle.setSelected(true);
-        showPassedToggle.setTooltip(new Tooltip(tr("testrunner.showPassed")));
-        showPassedToggle.setOnAction(e -> rebuild());
         // "Track running test": keep the newest result scrolled into view so a long run reads as live
         // progress. Auto-disabled the moment the user selects a row (they're inspecting — don't yank the view).
         followToggle.setGraphic(Icons.arrowDown());
@@ -103,10 +111,18 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         followToggle.setSelected(true);
         followToggle.setTooltip(new Tooltip(tr("testrunner.followRunning")));
 
-        HBox toolbar = new HBox(2, rerunButton, rerunFailedButton, stopButton, showPassedToggle, followToggle);
+        HBox toolbar = new HBox(2, rerunButton, rerunFailedButton, stopButton, followToggle);
         toolbar.setAlignment(Pos.CENTER_LEFT);
         HBox header = new HBox(10, status, progress, passedChip, failedChip, skippedChip, spacer(), elapsed, toolbar);
         header.setAlignment(Pos.CENTER_LEFT);
+
+        filterField.setPromptText(tr("testrunner.filterPrompt"));
+        filterField.getStyleClass().add("bookmarks-filter");
+        HBox.setHgrow(filterField, Priority.ALWAYS);
+        filterField.textProperty().addListener((obs, old, q) -> rebuild());
+        HBox filterBar = new HBox(4, filterField, ClearableField.clearButton(filterField));
+        filterBar.getStyleClass().add("project-filter-bar");
+        filterBar.setAlignment(Pos.CENTER_LEFT);
 
         tree.getStyleClass().add("test-tree");
         tree.setShowRoot(false);
@@ -131,6 +147,9 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
             }
         });
         installContextMenu();
+        // Same keyboard flow as the other filterable tool windows: Down enters the tree, Enter activates,
+        // C-n/C-p move the selection without leaving the field.
+        FilterFieldNav.install(filterField, tree, this::activateSelected);
 
         detail.setEditable(false);
         detail.setWrapText(false);
@@ -141,7 +160,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         SplitPane split = new SplitPane(tree, new VirtualizedScrollPane<>(detail));
         split.setDividerPositions(0.5);
         VBox.setVgrow(split, Priority.ALWAYS);
-        getChildren().addAll(header, split);
+        getChildren().addAll(header, filterBar, split);
         idle();
     }
 
@@ -176,6 +195,58 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
     void setOnLink(Consumer<StackTraceLinks.Link> c) {
         this.onLink = c;
+    }
+
+    // --- filtering ---------------------------------------------------------------------------------
+
+    /** The live filter: the three chips' states plus the filter field's text. */
+    TestFilter filter() {
+        TestFilter f = TestFilter.ALL
+                .with(Bucket.PASSED, passedChip.isSelected())
+                .with(Bucket.FAILED, failedChip.isSelected())
+                .with(Bucket.SKIPPED, skippedChip.isSelected());
+        return f.withQuery(filterField.getText());
+    }
+
+    /** Applies a filter to the chips + field (which re-renders the tree through their own listeners). */
+    void setFilter(TestFilter f) {
+        passedChip.setSelected(f.shows(Bucket.PASSED));
+        failedChip.setSelected(f.shows(Bucket.FAILED));
+        skippedChip.setSelected(f.shows(Bucket.SKIPPED));
+        filterField.setText(f.query()); // fires the text listener → rebuild() when it actually changes
+        rebuild();
+    }
+
+    /** {@code test.showOnlyFailed}: the one-click "where is the failure" filter. */
+    void showOnlyFailed() {
+        setFilter(TestFilter.failedOnly());
+    }
+
+    /** {@code test.showAllTests}: back to everything, query cleared. */
+    void clearFilter() {
+        setFilter(TestFilter.ALL);
+    }
+
+    /** {@code test.filterTests}: put the caret in the filter field. */
+    void focusFilter() {
+        filterField.requestFocus();
+        filterField.selectAll();
+    }
+
+    /**
+     * A count chip is hidden when it is both zero and switched on (the pre-filter behaviour: no failures ⇒
+     * no "0 failed" noise). A switched-<em>off</em> chip always stays visible, or the only control that
+     * could bring those tests back would be the one the filter just hid.
+     */
+    private void updateFilterState() {
+        setChipVisible(failedChip, lastCounts.failedOrErrored() > 0);
+        setChipVisible(skippedChip, lastCounts.skipped() > 0);
+    }
+
+    private static void setChipVisible(ToggleButton chip, boolean hasAny) {
+        boolean show = hasAny || !chip.isSelected();
+        chip.setVisible(show);
+        chip.setManaged(show);
     }
 
     /** Matches the detail console font to the editor's code-area font (family + effective size). */
@@ -293,39 +364,85 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
             return;
         }
         lastRoot = root;
-        boolean showPassed = showPassedToggle.isSelected();
+        TestFilter f = filter();
+        List<TreeItem<TestNode>> suiteItems = new ArrayList<>();
         for (TestNode suite : root.children()) {
+            if (!f.acceptsSuite(suite)) {
+                continue; // every test filtered out → the class row goes with them
+            }
             TreeItem<TestNode> suiteItem = items.get(suite);
             if (suiteItem == null) {
                 suiteItem = new TreeItem<>(suite);
                 suiteItem.setExpanded(true);
                 items.put(suite, suiteItem);
-                rootItem.getChildren().add(suiteItem);
             }
+            List<TreeItem<TestNode>> tests = new ArrayList<>();
             for (TestNode test : suite.children()) {
-                boolean visible = showPassed || test.status() != TestStatus.PASSED;
+                if (!f.acceptsTest(test)) {
+                    continue;
+                }
                 TreeItem<TestNode> testItem = items.get(test);
-                if (visible && testItem == null) {
+                if (testItem == null) {
                     testItem = new TreeItem<>(test);
                     items.put(test, testItem);
-                    suiteItem.getChildren().add(testItem);
-                } else if (!visible && testItem != null) {
-                    suiteItem.getChildren().remove(testItem);
-                    items.remove(test);
                 }
+                tests.add(testItem);
             }
+            reconcile(suiteItem.getChildren(), tests);
+            suiteItems.add(suiteItem);
         }
+        reconcile(rootItem.getChildren(), suiteItems);
         tree.refresh();
     }
 
-    /** Full rebuild (used when the show-passed filter flips, so removed rows re-appear in tree order). */
-    private void rebuild() {
-        TestNode root = lastRoot;
-        items.clear();
-        rootItem.getChildren().clear();
-        if (root != null) {
-            sync(root);
+    /**
+     * Makes {@code current} equal {@code desired} with the fewest list mutations — the steady live-run case
+     * (nothing structural changed, only statuses) costs one walk and no mutation at all. A wholesale
+     * {@code setAll} would be simpler but drops the TreeView's selection on every pulse, so a user reading a
+     * failure mid-run would keep losing it.
+     */
+    private static void reconcile(List<TreeItem<TestNode>> current, List<TreeItem<TestNode>> desired) {
+        if (sameOrder(current, desired)) {
+            return;
         }
+        current.removeIf(item -> !containsIdentical(desired, item));
+        for (int i = 0; i < desired.size(); i++) {
+            TreeItem<TestNode> want = desired.get(i);
+            if (i >= current.size()) {
+                current.add(want);
+            } else if (current.get(i) != want) {
+                current.add(i, want);
+            }
+        }
+    }
+
+    private static boolean sameOrder(List<TreeItem<TestNode>> a, List<TreeItem<TestNode>> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            if (a.get(i) != b.get(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean containsIdentical(List<TreeItem<TestNode>> list, TreeItem<TestNode> item) {
+        for (TreeItem<TestNode> candidate : list) {
+            if (candidate == item) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Re-applies the filter to the current tree (chip toggled, filter text typed, filter set by command). */
+    private void rebuild() {
+        if (lastRoot != null) {
+            sync(lastRoot);
+        }
+        updateFilterState();
     }
 
     /**
@@ -479,14 +596,11 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     // --- header helpers ----------------------------------------------------------------------------
 
     private void setChips(TestCounts counts) {
+        lastCounts = counts;
         passedChip.setText(tr("testrunner.chip.passed", counts.passed()));
-        int failed = counts.failedOrErrored();
-        failedChip.setText(tr("testrunner.chip.failed", failed));
-        failedChip.setVisible(failed > 0);
-        failedChip.setManaged(failed > 0);
+        failedChip.setText(tr("testrunner.chip.failed", counts.failedOrErrored()));
         skippedChip.setText(tr("testrunner.chip.skipped", counts.skipped()));
-        skippedChip.setVisible(counts.skipped() > 0);
-        skippedChip.setManaged(counts.skipped() > 0);
+        updateFilterState();
     }
 
     private void setProgressFailed(boolean failed) {
@@ -507,10 +621,18 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         return (seconds / 60) + "m " + (seconds % 60) + "s";
     }
 
-    private static Label chip(String colorClass) {
-        Label l = new Label();
-        l.getStyleClass().addAll("test-chip", colorClass);
-        return l;
+    /**
+     * A header count chip that is also its status filter: click to hide/show that bucket. A deselected chip
+     * dims (the {@code .test-chip:!selected} rule) so the tree's state is readable from the header.
+     */
+    private ToggleButton chip(String colorClass, String tooltipKey) {
+        ToggleButton b = new ToggleButton();
+        b.getStyleClass().addAll("test-chip", colorClass);
+        b.setSelected(true);
+        b.setFocusTraversable(false);
+        b.setTooltip(new Tooltip(tr(tooltipKey)));
+        b.setOnAction(e -> rebuild());
+        return b;
     }
 
     private static Button iconButton(Node graphic, String tooltipKey) {
@@ -533,12 +655,14 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /**
+     * Focus lands on the filter field, like the other filterable tool windows — and deliberately selects
+     * nothing: selecting row 0 here would trip the "user is reading a row" listener and silently turn off
+     * run tracking every time the window was opened mid-run.
+     */
     @Override
     public void focusFirstItem() {
-        tree.requestFocus();
-        if (!rootItem.getChildren().isEmpty()) {
-            tree.getSelectionModel().select(0);
-        }
+        filterField.requestFocus();
     }
 
     /** Renders a node as a status icon + name + (for a test) a muted duration. */

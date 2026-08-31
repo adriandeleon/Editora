@@ -566,6 +566,26 @@ final class TestRunCoordinator implements TestRunHook {
         }
     }
 
+    /** {@code test.showOnlyFailed}: open the window and narrow the tree to failures/errors. */
+    void showOnlyFailed() {
+        ops.openTestResults();
+        panel.showOnlyFailed();
+        host.setStatus(tr("status.testrunner.filterFailed"));
+    }
+
+    /** {@code test.showAllTests}: open the window and drop every status/name filter. */
+    void showAllTests() {
+        ops.openTestResults();
+        panel.clearFilter();
+        host.setStatus(tr("status.testrunner.filterCleared"));
+    }
+
+    /** {@code test.filterTests}: open the window and put the caret in its filter field. */
+    void focusFilter() {
+        ops.openTestResults();
+        panel.focusFilter();
+    }
+
     void rerun() {
         if (currentRun != null) {
             ops.runTest(currentRun.tool(), currentRun.workingDir(), currentRun.taskArgs(), currentRun.toggleArgs());

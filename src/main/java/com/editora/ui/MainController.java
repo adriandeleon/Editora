@@ -16451,6 +16451,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         registry.register(Command.of("test.rerun", testRunCoordinator::rerun));
         registry.register(Command.of("test.rerunFailed", testRunCoordinator::rerunFailed));
         registry.register(Command.of("test.stop", testRunCoordinator::stop));
+        registry.register(Command.of("test.showOnlyFailed", testRunCoordinator::showOnlyFailed));
+        registry.register(Command.of("test.showAllTests", testRunCoordinator::showAllTests));
+        registry.register(Command.of("test.filterTests", testRunCoordinator::focusFilter));
         registry.register(Command.of("tool.testResults", () -> toolWindows.toggle(testResultsToolWindow)));
         registry.register(Command.of(
                 "view.toggleTestRunner",
