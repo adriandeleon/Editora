@@ -188,7 +188,9 @@ public enum ConfigSchema {
                     // v7→8: a side can now hold two tool windows, so the open set became a per-side list.
                     7, ConfigMigrations::seedOpenToolWindows,
                     // v8→9: + floatingToolWindows / floatingToolWindowBounds (additive)
-                    8, ConfigMigrations::identity)),
+                    8, ConfigMigrations::identity,
+                    // v9→10: + toolWindowPresentationModes (additive; missing means docked)
+                    9, ConfigMigrations::identity)),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.

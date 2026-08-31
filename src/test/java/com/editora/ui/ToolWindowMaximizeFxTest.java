@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import javafx.scene.Scene;
 import javafx.scene.control.Label;
@@ -172,6 +173,62 @@ class ToolWindowMaximizeFxTest {
                     0.001,
                     "the maximized divider was persisted as the window's size");
             assertFalse(r.manager().isMaximized(r.right()));
+        });
+    }
+
+    @Test
+    void reopeningAClosedMaximizedWindowMaximizesItAgain() throws Exception {
+        Rig r = rig();
+        FxTestSupport.runOnFx(() -> {
+            openAt(r, r.right(), r.hSplit(), 0.70);
+            r.manager().toggleMaximized(r.right());
+            r.layout();
+            r.manager().close(r.right());
+
+            r.manager().open(r.right());
+            r.layout();
+
+            assertTrue(r.manager().isMaximized(r.right()));
+            assertEquals(
+                    "MAXIMIZED",
+                    r.config().getWorkspaceState().getToolWindowPresentationModes().get("alpha"));
+            assertEquals(0.0, r.hSplit().getDividerPositions()[0], AT_END);
+        });
+    }
+
+    @Test
+    void explicitlyRestoringMakesDockedTheRememberedPresentation() throws Exception {
+        Rig r = rig();
+        FxTestSupport.runOnFx(() -> {
+            openAt(r, r.right(), r.hSplit(), 0.70);
+            r.manager().toggleMaximized(r.right());
+            r.manager().toggleMaximized(r.right());
+            r.manager().close(r.right());
+
+            r.manager().open(r.right());
+            r.layout();
+
+            assertFalse(r.manager().isMaximized(r.right()));
+            assertEquals(
+                    "DOCKED",
+                    r.config().getWorkspaceState().getToolWindowPresentationModes().get("alpha"));
+        });
+    }
+
+    @Test
+    void sessionRestoreAppliesMaximizeAfterOpeningTheOtherSides() throws Exception {
+        Rig r = rig();
+        FxTestSupport.runOnFx(() -> {
+            r.config().getWorkspaceState().getOpenToolWindows().put("RIGHT", List.of("alpha"));
+            r.config().getWorkspaceState().getOpenToolWindows().put("BOTTOM", List.of("beta"));
+            r.config().getWorkspaceState().getToolWindowPresentationModes().put("alpha", "MAXIMIZED");
+
+            r.manager().restore();
+            r.layout();
+
+            assertTrue(r.manager().isOpen(r.right()));
+            assertTrue(r.manager().isOpen(r.bottom()));
+            assertTrue(r.manager().isMaximized(r.right()));
         });
     }
 
