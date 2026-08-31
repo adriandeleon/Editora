@@ -45,6 +45,10 @@ import static com.editora.i18n.Messages.tr;
  */
 public class ToolWindowManager {
 
+    private static final String MODE_DOCKED = "DOCKED";
+    private static final String MODE_MAXIMIZED = "MAXIMIZED";
+    private static final String MODE_FLOATING = "FLOATING";
+
     private static final PseudoClass OPEN = PseudoClass.getPseudoClass("open");
     /** Set on the stripe button of the tool window that currently holds keyboard focus (IntelliJ-style
      *  "active" highlight, stronger than the merely-{@link #OPEN} tint). Custom name to avoid colliding
@@ -742,8 +746,22 @@ public class ToolWindowManager {
 
     /** Reopens the given tool windows by id (used when leaving Zen mode). */
     public void openByIds(java.util.List<String> ids) {
+        ToolWindow maximizeAfterOpen = null;
         for (String id : ids) {
-            openById(id);
+            ToolWindow tw = visibleById(id);
+            if (tw == null) {
+                continue;
+            }
+            if (MODE_MAXIMIZED.equals(presentationMode(tw))) {
+                maximizeAfterOpen = tw;
+                openOnSide(tw, false, true);
+            } else {
+                openRemembered(tw, false, true);
+            }
+        }
+        // Opening another side invalidates a live maximize, so apply it only after the whole batch exists.
+        if (maximizeAfterOpen != null) {
+            maximize(maximizeAfterOpen);
         }
     }
 
@@ -754,13 +772,30 @@ public class ToolWindowManager {
         // floating set from the live one — which is empty until the deferred pass below runs. Reading it
         // after the docked sides restore hands back a list this method has just cleared itself.
         List<String> floating = List.copyOf(config.getWorkspaceState().getFloatingToolWindows());
+        Map<ToolWindow.Side, List<String>> docked = new java.util.EnumMap<>(ToolWindow.Side.class);
         for (ToolWindow.Side side : ToolWindow.Side.values()) {
-            List<String> ids = config.getWorkspaceState().getOpenToolWindows().getOrDefault(side.name(), List.of());
+            docked.put(
+                    side,
+                    List.copyOf(config.getWorkspaceState().getOpenToolWindows().getOrDefault(side.name(), List.of())));
+        }
+        ToolWindow maximizeAfterOpen = null;
+        for (ToolWindow.Side side : ToolWindow.Side.values()) {
             boolean first = true;
-            for (String id : ids) {
-                openById(id, first);
+            for (String id : docked.get(side)) {
+                ToolWindow tw = visibleById(id);
+                if (tw != null) {
+                    // Session restoration rebuilds the complete dock first. Applying maximize per-window
+                    // would have the next side's open cancel it as a stale layout.
+                    openOnSide(tw, false, first);
+                    if (MODE_MAXIMIZED.equals(presentationMode(tw))) {
+                        maximizeAfterOpen = tw;
+                    }
+                }
                 first = false;
             }
+        }
+        if (maximizeAfterOpen != null) {
+            maximize(maximizeAfterOpen);
         }
         if (!floating.isEmpty()) {
             // Deferred: restore() runs during window construction, before there is a Scene — and so before
@@ -806,7 +841,20 @@ public class ToolWindowManager {
 
     /** Opens {@code tw}; when {@code focus}, moves keyboard focus into it and selects its first item. */
     public void open(ToolWindow tw, boolean focus) {
-        openOnSide(tw, focus, true);
+        openRemembered(tw, focus, true);
+    }
+
+    /** Opens a closed tool window in the presentation mode in which the user last left it. */
+    private void openRemembered(ToolWindow tw, boolean focus, boolean replace) {
+        String mode = presentationMode(tw);
+        if (MODE_FLOATING.equals(mode) && vSplit.getScene() != null) {
+            openFloating(tw);
+            return;
+        }
+        openOnSide(tw, focus, replace);
+        if (MODE_MAXIMIZED.equals(mode)) {
+            maximize(tw);
+        }
     }
 
     /**
@@ -816,6 +864,7 @@ public class ToolWindowManager {
      * palette) keeps replacing, as it always has, so splitting only ever happens when it is asked for.
      */
     public void openInSplit(ToolWindow tw) {
+        rememberPresentation(tw, MODE_DOCKED);
         openOnSide(tw, true, false);
     }
 
@@ -923,6 +972,7 @@ public class ToolWindowManager {
         floatingStages.put(tw, stage);
         stage.show();
         setPanelFloating(tw, true);
+        rememberPresentation(tw, MODE_FLOATING);
         persist();
         if (tw.getContent() instanceof ToolWindowContent content) {
             Platform.runLater(content::focusFirstItem);
@@ -950,6 +1000,7 @@ public class ToolWindowManager {
         if (wasEmpty) {
             applyOuterDivider(side, tw, panels.get(tw));
         }
+        rememberPresentation(tw, MODE_DOCKED);
         persist();
     }
 
@@ -1167,9 +1218,14 @@ public class ToolWindowManager {
     public void toggleMaximized(ToolWindow tw) {
         if (isMaximized(tw)) {
             restoreMaximized();
+            rememberPresentation(tw, MODE_DOCKED);
         } else {
             maximize(tw);
+            if (isMaximized(tw)) {
+                rememberPresentation(tw, MODE_MAXIMIZED);
+            }
         }
+        persist();
     }
 
     /**
@@ -1223,6 +1279,11 @@ public class ToolWindowManager {
      * that is about to change a split's contents can call it unconditionally.
      */
     private void restoreMaximized() {
+        restoreMaximized(true);
+    }
+
+    /** @param rememberDocked whether this visible transition should replace the sticky maximize mode */
+    private void restoreMaximized(boolean rememberDocked) {
         if (maximized == null) {
             return;
         }
@@ -1249,6 +1310,9 @@ public class ToolWindowManager {
             split.setDividerPositions(positions);
         }
         setPanelMaximized(tw, false);
+        if (rememberDocked) {
+            rememberPresentation(tw, MODE_DOCKED);
+        }
     }
 
     private void setPanelMaximized(ToolWindow tw, boolean value) {
@@ -1266,7 +1330,7 @@ public class ToolWindowManager {
      * the window's remembered size would have it reopen next session covering the editor.
      */
     public void persistDividers() {
-        restoreMaximized();
+        restoreMaximized(false);
         for (ToolWindow.Side side : ToolWindow.Side.values()) {
             ToolWindow primary = primaryOn(side);
             if (primary != null) {
@@ -1317,7 +1381,7 @@ public class ToolWindowManager {
         }
         // Before the dividers are read below: a maximized divider sits at 0 or 1, and remembering that as
         // this window's size would have it reopen covering the editor.
-        restoreMaximized();
+        restoreMaximized(!isMaximized(tw));
         ToolWindow.Side side = currentSide(tw);
         Double pos = outerDividerOf(side);
         if (pos != null) {
@@ -1339,20 +1403,22 @@ public class ToolWindowManager {
         }
     }
 
-    private void openById(String id) {
-        openById(id, true);
-    }
-
-    /** @param replace false to stack this one beside whatever the side already restored */
-    private void openById(String id, boolean replace) {
+    private ToolWindow visibleById(String id) {
         if (id == null || id.isEmpty()) {
-            return;
+            return null;
         }
         ToolWindow tw = byId.get(id);
-        if (tw != null && shouldShowButton(tw)) {
-            // Restore (incl. session + Zen exit) must not steal focus from the editor.
-            openOnSide(tw, false, replace);
-        }
+        return tw != null && shouldShowButton(tw) ? tw : null;
+    }
+
+    private String presentationMode(ToolWindow tw) {
+        String mode =
+                config.getWorkspaceState().getToolWindowPresentationModes().get(tw.getId());
+        return MODE_MAXIMIZED.equals(mode) || MODE_FLOATING.equals(mode) ? mode : MODE_DOCKED;
+    }
+
+    private void rememberPresentation(ToolWindow tw, String mode) {
+        config.getWorkspaceState().getToolWindowPresentationModes().put(tw.getId(), mode);
     }
 
     private Pane stripeFor(ToolWindow.Side side) {

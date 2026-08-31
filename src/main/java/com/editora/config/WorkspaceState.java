@@ -30,7 +30,7 @@ public class WorkspaceState {
      * unknown field is ignored on load and dropped on the next write, and running or debugging is now the
      * caller's choice rather than something the entry declares.
      */
-    public static final int SCHEMA_VERSION = 9;
+    public static final int SCHEMA_VERSION = 10;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -61,16 +61,16 @@ public class WorkspaceState {
      */
     private Map<String, Double> toolWindowSplitDividers = new LinkedHashMap<>();
 
-    /**
-     * Tool windows that were open in their own floating stage. Additive in schema v9.
-     *
-     * <p>Floating is a state of an <em>open</em> window rather than a sticky per-window mode: closing a
-     * floating stage closes the window, and reopening it from the stripe docks it. That way a window can
-     * never be reopened into a stage the user has forgotten about.
-     */
+    /** Tool windows that were open in their own floating stage. Additive in schema v9. */
     private List<String> floatingToolWindows = new ArrayList<>();
     /** Where each floating tool window was last left: id -> [x, y, width, height]. Additive in schema v9. */
     private Map<String, List<Double>> floatingToolWindowBounds = new LinkedHashMap<>();
+    /**
+     * How each tool window was last presented: id -> "DOCKED"|"MAXIMIZED"|"FLOATING". Missing means
+     * docked for compatibility with sessions written before schema v10. Unlike the open-window lists,
+     * this survives closing the tool window so its next explicit open returns to the same presentation.
+     */
+    private Map<String, String> toolWindowPresentationModes = new LinkedHashMap<>();
 
     private double leftDividerPosition = 0.22;
     private double rightDividerPosition = 0.78;
@@ -242,6 +242,15 @@ public class WorkspaceState {
     public void setFloatingToolWindowBounds(Map<String, List<Double>> floatingToolWindowBounds) {
         this.floatingToolWindowBounds =
                 floatingToolWindowBounds == null ? new LinkedHashMap<>() : floatingToolWindowBounds;
+    }
+
+    public Map<String, String> getToolWindowPresentationModes() {
+        return toolWindowPresentationModes;
+    }
+
+    public void setToolWindowPresentationModes(Map<String, String> toolWindowPresentationModes) {
+        this.toolWindowPresentationModes =
+                toolWindowPresentationModes == null ? new LinkedHashMap<>() : toolWindowPresentationModes;
     }
 
     public Map<String, List<String>> getOpenToolWindows() {

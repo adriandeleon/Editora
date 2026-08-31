@@ -137,7 +137,7 @@ class ToolWindowFloatFxTest {
         });
     }
 
-    /** Closing the stage closes the window — floating is a state of an open window, not a sticky mode. */
+    /** Closing the stage closes the window but retains floating as its presentation for the next open. */
     @Test
     void closingAFloatingWindowClosesTheToolWindow() throws Exception {
         FxTestSupport.runOnFx(() -> {
@@ -151,6 +151,50 @@ class ToolWindowFloatFxTest {
             assertFalse(r.manager().isFloating(r.a()));
             assertTrue(r.stages().isEmpty());
             assertFalse(r.panels().containsKey(r.a()), "the panel should have been dropped with the window");
+            assertEquals(
+                    "FLOATING",
+                    r.config()
+                            .getWorkspaceState()
+                            .getToolWindowPresentationModes()
+                            .get("alpha"));
+            close(r);
+        });
+    }
+
+    @Test
+    void reopeningAClosedFloatingWindowFloatsItAgain() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Rig r = rigUnchecked();
+            r.manager().open(r.a());
+            r.manager().toggleFloating(r.a());
+            r.manager().close(r.a());
+
+            r.manager().open(r.a());
+
+            assertTrue(r.manager().isFloating(r.a()));
+            assertTrue(r.stages().get(r.a()).isShowing());
+            close(r);
+        });
+    }
+
+    @Test
+    void dockingBackMakesDockedTheRememberedPresentation() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Rig r = rigUnchecked();
+            r.manager().open(r.a());
+            r.manager().toggleFloating(r.a());
+            r.manager().toggleFloating(r.a());
+            r.manager().close(r.a());
+
+            r.manager().open(r.a());
+
+            assertFalse(r.manager().isFloating(r.a()));
+            assertEquals(
+                    "DOCKED",
+                    r.config()
+                            .getWorkspaceState()
+                            .getToolWindowPresentationModes()
+                            .get("alpha"));
             close(r);
         });
     }
