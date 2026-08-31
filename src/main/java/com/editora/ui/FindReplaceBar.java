@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 
 import javafx.animation.PauseTransition;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
@@ -86,11 +87,11 @@ public class FindReplaceBar extends HBox {
         inSelection.setTooltip(new Tooltip(tr("find.inSelection")));
         countLabel.getStyleClass().add("find-count");
 
-        Button next = new Button(tr("find.next"));
-        Button prev = new Button(tr("find.prev"));
+        Button next = iconButton(Icons.findNext(), tr("find.next"));
+        Button prev = iconButton(Icons.findPrevious(), tr("find.prev"));
         Button replace = new Button(tr("find.replace"));
         Button replaceAll = new Button(tr("find.all"));
-        Button close = new Button("✕");
+        Button close = iconButton(Icons.closeTab(), tr("find.close"));
         // Trailing clear ("✕") buttons inside each text field (shown only while the field has text).
         Button findClear = ClearableField.clearButton(findField);
         Button replaceClear = ClearableField.clearButton(replaceField);
@@ -156,6 +157,16 @@ public class FindReplaceBar extends HBox {
                         preserveCase,
                         inSelection,
                         close);
+    }
+
+    /** A compact icon-only action that remains named for tooltips and assistive technology. */
+    private static Button iconButton(Node graphic, String accessibleName) {
+        Button button = new Button();
+        button.setGraphic(graphic);
+        button.setTooltip(new Tooltip(accessibleName));
+        button.setAccessibleText(accessibleName);
+        button.getStyleClass().addAll("button-icon", "flat", "find-bar-icon");
+        return button;
     }
 
     public void show(boolean backward) {

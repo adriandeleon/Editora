@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -77,6 +79,27 @@ class FindReplaceBarFxTest {
             VBox root = new VBox(h.bar, h.buffer.getNode());
             new Scene(root, 800, 600);
             return h;
+        });
+    }
+
+    @Test
+    void navigationAndCloseActionsAreNamedIconButtons() throws Exception {
+        Harness h = harness("one two");
+        FxTestSupport.runOnFx(() -> {
+            List<Button> iconButtons = h.bar.getChildren().stream()
+                    .filter(Button.class::isInstance)
+                    .map(Button.class::cast)
+                    .filter(button -> button.getStyleClass().contains("find-bar-icon"))
+                    .toList();
+
+            assertEquals(3, iconButtons.size());
+            for (Button button : iconButtons) {
+                assertTrue(button.getText() == null || button.getText().isEmpty());
+                assertNotNull(button.getGraphic());
+                assertNotNull(button.getTooltip());
+                assertFalse(button.getAccessibleText().isBlank());
+                assertEquals(button.getAccessibleText(), button.getTooltip().getText());
+            }
         });
     }
 
