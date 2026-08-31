@@ -3197,10 +3197,27 @@
 .toolbar-icon.test-icon-fail { -fx-fill: -color-danger-fg; }
 .toolbar-icon.test-icon-skip { -fx-fill: -color-warning-fg; }
 .test-runner .test-status { -fx-text-fill: -color-fg-muted; }
-.test-runner .test-chip { -fx-font-size: 11px; -fx-font-weight: bold; }
-.test-runner .test-chip-pass { -fx-text-fill: -color-success-fg; }
-.test-runner .test-chip-fail { -fx-text-fill: -color-danger-fg; }
-.test-runner .test-chip-skip { -fx-text-fill: -color-warning-fg; }
+/* Count chips double as status filters: flat like the Labels they replaced, dimmed while switched off. */
+.test-runner .test-chip {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-background-color: transparent;
+    -fx-background-radius: 999;
+    -fx-border-width: 0;
+    -fx-padding: 1px 6px 1px 6px;
+    -fx-cursor: hand;
+}
+.test-runner .test-chip:hover,
+.test-runner .test-chip:selected:hover { -fx-background-color: -color-bg-subtle; }
+.test-runner .test-chip:selected { -fx-background-color: transparent; }
+/* Written off-state-first (no negated pseudo-class, which JavaFX CSS doesn't support): the bare rule is the
+   switched-off look — muted and faded, so the header says what the tree is hiding — and :selected restores
+   the status colour at higher specificity. */
+.test-runner .test-chip { -fx-text-fill: -color-fg-muted; -fx-opacity: 0.55; }
+.test-runner .test-chip:selected { -fx-opacity: 1.0; }
+.test-runner .test-chip-pass:selected { -fx-text-fill: -color-success-fg; }
+.test-runner .test-chip-fail:selected { -fx-text-fill: -color-danger-fg; }
+.test-runner .test-chip-skip:selected { -fx-text-fill: -color-warning-fg; }
 .test-runner .test-elapsed { -fx-text-fill: -color-fg-muted; }
 .test-runner .test-progress { -fx-pref-width: 140px; }
 .test-runner .test-progress.test-progress-failed .bar { -fx-background-color: -color-danger-fg; }

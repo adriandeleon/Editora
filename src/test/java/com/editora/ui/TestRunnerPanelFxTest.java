@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -11,6 +12,7 @@ import javafx.scene.control.TreeView;
 import com.editora.build.BuildTool;
 import com.editora.test.ParsedSuite;
 import com.editora.test.ParsedTest;
+import com.editora.test.TestFilter;
 import com.editora.test.TestNode;
 import com.editora.test.TestRun;
 import com.editora.test.TestStatus;
@@ -152,5 +154,157 @@ class TestRunnerPanelFxTest {
         // A new run re-enables it.
         FxTestSupport.runOnFx(() -> panel.startRun("test ./..."));
         assertTrue(follow.isSelected(), "a new run re-enables tracking");
+    }
+
+    /**
+     * The filter's whole point on a big run: hiding passed tests must take their all-passing class rows with
+     * them, or a single failure among thousands is no easier to find. Also pins that the chips are the
+     * filter control (clicking one re-renders) and that a live-run update keeps the narrowed view.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void hidingPassedTestsAlsoHidesTheirAllPassingClasses() throws Exception {
+        TestRun run = new TestRun(BuildTool.MAVEN, Path.of("."), List.of("test"), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "com.x.GreenTest",
+                        List.of(
+                                ParsedTest.of("com.x.GreenTest", "a", TestStatus.PASSED, 1),
+                                ParsedTest.of("com.x.GreenTest", "b", TestStatus.PASSED, 1))));
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "com.x.RedTest",
+                        List.of(
+                                ParsedTest.of("com.x.RedTest", "ok", TestStatus.PASSED, 1),
+                                ParsedTest.of("com.x.RedTest", "boom", TestStatus.FAILED, 1))));
+
+        TestRunnerPanel panel = FxTestSupport.callOnFx(() -> {
+            TestRunnerPanel p = new TestRunnerPanel();
+            p.startRun("test");
+            p.update(run);
+            return p;
+        });
+        TreeView<TestNode> tree = FxTestSupport.field(panel, "tree");
+        assertEquals(2, tree.getRoot().getChildren().size(), "both classes show unfiltered");
+
+        ToggleButton passedChip = FxTestSupport.field(panel, "passedChip");
+        FxTestSupport.runOnFx(passedChip::fire); // a click: ToggleButton.fire() flips it and fires the action
+        assertFalse(passedChip.isSelected());
+        assertEquals(1, tree.getRoot().getChildren().size(), "the all-passing class is gone, not left empty");
+        TreeItem<TestNode> red = tree.getRoot().getChildren().get(0);
+        assertEquals("com.x.RedTest", red.getValue().displayName());
+        assertEquals(1, red.getChildren().size(), "only the failing test remains in the surviving class");
+        assertEquals("boom", red.getChildren().get(0).getValue().displayName());
+
+        // A live update re-applies the filter rather than re-showing everything.
+        FxTestSupport.runOnFx(() -> panel.update(run));
+        assertEquals(1, tree.getRoot().getChildren().size());
+
+        // Turning the chip back on restores the hidden class in model order.
+        FxTestSupport.runOnFx(passedChip::fire);
+        assertTrue(passedChip.isSelected());
+        assertEquals(2, tree.getRoot().getChildren().size());
+        assertEquals(
+                "com.x.GreenTest",
+                tree.getRoot().getChildren().get(0).getValue().displayName());
+    }
+
+    /** The name filter narrows by test or class, and clearing it restores the tree. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theNameFilterNarrowsTheTreeAndIsReversible() throws Exception {
+        TestRun run = new TestRun(BuildTool.MAVEN, Path.of("."), List.of("test"), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "com.x.AlphaTest", List.of(ParsedTest.of("com.x.AlphaTest", "one", TestStatus.PASSED, 1))));
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "com.x.BetaTest", List.of(ParsedTest.of("com.x.BetaTest", "two", TestStatus.PASSED, 1))));
+
+        TestRunnerPanel panel = FxTestSupport.callOnFx(() -> {
+            TestRunnerPanel p = new TestRunnerPanel();
+            p.startRun("test");
+            p.update(run);
+            return p;
+        });
+        TreeView<TestNode> tree = FxTestSupport.field(panel, "tree");
+        TextField field = FxTestSupport.field(panel, "filterField");
+
+        FxTestSupport.runOnFx(() -> field.setText("beta"));
+        assertEquals(1, tree.getRoot().getChildren().size(), "typing a class name keeps only that class");
+        assertEquals(
+                "com.x.BetaTest", tree.getRoot().getChildren().get(0).getValue().displayName());
+
+        FxTestSupport.runOnFx(() -> field.setText("no-such-test"));
+        assertEquals(0, tree.getRoot().getChildren().size(), "no matches → an empty tree, not a stale one");
+
+        FxTestSupport.runOnFx(() -> field.clear());
+        assertEquals(2, tree.getRoot().getChildren().size());
+    }
+
+    /** {@code test.showOnlyFailed} / {@code test.showAllTests} drive the same chips the user clicks. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void showOnlyFailedAndClearFilterRoundTrip() throws Exception {
+        TestRun run = new TestRun(BuildTool.MAVEN, Path.of("."), List.of("test"), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "com.x.MixedTest",
+                        List.of(
+                                ParsedTest.of("com.x.MixedTest", "ok", TestStatus.PASSED, 1),
+                                ParsedTest.of("com.x.MixedTest", "skipped", TestStatus.SKIPPED, 0),
+                                ParsedTest.of("com.x.MixedTest", "bad", TestStatus.FAILED, 1))));
+
+        TestRunnerPanel panel = FxTestSupport.callOnFx(() -> {
+            TestRunnerPanel p = new TestRunnerPanel();
+            p.startRun("test");
+            p.update(run);
+            p.showOnlyFailed();
+            return p;
+        });
+        TreeView<TestNode> tree = FxTestSupport.field(panel, "tree");
+        assertEquals(1, tree.getRoot().getChildren().size());
+        assertEquals(1, tree.getRoot().getChildren().get(0).getChildren().size(), "only the failing test");
+        assertEquals(
+                "bad",
+                tree.getRoot()
+                        .getChildren()
+                        .get(0)
+                        .getChildren()
+                        .get(0)
+                        .getValue()
+                        .displayName());
+
+        FxTestSupport.runOnFx(panel::clearFilter);
+        assertEquals(3, tree.getRoot().getChildren().get(0).getChildren().size(), "all three are back");
+        assertFalse(FxTestSupport.<TestFilter>callOnFx(panel::filter).isActive());
+    }
+
+    /**
+     * Opening the window focuses the filter field and selects nothing — selecting row 0 (what it used to do)
+     * trips the "the user is reading a row" listener and would silently stop run tracking.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void focusFirstItemDoesNotDisableRunTracking() throws Exception {
+        TestRun run = new TestRun(BuildTool.MAVEN, Path.of("."), List.of("test"), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(), new ParsedSuite("pkg", List.of(ParsedTest.of("pkg", "TestA", TestStatus.PASSED, 1))));
+        TestRunnerPanel panel = FxTestSupport.callOnFx(() -> {
+            TestRunnerPanel p = new TestRunnerPanel();
+            p.startRun("test");
+            p.update(run);
+            p.focusFirstItem();
+            return p;
+        });
+        ToggleButton follow = FxTestSupport.field(panel, "followToggle");
+        TreeView<TestNode> tree = FxTestSupport.field(panel, "tree");
+        assertTrue(tree.getSelectionModel().isEmpty(), "nothing is selected on open");
+        assertTrue(follow.isSelected(), "tracking survives opening the window mid-run");
     }
 }
