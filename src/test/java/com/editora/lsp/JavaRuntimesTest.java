@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -101,5 +102,44 @@ class JavaRuntimesTest {
                         java.util.List.of(new JavaRuntimes.Jdk(0, "/x"), new JavaRuntimes.Jdk(21, "/y"))));
         org.junit.jupiter.api.Assertions.assertTrue(
                 JavaRuntimes.majorsDescending(null).isEmpty());
+    }
+
+    /**
+     * A jlinked runtime image is not a JDK, however convincing its {@code release} file is.
+     *
+     * <p>This is Editora's own packaged runtime ({@code <app>/lib/runtime}): a real {@code release} saying
+     * {@code JAVA_VERSION="25.0.4"} and no compiler — on Linux no {@code bin/} at all, since
+     * {@code scripts/aot_build.java} deletes it. Accepting it made {@code java.home} claim the JavaSE-25
+     * slot in every packaged build and jdtls reject it ("does not point to a JDK").
+     */
+    @Test
+    void aRuntimeImageWithAReleaseFileButNoCompilerIsNotAJdk(@TempDir java.nio.file.Path tmp) throws Exception {
+        java.nio.file.Path runtime = java.nio.file.Files.createDirectory(tmp.resolve("runtime"));
+        java.nio.file.Files.writeString(runtime.resolve("release"), "JAVA_VERSION=\"25.0.4\"\n");
+        assertFalse(JavaRuntimes.hasCompiler(runtime), "no bin/ at all — the Linux app-image layout");
+
+        // Windows keeps bin/ (the JVM lives there) but still ships no compiler.
+        java.nio.file.Files.createDirectory(runtime.resolve("bin"));
+        java.nio.file.Files.writeString(runtime.resolve("bin").resolve("java"), "");
+        assertFalse(JavaRuntimes.hasCompiler(runtime), "bin/java is a runtime; only javac makes it a JDK");
+    }
+
+    @Test
+    void aRealJdkIsAccepted(@TempDir java.nio.file.Path tmp) throws Exception {
+        java.nio.file.Path jdk = java.nio.file.Files.createDirectory(tmp.resolve("jdk"));
+        java.nio.file.Files.createDirectory(jdk.resolve("bin"));
+        java.nio.file.Files.writeString(jdk.resolve("bin").resolve("javac"), "");
+        assertTrue(JavaRuntimes.hasCompiler(jdk));
+
+        java.nio.file.Path win = java.nio.file.Files.createDirectory(tmp.resolve("win"));
+        java.nio.file.Files.createDirectory(win.resolve("bin"));
+        java.nio.file.Files.writeString(win.resolve("bin").resolve("javac.exe"), "");
+        assertTrue(JavaRuntimes.hasCompiler(win), "Windows JDK");
+    }
+
+    @Test
+    void aMissingDirectoryIsNotAJdk(@TempDir java.nio.file.Path tmp) {
+        assertFalse(JavaRuntimes.hasCompiler(null));
+        assertFalse(JavaRuntimes.hasCompiler(tmp.resolve("nope")));
     }
 }

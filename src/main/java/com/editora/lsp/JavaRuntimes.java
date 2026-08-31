@@ -68,9 +68,32 @@ public final class JavaRuntimes {
         return List.copyOf(found);
     }
 
-    /** Adds {@code dir} if it looks like a JDK (has a readable {@code release} with a JAVA_VERSION). */
-    private static void addJdk(List<Jdk> out, java.nio.file.Path dir) {
+    /**
+     * Whether {@code dir} is a JDK rather than a bare runtime image — i.e. it ships a compiler.
+     *
+     * <p>A {@code release} file is not enough, and trusting one shipped a real bug. Editora's own packaged
+     * runtime (jpackage's {@code <app>/lib/runtime}) carries one reading {@code JAVA_VERSION="25.0.4"} while
+     * being a jlinked image with no compiler — and on non-Windows {@code scripts/aot_build.java} deletes its
+     * {@code bin/} outright. Admitting it let {@code System.getProperty("java.home")} claim the JavaSE-25
+     * slot in every packaged build, which jdtls rejects outright ("Invalid runtime for JavaSE-25: The path
+     * (/opt/editora/lib/runtime) does not point to a JDK"). Worse, {@link #discover} adds {@code java.home}
+     * first and {@link #runtimes} de-dupes by major, so it also <em>shadowed</em> a real JDK 25 installed on
+     * the machine — leaving that execution environment unbound and unmarking the default, the very
+     * empty-classpath failure this class exists to prevent. Invisible under {@code mvn javafx:run}, where
+     * {@code java.home} is a real JDK.
+     */
+    static boolean hasCompiler(java.nio.file.Path dir) {
         if (dir == null) {
+            return false;
+        }
+        java.nio.file.Path bin = dir.resolve("bin");
+        return java.nio.file.Files.isRegularFile(bin.resolve("javac"))
+                || java.nio.file.Files.isRegularFile(bin.resolve("javac.exe"));
+    }
+
+    /** Adds {@code dir} if it looks like a JDK (a compiler, plus a readable {@code release} with a version). */
+    private static void addJdk(List<Jdk> out, java.nio.file.Path dir) {
+        if (!hasCompiler(dir)) {
             return;
         }
         java.nio.file.Path release = dir.resolve("release");
