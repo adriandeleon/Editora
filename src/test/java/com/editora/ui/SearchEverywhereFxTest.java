@@ -2,6 +2,9 @@ package com.editora.ui;
 
 import java.util.List;
 
+import javafx.scene.input.KeyCode;
+import javafx.scene.robot.Robot;
+
 import com.editora.command.CommandRegistry;
 import com.editora.config.ConfigManager;
 import com.editora.search.SearchEverywhere;
@@ -87,6 +90,49 @@ class SearchEverywhereFxTest {
         FxTestSupport.runOnFxUnchecked(() -> registry.run("search.everywhere"));
         assertTrue(popup().isShown());
         hide();
+    }
+
+    @Test
+    void commandShiftEOpensThePopupWithTheEmacsKeymapOnMac() throws Exception {
+        if (!com.editora.command.KeymapManager.isMac()) {
+            return;
+        }
+        ConfigManager config = FxTestSupport.field(fx.controller, "config");
+        String original = config.getSettings().getKeymap();
+        try {
+            FxTestSupport.runOnFxUnchecked(() -> {
+                config.getSettings().setKeymap("emacs");
+                fx.windowManager.reloadSharedKeymap();
+                javafx.stage.Stage stage = FxTestSupport.field(fx.controller, "stage");
+                stage.requestFocus();
+                Robot robot = new Robot();
+                robot.keyPress(KeyCode.COMMAND);
+                robot.keyPress(KeyCode.SHIFT);
+                robot.keyPress(KeyCode.E);
+                robot.keyRelease(KeyCode.E);
+                robot.keyRelease(KeyCode.SHIFT);
+                robot.keyRelease(KeyCode.COMMAND);
+            });
+            FxTestSupport.runOnFx(() -> {});
+            assertTrue(popup().isShown(), "Cmd-Shift-E must reach Search Everywhere with the Emacs keymap on macOS");
+            FxTestSupport.runOnFxUnchecked(() -> {
+                Robot robot = new Robot();
+                robot.keyPress(KeyCode.U);
+                robot.keyRelease(KeyCode.U);
+            });
+            FxTestSupport.runOnFx(() -> {});
+            String query = FxTestSupport.callOnFx(() -> {
+                javafx.scene.control.TextField input = FxTestSupport.field(popup(), "input");
+                return input.getText();
+            });
+            assertEquals("u", query, "the opening Command chord must not swallow the first query character");
+            hide();
+        } finally {
+            FxTestSupport.runOnFxUnchecked(() -> {
+                config.getSettings().setKeymap(original);
+                fx.windowManager.reloadSharedKeymap();
+            });
+        }
     }
 
     @Test

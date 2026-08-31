@@ -73,6 +73,17 @@ class KeyDispatcherTest {
     }
 
     @Test
+    void releaseClearsTheSwallowWhenACommandChordHasNoTypedEvent() {
+        KeyDispatcher d = dispatcher();
+        KeyEvent p = press(KeyCode.T, false, true, false, false); // C-t
+        d.handle(p);
+        d.handleReleased(new KeyEvent(KeyEvent.KEY_RELEASED, "", "", KeyCode.T, false, false, false, false));
+        KeyEvent next = typed("a", false);
+        d.handleTyped(next);
+        assertFalse(next.isConsumed(), "the first real character after a Command/Ctrl shortcut must survive");
+    }
+
+    @Test
     void normalTypedCharIsNotSwallowed() {
         KeyDispatcher d = dispatcher();
         KeyEvent p = press(KeyCode.A, false, false, false, false); // lone unbound 'a'
