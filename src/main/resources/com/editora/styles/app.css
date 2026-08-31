@@ -2371,6 +2371,16 @@
     -fx-alignment: center-left;
 }
 
+.find-bar .find-bar-icon {
+    -fx-min-width: 28;
+    -fx-pref-width: 28;
+    -fx-max-width: 28;
+    -fx-min-height: 28;
+    -fx-pref-height: 28;
+    -fx-max-height: 28;
+    -fx-padding: 0;
+}
+
 /* Collapse the tab header when the tab bar is toggled off (view.toggleTabBar). */
 .tab-pane.no-tab-header > .tab-header-area {
     -fx-pref-height: 0;

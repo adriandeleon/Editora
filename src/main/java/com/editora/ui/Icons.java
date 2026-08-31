@@ -555,6 +555,16 @@ final class Icons {
         return of("M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z");
     }
 
+    /** Up chevron — previous match in the Find bar, following the usual editor convention. */
+    static Node findPrevious() {
+        return line("M3.5 10.5 8 6l4.5 4.5");
+    }
+
+    /** Down chevron — next match in the Find bar, following the usual editor convention. */
+    static Node findNext() {
+        return line("M3.5 5.5 8 10l4.5-4.5");
+    }
+
     /** Double chevron left (Material "keyboard_double_arrow_left") — diff "apply whole hunk" toward left. */
     static Node doubleChevronLeft() {
         return of("M17.59 18 19 16.59 14.42 12 19 7.41 17.59 6l-6 6 6 6zm-6 0 1.41-1.41L8.42 "
