@@ -122,13 +122,15 @@ public final class SearchEverywhere {
         List<Group> groups = new ArrayList<>();
         for (Map.Entry<Kind, List<Item>> e : byKind.entrySet()) {
             List<Item> ranked = new ArrayList<>(e.getValue());
-            // Actionable rows first, then by score. A disabled row is worth listing but never worth
-            // outranking something the user can actually run, and this ordering also keeps a group's
-            // best-item score (which decides group order below) from being set by a row nobody can pick.
-            ranked.sort(Comparator.comparing((Item i) -> !i.enabled())
-                    .thenComparing(Comparator.comparingInt(Item::score).reversed())
-                    .thenComparingInt((Item i) -> i.label().length())
-                    .thenComparing(Item::label));
+            // Command Palette and Search Everywhere deliberately share one command-ordering function.
+            // Commands therefore arrive pre-ranked and must retain that order here. Corpus sources are
+            // still defensively ranked because callers may aggregate unsorted file/symbol candidates.
+            if (e.getKey() != Kind.COMMAND) {
+                ranked.sort(Comparator.comparing((Item i) -> !i.enabled())
+                        .thenComparing(Comparator.comparingInt(Item::score).reversed())
+                        .thenComparingInt((Item i) -> i.label().length())
+                        .thenComparing(Item::label));
+            }
             if (ranked.size() > perGroup) {
                 ranked = new ArrayList<>(ranked.subList(0, perGroup));
             }

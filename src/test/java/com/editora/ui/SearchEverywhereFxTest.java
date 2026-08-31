@@ -84,6 +84,16 @@ class SearchEverywhereFxTest {
                 .toList();
     }
 
+    private List<String> paletteCommandTitles(String query) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            CommandPalette palette = FxTestSupport.field(fx.controller, "palette");
+            FxTestSupport.call(palette, "filter", new Class<?>[] {String.class}, query);
+            javafx.collections.ObservableList<com.editora.command.Command> commands =
+                    FxTestSupport.field(palette, "items");
+            return commands.stream().map(com.editora.command.Command::title).toList();
+        });
+    }
+
     @Test
     void theCommandOpensThePopup() throws Exception {
         CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
@@ -162,6 +172,20 @@ class SearchEverywhereFxTest {
     }
 
     @Test
+    void commandRowsUseTheExactCommandPaletteOrder() throws Exception {
+        for (String query : List.of("", "toggle")) {
+            FxTestSupport.runOnFxUnchecked(() -> popup().show(""));
+            type(query.isEmpty() ? "" : ">" + query);
+            List<String> searchEverywhere = items().stream().map(Item::label).toList();
+            assertEquals(
+                    paletteCommandTitles(query),
+                    searchEverywhere,
+                    "Search Everywhere command order must match the Command Palette for query '" + query + "'");
+            hide();
+        }
+    }
+
+    @Test
     void aBareFileSigilDoesNotWalkTheProject() throws Exception {
         // A sigil with nothing typed after it is a scope, not an empty query: name the scope, walk nothing.
         FxTestSupport.runOnFxUnchecked(() -> popup().show(""));
@@ -181,17 +205,6 @@ class SearchEverywhereFxTest {
         assertTrue(
                 items.stream().anyMatch(i -> !i.enabled()),
                 "sanity: a fresh window has gated commands (LSP is off by default)");
-        // ...and every one of them sorts after the commands the user can actually run.
-        int firstDisabled = -1;
-        for (int i = 0; i < items.size(); i++) {
-            if (!items.get(i).enabled()) {
-                firstDisabled = i;
-                break;
-            }
-        }
-        assertTrue(
-                items.subList(firstDisabled, items.size()).stream().noneMatch(Item::enabled),
-                "a disabled row must never outrank one the user can run");
         hide();
     }
 

@@ -160,11 +160,11 @@ class SearchEverywhereTest {
         }
 
         @Test
-        void aDisabledRowNeverOutranksOneTheUserCanRun() {
-            // The disabled row scores higher, so only the enabled-first rule can put "run" ahead of it.
+        void commandRowsPreserveTheirSourceOrdering() {
+            // The command source is the shared Command Palette ranking; merge must not second-guess it.
             List<Item> items = List.of(disabled(Kind.COMMAND, "gray", 90), item(Kind.COMMAND, "run", 10));
             assertEquals(
-                    List.of("run", "gray"),
+                    List.of("gray", "run"),
                     SearchEverywhere.flatten(SearchEverywhere.merge(items)).stream()
                             .map(Item::label)
                             .toList());

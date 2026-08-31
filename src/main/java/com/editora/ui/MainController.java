@@ -3755,7 +3755,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // command turned a one-character query into hundreds of rebuilds of the same map.
             java.util.Map<String, String> chords = invertBindings();
             boolean all = query == null || query.isBlank();
-            for (Command c : registry.all()) {
+            for (Command c : CommandPalette.orderedMatches(registry.all(), query)) {
                 // A command whose feature is off is listed, grayed, with an explanation — the same choice
                 // the palette makes (#532). Hiding it means the user never learns it exists, which matters
                 // most here precisely because this picker can stand in for the palette.

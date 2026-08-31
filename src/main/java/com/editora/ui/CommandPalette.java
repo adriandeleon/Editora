@@ -317,20 +317,25 @@ public class CommandPalette {
         // One snapshot of the live feature/context state for this whole pass — see enabledPolicy.
         enabledSnapshot = enabledPolicy.get();
         currentQuery = query == null ? "" : query.trim();
-        String q = currentQuery;
+        items.setAll(orderedMatches(registry.all(), currentQuery));
+        selectFirstEnabled();
+    }
+
+    /**
+     * The canonical command ordering shared by the Command Palette and Search Everywhere. An empty query
+     * preserves registry order; a real query uses fuzzy score, then shorter and alphabetical titles.
+     */
+    static List<Command> orderedMatches(java.util.Collection<Command> commands, String query) {
+        String q = query == null ? "" : query.trim();
         if (q.isEmpty()) {
-            // A command that fails the enabled predicate (a disabled feature) is still listed — grayed and
-            // non-actionable — rather than hidden (#532).
-            items.setAll(registry.all());
-            selectFirstEnabled();
-            return;
+            return new ArrayList<>(commands);
         }
         // Score every command and order by that score, so the best match leads rather than merely some
         // match. Ties fall back to the shorter then alphabetical title, which keeps the order stable
         // across keystrokes instead of letting equal-scoring rows shuffle under the cursor.
         record Scored(Command command, int score) {}
         List<Scored> scored = new ArrayList<>();
-        for (Command command : registry.all()) {
+        for (Command command : commands) {
             FuzzyMatch.Match m = FuzzyMatch.of(command.title(), q);
             if (m != null) {
                 scored.add(new Scored(command, m.score()));
@@ -344,8 +349,7 @@ public class CommandPalette {
         for (Scored s : scored) {
             matches.add(s.command());
         }
-        items.setAll(matches);
-        selectFirstEnabled();
+        return matches;
     }
 
     /** Selects the first <em>enabled</em> result (the cursor never rests on a grayed-out command). */
