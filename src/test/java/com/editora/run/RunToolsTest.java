@@ -96,4 +96,27 @@ class RunToolsTest {
     void theShortLinkFormLeavesTheRawLineNull() {
         assertNull(new StackTraceLinks.Link("A.java", 3).raw());
     }
+
+    @Test
+    void consoleUrlsFindHttpLinksAndTrimSurroundingPunctuation() {
+        String line = "Local http://localhost:4321/ and docs (https://example.com/a_(b)).";
+
+        List<ConsoleUrls.Link> links = ConsoleUrls.find(line);
+
+        assertEquals(List.of("http://localhost:4321/", "https://example.com/a_(b)"),
+                links.stream().map(ConsoleUrls.Link::url).toList());
+        assertEquals(links.get(0), ConsoleUrls.at(line, line.indexOf("localhost")));
+        assertNull(ConsoleUrls.at(line, 0));
+
+        String multiline = "plain\nsee https://example.com/docs\nafter";
+        ConsoleUrls.Link multilineLink = ConsoleUrls.at(multiline, multiline.indexOf("example"));
+        assertEquals(multiline.indexOf("https://"), multilineLink.start());
+        assertEquals("https://example.com/docs", multilineLink.url());
+    }
+
+    @Test
+    void consoleUrlsIgnoreNonWebSchemesAndNullInput() {
+        assertEquals(List.of(), ConsoleUrls.find("file:///tmp/a.txt ftp://example.com"));
+        assertEquals(List.of(), ConsoleUrls.find(null));
+    }
 }
