@@ -45,5 +45,6 @@ Read [`docs/conventions.md`](docs/conventions.md) in full once. The high points:
 - Writing tests (incl. the headless-FX harness): [`docs/testing.md`](docs/testing.md).
 - Building a plugin (the public extension API): [`docs/plugins.md`](docs/plugins.md).
 
-The exhaustive subsystem reference is [`CLAUDE.md`](CLAUDE.md); the `docs/` guides are the
-readable distillation of it.
+Operational repository instructions are in [`AGENTS.md`](AGENTS.md). The `docs/` guides are the
+readable contributor documentation, with exhaustive implementation history preserved in
+[`docs/reference/`](docs/reference/README.md).

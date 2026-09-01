@@ -5,9 +5,9 @@ the deeper conventions live in [conventions.md](conventions.md) and
 [performance.md](performance.md), and the step-by-step "add an X" recipes in
 [extending.md](extending.md).
 
-> The authoritative, exhaustive description of every subsystem is in the root
-> [`CLAUDE.md`](../CLAUDE.md). These docs are the human-readable distillation; when they
-> disagree with the code, the code wins.
+> The root [`AGENTS.md`](../AGENTS.md) contains operational rules. This guide is the contributor
+> orientation, and the [architecture catalog](reference/architecture-catalog.md) preserves the
+> exhaustive subsystem history. When documentation disagrees with the code, the code wins.
 
 ## What it is
 

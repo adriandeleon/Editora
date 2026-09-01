@@ -5,7 +5,8 @@ subsystem reference: it records what shipped, what was decided against, and what
 
 **Phases 1–5 have shipped.** What they built is documented in
 [subsystems/navigation.md](subsystems/navigation.md) and, terser, in the
-`search/FuzzyMatch` + `index/` + `search/SearchEverywhere` bullet of [`../CLAUDE.md`](../CLAUDE.md).
+`search/FuzzyMatch` + `index/` + `search/SearchEverywhere` entry of the
+[architecture catalog](reference/architecture-catalog.md).
 This file keeps only the sequencing, the rejected alternatives, and the items still open.
 
 ## Status

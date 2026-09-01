@@ -369,7 +369,7 @@
         <!-- Headless-JavaFX test harness (test scope only; never shipped). TestFX drives only the
              toolkit lifecycle (FxToolkit); the headless Glass backend is JavaFX 26's built-in Headless
              platform (-Dglass.platform=Headless in surefire), so FX tests run with no display/xvfb and
-             no Monocle jar on CI. See CLAUDE.md (Tests). -->
+             no Monocle jar on CI. See docs/testing.md. -->
         <dependency>
             <groupId>org.testfx</groupId>
             <artifactId>testfx-core</artifactId>

@@ -3,7 +3,8 @@
 # bundled template.desktop; staged into the DEB wrap's resource dir by scripts/aot_build.java).
 # Adds what jpackage's generated entry lacks: Exec %F (pass opened files as argv), MimeType
 # (GNOME "Open With" / default-editor eligibility), StartupWMClass (bind the running window to this
-# entry), and real Categories. This comment ships in the installed file; details in CLAUDE.md.
+# entry), and real Categories. This comment ships in the installed file; details in
+# docs/reference/release-pipeline.md.
 [Desktop Entry]
 Type=Application
 Name=APPLICATION_NAME
