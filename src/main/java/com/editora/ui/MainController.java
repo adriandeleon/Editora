@@ -3425,6 +3425,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void enableGitHubWindowByDefault() {
+                    if (githubToolWindow != null) {
+                        toolWindows.setVisibleIfUnset(githubToolWindow, true);
+                    }
+                }
+
+                @Override
                 public void toggleGitHubWindow() {
                     if (githubToolWindow != null) {
                         toolWindows.toggle(githubToolWindow);
