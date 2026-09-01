@@ -2932,7 +2932,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // who hides it in Settings → Tool Windows still has that preference persisted and respected.
         toolWindows.register(buildOutputToolWindow, true);
         toolWindows.setAvailable(buildOutputToolWindow, false); // …available once any build tool is detected
-        toolWindows.register(testResultsToolWindow, false); // stripe off by default; auto-opens on a `test` run
+        // Default-visible by preference, but unavailable until a test run occurs. This matches Build Output:
+        // availability answers whether there is anything to show, while Settings controls the user's stripe choice.
+        toolWindows.register(testResultsToolWindow, true);
         toolWindows.setAvailable(testResultsToolWindow, false); // …available once a test run has occurred
         toolWindows.register(remoteToolWindow, false); // off by default (niche); always available — no buffer needed
         toolWindows.register(
@@ -3421,6 +3423,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                     // repo with open activity — unlike the Commit/Git Log windows, which act on the active file.
                     if (githubToolWindow != null) {
                         toolWindows.setAvailable(githubToolWindow, available);
+                    }
+                }
+
+                @Override
+                public void enableGitHubWindowByDefault() {
+                    if (githubToolWindow != null) {
+                        toolWindows.setVisibleIfUnset(githubToolWindow, true);
                     }
                 }
 
@@ -4374,6 +4383,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                     if (hierarchyToolWindow != null) {
                         toolWindows.setAvailable(hierarchyToolWindow, available); // same LSP-managed gate (#682)
+                    }
+                }
+
+                @Override
+                public void enableNavigationWindowsByDefault() {
+                    if (referencesToolWindow != null) {
+                        toolWindows.setVisibleIfUnset(referencesToolWindow, true);
+                    }
+                    if (hierarchyToolWindow != null) {
+                        toolWindows.setVisibleIfUnset(hierarchyToolWindow, true);
                     }
                 }
 

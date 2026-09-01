@@ -67,6 +67,9 @@ class LspOpsStub implements LspCoordinator.Ops {
     public void setProblemsAvailable(boolean available) {}
 
     @Override
+    public void enableNavigationWindowsByDefault() {}
+
+    @Override
     public void openReferencesWindow() {}
 
     @Override

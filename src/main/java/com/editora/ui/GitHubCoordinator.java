@@ -63,6 +63,9 @@ final class GitHubCoordinator {
         /** (Slice 2) Sets whether the GitHub tool-window stripe button is available (repo is a GitHub repo). */
         void setGitHubWindowAvailable(boolean available);
 
+        /** Makes the GitHub stripe visible for a first-time user, preserving any explicit show/hide choice. */
+        void enableGitHubWindowByDefault();
+
         /** (Slice 2) Opens/toggles the GitHub tool window. */
         void toggleGitHubWindow();
 
@@ -151,7 +154,14 @@ final class GitHubCoordinator {
             return;
         }
         service.setCommand(host.settings().getGhPath());
-        service.detect(a -> applyGating());
+        service.detect(a -> {
+            // Installation, not authentication, determines the first-run visibility default. Availability
+            // still requires authentication + a GitHub repo with activity, so this never exposes a dead stripe.
+            if (a.found()) {
+                ops.enableGitHubWindowByDefault();
+            }
+            applyGating();
+        });
     }
 
     /** Re-derives the tool-window availability from cached state (called on tab switch, cheap/sync). */

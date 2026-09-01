@@ -94,6 +94,9 @@ final class LspCoordinator {
         /** Shows/hides the Problems tool-window stripe button (active file is server-managed). */
         void setProblemsAvailable(boolean available);
 
+        /** Enables References and Hierarchy for a first-time user once an enabled server is installed. */
+        void enableNavigationWindowsByDefault();
+
         /** Opens (shows + focuses) the References tool window after a multi-result Find References. */
         void openReferencesWindow();
 
@@ -535,6 +538,11 @@ final class LspCoordinator {
             // Probe each known server independently (one may be installed and another not).
             lspManager.detect(serverId, ok -> {
                 serverAvailable.put(serverId, ok);
+                if (ok && serverEnabled(serverId)) {
+                    // Installation is enough to seed the preference. The active-buffer managed gate still
+                    // controls current availability, so neither stripe appears on an ineligible tab.
+                    ops.enableNavigationWindowsByDefault();
+                }
                 applyGating();
             });
         }

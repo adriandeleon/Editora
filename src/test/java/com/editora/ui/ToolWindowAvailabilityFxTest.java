@@ -67,6 +67,29 @@ class ToolWindowAvailabilityFxTest {
     }
 
     @Test
+    void aDetectedToolCanSeedVisibilityForAFirstTimeUser() throws Exception {
+        Rig r = FxTestSupport.callOnFx(ToolWindowAvailabilityFxTest::rig);
+        assertNull(storedPreference(r));
+
+        FxTestSupport.runOnFx(() -> r.manager().setVisibleIfUnset(r.tw(), true));
+
+        assertTrue(Boolean.TRUE.equals(storedPreference(r)));
+        assertTrue(FxTestSupport.callOnFx(() -> r.manager().isVisible(r.tw())));
+    }
+
+    @Test
+    void aDetectedToolDoesNotOverrideAnExplicitlyHiddenPreference() throws Exception {
+        Rig r = FxTestSupport.callOnFx(ToolWindowAvailabilityFxTest::rig);
+        FxTestSupport.runOnFx(() -> {
+            r.manager().setVisible(r.tw(), false);
+            r.manager().setVisibleIfUnset(r.tw(), true);
+        });
+
+        assertFalse(Boolean.TRUE.equals(storedPreference(r)));
+        assertFalse(FxTestSupport.callOnFx(() -> r.manager().isVisible(r.tw())));
+    }
+
+    @Test
     void becomingAvailableAgainDoesNotResurrectAWindowTheUserHid() throws Exception {
         Rig r = FxTestSupport.callOnFx(ToolWindowAvailabilityFxTest::rig);
         FxTestSupport.runOnFx(() -> {

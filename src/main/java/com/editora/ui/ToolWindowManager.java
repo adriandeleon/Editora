@@ -570,6 +570,17 @@ public class ToolWindowManager {
         }
     }
 
+    /**
+     * Seeds a context-dependent visibility default without overriding a choice the user already made.
+     * Used when a tool's sensible default cannot be known at registration time (for example, GitHub after
+     * the asynchronous {@code gh} probe completes).
+     */
+    public void setVisibleIfUnset(ToolWindow tw, boolean visible) {
+        if (!config.getWorkspaceState().getToolWindowVisible().containsKey(tw.getId())) {
+            setVisible(tw, visible);
+        }
+    }
+
     /** Whether the stripe button should be present: the user keeps it visible AND it isn't context-hidden. */
     private boolean shouldShowButton(ToolWindow tw) {
         return ToolWindowVisibility.buttonShown(isVisible(tw), unavailable.contains(tw));
