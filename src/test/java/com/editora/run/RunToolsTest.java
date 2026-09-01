@@ -103,7 +103,8 @@ class RunToolsTest {
 
         List<ConsoleUrls.Link> links = ConsoleUrls.find(line);
 
-        assertEquals(List.of("http://localhost:4321/", "https://example.com/a_(b)"),
+        assertEquals(
+                List.of("http://localhost:4321/", "https://example.com/a_(b)"),
                 links.stream().map(ConsoleUrls.Link::url).toList());
         assertEquals(links.get(0), ConsoleUrls.at(line, line.indexOf("localhost")));
         assertNull(ConsoleUrls.at(line, 0));

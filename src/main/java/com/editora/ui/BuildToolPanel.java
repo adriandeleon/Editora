@@ -187,7 +187,8 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
                 if (link.start() > offset) {
                     builder.add(styleClass == null ? List.of() : List.of(styleClass), link.start() - offset);
                 }
-                builder.add(styleClass == null ? List.of("console-url") : List.of(styleClass, "console-url"),
+                builder.add(
+                        styleClass == null ? List.of("console-url") : List.of(styleClass, "console-url"),
                         link.end() - link.start());
                 offset = link.end();
             }

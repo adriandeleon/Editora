@@ -38,6 +38,7 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
     private int fontSize;
     /** The clicked-stack-trace-link handler shared by every console. */
     private Consumer<StackTraceLinks.Link> onLink;
+
     private Consumer<String> onUrl;
 
     public BuildOutputPanel() {
