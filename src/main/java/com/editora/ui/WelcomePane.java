@@ -21,6 +21,7 @@ import javafx.scene.layout.VBox;
 import com.editora.AppInfo;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
+import com.editora.config.Project;
 import com.editora.config.RecentFiles;
 import com.editora.editor.TabContent;
 import com.editora.vfs.RemoteConnection;
@@ -46,6 +47,7 @@ public final class WelcomePane extends Region implements TabContent {
     private final CommandRegistry registry;
     private final KeymapManager keymap;
     private final RecentFiles recentFiles;
+    private final Supplier<List<Project>> projects;
     private final Consumer<Path> onOpenRecent;
     private final Consumer<String> openUrl;
     private final BooleanSupplier projectsEnabled;
@@ -70,6 +72,7 @@ public final class WelcomePane extends Region implements TabContent {
             CommandRegistry registry,
             KeymapManager keymap,
             RecentFiles recentFiles,
+            Supplier<List<Project>> projects,
             Consumer<Path> onOpenRecent,
             Consumer<String> openUrl,
             BooleanSupplier projectsEnabled,
@@ -80,6 +83,7 @@ public final class WelcomePane extends Region implements TabContent {
         this.registry = registry;
         this.keymap = keymap;
         this.recentFiles = recentFiles;
+        this.projects = projects;
         this.onOpenRecent = onOpenRecent;
         this.openUrl = openUrl;
         this.projectsEnabled = projectsEnabled;
@@ -276,7 +280,14 @@ public final class WelcomePane extends Region implements TabContent {
             link.getStyleClass().add("welcome-link");
             Label dir = new Label(parentText(p));
             dir.getStyleClass().add("welcome-recent-dir");
-            HBox row = new HBox(8, link, dir);
+            HBox row = new HBox(8, link);
+            RecentProject.containing(p, projects == null ? List.of() : projects.get())
+                    .ifPresent(project -> {
+                        Label projectName = new Label(project.name());
+                        projectName.getStyleClass().add("recent-project-name");
+                        row.getChildren().add(projectName);
+                    });
+            row.getChildren().add(dir);
             row.setAlignment(Pos.BASELINE_LEFT);
             Tooltip.install(row, new Tooltip(p.toString()));
             link.setOnAction(e -> onOpenRecent.accept(p));

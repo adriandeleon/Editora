@@ -38,6 +38,7 @@ class WelcomeZoomFxTest {
                     new CommandRegistry(),
                     new KeymapManager(),
                     new RecentFiles(configDir),
+                    List::of,
                     p -> {},
                     u -> {},
                     () -> true,
