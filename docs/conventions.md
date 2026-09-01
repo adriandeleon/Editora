@@ -106,5 +106,6 @@ well-covered pure packages — when you raise a package's coverage, ratchet its 
 
 A feature PR updates `CHANGELOG.md`, `README.md`, and `TODO.md` in the same change, not as a
 follow-up. User-facing documentation lives in the separate website repo; **this `docs/` folder
-is for developers**. Keep `CLAUDE.md` (the dense, exhaustive reference) accurate too — but
-prefer linking these docs from it over re-explaining.
+is for developers**. Keep `AGENTS.md` concise and operational. Put durable explanations in the
+focused guides and preserve established implementation detail in the
+[reference catalogs](reference/README.md).

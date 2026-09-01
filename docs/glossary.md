@@ -2,7 +2,8 @@
 
 The recurring Editora-specific terms a new contributor will hit, with one place each to go read
 more. Back to [the docs index](README.md). When a definition here disagrees with the code, the
-code wins — see the root [`CLAUDE.md`](../CLAUDE.md) for the exhaustive reference.
+code wins — see the [architecture catalog](reference/architecture-catalog.md) for the exhaustive
+reference.
 
 ---
 

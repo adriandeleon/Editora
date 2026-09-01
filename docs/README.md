@@ -3,8 +3,9 @@
 Guides for working **on** Editora. User-facing documentation lives in the separate website
 repository; this folder is for contributors.
 
-The exhaustive, terse subsystem reference is the root [`CLAUDE.md`](../CLAUDE.md). These guides
-are the readable distillation of it — when they disagree with the code, the code wins.
+The root [`AGENTS.md`](../AGENTS.md) is the concise operational guide. These pages hold the durable
+architecture and contributor guidance; the exhaustive historical notes are preserved in
+[`reference/`](reference/README.md). When documentation disagrees with the code, the code wins.
 
 ## Start here
 
@@ -59,3 +60,8 @@ are the readable distillation of it — when they disagree with the code, the co
 - [testing.md](testing.md) — pure tests, the headless-FX harness (JavaFX 26's built-in Headless
   platform), the JaCoCo floors.
 - [release.md](release.md) — cutting a release and the CI matrix.
+
+## Detailed reference
+
+- [reference/](reference/README.md) — exhaustive command, release, architecture, convention, and
+  packaging catalogs retained for established subsystem details and implementation history.
