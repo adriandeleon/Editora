@@ -202,7 +202,7 @@ public final class ConfigWriter {
      * those keep the mode of the file they find.
      *
      * <p><b>Use this for anything derived from the config dir.</b> Config data is not public:
-     * {@code settings.toml} holds the AI provider's <em>API key</em> — a billable credential — and
+     * {@code settings.json} holds the AI provider's <em>API key</em> — a billable credential — and
      * {@code notes.json} holds the user's private notes. The default umask leaves a new file world-readable
      * (0644) in a directory that is itself world-traversable (0755), so any other account on the machine can
      * simply read the key out. That applies just as much to a <em>copy</em>: the config export writes a zip of

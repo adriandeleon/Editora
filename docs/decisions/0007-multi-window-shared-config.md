@@ -23,7 +23,7 @@ split in two:
 
 ## Consequences
 
-- A `config.save()` from any window writes `settings.toml` + that window's session file without
+- A `config.save()` from any window writes `settings.json` + that window's session file without
   clobbering another window's in-memory copy. A settings change broadcasts via
   `WindowManager.broadcastSettingsApplied()`.
 - `config.getBookmarks()/getNotes()/getBreakpoints()` return the bucket for *this* window's

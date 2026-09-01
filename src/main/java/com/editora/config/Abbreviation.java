@@ -3,7 +3,7 @@ package com.editora.config;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
- * One user-defined abbreviation: a short word and the text it expands to. Persisted in {@code settings.toml}
+ * One user-defined abbreviation: a short word and the text it expands to. Persisted in {@code abbreviations.json}
  * as an entry of {@link Settings#getAbbreviations()}; a mutable POJO so the Settings editor can edit it in
  * place, mirroring {@code externalTool.ExternalTool} / {@code todo.TodoPattern}.
  */

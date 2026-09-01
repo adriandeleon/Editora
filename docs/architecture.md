@@ -76,7 +76,7 @@ Config is split:
   is per-window and owns only that window's session (`WorkspaceState` + its
   `workspaceStateFile`), delegating everything shared to `SharedConfig`.
 
-So a `config.save()` from any window writes `settings.toml` + that window's session file
+So a `config.save()` from any window writes `settings.json` + that window's session file
 without clobbering another window's in-memory copy. A settings change in one window
 broadcasts to all via `WindowManager.broadcastSettingsApplied()`. See
 [config-and-schema](conventions.md#config-and-schema) for the storage details, and the
@@ -86,7 +86,7 @@ broadcasts to all via `WindowManager.broadcastSettingsApplied()`. See
 flowchart LR
     subgraph shared["SharedConfig — one instance, shared by reference"]
         direction TB
-        S["Settings (settings.toml)"]
+        S["Settings (settings.json)"]
         ST["bookmark / note / breakpoint /<br/>connection / macro stores"]
         PM["ProjectManager index"]
     end

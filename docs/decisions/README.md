@@ -11,7 +11,7 @@ rather than rewriting history.
 | --- | --- | --- |
 | [0001](0001-richtextfx-fork.md) | Fork RichTextFX for multiple cursors, vendor it in `m2-repo/` | Accepted |
 | [0002](0002-native-cli-git.md) | Native-CLI git (shell out), not JGit | Accepted |
-| [0003](0003-toml-settings-json-session.md) | TOML for settings, JSON for session + stores | Accepted |
+| [0003](0003-toml-settings-json-session.md) | TOML for settings, JSON for session + stores | Superseded by 0011 |
 | [0004](0004-textmate-grammars.md) | TextMate grammars via tm4e, not a hand-written highlighter | Accepted |
 | [0005](0005-in-scene-overlays.md) | In-scene overlays (`OverlayHost`), not `javafx.stage.Popup` | Accepted |
 | [0006](0006-headless-awt-guard.md) | Force `java.awt.headless=true` before anything else | Accepted |
@@ -19,6 +19,7 @@ rather than rewriting history.
 | [0008](0008-feature-coordinators.md) | Decompose `MainController` into feature coordinators | Accepted (ongoing) |
 | [0009](0009-plugins-no-modulelayer.md) | Plugins via a child `URLClassLoader`, no `ModuleLayer` | Accepted |
 | [0010](0010-builtin-headless-test-platform.md) | JavaFX 26 built-in Headless test platform, drop self-built Monocle | Accepted |
+| [0011](0011-json-settings.md) | JSON for global and project settings | Accepted |
 
 ## Writing a new one
 

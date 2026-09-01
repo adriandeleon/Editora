@@ -21,7 +21,7 @@ Two serialization formats, chosen per file:
 
 | File | Format | POJO / store | Notes |
 | --- | --- | --- | --- |
-| `settings.toml` | TOML (Jackson `TomlMapper`) | `Settings` | App-wide preferences. |
+| `settings.json` | JSON | `Settings` | App-wide preferences. |
 | `workspace-state.json` | JSON | `WorkspaceState` | The no-project window's session. |
 | `projects/<id>.json` | JSON | `WorkspaceState` | One project window's session. |
 | `windows/<uuid>.json` | JSON | `WorkspaceState` | An untitled "New Window" session. |
@@ -37,7 +37,12 @@ Two serialization formats, chosen per file:
 | `search-history.json` | JSON | `SearchHistory` | Find-in-Files history. |
 | `dictionary.txt` | plain text | (in-memory `Set<String>`) | User spell-check words, one per line. |
 
-`settings.toml` was a clean cut from a pre-existing `settings.json` — there is no JSON→TOML migration. The bundled keymap and TextMate grammars stay JSON but are app *resources*, not user config, so they are out of scope here.
+On first launch after the format change, `SharedConfig.loadSettings()` converts a legacy
+`settings.toml` when `settings.json` is absent. It reads the TOML through the ordinary versioned
+migration pipeline, atomically writes the complete JSON replacement, and only then removes TOML.
+If writing fails, the launch still uses the migrated in-memory values and leaves TOML for a retry;
+if both files exist, JSON wins. Project-local `.editora/settings.toml` remains readable and is
+converted by the explicit **Edit Project Settings** action.
 
 ## SharedConfig vs ConfigManager
 
@@ -46,7 +51,7 @@ The config is split in two so that multiple windows can run over the same prefer
 - [`SharedConfig`](../../src/main/java/com/editora/config/SharedConfig.java) — the **app-wide** half: the `Settings` object, the bucketed stores (`BookmarkStore`/`NoteStore`/`BreakpointStore`/`HistoryStore`), `ConnectionStore`, `MacroStore`, `PluginStore`, the user spell dictionary, and the `ProjectManager` index. A single instance is created once at startup and held **by reference** across every window. It owns the `ConfigWriter` (below) and the file-location getters (`getSettingsFile()`, `getBookmarksFile()`, …).
 - [`ConfigManager`](../../src/main/java/com/editora/config/ConfigManager.java) — the **per-window** half: it owns only that window's `WorkspaceState` and the `workspaceStateFile` it lives in, and delegates everything shared to its `SharedConfig`. In single-window/test use a `ConfigManager` constructs its own `SharedConfig`.
 
-So a `save()` from any window writes `settings.toml` plus that window's session file without touching another window's in-memory copy.
+So a `save()` from any window writes `settings.json` plus that window's session file without touching another window's in-memory copy.
 
 ### Per-window session and per-project buckets
 
@@ -62,7 +67,7 @@ Bookmarks were deliberately moved out of `WorkspaceState` into their own `bookma
 
 ## ConfigWriter: off-FX-thread atomic writes
 
-[`ConfigWriter`](../../src/main/java/com/editora/config/ConfigWriter.java) performs all `settings.toml` and session writes off the JavaFX thread on a single `config-writer` daemon thread.
+[`ConfigWriter`](../../src/main/java/com/editora/config/ConfigWriter.java) performs all `settings.json` and session writes off the JavaFX thread on a single `config-writer` daemon thread.
 
 The contract: callers serialize a **consistent snapshot to bytes on their own thread** (the FX thread is single-threaded, so reading the config POJOs needs no locking) and hand the immutable bytes to the writer. Each write is a **temp-file + atomic move** (`writeAtomic`), so a crash mid-write never leaves a half-written config.
 
@@ -71,7 +76,7 @@ Two paths:
 - `enqueue(file, bytes)` — non-blocking and **coalesced per file** (latest bytes win), via `ConfigManager.saveAsync()` → `SharedConfig.enqueueSettings()`. This backs the frequent in-session save (`MainController.requestSave`).
 - `flush()` — blocks until everything queued has landed, via `ConfigManager.save()` → `SharedConfig.flushWrites()`. This is the durable form used by quit (`persistSession`), one-off actions, and `exportConfig()`. `App.start` registers a JVM-shutdown flush.
 
-`settings.toml` and `workspace-state.json` are the only files with both an async and a sync writer, and **both funnel through the one writer queue**. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. The other stores (`bookmarks.json`, `notes.json`, …) keep their own direct synchronous `json.writeValue` calls in `SharedConfig` and don't go through the queue.
+`settings.json` and `workspace-state.json` are the only files with both an async and a sync writer, and **both funnel through the one writer queue**. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. The other stores (`bookmarks.json`, `notes.json`, …) keep their own direct synchronous `json.writeValue` calls in `SharedConfig` and don't go through the queue.
 
 ## Schema versioning and migrations
 
@@ -89,7 +94,7 @@ For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (45) with ident
 
 ### The engine: `ConfigMigrations.readVersioned`
 
-[`ConfigMigrations.readVersioned(file, mapper, defaults, schema)`](../../src/main/java/com/editora/config/migration/ConfigMigrations.java) is the single read path (mapper-agnostic, so it works for both `TomlMapper` and the JSON `ObjectMapper` — `TomlMapper` produces ordinary Jackson nodes):
+[`ConfigMigrations.readVersioned(file, mapper, defaults, schema)`](../../src/main/java/com/editora/config/migration/ConfigMigrations.java) is the single read path. It is mapper-agnostic, so the same migrations also process the legacy TOML file before conversion because `TomlMapper` produces ordinary Jackson nodes:
 
 1. Missing/unreadable/empty → return `defaults`.
 2. Parse to a Jackson tree.

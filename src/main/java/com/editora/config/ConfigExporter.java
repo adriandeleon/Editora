@@ -64,7 +64,7 @@ public final class ConfigExporter {
      * forward-slash separators) into {@code destinationDir/<zipName>} and returns the created file.
      * A missing/empty config dir yields a valid empty zip. {@code destinationDir} must exist.
      *
-     * <p>The zip is created <b>owner-only</b>: it contains a copy of {@code settings.toml} — and so of the AI
+     * <p>The zip is created <b>owner-only</b>: it contains a copy of {@code settings.json} — and so of the AI
      * provider's API key — plus the user's private notes, and it lands in their home directory, which is
      * world-traversable. Locking down the config dir's own files while writing a world-readable archive of
      * them next door would protect nothing.

@@ -32,9 +32,9 @@ import com.fasterxml.jackson.dataformat.toml.TomlMapper;
  */
 public class SharedConfig {
 
-    /** TOML for preferences. */
-    private final TomlMapper toml = new TomlMapper();
-    /** Pretty JSON for the bucketed stores. */
+    /** Legacy TOML reader used only for the one-time {@code settings.toml} migration. */
+    private final TomlMapper legacyToml = new TomlMapper();
+    /** Pretty JSON for preferences and the bucketed stores. */
     private final ObjectMapper json = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
     private final Path configDir;
@@ -94,7 +94,7 @@ public class SharedConfig {
 
     /** Reads all shared config files, merging stored values onto defaults. Falls back to defaults on error. */
     public void load() {
-        settings = ConfigMigrations.readVersioned(getSettingsFile(), toml, new Settings(), ConfigSchema.SETTINGS);
+        settings = loadSettings();
         loadBookmarks();
         loadBreakpoints();
         loadHistory();
@@ -107,11 +107,40 @@ public class SharedConfig {
         loadUserDictionary();
     }
 
+    /**
+     * Loads JSON preferences, converting the legacy TOML file once when JSON does not yet exist.
+     *
+     * <p>The legacy file is removed only after the complete JSON replacement has been written atomically.
+     * If the write fails, this launch still uses the TOML values and the next launch can retry; an existing
+     * JSON file always wins so a stale legacy copy can never roll settings back.
+     */
+    private Settings loadSettings() {
+        Path file = getSettingsFile();
+        Path legacy = getLegacySettingsFile();
+        if (!Files.exists(file) && Files.isReadable(legacy)) {
+            Settings migrated =
+                    ConfigMigrations.readVersioned(legacy, legacyToml, new Settings(), ConfigSchema.SETTINGS);
+            try {
+                ConfigWriter.writeAtomic(file, json, migrated);
+            } catch (IOException ignored) {
+                // Keep using the values read from TOML. Leaving it in place makes migration retryable.
+                return migrated;
+            }
+            try {
+                Files.deleteIfExists(legacy);
+            } catch (IOException ignored) {
+                // JSON now wins on every later launch; a stale legacy copy is harmless.
+            }
+            return migrated;
+        }
+        return ConfigMigrations.readVersioned(file, json, new Settings(), ConfigSchema.SETTINGS);
+    }
+
     public Settings getSettings() {
         return settings;
     }
 
-    /** Writes preferences to {@code settings.toml} synchronously (serialize now, then block until written). */
+    /** Writes preferences to {@code settings.json} synchronously (serialize now, then block until written). */
     public void saveSettings() {
         enqueueSettings();
         writer.flush();
@@ -127,14 +156,14 @@ public class SharedConfig {
         return writer;
     }
 
-    /** Serializes the current preferences and queues a write to {@code settings.toml} (non-blocking). */
+    /** Serializes the current preferences and queues a write to {@code settings.json} (non-blocking). */
     void enqueueSettings() {
         writer.enqueue(getSettingsFile(), settingsBytes());
     }
 
     private byte[] settingsBytes() {
         try {
-            return toml.writeValueAsBytes(settings);
+            return json.writeValueAsBytes(settings);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new UncheckedIOException("Failed to serialize settings", e);
         }
@@ -170,6 +199,10 @@ public class SharedConfig {
 
     public Path getSettingsFile() {
         return configDir.resolve(ConfigManager.SETTINGS_FILE_NAME);
+    }
+
+    Path getLegacySettingsFile() {
+        return configDir.resolve(ConfigManager.LEGACY_SETTINGS_FILE_NAME);
     }
 
     public Path getBookmarksFile() {

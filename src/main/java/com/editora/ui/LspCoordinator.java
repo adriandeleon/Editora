@@ -724,7 +724,7 @@ final class LspCoordinator {
     }
 
     /**
-     * This window's project overrides, from the committed {@code .editora/settings.toml} (#771).
+     * This window's project overrides, from the committed {@code .editora/settings.json} (#771).
      *
      * <p>Cached per project root because these are read on every gating pass, and a settings apply re-runs
      * gating for every open buffer — re-reading a file each time would be disk I/O on the FX thread for a
@@ -737,8 +737,7 @@ final class LspCoordinator {
         }
         if (!root.equals(projectSettingsRoot)) {
             projectSettingsRoot = root;
-            projectSettingsCache = com.editora.config.ProjectSettings.load(
-                    new com.fasterxml.jackson.dataformat.toml.TomlMapper(), root);
+            projectSettingsCache = com.editora.config.ProjectSettings.load(root);
         }
         return projectSettingsCache;
     }

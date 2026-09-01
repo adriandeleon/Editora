@@ -802,7 +802,7 @@ print and exit without opening a window. Works on macOS, Linux, and Windows.
 
 ## Configuration
 
-User preferences live in `~/.editora/settings.toml` (font, theme, keymap, tab size,
+User preferences live in `~/.editora/settings.json` (font, theme, keymap, tab size,
 view options, auto-save mode, and keybinding overrides). Session state — collapsed fold
 regions and tool-window layout — is stored as JSON in `workspace-state.json`, recent
 files in `recent-files.json`, bookmarks and breakpoints (scoped per project) in `bookmarks.json` /

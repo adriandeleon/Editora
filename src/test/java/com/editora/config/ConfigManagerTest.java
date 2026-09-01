@@ -5,6 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,7 +25,7 @@ class ConfigManagerTest {
     }
 
     @Test
-    void savesAndReloadsSettingsAsToml(@TempDir Path dir) {
+    void savesAndReloadsSettingsAsJson(@TempDir Path dir) {
         ConfigManager config = new ConfigManager(dir);
         config.load();
         config.getSettings().setTabSize(8);
@@ -33,26 +35,26 @@ class ConfigManagerTest {
         Settings reloaded = new ConfigManager(dir).load();
         assertEquals(8, reloaded.getTabSize());
         assertEquals("light", reloaded.getTheme());
-        assertTrue(Files.exists(dir.resolve("settings.toml")));
+        assertTrue(Files.exists(dir.resolve("settings.json")));
     }
 
     @Test
-    void partialTomlMergesOntoDefaults(@TempDir Path dir) throws IOException {
-        Files.writeString(dir.resolve("settings.toml"), "fontSize = 20\n");
+    void partialJsonMergesOntoDefaults(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("settings.json"), "{\"fontSize\": 20}");
         Settings settings = new ConfigManager(dir).load();
         assertEquals(20, settings.getFontSize());
         assertEquals("emacs", settings.getKeymap()); // untouched default
     }
 
     @Test
-    void malformedTomlFallsBackToDefaults(@TempDir Path dir) throws IOException {
-        Files.writeString(dir.resolve("settings.toml"), "this is = = not toml [[[");
+    void malformedJsonFallsBackToDefaults(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("settings.json"), "{ this is not JSON");
         Settings settings = new ConfigManager(dir).load();
         assertEquals(14, settings.getFontSize());
     }
 
     @Test
-    void keybindingChordKeysRoundTripInToml(@TempDir Path dir) {
+    void keybindingChordKeysRoundTripInJson(@TempDir Path dir) {
         ConfigManager config = new ConfigManager(dir);
         config.load();
         config.getSettings().getKeybindings().put("C-x C-s", "file.save");
@@ -60,6 +62,39 @@ class ConfigManagerTest {
 
         Settings reloaded = new ConfigManager(dir).load();
         assertEquals("file.save", reloaded.getKeybindings().get("C-x C-s"));
+    }
+
+    @Test
+    void legacyTomlIsMigratedAtomicallyToJson(@TempDir Path dir) throws IOException {
+        Path legacy = dir.resolve("settings.toml");
+        Settings old = new Settings();
+        old.setFontSize(20);
+        old.setTheme("light");
+        old.setKeybindings(java.util.Map.of("C-x C-s", "file.save"));
+        new TomlMapper().writeValue(legacy.toFile(), old);
+
+        Settings settings = new ConfigManager(dir).load();
+
+        assertEquals(20, settings.getFontSize());
+        assertEquals("light", settings.getTheme());
+        assertEquals("file.save", settings.getKeybindings().get("C-x C-s"));
+        assertTrue(Files.exists(dir.resolve("settings.json")), "JSON replacement written");
+        assertFalse(Files.exists(legacy), "legacy file removed only after replacement");
+        var json = new ObjectMapper().readTree(dir.resolve("settings.json").toFile());
+        assertEquals(20, json.get("fontSize").asInt());
+        assertEquals("light", json.get("theme").asText());
+        assertEquals("file.save", json.get("keybindings").get("C-x C-s").asText());
+    }
+
+    @Test
+    void existingJsonWinsOverStaleLegacyToml(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("settings.json"), "{\"fontSize\": 18}");
+        Files.writeString(dir.resolve("settings.toml"), "fontSize = 30\n");
+
+        Settings settings = new ConfigManager(dir).load();
+
+        assertEquals(18, settings.getFontSize());
+        assertTrue(Files.exists(dir.resolve("settings.toml")), "unused legacy file is not touched");
     }
 
     @Test

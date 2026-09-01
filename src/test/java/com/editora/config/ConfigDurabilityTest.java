@@ -75,10 +75,10 @@ class ConfigDurabilityTest {
         // a newer config. But the backup used to be SKIPPED when one already existed — so on the second
         // downgrade the newer file was left in place for the next save to overwrite, and the only copy on disk
         // was the stale one from the first downgrade. Alternating beta/stable ate the user's settings.
-        Path file = dir.resolve("settings.toml");
+        Path file = dir.resolve("settings.json");
         Files.writeString(file, "first newer version");
         ConfigMigrations.backup(file, 99);
-        assertEquals("first newer version", Files.readString(dir.resolve("settings.toml.v99.bak")));
+        assertEquals("first newer version", Files.readString(dir.resolve("settings.json.v99.bak")));
 
         Files.writeString(file, "second, re-customized newer version");
         ConfigMigrations.backup(file, 99);
@@ -86,11 +86,11 @@ class ConfigDurabilityTest {
         assertFalse(Files.exists(file), "the newer file was moved out of the way, not left to be overwritten");
         assertEquals(
                 "first newer version",
-                Files.readString(dir.resolve("settings.toml.v99.bak")),
+                Files.readString(dir.resolve("settings.json.v99.bak")),
                 "the first backup is intact");
         assertEquals(
                 "second, re-customized newer version",
-                Files.readString(dir.resolve("settings.toml.v99.bak.2")),
+                Files.readString(dir.resolve("settings.json.v99.bak.2")),
                 "and the second is kept alongside it, not dropped on the floor");
     }
 

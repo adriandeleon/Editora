@@ -19,9 +19,7 @@ class ConfigVersioningTest {
         ConfigManager cfg = new ConfigManager(dir);
         cfg.load();
         cfg.save();
-        assertTrue(
-                Files.readString(cfg.getSettingsFile()).contains("schemaVersion = " + Settings.SCHEMA_VERSION),
-                "settings.toml is stamped");
+        assertTrue(Files.readString(cfg.getSettingsFile()).contains("\"schemaVersion\""), "settings.json is stamped");
         assertTrue(
                 Files.readString(cfg.getWorkspaceStateFile()).contains("\"schemaVersion\""),
                 "workspace-state.json is stamped");
@@ -29,15 +27,15 @@ class ConfigVersioningTest {
 
     @Test
     void unversionedSettingsLoadCleanlyAndAreStampedOnSave(@TempDir Path dir) throws Exception {
-        // A pre-versioning settings.toml (no schemaVersion key) reads normally.
-        Files.writeString(dir.resolve("settings.toml"), "fontFamily = \"Iosevka\"\nfontSize = 17\n");
+        // A pre-versioning settings.json (no schemaVersion key) reads normally.
+        Files.writeString(dir.resolve("settings.json"), "{\"fontFamily\": \"Iosevka\", \"fontSize\": 17}");
         ConfigManager cfg = new ConfigManager(dir);
         Settings s = cfg.load();
         assertEquals("Iosevka", s.getFontFamily());
         assertEquals(17, s.getFontSize());
         assertEquals(Settings.SCHEMA_VERSION, s.getSchemaVersion(), "stamped to current on load");
         cfg.save();
-        assertTrue(Files.readString(cfg.getSettingsFile()).contains("schemaVersion = "));
+        assertTrue(Files.readString(cfg.getSettingsFile()).contains("\"schemaVersion\""));
     }
 
     @Test
@@ -46,12 +44,12 @@ class ConfigVersioningTest {
         // being in the future the moment the schema is bumped, and the test then asserts nothing.
         int future = Settings.SCHEMA_VERSION + 1;
         Files.writeString(
-                dir.resolve("settings.toml"), "schemaVersion = " + future + "\nfontFamily = \"FromTheFuture\"\n");
+                dir.resolve("settings.json"), "{\"schemaVersion\": " + future + ", \"fontFamily\": \"FromTheFuture\"}");
         ConfigManager cfg = new ConfigManager(dir);
         Settings s = cfg.load();
         assertEquals(new Settings().getFontFamily(), s.getFontFamily(), "defaults used, not the future font");
-        assertFalse(Files.exists(dir.resolve("settings.toml")), "too-new file moved aside");
-        assertTrue(Files.exists(dir.resolve("settings.toml.v" + future + ".bak")), "backed up for safety");
+        assertFalse(Files.exists(dir.resolve("settings.json")), "too-new file moved aside");
+        assertTrue(Files.exists(dir.resolve("settings.json.v" + future + ".bak")), "backed up for safety");
     }
 
     @Test

@@ -47,7 +47,7 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 ## Decisions
 
 - [decisions/](decisions/README.md) — architecture decision records: the *why* behind the
-  unusual choices (the RichTextFX fork, native-CLI git, TOML settings, TextMate highlighting,
+  unusual choices (the RichTextFX fork, native-CLI git, JSON settings, TextMate highlighting,
   in-scene overlays, the headless-AWT guard, multi-window config, feature coordinators, the
   plugin classloader, the headless test platform).
 

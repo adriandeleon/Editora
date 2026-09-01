@@ -91,9 +91,9 @@ class ConfigMigrationsTest {
 
     @Test
     void backupDoesNotClobberAnExistingBak(@TempDir Path dir) throws Exception {
-        Path f = dir.resolve("settings.toml");
+        Path f = dir.resolve("settings.json");
         Files.writeString(f, "new");
-        Path bak = dir.resolve("settings.toml.v2.bak");
+        Path bak = dir.resolve("settings.json.v2.bak");
         Files.writeString(bak, "original-backup");
         ConfigMigrations.backup(f, 2);
         assertEquals("original-backup", Files.readString(bak), "first backup is preserved");

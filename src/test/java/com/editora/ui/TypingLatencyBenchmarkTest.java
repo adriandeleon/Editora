@@ -265,12 +265,12 @@ class TypingLatencyBenchmarkTest {
     void leakVsSettings() throws Exception {
         String[][] cases = {
             {"defaults", ""},
-            {"columnRuler off", "showColumnRuler=false\n"},
-            {"ruler+minimap+ws off", "showColumnRuler=false\nshowMinimap=false\nshowWhitespace=false\n"},
+            {"columnRuler off", "\"showColumnRuler\":false"},
+            {"ruler+minimap+ws off", "\"showColumnRuler\":false,\"showMinimap\":false,\"showWhitespace\":false"},
         };
         for (String[] c : cases) {
             Path dir = Files.createTempDirectory("editora-leaks");
-            Files.writeString(dir.resolve("settings.toml"), "schemaVersion = 93\n" + c[1]);
+            Files.writeString(dir.resolve("settings.json"), settingsJson(c[1]));
             Path file = Files.createTempFile("editora-leaks-", ".java");
             Files.writeString(file, sample(400));
             FxWindowFixture w = FxWindowFixture.create(dir, false, false, false, List.of(), true, x -> {});
@@ -307,7 +307,7 @@ class TypingLatencyBenchmarkTest {
     void leakVsMultiCaret() throws Exception {
         for (String mc : new String[] {"true", "false"}) {
             Path dir = Files.createTempDirectory("editora-mc");
-            Files.writeString(dir.resolve("settings.toml"), "schemaVersion = 93\nmultiCaret=" + mc + "\n");
+            Files.writeString(dir.resolve("settings.json"), settingsJson("\"multiCaret\":" + mc));
             Path file = Files.createTempFile("editora-mc-", ".java");
             Files.writeString(file, sample(400));
             FxWindowFixture w = FxWindowFixture.create(dir, false, false, false, List.of(), true, x -> {});
@@ -674,20 +674,22 @@ class TypingLatencyBenchmarkTest {
             {"defaults", ""},
             {
                 "all suspects off",
-                "spellCheck=false\ntodoHighlight=false\nautocomplete=false\nshowMinimap=false\n"
-                        + "notesSupport=false\nshowNoteIndicators=false\nmarkdownLint=false\n"
-                        + "editorConfigSupport=false\nmultiCaret=false\n"
+                "\"spellCheck\":false,\"todoHighlight\":false,\"autocomplete\":false,"
+                        + "\"showMinimap\":false,\"notesSupport\":false,"
+                        + "\"showNoteIndicators\":false,\"markdownLint\":false,"
+                        + "\"editorConfigSupport\":false,\"multiCaret\":false"
             },
-            {"spellCheck off", "spellCheck=false\n"},
-            {"todoHighlight off", "todoHighlight=false\n"},
-            {"autocomplete off", "autocomplete=false\n"},
-            {"minimap off", "showMinimap=false\n"},
-            {"notes off", "notesSupport=false\nshowNoteIndicators=false\n"},
-            {"simple (no gutter)", "simpleMode=true\n"},
+            {"spellCheck off", "\"spellCheck\":false"},
+            {"todoHighlight off", "\"todoHighlight\":false"},
+            {"autocomplete off", "\"autocomplete\":false"},
+            {"minimap off", "\"showMinimap\":false"},
+            {"notes off", "\"notesSupport\":false,\"showNoteIndicators\":false"},
+            {"simple (no gutter)", "\"simpleMode\":true"},
             {
                 "simple + all off",
-                "simpleMode=true\nspellCheck=false\ntodoHighlight=false\nautocomplete=false\n"
-                        + "showMinimap=false\nnotesSupport=false\nshowNoteIndicators=false\n"
+                "\"simpleMode\":true,\"spellCheck\":false,\"todoHighlight\":false,"
+                        + "\"autocomplete\":false,\"showMinimap\":false,"
+                        + "\"notesSupport\":false,\"showNoteIndicators\":false"
             },
         };
         String only = System.getProperty("bench.case", "");
@@ -697,7 +699,7 @@ class TypingLatencyBenchmarkTest {
         String text = sample(2_000);
         for (String[] c : cases) {
             Path dir = Files.createTempDirectory("editora-bisect");
-            Files.writeString(dir.resolve("settings.toml"), "schemaVersion = 93\n" + c[1]);
+            Files.writeString(dir.resolve("settings.json"), settingsJson(c[1]));
             Path file = Files.createTempFile("editora-bisect-", ".java");
             Files.writeString(file, text);
             FxWindowFixture w = FxWindowFixture.create(dir, false, false, false, List.of(), true, x -> {});
@@ -806,6 +808,10 @@ class TypingLatencyBenchmarkTest {
                 s.get((int) (s.size() * 0.90)),
                 s.get((int) (s.size() * 0.99)),
                 s.get(s.size() - 1));
+    }
+
+    private static String settingsJson(String fields) {
+        return "{\"schemaVersion\":93" + (fields.isBlank() ? "" : "," + fields) + "}";
     }
 
     private static String sample(int lines) {
