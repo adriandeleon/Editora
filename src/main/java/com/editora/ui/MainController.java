@@ -1384,6 +1384,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 registry,
                 keymap,
                 recentFiles,
+                () -> config.projects().list(),
                 this::openRecent,
                 this::openExternalUrl,
                 this::projectsEnabled,
@@ -2229,6 +2230,13 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** A recent-file menu entry: filename label that opens the file, plus an inline ✕ icon to remove it. */
     private CustomMenuItem recentMenuItem(Path path) {
         Label name = new Label(path.getFileName().toString());
+        Label projectName = RecentProject.containing(path, config.projects().list())
+                .map(project -> {
+                    Label label = new Label(project.name());
+                    label.getStyleClass().add("recent-project-name");
+                    return label;
+                })
+                .orElse(null);
         Button removeBtn = new Button();
         removeBtn.setGraphic(Icons.trash());
         removeBtn.getStyleClass().addAll("button-icon", "flat", "recent-remove");
@@ -2241,7 +2249,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox box = new HBox(8, name, spacer, removeBtn);
+        HBox box = new HBox(8, name);
+        if (projectName != null) {
+            box.getChildren().add(projectName);
+        }
+        box.getChildren().addAll(spacer, removeBtn);
         box.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         box.setPrefWidth(220);
 
