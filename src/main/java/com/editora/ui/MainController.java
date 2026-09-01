@@ -4385,6 +4385,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void enableNavigationWindowsByDefault() {
+                    if (referencesToolWindow != null) {
+                        toolWindows.setVisibleIfUnset(referencesToolWindow, true);
+                    }
+                    if (hierarchyToolWindow != null) {
+                        toolWindows.setVisibleIfUnset(hierarchyToolWindow, true);
+                    }
+                }
+
+                @Override
                 public void openReferencesWindow() {
                     if (referencesToolWindow != null) {
                         toolWindows.open(referencesToolWindow);
