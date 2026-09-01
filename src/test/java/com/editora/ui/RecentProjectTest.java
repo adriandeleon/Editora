@@ -1,14 +1,13 @@
 package com.editora.ui;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.nio.file.Path;
 import java.util.List;
 
+import com.editora.config.Project;
 import org.junit.jupiter.api.Test;
 
-import com.editora.config.Project;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RecentProjectTest {
     private static final Project OUTER = new Project("outer", "Editora", "/work/editora");
@@ -16,18 +15,23 @@ class RecentProjectTest {
 
     @Test
     void findsProjectContainingRecentFile() {
-        assertEquals(OUTER, RecentProject.containing(Path.of("/work/editora/src/App.java"), List.of(OUTER)).orElseThrow());
+        assertEquals(
+                OUTER,
+                RecentProject.containing(Path.of("/work/editora/src/App.java"), List.of(OUTER))
+                        .orElseThrow());
     }
 
     @Test
     void choosesMostSpecificProjectForNestedRoots() {
-        assertEquals(INNER, RecentProject.containing(
-                        Path.of("/work/editora/plugins/demo/Plugin.java"), List.of(OUTER, INNER))
-                .orElseThrow());
+        assertEquals(
+                INNER,
+                RecentProject.containing(Path.of("/work/editora/plugins/demo/Plugin.java"), List.of(OUTER, INNER))
+                        .orElseThrow());
     }
 
     @Test
     void doesNotMistakeSiblingPrefixForProjectMembership() {
-        assertTrue(RecentProject.containing(Path.of("/work/editora-old/README.md"), List.of(OUTER)).isEmpty());
+        assertTrue(RecentProject.containing(Path.of("/work/editora-old/README.md"), List.of(OUTER))
+                .isEmpty());
     }
 }

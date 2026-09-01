@@ -281,11 +281,12 @@ public final class WelcomePane extends Region implements TabContent {
             Label dir = new Label(parentText(p));
             dir.getStyleClass().add("welcome-recent-dir");
             HBox row = new HBox(8, link);
-            RecentProject.containing(p, projects == null ? List.of() : projects.get()).ifPresent(project -> {
-                Label projectName = new Label(project.name());
-                projectName.getStyleClass().add("recent-project-name");
-                row.getChildren().add(projectName);
-            });
+            RecentProject.containing(p, projects == null ? List.of() : projects.get())
+                    .ifPresent(project -> {
+                        Label projectName = new Label(project.name());
+                        projectName.getStyleClass().add("recent-project-name");
+                        row.getChildren().add(projectName);
+                    });
             row.getChildren().add(dir);
             row.setAlignment(Pos.BASELINE_LEFT);
             Tooltip.install(row, new Tooltip(p.toString()));
