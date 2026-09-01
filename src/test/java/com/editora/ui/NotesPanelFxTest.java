@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -70,6 +71,15 @@ class NotesPanelFxTest {
     @SuppressWarnings("unchecked")
     private static TreeView<Object> tree(NotesPanel p) {
         return (TreeView<Object>) FxTestSupport.<TreeView<?>>field(p, "tree");
+    }
+
+    @Test
+    void showsProjectScopeInformationBadge() throws Exception {
+        NotesPanel p = panel();
+        assertTrue(FxTestSupport.callOnFx(() -> p.lookupAll(".info-badge").stream()
+                .filter(Label.class::isInstance)
+                .map(Label.class::cast)
+                .anyMatch(label -> "ⓘ".equals(label.getText()))));
     }
 
     @Test

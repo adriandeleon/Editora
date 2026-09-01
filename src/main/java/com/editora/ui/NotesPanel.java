@@ -72,6 +72,8 @@ public class NotesPanel extends VBox implements ToolWindowContent {
 
     private record NoteRow(String projectKey, String fileKey, PersonalNote note) implements Row {}
 
+    private static final String SCOPE_HINT = tr("notes.scopeTip");
+
     private final Supplier<Scope> source;
     private final Actions actions;
     private final TextField filterField = new TextField();
@@ -116,7 +118,15 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         showAll.setSelected(true);
         showAll.selectedProperty().addListener((o, w, n) -> refresh());
 
-        header = new HBox(6, filterField, clear, showAll);
+        // An info badge explaining that personal notes are scoped per project.
+        Label info = new Label("ⓘ");
+        info.getStyleClass().add("info-badge");
+        Tooltip infoTip = new Tooltip(SCOPE_HINT);
+        infoTip.setWrapText(true);
+        infoTip.setMaxWidth(320);
+        Tooltip.install(info, infoTip);
+
+        header = new HBox(6, filterField, clear, showAll, info);
         header.getStyleClass().add("project-filter-bar");
         header.setAlignment(Pos.CENTER_LEFT);
 
