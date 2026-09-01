@@ -17,7 +17,7 @@ public final class Themes {
 
     /**
      * First-run default: the "Caret & Ink" flagship theme (UI Kit v1). Existing installs keep the
-     * theme already written into {@code settings.toml} — Jackson persists every modeled field, so
+     * theme already written into {@code settings.json} — Jackson persists every modeled field, so
      * only a fresh config dir picks this up. It is also the fallback for an unrecognized theme name.
      */
     public static final String DEFAULT = "Editora Light";

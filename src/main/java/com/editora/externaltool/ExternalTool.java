@@ -7,7 +7,7 @@ import java.util.Locale;
  * {@code command} (program) and {@code arguments} (both support {@code $Name$} macros — see
  * {@link ToolMacros}), an optional {@code workingDir} (blank ⇒ the file's directory), a {@link StdinSource}
  * (what to pipe to the process's stdin), and an {@link OutputTarget} (what to do with its stdout). A mutable
- * Jackson POJO so it round-trips in {@code settings.toml} as part of {@code Settings} (an array of tables).
+ * Jackson POJO so it round-trips in {@code settings.json} as part of {@code Settings}.
  */
 public class ExternalTool {
 

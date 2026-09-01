@@ -1,6 +1,6 @@
 # 0003 — TOML for settings, JSON for session + stores
 
-**Status:** Accepted
+**Status:** Superseded by [0011](0011-json-settings.md)
 
 ## Context
 
@@ -17,6 +17,9 @@ Preferences are meant to be hand-editable; session/stores are machine-managed.
   files. These are machine-managed, so editability doesn't matter and JSON is the lighter choice.
 
 ## Consequences
+
+This decision describes the historical TOML format. Editora now stores preferences in JSON; see
+[0011](0011-json-settings.md) for the replacement and migration behavior.
 
 - The switch to TOML for settings was a clean cut — a pre-existing `settings.json` is **not**
   migrated.

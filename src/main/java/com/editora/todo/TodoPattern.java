@@ -3,7 +3,7 @@ package com.editora.todo;
 /**
  * A user-configurable highlight pattern (IntelliJ-style "TODO" patterns): a display {@code name}, a
  * {@code pattern} (Java regex), a highlight {@code color} (web hex), and {@code caseSensitive}/{@code enabled}
- * flags. A mutable Jackson POJO so it round-trips in {@code settings.toml} as part of {@code Settings}
+ * flags. A mutable Jackson POJO so it round-trips in {@code settings.json} as part of {@code Settings}
  * (an array of tables); compiled to a {@link java.util.regex.Pattern} by {@link TodoPatterns}.
  */
 public class TodoPattern {

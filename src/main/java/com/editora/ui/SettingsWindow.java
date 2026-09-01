@@ -60,7 +60,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The Settings window: a left category sidebar + per-category pages, a search box, and a live
  * preview, scalable as Editora grows. Changes are <em>applied live</em> — each control writes its
- * {@link Settings} field and calls {@link #apply()} (persist to {@code settings.toml} + notify the
+ * {@link Settings} field and calls {@link #apply()} (persist to {@code settings.json} + notify the
  * controller), so there is no OK/Cancel; only Reset + Close.
  */
 public class SettingsWindow {

@@ -48,7 +48,7 @@ Never hand a raw English literal to a JavaFX control. Use
 
 ## Config and schema
 
-Preferences live in `settings.toml` (`Settings`, a Jackson POJO); session state in
+Preferences live in `settings.json` (`Settings`, a Jackson POJO); session state in
 `workspace-state.json` (`WorkspaceState`); other stores in their own JSON files. See
 [architecture.md](architecture.md#multi-window-model) for the `SharedConfig`/`ConfigManager`
 split.

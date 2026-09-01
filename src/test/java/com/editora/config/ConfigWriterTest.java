@@ -24,11 +24,11 @@ class ConfigWriterTest {
 
     @Test
     void configFilesAreNotReadableByOtherUsers(@TempDir Path dir) throws IOException {
-        // settings.toml holds Settings.aiApiKey — the AI provider's billable credential — and notes.json holds
+        // settings.json holds Settings.aiApiKey — the AI provider's billable credential — and notes.json holds
         // the user's private notes. The default umask writes 0644 into a 0755 config dir, so any other account
         // on the machine could simply read the key out.
         assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
-        Path file = dir.resolve("settings.toml");
+        Path file = dir.resolve("settings.json");
 
         ConfigWriter.writeAtomic(file, bytes("aiApiKey = 'sk-proj-secret'\n"));
 
@@ -40,9 +40,9 @@ class ConfigWriterTest {
 
     @Test
     void rewritingTightensAFileLeftWorldReadableByAnOlderVersion(@TempDir Path dir) throws IOException {
-        // An existing install already has a 0644 settings.toml; the next save must fix it, not preserve it.
+        // An existing install already has a 0644 settings.json; the next save must fix it, not preserve it.
         assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
-        Path file = dir.resolve("settings.toml");
+        Path file = dir.resolve("settings.json");
         Files.writeString(file, "aiApiKey = 'old'\n");
         Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-r--r--"));
 
@@ -55,8 +55,8 @@ class ConfigWriterTest {
     void aLeftoverTempFileDoesNotLeakItsOldPermissions(@TempDir Path dir) throws IOException {
         // A temp left behind by a crashed write would otherwise be reused with its old, laxer mode.
         assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
-        Path file = dir.resolve("settings.toml");
-        Path tmp = dir.resolve("settings.toml.tmp");
+        Path file = dir.resolve("settings.json");
+        Path tmp = dir.resolve("settings.json.tmp");
         Files.writeString(tmp, "stale");
         Files.setPosixFilePermissions(tmp, PosixFilePermissions.fromString("rw-rw-rw-"));
 
@@ -68,11 +68,11 @@ class ConfigWriterTest {
 
     @Test
     void writeAtomicCreatesParentDirsAndWritesContent(@TempDir Path dir) throws IOException {
-        Path file = dir.resolve("nested/sub/settings.toml");
+        Path file = dir.resolve("nested/sub/settings.json");
         ConfigWriter.writeAtomic(file, bytes("a = 1\n"));
         assertTrue(Files.exists(file));
         assertArrayEquals(bytes("a = 1\n"), Files.readAllBytes(file));
-        assertFalse(Files.exists(file.resolveSibling("settings.toml.tmp")), "temp file is moved away, not left behind");
+        assertFalse(Files.exists(file.resolveSibling("settings.json.tmp")), "temp file is moved away, not left behind");
     }
 
     @Test
@@ -86,7 +86,7 @@ class ConfigWriterTest {
     @Test
     void enqueueThenFlushWritesLatestBytes(@TempDir Path dir) throws IOException {
         ConfigWriter w = new ConfigWriter();
-        Path file = dir.resolve("settings.toml");
+        Path file = dir.resolve("settings.json");
         // A burst of writes to the same file coalesces to the last one.
         for (int i = 0; i < 50; i++) {
             w.enqueue(file, bytes("v=" + i + "\n"));
@@ -99,7 +99,7 @@ class ConfigWriterTest {
     @Test
     void flushWritesAllPendingPaths(@TempDir Path dir) throws IOException {
         ConfigWriter w = new ConfigWriter();
-        Path a = dir.resolve("settings.toml");
+        Path a = dir.resolve("settings.json");
         Path b = dir.resolve("projects/p1.json");
         w.enqueue(a, bytes("A"));
         w.enqueue(b, bytes("B"));
@@ -131,7 +131,7 @@ class ConfigWriterTest {
         // deterministically by pointing at a target whose parent is a regular file (createDirectories throws).
         Path blocker = dir.resolve("blocker");
         Files.writeString(blocker, "x");
-        Path target = blocker.resolve("settings.toml");
+        Path target = blocker.resolve("settings.json");
 
         ConfigWriter w = new ConfigWriter();
         java.util.concurrent.atomic.AtomicReference<Path> failed = new java.util.concurrent.atomic.AtomicReference<>();

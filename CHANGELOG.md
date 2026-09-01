@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Preferences now use JSON instead of TOML.** Global settings move from `settings.toml` to
+  `settings.json`, and committed project toolchain overrides move to `.editora/settings.json`.
+  Existing global TOML is converted automatically through the normal schema migrations and removed
+  only after an atomic JSON write succeeds. Existing project TOML remains readable and is converted
+  when **Edit Project Settings** is opened, so current installations and repositories keep their
+  settings without maintaining TOML as an active configuration format.
+
 ## [0.15.0] - 2026-08-30
 
 ### Added

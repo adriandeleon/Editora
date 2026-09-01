@@ -3,30 +3,30 @@ package com.editora.config;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import com.fasterxml.jackson.dataformat.toml.TomlMapper;
+import com.editora.i18n.Messages;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProjectSettingsTest {
 
-    private static final TomlMapper MAPPER = new TomlMapper();
-
-    private static Path write(Path root, String toml) throws Exception {
+    private static Path write(Path root, String json) throws Exception {
         Path file = ProjectSettings.fileFor(root);
         Files.createDirectories(file.getParent());
-        Files.writeString(file, toml);
+        Files.writeString(file, json);
         return file;
     }
 
     @Test
     void aProjectOverridesTheServerCommand(@TempDir Path root) throws Exception {
-        write(root, "[lspCommands]\njava = \"/opt/jdk17/bin/jdtls\"\n");
+        write(root, "{\"lspCommands\": {\"java\": \"/opt/jdk17/bin/jdtls\"}}");
 
-        ProjectSettings ps = ProjectSettings.load(MAPPER, root);
+        ProjectSettings ps = ProjectSettings.load(root);
 
         assertFalse(ps.isEmpty());
         assertEquals("/opt/jdk17/bin/jdtls", ps.commandFor("java", "jdtls"), "the project's toolchain wins");
@@ -35,9 +35,9 @@ class ProjectSettingsTest {
 
     @Test
     void aProjectCanTurnAServerOffOrOn(@TempDir Path root) throws Exception {
-        write(root, "[lspEnabled]\nrust = false\npython = true\n");
+        write(root, "{\"lspEnabled\": {\"rust\": false, \"python\": true}}");
 
-        ProjectSettings ps = ProjectSettings.load(MAPPER, root);
+        ProjectSettings ps = ProjectSettings.load(root);
 
         assertFalse(ps.enabledFor("rust", true), "explicitly off beats a global on");
         assertTrue(ps.enabledFor("python", false), "and explicitly on beats a global off");
@@ -60,16 +60,67 @@ class ProjectSettingsTest {
     /** This file is committed and hand-edited by anyone on the team; a typo must not stop the project opening. */
     @Test
     void aMalformedOrAbsentFileYieldsNoOverrides(@TempDir Path root) throws Exception {
-        assertTrue(ProjectSettings.load(MAPPER, root).isEmpty(), "absent");
+        assertTrue(ProjectSettings.load(root).isEmpty(), "absent");
 
-        write(root, "[lspCommands\nthis is not toml");
-        ProjectSettings ps = ProjectSettings.load(MAPPER, root);
+        write(root, "{this is not JSON");
+        ProjectSettings ps = ProjectSettings.load(root);
         assertTrue(ps.isEmpty(), "malformed");
         assertEquals("jdtls", ps.commandFor("java", "jdtls"), "and everything falls through to global");
     }
 
     @Test
     void noProjectMeansNoOverrides() {
-        assertTrue(ProjectSettings.load(MAPPER, null).isEmpty());
+        assertTrue(ProjectSettings.load(null).isEmpty());
+    }
+
+    @Test
+    void legacyTomlRemainsReadableAndCanBeMigratedForEditing(@TempDir Path root) throws Exception {
+        Path legacy = ProjectSettings.legacyFileFor(root);
+        Files.createDirectories(legacy.getParent());
+        Files.writeString(legacy, "[lspCommands]\njava = \"legacy-jdtls\"\n");
+
+        assertEquals("legacy-jdtls", ProjectSettings.load(root).commandFor("java", "global-jdtls"));
+
+        Path json = ProjectSettings.migrateLegacyForEditing(root);
+        assertEquals(ProjectSettings.fileFor(root), json);
+        assertTrue(Files.exists(json));
+        assertFalse(Files.exists(legacy));
+        assertEquals("legacy-jdtls", ProjectSettings.load(root).commandFor("java", "global-jdtls"));
+    }
+
+    @Test
+    void jsonWinsWhenBothProjectFormatsExist(@TempDir Path root) throws Exception {
+        write(root, "{\"lspCommands\": {\"java\": \"json-jdtls\"}}");
+        Path legacy = ProjectSettings.legacyFileFor(root);
+        Files.writeString(legacy, "[lspCommands]\njava = \"legacy-jdtls\"\n");
+
+        assertEquals("json-jdtls", ProjectSettings.load(root).commandFor("java", "global-jdtls"));
+    }
+
+    @Test
+    void malformedLegacyTomlIsNotDestroyedDuringExplicitMigration(@TempDir Path root) throws Exception {
+        Path legacy = ProjectSettings.legacyFileFor(root);
+        Files.createDirectories(legacy.getParent());
+        String malformed = "[lspCommands\nthis is not toml";
+        Files.writeString(legacy, malformed);
+
+        assertThrows(java.io.IOException.class, () -> ProjectSettings.migrateLegacyForEditing(root));
+        assertEquals(malformed, Files.readString(legacy));
+        assertFalse(Files.exists(ProjectSettings.fileFor(root)));
+    }
+
+    @Test
+    void everyLocalizedTemplateIsValidJsonWithoutActiveOverrides() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        try {
+            for (String language : Messages.available().keySet()) {
+                Messages.init(language);
+                ProjectSettings template =
+                        mapper.readValue(Messages.tr("project.settings.template"), ProjectSettings.class);
+                assertTrue(template.isEmpty(), language + " template examples must not activate overrides");
+            }
+        } finally {
+            Messages.init("en");
+        }
     }
 }

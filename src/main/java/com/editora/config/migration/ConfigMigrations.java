@@ -223,7 +223,7 @@ public final class ConfigMigrations {
     }
 
     /**
-     * v49 → v50 for {@code settings.toml}: grow an existing user's {@code todoPatterns} to include the new
+     * v49 → v50 for the settings file: grow an existing user's {@code todoPatterns} to include the new
      * built-in keyword defaults (HACK / NOTE / XXX / DONE) that joined TODO / FIXME, appending any whose
      * {@code name} isn't already present (custom entries are untouched, order preserved). Absent
      * {@code todoPatterns} needs nothing — the read path merges onto {@link com.editora.todo.TodoPatterns#defaults()},
@@ -261,7 +261,7 @@ public final class ConfigMigrations {
     }
 
     /**
-     * v77 -> v78 for {@code settings.toml}: split the single {@code aiApiKey} onto per-provider fields. The
+     * v77 -> v78 for the settings file: split the single {@code aiApiKey} onto per-provider fields. The
      * key was a single field shared by both AI providers, so switching provider silently sent one provider's
      * credential to the other's endpoint. {@code aiApiKey} now holds the <em>Anthropic</em> key and
      * {@code aiApiKeyOpenai} the OpenAI-compatible one. A user whose saved provider was OpenAI had their
@@ -270,7 +270,7 @@ public final class ConfigMigrations {
      * key saved under Anthropic — already lands in the right field and is left untouched.
      */
     /**
-     * v80 → v81 for {@code settings.toml}: split the single {@code keybindings} override map into per-platform
+     * v80 → v81 for the settings file: split the single {@code keybindings} override map into per-platform
      * maps ({@code keybindings} = Ctrl-based Windows/Linux, {@code keybindingsMac} = Cmd-based macOS), so a config
      * synced between OSes no longer double-binds a rebound command (#439). A rebind's UNBIND suppressor keys to
      * the resolved chord, so a mac-written {@code Cmd-S UNBIND} doesn't suppress the {@code Ctrl-S} default on

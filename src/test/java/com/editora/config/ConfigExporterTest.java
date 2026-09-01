@@ -55,7 +55,7 @@ class ConfigExporterTest {
     @Test
     void exportZipsAllFilesWithRelativeEntries(@TempDir Path tmp) throws Exception {
         Path cfg = Files.createDirectories(tmp.resolve(".editora"));
-        Files.writeString(cfg.resolve("settings.toml"), "fontSize = 14\n");
+        Files.writeString(cfg.resolve("settings.json"), "{\"fontSize\":14}\n");
         Files.createDirectories(cfg.resolve("projects"));
         Files.writeString(cfg.resolve("projects").resolve("p1.json"), "{}");
         Path dest = Files.createDirectories(tmp.resolve("home"));
@@ -72,11 +72,11 @@ class ConfigExporterTest {
                 entries.add(e.getName());
             }
             // forward-slash separated, relative to the config dir
-            assertTrue(entries.contains("settings.toml"), "settings.toml entry: " + entries);
+            assertTrue(entries.contains("settings.json"), "settings.json entry: " + entries);
             assertTrue(entries.contains("projects/p1.json"), "nested entry with / separator: " + entries);
-            ZipEntry settings = zf.getEntry("settings.toml");
+            ZipEntry settings = zf.getEntry("settings.json");
             String content = new String(zf.getInputStream(settings).readAllBytes());
-            assertEquals("fontSize = 14\n", content, "file content preserved");
+            assertEquals("{\"fontSize\":14}\n", content, "file content preserved");
         }
         assertEquals(2, entries.size(), "only regular files, no directory entries");
     }
@@ -93,11 +93,11 @@ class ConfigExporterTest {
 
     @Test
     void theExportedZipIsNotReadableByOtherUsers(@TempDir Path cfg, @TempDir Path home) throws Exception {
-        // The export lands in the user's home directory and contains a copy of settings.toml — and so of the
+        // The export lands in the user's home directory and contains a copy of settings.json — and so of the
         // AI provider's API key — plus the user's private notes. Writing the config dir's own files owner-only
         // while dropping a world-readable archive of them next door would protect nothing.
         assumeTrue(cfg.getFileSystem().supportedFileAttributeViews().contains("posix"));
-        Files.writeString(cfg.resolve("settings.toml"), "aiApiKey = 'sk-ant-api03-BILLABLE'\n");
+        Files.writeString(cfg.resolve("settings.json"), "{\"aiApiKey\":\"sk-ant-api03-BILLABLE\"}\n");
 
         Path zip = ConfigExporter.export(cfg, home, "1.0.0", "someone", WHEN);
 

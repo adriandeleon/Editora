@@ -252,7 +252,7 @@ there's no global dispatcher to interfere. The **conflict check** lives in
 warns before stealing it. The same path serves the inline Macros keybinding row.
 
 User overrides persist in `Settings.keybindings` (a `Map<String,String>` of chord → id, with blank
-values meaning UNBIND), serialized with the rest of `settings.toml`.
+values meaning UNBIND), serialized with the rest of `settings.json`.
 
 ## Adding a command
 

@@ -19,16 +19,16 @@ class AboutSettingsPathTest {
     void abbreviatesHomeDirToTilde() {
         String home = System.getProperty("user.home");
         assertEquals(
-                "~" + SEP + ".editora-dev" + SEP + "settings.toml",
-                SettingsWindow.displaySettingsPath(Path.of(home, ".editora-dev", "settings.toml")));
+                "~" + SEP + ".editora-dev" + SEP + "settings.json",
+                SettingsWindow.displaySettingsPath(Path.of(home, ".editora-dev", "settings.json")));
         assertEquals(
-                "~" + SEP + ".editora" + SEP + "settings.toml",
-                SettingsWindow.displaySettingsPath(Path.of(home, ".editora", "settings.toml")));
+                "~" + SEP + ".editora" + SEP + "settings.json",
+                SettingsWindow.displaySettingsPath(Path.of(home, ".editora", "settings.json")));
     }
 
     @Test
     void leavesPathsOutsideHomeUntouched() {
-        Path outside = Path.of(System.getProperty("user.home")).getRoot().resolve("etc-editora.toml");
+        Path outside = Path.of(System.getProperty("user.home")).getRoot().resolve("etc-editora.json");
         assertEquals(outside.toString(), SettingsWindow.displaySettingsPath(outside));
     }
 }

@@ -3,6 +3,10 @@
 A backlog of planned features and improvements. Unordered within each section.
 
 ## Recently shipped
+- [x] **Global and project settings use JSON instead of TOML** — `settings.json` now shares the same
+      Jackson format and tooling as the rest of Editora's persisted state. Existing global TOML is
+      migrated atomically on first load; committed project TOML remains readable and converts when
+      explicitly opened for editing.
 - [x] **Tab moves the caret to the indent on an already-indented line** — Enter inside a block leaves the new
       line carrying its indent, so Tab had nothing to add and the "repeated Tab must not pile on indentation"
       guard swallowed the keystroke whole: from column 0 (`C-a`/Home/a click) Tab did *nothing*. Both paths

@@ -7,7 +7,7 @@ import java.util.Map;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-/** User preferences, (de)serialized to {@code settings.toml}. Session/state lives in {@link WorkspaceState}. */
+/** User preferences, (de)serialized to {@code settings.json}. Session/state lives in {@link WorkspaceState}. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Settings {
 
@@ -39,7 +39,7 @@ public class Settings {
         live.setKeybindingsMac(keybindingsMac);
     }
 
-    /** Current on-disk schema version of {@code settings.toml}; bump when the format changes (+ a migration). */
+    /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
     public static final int SCHEMA_VERSION = 101;
 
     private int schemaVersion = SCHEMA_VERSION;
@@ -59,7 +59,7 @@ public class Settings {
 
     /** App (AtlantaFX) theme. First-run default is the "Caret & Ink" flagship — see {@code Themes.DEFAULT}
      *  (kept as a literal here so config stays free of a {@code ui} dependency). An existing install keeps
-     *  whatever is already in {@code settings.toml}: Jackson persists every modeled field, so only a fresh
+     *  whatever is already in {@code settings.json}: Jackson persists every modeled field, so only a fresh
      *  config dir picks up a changed default. */
     private String theme = "Editora Light";
     /** Editor color theme (syntax + surface). Follows {@link #theme} until the user picks one. */
@@ -405,7 +405,7 @@ public class Settings {
     /** The Anthropic model id for the AI actions; blank = the built-in default (claude-opus-4-8). */
     private String aiModel = "";
     /** Anthropic API key override; blank = the ANTHROPIC_API_KEY environment variable. Stored in
-     *  settings.toml as plain text — prefer the environment variable on shared machines. Per-provider:
+     *  settings.json as plain text — prefer the environment variable on shared machines. Per-provider:
      *  this is the Anthropic key only, so switching to the OpenAI provider never sends it to that endpoint
      *  (see {@link #getApiKeyFor}). */
     private String aiApiKey = "";

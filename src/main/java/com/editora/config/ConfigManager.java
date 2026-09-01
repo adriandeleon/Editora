@@ -20,8 +20,8 @@ import com.fasterxml.jackson.databind.SerializationFeature;
  * {@link #save()} from one window writes settings without clobbering another window's copy.
  *
  * <p>The config directory is the {@code EDITORA_CONFIG_DIR} environment variable when set, otherwise
- * {@code ~/.editora/} ({@code ~/.editora-dev/} in {@code --dev}). Preferences are TOML in
- * {@code settings.toml}; session state is JSON in the window's state file. Missing/malformed files fall
+ * {@code ~/.editora/} ({@code ~/.editora-dev/} in {@code --dev}). Preferences are JSON in
+ * {@code settings.json}; session state is JSON in the window's state file. Missing/malformed files fall
  * back to defaults. In single-window/test use a {@code ConfigManager} owns its own {@link SharedConfig}.
  */
 public class ConfigManager {
@@ -30,7 +30,8 @@ public class ConfigManager {
     /** Dev-mode config dir (--dev), kept separate from the production config so they don't interfere. */
     static final String APP_DIR_NAME_DEV = ".editora-dev";
 
-    static final String SETTINGS_FILE_NAME = "settings.toml";
+    static final String SETTINGS_FILE_NAME = "settings.json";
+    static final String LEGACY_SETTINGS_FILE_NAME = "settings.toml";
     static final String WORKSPACE_FILE_NAME = "workspace-state.json";
     static final String BOOKMARKS_FILE_NAME = "bookmarks.json";
     static final String BREAKPOINTS_FILE_NAME = "breakpoints.json";
@@ -376,7 +377,7 @@ public class ConfigManager {
         return shared.getSettings();
     }
 
-    /** Writes the shared preferences ({@code settings.toml}) and this window's session-state file. */
+    /** Writes the shared preferences ({@code settings.json}) and this window's session-state file. */
     /** Writes preferences + this window's session state synchronously (blocks until both are on disk). */
     public void save() {
         shared.enqueueSettings();
