@@ -99,8 +99,8 @@ class NotesPanelFxTest {
         byProject.put("p1", Map.of("/p1/Foo.java", List.of(note("current"))));
         byProject.put("p2", Map.of("/p2/Bar.py", List.of(note("other"))));
 
-        NotesPanel p = FxTestSupport.callOnFx(
-                () -> new NotesPanel(() -> new NotesPanel.Scope(byProject, "p1", k -> k), NOOP));
+        NotesPanel p =
+                FxTestSupport.callOnFx(() -> new NotesPanel(() -> new NotesPanel.Scope(byProject, "p1", k -> k), NOOP));
         TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
 
         assertEquals(3, root.getChildren().size(), "all project groups are shown by default");
@@ -115,8 +115,8 @@ class NotesPanelFxTest {
         byProject.put("p1", Map.of());
         byProject.put("p2", Map.of("/p2/Bar.py", List.of(note("other"))));
 
-        NotesPanel p = FxTestSupport.callOnFx(
-                () -> new NotesPanel(() -> new NotesPanel.Scope(byProject, "p1", k -> k), NOOP));
+        NotesPanel p =
+                FxTestSupport.callOnFx(() -> new NotesPanel(() -> new NotesPanel.Scope(byProject, "p1", k -> k), NOOP));
         TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
         StackPane placeholder = FxTestSupport.field(p, "placeholderPane");
 

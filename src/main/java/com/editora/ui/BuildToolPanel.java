@@ -6,6 +6,7 @@ import java.util.function.Consumer;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
@@ -14,6 +15,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.build.OutputStyle;
+import com.editora.run.ConsoleUrls;
 import com.editora.run.StackTraceLinks;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.Caret;
@@ -42,6 +44,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     private final Button stopButton = new Button();
     private final Button clearButton = new Button();
     private Consumer<StackTraceLinks.Link> onLink;
+    private Consumer<String> onUrl;
 
     /** This tool's output style (set per run by {@link #started}). */
     private OutputStyle style = OutputStyle.passthrough();
@@ -75,6 +78,22 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         output.setShowCaret(Caret.CaretVisibility.OFF);
         output.getStyleClass().addAll("editor-area", "run-output");
         RunPanel.installLinkClicks(output, () -> onLink);
+        output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_CLICKED, e -> {
+            if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY || e.getClickCount() != 1 || onUrl == null) {
+                return;
+            }
+            int offset = output.hit(e.getX(), e.getY()).getInsertionIndex();
+            ConsoleUrls.Link link = ConsoleUrls.at(output.getText(), offset);
+            if (link != null) {
+                onUrl.accept(link.url());
+                e.consume();
+            }
+        });
+        output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_MOVED, e -> {
+            int offset = output.hit(e.getX(), e.getY()).getInsertionIndex();
+            output.setCursor(ConsoleUrls.at(output.getText(), offset) == null ? Cursor.TEXT : Cursor.HAND);
+        });
+        output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_EXITED, e -> output.setCursor(null));
         ConsoleNav.installShared(output);
         ConsoleContextMenu.install(output); // right-click Select All / Copy
 
@@ -86,6 +105,10 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
 
     public void setOnLink(Consumer<StackTraceLinks.Link> onLink) {
         this.onLink = onLink;
+    }
+
+    public void setOnUrl(Consumer<String> onUrl) {
+        this.onUrl = onUrl;
     }
 
     /** Matches the console font to the editor's code-area font (family + effective size). */
@@ -157,10 +180,22 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         int caretBefore = output.getCaretPosition();
         boolean follow = caretBefore >= start;
         output.appendText(line + "\n");
-        if (styleClass != null) {
-            StyleSpans<Collection<String>> spans = new StyleSpansBuilder<Collection<String>>()
-                    .add(List.of(styleClass), line.length())
-                    .create();
+        if (!line.isEmpty()) {
+            StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
+            int offset = 0;
+            for (ConsoleUrls.Link link : ConsoleUrls.find(line)) {
+                if (link.start() > offset) {
+                    builder.add(styleClass == null ? List.of() : List.of(styleClass), link.start() - offset);
+                }
+                builder.add(
+                        styleClass == null ? List.of("console-url") : List.of(styleClass, "console-url"),
+                        link.end() - link.start());
+                offset = link.end();
+            }
+            if (offset < line.length()) {
+                builder.add(styleClass == null ? List.of() : List.of(styleClass), line.length() - offset);
+            }
+            StyleSpans<Collection<String>> spans = builder.create();
             output.setStyleSpans(start, spans);
         }
         ConsoleNav.afterAppend(output, caretBefore, follow, MAX_CHARS);

@@ -2763,6 +2763,10 @@
 
 /* Run tool window (Java 25 compact source files). */
 .run-panel .run-status { -fx-text-fill: -color-fg-muted; }
+.run-panel .text.console-url {
+    -fx-fill: -color-accent-fg;
+    -fx-underline: true;
+}
 /* No font here: the Run/External-Tools console font is set programmatically to match the editor
    (RunPanel/ExternalToolPanel.setOutputFont). A -fx-font-size rule here overrides that on every CSS
    pass, so the family/size are deliberately left to the control's font property. */

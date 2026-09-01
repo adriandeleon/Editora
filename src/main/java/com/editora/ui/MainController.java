@@ -2809,6 +2809,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         // A single shared "Output" console for every build tool (auto-opens on a run).
         buildOutputPanel.setOnLink(this::openRunLink);
+        buildOutputPanel.setOnUrl(this::openExternalUrl);
         installCommandLogs();
         buildOutputToolWindow = new ToolWindow(
                 "buildOutput",

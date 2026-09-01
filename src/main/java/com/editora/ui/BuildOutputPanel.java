@@ -39,6 +39,8 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
     /** The clicked-stack-trace-link handler shared by every console. */
     private Consumer<StackTraceLinks.Link> onLink;
 
+    private Consumer<String> onUrl;
+
     public BuildOutputPanel() {
         getStyleClass().add("build-output-tabs");
         setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE); // one bounded tab per tool; persist for the session
@@ -48,6 +50,12 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
     public void setOnLink(Consumer<StackTraceLinks.Link> onLink) {
         this.onLink = onLink;
         consoles.values().forEach(c -> c.setOnLink(onLink));
+    }
+
+    /** The browser opener shared by URLs in every output tab. */
+    public void setOnUrl(Consumer<String> onUrl) {
+        this.onUrl = onUrl;
+        consoles.values().forEach(c -> c.setOnUrl(onUrl));
     }
 
     /** Matches every console's font to the editor's code-area font (family + effective size). */
@@ -112,6 +120,9 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
             console = new BuildToolPanel();
             if (onLink != null) {
                 console.setOnLink(onLink);
+            }
+            if (onUrl != null) {
+                console.setOnUrl(onUrl);
             }
             if (fontFamily != null) {
                 console.setOutputFont(fontFamily, fontSize);
