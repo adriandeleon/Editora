@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sets. Filtering fades unrelated nodes instead of removing their spatial context, and project scans remain
   bounded and off the JavaFX thread. Canvas nodes use the same themed folder and file-type glyphs as the
   traditional Project tree, folders expand or collapse with one click, and files already open in editor tabs
-  carry a prominent accent rail and label.
+  carry a prominent accent rail and label. Hover tooltips expose the full path, type, size, modification time,
+  and relevant editor or Git status without filesystem work on the JavaFX thread.
 
 ### Changed
 

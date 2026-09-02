@@ -9,6 +9,7 @@ import java.util.Set;
 
 import javafx.scene.Scene;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
@@ -83,6 +84,10 @@ class ProjectMapViewFxTest {
 
     @Test
     void canvasRasterizesTheSharedFolderAndFileTypeGlyphs() throws Exception {
+        Path javaFile = Files.writeString(root.resolve("Main.java"), "class Main {}")
+                .toAbsolutePath()
+                .normalize();
+        List<ProjectMapModel.Entry> entries = ProjectMapModel.loadVisible(root, Set.of(root), false);
         Set<Path> openFiles = new HashSet<>();
         ProjectMapView mapView =
                 FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, openFiles::contains, path -> false));
@@ -98,10 +103,6 @@ class ProjectMapViewFxTest {
                 mapView.layout();
 
                 Region surface = FxTestSupport.field(mapView, "surface");
-                Path javaFile = root.resolve("Main.java").toAbsolutePath().normalize();
-                List<ProjectMapModel.Entry> entries = List.of(
-                        new ProjectMapModel.Entry(root, null, 0, true),
-                        new ProjectMapModel.Entry(javaFile, root, 1, false));
                 FxTestSupport.call(
                         surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
 
@@ -117,6 +118,17 @@ class ProjectMapViewFxTest {
                 mapView.refreshStates();
                 assertEquals(Set.of(javaFile), FxTestSupport.field(surface, "openPaths"));
                 assertTrue(surface.getAccessibleText().contains("open in a tab"));
+
+                Object javaBox = boxFor(surface, javaFile);
+                double hoverX = center(javaBox, "x", "width");
+                double hoverY = center(javaBox, "y", "height");
+                move(surface, hoverX, hoverY);
+                Tooltip tooltip = FxTestSupport.field(surface, "nodeTooltip");
+                assertTrue(tooltip.getText().contains(javaFile.toString()));
+                assertTrue(tooltip.getText().contains("Type: File"));
+                assertTrue(tooltip.getText().contains("Size: 13 B"));
+                assertTrue(tooltip.getText().contains("Modified:"));
+                assertTrue(tooltip.getText().contains("Open in a tab"));
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
@@ -146,17 +158,9 @@ class ProjectMapViewFxTest {
                 FxTestSupport.call(
                         surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
 
-                List<?> boxes = FxTestSupport.field(surface, "boxes");
-                Object sourceBox = boxes.stream()
-                        .filter(box -> ((ProjectMapModel.Entry) FxTestSupport.call(box, "entry", new Class<?>[0]))
-                                .path()
-                                .equals(source))
-                        .findFirst()
-                        .orElseThrow();
-                double clickX = (double) FxTestSupport.call(sourceBox, "x", new Class<?>[0])
-                        + (double) FxTestSupport.call(sourceBox, "width", new Class<?>[0]) / 2;
-                double clickY = (double) FxTestSupport.call(sourceBox, "y", new Class<?>[0])
-                        + (double) FxTestSupport.call(sourceBox, "height", new Class<?>[0]) / 2;
+                Object sourceBox = boxFor(surface, source);
+                double clickX = center(sourceBox, "x", "width");
+                double clickY = center(sourceBox, "y", "height");
 
                 click(surface, clickX, clickY);
                 assertTrue(mapView.expandedDirectories().contains(source));
@@ -167,6 +171,44 @@ class ProjectMapViewFxTest {
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
         }
+    }
+
+    private static Object boxFor(Region surface, Path path) {
+        List<?> boxes = FxTestSupport.field(surface, "boxes");
+        return boxes.stream()
+                .filter(box -> ((ProjectMapModel.Entry) FxTestSupport.call(box, "entry", new Class<?>[0]))
+                        .path()
+                        .equals(path))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static double center(Object box, String origin, String size) {
+        return (double) FxTestSupport.call(box, origin, new Class<?>[0])
+                + (double) FxTestSupport.call(box, size, new Class<?>[0]) / 2;
+    }
+
+    private static void move(Region target, double x, double y) {
+        MouseEvent event = new MouseEvent(
+                MouseEvent.MOUSE_MOVED,
+                x,
+                y,
+                x,
+                y,
+                MouseButton.NONE,
+                0,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                new PickResult(target, x, y));
+        FxTestSupport.invokeWith(target, "mouseMoved", MouseEvent.class, event);
     }
 
     private static void click(Region target, double x, double y) {

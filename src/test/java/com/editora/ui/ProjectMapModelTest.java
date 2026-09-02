@@ -8,6 +8,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -39,6 +40,21 @@ class ProjectMapModelTest {
 
         assertFalse(has(ProjectMapModel.loadVisible(root, Set.of(root), false), hidden));
         assertTrue(has(ProjectMapModel.loadVisible(root, Set.of(root), true), hidden));
+    }
+
+    @Test
+    void visibleSnapshotCapturesFileMetadataOffTheFxThread() throws Exception {
+        Path file = Files.writeString(root.resolve("notes.txt"), "hello");
+
+        ProjectMapModel.Entry entry = ProjectMapModel.loadVisible(root, Set.of(root), false).stream()
+                .filter(candidate ->
+                        candidate.path().equals(file.toAbsolutePath().normalize()))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(5, entry.size());
+        assertTrue(entry.modifiedMillis() > 0);
+        assertFalse(entry.symbolicLink());
     }
 
     @Test

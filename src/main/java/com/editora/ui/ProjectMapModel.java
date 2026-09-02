@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -33,10 +34,21 @@ final class ProjectMapModel {
         OTHER
     }
 
-    record Entry(Path path, Path parent, int depth, boolean directory) {
+    record Entry(
+            Path path,
+            Path parent,
+            int depth,
+            boolean directory,
+            long size,
+            long modifiedMillis,
+            boolean symbolicLink) {
         Entry {
             path = normalize(path);
             parent = normalize(parent);
+        }
+
+        Entry(Path path, Path parent, int depth, boolean directory) {
+            this(path, parent, depth, directory, -1, -1, false);
         }
 
         String name() {
@@ -79,8 +91,9 @@ final class ProjectMapModel {
         List<Entry> result = new ArrayList<>();
         while (!queue.isEmpty() && result.size() < MAX_VISIBLE_ITEMS) {
             Pending pending = queue.removeFirst();
-            boolean directory = Files.isDirectory(pending.path(), LinkOption.NOFOLLOW_LINKS);
-            result.add(new Entry(pending.path(), pending.parent(), pending.depth(), directory));
+            Entry entry = readEntry(pending.path(), pending.parent(), pending.depth());
+            boolean directory = entry.directory();
+            result.add(entry);
             if (!directory || !normalizedExpanded.contains(pending.path())) {
                 continue;
             }
@@ -92,6 +105,23 @@ final class ProjectMapModel {
             }
         }
         return List.copyOf(result);
+    }
+
+    private static Entry readEntry(Path path, Path parent, int depth) {
+        try {
+            BasicFileAttributes attributes =
+                    Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            return new Entry(
+                    path,
+                    parent,
+                    depth,
+                    attributes.isDirectory(),
+                    attributes.isRegularFile() ? attributes.size() : -1,
+                    attributes.lastModifiedTime().toMillis(),
+                    attributes.isSymbolicLink());
+        } catch (IOException | RuntimeException ignored) {
+            return new Entry(path, parent, depth, Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS));
+        }
     }
 
     static boolean matches(Entry entry, Filters filters, boolean open, boolean modified, boolean gitChanged) {

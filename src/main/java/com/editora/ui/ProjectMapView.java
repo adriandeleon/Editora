@@ -1,11 +1,16 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -48,6 +53,7 @@ import javafx.scene.paint.Paint;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.util.Duration;
 import javafx.util.StringConverter;
 
 import com.editora.git.GitFileStatus;
@@ -284,6 +290,7 @@ final class ProjectMapView extends VBox {
         disposed = true;
         generation.incrementAndGet();
         loader.shutdownNow();
+        surface.dispose();
     }
 
     private void updateFilters() {
@@ -338,6 +345,9 @@ final class ProjectMapView extends VBox {
         private static final double COLUMN_GAP = 50;
         private static final double ROW_GAP = 9;
         private static final double WORLD_PADDING = 22;
+        private static final DateTimeFormatter TOOLTIP_TIME = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
+                .withLocale(Locale.getDefault())
+                .withZone(ZoneId.systemDefault());
         private static final double ICON_SIZE = 20;
         private static final double ICON_RASTER_SCALE = 2;
         private static final double MIN_ZOOM = 0.65;
@@ -357,6 +367,7 @@ final class ProjectMapView extends VBox {
         private final Rectangle fileProbe = probe("project-map-probe-file");
         private final Rectangle oliveProbe = probe("project-map-probe-olive");
         private final Rectangle violetProbe = probe("project-map-probe-violet");
+        private final Tooltip nodeTooltip = new Tooltip();
         private final List<NodeBox> boxes = new ArrayList<>();
         private final Map<IconKey, Image> iconImages = new HashMap<>();
 
@@ -416,6 +427,11 @@ final class ProjectMapView extends VBox {
             setFocusTraversable(true);
             setAccessibleRole(AccessibleRole.TREE_VIEW);
             setAccessibleHelp(tr("project.map.accessibleHelp"));
+            nodeTooltip.setShowDelay(Duration.millis(350));
+            nodeTooltip.setHideDelay(Duration.millis(100));
+            nodeTooltip.setWrapText(true);
+            nodeTooltip.setMaxWidth(520);
+            Tooltip.install(this, nodeTooltip);
 
             widthProperty().addListener((obs, old, value) -> repaint());
             heightProperty().addListener((obs, old, value) -> repaint());
@@ -464,6 +480,7 @@ final class ProjectMapView extends VBox {
         void setEntries(List<ProjectMapModel.Entry> entries, Set<Path> expanded) {
             this.entries = entries == null ? List.of() : List.copyOf(entries);
             expandedSnapshot = expanded == null ? Set.of() : Set.copyOf(expanded);
+            clearNodeTooltip();
             if (selected == null
                     || this.entries.stream().noneMatch(entry -> entry.path().equals(selected))) {
                 selected =
@@ -498,7 +515,16 @@ final class ProjectMapView extends VBox {
             snapshotStates();
             recomputeEmphasis();
             updateAccessibleText();
+            entries.stream()
+                    .filter(entry -> entry.path().equals(hovered))
+                    .findFirst()
+                    .ifPresent(entry -> nodeTooltip.setText(tooltipText(entry)));
             repaint();
+        }
+
+        void dispose() {
+            clearNodeTooltip();
+            Tooltip.uninstall(this, nodeTooltip);
         }
 
         void repaint() {
@@ -813,9 +839,66 @@ final class ProjectMapView extends VBox {
             Path next = hit == null ? null : hit.entry().path();
             if (!java.util.Objects.equals(next, hovered)) {
                 hovered = next;
+                if (hit == null) {
+                    clearNodeTooltip();
+                } else {
+                    nodeTooltip.setText(tooltipText(hit.entry()));
+                }
                 setCursor(hit == null ? Cursor.DEFAULT : Cursor.HAND);
                 repaint();
             }
+        }
+
+        private void clearNodeTooltip() {
+            hovered = null;
+            nodeTooltip.hide();
+            nodeTooltip.setText(null);
+        }
+
+        private String tooltipText(ProjectMapModel.Entry entry) {
+            List<String> lines = new ArrayList<>(4);
+            lines.add(entry.path().toString());
+            String type = entry.symbolicLink()
+                    ? tr("project.map.tooltip.symbolicLink")
+                    : tr(entry.directory() ? "project.map.tooltip.folder" : "project.map.tooltip.file");
+            lines.add(tr("project.map.tooltip.type", type));
+            if (!entry.directory() && entry.size() >= 0) {
+                lines.add(tr("project.map.tooltip.size", formatSize(entry.size())));
+            }
+            if (entry.modifiedMillis() >= 0) {
+                lines.add(tr(
+                        "project.map.tooltip.modified",
+                        TOOLTIP_TIME.format(Instant.ofEpochMilli(entry.modifiedMillis()))));
+            }
+
+            List<String> statuses = new ArrayList<>(3);
+            if (openPaths.contains(entry.path())) {
+                statuses.add(tr("project.map.tooltip.open"));
+            }
+            if (modifiedPaths.contains(entry.path())) {
+                statuses.add(tr("project.map.tooltip.unsaved"));
+            }
+            if (gitState.containsKey(entry.path()) || gitDirectories.contains(entry.path())) {
+                statuses.add(tr("project.map.tooltip.gitChanged"));
+            }
+            if (!statuses.isEmpty()) {
+                lines.add(tr("project.map.tooltip.status", String.join(", ", statuses)));
+            }
+            return String.join("\n", lines);
+        }
+
+        private static String formatSize(long bytes) {
+            if (bytes < 1024) {
+                return bytes + " B";
+            }
+            String[] units = {"kB", "MB", "GB", "TB"};
+            double value = bytes;
+            int unit = -1;
+            do {
+                value /= 1024.0;
+                unit++;
+            } while (value >= 1024 && unit < units.length - 1);
+            return String.format(Locale.ROOT, "%.1f %s", value, units[unit]);
         }
 
         private void mouseClicked(MouseEvent event) {
