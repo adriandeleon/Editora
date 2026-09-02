@@ -21,12 +21,14 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import javafx.application.Platform;
+import javafx.event.EventHandler;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.AccessibleRole;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
+import javafx.scene.Scene;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -57,6 +59,7 @@ import javafx.scene.paint.Paint;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.stage.WindowEvent;
 import javafx.util.Duration;
 import javafx.util.StringConverter;
 
@@ -545,6 +548,9 @@ final class ProjectMapView extends VBox {
         private double columnPressOffsetY;
         private Integer draggedColumn;
         private OverviewBox overviewBox;
+        private ContextMenu activeContextMenu;
+        private Scene dismissScene;
+        private EventHandler<MouseEvent> dismissFilter;
         private boolean panning;
         private boolean painting;
         private boolean viewportInitialized;
@@ -715,6 +721,7 @@ final class ProjectMapView extends VBox {
         }
 
         void dispose() {
+            dismissContextMenu();
             clearNodeTooltip();
             Tooltip.uninstall(this, nodeTooltip);
             columnControls.clear();
@@ -1402,6 +1409,7 @@ final class ProjectMapView extends VBox {
         }
 
         private void contextMenuRequested(ContextMenuEvent event) {
+            dismissContextMenu();
             if (overviewBox != null && overviewBox.contains(event.getX(), event.getY())) {
                 return;
             }
@@ -1414,9 +1422,56 @@ final class ProjectMapView extends VBox {
             select(hit.entry().path());
             ContextMenu menu = contextMenuFactory.apply(hit.entry());
             if (menu != null && !menu.getItems().isEmpty()) {
+                activeContextMenu = menu;
+                menu.addEventHandler(WindowEvent.WINDOW_HIDDEN, hidden -> {
+                    if (activeContextMenu == menu) {
+                        activeContextMenu = null;
+                        removeDismissFilter();
+                    }
+                });
                 menu.show(this, event.getScreenX(), event.getScreenY());
+                installDismissFilter(menu);
             }
             event.consume();
+        }
+
+        /**
+         * Guarantees that the map menu closes on the next press anywhere in its owner window. JavaFX's
+         * popup auto-hide normally does this, but native popup grabs can miss a press on some platforms.
+         * Arming on the next pulse prevents the opening gesture from immediately closing the menu.
+         */
+        private void installDismissFilter(ContextMenu menu) {
+            Scene scene = getScene();
+            if (scene == null) {
+                return;
+            }
+            removeDismissFilter();
+            EventHandler<MouseEvent> filter = pressed -> menu.hide();
+            Platform.runLater(() -> {
+                if (activeContextMenu != menu || !menu.isShowing()) {
+                    return;
+                }
+                dismissScene = scene;
+                dismissFilter = filter;
+                scene.addEventFilter(MouseEvent.MOUSE_PRESSED, filter);
+            });
+        }
+
+        private void dismissContextMenu() {
+            ContextMenu menu = activeContextMenu;
+            activeContextMenu = null;
+            if (menu != null) {
+                menu.hide();
+            }
+            removeDismissFilter();
+        }
+
+        private void removeDismissFilter() {
+            if (dismissScene != null && dismissFilter != null) {
+                dismissScene.removeEventFilter(MouseEvent.MOUSE_PRESSED, dismissFilter);
+            }
+            dismissScene = null;
+            dismissFilter = null;
         }
 
         private void scrolled(ScrollEvent event) {
@@ -1448,6 +1503,11 @@ final class ProjectMapView extends VBox {
         }
 
         private void keyPressed(KeyEvent event) {
+            // Parent event filters also see keystrokes targeted at child controls. Text editing owns every
+            // key while a per-column filter has focus; otherwise Backspace/Home/arrows become map commands.
+            if (isColumnControl(event.getTarget())) {
+                return;
+            }
             if (entries.isEmpty()) {
                 return;
             }

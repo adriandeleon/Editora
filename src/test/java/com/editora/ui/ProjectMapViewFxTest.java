@@ -9,14 +9,19 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
+import javafx.event.Event;
+import javafx.geometry.Point2D;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.input.ContextMenuEvent;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.PickResult;
@@ -24,6 +29,7 @@ import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.stage.Stage;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -245,6 +251,105 @@ class ProjectMapViewFxTest {
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
+    void backspaceEditsAColumnFilterInsteadOfNavigatingTheMap() throws Exception {
+        Path source = root.resolve("src").toAbsolutePath().normalize();
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 500, 300);
+                mapView.resize(500, 300);
+                mapView.layout();
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        List.of(
+                                new ProjectMapModel.Entry(root, null, 0, true),
+                                new ProjectMapModel.Entry(source, root, 1, true)),
+                        Set.of(root));
+                mapView.applyCss();
+                mapView.layout();
+
+                TextField filter = (TextField) surface.lookup(".project-map-column-filter");
+                filter.setText("src");
+                filter.positionCaret(filter.getLength());
+                Event.fireEvent(
+                        filter,
+                        new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.BACK_SPACE, false, false, false, false));
+
+                assertEquals("sr", filter.getText());
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
+    void mapContextMenuClosesOnTheNextPressAnywhereInTheWindow() throws Exception {
+        Path file = root.resolve("notes.txt").toAbsolutePath().normalize();
+        AtomicReference<Stage> stageRef = new AtomicReference<>();
+        AtomicReference<ContextMenu> menuRef = new AtomicReference<>();
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                Stage stage = new Stage();
+                stageRef.set(stage);
+                StackPane window = new StackPane(mapView);
+                Scene scene = new Scene(window, 500, 300);
+                stage.setScene(scene);
+                stage.show();
+                window.applyCss();
+                window.layout();
+
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        List.of(
+                                new ProjectMapModel.Entry(root, null, 0, true),
+                                new ProjectMapModel.Entry(file, root, 1, false)),
+                        Set.of(root));
+                ContextMenu menu = new ContextMenu(new MenuItem("Open"));
+                menu.setAutoHide(false); // exercise the map's explicit fallback, not the native popup grab
+                menuRef.set(menu);
+                mapView.setContextMenuFactory(entry -> menu);
+
+                Object fileBox = boxFor(surface, file);
+                double x = center(fileBox, "x", "width");
+                double y = center(fileBox, "y", "height");
+                Point2D screen = surface.localToScreen(x, y);
+                ContextMenuEvent event = new ContextMenuEvent(
+                        ContextMenuEvent.CONTEXT_MENU_REQUESTED,
+                        x,
+                        y,
+                        screen.getX(),
+                        screen.getY(),
+                        false,
+                        new PickResult(surface, x, y));
+                FxTestSupport.invokeWith(surface, "contextMenuRequested", ContextMenuEvent.class, event);
+            });
+            FxTestSupport.runOnFx(() -> {}); // let the deferred owner-scene dismissal filter arm
+
+            assertTrue(FxTestSupport.callOnFx(() -> menuRef.get().isShowing()));
+            FxTestSupport.runOnFx(() -> Event.fireEvent(
+                    stageRef.get().getScene().getRoot(),
+                    mouse((Region) stageRef.get().getScene().getRoot(), MouseEvent.MOUSE_PRESSED, 480, 280)));
+            assertFalse(FxTestSupport.callOnFx(() -> menuRef.get().isShowing()));
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                mapView.dispose();
+                if (stageRef.get() != null) {
+                    stageRef.get().hide();
+                }
+            });
         }
     }
 
