@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -77,8 +79,9 @@ class ProjectMapViewFxTest {
 
     @Test
     void canvasRasterizesTheSharedFolderAndFileTypeGlyphs() throws Exception {
+        Set<Path> openFiles = new HashSet<>();
         ProjectMapView mapView =
-                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, openFiles::contains, path -> false));
         try {
             FxTestSupport.runOnFx(() -> {
                 Scene scene = new Scene(mapView, 500, 300);
@@ -91,9 +94,10 @@ class ProjectMapViewFxTest {
                 mapView.layout();
 
                 Region surface = FxTestSupport.field(mapView, "surface");
+                Path javaFile = root.resolve("Main.java").toAbsolutePath().normalize();
                 List<ProjectMapModel.Entry> entries = List.of(
                         new ProjectMapModel.Entry(root, null, 0, true),
-                        new ProjectMapModel.Entry(root.resolve("Main.java"), root, 1, false));
+                        new ProjectMapModel.Entry(javaFile, root, 1, false));
                 FxTestSupport.call(
                         surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
 
@@ -103,6 +107,12 @@ class ProjectMapViewFxTest {
                 assertTrue(
                         images.keySet().stream().anyMatch(key -> key.toString().contains("kind=java")));
                 assertTrue(images.values().stream().allMatch(ProjectMapViewFxTest::hasVisiblePixel));
+
+                openFiles.add(javaFile);
+                FxTestSupport.call(surface, "setSelected", new Class<?>[] {Path.class}, javaFile);
+                mapView.refreshStates();
+                assertEquals(Set.of(javaFile), FxTestSupport.field(surface, "openPaths"));
+                assertTrue(surface.getAccessibleText().contains("open in a tab"));
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);

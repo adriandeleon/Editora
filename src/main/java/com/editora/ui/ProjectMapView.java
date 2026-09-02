@@ -496,6 +496,7 @@ final class ProjectMapView extends VBox {
         void stateChanged() {
             snapshotStates();
             recomputeEmphasis();
+            updateAccessibleText();
             repaint();
         }
 
@@ -650,11 +651,15 @@ final class ProjectMapView extends VBox {
             g.setStroke(isSelected || isHovered ? accent : color(borderProbe, Color.web("#3a4554")));
             g.setLineWidth((isSelected ? 1.5 : 1.0) * zoom);
             g.strokeRoundRect(box.x(), box.y(), box.width(), box.height(), 8 * zoom, 8 * zoom);
+            drawOpenMarker(g, entry, box, isSelected);
 
             double iconX = box.x() + 7 * zoom;
             double iconY = box.y() + 6 * zoom;
             drawIcon(g, entry, iconX, iconY);
-            g.setFill(isSelected ? Color.WHITE : color(textProbe, Color.web("#d8dee9")));
+            g.setFill(
+                    isSelected
+                            ? Color.WHITE
+                            : openPaths.contains(entry.path()) ? accent : color(textProbe, Color.web("#d8dee9")));
             g.setFont(Font.font("System", isSelected ? FontWeight.SEMI_BOLD : FontWeight.NORMAL, 12 * zoom));
             String label = ellipsize(entry.name(), Math.max(4, (int) (15 / zoom)));
             g.fillText(label, box.x() + 31 * zoom, box.y() + 20.5 * zoom, box.width() - 51 * zoom);
@@ -665,6 +670,16 @@ final class ProjectMapView extends VBox {
                 g.fillText("›", box.x() + box.width() - 15 * zoom, box.y() + 21 * zoom);
             }
             g.setGlobalAlpha(1);
+        }
+
+        /** Open files get an unmistakable tab-colored rail in addition to their accent-colored label. */
+        private void drawOpenMarker(GraphicsContext g, ProjectMapModel.Entry entry, NodeBox box, boolean selectedNode) {
+            if (entry.directory() || !openPaths.contains(entry.path())) {
+                return;
+            }
+            g.setFill(selectedNode ? Color.WHITE : color(accentProbe, Color.web("#388bfd")));
+            g.fillRoundRect(
+                    box.x() + 2 * zoom, box.y() + 7 * zoom, 3 * zoom, box.height() - 14 * zoom, 3 * zoom, 3 * zoom);
         }
 
         private void drawIcon(GraphicsContext g, ProjectMapModel.Entry entry, double x, double y) {
@@ -721,10 +736,7 @@ final class ProjectMapView extends VBox {
             if (entry.directory()) {
                 return;
             }
-            List<Color> dots = new ArrayList<>(3);
-            if (openPaths.contains(entry.path())) {
-                dots.add(color(accentProbe, Color.web("#58a6ff")));
-            }
+            List<Color> dots = new ArrayList<>(2);
             if (modifiedPaths.contains(entry.path())) {
                 dots.add(color(warningProbe, Color.web("#d29922")));
             }
@@ -953,8 +965,14 @@ final class ProjectMapView extends VBox {
         }
 
         private void updateAccessibleText() {
-            String name = selectedEntry().map(ProjectMapModel.Entry::name).orElse(tr("project.map.empty"));
-            setAccessibleText(tr("project.map.accessibleSelection", name));
+            var current = selectedEntry();
+            String name = current.map(ProjectMapModel.Entry::name).orElse(tr("project.map.empty"));
+            boolean open = current.filter(entry -> !entry.directory())
+                    .map(ProjectMapModel.Entry::path)
+                    .filter(openPaths::contains)
+                    .isPresent();
+            setAccessibleText(
+                    tr(open ? "project.map.accessibleSelectionOpen" : "project.map.accessibleSelection", name));
         }
 
         private Rectangle probe(String styleClass) {

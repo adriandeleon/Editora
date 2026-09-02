@@ -361,6 +361,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapView.refreshStates();
     }
 
+    /** Refreshes the Map's open-tab markers after the editor's tab membership changes. */
+    public void refreshOpenFiles() {
+        mapView.refreshStates();
+    }
+
     /**
      * Sets the per-file Git working-tree status (absolute normalized path → {@link com.editora.git.GitFileStatus},
      * from {@code GitFileStatus.byPath}) used to color the tree IntelliJ-style, and re-renders the cells. Also

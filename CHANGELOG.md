@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zoom, mouse and keyboard navigation, and filters for open, modified, Git-changed, and file-type working
   sets. Filtering fades unrelated nodes instead of removing their spatial context, and project scans remain
   bounded and off the JavaFX thread. Canvas nodes use the same themed folder and file-type glyphs as the
-  traditional Project tree.
+  traditional Project tree, while files already open in editor tabs carry a prominent accent rail and label.
 
 ### Changed
 

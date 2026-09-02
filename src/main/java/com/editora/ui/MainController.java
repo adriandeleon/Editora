@@ -2333,7 +2333,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             refreshMenuEnablement(); // buffer-shaped menu items (preview, CSV, .http, Typst) follow the tab
         });
         editorArea.addTabsListener((ListChangeListener<Tab>) c -> {
+            boolean membershipChanged = false;
             while (c.next()) {
+                membershipChanged |= c.wasAdded() || c.wasRemoved();
                 // A tab added in the background (e.g. session restore opening many at once) starts
                 // rendering-inactive so it holds no minimap snapshot until it's first shown.
                 if (c.wasAdded()) {
@@ -2375,6 +2377,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                         }
                     }
                 }
+            }
+            if (membershipChanged && projectPanel != null) {
+                projectPanel.refreshOpenFiles();
             }
         });
     }
