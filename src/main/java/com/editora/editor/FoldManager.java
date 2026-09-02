@@ -14,6 +14,7 @@ import java.util.function.DoubleSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntPredicate;
+import java.util.function.Supplier;
 
 import javafx.application.Platform;
 import javafx.geometry.Pos;
@@ -48,6 +49,9 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
 public final class FoldManager {
 
     private final CodeArea area;
+    /** Full-text source; EditorBuffer supplies its per-version shared snapshot. */
+    private final Supplier<String> textSnapshot;
+
     private List<Region> regions = List.of();
     /** Server-supplied regions ({@code textDocument/foldingRange}, #738); null while none have arrived, in
      *  which case {@link #recompute()} falls back to the {@link FoldRegions} heuristic. */
@@ -137,7 +141,12 @@ public final class FoldManager {
     private int previewPar = -1;
 
     public FoldManager(CodeArea area) {
+        this(area, area::getText);
+    }
+
+    FoldManager(CodeArea area, Supplier<String> textSnapshot) {
         this.area = area;
+        this.textSnapshot = textSnapshot;
         area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> {
             if (heuristicEnabled) {
                 recomputeAsync();
@@ -328,7 +337,7 @@ public final class FoldManager {
      */
     public void recompute() {
         recomputeGeneration++; // invalidate a debounced result captured before this explicit recompute
-        String text = heuristicEnabled ? area.getText() : "";
+        String text = heuristicEnabled ? textSnapshot.get() : "";
         applyRegions(detectRegions(text, language, serverRegions, manualRegions, heuristicEnabled));
     }
 
@@ -339,7 +348,7 @@ public final class FoldManager {
      */
     private void recomputeAsync() {
         long generation = ++recomputeGeneration;
-        String text = area.getText();
+        String text = textSnapshot.get();
         String languageSnapshot = language;
         List<Region> serverSnapshot = serverRegions;
         List<Region> manualSnapshot = manualRegions;
@@ -724,19 +733,19 @@ public final class FoldManager {
 
     /** Folds every multi-line block comment (VS Code's {@code foldAllBlockComments}). Returns the count. */
     public int foldAllBlockComments() {
-        return foldExactly(FoldRegions.blockComments(area.getText(), language));
+        return foldExactly(FoldRegions.blockComments(textSnapshot.get(), language));
     }
 
     /** Folds every {@code #region} marker region (VS Code's {@code foldAllMarkerRegions}). Returns the count. */
     public int foldAllMarkerRegions() {
-        return foldExactly(FoldRegions.markers(area.getText(), language));
+        return foldExactly(FoldRegions.markers(textSnapshot.get(), language));
     }
 
     /** Unfolds every {@code #region} marker region ({@code unfoldAllMarkerRegions}). Returns the count. */
     public int unfoldAllMarkerRegions() {
         int topPar = firstVisiblePar();
         int n = 0;
-        for (Region r : FoldRegions.markers(area.getText(), language)) {
+        for (Region r : FoldRegions.markers(textSnapshot.get(), language)) {
             // Same phantom-header guard as unfoldAllExcept: a marker region hidden inside a folded
             // ancestor reads as collapsed, and unfolding it would rip the ancestor open.
             if (isCollapsed(r.startLine()) && !area.isFolded(r.startLine())) {

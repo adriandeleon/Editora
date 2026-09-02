@@ -108,6 +108,14 @@ Folding's debounced document detection is also generation-guarded background wor
 commands remain synchronous, while large-file mode skips heuristic detection entirely; server and
 manual regions can still be applied without scanning the document.
 
+Whole-document consumers must use `EditorBuffer`'s versioned text snapshot rather than independently
+calling RichTextFX `getText()`. The first consumer of a document version materializes one immutable String
+on the FX thread; highlighting, folding, TODO scans, lint, LSP sync, previews, run-target detection, saves,
+and Undo History reuse it. Every plain-text edit invalidates the buffer's cached reference synchronously,
+while background work keeps its local snapshot and retains the existing generation/version guard. This
+bounds the cache to one current String per buffer and avoids repeating the same O(document) copy across
+independently debounced consumers after an edit settles.
+
 ### 6. Bound retained GPU textures
 
 JavaFX's Prism texture pool has a fixed ceiling (default 512 MB); exhausting it makes the
