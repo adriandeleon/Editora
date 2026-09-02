@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Find in Files now has one clear visual toggle.** Its duplicate tool-stripe icon has been removed in
+  favor of the toolbar button, which now stays highlighted for as long as the Search tool window is open.
+
 - **Large and remote files open without blocking the window on disk I/O.** Editora now shows the editor tab
   immediately, then reads, classifies, and decodes expensive files on virtual threads before performing one
   JavaFX document insertion. Large-file safeguards are active before that insertion, heuristic folding no

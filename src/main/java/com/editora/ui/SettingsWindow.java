@@ -6047,7 +6047,7 @@ public class SettingsWindow {
 
         List<Runnable> moveRefreshers = new ArrayList<>();
         Runnable refreshMoves = () -> moveRefreshers.forEach(Runnable::run);
-        for (ToolWindow tw : toolWindows.getRegisteredToolWindows()) {
+        for (ToolWindow tw : toolWindows.getStripeToolWindows()) {
             CheckBox showCheck = new CheckBox(tr("settings.show"));
             showCheck.setSelected(toolWindows.isVisible(tw));
 

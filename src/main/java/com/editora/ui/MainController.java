@@ -2920,7 +2920,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(fileInfoToolWindow);
         toolWindows.register(undoHistoryToolWindow, false); // stripe off by default; reachable via the
         // undoHistory.jump popup, the tool.undoHistory command, or Settings → Tool Windows
-        toolWindows.register(searchToolWindow);
+        // The toolbar is the sole visual toggle for Find in Files; a second icon on the stripe was
+        // redundant. Keep the window registered so commands, restoration, and docking still work.
+        toolWindows.registerWithoutStripe(searchToolWindow);
         toolWindows.register(todoToolWindow);
         toolWindows.register(markdownLintToolWindow);
         toolWindows.register(problemsToolWindow);
@@ -2952,6 +2954,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.setAvailable(agentToolWindow, agentCoordinator.isEnabled());
         updateBufferToolWindows(); // hide buffer-only windows until there's an actionable buffer (no Welcome flash)
         toolWindows.setStateListener((tw, opened) -> {
+            if (tw == searchToolWindow) {
+                findInFilesButton.pseudoClassStateChanged(OPEN, opened);
+            }
             if (tw == gitLogToolWindow) {
                 // Refresh the log whenever the window is opened — via the stripe button (which toggles
                 // directly, bypassing showGitLog) or a command. open() only fires this on a real open.

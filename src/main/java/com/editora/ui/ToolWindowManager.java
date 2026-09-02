@@ -69,6 +69,9 @@ public class ToolWindowManager {
     /** Tool windows whose stripe button is hidden by default (until the user shows them), absent any saved
      *  visibility preference — e.g. Remote, which is niche so it stays off until enabled. */
     private final Set<String> defaultHidden = new HashSet<>();
+    /** Registered windows intentionally controlled somewhere other than a stripe button (for example,
+     *  Find in Files, whose toolbar button is its sole visual toggle). */
+    private final Set<String> stripeOmitted = new HashSet<>();
 
     /**
      * A side can hold two tool windows, stacked — Project over Structure, or two consoles side by side
@@ -298,6 +301,12 @@ public class ToolWindowManager {
         if (!defaultVisible) {
             defaultHidden.add(tw.getId());
         }
+        register(tw);
+    }
+
+    /** Registers a command-addressable tool window without offering a duplicate button on the stripe. */
+    public void registerWithoutStripe(ToolWindow tw) {
+        stripeOmitted.add(tw.getId());
         register(tw);
     }
 
@@ -583,7 +592,8 @@ public class ToolWindowManager {
 
     /** Whether the stripe button should be present: the user keeps it visible AND it isn't context-hidden. */
     private boolean shouldShowButton(ToolWindow tw) {
-        return ToolWindowVisibility.buttonShown(isVisible(tw), unavailable.contains(tw));
+        return !stripeOmitted.contains(tw.getId())
+                && ToolWindowVisibility.buttonShown(isVisible(tw), unavailable.contains(tw));
     }
 
     /**
@@ -621,6 +631,13 @@ public class ToolWindowManager {
 
     public Collection<ToolWindow> getRegisteredToolWindows() {
         return Collections.unmodifiableCollection(byId.values());
+    }
+
+    /** Windows whose stripe visibility and placement the user can customize in Settings. */
+    public Collection<ToolWindow> getStripeToolWindows() {
+        return byId.values().stream()
+                .filter(tw -> !stripeOmitted.contains(tw.getId()))
+                .toList();
     }
 
     /** True if this tool window is the one currently open on its side. */
@@ -1419,7 +1436,9 @@ public class ToolWindowManager {
             return null;
         }
         ToolWindow tw = byId.get(id);
-        return tw != null && shouldShowButton(tw) ? tw : null;
+        // A stripe-omitted window may still be restored: omission only removes the duplicate control,
+        // not the window's normal persisted open state.
+        return tw != null && isVisible(tw) && !unavailable.contains(tw) ? tw : null;
     }
 
     private String presentationMode(ToolWindow tw) {
