@@ -52,9 +52,8 @@ import com.editora.search.FuzzyMatch;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The Project tool window: a filter box over a lazy file tree or read-only spatial map rooted at the active
- * project's folder. The tree remains the file-management surface; the Canvas map is an alternate navigation
- * surface.
+ * The Project tool window: a filter box over a lazy file tree or spatial map rooted at the active project's
+ * folder. The Canvas map is an alternate navigation surface and shares the tree's context-menu actions.
  * Typing in the filter runs a bounded, debounced project-wide name search (dot-dirs skipped, capped)
  * and shows matches as a flat list; clearing it restores the lazy tree. Emacs-style keyboard nav
  * (C-n/C-p, C-f/C-b, Enter) like the Structure panel; Enter/double-click opens a file; a right-click
@@ -223,6 +222,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.isModified = isModified;
         this.mapView = new ProjectMapView(onOpenFile, isOpen, isModified);
         this.mapView.setOnExpandedChanged(this::syncWatches);
+        this.mapView.setContextMenuFactory(entry -> contextMenuFor(
+                new TreeItem<>(entry.path()), entry.directory(), entry.path().equals(root)));
         getStyleClass().add("project-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
@@ -1550,141 +1551,145 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
 
         private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir, boolean isRoot) {
-            ContextMenu menu = new ContextMenu();
-            if (isDir) {
-                menu.getItems().add(newMenu(treeItem));
-            }
-            // Offered on a folder holding a pom and on a pom.xml row itself — the same submenu the editor's
-            // right-click on that file shows. Built per right-click rather than once: a folder gains or loses
-            // its pom.xml while the tree is open, and mavenMenuFor owns the whole "is there anything here?"
-            // rule (it answers null for a folder with no pom, and for any file that is not a pom.xml).
-            javafx.scene.control.Menu maven = mavenMenuFor(treeItem.getValue());
-            if (maven != null) {
-                menu.getItems().add(maven);
-            }
-            // Rename is offered on every file/folder EXCEPT the project root — renaming that would move the
-            // whole project folder on disk and leave the project pointing at a path that no longer exists.
-            if (!isRoot) {
-                MenuItem rename = new MenuItem(tr("project.menu.rename"));
-                rename.setGraphic(Icons.edit());
-                rename.setOnAction(e -> renameItem(treeItem));
-                menu.getItems().add(rename);
-            }
-            if (!isDir) {
-                MenuItem delete = new MenuItem(tr("project.menu.delete"));
-                delete.setGraphic(Icons.trash());
-                // Deletes the whole multi-file selection when this row is part of it, else just this file
-                // (the confirm dialog shows the count).
-                delete.setOnAction(e -> deleteSelected(treeItem));
-                menu.getItems().add(delete);
-            }
-            if (onReveal != null || onOpenTerminal != null) {
-                menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
-            }
-            if (onReveal != null) {
-                MenuItem reveal = new MenuItem(tr("project.menu.revealInFileManager"));
-                reveal.setGraphic(Icons.revealInFiles());
-                reveal.setOnAction(e -> onReveal.accept(treeItem.getValue(), isDir));
-                menu.getItems().add(reveal);
-            }
-            if (onOpenTerminal != null) {
-                MenuItem terminal = new MenuItem(tr("project.menu.openTerminal"));
-                terminal.setGraphic(Icons.terminal());
-                terminal.setOnAction(e -> onOpenTerminal.accept(treeItem.getValue(), isDir));
-                menu.getItems().add(terminal);
-            }
-            // Local History + Git act on a concrete file (not a folder).
-            if (fileActions != null && !isDir) {
-                Path file = treeItem.getValue();
-                menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
-
-                MenuItem localHistory = new MenuItem(tr("project.menu.localHistory"));
-                localHistory.setGraphic(Icons.history());
-                localHistory.setOnAction(e -> fileActions.showLocalHistory(file));
-                menu.getItems().add(localHistory);
-
-                Menu git = new Menu(tr("project.menu.git"));
-                git.setGraphic(Icons.git());
-                MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
-                stage.setGraphic(Icons.stageAll());
-                stage.setOnAction(e -> fileActions.gitStage(file));
-                MenuItem unstage = new MenuItem(tr("project.menu.git.unstage"));
-                unstage.setGraphic(Icons.remove());
-                unstage.setOnAction(e -> fileActions.gitUnstage(file));
-                MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
-                revert.setGraphic(Icons.undo());
-                revert.setOnAction(e -> fileActions.gitRevert(file));
-                MenuItem ignore = new MenuItem(tr("project.menu.git.addToGitignore"));
-                ignore.setGraphic(Icons.git());
-                ignore.setOnAction(e -> fileActions.gitAddToGitignore(file));
-                MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
-                compareHead.setGraphic(Icons.diff());
-                compareHead.setOnAction(e -> fileActions.gitCompareWithHead(file));
-                MenuItem compareBranch = new MenuItem(tr("project.menu.git.compareBranch"));
-                compareBranch.setGraphic(Icons.diff());
-                compareBranch.setOnAction(e -> fileActions.gitCompareWithBranch(file));
-                MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
-                compareRevision.setGraphic(Icons.diff());
-                compareRevision.setOnAction(e -> fileActions.gitCompareWithRevision(file));
-                MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
-                annotate.setGraphic(Icons.blame());
-                annotate.setOnAction(e -> fileActions.gitAnnotate(file));
-                MenuItem fileHistory = new MenuItem(tr("project.menu.git.fileHistory"));
-                fileHistory.setGraphic(Icons.gitLog());
-                fileHistory.setOnAction(e -> fileActions.gitShowFileHistory(file));
-                git.getItems()
-                        .addAll(
-                                stage,
-                                unstage,
-                                revert,
-                                ignore,
-                                new javafx.scene.control.SeparatorMenuItem(),
-                                compareHead,
-                                compareBranch,
-                                compareRevision,
-                                annotate,
-                                fileHistory);
-                menu.getItems().add(git);
-
-                // Disable to match the live feature toggles + the file's actual status.
-                menu.setOnShowing(e -> {
-                    localHistory.setDisable(!fileActions.localHistoryEnabled());
-                    git.setDisable(!fileActions.gitAvailable()); // grey out the Git submenu when there's no VCS
-                    com.editora.git.GitFileStatus st =
-                            gitStatus.get(file.toAbsolutePath().normalize());
-                    revert.setDisable(st == null); // nothing to revert on a clean file
-                    ignore.setDisable(st != com.editora.git.GitFileStatus.UNTRACKED); // ignore = for new files
-                });
-            }
-            // On a folder: Local History (folder view) + Git Stage/Revert of the whole subtree.
-            if (fileActions != null && isDir) {
-                Path dir = treeItem.getValue();
-                menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
-                MenuItem folderHistory = new MenuItem(tr("project.menu.localHistory"));
-                folderHistory.setGraphic(Icons.history());
-                folderHistory.setOnAction(e -> fileActions.showLocalHistory(dir));
-                menu.getItems().add(folderHistory);
-
-                Menu git = new Menu(tr("project.menu.git"));
-                git.setGraphic(Icons.git());
-                MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
-                stage.setGraphic(Icons.stageAll());
-                stage.setOnAction(e -> fileActions.gitStage(dir));
-                MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
-                revert.setGraphic(Icons.undo());
-                revert.setOnAction(e -> fileActions.gitRevert(dir));
-                git.getItems().addAll(stage, revert);
-                menu.getItems().add(git);
-
-                menu.setOnShowing(e -> {
-                    folderHistory.setDisable(!fileActions.localHistoryEnabled());
-                    boolean gitOn = fileActions.gitAvailable();
-                    git.setDisable(!gitOn);
-                    revert.setDisable(
-                            !gitChangedDirs.contains(dir.toAbsolutePath().normalize()));
-                });
-            }
-            return menu;
+            return ProjectPanel.this.contextMenuFor(treeItem, isDir, isRoot);
         }
+    }
+
+    /** One lazily built file-management menu shared by Tree rows and Canvas map nodes. */
+    private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir, boolean isRoot) {
+        ContextMenu menu = new ContextMenu();
+        if (isDir) {
+            menu.getItems().add(newMenu(treeItem));
+        }
+        // Offered on a folder holding a pom and on a pom.xml row itself — the same submenu the editor's
+        // right-click on that file shows. Built per right-click rather than once: a folder gains or loses
+        // its pom.xml while the tree is open, and mavenMenuFor owns the whole "is there anything here?"
+        // rule (it answers null for a folder with no pom, and for any file that is not a pom.xml).
+        javafx.scene.control.Menu maven = mavenMenuFor(treeItem.getValue());
+        if (maven != null) {
+            menu.getItems().add(maven);
+        }
+        // Rename is offered on every file/folder EXCEPT the project root — renaming that would move the
+        // whole project folder on disk and leave the project pointing at a path that no longer exists.
+        if (!isRoot) {
+            MenuItem rename = new MenuItem(tr("project.menu.rename"));
+            rename.setGraphic(Icons.edit());
+            rename.setOnAction(e -> renameItem(treeItem));
+            menu.getItems().add(rename);
+        }
+        if (!isDir) {
+            MenuItem delete = new MenuItem(tr("project.menu.delete"));
+            delete.setGraphic(Icons.trash());
+            // Deletes the whole multi-file selection when this row is part of it, else just this file
+            // (the confirm dialog shows the count).
+            delete.setOnAction(e -> deleteSelected(treeItem));
+            menu.getItems().add(delete);
+        }
+        if (onReveal != null || onOpenTerminal != null) {
+            menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+        }
+        if (onReveal != null) {
+            MenuItem reveal = new MenuItem(tr("project.menu.revealInFileManager"));
+            reveal.setGraphic(Icons.revealInFiles());
+            reveal.setOnAction(e -> onReveal.accept(treeItem.getValue(), isDir));
+            menu.getItems().add(reveal);
+        }
+        if (onOpenTerminal != null) {
+            MenuItem terminal = new MenuItem(tr("project.menu.openTerminal"));
+            terminal.setGraphic(Icons.terminal());
+            terminal.setOnAction(e -> onOpenTerminal.accept(treeItem.getValue(), isDir));
+            menu.getItems().add(terminal);
+        }
+        // Local History + Git act on a concrete file (not a folder).
+        if (fileActions != null && !isDir) {
+            Path file = treeItem.getValue();
+            menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+
+            MenuItem localHistory = new MenuItem(tr("project.menu.localHistory"));
+            localHistory.setGraphic(Icons.history());
+            localHistory.setOnAction(e -> fileActions.showLocalHistory(file));
+            menu.getItems().add(localHistory);
+
+            Menu git = new Menu(tr("project.menu.git"));
+            git.setGraphic(Icons.git());
+            MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
+            stage.setGraphic(Icons.stageAll());
+            stage.setOnAction(e -> fileActions.gitStage(file));
+            MenuItem unstage = new MenuItem(tr("project.menu.git.unstage"));
+            unstage.setGraphic(Icons.remove());
+            unstage.setOnAction(e -> fileActions.gitUnstage(file));
+            MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
+            revert.setGraphic(Icons.undo());
+            revert.setOnAction(e -> fileActions.gitRevert(file));
+            MenuItem ignore = new MenuItem(tr("project.menu.git.addToGitignore"));
+            ignore.setGraphic(Icons.git());
+            ignore.setOnAction(e -> fileActions.gitAddToGitignore(file));
+            MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
+            compareHead.setGraphic(Icons.diff());
+            compareHead.setOnAction(e -> fileActions.gitCompareWithHead(file));
+            MenuItem compareBranch = new MenuItem(tr("project.menu.git.compareBranch"));
+            compareBranch.setGraphic(Icons.diff());
+            compareBranch.setOnAction(e -> fileActions.gitCompareWithBranch(file));
+            MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
+            compareRevision.setGraphic(Icons.diff());
+            compareRevision.setOnAction(e -> fileActions.gitCompareWithRevision(file));
+            MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
+            annotate.setGraphic(Icons.blame());
+            annotate.setOnAction(e -> fileActions.gitAnnotate(file));
+            MenuItem fileHistory = new MenuItem(tr("project.menu.git.fileHistory"));
+            fileHistory.setGraphic(Icons.gitLog());
+            fileHistory.setOnAction(e -> fileActions.gitShowFileHistory(file));
+            git.getItems()
+                    .addAll(
+                            stage,
+                            unstage,
+                            revert,
+                            ignore,
+                            new javafx.scene.control.SeparatorMenuItem(),
+                            compareHead,
+                            compareBranch,
+                            compareRevision,
+                            annotate,
+                            fileHistory);
+            menu.getItems().add(git);
+
+            // Disable to match the live feature toggles + the file's actual status.
+            menu.setOnShowing(e -> {
+                localHistory.setDisable(!fileActions.localHistoryEnabled());
+                git.setDisable(!fileActions.gitAvailable()); // grey out the Git submenu when there's no VCS
+                com.editora.git.GitFileStatus st =
+                        gitStatus.get(file.toAbsolutePath().normalize());
+                revert.setDisable(st == null); // nothing to revert on a clean file
+                ignore.setDisable(st != com.editora.git.GitFileStatus.UNTRACKED); // ignore = for new files
+            });
+        }
+        // On a folder: Local History (folder view) + Git Stage/Revert of the whole subtree.
+        if (fileActions != null && isDir) {
+            Path dir = treeItem.getValue();
+            menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+            MenuItem folderHistory = new MenuItem(tr("project.menu.localHistory"));
+            folderHistory.setGraphic(Icons.history());
+            folderHistory.setOnAction(e -> fileActions.showLocalHistory(dir));
+            menu.getItems().add(folderHistory);
+
+            Menu git = new Menu(tr("project.menu.git"));
+            git.setGraphic(Icons.git());
+            MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
+            stage.setGraphic(Icons.stageAll());
+            stage.setOnAction(e -> fileActions.gitStage(dir));
+            MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
+            revert.setGraphic(Icons.undo());
+            revert.setOnAction(e -> fileActions.gitRevert(dir));
+            git.getItems().addAll(stage, revert);
+            menu.getItems().add(git);
+
+            menu.setOnShowing(e -> {
+                folderHistory.setDisable(!fileActions.localHistoryEnabled());
+                boolean gitOn = fileActions.gitAvailable();
+                git.setDisable(!gitOn);
+                revert.setDisable(!gitChangedDirs.contains(dir.toAbsolutePath().normalize()));
+            });
+        }
+        return menu;
     }
 }

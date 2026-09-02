@@ -6,11 +6,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 import javafx.scene.Scene;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
+import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.PickResult;
@@ -22,6 +26,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -69,6 +74,16 @@ class ProjectMapViewFxTest {
                 Region surface = FxTestSupport.field(mapView, "surface");
                 assertTrue(surface.getWidth() > 0);
                 assertTrue(surface.getHeight() > 0);
+
+                @SuppressWarnings("unchecked")
+                Function<ProjectMapModel.Entry, ContextMenu> contextMenuFactory =
+                        FxTestSupport.field(surface, "contextMenuFactory");
+                Path readme = root.resolve("README.md").toAbsolutePath().normalize();
+                ContextMenu menu = contextMenuFactory.apply(new ProjectMapModel.Entry(readme, root, 1, false));
+                assertTrue(menu.getItems().stream()
+                        .anyMatch(item -> tr("project.menu.rename").equals(item.getText())));
+                assertTrue(menu.getItems().stream()
+                        .anyMatch(item -> tr("project.menu.delete").equals(item.getText())));
 
                 StackPane host = (StackPane) mapView.getChildren().getLast();
                 Region zoomBar = (Region) host.lookup(".project-map-zoom");
@@ -167,6 +182,49 @@ class ProjectMapViewFxTest {
 
                 click(surface, clickX, clickY);
                 assertFalse(mapView.expandedDirectories().contains(source));
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
+    void rightClickSelectsTheNodeAndRequestsItsSharedContextMenu() throws Exception {
+        Path file = Files.writeString(root.resolve("notes.txt"), "hello")
+                .toAbsolutePath()
+                .normalize();
+        AtomicReference<ProjectMapModel.Entry> requested = new AtomicReference<>();
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 500, 300);
+                mapView.applyCss();
+                mapView.resize(500, 300);
+                mapView.layout();
+
+                Region surface = FxTestSupport.field(mapView, "surface");
+                surface.resize(500, 240);
+                List<ProjectMapModel.Entry> entries = List.of(
+                        new ProjectMapModel.Entry(root, null, 0, true),
+                        new ProjectMapModel.Entry(file, root, 1, false));
+                FxTestSupport.call(
+                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
+                mapView.setContextMenuFactory(entry -> {
+                    requested.set(entry);
+                    return null;
+                });
+
+                Object fileBox = boxFor(surface, file);
+                double x = center(fileBox, "x", "width");
+                double y = center(fileBox, "y", "height");
+                ContextMenuEvent event = new ContextMenuEvent(
+                        ContextMenuEvent.CONTEXT_MENU_REQUESTED, x, y, x, y, false, new PickResult(surface, x, y));
+                FxTestSupport.invokeWith(surface, "contextMenuRequested", ContextMenuEvent.class, event);
+
+                assertEquals(file, requested.get().path());
+                assertTrue(surface.getAccessibleText().contains("notes.txt"));
+                assertTrue(event.isConsumed());
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);

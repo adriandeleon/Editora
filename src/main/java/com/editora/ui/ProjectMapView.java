@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 import javafx.application.Platform;
@@ -31,12 +32,14 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.WritableImage;
+import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -61,9 +64,8 @@ import com.editora.git.GitFileStatus;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * Read-only spatial navigator for a project. Native JavaFX controls own filtering and zoom; the hierarchy
- * itself is drawn on a {@link Canvas}. This intentionally offers no rename/delete/move affordances — the
- * existing Project tree remains the file-management surface.
+ * Spatial navigator for a project. Native JavaFX controls own filtering and zoom; the hierarchy itself is
+ * drawn on a {@link Canvas}. Node context menus reuse the Project tree's file-management actions.
  */
 final class ProjectMapView extends VBox {
 
@@ -286,6 +288,10 @@ final class ProjectMapView extends VBox {
         onExpandedChanged = callback == null ? () -> {} : callback;
     }
 
+    void setContextMenuFactory(Function<ProjectMapModel.Entry, ContextMenu> factory) {
+        surface.setContextMenuFactory(factory);
+    }
+
     void dispose() {
         disposed = true;
         generation.incrementAndGet();
@@ -385,6 +391,7 @@ final class ProjectMapView extends VBox {
         private Path selected;
         private Path hovered;
         private Consumer<ProjectMapModel.Entry> onActivate = entry -> {};
+        private Function<ProjectMapModel.Entry, ContextMenu> contextMenuFactory = entry -> null;
         private Runnable onZoomChanged = () -> {};
         private double zoom = 1.0;
         private double offsetX;
@@ -460,12 +467,17 @@ final class ProjectMapView extends VBox {
             addEventHandler(MouseEvent.MOUSE_RELEASED, event -> panning = false);
             addEventHandler(MouseEvent.MOUSE_MOVED, this::mouseMoved);
             addEventHandler(MouseEvent.MOUSE_CLICKED, this::mouseClicked);
+            addEventHandler(ContextMenuEvent.CONTEXT_MENU_REQUESTED, this::contextMenuRequested);
             addEventHandler(ScrollEvent.SCROLL, this::scrolled);
             addEventFilter(KeyEvent.KEY_PRESSED, this::keyPressed);
         }
 
         void setOnActivate(Consumer<ProjectMapModel.Entry> onActivate) {
             this.onActivate = onActivate;
+        }
+
+        void setContextMenuFactory(Function<ProjectMapModel.Entry, ContextMenu> factory) {
+            contextMenuFactory = factory == null ? entry -> null : factory;
         }
 
         void setOnZoomChanged(Runnable onZoomChanged) {
@@ -914,6 +926,23 @@ final class ProjectMapView extends VBox {
             repaint();
             if (hit.entry().directory() ? event.getClickCount() == 1 : event.getClickCount() >= 2) {
                 onActivate.accept(hit.entry());
+            }
+            event.consume();
+        }
+
+        private void contextMenuRequested(ContextMenuEvent event) {
+            NodeBox hit = hit(event.getX(), event.getY());
+            if (hit == null) {
+                return;
+            }
+            requestFocus();
+            clearNodeTooltip();
+            selected = hit.entry().path();
+            updateAccessibleText();
+            repaint();
+            ContextMenu menu = contextMenuFactory.apply(hit.entry());
+            if (menu != null && !menu.getItems().isEmpty()) {
+                menu.show(this, event.getScreenX(), event.getScreenY());
             }
             event.consume();
         }

@@ -195,8 +195,8 @@ You will see these everywhere; learn them once:
 - **The Project Map hybrid** (`ProjectMapView` + `ProjectMapModel`): native JavaFX controls own
   filters, focus, and zoom while a focusable Canvas draws and hit-tests the bounded visible hierarchy.
   Filesystem listing runs on one daemon executor behind a generation guard. The existing `ProjectPanel`
-  tree remains the accessible file-management surface and shares its root, watcher refresh, Git state,
-  modified/open predicates, search field, and open-file callback with the map.
+  tree remains the accessible fallback and shares its root, watcher refresh, Git state, modified/open
+  predicates, search field, open-file callback, and lazily built file-management context menu with the map.
 - **The feature-coordinator pattern** (`LogViewerCoordinator`/`MermaidCoordinator`/…): pull a
   feature's logic out of `MainController` behind a `CoordinatorHost` interface so it is
   unit-testable. Recipe in [extending.md](extending.md#extract-a-feature-coordinator).

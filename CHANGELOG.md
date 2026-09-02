@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bounded and off the JavaFX thread. Canvas nodes use the same themed folder and file-type glyphs as the
   traditional Project tree, folders expand or collapse with one click, and files already open in editor tabs
   carry a prominent accent rail and label. Hover tooltips expose the full path, type, size, modification time,
-  and relevant editor or Git status without filesystem work on the JavaFX thread.
+  and relevant editor or Git status without filesystem work on the JavaFX thread. Right-clicking any map node
+  opens the same file-management menu as the traditional tree, including New, Maven, rename/delete, reveal,
+  terminal, Local History, and Git actions when applicable.
 
 ### Changed
 
