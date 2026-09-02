@@ -17,8 +17,11 @@ import java.util.function.Predicate;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.AccessibleRole;
 import javafx.scene.Cursor;
+import javafx.scene.Node;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
@@ -27,6 +30,8 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
+import javafx.scene.image.Image;
+import javafx.scene.image.WritableImage;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -333,10 +338,13 @@ final class ProjectMapView extends VBox {
         private static final double COLUMN_GAP = 50;
         private static final double ROW_GAP = 9;
         private static final double WORLD_PADDING = 22;
+        private static final double ICON_SIZE = 20;
+        private static final double ICON_RASTER_SCALE = 2;
         private static final double MIN_ZOOM = 0.65;
         private static final double MAX_ZOOM = 1.55;
 
         private final Canvas canvas = new Canvas(1, 1);
+        private final StackPane iconRasterizer = new StackPane();
         private final Rectangle bgProbe = probe("project-map-probe-bg");
         private final Rectangle surfaceProbe = probe("project-map-probe-surface");
         private final Rectangle borderProbe = probe("project-map-probe-border");
@@ -345,7 +353,12 @@ final class ProjectMapView extends VBox {
         private final Rectangle accentProbe = probe("project-map-probe-accent");
         private final Rectangle warningProbe = probe("project-map-probe-warning");
         private final Rectangle successProbe = probe("project-map-probe-success");
+        private final Rectangle folderProbe = probe("project-map-probe-folder");
+        private final Rectangle fileProbe = probe("project-map-probe-file");
+        private final Rectangle oliveProbe = probe("project-map-probe-olive");
+        private final Rectangle violetProbe = probe("project-map-probe-violet");
         private final List<NodeBox> boxes = new ArrayList<>();
+        private final Map<IconKey, Image> iconImages = new HashMap<>();
 
         private List<ProjectMapModel.Entry> entries = List.of();
         private Set<Path> expandedSnapshot = Set.of();
@@ -372,10 +385,20 @@ final class ProjectMapView extends VBox {
         private boolean panning;
 
         MapSurface() {
-            getStyleClass().add("project-map-surface");
+            // The project-tree class supplies the same per-editor-theme folder/file looked-up colors used
+            // by PathCell. It has no TreeView skin effect on this Region.
+            getStyleClass().addAll("project-map-surface", "project-tree");
+            iconRasterizer.setManaged(false);
+            iconRasterizer.setMouseTransparent(true);
+            iconRasterizer.setMinSize(ICON_SIZE, ICON_SIZE);
+            iconRasterizer.setPrefSize(ICON_SIZE, ICON_SIZE);
+            iconRasterizer.setMaxSize(ICON_SIZE, ICON_SIZE);
+            iconRasterizer.resize(ICON_SIZE, ICON_SIZE);
+            iconRasterizer.relocate(-ICON_SIZE * 2, -ICON_SIZE * 2);
             getChildren()
                     .addAll(
                             canvas,
+                            iconRasterizer,
                             bgProbe,
                             surfaceProbe,
                             borderProbe,
@@ -383,7 +406,11 @@ final class ProjectMapView extends VBox {
                             mutedProbe,
                             accentProbe,
                             warningProbe,
-                            successProbe);
+                            successProbe,
+                            folderProbe,
+                            fileProbe,
+                            oliveProbe,
+                            violetProbe);
             setMinSize(80, 100);
             setFocusTraversable(true);
             setAccessibleRole(AccessibleRole.TREE_VIEW);
@@ -400,8 +427,15 @@ final class ProjectMapView extends VBox {
                     mutedProbe,
                     accentProbe,
                     warningProbe,
-                    successProbe)) {
-                probe.fillProperty().addListener((obs, old, value) -> repaint());
+                    successProbe,
+                    folderProbe,
+                    fileProbe,
+                    oliveProbe,
+                    violetProbe)) {
+                probe.fillProperty().addListener((obs, old, value) -> {
+                    iconImages.clear();
+                    repaint();
+                });
             }
 
             addEventHandler(MouseEvent.MOUSE_PRESSED, this::mousePressed);
@@ -617,9 +651,9 @@ final class ProjectMapView extends VBox {
             g.setLineWidth((isSelected ? 1.5 : 1.0) * zoom);
             g.strokeRoundRect(box.x(), box.y(), box.width(), box.height(), 8 * zoom, 8 * zoom);
 
-            double iconX = box.x() + 10 * zoom;
-            double iconY = box.y() + 9 * zoom;
-            drawIcon(g, entry.directory(), iconX, iconY);
+            double iconX = box.x() + 7 * zoom;
+            double iconY = box.y() + 6 * zoom;
+            drawIcon(g, entry, iconX, iconY);
             g.setFill(isSelected ? Color.WHITE : color(textProbe, Color.web("#d8dee9")));
             g.setFont(Font.font("System", isSelected ? FontWeight.SEMI_BOLD : FontWeight.NORMAL, 12 * zoom));
             String label = ellipsize(entry.name(), Math.max(4, (int) (15 / zoom)));
@@ -633,17 +667,54 @@ final class ProjectMapView extends VBox {
             g.setGlobalAlpha(1);
         }
 
-        private void drawIcon(GraphicsContext g, boolean directory, double x, double y) {
-            g.setStroke(color(accentProbe, Color.web("#58a6ff")));
-            g.setLineWidth(Math.max(1, 1.2 * zoom));
-            if (directory) {
-                g.strokeRoundRect(x, y + 2 * zoom, 13 * zoom, 10 * zoom, 2 * zoom, 2 * zoom);
-                g.strokeLine(x + 1 * zoom, y + 2 * zoom, x + 5 * zoom, y - 1 * zoom);
-                g.strokeLine(x + 5 * zoom, y - 1 * zoom, x + 9 * zoom, y + 2 * zoom);
-            } else {
-                g.strokeRoundRect(x + 1 * zoom, y - 1 * zoom, 11 * zoom, 14 * zoom, 1.5 * zoom, 1.5 * zoom);
-                g.strokeLine(x + 7 * zoom, y - 1 * zoom, x + 12 * zoom, y + 4 * zoom);
+        private void drawIcon(GraphicsContext g, ProjectMapModel.Entry entry, double x, double y) {
+            Image icon = iconImage(entry);
+            g.drawImage(icon, x, y, ICON_SIZE * zoom, ICON_SIZE * zoom);
+        }
+
+        private Image iconImage(ProjectMapModel.Entry entry) {
+            String kind = entry.directory() ? "folder" : FileIcons.iconKeyFor(entry.name());
+            String statusClass = iconStatusClass(entry);
+            IconKey key = new IconKey(kind, statusClass);
+            return iconImages.computeIfAbsent(
+                    key, ignored -> rasterizeIcon(entry.name(), entry.directory(), statusClass));
+        }
+
+        private String iconStatusClass(ProjectMapModel.Entry entry) {
+            if (entry.directory()) {
+                return gitDirectories.contains(entry.path()) ? "git-status-dir-changed" : "";
             }
+            if (modifiedPaths.contains(entry.path())) {
+                return "modified-file";
+            }
+            GitFileStatus status = gitState.get(entry.path());
+            return status == null ? "" : status.cssClass();
+        }
+
+        /** Snapshots the shared Project-tree SVG once; subsequent Canvas paints only blit the cached image. */
+        private Image rasterizeIcon(String fileName, boolean directory, String statusClass) {
+            Node glyph = FileIcons.forProjectItem(fileName, directory);
+            StackPane cell = new StackPane(glyph);
+            cell.getStyleClass().add(directory ? "folder-cell" : "file-cell");
+            if (statusClass != null && !statusClass.isBlank()) {
+                cell.getStyleClass().add(statusClass);
+            }
+            cell.setMinSize(ICON_SIZE, ICON_SIZE);
+            cell.setPrefSize(ICON_SIZE, ICON_SIZE);
+            cell.setMaxSize(ICON_SIZE, ICON_SIZE);
+            iconRasterizer.getChildren().setAll(cell);
+            iconRasterizer.applyCss();
+            iconRasterizer.layout();
+
+            SnapshotParameters parameters = new SnapshotParameters();
+            parameters.setFill(Color.TRANSPARENT);
+            parameters.setViewport(new Rectangle2D(0, 0, ICON_SIZE, ICON_SIZE));
+            parameters.setTransform(javafx.scene.transform.Transform.scale(ICON_RASTER_SCALE, ICON_RASTER_SCALE));
+            WritableImage image =
+                    new WritableImage((int) (ICON_SIZE * ICON_RASTER_SCALE), (int) (ICON_SIZE * ICON_RASTER_SCALE));
+            cell.snapshot(parameters, image);
+            iconRasterizer.getChildren().clear();
+            return image;
         }
 
         private void drawStatusDots(GraphicsContext g, ProjectMapModel.Entry entry, NodeBox box) {
@@ -904,6 +975,8 @@ final class ProjectMapView extends VBox {
         }
 
         private record NodeBox(ProjectMapModel.Entry entry, double x, double y, double width, double height) {}
+
+        private record IconKey(String kind, String statusClass) {}
     }
 
     private static boolean safeTest(Predicate<Path> predicate, Path path) {

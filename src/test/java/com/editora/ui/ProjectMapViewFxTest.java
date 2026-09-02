@@ -2,9 +2,13 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import javafx.scene.Scene;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.image.Image;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
@@ -69,5 +73,50 @@ class ProjectMapViewFxTest {
         } finally {
             FxTestSupport.runOnFx(panel::dispose);
         }
+    }
+
+    @Test
+    void canvasRasterizesTheSharedFolderAndFileTypeGlyphs() throws Exception {
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                Scene scene = new Scene(mapView, 500, 300);
+                scene.getStylesheets()
+                        .add(ProjectMapViewFxTest.class
+                                .getResource("/com/editora/styles/app.css")
+                                .toExternalForm());
+                mapView.applyCss();
+                mapView.resize(500, 300);
+                mapView.layout();
+
+                Region surface = FxTestSupport.field(mapView, "surface");
+                List<ProjectMapModel.Entry> entries = List.of(
+                        new ProjectMapModel.Entry(root, null, 0, true),
+                        new ProjectMapModel.Entry(root.resolve("Main.java"), root, 1, false));
+                FxTestSupport.call(
+                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
+
+                Map<?, Image> images = FxTestSupport.field(surface, "iconImages");
+                assertTrue(
+                        images.keySet().stream().anyMatch(key -> key.toString().contains("kind=folder")));
+                assertTrue(
+                        images.keySet().stream().anyMatch(key -> key.toString().contains("kind=java")));
+                assertTrue(images.values().stream().allMatch(ProjectMapViewFxTest::hasVisiblePixel));
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    private static boolean hasVisiblePixel(Image image) {
+        for (int y = 0; y < (int) image.getHeight(); y++) {
+            for (int x = 0; x < (int) image.getWidth(); x++) {
+                if (image.getPixelReader().getArgb(x, y) >>> 24 != 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

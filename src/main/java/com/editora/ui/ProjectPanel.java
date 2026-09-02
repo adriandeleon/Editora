@@ -1540,9 +1540,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             Path fileName = item.getFileName();
             // Box the folder glyph in the same fixed icon column as the (already-boxed) file glyphs, so
             // folder and file rows share one icon width and every label starts at the same x.
-            Node glyph = isDir
-                    ? FileIcons.boxed(Icons.project())
-                    : FileIcons.forFileName(fileName == null ? label : fileName.toString());
+            Node glyph = FileIcons.forProjectItem(fileName == null ? label : fileName.toString(), isDir);
             setGraphic(FileIcons.withStatusLetter(glyph, fileStatus == null ? null : fileStatus.letter()));
         }
 
