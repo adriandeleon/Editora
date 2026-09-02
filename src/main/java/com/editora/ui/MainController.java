@@ -2466,7 +2466,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::onProjectFileRenamed,
                 this::onProjectFileDeleted,
                 this::isPathModified,
-                this::hasFileOpen);
+                this::hasFileOpen,
+                this::projectMapPreviewContent);
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
         // Lazy lambda: historyCoordinator is constructed later in this method, so defer the field read to call time.
         projectPanel.setOnBeforeDelete(
@@ -9577,6 +9578,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         EditorBuffer buffer = bufferOf(tab);
         return buffer != null && buffer.isDirty();
+    }
+
+    /** Captures an open editor's current text for the Map's floating preview, including unsaved changes. */
+    private ProjectMapPreview.Content projectMapPreviewContent(Path file) {
+        EditorBuffer buffer = bufferOf(tabForPath(file));
+        if (buffer == null) {
+            return null;
+        }
+        var area = buffer.getArea();
+        int length = area.getLength();
+        int end = Math.min(length, ProjectMapPreview.MAX_PREVIEW_CHARS);
+        return new ProjectMapPreview.Content(area.getText(0, end), end < length);
     }
 
     /**

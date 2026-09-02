@@ -76,6 +76,7 @@ final class ProjectMapView extends VBox {
     private final Predicate<Path> isOpen;
     private final Predicate<Path> isModified;
     private final Consumer<Path> onOpenFile;
+    private final Function<Path, ProjectMapPreview.Content> previewContent;
     private final ToggleButton openFilter = filterButton("project.map.filter.open");
     private final ToggleButton modifiedFilter = filterButton("project.map.filter.modified");
     private final ToggleButton gitFilter = filterButton("project.map.filter.gitChanged");
@@ -84,6 +85,7 @@ final class ProjectMapView extends VBox {
     private final Button forwardButton = new Button("›");
     private final HBox breadcrumbs = new HBox(2);
     private final MapSurface surface = new MapSurface();
+    private final ProjectMapPreview preview;
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "project-map-loader");
         thread.setDaemon(true);
@@ -105,9 +107,19 @@ final class ProjectMapView extends VBox {
     private Path pendingSelection;
 
     ProjectMapView(Consumer<Path> onOpenFile, Predicate<Path> isOpen, Predicate<Path> isModified) {
+        this(onOpenFile, isOpen, isModified, path -> null);
+    }
+
+    ProjectMapView(
+            Consumer<Path> onOpenFile,
+            Predicate<Path> isOpen,
+            Predicate<Path> isModified,
+            Function<Path, ProjectMapPreview.Content> previewContent) {
         this.onOpenFile = onOpenFile;
         this.isOpen = isOpen == null ? path -> false : isOpen;
         this.isModified = isModified == null ? path -> false : isModified;
+        this.previewContent = previewContent == null ? path -> null : previewContent;
+        this.preview = new ProjectMapPreview(onOpenFile);
         getStyleClass().add("project-map-view");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
@@ -214,10 +226,14 @@ final class ProjectMapView extends VBox {
         zoomBar.getStyleClass().add("project-map-zoom");
         zoomBar.setAlignment(Pos.CENTER);
         zoomBar.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
-        StackPane host = new StackPane(surface, zoomBar);
+        StackPane host = new StackPane(surface, zoomBar, preview);
         host.getStyleClass().add("project-map-host");
         StackPane.setAlignment(zoomBar, Pos.BOTTOM_LEFT);
         StackPane.setMargin(zoomBar, new Insets(8));
+        host.widthProperty()
+                .addListener((obs, old, value) -> preview.constrainTo(value.doubleValue(), host.getHeight()));
+        host.heightProperty()
+                .addListener((obs, old, value) -> preview.constrainTo(host.getWidth(), value.doubleValue()));
         return host;
     }
 
@@ -250,6 +266,7 @@ final class ProjectMapView extends VBox {
             return;
         }
         this.root = normalized;
+        preview.hidePreview();
         expanded.clear();
         selectionHistory.clear();
         historyIndex = -1;
@@ -333,11 +350,16 @@ final class ProjectMapView extends VBox {
         surface.setContextMenuFactory(factory);
     }
 
+    void hidePreview() {
+        preview.hidePreview();
+    }
+
     void dispose() {
         disposed = true;
         generation.incrementAndGet();
         loader.shutdownNow();
         surface.dispose();
+        preview.dispose();
     }
 
     private void updateFilters() {
@@ -396,7 +418,25 @@ final class ProjectMapView extends VBox {
         if (!navigatingHistory) {
             recordSelection(path);
         }
+        previewSelection(path);
         updateNavigation();
+    }
+
+    private void previewSelection(Path path) {
+        ProjectMapModel.Entry entry = surface.selectedEntry()
+                .filter(candidate -> candidate.path().equals(path))
+                .orElse(null);
+        if (entry == null || entry.directory()) {
+            preview.hidePreview();
+            return;
+        }
+        ProjectMapPreview.Content content;
+        try {
+            content = previewContent.apply(entry.path());
+        } catch (RuntimeException ignored) {
+            content = null;
+        }
+        preview.showFile(entry.path(), content);
     }
 
     private void recordSelection(Path path) {

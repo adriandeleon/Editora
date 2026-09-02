@@ -1101,6 +1101,54 @@
     -fx-background-color: -color-neutral-muted;
     -fx-text-fill: -color-fg-default;
 }
+.project-map-preview {
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.42), 22, 0.16, 0, 7);
+}
+.project-map-preview-frame {
+    -fx-background-color: -color-bg-default;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+}
+.project-map-preview-header {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 8 8 0 0;
+    -fx-border-color: transparent transparent -color-border-default transparent;
+    -fx-padding: 5 6 5 10;
+    -fx-cursor: move;
+}
+.project-map-preview-title {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-preview-title .toolbar-icon {
+    -fx-fill: -project-file-color;
+}
+.project-map-preview-status {
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-preview-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-padding: 2 6 2 6;
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-preview-button:hover {
+    -fx-background-color: -color-neutral-muted;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-preview-editor {
+    -fx-font-size: 12px;
+}
+.project-map-preview-resize {
+    -fx-border-color: transparent -color-fg-muted -color-fg-muted transparent;
+    -fx-border-width: 0 2 2 0;
+    -fx-opacity: 0.72;
+}
 
 /* Zero-sized Shapes let Canvas painting consume the active AtlantaFX palette after CSS resolution. */
 .project-map-probe-bg { -fx-fill: -color-bg-default; }

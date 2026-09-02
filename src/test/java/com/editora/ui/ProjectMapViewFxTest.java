@@ -212,6 +212,78 @@ class ProjectMapViewFxTest {
     }
 
     @Test
+    void oneClickShowsAMovableResizableScrollableCodePreview() throws Exception {
+        Path file = Files.writeString(root.resolve("Preview.java"), "class Preview {\n    int value = 7;\n}\n")
+                .toAbsolutePath()
+                .normalize();
+        AtomicReference<Path> opened = new AtomicReference<>();
+        ProjectMapView mapView = FxTestSupport.callOnFx(() -> new ProjectMapView(
+                opened::set,
+                path -> false,
+                path -> false,
+                path -> new ProjectMapPreview.Content("class Preview {\n    int value = 8;\n}\n", false)));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                Scene scene = new Scene(mapView, 900, 620);
+                scene.getStylesheets()
+                        .add(ProjectMapViewFxTest.class
+                                .getResource("/com/editora/styles/app.css")
+                                .toExternalForm());
+                mapView.resize(900, 620);
+                mapView.applyCss();
+                mapView.layout();
+
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        List.of(
+                                new ProjectMapModel.Entry(root, null, 0, true),
+                                new ProjectMapModel.Entry(file, root, 1, false)),
+                        Set.of(root));
+
+                Object fileBox = boxFor(surface, file);
+                click(surface, center(fileBox, "x", "width"), center(fileBox, "y", "height"));
+
+                ProjectMapPreview preview = FxTestSupport.field(mapView, "preview");
+                assertTrue(preview.isVisible());
+                assertEquals(file, preview.path());
+                assertTrue(preview.editor().getText().contains("value = 8"), "open-buffer content should win");
+                assertEquals(640, preview.getWidth(), 0.001);
+                assertEquals(420, preview.getHeight(), 0.001);
+                javafx.scene.layout.BorderPane frame = FxTestSupport.field(preview, "frame");
+                assertTrue(frame.getCenter() instanceof org.fxmisc.flowless.VirtualizedScrollPane<?>);
+
+                preview.relocate(40, 40);
+                double beforeWidth = preview.getWidth();
+                FxTestSupport.invokeWith(
+                        preview,
+                        "resizePressed",
+                        MouseEvent.class,
+                        mouse(preview, MouseEvent.MOUSE_PRESSED, beforeWidth, preview.getHeight()));
+                FxTestSupport.invokeWith(
+                        preview,
+                        "resized",
+                        MouseEvent.class,
+                        mouse(preview, MouseEvent.MOUSE_DRAGGED, beforeWidth + 70, preview.getHeight() + 45));
+                assertTrue(preview.getWidth() > beforeWidth);
+                assertTrue(preview.getHeight() > 420);
+
+                Button open = FxTestSupport.field(preview, "open");
+                open.fire();
+                assertEquals(file, opened.get());
+
+                Button close = FxTestSupport.field(preview, "close");
+                close.fire();
+                assertFalse(preview.isVisible());
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
     void rightClickSelectsTheNodeAndRequestsItsSharedContextMenu() throws Exception {
         Path file = Files.writeString(root.resolve("notes.txt"), "hello")
                 .toAbsolutePath()

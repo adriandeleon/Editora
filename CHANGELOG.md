@@ -23,7 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accent rail and label. Hover tooltips expose the full path, type, size, modification time, and relevant
   editor or Git status without filesystem work on the JavaFX thread. Right-clicking any map node opens the
   same file-management menu as the traditional tree, including New, Maven, rename/delete, reveal, terminal,
-  Local History, and Git actions when applicable.
+  Local History, and Git actions when applicable. Selecting a file also opens a movable, resizable,
+  independently scrollable code preview above the canvas, with syntax highlighting, current unsaved content
+  for open buffers, and an explicit action to open the full editor tab.
 
 ### Changed
 

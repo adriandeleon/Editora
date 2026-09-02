@@ -216,11 +216,21 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             Consumer<Path> onFileDeleted,
             java.util.function.Predicate<Path> isModified,
             java.util.function.Predicate<Path> isOpen) {
+        this(onOpenFile, onFileRenamed, onFileDeleted, isModified, isOpen, path -> null);
+    }
+
+    public ProjectPanel(
+            Consumer<Path> onOpenFile,
+            BiConsumer<Path, Path> onFileRenamed,
+            Consumer<Path> onFileDeleted,
+            java.util.function.Predicate<Path> isModified,
+            java.util.function.Predicate<Path> isOpen,
+            java.util.function.Function<Path, ProjectMapPreview.Content> previewContent) {
         this.onOpenFile = onOpenFile;
         this.onFileRenamed = onFileRenamed;
         this.onFileDeleted = onFileDeleted;
         this.isModified = isModified;
-        this.mapView = new ProjectMapView(onOpenFile, isOpen, isModified);
+        this.mapView = new ProjectMapView(onOpenFile, isOpen, isModified, previewContent);
         this.mapView.setOnExpandedChanged(this::syncWatches);
         this.mapView.setContextMenuFactory(entry -> contextMenuFor(
                 new TreeItem<>(entry.path()), entry.directory(), entry.path().equals(root)));
@@ -516,6 +526,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             syncWatches();
             return;
         }
+        mapView.hidePreview();
         if (q.isEmpty()) {
             filtering = false;
             PathItem rootItem = new PathItem(root, showHidden);
