@@ -29,6 +29,8 @@ import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
@@ -50,7 +52,9 @@ import com.editora.search.FuzzyMatch;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The Project tool window: a filter box over a lazy file tree rooted at the active project's folder.
+ * The Project tool window: a filter box over a lazy file tree or read-only spatial map rooted at the active
+ * project's folder. The tree remains the file-management surface; the Canvas map is an alternate navigation
+ * surface.
  * Typing in the filter runs a bounded, debounced project-wide name search (dot-dirs skipped, capped)
  * and shows matches as a flat list; clearing it restores the lazy tree. Emacs-style keyboard nav
  * (C-n/C-p, C-f/C-b, Enter) like the Structure panel; Enter/double-click opens a file; a right-click
@@ -158,6 +162,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final HBox filterBar = new HBox();
 
     private final TreeView<Path> tree = new TreeView<>();
+    private final ProjectMapView mapView;
+    private boolean mapMode;
     private final StackPane placeholderPane;
     private final PauseTransition filterDebounce = new PauseTransition(Duration.millis(150));
 
@@ -202,10 +208,21 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             BiConsumer<Path, Path> onFileRenamed,
             Consumer<Path> onFileDeleted,
             java.util.function.Predicate<Path> isModified) {
+        this(onOpenFile, onFileRenamed, onFileDeleted, isModified, path -> false);
+    }
+
+    public ProjectPanel(
+            Consumer<Path> onOpenFile,
+            BiConsumer<Path, Path> onFileRenamed,
+            Consumer<Path> onFileDeleted,
+            java.util.function.Predicate<Path> isModified,
+            java.util.function.Predicate<Path> isOpen) {
         this.onOpenFile = onOpenFile;
         this.onFileRenamed = onFileRenamed;
         this.onFileDeleted = onFileDeleted;
         this.isModified = isModified;
+        this.mapView = new ProjectMapView(onOpenFile, isOpen, isModified);
+        this.mapView.setOnExpandedChanged(this::syncWatches);
         getStyleClass().add("project-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
@@ -264,6 +281,36 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         // Focus lands on the filter field (focusFirstItem); Down moves into the results and Enter opens the
         // selected (or first) match, so the whole flow is keyboard-only (shared with Structure/Bookmarks/Notes).
         FilterFieldNav.install(filterField, tree, this::openSelected);
+        // The same search field fronts both modes. Intercept navigation before FilterFieldNav's tree handler
+        // when Map is active, then hand focus/activation to the Canvas surface.
+        filterField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (!mapMode) {
+                return;
+            }
+            switch (e.getCode()) {
+                case DOWN -> {
+                    mapView.focusMap();
+                    e.consume();
+                }
+                case ENTER -> {
+                    mapView.openSelection();
+                    e.consume();
+                }
+                case N -> {
+                    if (e.isControlDown()) {
+                        mapView.moveSelection(1);
+                        e.consume();
+                    }
+                }
+                case P -> {
+                    if (e.isControlDown()) {
+                        mapView.moveSelection(-1);
+                        e.consume();
+                    }
+                }
+                default -> {}
+            }
+        });
 
         // Trailing clear button — visible only while the filter has text; clicking it empties the filter
         // (which restores the lazy tree via the debounce) and returns focus to the field.
@@ -278,15 +325,40 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         clear.visibleProperty().bind(filterField.textProperty().isEmpty().not());
         clear.managedProperty().bind(clear.visibleProperty()); // reclaim its width when hidden
 
+        ToggleButton treeMode = new ToggleButton(tr("project.view.tree"));
+        ToggleButton mapModeButton = new ToggleButton(tr("project.view.map"));
+        treeMode.getStyleClass().add("project-view-toggle");
+        mapModeButton.getStyleClass().add("project-view-toggle");
+        treeMode.setTooltip(new Tooltip(tr("project.view.tree.tooltip")));
+        mapModeButton.setTooltip(new Tooltip(tr("project.view.map.tooltip")));
+        treeMode.setFocusTraversable(false);
+        mapModeButton.setFocusTraversable(false);
+        ToggleGroup modes = new ToggleGroup();
+        treeMode.setToggleGroup(modes);
+        mapModeButton.setToggleGroup(modes);
+        treeMode.setSelected(true);
+        // A selected mode cannot be cleared: clicking the already-selected toggle leaves it selected.
+        modes.selectedToggleProperty().addListener((obs, old, selected) -> {
+            if (selected == null) {
+                modes.selectToggle(old);
+                return;
+            }
+            mapMode = selected == mapModeButton;
+            rebuildBody();
+        });
+        HBox viewModes = new HBox(treeMode, mapModeButton);
+        viewModes.getStyleClass().add("project-view-modes");
+
         HBox.setHgrow(filterField, Priority.ALWAYS);
         filterBar.getStyleClass().add("project-filter-bar");
         filterBar.setAlignment(Pos.CENTER);
-        filterBar.getChildren().setAll(filterField, clear);
+        filterBar.getChildren().setAll(filterField, clear, viewModes);
     }
 
     /** Re-renders the visible tree cells so each file's modified marker/color reflects current state. */
     public void refreshModified() {
         tree.refresh();
+        mapView.refreshStates();
     }
 
     /**
@@ -309,6 +381,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         gitChangedDirs = dirs;
         tree.refresh();
+        mapView.setGitStatus(gitStatus);
     }
 
     /**
@@ -317,6 +390,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * Cheap: only re-lists directories that are currently expanded. Called on window focus-regain.
      */
     public void refreshTree() {
+        if (mapMode) {
+            mapView.refresh();
+            return;
+        }
         if (root == null || filtering || !(tree.getRoot() instanceof PathItem rootItem)) {
             return;
         }
@@ -377,6 +454,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Points the tree at {@code root} (a project folder), or shows the placeholder when {@code null}. */
     public void setRoot(Path root) {
         this.root = root;
+        mapView.setRoot(root);
+        mapView.setGitStatus(gitStatus); // recompute changed-directory ancestry against the new root
         loading = true;
         filterField.clear();
         loading = false;
@@ -395,6 +474,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         this.showHidden = showHidden;
+        mapView.setShowHidden(showHidden);
         if (root != null) {
             rebuildBody(); // recreate the tree (PathItems capture the flag) with the new visibility
         }
@@ -422,6 +502,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         String q = filterField.getText().trim();
+        if (mapMode) {
+            filtering = false;
+            mapView.setQuery(q);
+            getChildren().setAll(filterBar, mapView);
+            VBox.setVgrow(mapView, Priority.ALWAYS);
+            syncWatches();
+            return;
+        }
         if (q.isEmpty()) {
             filtering = false;
             PathItem rootItem = new PathItem(root, showHidden);
@@ -499,8 +587,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (root != null && Files.isDirectory(root)) {
             desired.add(root);
         }
-        if (tree.getRoot() instanceof PathItem rootItem) {
+        if (!mapMode && tree.getRoot() instanceof PathItem rootItem) {
             collectExpanded(rootItem, desired); // expanded directories (root included)
+        }
+        if (mapMode) {
+            desired.addAll(mapView.expandedDirectories());
         }
         watchKeys.entrySet().removeIf(entry -> {
             if (!desired.contains(entry.getValue())) {
@@ -631,6 +722,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         }
         searchExecutor.shutdownNow();
+        mapView.dispose();
     }
 
     /**
@@ -714,6 +806,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     // --- keyboard navigation (mirrors StructurePanel) ---
 
     private void onKey(KeyEvent e) {
+        if (mapMode) {
+            return; // the Canvas surface owns its arrows/C-n/C-p/Enter in Map mode
+        }
         switch (e.getCode()) {
             case ENTER -> {
                 openSelected();

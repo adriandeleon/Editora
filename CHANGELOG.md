@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Project tool window now has a visual Map navigator.** A Tree/Map switch preserves the existing
+  file-management tree while offering a read-only Canvas hierarchy with connected depth columns, pan and
+  zoom, mouse and keyboard navigation, and filters for open, modified, Git-changed, and file-type working
+  sets. Filtering fades unrelated nodes instead of removing their spatial context, and project scans remain
+  bounded and off the JavaFX thread.
+
 ### Changed
 
 - **Find in Files now has one clear visual toggle.** Its duplicate tool-stripe icon has been removed in

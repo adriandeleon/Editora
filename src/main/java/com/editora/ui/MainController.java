@@ -2457,7 +2457,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 : menuBar.node());
         toolWindows = new ToolWindowManager(workspace, editorFooter(), config, keymap);
         projectPanel = new ProjectPanel(
-                this::openPath, this::onProjectFileRenamed, this::onProjectFileDeleted, this::isPathModified);
+                this::openPath,
+                this::onProjectFileRenamed,
+                this::onProjectFileDeleted,
+                this::isPathModified,
+                this::hasFileOpen);
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
         // Lazy lambda: historyCoordinator is constructed later in this method, so defer the field read to call time.
         projectPanel.setOnBeforeDelete(

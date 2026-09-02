@@ -964,6 +964,102 @@
     -fx-background-color: -color-neutral-muted;
     -fx-text-fill: -color-fg-default;
 }
+
+/* Project navigator mode switch. The tree remains the management surface; Map is the read-only spatial
+   Canvas view, so this control is intentionally small enough to live beside the shared search field. */
+.project-view-modes {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 5;
+    -fx-padding: 1;
+}
+.project-view-toggle {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-padding: 3 7 3 7;
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-view-toggle:selected {
+    -fx-background-color: -color-accent-subtle;
+    -fx-text-fill: -color-accent-fg;
+}
+
+/* Canvas project map. Filters are native controls for focus/accessibility; only the hierarchy is painted. */
+.project-map-view {
+    -fx-padding: 0;
+}
+.project-map-filters {
+    -fx-padding: 3 2 5 2;
+}
+.project-map-filter-heading {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 10px;
+    -fx-padding: 0 2 0 1;
+}
+.project-map-filter-chip,
+.project-map-type-filter,
+.project-map-filter-clear {
+    -fx-font-size: 10px;
+}
+.project-map-filter-chip {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 10;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 10;
+    -fx-padding: 3 8 3 8;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-filter-chip:selected {
+    -fx-background-color: -color-accent-subtle;
+    -fx-border-color: -color-accent-muted;
+    -fx-text-fill: -color-accent-fg;
+}
+.project-map-filter-clear {
+    -fx-background-color: transparent;
+    -fx-padding: 3 5 3 5;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-filter-clear:hover {
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-type-filter {
+    -fx-pref-width: 92px;
+}
+.project-map-host {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1 0 0 0;
+}
+.project-map-surface:focused {
+    -fx-effect: innershadow(gaussian, -color-accent-muted, 4, 0.1, 0, 0);
+}
+.project-map-zoom {
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 5;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 5;
+    -fx-padding: 1;
+}
+.project-map-zoom-control {
+    -fx-background-color: transparent;
+    -fx-padding: 3 6 3 6;
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-zoom-control:hover {
+    -fx-background-color: -color-neutral-muted;
+    -fx-text-fill: -color-fg-default;
+}
+
+/* Zero-sized Shapes let Canvas painting consume the active AtlantaFX palette after CSS resolution. */
+.project-map-probe-bg { -fx-fill: -color-bg-default; }
+.project-map-probe-surface { -fx-fill: -color-bg-subtle; }
+.project-map-probe-border { -fx-fill: -color-border-default; }
+.project-map-probe-text { -fx-fill: -color-fg-default; }
+.project-map-probe-muted { -fx-fill: -color-fg-muted; }
+.project-map-probe-accent { -fx-fill: -color-accent-emphasis; }
+.project-map-probe-warning { -fx-fill: -state-amber; }
+.project-map-probe-success { -fx-fill: -state-green; }
 .project-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;

@@ -192,6 +192,11 @@ You will see these everywhere; learn them once:
 - **The Canvas overlay idiom** (`SpellCheckOverlay`/`MarkdownLintOverlay`/…): a
   mouse-transparent `Canvas`, coalesced redraw, visible-paragraphs only, released to 1×1 when
   inactive. Recipe in [extending.md](extending.md#add-a-canvas-overlay).
+- **The Project Map hybrid** (`ProjectMapView` + `ProjectMapModel`): native JavaFX controls own
+  filters, focus, and zoom while a focusable Canvas draws and hit-tests the bounded visible hierarchy.
+  Filesystem listing runs on one daemon executor behind a generation guard. The existing `ProjectPanel`
+  tree remains the accessible file-management surface and shares its root, watcher refresh, Git state,
+  modified/open predicates, search field, and open-file callback with the map.
 - **The feature-coordinator pattern** (`LogViewerCoordinator`/`MermaidCoordinator`/…): pull a
   feature's logic out of `MainController` behind a `CoordinatorHost` interface so it is
   unit-testable. Recipe in [extending.md](extending.md#extract-a-feature-coordinator).
