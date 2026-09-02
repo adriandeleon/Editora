@@ -88,6 +88,16 @@ Highlighting + minimap are disabled at **≥ 5 MB**; the file goes read-only wit
 at **≥ 50 MB**. Many overlays check `largeFile`/`hugeFile` and no-op. Keep these guards when
 touching that code, and bound memory (undo history is capped; loads are capped).
 
+Initial opens of local files at **≥ 256 KB**, and all remote files, use a tab shell while
+`MainController` reads, binary-sniffs, resolves the charset, and decodes on a virtual thread. The
+only required FX-thread step is the final RichTextFX insertion. Apply the large/heavy/read-only
+profile before that insertion so disabled features and undo history never observe the initial
+document change. Navigation requested against the shell must remain queued until loading completes.
+
+Folding's debounced document detection is also generation-guarded background work. Explicit fold
+commands remain synchronous, while large-file mode skips heuristic detection entirely; server and
+manual regions can still be applied without scanning the document.
+
 ### 6. Bound retained GPU textures
 
 JavaFX's Prism texture pool has a fixed ceiling (default 512 MB); exhausting it makes the

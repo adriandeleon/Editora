@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Large and remote files open without blocking the window on disk I/O.** Editora now shows the editor tab
+  immediately, then reads, classifies, and decodes expensive files on virtual threads before performing one
+  JavaFX document insertion. Large-file safeguards are active before that insertion, heuristic folding no
+  longer scans large documents after the load debounce, restored folds are computed once, and restoring
+  several personal notes reuses one text snapshot instead of copying the document for every note.
+
+- **Large CSV edits and live rendered previews stay responsive.** Rainbow CSV span construction now runs
+  off the JavaFX thread and discards stale results instead of rescanning and restyling the whole document
+  in the typing pulse. DOT, PlantUML, and Typst previews now coalesce queued renders per editor surface, so
+  a slow external renderer does not work through every obsolete intermediate revision after typing stops.
+
 - **Preferences now use JSON instead of TOML.** Global settings move from `settings.toml` to
   `settings.json`, and committed project toolchain overrides move to `.editora/settings.json`.
   Existing global TOML is converted automatically through the normal schema migrations and removed

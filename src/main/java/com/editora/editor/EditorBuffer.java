@@ -5704,8 +5704,9 @@ public class EditorBuffer implements TabContent {
             // zoom re-render a cheap re-fit. Don't call applyPreviewScale() here (it re-enters this branch).
             double v = previewPane().getVvalue();
             double scale = previewFontScale;
+            String surfaceKey = "diagram@" + System.identityHashCode(this);
             javafx.scene.layout.VBox box =
-                    new javafx.scene.layout.VBox(DiagramImages.node(dk, area.getText(), lw -> lw * scale));
+                    new javafx.scene.layout.VBox(DiagramImages.node(dk, area.getText(), lw -> lw * scale, surfaceKey));
             box.getStyleClass().add("markdown-preview");
             StackPane wrap = new StackPane(box);
             wrap.getStyleClass().add("markdown-preview-wrap");
@@ -5728,8 +5729,9 @@ public class EditorBuffer implements TabContent {
             java.nio.file.Path fileDir = local ? path.getParent() : null;
             java.nio.file.Path root = local && typstRootResolver != null ? typstRootResolver.apply(path) : fileDir;
             String retainKey = path != null ? path.toString() : ("untitled@" + System.identityHashCode(this));
-            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
-                    TypstImages.node(area.getText(), lw -> lw * scale, retainKey, fileDir, root, getDisplayName()));
+            String surfaceKey = "typst@" + System.identityHashCode(this);
+            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(TypstImages.node(
+                    area.getText(), lw -> lw * scale, retainKey, surfaceKey, fileDir, root, getDisplayName()));
             box.getStyleClass().add("markdown-preview");
             StackPane wrap = new StackPane(box);
             wrap.getStyleClass().add("markdown-preview-wrap");
@@ -7614,7 +7616,7 @@ public class EditorBuffer implements TabContent {
     /**
      * Enables large-file mode: skips syntax highlighting and hides the minimap (regardless of the
      * user's view settings) so very large documents stay responsive. Should be set right after the
-     * content is loaded; see {@link #LARGE_FILE_BYTES}.
+     * content is inserted; see {@link #LARGE_FILE_BYTES}.
      */
     public void setLargeFile(boolean large) {
         if (this.largeFile == large) {
@@ -7622,6 +7624,7 @@ public class EditorBuffer implements TabContent {
         }
         this.largeFile = large;
         highlightGen++; // discard any in-flight highlight result
+        folds.setHeuristicEnabled(!large); // never schedule a whole-document fold scan for a large file
         setMinimapVisible(minimapVisible); // re-apply with the large-file guard
         applySpellActive(); // spell checking is off in large-file mode (like highlighting)
         // Large files don't need (and shouldn't pay the memory for) undo history.
@@ -9964,9 +9967,20 @@ public class EditorBuffer implements TabContent {
 
     /** Replaces the document content (e.g. after loading a file) and resets the dirty flag. */
     public void setContent(String content) {
+        setInitialContent(content);
+    }
+
+    /**
+     * Installs freshly-loaded content without immediately copying the whole RichTextFX document back out
+     * merely to establish the clean baseline. Size-based modes should be applied before this call, so the
+     * initial replacement never enters an undo manager or feature that the load profile will disable.
+     */
+    public void setInitialContent(String content) {
+        String initial = content == null ? "" : content;
         widen(); // a fresh document supersedes any narrowing of the old one
-        area.replaceText(content == null ? "" : content);
-        markClean();
+        area.replaceText(initial);
+        cleanText = initial;
+        dirty.set(false);
         recomputeRun(); // detect a runnable file on load (drives the Run glyph)
     }
 
@@ -10179,8 +10193,8 @@ public class EditorBuffer implements TabContent {
         lineDepths.clear();
     }
 
-    /** Applies per-column rainbow CSV coloring over the whole document (a cheap O(n) FX-thread pass — no
-     *  grammar state, so no incremental machinery; runs on the same debounced highlight pulse). */
+    /** Applies per-column rainbow CSV coloring over the whole document. The scan and span construction run
+     *  off the FX thread; only the guarded style application returns to it. */
     private void applyCsvRainbow() {
         lineStates.clear();
         lineDepths.clear();
@@ -10193,12 +10207,19 @@ public class EditorBuffer implements TabContent {
         if (len == 0) {
             return;
         }
-        char delim = com.editora.csv.CsvParser.detectDelimiter(text);
-        StyleSpans<Collection<String>> spans = CsvRainbow.buildSpans(text, delim, CsvRainbow.COLORS);
-        if (spans.length() == len) {
-            area.setStyleSpans(0, spans);
-            scheduleBraceMatch();
-        }
+        long version = docVersion;
+        long gen = ++highlightGen;
+        HIGHLIGHT_POOL.execute(() -> {
+            char delim = com.editora.csv.CsvParser.detectDelimiter(text);
+            StyleSpans<Collection<String>> spans = CsvRainbow.buildSpans(text, delim, CsvRainbow.COLORS);
+            Platform.runLater(() -> {
+                if (gen != highlightGen || version != docVersion || spans.length() != area.getLength()) {
+                    return;
+                }
+                setStyleSpansPreservingScroll(0, spans);
+                scheduleBraceMatch();
+            });
+        });
     }
 
     /**
