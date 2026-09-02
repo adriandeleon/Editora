@@ -490,6 +490,8 @@ final class ProjectMapView extends VBox {
         private static final double ROW_GAP = 9;
         private static final double WORLD_PADDING = 22;
         private static final double COLUMN_HEADER_HEIGHT = 70;
+        private static final double COLUMN_TOP_INSET = 5;
+        private static final double COLUMN_BOTTOM_PADDING = 12;
         private static final DateTimeFormatter TOOLTIP_TIME = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
                 .withLocale(Locale.getDefault())
                 .withZone(ZoneId.systemDefault());
@@ -939,16 +941,18 @@ final class ProjectMapView extends VBox {
                             NODE_WIDTH * zoom,
                             NODE_HEIGHT * zoom));
                 }
-                double cardHeight = headerHeight + Math.max(1, column.entries().size()) * (NODE_HEIGHT + ROW_GAP) + 12;
+                int rowCount = column.entries().size();
+                double rowsHeight = rowCount == 0 ? 0 : rowCount * NODE_HEIGHT + (rowCount - 1) * ROW_GAP;
+                double cardHeight = COLUMN_TOP_INSET + headerHeight + rowsHeight + COLUMN_BOTTOM_PADDING;
                 columnBoxes.add(new ColumnBox(
                         column,
                         screenX(columnWorldX - 10),
-                        screenY(columnWorldY - 5),
+                        screenY(columnWorldY - COLUMN_TOP_INSET),
                         (NODE_WIDTH + 20) * zoom,
                         cardHeight * zoom));
             }
 
-            drawColumns(g, height);
+            drawColumns(g);
             Map<Path, NodeBox> byPath = new HashMap<>();
             for (NodeBox box : boxes) {
                 byPath.put(box.entry().path(), box);
@@ -1079,7 +1083,7 @@ final class ProjectMapView extends VBox {
             g.setGlobalAlpha(1);
         }
 
-        private void drawColumns(GraphicsContext g, double viewportHeight) {
+        private void drawColumns(GraphicsContext g) {
             Color surface = color(surfaceProbe, Color.web("#161d27"));
             Color border = color(borderProbe, Color.web("#303946"));
             for (ColumnBox box : columnBoxes) {
@@ -1087,7 +1091,7 @@ final class ProjectMapView extends VBox {
                 double x = box.x();
                 double y = box.y();
                 double w = box.width();
-                double h = Math.max(box.height(), Math.max(80, viewportHeight - y - 42));
+                double h = box.height();
                 g.setGlobalAlpha(0.64);
                 g.setFill(surface);
                 g.fillRoundRect(x, y, w, h, 12 * zoom, 12 * zoom);

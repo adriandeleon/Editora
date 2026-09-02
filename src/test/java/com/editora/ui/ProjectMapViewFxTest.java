@@ -354,6 +354,53 @@ class ProjectMapViewFxTest {
     }
 
     @Test
+    void eachColumnHeightFollowsItsVisibleRowsWithBottomPadding() throws Exception {
+        Path src = root.resolve("src").toAbsolutePath().normalize();
+        Path docs = root.resolve("docs").toAbsolutePath().normalize();
+        Path readme = root.resolve("README.md").toAbsolutePath().normalize();
+        Path java = src.resolve("App.java");
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 720, 420);
+                mapView.resize(720, 420);
+                mapView.layout();
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        List.of(
+                                new ProjectMapModel.Entry(root, null, 0, true),
+                                new ProjectMapModel.Entry(src, root, 1, true),
+                                new ProjectMapModel.Entry(docs, root, 1, true),
+                                new ProjectMapModel.Entry(readme, root, 1, false),
+                                new ProjectMapModel.Entry(java, src, 2, false)),
+                        Set.of(root, src));
+
+                Object depthOne = columnBoxFor(surface, 1);
+                Object depthTwo = columnBoxFor(surface, 2);
+                double depthOneHeight = (double) FxTestSupport.call(depthOne, "height", new Class<?>[0]);
+                double depthTwoHeight = (double) FxTestSupport.call(depthTwo, "height", new Class<?>[0]);
+                assertTrue(depthOneHeight > depthTwoHeight, "a three-row column should be taller than one row");
+
+                double columnBottom = (double) FxTestSupport.call(depthOne, "y", new Class<?>[0]) + depthOneHeight;
+                double lastRowBottom = FxTestSupport.<List<?>>field(surface, "boxes").stream()
+                        .filter(box -> entryOf(box).depth() == 1)
+                        .mapToDouble(box -> (double) FxTestSupport.call(box, "y", new Class<?>[0])
+                                + (double) FxTestSupport.call(box, "height", new Class<?>[0]))
+                        .max()
+                        .orElseThrow();
+                double zoom = FxTestSupport.field(surface, "zoom");
+                assertEquals(12 * zoom, columnBottom - lastRowBottom, 0.001);
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
     void columnFiltersReflowDescendantsAndPinnedColumnsDoNotDrag() throws Exception {
         Path src = root.resolve("src").toAbsolutePath().normalize();
         Path docs = root.resolve("docs").toAbsolutePath().normalize();
