@@ -383,6 +383,7 @@ final class ProjectMapView extends VBox {
         private double pressOffsetX;
         private double pressOffsetY;
         private boolean panning;
+        private boolean painting;
 
         MapSurface() {
             // The project-tree class supplies the same per-editor-theme folder/file looked-up colors used
@@ -501,8 +502,14 @@ final class ProjectMapView extends VBox {
         }
 
         void repaint() {
-            if (getWidth() > 0 && getHeight() > 0) {
+            if (painting || getWidth() <= 0 || getHeight() <= 0) {
+                return;
+            }
+            painting = true;
+            try {
                 paint();
+            } finally {
+                painting = false;
             }
         }
 
@@ -691,8 +698,13 @@ final class ProjectMapView extends VBox {
             String kind = entry.directory() ? "folder" : FileIcons.iconKeyFor(entry.name());
             String statusClass = iconStatusClass(entry);
             IconKey key = new IconKey(kind, statusClass);
-            return iconImages.computeIfAbsent(
-                    key, ignored -> rasterizeIcon(entry.name(), entry.directory(), statusClass));
+            Image cached = iconImages.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            Image image = rasterizeIcon(entry.name(), entry.directory(), statusClass);
+            iconImages.put(key, image);
+            return image;
         }
 
         private String iconStatusClass(ProjectMapModel.Entry entry) {
@@ -817,7 +829,7 @@ final class ProjectMapView extends VBox {
             selected = hit.entry().path();
             updateAccessibleText();
             repaint();
-            if (event.getClickCount() >= 2) {
+            if (hit.entry().directory() ? event.getClickCount() == 1 : event.getClickCount() >= 2) {
                 onActivate.accept(hit.entry());
             }
             event.consume();

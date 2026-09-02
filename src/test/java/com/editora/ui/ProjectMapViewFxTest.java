@@ -10,6 +10,9 @@ import java.util.Set;
 import javafx.scene.Scene;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.image.Image;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.input.PickResult;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
@@ -19,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -117,6 +121,75 @@ class ProjectMapViewFxTest {
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
         }
+    }
+
+    @Test
+    void oneClickExpandsAndCollapsesFolderNodes() throws Exception {
+        Path source =
+                Files.createDirectory(root.resolve("src")).toAbsolutePath().normalize();
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 500, 300);
+                mapView.setRoot(root);
+                mapView.applyCss();
+                mapView.resize(500, 300);
+                mapView.layout();
+
+                Region surface = FxTestSupport.field(mapView, "surface");
+                surface.resize(500, 240);
+                surface.layout();
+                List<ProjectMapModel.Entry> entries = List.of(
+                        new ProjectMapModel.Entry(root, null, 0, true),
+                        new ProjectMapModel.Entry(source, root, 1, true));
+                FxTestSupport.call(
+                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
+
+                List<?> boxes = FxTestSupport.field(surface, "boxes");
+                Object sourceBox = boxes.stream()
+                        .filter(box -> ((ProjectMapModel.Entry) FxTestSupport.call(box, "entry", new Class<?>[0]))
+                                .path()
+                                .equals(source))
+                        .findFirst()
+                        .orElseThrow();
+                double clickX = (double) FxTestSupport.call(sourceBox, "x", new Class<?>[0])
+                        + (double) FxTestSupport.call(sourceBox, "width", new Class<?>[0]) / 2;
+                double clickY = (double) FxTestSupport.call(sourceBox, "y", new Class<?>[0])
+                        + (double) FxTestSupport.call(sourceBox, "height", new Class<?>[0]) / 2;
+
+                click(surface, clickX, clickY);
+                assertTrue(mapView.expandedDirectories().contains(source));
+
+                click(surface, clickX, clickY);
+                assertFalse(mapView.expandedDirectories().contains(source));
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    private static void click(Region target, double x, double y) {
+        MouseEvent event = new MouseEvent(
+                MouseEvent.MOUSE_CLICKED,
+                x,
+                y,
+                x,
+                y,
+                MouseButton.PRIMARY,
+                1,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                true,
+                new PickResult(target, x, y));
+        FxTestSupport.invokeWith(target, "mouseClicked", MouseEvent.class, event);
     }
 
     private static boolean hasVisiblePixel(Image image) {
