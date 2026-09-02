@@ -88,11 +88,21 @@ Highlighting + minimap are disabled at **≥ 5 MB**; the file goes read-only wit
 at **≥ 50 MB**. Many overlays check `largeFile`/`hugeFile` and no-op. Keep these guards when
 touching that code, and bound memory (undo history is capped; loads are capped).
 
-Initial opens of local files at **≥ 256 KB**, and all remote files, use a tab shell while
-`MainController` reads, binary-sniffs, resolves the charset, and decodes on a virtual thread. The
-only required FX-thread step is the final RichTextFX insertion. Apply the large/heavy/read-only
-profile before that insertion so disabled features and undo history never observe the initial
-document change. Navigation requested against the shell must remain queued until loading completes.
+Every text-file candidate uses a tab shell while `MainController` stats, reads, binary-sniffs, resolves
+EditorConfig/the charset, and decodes on a virtual thread. File size is not a safe proxy for latency: a
+tiny file can live on a cold network mount or FUSE provider. The only required FX-thread step is the final
+RichTextFX insertion. The shell applies no path-dependent settings; the prepared EditorConfig result is
+applied once, immediately before insertion, rather than walking parent directories on FX and then doing it
+again in the loader.
+
+Apply the large/heavy/read-only profile before that insertion so disabled features and undo history never
+observe the initial document change. Shape matters as well as byte and line counts: a paragraph at **64 KiB
+or wider** enters the long-line safety profile, which forces wrapping off, uses the large-file feature
+guards, and installs giant paragraphs as bounded, visually identical style segments. The segmentation keeps
+the text and paragraph model exact while preventing JavaFX Text from laying out hundreds of thousands of
+characters as one glyph node. This protects minified/generated files that evade a line-count threshold but
+are pathological to lay out as one paragraph. Navigation requested against the shell must remain queued
+until loading completes.
 
 Folding's debounced document detection is also generation-guarded background work. Explicit fold
 commands remain synchronous, while large-file mode skips heuristic detection entirely; server and

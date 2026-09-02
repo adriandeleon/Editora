@@ -14,6 +14,7 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
+import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -57,6 +58,22 @@ class ToolWindowStripeAlignmentFxTest {
         Files.writeString(file, "# Hello\n\nsecond line\nthird line\n");
         fx = FxWindowFixture.create(
                 dir, false, false, false, List.of(new MainController.OpenTarget(file, 1, 1)), true, c -> {});
+        // Text opens deliberately install an empty shell first. Measure only after the initial document has
+        // landed and RichTextFX has built the first paragraph; otherwise this test compares two different
+        // layout pulses and intermittently reads the shell's pre-content geometry.
+        boolean loaded = false;
+        for (int i = 0; i < 300; i++) {
+            loaded = FxTestSupport.callOnFx(() -> {
+                EditorBuffer buffer =
+                        (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+                return buffer != null && !buffer.getContent().isEmpty();
+            });
+            if (loaded) {
+                break;
+            }
+            Thread.sleep(20);
+        }
+        assertTrue(loaded, "the sample document should finish loading before geometry is measured");
         FxTestSupport.runOnFx(() -> {
             Scene scene = FxTestSupport.<Stage>field(fx.controller, "stage").getScene();
             scene.getRoot().resize(1500, 800);

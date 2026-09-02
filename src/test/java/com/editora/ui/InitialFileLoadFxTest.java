@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.BeforeAll;
@@ -22,27 +23,96 @@ class InitialFileLoadFxTest {
     }
 
     @Test
-    void expensiveOpenEventuallyInstallsTheCompleteDocument() throws Exception {
+    void smallLocalOpenStartsWithAShellAndEventuallyInstallsTheCompleteDocument() throws Exception {
         Path dir = Files.createTempDirectory("editora-async-open");
-        Path file = dir.resolve("large.txt");
-        // Above the asynchronous-load threshold, but with ordinary line lengths. A single 300 KB line
-        // turns this load-path test into a RichTextFX long-line layout stress test and can monopolize a
-        // slower Linux CI FX thread long enough to make unrelated tests time out behind it.
-        String content = ("x".repeat(1023) + "\n").repeat(270);
+        Path file = dir.resolve("small.txt");
+        String content = "small local file\n".repeat(8);
         Files.writeString(file, content);
         FxWindowFixture fx = FxWindowFixture.create();
         try {
-            assertTrue(
-                    (Boolean) FxTestSupport.call(fx.controller, "shouldLoadAsync", new Class<?>[] {Path.class}, file));
-            FxTestSupport.runOnFx(
-                    () -> FxTestSupport.call(fx.controller, "openPath", new Class<?>[] {Path.class}, file));
+            AtomicReference<EditorBuffer> opened = new AtomicReference<>();
+            FxTestSupport.runOnFx(() -> {
+                FxTestSupport.call(fx.controller, "openPath", new Class<?>[] {Path.class}, file);
+                EditorBuffer shell =
+                        (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+                opened.set(shell);
+                assertEquals("", shell.getContent(), "the disk result must not land during the initiating FX task");
+                assertTrue(
+                        ((java.util.Set<?>) FxTestSupport.field(fx.controller, "loadingBuffers")).contains(shell),
+                        "even a small local text file should start as a loading shell");
+            });
 
-            EditorBuffer buffer = FxTestSupport.callOnFx(
-                    () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {}));
+            EditorBuffer buffer = opened.get();
             assertNotNull(buffer, "the tab shell should be visible immediately");
             assertTrue(waitUntil(() -> content.equals(buffer.getContent())), "background load did not complete");
             assertEquals(content, FxTestSupport.callOnFx(buffer::getContent));
             assertTrue(!FxTestSupport.callOnFx(buffer::isDirty), "a freshly loaded document must stay clean");
+        } finally {
+            fx.dispose();
+            Files.deleteIfExists(file);
+            Files.deleteIfExists(dir);
+        }
+    }
+
+    @Test
+    void loadingShellDefersEditorConfigAndAppliesThePreparedResult() throws Exception {
+        Path dir = Files.createTempDirectory("editora-async-editorconfig");
+        Path config = dir.resolve(".editorconfig");
+        Path file = dir.resolve("sample.txt");
+        Files.writeString(config, "root = true\n\n[*.txt]\nindent_style = space\nindent_size = 7\n");
+        Files.writeString(file, "configured\n");
+        FxWindowFixture fx = FxWindowFixture.create();
+        try {
+            AtomicReference<EditorBuffer> opened = new AtomicReference<>();
+            FxTestSupport.runOnFx(() -> {
+                FxTestSupport.call(fx.controller, "openPath", new Class<?>[] {Path.class}, file);
+                EditorBuffer shell =
+                        (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+                opened.set(shell);
+                assertTrue(shell.getEditorConfigProps().isEmpty(), "the FX-thread shell must not resolve EditorConfig");
+            });
+
+            EditorBuffer buffer = opened.get();
+            assertTrue(waitUntil(() -> "configured\n".equals(buffer.getContent())), "background load did not complete");
+            assertEquals(7, FxTestSupport.callOnFx(buffer::getTabSize));
+            assertEquals(
+                    7,
+                    FxTestSupport.callOnFx(() -> buffer.getEditorConfigProps().indentSize()),
+                    "the background-resolved EditorConfig result should be reused");
+        } finally {
+            fx.dispose();
+            Files.deleteIfExists(file);
+            Files.deleteIfExists(config);
+            Files.deleteIfExists(dir);
+        }
+    }
+
+    @Test
+    void pathologicalLongLineUsesSafeProfileBeforeInsertion() throws Exception {
+        Path dir = Files.createTempDirectory("editora-long-line-open");
+        Path file = dir.resolve("minified.js");
+        // The former async-load fixture accidentally exposed this exact shape: one ~320 KiB paragraph
+        // monopolized the Linux FX thread and caused cascading suite timeouts. Keep it as an explicit guard.
+        String content = "x".repeat(MainController.LONG_LINE_FILE_CHARS * 5);
+        Files.writeString(file, content);
+        FxWindowFixture fx = FxWindowFixture.create();
+        try {
+            FxTestSupport.runOnFx(
+                    () -> FxTestSupport.call(fx.controller, "openPath", new Class<?>[] {Path.class}, file));
+            EditorBuffer buffer = FxTestSupport.callOnFx(
+                    () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {}));
+            assertTrue(waitUntil(() -> content.equals(buffer.getContent())), "background load did not complete");
+            assertTrue(
+                    FxTestSupport.callOnFx(buffer::isLargeFile), "long-line safety mode should disable heavy features");
+            assertTrue(
+                    !FxTestSupport.callOnFx(() -> buffer.getArea().isWrapText()),
+                    "safe profile must force wrapping off");
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> buffer.getArea()
+                                    .getStyleSpans(0, content.length())
+                                    .getSpanCount())
+                            > 1,
+                    "the giant paragraph should be split into bounded, visually identical text nodes");
         } finally {
             fx.dispose();
             Files.deleteIfExists(file);

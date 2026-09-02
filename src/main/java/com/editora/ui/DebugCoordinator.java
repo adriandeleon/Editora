@@ -86,6 +86,11 @@ final class DebugCoordinator {
         /** The open buffer for {@code file} (canonical-tab match), or {@code null} when no tab holds it. */
         EditorBuffer bufferForPath(Path file);
 
+        /** Runs {@code action} once an asynchronously opened buffer has received its initial document. */
+        default void afterBufferLoad(EditorBuffer buffer, Runnable action) {
+            action.run();
+        }
+
         /** The persisted debug-watch expressions (workspace state). */
         List<String> debugWatches();
 
@@ -680,7 +685,13 @@ final class DebugCoordinator {
         EditorBuffer b = ops.bufferForPath(frame.file());
         if (b != null) {
             execHighlightBuffer = b;
-            b.setExecutionLine(frame.line());
+            ops.afterBufferLoad(b, () -> {
+                // The user may resume or select another frame while this file is still loading. Never let
+                // that obsolete completion repaint an execution marker that clearExecHighlight removed.
+                if (execHighlightBuffer == b) {
+                    b.setExecutionLine(frame.line());
+                }
+            });
         }
         if (keepFocus != null) {
             Platform.runLater(keepFocus::requestFocus); // after openPath's own requestFocus, so the panel wins

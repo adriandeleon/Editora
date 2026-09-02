@@ -54,12 +54,12 @@ class ExternalOpenTargetFxTest {
                 // What App.externalTarget makes of the Apple Event's string.
                 fx.controller.openExternalFiles(List.of(new MainController.OpenTarget(file, 3, 0)));
             });
-            // The jump is deferred past openPath's own goToStart, as it is for a command-line target, so
-            // the queue has to be drained before the caret means anything. Each round trip lets one
-            // generation of runLater work run.
-            FxTestSupport.runOnFx(() -> {});
-            FxTestSupport.runOnFx(() -> {});
-            FxTestSupport.runOnFx(() -> {});
+            // The jump is queued behind the asynchronous file load, as it is for a command-line target.
+            waitUntil(() -> FxTestSupport.callOnFx(() -> {
+                EditorBuffer buffer =
+                        (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+                return buffer != null && buffer.getArea().getCurrentParagraph() + 1 == 3;
+            }));
             FxTestSupport.runOnFx(() -> {
                 TabPane tabs = FxTestSupport.field(fx.controller, "tabPane");
                 Tab selected = tabs.getSelectionModel().getSelectedItem();
@@ -99,6 +99,15 @@ class ExternalOpenTargetFxTest {
             assertEquals("plain.txt", title.get());
         } finally {
             fx.dispose();
+        }
+    }
+
+    private static void waitUntil(java.util.concurrent.Callable<Boolean> condition) throws Exception {
+        for (int i = 0; i < 300; i++) {
+            if (condition.call()) {
+                return;
+            }
+            Thread.sleep(20);
         }
     }
 }
