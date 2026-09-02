@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -53,6 +54,26 @@ class ToolWindowAvailabilityFxTest {
     /** The persisted preference, straight out of the workspace state — null when the user never chose. */
     private static Boolean storedPreference(Rig r) {
         return r.config().getWorkspaceState().getToolWindowVisible().get("probe");
+    }
+
+    @Test
+    void aWindowRegisteredWithoutAStripeIsNotCustomizableAsAStripeButton() throws Exception {
+        Rig r = FxTestSupport.callOnFx(ToolWindowAvailabilityFxTest::rig);
+        ToolWindow toolbarOwned = FxTestSupport.callOnFx(() -> {
+            ToolWindow tw = new ToolWindow(
+                    "toolbarOwned",
+                    "Toolbar owned",
+                    ToolWindow.Side.RIGHT,
+                    () -> new Label("i"),
+                    new Label("content"),
+                    "tool.toolbarOwned");
+            r.manager().registerWithoutStripe(tw);
+            return tw;
+        });
+
+        assertTrue(r.manager().getRegisteredToolWindows().contains(toolbarOwned));
+        assertFalse(r.manager().getStripeToolWindows().contains(toolbarOwned));
+        assertEquals(1, r.manager().getStripeToolWindows().size());
     }
 
     @Test
