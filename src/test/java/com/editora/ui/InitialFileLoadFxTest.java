@@ -25,7 +25,10 @@ class InitialFileLoadFxTest {
     void expensiveOpenEventuallyInstallsTheCompleteDocument() throws Exception {
         Path dir = Files.createTempDirectory("editora-async-open");
         Path file = dir.resolve("large.txt");
-        String content = "0123456789abcdef".repeat(20_000); // above the asynchronous-load threshold
+        // Above the asynchronous-load threshold, but with ordinary line lengths. A single 300 KB line
+        // turns this load-path test into a RichTextFX long-line layout stress test and can monopolize a
+        // slower Linux CI FX thread long enough to make unrelated tests time out behind it.
+        String content = ("x".repeat(1023) + "\n").repeat(270);
         Files.writeString(file, content);
         FxWindowFixture fx = FxWindowFixture.create();
         try {
