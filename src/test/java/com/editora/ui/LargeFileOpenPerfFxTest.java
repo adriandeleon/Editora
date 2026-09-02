@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -77,5 +78,26 @@ class LargeFileOpenPerfFxTest {
         long genLater = FxTestSupport.callOnFx(() -> FxTestSupport.<Long>field(buf, "highlightGen"));
         org.junit.jupiter.api.Assertions.assertEquals(
                 genAfterDispose, genLater, "the debounce pulse re-dispatched highlighting on a disposed buffer");
+    }
+
+    @Test
+    void largeFileModeSkipsTheDebouncedWholeDocumentFoldScan() throws Exception {
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("java");
+            b.setLargeFile(true); // the loader now applies this before the initial replacement
+            b.setInitialContent("class A {\n  void f() {\n  }\n}\n".repeat(2000));
+            return b;
+        });
+        try {
+            Thread.sleep(700); // outlive FoldManager's 250 ms succession debounce
+            assertEquals(
+                    0,
+                    FxTestSupport.callOnFx(
+                            () -> buffer.getFoldManager().regions().size()),
+                    "large-file insertion must not trigger heuristic folding");
+        } finally {
+            FxTestSupport.runOnFx(buffer::dispose);
+        }
     }
 }

@@ -6,6 +6,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Regression for #461: the Typst preview cache must be bounded by total <em>pages</em> (each page pins a
@@ -36,5 +38,12 @@ class TypstImagesTest {
         // The just-rendered (visible) document must always stay cached.
         assertEquals(List.of("a"), TypstImages.keysToEvict(List.of(e("a", 10), e("big", 100)), 60));
         assertEquals(List.of(), TypstImages.keysToEvict(List.of(e("big", 100)), 60), "the only entry is kept");
+    }
+
+    @Test
+    void onlyTheLatestRenderForASurfaceRuns() {
+        assertTrue(TypstImages.superseded("preview", 1L, 2L));
+        assertFalse(TypstImages.superseded("preview", 2L, 2L));
+        assertFalse(TypstImages.superseded(null, 1L, 2L));
     }
 }

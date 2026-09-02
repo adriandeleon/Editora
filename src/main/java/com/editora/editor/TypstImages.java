@@ -95,6 +95,8 @@ public final class TypstImages {
         t.setDaemon(true);
         return t;
     });
+    private static final Map<String, Long> LATEST = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.atomic.AtomicLong SEQ = new java.util.concurrent.atomic.AtomicLong();
 
     private static volatile boolean enabled;
     private static volatile List<String> command = List.of("typst");
@@ -167,9 +169,21 @@ public final class TypstImages {
      */
     public static Node node(
             String source, DoubleUnaryOperator sizer, String retainKey, Path fileDir, Path root, String displayName) {
+        return node(source, sizer, retainKey, null, fileDir, root, displayName);
+    }
+
+    /** As the legacy overload, with a stable surface key that coalesces obsolete queued CLI renders. */
+    public static Node node(
+            String source,
+            DoubleUnaryOperator sizer,
+            String retainKey,
+            String surfaceKey,
+            Path fileDir,
+            Path root,
+            String displayName) {
         StackPane host = new StackPane();
         host.getStyleClass().add("md-diagram");
-        fill(host, source, sizer, retainKey, fileDir, root, displayName);
+        fill(host, source, sizer, retainKey, surfaceKey, fileDir, root, displayName);
         return host;
     }
 
@@ -178,6 +192,7 @@ public final class TypstImages {
             String source,
             DoubleUnaryOperator sizer,
             String retainKey,
+            String surfaceKey,
             Path fileDir,
             Path root,
             String displayName) {
@@ -198,8 +213,18 @@ public final class TypstImages {
             host.getChildren().setAll(placeholder(Messages.tr("typst.rendering")));
         }
         List<String> cmd = command;
+        long gen = surfaceKey == null ? -1 : SEQ.incrementAndGet();
+        if (surfaceKey != null) {
+            LATEST.put(surfaceKey, gen);
+        }
         EXEC.submit(() -> {
+            if (surfaceKey != null && superseded(surfaceKey, gen, LATEST.get(surfaceKey))) {
+                return;
+            }
             TypstRenderer.Pages r = TypstRenderer.renderPages(cmd, source, fileDir, root, displayName);
+            if (surfaceKey != null && superseded(surfaceKey, gen, LATEST.get(surfaceKey))) {
+                return;
+            }
             Cached result;
             if (r.ok()) {
                 int total = r.pages().size();
@@ -226,7 +251,14 @@ public final class TypstImages {
                 evictToPageBudget(LAST_GOOD, List::size, MAX_CACHED_PAGES);
             }
             Platform.runLater(() -> applyCached(host, result, sizer, retainKey));
+            if (surfaceKey != null) {
+                LATEST.remove(surfaceKey, gen);
+            }
         });
+    }
+
+    static boolean superseded(String surfaceKey, long gen, Long latest) {
+        return surfaceKey != null && latest != null && latest.longValue() != gen;
     }
 
     private static void applyCached(StackPane host, Cached c, DoubleUnaryOperator sizer, String retainKey) {

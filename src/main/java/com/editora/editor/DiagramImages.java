@@ -70,6 +70,8 @@ public final class DiagramImages {
         t.setDaemon(true);
         return t;
     });
+    private static final Map<String, Long> LATEST = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.atomic.AtomicLong SEQ = new java.util.concurrent.atomic.AtomicLong();
 
     private static volatile boolean enabled;
     private static volatile Map<DiagramKind, List<String>> commands = new EnumMap<>(DiagramKind.class);
@@ -106,14 +108,25 @@ public final class DiagramImages {
      * width (a standalone preview multiplies by the zoom factor, so zoom actually resizes the image).
      */
     public static Node node(DiagramKind kind, String source, java.util.function.DoubleUnaryOperator sizer) {
+        return node(kind, source, sizer, null);
+    }
+
+    /** As {@link #node(DiagramKind, String, java.util.function.DoubleUnaryOperator)}, but coalesces queued
+     *  live-preview renders for a non-null stable surface key. */
+    public static Node node(
+            DiagramKind kind, String source, java.util.function.DoubleUnaryOperator sizer, String surfaceKey) {
         StackPane host = new StackPane();
         host.getStyleClass().add("md-diagram");
-        fill(host, kind, source, sizer);
+        fill(host, kind, source, sizer, surfaceKey);
         return host;
     }
 
     private static void fill(
-            StackPane host, DiagramKind kind, String source, java.util.function.DoubleUnaryOperator sizer) {
+            StackPane host,
+            DiagramKind kind,
+            String source,
+            java.util.function.DoubleUnaryOperator sizer,
+            String surfaceKey) {
         boolean useDark = dark && kind.themeSensitive();
         String key = key(kind, source, useDark);
         Cached hit = CACHE.get(key);
@@ -127,8 +140,18 @@ public final class DiagramImages {
         }
         host.getChildren().setAll(placeholder(Messages.tr("diagram.rendering")));
         List<String> cmd = commands.getOrDefault(kind, List.of(kind.defaultCommand()));
+        long gen = surfaceKey == null ? -1 : SEQ.incrementAndGet();
+        if (surfaceKey != null) {
+            LATEST.put(surfaceKey, gen);
+        }
         EXEC.submit(() -> {
+            if (surfaceKey != null && superseded(surfaceKey, gen, LATEST.get(surfaceKey))) {
+                return;
+            }
             DiagramRenderer.Render r = DiagramRenderer.renderPng(kind, cmd, source, useDark);
+            if (surfaceKey != null && superseded(surfaceKey, gen, LATEST.get(surfaceKey))) {
+                return;
+            }
             Cached result;
             if (r.ok()) {
                 javafx.scene.image.Image img =
@@ -151,7 +174,14 @@ public final class DiagramImages {
                         ImageCacheBudget.DIAGRAM_BUDGET_BYTES);
             }
             Platform.runLater(() -> applyCached(host, result, sizer));
+            if (surfaceKey != null) {
+                LATEST.remove(surfaceKey, gen);
+            }
         });
+    }
+
+    static boolean superseded(String surfaceKey, long gen, Long latest) {
+        return surfaceKey != null && latest != null && latest.longValue() != gen;
     }
 
     private static void applyCached(StackPane host, Cached c, java.util.function.DoubleUnaryOperator sizer) {

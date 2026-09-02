@@ -55,6 +55,8 @@ public final class FoldManager {
 
     private Map<Integer, Region> byStart = Map.of();
     private String language = "plaintext";
+    /** Supersedes debounced background detections when the text/language/region sources change again. */
+    private long recomputeGeneration;
     /** Max number of lines shown in a collapsed region's hover preview. */
     private static final int PREVIEW_LINES = 40;
     /** Minimum digit width the line-number gutter pads to, so a file of fewer than 10 lines still reserves
@@ -136,12 +138,17 @@ public final class FoldManager {
 
     public FoldManager(CodeArea area) {
         this.area = area;
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> recompute());
+        area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> {
+            if (heuristicEnabled) {
+                recomputeAsync();
+            }
+        });
         // Manual regions are anchored to nothing, so they shift through every edit immediately (the
         // BookmarkManager pattern) — the debounced recompute above re-detects, it cannot re-anchor.
         // The empty-list early-out keeps this a single field check per keystroke for every buffer
         // without manual folds, i.e. almost all of them.
         area.plainTextChanges().subscribe(ch -> {
+            recomputeGeneration++;
             if (manualRegions.isEmpty()) {
                 return;
             }
@@ -160,6 +167,17 @@ public final class FoldManager {
     /** User-defined fold ranges with no syntactic basis (see {@link ManualFolds}); merged into
      *  {@link #regions} by {@link #recompute}. */
     private List<Region> manualRegions = List.of();
+
+    /** False for large-file mode: manual/server folds still work, but no whole-document heuristic scan runs. */
+    private boolean heuristicEnabled = true;
+
+    public void setHeuristicEnabled(boolean enabled) {
+        if (heuristicEnabled == enabled) {
+            return;
+        }
+        heuristicEnabled = enabled;
+        recompute();
+    }
 
     /**
      * Adds a manual fold range (already-present or degenerate spans are ignored) and folds it. Returns
@@ -309,28 +327,63 @@ public final class FoldManager {
      * would reset the viewport).
      */
     public void recompute() {
-        Set<Integer> oldStarts = byStart.keySet();
+        recomputeGeneration++; // invalidate a debounced result captured before this explicit recompute
+        String text = heuristicEnabled ? area.getText() : "";
+        applyRegions(detectRegions(text, language, serverRegions, manualRegions, heuristicEnabled));
+    }
+
+    /**
+     * Runs the expensive brace/indent/comment scan away from the FX thread after typing or initial load.
+     * Capturing RichTextFX text stays on FX; only the pure detector crosses threads. A generation check
+     * prevents an older snapshot from replacing regions for newer text or language state.
+     */
+    private void recomputeAsync() {
+        long generation = ++recomputeGeneration;
+        String text = area.getText();
+        String languageSnapshot = language;
+        List<Region> serverSnapshot = serverRegions;
+        List<Region> manualSnapshot = manualRegions;
+        Thread.ofVirtual().name("editora-fold-detect").start(() -> {
+            List<Region> detected = detectRegions(text, languageSnapshot, serverSnapshot, manualSnapshot, true);
+            javafx.application.Platform.runLater(() -> {
+                if (generation == recomputeGeneration && heuristicEnabled) {
+                    applyRegions(detected);
+                }
+            });
+        });
+    }
+
+    private static List<Region> detectRegions(
+            String text,
+            String language,
+            List<Region> serverRegions,
+            List<Region> manualRegions,
+            boolean heuristicEnabled) {
         // A language server's regions win when it supplied any: it parses the grammar, so it knows the
         // import block is one region and where a javadoc ends — neither of which brace/indent scanning can
         // derive. An empty or absent answer falls back to the heuristic rather than leaving the file
         // unfoldable, which also covers the window between opening a file and its server reporting ready.
-        String text = area.getText();
+        boolean serverBacked = serverRegions != null && !serverRegions.isEmpty();
         List<Region> base =
-                serverRegions != null && !serverRegions.isEmpty() ? serverRegions : FoldRegions.detect(text, language);
+                serverBacked ? serverRegions : heuristicEnabled ? FoldRegions.detect(text, language) : List.of();
         // Block comments, #region markers, and the user's manual ranges are ADDITIVE regardless of where
         // the base came from — a server's answer replaces the structural heuristic, not these. A server
         // that also reports comment regions (LSP folding kinds) just dedups in canonicalOrder.
-        List<Region> comments = FoldRegions.blockComments(text, language);
-        List<Region> markerRegions = FoldRegions.markers(text, language);
+        List<Region> comments = heuristicEnabled ? FoldRegions.blockComments(text, language) : List.of();
+        List<Region> markerRegions = heuristicEnabled ? FoldRegions.markers(text, language) : List.of();
         if (comments.isEmpty() && markerRegions.isEmpty() && manualRegions.isEmpty()) {
-            regions = base;
-        } else {
-            List<Region> merged = new ArrayList<>(base);
-            merged.addAll(comments);
-            merged.addAll(markerRegions);
-            merged.addAll(manualRegions);
-            regions = FoldRegions.canonicalOrder(merged);
+            return base;
         }
+        List<Region> merged = new ArrayList<>(base);
+        merged.addAll(comments);
+        merged.addAll(markerRegions);
+        merged.addAll(manualRegions);
+        return FoldRegions.canonicalOrder(merged);
+    }
+
+    private void applyRegions(List<Region> detected) {
+        Set<Integer> oldStarts = byStart.keySet();
+        regions = detected;
         Map<Integer, Region> map = new HashMap<>();
         for (Region r : regions) {
             // Keep the outermost region for a given header line (largest span wins).
@@ -918,6 +971,26 @@ public final class FoldManager {
             recompute();
             for (Region r : regions) {
                 if (startLines.contains(r.startLine()) && !isCollapsed(r.startLine())) {
+                    area.foldParagraphs(r.startLine(), r.endLine());
+                    shadeHeader(r.startLine(), true);
+                }
+            }
+        } finally {
+            restoring = false;
+        }
+    }
+
+    /** Restores manual ranges and collapsed headers with one region recomputation instead of two. */
+    public void restore(List<Region> manual, List<Integer> collapsedStartLines) {
+        manualRegions = manual == null || manual.isEmpty() ? List.of() : List.copyOf(manual);
+        recompute();
+        if (collapsedStartLines == null || collapsedStartLines.isEmpty()) {
+            return;
+        }
+        restoring = true;
+        try {
+            for (Region r : regions) {
+                if (collapsedStartLines.contains(r.startLine()) && !isCollapsed(r.startLine())) {
                     area.foldParagraphs(r.startLine(), r.endLine());
                     shadeHeader(r.startLine(), true);
                 }

@@ -224,11 +224,14 @@ public final class NoteManager {
         try {
             tracked.clear();
             if (saved != null) {
+                // One snapshot for the whole restore. place(note) used to materialize the complete document
+                // once per note, turning file open into O(notes × document-size) copying before relocation.
+                String document = area.getText();
                 for (PersonalNote s : saved) {
                     if (s == null) {
                         continue;
                     }
-                    Tracked t = place(s);
+                    Tracked t = place(s, document);
                     tracked.put(s.id(), t);
                     if (t.note.status() != s.status()) {
                         moved = true;
@@ -246,11 +249,15 @@ public final class NoteManager {
     // ---- internals ----
 
     private Tracked place(PersonalNote note) {
+        return place(note, area.getText());
+    }
+
+    private Tracked place(PersonalNote note, String document) {
         TextAnchor a = note.anchor();
         int savedStart = absOffset(a.line(), a.column());
         int savedEnd = absOffset(a.endLine(), a.endColumn());
         int[] r = NoteAnchors.relocate(
-                area.getText(), savedStart, savedEnd, a.selectedText(), a.prefix(), a.suffix(), a.length());
+                document, savedStart, savedEnd, a.selectedText(), a.prefix(), a.suffix(), a.length());
         if (r == null) {
             // ORPHANED is a system observation ("I can't find the text"), RESOLVED is the user's decision.
             // Overwriting one with the other lost the decision permanently: a checkout that hid the text
