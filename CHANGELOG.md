@@ -10,15 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **The Project tool window now has a visual Map navigator.** A Tree/Map switch preserves the existing
-  file-management tree while offering a read-only Canvas hierarchy with connected depth columns, pan and
-  zoom, mouse and keyboard navigation, and filters for open, modified, Git-changed, and file-type working
-  sets. Filtering fades unrelated nodes instead of removing their spatial context, and project scans remain
-  bounded and off the JavaFX thread. Canvas nodes use the same themed folder and file-type glyphs as the
-  traditional Project tree, folders expand or collapse with one click, and files already open in editor tabs
-  carry a prominent accent rail and label. Hover tooltips expose the full path, type, size, modification time,
-  and relevant editor or Git status without filesystem work on the JavaFX thread. Right-clicking any map node
-  opens the same file-management menu as the traditional tree, including New, Maven, rename/delete, reveal,
-  terminal, Local History, and Git actions when applicable.
+  file-management tree while offering a Canvas hierarchy with focused Miller-style columns, pan, pointer-
+  centered mouse-wheel zoom, mouse and keyboard navigation, and filters for open, modified, Git-changed, and
+  file-type working sets. Each column has its own live name filter and item count, can be repositioned by its
+  header and pinned against accidental movement, and keeps a single active branch per depth so unrelated
+  sibling expansions no longer merge into a dense connection bundle. Fit/center controls, automatic initial
+  framing, a compact overview, selected-path highlighting, breadcrumbs, Back/Forward history, Page Up/Down,
+  Backspace-to-parent, Alt-Left/Right history, and slash-to-filter make large projects practical. Filtering
+  fades unrelated nodes instead of removing their spatial context, and project scans remain bounded and off
+  the JavaFX thread. Canvas nodes use the same themed folder and file-type glyphs as the traditional Project
+  tree, folders expand or collapse with one click, and files already open in editor tabs carry a prominent
+  accent rail and label. Hover tooltips expose the full path, type, size, modification time, and relevant
+  editor or Git status without filesystem work on the JavaFX thread. Right-clicking any map node opens the
+  same file-management menu as the traditional tree, including New, Maven, rename/delete, reveal, terminal,
+  Local History, and Git actions when applicable.
 
 ### Changed
 

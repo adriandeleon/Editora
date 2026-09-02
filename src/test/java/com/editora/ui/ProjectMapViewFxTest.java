@@ -10,7 +10,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
@@ -18,6 +20,7 @@ import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.PickResult;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
@@ -179,6 +182,20 @@ class ProjectMapViewFxTest {
 
                 click(surface, clickX, clickY);
                 assertTrue(mapView.expandedDirectories().contains(source));
+                Button back = FxTestSupport.field(mapView, "backButton");
+                assertFalse(back.isDisabled());
+                HBox breadcrumbs = FxTestSupport.field(mapView, "breadcrumbs");
+                assertTrue(breadcrumbs.getChildren().stream()
+                        .filter(Button.class::isInstance)
+                        .map(Button.class::cast)
+                        .anyMatch(button -> "src".equals(button.getText())));
+                back.fire();
+                @SuppressWarnings("unchecked")
+                java.util.Optional<ProjectMapModel.Entry> selected = (java.util.Optional<ProjectMapModel.Entry>)
+                        FxTestSupport.call(surface, "selectedEntry", new Class<?>[0]);
+                assertEquals(
+                        root.toAbsolutePath().normalize(),
+                        selected.orElseThrow().path());
 
                 click(surface, clickX, clickY);
                 assertFalse(mapView.expandedDirectories().contains(source));
@@ -231,12 +248,132 @@ class ProjectMapViewFxTest {
         }
     }
 
+    @Test
+    void columnFiltersReflowDescendantsAndPinnedColumnsDoNotDrag() throws Exception {
+        Path src = root.resolve("src").toAbsolutePath().normalize();
+        Path docs = root.resolve("docs").toAbsolutePath().normalize();
+        Path java = src.resolve("App.java");
+        Path guide = docs.resolve("guide.md");
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 720, 420);
+                mapView.applyCss();
+                mapView.resize(720, 420);
+                mapView.layout();
+                Region surface = FxTestSupport.field(mapView, "surface");
+                surface.resize(720, 350);
+                List<ProjectMapModel.Entry> entries = List.of(
+                        new ProjectMapModel.Entry(root, null, 0, true),
+                        new ProjectMapModel.Entry(src, root, 1, true),
+                        new ProjectMapModel.Entry(docs, root, 1, true),
+                        new ProjectMapModel.Entry(java, src, 2, false),
+                        new ProjectMapModel.Entry(guide, docs, 2, false));
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        entries,
+                        Set.of(root, src, docs));
+
+                Map<Integer, ?> controls = FxTestSupport.field(surface, "columnControls");
+                Object depthOne = controls.get(1);
+                TextField filter = (TextField) FxTestSupport.call(depthOne, "filter", new Class<?>[0]);
+                ToggleButton pin = (ToggleButton) FxTestSupport.call(depthOne, "pin", new Class<?>[0]);
+                filter.setText("src");
+                List<?> filteredBoxes = FxTestSupport.field(surface, "boxes");
+                assertTrue(filteredBoxes.stream()
+                        .anyMatch(box -> entryOf(box).path().equals(src)));
+                assertTrue(filteredBoxes.stream()
+                        .anyMatch(box -> entryOf(box).path().equals(java)));
+                assertFalse(filteredBoxes.stream()
+                        .anyMatch(box -> entryOf(box).path().equals(docs)));
+                assertFalse(filteredBoxes.stream()
+                        .anyMatch(box -> entryOf(box).path().equals(guide)));
+
+                Object columnBox = columnBoxFor(surface, 1);
+                double x = (double) FxTestSupport.call(columnBox, "x", new Class<?>[0]) + 5;
+                double y = (double) FxTestSupport.call(columnBox, "y", new Class<?>[0]) + 5;
+                drag(surface, x, y, x + 45, y + 20);
+                Object layout = ((Map<?, ?>) FxTestSupport.field(surface, "columnLayouts")).get(1);
+                double movedX = FxTestSupport.field(layout, "x");
+                assertTrue(movedX > 0);
+
+                pin.fire();
+                drag(surface, x + 45, y + 20, x + 100, y + 50);
+                assertEquals(movedX, (double) FxTestSupport.field(layout, "x"), 0.001);
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
+    void plainMouseWheelZoomsAroundThePointer() throws Exception {
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 500, 300);
+                mapView.applyCss();
+                mapView.resize(500, 300);
+                mapView.layout();
+                Region surface = FxTestSupport.field(mapView, "surface");
+                double before = FxTestSupport.field(surface, "zoom");
+                ScrollEvent wheel = new ScrollEvent(
+                        ScrollEvent.SCROLL,
+                        250,
+                        150,
+                        250,
+                        150,
+                        false,
+                        false,
+                        false,
+                        false,
+                        true,
+                        false,
+                        0,
+                        120,
+                        0,
+                        120,
+                        ScrollEvent.HorizontalTextScrollUnits.NONE,
+                        0,
+                        ScrollEvent.VerticalTextScrollUnits.NONE,
+                        0,
+                        0,
+                        new PickResult(surface, 250, 150));
+                FxTestSupport.invokeWith(surface, "scrolled", ScrollEvent.class, wheel);
+                assertTrue((double) FxTestSupport.field(surface, "zoom") > before);
+                assertTrue(wheel.isConsumed());
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
     private static Object boxFor(Region surface, Path path) {
         List<?> boxes = FxTestSupport.field(surface, "boxes");
         return boxes.stream()
                 .filter(box -> ((ProjectMapModel.Entry) FxTestSupport.call(box, "entry", new Class<?>[0]))
                         .path()
                         .equals(path))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static ProjectMapModel.Entry entryOf(Object box) {
+        return (ProjectMapModel.Entry) FxTestSupport.call(box, "entry", new Class<?>[0]);
+    }
+
+    private static Object columnBoxFor(Region surface, int depth) {
+        List<?> boxes = FxTestSupport.field(surface, "columnBoxes");
+        return boxes.stream()
+                .filter(box -> {
+                    ProjectMapModel.Column column =
+                            (ProjectMapModel.Column) FxTestSupport.call(box, "column", new Class<?>[0]);
+                    return column.depth() == depth;
+                })
                 .findFirst()
                 .orElseThrow();
     }
@@ -290,6 +427,36 @@ class ProjectMapViewFxTest {
                 true,
                 new PickResult(target, x, y));
         FxTestSupport.invokeWith(target, "mouseClicked", MouseEvent.class, event);
+    }
+
+    private static void drag(Region target, double fromX, double fromY, double toX, double toY) {
+        FxTestSupport.invokeWith(
+                target, "mousePressed", MouseEvent.class, mouse(target, MouseEvent.MOUSE_PRESSED, fromX, fromY));
+        FxTestSupport.invokeWith(
+                target, "mouseDragged", MouseEvent.class, mouse(target, MouseEvent.MOUSE_DRAGGED, toX, toY));
+        target.fireEvent(mouse(target, MouseEvent.MOUSE_RELEASED, toX, toY));
+    }
+
+    private static MouseEvent mouse(Region target, javafx.event.EventType<MouseEvent> type, double x, double y) {
+        return new MouseEvent(
+                type,
+                x,
+                y,
+                x,
+                y,
+                MouseButton.PRIMARY,
+                1,
+                false,
+                false,
+                false,
+                false,
+                true,
+                false,
+                false,
+                false,
+                false,
+                false,
+                new PickResult(target, x, y));
     }
 
     private static boolean hasVisiblePixel(Image image) {

@@ -193,10 +193,13 @@ You will see these everywhere; learn them once:
   mouse-transparent `Canvas`, coalesced redraw, visible-paragraphs only, released to 1×1 when
   inactive. Recipe in [extending.md](extending.md#add-a-canvas-overlay).
 - **The Project Map hybrid** (`ProjectMapView` + `ProjectMapModel`): native JavaFX controls own
-  filters, focus, and zoom while a focusable Canvas draws and hit-tests the bounded visible hierarchy.
-  Filesystem listing runs on one daemon executor behind a generation guard. The existing `ProjectPanel`
-  tree remains the accessible fallback and shares its root, watcher refresh, Git state, modified/open
-  predicates, search field, open-file callback, and lazily built file-management context menu with the map.
+  global/per-column filters, breadcrumbs, focus, pin state, and history while a focusable Canvas draws and
+  hit-tests the bounded visible hierarchy, movable column cards, connections, and overview. Expansion follows
+  one focused Miller-style branch: opening a sibling prunes the old sibling branch so a depth column has one
+  meaningful parent. Filesystem listing runs on one daemon executor behind a generation guard. The existing
+  `ProjectPanel` tree remains the accessible fallback and shares its root, watcher refresh, Git state,
+  modified/open predicates, search field, open-file callback, and lazily built file-management context menu
+  with the map.
 - **The feature-coordinator pattern** (`LogViewerCoordinator`/`MermaidCoordinator`/…): pull a
   feature's logic out of `MainController` behind a `CoordinatorHost` interface so it is
   unit-testable. Recipe in [extending.md](extending.md#extract-a-feature-coordinator).

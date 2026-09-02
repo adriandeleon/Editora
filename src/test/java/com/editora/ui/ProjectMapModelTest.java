@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
@@ -86,6 +87,52 @@ class ProjectMapModelTest {
         assertTrue(emphasized.contains(ProjectMapModel.normalize(src)));
         assertTrue(emphasized.contains(ProjectMapModel.normalize(file)));
         assertFalse(emphasized.contains(ProjectMapModel.normalize(root.resolve("README.md"))));
+    }
+
+    @Test
+    void focusedExpansionReplacesSiblingBranchesAndCollapsesDescendants() {
+        Path src = root.resolve("src");
+        Path main = src.resolve("main");
+        Path docs = root.resolve("docs");
+        Set<Path> srcBranch = ProjectMapModel.toggleFocusedExpansion(root, Set.of(root), src);
+        srcBranch = ProjectMapModel.toggleFocusedExpansion(root, srcBranch, main);
+        assertEquals(Set.of(normalize(root), normalize(src), normalize(main)), srcBranch);
+
+        Set<Path> docsBranch = ProjectMapModel.toggleFocusedExpansion(root, srcBranch, docs);
+        assertEquals(Set.of(normalize(root), normalize(docs)), docsBranch);
+
+        assertEquals(Set.of(normalize(root)), ProjectMapModel.toggleFocusedExpansion(root, docsBranch, docs));
+    }
+
+    @Test
+    void columnFiltersKeepAValidVisibleHierarchy() {
+        Path src = root.resolve("src");
+        Path docs = root.resolve("docs");
+        Path java = src.resolve("App.java");
+        Path markdown = docs.resolve("guide.md");
+        List<ProjectMapModel.Entry> entries = List.of(
+                new ProjectMapModel.Entry(root, null, 0, true),
+                new ProjectMapModel.Entry(src, root, 1, true),
+                new ProjectMapModel.Entry(docs, root, 1, true),
+                new ProjectMapModel.Entry(java, src, 2, false),
+                new ProjectMapModel.Entry(markdown, docs, 2, false));
+
+        List<ProjectMapModel.Column> columns = ProjectMapModel.columns(entries, Map.of(1, "src"));
+        assertEquals(
+                List.of(normalize(src)),
+                columns.get(1).entries().stream()
+                        .map(ProjectMapModel.Entry::path)
+                        .toList());
+        assertEquals(
+                List.of(normalize(java)),
+                columns.get(2).entries().stream()
+                        .map(ProjectMapModel.Entry::path)
+                        .toList());
+        assertEquals(2, columns.get(1).totalEntries());
+    }
+
+    private static Path normalize(Path path) {
+        return ProjectMapModel.normalize(path);
     }
 
     private static boolean has(List<ProjectMapModel.Entry> entries, Path path) {

@@ -12,7 +12,9 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 import com.editora.search.FuzzyMatch;
 
@@ -68,6 +70,14 @@ final class ProjectMapModel {
         }
     }
 
+    /** One Miller-style depth column. A focused expansion path gives every non-root column one parent. */
+    record Column(int depth, Path parent, List<Entry> entries, int totalEntries) {
+        Column {
+            parent = normalize(parent);
+            entries = entries == null ? List.of() : List.copyOf(entries);
+        }
+    }
+
     private ProjectMapModel() {}
 
     /**
@@ -103,6 +113,70 @@ final class ProjectMapModel {
                 }
                 queue.addLast(new Pending(child, pending.path(), pending.depth() + 1));
             }
+        }
+        return List.copyOf(result);
+    }
+
+    /**
+     * Opens one directory branch at a time. Selecting a sibling replaces the old branch at that depth,
+     * preventing unrelated children from being merged into the same visual column. Clicking an already-open
+     * directory closes it and every descendant; the project root itself always remains open.
+     */
+    static Set<Path> toggleFocusedExpansion(Path root, Set<Path> expanded, Path directory) {
+        Path normalizedRoot = normalize(root);
+        Path normalizedDirectory = normalize(directory);
+        if (normalizedRoot == null || normalizedDirectory == null || !normalizedDirectory.startsWith(normalizedRoot)) {
+            return expanded == null ? Set.of() : Set.copyOf(expanded);
+        }
+        Set<Path> result = new HashSet<>();
+        if (expanded != null) {
+            expanded.stream()
+                    .map(ProjectMapModel::normalize)
+                    .filter(java.util.Objects::nonNull)
+                    .forEach(result::add);
+        }
+        result.add(normalizedRoot);
+        if (result.contains(normalizedDirectory)) {
+            result.removeIf(path -> path.startsWith(normalizedDirectory) && !path.equals(normalizedRoot));
+            return Set.copyOf(result);
+        }
+
+        // Keep only the selected directory's ancestors, then add it as the new branch tip.
+        result.removeIf(path -> !normalizedDirectory.startsWith(path));
+        result.add(normalizedDirectory);
+        return Set.copyOf(result);
+    }
+
+    /**
+     * Builds sorted depth columns and applies each column's local name filter. Descendants of a filtered-out
+     * folder are omitted too, so the remaining geometry always represents a valid visible hierarchy.
+     */
+    static List<Column> columns(List<Entry> entries, Map<Integer, String> columnQueries) {
+        if (entries == null || entries.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, List<Entry>> grouped = new TreeMap<>();
+        for (Entry entry : entries) {
+            grouped.computeIfAbsent(entry.depth(), ignored -> new ArrayList<>()).add(entry);
+        }
+        Set<Path> visible = new HashSet<>();
+        List<Column> result = new ArrayList<>();
+        for (var group : grouped.entrySet()) {
+            int depth = group.getKey();
+            List<Entry> all = group.getValue().stream()
+                    .sorted(Comparator.comparing(Entry::name, String.CASE_INSENSITIVE_ORDER))
+                    .toList();
+            String query = columnQueries == null ? "" : columnQueries.getOrDefault(depth, "");
+            String normalizedQuery = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
+            List<Entry> shown = all.stream()
+                    .filter(entry -> depth == 0 || entry.parent() == null || visible.contains(entry.parent()))
+                    .filter(entry -> normalizedQuery.isEmpty() || FuzzyMatch.of(entry.name(), normalizedQuery) != null)
+                    .toList();
+            shown.forEach(entry -> visible.add(entry.path()));
+            Path parent = all.stream().map(Entry::parent).distinct().limit(2).count() == 1
+                    ? all.getFirst().parent()
+                    : null;
+            result.add(new Column(depth, parent, shown, all.size()));
         }
         return List.copyOf(result);
     }

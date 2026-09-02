@@ -72,10 +72,12 @@ Editora is built with the help of AI coding tools.
   Open toolbar icon still uses the native OS dialog.
 - **Projects** (on by default; disable in Settings) — VSCode single-folder-workspace style: a root
   folder + its own saved session (open files, layout, folds), shown as a filterable file tree in the
-  Project tool window with a project switcher in the toolbar. Open (`C-x C-p`)/switch (`C-x p`)/close
-  via the palette or toolbar; switching restores that project's files and layout. With no project open, the
-  Project tool window becomes a **"Current Folder"** explorer rooted at the active file's directory, tracking
-  the focused tab.
+  Project tool window with a project switcher in the toolbar. Its Tree/Map switch adds a spatial,
+  Miller-column navigator with per-column filters, movable/pinnable columns, mouse-wheel zoom, breadcrumbs,
+  history, fit/center controls, an overview, editor/Git status, metadata tooltips, and the tree's complete
+  right-click menu. Open (`C-x C-p`)/switch (`C-x p`)/close via the palette or toolbar; switching restores
+  that project's files and layout. With no project open, the Project tool window becomes a **"Current
+  Folder"** explorer rooted at the active file's directory, tracking the focused tab.
 - **Keybinding themes** — choose **Emacs** (default), **CUA**, **Sublime Text**, **VSCode**, or
   **IntelliJ IDEA** in Settings → Keymaps (or the `Keymap: Select…` command); switching is live, no
   restart, and each theme adapts to macOS (Cmd) vs Windows/Linux (Ctrl). Emacs uses multi-key chord

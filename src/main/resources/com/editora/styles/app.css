@@ -991,6 +991,31 @@
 .project-map-filters {
     -fx-padding: 3 2 5 2;
 }
+.project-map-navigation {
+    -fx-padding: 0 2 4 2;
+}
+.project-map-nav-button,
+.project-map-breadcrumb {
+    -fx-background-color: transparent;
+    -fx-padding: 2 5 2 5;
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-nav-button:hover,
+.project-map-breadcrumb:hover {
+    -fx-background-color: -color-neutral-muted;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-nav-button:disabled {
+    -fx-opacity: 0.35;
+}
+.project-map-breadcrumbs {
+    -fx-alignment: center-left;
+}
+.project-map-breadcrumb-separator {
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
 .project-map-filter-heading {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 10px;
@@ -1032,6 +1057,32 @@
 }
 .project-map-surface:focused {
     -fx-effect: innershadow(gaussian, -color-accent-muted, 4, 0.1, 0, 0);
+}
+.project-map-column-filter {
+    -fx-font-size: 10px;
+    -fx-padding: 2 6 2 6;
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 5;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 5;
+}
+.project-map-column-filter:focused {
+    -fx-border-color: -color-accent-emphasis;
+}
+.project-map-column-pin {
+    -fx-background-color: transparent;
+    -fx-background-radius: 5;
+    -fx-padding: 3;
+}
+.project-map-column-pin:hover,
+.project-map-column-pin:selected {
+    -fx-background-color: -color-accent-subtle;
+}
+.project-map-column-pin .toolbar-icon {
+    -fx-fill: -color-fg-muted;
+}
+.project-map-column-pin:selected .toolbar-icon {
+    -fx-fill: -color-accent-fg;
 }
 .project-map-zoom {
     -fx-background-color: -color-bg-overlay;
