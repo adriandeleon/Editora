@@ -338,10 +338,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         t.setDaemon(true);
         return t;
     });
-    /** Disk reads/charset decoding for expensive opens. Virtual threads also keep remote-provider waits cheap. */
+    /** Disk reads/charset decoding for file opens. Virtual threads also keep remote-provider waits cheap. */
     private final ExecutorService fileLoadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    /** Local files below this stay synchronous: scheduling costs more than their bounded read/decode work. */
-    private static final long ASYNC_FILE_LOAD_BYTES = 256L * 1024;
+    /** A paragraph this wide makes RichTextFX layout pathological even when the file itself is small. */
+    static final int LONG_LINE_FILE_CHARS = 64 * 1024;
     /** Buffers whose tab shell exists but whose document has not reached the FX thread yet. FX-thread only. */
     private final Set<EditorBuffer> loadingBuffers = Collections.newSetFromMap(new IdentityHashMap<>());
     /** Navigation requested while a shell is loading (CLI file:line, diagnostics, external-open). */
@@ -2776,6 +2776,17 @@ public class MainController implements com.editora.mcp.McpBridge {
                     @Override
                     public EditorBuffer bufferForPath(Path file) {
                         return bufferOf(tabForPath(file));
+                    }
+
+                    @Override
+                    public void afterBufferLoad(EditorBuffer buffer, Runnable action) {
+                        if (loadingBuffers.contains(buffer)) {
+                            afterBufferLoad
+                                    .computeIfAbsent(buffer, ignored -> new ArrayList<>())
+                                    .add(action);
+                        } else {
+                            action.run();
+                        }
                     }
 
                     @Override
@@ -6929,24 +6940,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 buffers.add(null);
                 continue;
             }
-            // A binary file restores into the read-only hex viewer (null placeholder keeps the fill indices
-            // aligned, like the image-viewer case; fillSessionFiles skips nulls).
-            if (looksBinaryFile(p)) {
-                Tab tab = openHexTab(p, active);
-                if (f.isPinned()) {
-                    pinned.add(tab);
-                }
-                buffers.add(null);
-                continue;
-            }
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(p); // sets the tab title/language; content comes later
-            if (shouldLoadAsync(p)) {
-                buffer.setHeavyFile(true); // suppress LSP/minimap while this restored tab is only a shell
-                buffer.setViewMode(true);
-                loadingBuffers.add(buffer);
-            }
-            Tab tab = addBuffer(buffer, active);
+            buffer.setHeavyFile(true); // suppress LSP/minimap while this restored tab is only a shell
+            buffer.setViewMode(true);
+            loadingBuffers.add(buffer);
+            Tab tab = addBuffer(buffer, active, false);
             if (f.isPinned()) {
                 pinned.add(tab);
                 updateTabMeta(tab, buffer);
@@ -7324,36 +7323,38 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Loads a restored tab's content, large-file mode, folds, and caret (the tab already exists). */
     private void fillSessionBuffer(WorkspaceState.OpenFile f, EditorBuffer buffer, Runnable onComplete) {
         Path file = Path.of(f.getPath());
-        if (shouldLoadAsync(file)) {
-            fileLoadExecutor.execute(() -> {
-                try {
-                    PreparedLoad load = prepareLoad(file, false);
-                    Platform.runLater(() -> {
-                        if (tabForBuffer(buffer) != null) {
+        fileLoadExecutor.execute(() -> {
+            try {
+                PreparedLoad load = prepareLoad(file, true);
+                Platform.runLater(() -> {
+                    Tab tab = tabForBuffer(buffer);
+                    if (tab != null) {
+                        if (load.binary()) {
+                            boolean selected = editorArea.selectedTab() == tab;
+                            boolean wasPinned = pinned.remove(tab);
+                            discardLoading(buffer);
+                            editorArea.remove(tab);
+                            Tab hex = openHexTab(load.file(), selected);
+                            if (wasPinned) {
+                                pinned.add(hex);
+                            }
+                        } else {
                             buffer.setViewMode(false);
                             finishSessionBuffer(f, buffer, load);
                             clearLoading(buffer);
-                        } else {
-                            discardLoading(buffer);
                         }
-                        onComplete.run();
-                    });
-                } catch (IOException | RuntimeException e) {
-                    Platform.runLater(() -> {
-                        discardLoading(buffer); // unreadable now — leave the restored tab empty
-                        onComplete.run();
-                    });
-                }
-            });
-            return;
-        }
-        try {
-            finishSessionBuffer(f, buffer, prepareLoad(file, false));
-        } catch (IOException e) {
-            // Unreadable now — leave the tab empty.
-        } finally {
-            onComplete.run();
-        }
+                    } else {
+                        discardLoading(buffer);
+                    }
+                    onComplete.run();
+                });
+            } catch (IOException | RuntimeException e) {
+                Platform.runLater(() -> {
+                    discardLoading(buffer); // unreadable now — leave the restored tab empty
+                    onComplete.run();
+                });
+            }
+        });
     }
 
     private void finishSessionBuffer(WorkspaceState.OpenFile f, EditorBuffer buffer, PreparedLoad load) {
@@ -7516,11 +7517,20 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Adds a tab for {@code buffer}, appended to the strip; selects and focuses it when {@code select}. */
     private Tab addBuffer(EditorBuffer buffer, boolean select) {
+        return addBuffer(buffer, select, true);
+    }
+
+    /**
+     * Adds a tab, optionally resolving path-dependent settings. Loading shells pass false: disk-side
+     * preparation resolves EditorConfig once in the background and applies that immutable result before the
+     * document insertion.
+     */
+    private Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings) {
         // Spell checking: share the user dictionary + persist "Add to Dictionary" (before applyViewSettings,
         // which sets the per-file language and enables checking).
         buffer.setSpellUserWords(config.getUserDictionary());
         buffer.setOnAddToDictionary(this::addUserWordAndRefreshAll);
-        applyViewSettings(buffer);
+        applyViewSettings(buffer, resolvePathSettings);
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.schedulePersistBookmarks(buffer));
         buffer.setBookmarkToggleRequest(bookmarkCoordinator::onBookmarkToggleRequest);
@@ -8024,69 +8034,16 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.opened", com.editora.config.PathDisplay.of(file)));
             return;
         }
-        // Expensive/remote opens do their binary classification as part of the background read. This avoids
-        // both blocking the FX thread on a sample read and opening the file twice in the common text case.
-        if (shouldLoadAsync(file)) {
-            openTextBufferAsync(file, true);
-            return;
-        }
-        // A small local binary opens in the read-only hex viewer instead of dumping its bytes as garbage text.
-        if (looksBinaryFile(file)) {
-            openHexTab(file, true);
-            if (recentFiles != null) {
-                recentFiles.add(file);
-            }
-            setStatus(tr("status.opened", com.editora.config.PathDisplay.of(file)));
-            return;
-        }
-        openTextBuffer(file);
+        // Every text candidate is classified/read/decoded in the background. Even a tiny local file can live
+        // on a cold, network-mounted, or FUSE-backed path, so size is not a safe proxy for FX-thread latency.
+        openTextBufferAsync(file, true);
     }
 
     /** Loads {@code file} into a new text {@link EditorBuffer} tab (the normal text path, bypassing the
      *  image/binary routing in {@link #openPath}). Used by {@code openPath}'s fall-through and by the
      *  {@code view.openAsText} command (which forces a text open even for a binary / already-hex file). */
     private void openTextBuffer(Path file) {
-        if (shouldLoadAsync(file)) {
-            openTextBufferAsync(file, false); // explicit Open as Text bypasses binary routing
-            return;
-        }
-        try {
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setPath(file);
-            String note = loadInto(buffer, file);
-            // Apply folds before the node is in the scene, so each fold skips per-fold layout.
-            restoreFolds(buffer);
-            bookmarkCoordinator.restoreBookmarks(buffer);
-            debugCoordinator.restoreBreakpoints(buffer);
-            notesCoordinator.restoreNotes(buffer);
-            restoreReadOnly(buffer); // before addBuffer so the tab meta reflects read-only
-            addBuffer(buffer);
-            restoreMarkdownMode(buffer); // after addBuffer so the toggle is wired
-            // Land on the first line: replaceText leaves the caret at the end, and fold restoration
-            // moves it to a fold header. Defer so the viewport scroll runs after the tab is laid out.
-            Platform.runLater(buffer::goToStart);
-            if (recentFiles != null) {
-                recentFiles.add(file);
-            }
-            setStatus(note.isEmpty() ? tr("status.opened", com.editora.config.PathDisplay.of(file)) : note);
-        } catch (IOException e) {
-            setStatus(tr("status.failedOpen", e.getMessage()));
-            if (recentFiles != null) {
-                recentFiles.remove(file);
-            }
-        }
-    }
-
-    /** True when disk preparation is expensive enough to keep off the FX application thread. */
-    private static boolean shouldLoadAsync(Path file) {
-        if (com.editora.vfs.Vfs.isRemote(file)) {
-            return true;
-        }
-        try {
-            return Files.size(file) >= ASYNC_FILE_LOAD_BYTES;
-        } catch (IOException | RuntimeException e) {
-            return false; // let the synchronous path produce its normal, precise open error
-        }
+        openTextBufferAsync(file, false); // explicit Open as Text bypasses binary routing
     }
 
     /**
@@ -8099,8 +8056,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Prevent the empty shell from starting LSP/minimap work or accepting edits before its document lands.
         buffer.setHeavyFile(true);
         buffer.setViewMode(true);
-        Tab tab = addBuffer(buffer);
         loadingBuffers.add(buffer);
+        Tab tab = addBuffer(buffer, true, false);
         fileLoadExecutor.execute(() -> {
             try {
                 PreparedLoad load = prepareLoad(file, classifyBinary);
@@ -8138,7 +8095,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         restoreMarkdownMode(buffer);
         updateTabMeta(tab, buffer);
         lspCoordinator.syncBuffer(buffer); // the temporary heavy-file shell deliberately suppressed this
-        Platform.runLater(buffer::goToStart);
+        // Set the default caret before releasing queued navigation. A later runLater(goToStart) would erase
+        // a file:line request that waited on this loading shell.
+        buffer.goToStart();
         if (recentFiles != null) {
             recentFiles.add(load.file());
         }
@@ -8308,15 +8267,36 @@ public class MainController implements com.editora.mcp.McpBridge {
             long size,
             long mtime,
             int lines,
+            int maxLineLength,
             String charset,
             com.editora.editorconfig.EditorConfigProperties editorConfig,
             boolean binary,
             boolean large,
             boolean heavy,
+            boolean longLine,
             boolean truncated,
             boolean log,
             long logOffset,
             boolean tail) {}
+
+    /** Document shape computed while the decoded text is already in background-thread memory. */
+    record TextStats(int lines, int maxLineLength) {}
+
+    static TextStats textStats(String text) {
+        int lines = 1;
+        int lineLength = 0;
+        int maxLineLength = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                lines++;
+                maxLineLength = Math.max(maxLineLength, lineLength);
+                lineLength = 0;
+            } else {
+                lineLength++;
+            }
+        }
+        return new TextStats(lines, Math.max(maxLineLength, lineLength));
+    }
 
     private PreparedLoad prepareLoad(Path file, boolean sniffBinary) throws IOException {
         // One stat call for both size + mtime instead of two separate syscalls per file load.
@@ -8339,40 +8319,61 @@ public class MainController implements com.editora.mcp.McpBridge {
             boolean binary = sniffBinary && looksBinaryFile(file);
             if (binary) {
                 return new PreparedLoad(
-                        file, null, size, mtime, 0, null, editorConfig, true, true, false, true, isLog, 0, false);
+                        file,
+                        null,
+                        size,
+                        mtime,
+                        0,
+                        0,
+                        null,
+                        editorConfig,
+                        true,
+                        true,
+                        false,
+                        false,
+                        true,
+                        isLog,
+                        0,
+                        false);
             }
             if (isLog) {
                 // A huge log opens at its END (the tail is what matters) instead of the first chunk.
                 com.editora.logviewer.LogTail.Tail tail =
                         com.editora.logviewer.LogTail.readTail(file, EditorBuffer.HUGE_FILE_BYTES);
+                TextStats stats = textStats(tail.text());
                 return new PreparedLoad(
                         file,
                         tail.text(),
                         size,
                         mtime,
-                        lineCount(tail.text()),
+                        stats.lines(),
+                        stats.maxLineLength(),
                         com.editora.editorconfig.EditorConfigCharset.UTF_8,
                         editorConfig,
                         false,
                         true,
                         false,
+                        stats.maxLineLength() >= LONG_LINE_FILE_CHARS,
                         true,
                         true,
                         tail.offset(),
                         true);
             }
             String content = readCapped(file, (int) EditorBuffer.HUGE_FILE_BYTES);
+            TextStats stats = textStats(content);
             return new PreparedLoad(
                     file,
                     content,
                     size,
                     mtime,
-                    lineCount(content),
+                    stats.lines(),
+                    stats.maxLineLength(),
                     com.editora.editorconfig.EditorConfigCharset.UTF_8,
                     editorConfig,
                     false,
                     true,
                     false,
+                    stats.maxLineLength() >= LONG_LINE_FILE_CHARS,
                     true,
                     false,
                     0,
@@ -8385,7 +8386,22 @@ public class MainController implements com.editora.mcp.McpBridge {
                     : java.util.Arrays.copyOf(bytes, BinarySniff.SAMPLE_BYTES);
             if (BinarySniff.looksBinary(sample)) {
                 return new PreparedLoad(
-                        file, null, size, mtime, 0, null, editorConfig, true, false, false, false, false, 0, false);
+                        file,
+                        null,
+                        size,
+                        mtime,
+                        0,
+                        0,
+                        null,
+                        editorConfig,
+                        true,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        0,
+                        false);
             }
         }
         String charset = com.editora.editorconfig.EditorConfigCharset.resolveName(bytes, editorConfig.charset());
@@ -8394,19 +8410,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Intermediate tier: a very long single file (e.g. a 13k-line source) keeps highlighting + editing
         // but drops the minimap + LSP — the two heaviest features for a huge source — so it stays responsive.
         int threshold = config.getSettings().getLargeFileThreshold();
-        int lines = lineCount(content);
-        boolean heavy = !large && threshold > 0 && lines >= threshold;
+        TextStats stats = textStats(content);
+        boolean longLine = stats.maxLineLength() >= LONG_LINE_FILE_CHARS;
+        boolean heavy = !large && !longLine && threshold > 0 && stats.lines() >= threshold;
         return new PreparedLoad(
                 file,
                 content,
                 size,
                 mtime,
-                lines,
+                stats.lines(),
+                stats.maxLineLength(),
                 charset,
                 editorConfig,
                 false,
                 large,
                 heavy,
+                longLine,
                 false,
                 isLog,
                 size,
@@ -8417,14 +8436,19 @@ public class MainController implements com.editora.mcp.McpBridge {
     private String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load) {
         buffer.setDiskSnapshot(load.mtime(), load.size());
         buffer.setTruncatedLoad(load.truncated());
-        buffer.setEditorConfigProps(load.editorConfig());
+        applyResolvedEditorConfig(buffer, load.editorConfig());
         buffer.setDetectedCharset(load.charset());
-        buffer.setLargeFile(load.large());
+        buffer.setLargeFile(load.large() || load.longLine());
         buffer.setHeavyFile(load.heavy());
+        if (load.longLine()) {
+            // Wrapping a giant RichTextFX paragraph multiplies layout work. The user can explicitly turn it
+            // back on after loading, but the first rendered frame must use the safe profile.
+            buffer.setWordWrap(false);
+        }
         if (load.truncated()) {
             buffer.setReadOnly(true);
         }
-        buffer.setInitialContent(load.content());
+        buffer.setInitialContent(load.content(), load.longLine());
         if (load.log()) {
             logViewer.recordLoadOffset(buffer, load.logOffset());
         }
@@ -8438,17 +8462,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (load.large()) {
             return largeFileNote(load.file(), load.size());
         }
-        return load.heavy() ? tr("status.largeFileTier", load.lines()) : "";
-    }
-
-    private static int lineCount(String text) {
-        int lines = 1;
-        for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') {
-                lines++;
-            }
+        if (load.longLine()) {
+            return tr("status.longLineFileTier", load.maxLineLength());
         }
-        return lines;
+        return load.heavy() ? tr("status.largeFileTier", load.lines()) : "";
     }
 
     /** The file's resolved {@code .editorconfig} charset, or null (EditorConfig off / remote / no rule). The
@@ -13946,6 +13963,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void applyViewSettings(EditorBuffer buffer) {
+        applyViewSettings(buffer, true);
+    }
+
+    private void applyViewSettings(EditorBuffer buffer, boolean resolvePathSettings) {
         Settings s = config.getSettings();
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
         buffer.setFont(s.getFontFamily(), effectiveFont);
@@ -14004,7 +14025,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setFillColumn(s.getFillColumn());
         buffer.setAutoFillEnabled(s.isAutoFill()); // break prose lines at the fill column as you type (prose only)
         buffer.setAbbrevs(config.abbreviationMap(), s.isAbbrevMode()); // dictionary from abbreviations.json + mode
-        applyEditorConfig(buffer); // .editorconfig overrides the global indent/EOL/ruler/charset (when on)
+        if (resolvePathSettings) {
+            applyEditorConfig(buffer); // .editorconfig overrides the global indent/EOL/ruler/charset (when on)
+        } else {
+            // A loading shell must not walk the filesystem on FX. prepareLoad supplies the resolved values.
+            applyResolvedEditorConfig(buffer, com.editora.editorconfig.EditorConfigProperties.EMPTY);
+        }
     }
 
     /** Whether {@code .editorconfig} support is enabled. */
@@ -14021,13 +14047,18 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void applyEditorConfig(EditorBuffer buffer) {
         Path path = buffer.getPath();
         if (!editorConfigEnabled() || path == null || !com.editora.vfs.Vfs.isLocal(path)) {
-            buffer.setEditorConfigProps(com.editora.editorconfig.EditorConfigProperties.EMPTY);
-            applyEffectiveIndent(buffer, com.editora.editorconfig.EditorConfigProperties.EMPTY);
-            buffer.setRulerColumn(null);
-            buffer.setCharsetOverride(null);
+            applyResolvedEditorConfig(buffer, com.editora.editorconfig.EditorConfigProperties.EMPTY);
             return; // EOL override is left to a manual choice; tab size already comes from global settings
         }
         com.editora.editorconfig.EditorConfigProperties p = com.editora.editorconfig.EditorConfig.resolveFor(path);
+        applyResolvedEditorConfig(buffer, p);
+    }
+
+    /** Applies an already-resolved EditorConfig result without touching the filesystem. */
+    private void applyResolvedEditorConfig(
+            EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties properties) {
+        com.editora.editorconfig.EditorConfigProperties p =
+                properties == null ? com.editora.editorconfig.EditorConfigProperties.EMPTY : properties;
         buffer.setEditorConfigProps(p);
         applyEffectiveIndent(buffer, p);
         if (p.insertSpaces() != null || p.tabWidth() != null || p.indentSize() != null) {

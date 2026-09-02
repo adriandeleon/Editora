@@ -12,11 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Find in Files now has one clear visual toggle.** Its duplicate tool-stripe icon has been removed in
   favor of the toolbar button, which now stays highlighted for as long as the Search tool window is open.
 
-- **Large and remote files open without blocking the window on disk I/O.** Editora now shows the editor tab
-  immediately, then reads, classifies, and decodes expensive files on virtual threads before performing one
-  JavaFX document insertion. Large-file safeguards are active before that insertion, heuristic folding no
-  longer scans large documents after the load debounce, restored folds are computed once, and restoring
-  several personal notes reuses one text snapshot instead of copying the document for every note.
+- **Text files open without blocking the window on disk I/O.** Editora now shows the editor tab immediately
+  for every text candidate, then stats, classifies, resolves EditorConfig/the charset, reads, and decodes on
+  virtual threads before performing one JavaFX document insertion. This covers small files on slow mounts as
+  well as large and remote files, and avoids resolving EditorConfig twice or walking its directories on the
+  JavaFX thread. Files containing a 64 KiB-or-wider line enter a safe profile before insertion and split giant
+  paragraphs into visually identical bounded text nodes, protecting minified/generated sources from
+  pathological RichTextFX layout. Large-file safeguards are likewise active
+  before insertion, heuristic folding no longer scans large documents after the load debounce, restored
+  folds are computed once, and restoring several personal notes reuses one text snapshot instead of copying
+  the document for every note.
 
 - **Large CSV edits and live rendered previews stay responsive.** Rainbow CSV span construction now runs
   off the JavaFX thread and discards stale results instead of rescanning and restyling the whole document

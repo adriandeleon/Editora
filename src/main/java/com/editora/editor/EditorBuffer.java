@@ -3,6 +3,7 @@ package com.editora.editor;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -71,8 +72,10 @@ import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+import org.fxmisc.richtext.model.ReadOnlyStyledDocumentBuilder;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
+import org.fxmisc.richtext.model.StyledSegment;
 import org.fxmisc.richtext.multi.MultiCaretController;
 import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
@@ -7615,8 +7618,8 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Enables large-file mode: skips syntax highlighting and hides the minimap (regardless of the
-     * user's view settings) so very large documents stay responsive. Should be set right after the
-     * content is inserted; see {@link #LARGE_FILE_BYTES}.
+     * user's view settings) so very large or pathologically shaped documents stay responsive. The loader
+     * sets it before content is inserted; see {@link #LARGE_FILE_BYTES}.
      */
     public void setLargeFile(boolean large) {
         if (this.largeFile == large) {
@@ -9976,12 +9979,63 @@ public class EditorBuffer implements TabContent {
      * initial replacement never enters an undo manager or feature that the load profile will disable.
      */
     public void setInitialContent(String content) {
+        setInitialContent(content, false);
+    }
+
+    /**
+     * Installs freshly-loaded content, optionally splitting giant paragraphs into visually identical style
+     * segments. JavaFX Text lays out one RichTextFX segment as one text node; a minified 300 KiB source in a
+     * single node can monopolize the FX thread for many seconds. Alternating two no-op style classes keeps the
+     * document text and paragraph model exact while bounding each node's glyph run.
+     */
+    public void setInitialContent(String content, boolean segmentLongLines) {
         String initial = content == null ? "" : content;
         widen(); // a fresh document supersedes any narrowing of the old one
-        area.replaceText(initial);
+        // Establish the baseline before the change event. Otherwise an async loading shell briefly becomes
+        // dirty during replace(), which promotes a disposable preview tab before the method can clear it.
         cleanText = initial;
+        if (segmentLongLines) {
+            area.replace(0, area.getLength(), segmentedInitialDocument(initial));
+        } else {
+            area.replaceText(initial);
+        }
         dirty.set(false);
         recomputeRun(); // detect a runnable file on load (drives the Run glyph)
+    }
+
+    private static final int LONG_LINE_SEGMENT_CHARS = 4 * 1024;
+    private static final Collection<String> LONG_LINE_SEGMENT_A = List.of("long-line-segment-a");
+    private static final Collection<String> LONG_LINE_SEGMENT_B = List.of("long-line-segment-b");
+
+    private org.fxmisc.richtext.model.ReadOnlyStyledDocument<Collection<String>, String, Collection<String>>
+            segmentedInitialDocument(String text) {
+        var builder = new ReadOnlyStyledDocumentBuilder<Collection<String>, String, Collection<String>>(
+                area.getSegOps(), area.getInitialParagraphStyle());
+        int paragraphStart = 0;
+        while (true) {
+            int newline = text.indexOf('\n', paragraphStart);
+            int paragraphEnd = newline < 0 ? text.length() : newline;
+            int length = paragraphEnd - paragraphStart;
+            if (length == 0) {
+                builder.addParagraph("", Collections.emptyList());
+            } else if (length <= LONG_LINE_SEGMENT_CHARS) {
+                builder.addParagraph(text.substring(paragraphStart, paragraphEnd), Collections.emptyList());
+            } else {
+                List<StyledSegment<String, Collection<String>>> segments =
+                        new ArrayList<>((length + LONG_LINE_SEGMENT_CHARS - 1) / LONG_LINE_SEGMENT_CHARS);
+                int chunk = 0;
+                for (int start = paragraphStart; start < paragraphEnd; start += LONG_LINE_SEGMENT_CHARS) {
+                    int end = Math.min(paragraphEnd, start + LONG_LINE_SEGMENT_CHARS);
+                    Collection<String> style = (chunk++ & 1) == 0 ? LONG_LINE_SEGMENT_A : LONG_LINE_SEGMENT_B;
+                    segments.add(new StyledSegment<>(text.substring(start, end), style));
+                }
+                builder.addParagraph(segments);
+            }
+            if (newline < 0) {
+                return builder.build();
+            }
+            paragraphStart = newline + 1;
+        }
     }
 
     /**
