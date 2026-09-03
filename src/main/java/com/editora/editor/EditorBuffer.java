@@ -273,8 +273,10 @@ public class EditorBuffer implements TabContent {
     private static final int LOG_FOLLOW_CAP = 12 * 1024 * 1024;
     /** Fired from the debounced edit pulse while this is an HTML buffer (drives HTML live-preview reload). */
     private Runnable htmlPreviewDirtyListener;
-    /** Active debounced subscription driving live preview re-render (null when not previewing). */
-    private Subscription previewSub;
+    /** One document subscription and timer sequence for all differently-timed settled-edit work. */
+    private final SettledEditDispatcher settledEdits = new SettledEditDispatcher();
+
+    private Subscription settledEditSub;
     /** Bumped per preview render request; background results discard if stale. */
     private long previewGen;
     /**
@@ -824,9 +826,10 @@ public class EditorBuffer implements TabContent {
                         c.getRemoved().length(),
                         c.getInserted().length()));
         area.setLineHighlighterFill(lineHighlightColor);
-        // Track the earliest changed line immediately (the debounced stream below drops intermediate
-        // emissions, so the dirty start must be accumulated here), then re-highlight after a pause.
-        area.multiPlainChanges().subscribe(changes -> {
+        // Track the earliest changed line immediately (the settled dispatcher coalesces intermediate
+        // edits, so the dirty start must be accumulated here), then re-highlight after a pause.
+        configureSettledEditDispatcher();
+        settledEditSub = area.multiPlainChanges().subscribe(changes -> {
             for (var change : changes) {
                 int line = area.offsetToPosition(
                                 change.getPosition(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
@@ -848,46 +851,13 @@ public class EditorBuffer implements TabContent {
             if (lspActive) {
                 suppressStaleDiagnostics();
             }
-        });
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(150)).subscribe(ignore -> {
-            applyHighlighting();
-            recomputeRun(); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
-        });
-        // Live Mermaid linting: debounced maid run for .mmd buffers (only while enabled + maid detected).
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(450)).subscribe(ignore -> {
-            scheduleMermaidLint();
-            scheduleMarkdownLint();
-        });
-        // TODO/highlight patterns: debounced re-scan for the in-editor highlight (no-op when off / huge file).
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> refreshTodoMarks());
-        // Undo History tool window: snapshot the document when editing settles (one checkpoint per burst).
-        area.multiPlainChanges().successionEnds(UndoMerge.PAUSE).subscribe(ignore -> captureUndoCheckpoint());
-        // LSP document sync: debounced didChange notification (only while the buffer is LSP-managed) +
-        // a debounced pull-diagnostics request (no-op unless the server uses the pull model). The pull is
-        // here, not in lspChangeListener, so it fires once per debounce — not on every completion keystroke
-        // (requestLspCompletion flushes lspChangeListener directly to send fresh text before completing).
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> {
-            if (lspActive) {
-                sendLspChange();
-            }
-            if (lspActive && lspDiagnosticsRequester != null) {
-                lspDiagnosticsRequester.run();
-            }
-            if ((semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
-                semanticTokensRequester.run(); // drives semantic tokens AND inlay hints (#681)
-            }
+            settledEdits.changed();
         });
         // After scrolling settles, re-request semantic tokens for the now-visible region (debounced so a
         // drag-scroll doesn't fire a request per frame). Inert unless semantic highlighting is active.
         semanticScrollDebounce.setOnFinished(e -> {
             if ((semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
                 semanticTokensRequester.run(); // drives semantic tokens AND inlay hints (#681)
-            }
-        });
-        // HTML live preview: debounced reload pulse for HTML buffers (only while a browser preview is open).
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> {
-            if (isHtml() && htmlPreviewDirtyListener != null) {
-                htmlPreviewDirtyListener.run();
             }
         });
         // Dirty only when the content differs from the last saved/loaded text, so reverting an edit
@@ -920,6 +890,61 @@ public class EditorBuffer implements TabContent {
         installFormatBarListeners(area);
         installSplitScrollSync();
         installOverlays();
+    }
+
+    /**
+     * Registers every document-level idle milestone on one timer sequence. Feature predicates are checked
+     * before a milestone is armed and again before its actions run, so inactive services add no timer work.
+     * The order within a shared delay matches the former independent ReactFX subscriptions.
+     */
+    private void configureSettledEditDispatcher() {
+        settledEdits.at(Duration.ofMillis(150), () -> true, () -> {
+            applyHighlighting();
+            recomputeRun(); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
+        });
+        settledEdits.at(
+                Duration.ofMillis(250),
+                () -> (isHtml() && htmlPreviewDirtyListener != null)
+                        || (!largeFile && markdownViewMode != MarkdownViewMode.EDITOR),
+                () -> {
+                    if (isHtml() && htmlPreviewDirtyListener != null) {
+                        htmlPreviewDirtyListener.run();
+                    }
+                    if (!largeFile && markdownViewMode != MarkdownViewMode.EDITOR) {
+                        scheduleRenderPreview();
+                    }
+                });
+        settledEdits.at(
+                Duration.ofMillis(280),
+                () -> autocompleteEnabled && focusedArea != null && focusedArea.isFocused(),
+                () -> updateCompletion(focusedArea, false));
+        settledEdits.at(
+                Duration.ofMillis(300), () -> todoEnabled || lspActive || semanticActive || inlayHintsActive, () -> {
+                    if (todoEnabled) {
+                        refreshTodoMarks();
+                    }
+                    if (lspActive) {
+                        sendLspChange();
+                    }
+                    if (lspActive && lspDiagnosticsRequester != null) {
+                        lspDiagnosticsRequester.run();
+                    }
+                    if ((semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
+                        semanticTokensRequester.run(); // drives semantic tokens AND inlay hints (#681)
+                    }
+                });
+        settledEdits.at(
+                UndoMerge.PAUSE,
+                () -> !disposed && !largeFile && area.getLength() <= UNDO_HISTORY_MAX_BYTES,
+                this::captureUndoCheckpoint);
+        settledEdits.at(Duration.ofMillis(450), () -> mermaidLintEnabled || markdownLintEnabled, () -> {
+            scheduleMermaidLint();
+            scheduleMarkdownLint();
+        });
+        settledEdits.at(
+                Duration.ofMillis(600),
+                () -> aiCompletionEnabled && focusedArea != null && focusedArea.isFocused(),
+                () -> maybeRequestAiCompletion(focusedArea));
     }
 
     /**
@@ -2722,7 +2747,6 @@ public class EditorBuffer implements TabContent {
             focusedArea = area;
         } else {
             this.markdownViewMode = MarkdownViewMode.EDITOR; // a code split supersedes the Markdown preview
-            unsubscribePreview();
             ensureSecondaryView();
         }
         rebuildViewHost();
@@ -4884,18 +4908,15 @@ public class EditorBuffer implements TabContent {
         this.htmlPreviewDirtyListener = listener;
     }
 
-    /** Switches the Markdown view mode, (un)subscribing the live preview and rebuilding the view host. */
+    /** Switches the Markdown view mode and rebuilds the view host. */
     public void setMarkdownViewMode(MarkdownViewMode mode) {
         MarkdownViewMode target = mode == null ? MarkdownViewMode.EDITOR : mode;
         boolean changed = this.markdownViewMode != target;
         this.markdownViewMode = target;
         scheduleFormatBar(); // hide the format bar when entering pure PREVIEW, re-evaluate otherwise
         scheduleAiActionsBar(); // same, for the AI selection-actions bar
-        if (target == MarkdownViewMode.EDITOR) {
-            unsubscribePreview();
-        } else {
+        if (target != MarkdownViewMode.EDITOR) {
             this.split = Split.NONE; // preview supersedes any code split
-            ensurePreviewSubscription();
             scheduleRenderPreview();
         }
         rebuildViewHost();
@@ -5161,22 +5182,6 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    private void ensurePreviewSubscription() {
-        if (previewSub != null || largeFile) {
-            return; // large files render once (no live updates), mirroring the highlight/minimap guard
-        }
-        previewSub = area.multiPlainChanges()
-                .successionEnds(Duration.ofMillis(250))
-                .subscribe(ignore -> scheduleRenderPreview());
-    }
-
-    private void unsubscribePreview() {
-        if (previewSub != null) {
-            previewSub.unsubscribe();
-            previewSub = null;
-        }
-    }
-
     /**
      * Releases this buffer's resources. Must be called by the controller when the tab is
      * <em>actually closed</em> (not on a plain tab switch). The preview/highlight executors are now
@@ -5184,7 +5189,8 @@ public class EditorBuffer implements TabContent {
      * shut them down — it instead bumps {@link #previewGen}/{@link #highlightGen} so any in-flight task
      * submitted by this buffer discards its result (the gen guard) instead of touching the now-dead
      * buffer. The reactfx subscriptions are on the buffer's own {@code area}/{@code area2} and die with
-     * it on GC; we drop the preview one eagerly too. Idempotent. Once disposed the buffer must not be reused.
+     * it on GC; the shared settled-edit subscription is dropped eagerly too. Idempotent. Once disposed the
+     * buffer must not be reused.
      */
     public void dispose() {
         disposed = true; // reject any LATER dispatch (see below) — the gen bumps only cover in-flight work
@@ -5194,7 +5200,11 @@ public class EditorBuffer implements TabContent {
         // moment the tab closes returns that memory now rather than at the next collection.
         undoHistory.clear();
         documentSnapshots.invalidate();
-        unsubscribePreview();
+        if (settledEditSub != null) {
+            settledEditSub.unsubscribe();
+            settledEditSub = null;
+        }
+        settledEdits.dispose();
         disposeMultiCaret();
         previewGen++; // discard any in-flight preview result for this (now closed) buffer
         highlightGen++; // discard any in-flight highlight result
@@ -9209,27 +9219,15 @@ public class EditorBuffer implements TabContent {
         });
     }
 
-    /** Debounced auto-trigger: completion only appears after typing pauses (~280 ms), so it never
-     *  flickers while the user is typing continuously. */
+    /** Installs the immediate completion/signature lifecycle hooks for one view. Settled completion and
+     *  AI requests are shared by the document-level dispatcher, including when this is the split view. */
     private void installCompletionTrigger(CodeArea a) {
-        a.multiPlainChanges().successionEnds(Duration.ofMillis(280)).subscribe(ignored -> {
-            if (a.isFocused()) {
-                updateCompletion(a, false);
-            }
-        });
         // Signature help fires IMMEDIATELY on a typed trigger char ('(' / ','), not on the 280 ms pause —
         // the overload popup must appear as the call is opened. Guarded to three cheap checks per edit
         // when off; the request itself is deferred a pulse so the triggering insertion's caret settles
         // first (the maybeAutoFill lesson) — reading the caret inside the change emission sees a stale
         // position (#674).
         a.multiPlainChanges().subscribe(changes -> maybeTriggerSignatureHelp(a, changes));
-        // AI inline completion rides a longer pause (~600 ms) so it never races the local popup/ghost;
-        // each edit bumps the generation, superseding the in-flight request. Zero work while disabled.
-        a.multiPlainChanges().successionEnds(Duration.ofMillis(600)).subscribe(ignored -> {
-            if (a.isFocused()) {
-                maybeRequestAiCompletion(a);
-            }
-        });
         // Any caret move or scroll invalidates the inline ghost's position; clear it (the debounce
         // re-shows it after the next pause in typing). The popup manages its own key/caret handling.
         a.caretPositionProperty().addListener((o, ov, nv) -> {
@@ -9814,6 +9812,16 @@ public class EditorBuffer implements TabContent {
     /** Number of whole-document strings this buffer has materialized through the shared cache (tests). */
     long documentSnapshotMaterializations() {
         return documentSnapshots.materializations();
+    }
+
+    /** Number of settled-edit tasks sharing this buffer's one document subscription (tests). */
+    int settledEditTaskCount() {
+        return settledEdits.taskCount();
+    }
+
+    /** Whether the one shared settled-edit document subscription is active (tests). */
+    boolean settledEditSubscriptionActive() {
+        return settledEditSub != null;
     }
 
     /** Emacs {@code C-SPC}: record {@code pos} on this buffer's mark ring so {@code popMark} can return. */
