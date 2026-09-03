@@ -17,9 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The Project Map defaults to a right-to-left flow, remembers the last selected direction, recentres newly
-  opened column paths, opens a file row directly in an editor tab, and exposes canvas preview through a dedicated icon. Preview
-  cards are visibly marked read-only.
+- The Project Map defaults to a right-to-left flow, remembers the last selected direction, centres each newly
+  opened column on the folder that opened it while keeping it beyond the parent column without overlap, opens a
+  file row directly in an editor tab, clips panned content to the canvas below its toolbar, hides column controls when
+  zoom leaves too little header space, and exposes canvas preview through a dedicated icon. Preview cards open beyond
+  their source column in the active flow direction, expand to fit long lines when the viewport permits, and are visibly
+  marked read-only while retaining context-menu copy, bookmark, and Personal Note actions for clicked code.
 - Expert mode's floating **E** exit control now lives inside the active code viewport and clears the
   minimap instead of overlapping the window title bar or minimap.
 - Expert mode, including `--expert` CLI launches, now keeps the menu bar visible from the first frame.
@@ -34,13 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **The Project tool window now has a visual Map navigator.** A Tree/Map switch preserves the existing
-  file-management tree while offering a Canvas hierarchy with focused Miller-style columns, pan, pointer-
+  file-management tree while offering a Canvas hierarchy with branch-aware Miller-style columns, pan, pointer-
   centered mouse-wheel zoom, mouse and keyboard navigation, and filters for open, modified, Git-changed, and
   file-type working sets. Each column has its own live name filter, default-on hidden-file checkbox, and item
   count, uses the Project tree's folder-first case-insensitive ordering, and expands to fit its longest name
-  without truncation. Columns can be repositioned by their headers and pinned against accidental movement,
-  and the map keeps a single active branch per depth so unrelated
-  sibling expansions no longer merge into a dense connection bundle. Fit/center controls, automatic initial
+  without truncation. Columns can be repositioned by their headers, pinned against accidental movement, and
+  closed independently. Opening another folder from the same parent retains the existing branch in a separate
+  non-overlapping column; new columns stay beyond their parent in the selected flow direction and center on the
+  item that opened them when space permits. Fit/center controls, automatic initial
   framing, selectable left-to-right, right-to-left, top-to-bottom, and bottom-to-top flows with matching
   connector geometry and arrow-key semantics, a compact overview, selected-path highlighting, breadcrumbs,
   Back/Forward history, Page Up/Down,
@@ -51,9 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accent rail and label. Hover tooltips expose the full path, type, size, modification time, and relevant
   editor or Git status without filesystem work on the JavaFX thread. Right-clicking any map node opens the
   same file-management menu as the traditional tree, including New, Maven, rename/delete, reveal, terminal,
-  Local History, and Git actions when applicable. Selecting a file also opens a movable, resizable,
-  independently scrollable code preview above the canvas, with syntax highlighting, current unsaved content
-  for open buffers, and an explicit action to open the full editor tab.
+  Local History, and Git actions when applicable. File preview icons open movable, resizable,
+  independently scrollable code cards beside their source columns; several files can remain previewed at
+  once, each closes independently, and reopening a file focuses its existing card. Previews include syntax
+  highlighting, current unsaved content for open buffers, enough initial width for long lines, context actions
+  for copy, bookmarks, and Personal Notes, and an explicit action to open the full editor tab. The map can
+  also print or export the complete laid-out canvas to PDF through the normal print-preview and configured
+  PDF workflows.
 
 ### Changed
 

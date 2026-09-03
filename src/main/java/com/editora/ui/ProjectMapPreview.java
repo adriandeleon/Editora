@@ -17,20 +17,33 @@ import javafx.application.Platform;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.control.Button;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.IndexRange;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.ContextMenuEvent;
+import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.scene.text.Font;
+import javafx.scene.text.Text;
 
+import com.editora.config.NoteScope;
+import com.editora.config.TextAnchor;
 import com.editora.editor.GrammarRegistry;
+import com.editora.editor.NoteDraft;
 import com.editora.editor.TextMateHighlighter;
 import com.editora.editorconfig.EditorConfigCharset;
 import org.eclipse.tm4e.core.grammar.IGrammar;
@@ -38,6 +51,7 @@ import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.model.StyleSpans;
+import org.fxmisc.richtext.model.TwoDimensional;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -51,15 +65,33 @@ final class ProjectMapPreview extends StackPane {
     private static final int MAX_HIGHLIGHT_CHARS = 160_000;
     private static final double DEFAULT_WIDTH = 640;
     private static final double DEFAULT_HEIGHT = 420;
-    private static final double MIN_WIDTH = 340;
-    private static final double MIN_HEIGHT = 220;
-    private static final double EDGE_MARGIN = 14;
+    static final double MIN_WIDTH = 340;
+    static final double MIN_HEIGHT = 220;
+    static final double EDGE_MARGIN = 14;
+    private static final double TEXT_CHROME_WIDTH = 72;
+    private static final int TAB_COLUMNS = 4;
+    private static final int MAX_MEASURED_COLUMNS = 1_000;
 
     /** An already-open buffer snapshot. The caller captures it on the FX thread, including unsaved text. */
     record Content(String text, boolean truncated) {
         Content {
             text = text == null ? "" : text;
         }
+    }
+
+    record Placement(double x, double y, double width, double height) {}
+
+    @FunctionalInterface
+    interface PlacementResolver {
+        Placement resolve(double width, double height, double parentWidth, double parentHeight);
+    }
+
+    interface MarkerActions {
+        boolean personalNotesEnabled();
+
+        void addBookmark(Path file, int line);
+
+        void addPersonalNote(Path file, NoteDraft draft);
     }
 
     private enum LoadProblem {
@@ -82,6 +114,7 @@ final class ProjectMapPreview extends StackPane {
     private final Button close = new Button("×");
     private final CodeArea editor = new CodeArea();
     private final VirtualizedScrollPane<CodeArea> editorScroll = new VirtualizedScrollPane<>(editor);
+    private final ContextMenu editorContextMenu = new ContextMenu();
     private final ImageView imageView = new ImageView();
     private final ScrollPane imageScroll = new ScrollPane(imageView);
     private final Region resizeGrip = new Region();
@@ -96,6 +129,9 @@ final class ProjectMapPreview extends StackPane {
     private Path path;
     private boolean disposed;
     private boolean placed;
+    private boolean placementPending;
+    private PlacementResolver placementResolver;
+    private MarkerActions markerActions;
     private double preferredWidth = DEFAULT_WIDTH;
     private double preferredHeight = DEFAULT_HEIGHT;
     private double dragScreenX;
@@ -107,6 +143,8 @@ final class ProjectMapPreview extends StackPane {
     private double resizeWidth;
     private double resizeHeight;
     private double contentZoom = 1.0;
+    private Runnable onClose = this::hidePreview;
+    private Runnable onActivate = () -> {};
 
     ProjectMapPreview(Consumer<Path> onOpenFile) {
         this.onOpenFile = onOpenFile == null ? ignored -> {} : onOpenFile;
@@ -145,7 +183,7 @@ final class ProjectMapPreview extends StackPane {
         close.getStyleClass().add("project-map-preview-button");
         close.setTooltip(new Tooltip(tr("project.map.preview.close")));
         close.setAccessibleText(tr("project.map.preview.close"));
-        close.setOnAction(event -> hidePreview());
+        close.setOnAction(event -> onClose.run());
 
         titleBar.getStyleClass().add("project-map-preview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);
@@ -158,6 +196,7 @@ final class ProjectMapPreview extends StackPane {
         editor.setWrapText(false);
         editor.setParagraphGraphicFactory(LineNumberFactory.get(editor));
         editor.setAccessibleHelp(tr("project.map.preview.accessibleHelp"));
+        installEditorContextMenu();
         frame.getStyleClass().add("project-map-preview-frame");
         frame.setTop(titleBar);
         imageView.setPreserveRatio(true);
@@ -174,15 +213,23 @@ final class ProjectMapPreview extends StackPane {
         resizeGrip.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::resized);
         getChildren().addAll(frame, resizeGrip);
 
-        addEventHandler(MouseEvent.MOUSE_PRESSED, event -> toFront());
+        addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
+            toFront();
+            onActivate.run();
+        });
     }
 
-    void showFile(Path file, Content openContent) {
+    void showFile(Path file, Content openContent, PlacementResolver placementResolver) {
         if (disposed || file == null) {
             return;
         }
         long requested = generation.incrementAndGet();
         path = file.toAbsolutePath().normalize();
+        this.placementResolver = placementResolver;
+        preferredWidth = DEFAULT_WIDTH;
+        preferredHeight = DEFAULT_HEIGHT;
+        placed = false;
+        placementPending = true;
         title.setText(fileName(path));
         title.setGraphic(FileIcons.forProjectItem(fileName(path), false));
         title.setTooltip(new Tooltip(path.toString()));
@@ -215,6 +262,7 @@ final class ProjectMapPreview extends StackPane {
 
     void hidePreview() {
         generation.incrementAndGet();
+        editorContextMenu.hide();
         path = null;
         editor.replaceText("");
         status.setText("");
@@ -227,6 +275,18 @@ final class ProjectMapPreview extends StackPane {
 
     CodeArea editor() {
         return editor;
+    }
+
+    void setMarkerActions(MarkerActions actions) {
+        markerActions = actions;
+    }
+
+    void setOnClose(Runnable callback) {
+        onClose = callback == null ? this::hidePreview : callback;
+    }
+
+    void setOnActivate(Runnable callback) {
+        onActivate = callback == null ? () -> {} : callback;
     }
 
     void constrainTo(double parentWidth, double parentHeight) {
@@ -244,8 +304,112 @@ final class ProjectMapPreview extends StackPane {
     void dispose() {
         disposed = true;
         generation.incrementAndGet();
+        editorContextMenu.hide();
         loader.shutdownNow();
+        path = null;
         editor.replaceText("");
+        status.setText("");
+        setVisible(false);
+    }
+
+    private void installEditorContextMenu() {
+        editorContextMenu.getStyleClass().add("editor-context-menu");
+        editor.setOnContextMenuRequested(this::showEditorContextMenu);
+        editor.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
+            if (event.getButton() == MouseButton.PRIMARY && editorContextMenu.isShowing()) {
+                editorContextMenu.hide();
+            }
+        });
+    }
+
+    private void showEditorContextMenu(ContextMenuEvent event) {
+        rebuildEditorContextMenu(clickLineAt(event.getX(), event.getY()));
+        editorContextMenu.show(editor, event.getScreenX(), event.getScreenY());
+        event.consume();
+    }
+
+    private void rebuildEditorContextMenu(int clickedLine) {
+        boolean empty = editor.getLength() == 0;
+        MenuItem copy = new MenuItem(tr("editmenu.copy"), Icons.copy());
+        copy.setDisable(empty);
+        copy.setOnAction(ignored -> copySelectionOrAll());
+        MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"), Icons.selectAll());
+        selectAll.setDisable(empty);
+        selectAll.setOnAction(ignored -> {
+            editor.selectAll();
+            editor.requestFocus();
+        });
+
+        java.util.List<MenuItem> items = new java.util.ArrayList<>(java.util.List.of(copy, selectAll));
+        Path selected = path;
+        MarkerActions actions = markerActions;
+        if (!empty && selected != null && actions != null) {
+            items.add(new SeparatorMenuItem());
+            MenuItem bookmark = new MenuItem(tr("editmenu.addBookmark"), Icons.bookmark());
+            bookmark.setOnAction(ignored -> actions.addBookmark(selected, clickedLine));
+            items.add(bookmark);
+
+            MenuItem note = new MenuItem(tr("editmenu.addNote"), Icons.notes());
+            note.setDisable(!actions.personalNotesEnabled());
+            NoteDraft draft = noteDraftAt(clickedLine);
+            note.setOnAction(ignored -> actions.addPersonalNote(selected, draft));
+            items.add(note);
+        }
+        editorContextMenu.getItems().setAll(items);
+    }
+
+    private void copySelectionOrAll() {
+        String text = editor.getSelectedText();
+        if (text == null || text.isEmpty()) {
+            text = editor.getText();
+        }
+        if (text.isEmpty()) {
+            return;
+        }
+        ClipboardContent content = new ClipboardContent();
+        content.putString(text);
+        Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    private int clickLineAt(double x, double y) {
+        try {
+            int offset = editor.hit(x, y).getInsertionIndex();
+            return editor.offsetToPosition(offset, TwoDimensional.Bias.Forward).getMajor();
+        } catch (RuntimeException ignored) {
+            return editor.getCurrentParagraph();
+        }
+    }
+
+    private NoteDraft noteDraftAt(int clickedLine) {
+        String document = editor.getText();
+        IndexRange selection = editor.getSelection();
+        if (selection.getLength() > 0) {
+            int start = selection.getStart();
+            int end = selection.getEnd();
+            var startPosition = editor.offsetToPosition(start, TwoDimensional.Bias.Forward);
+            var endPosition = editor.offsetToPosition(end, TwoDimensional.Bias.Forward);
+            NoteScope scope = startPosition.getMajor() == endPosition.getMajor() ? NoteScope.WORD : NoteScope.RANGE;
+            String prefix = document.substring(Math.max(0, start - TextAnchor.MAX_CONTEXT), start);
+            String suffix = document.substring(end, Math.min(document.length(), end + TextAnchor.MAX_CONTEXT));
+            TextAnchor anchor = new TextAnchor(
+                    startPosition.getMajor(),
+                    startPosition.getMinor(),
+                    endPosition.getMajor(),
+                    endPosition.getMinor(),
+                    editor.getSelectedText(),
+                    prefix,
+                    suffix);
+            return new NoteDraft(scope, anchor);
+        }
+
+        int line = Math.max(0, Math.min(clickedLine, editor.getParagraphs().size() - 1));
+        String lineText = editor.getParagraph(line).getText();
+        int lineStart = editor.getAbsolutePosition(line, 0);
+        int lineEnd = lineStart + lineText.length();
+        String prefix = document.substring(Math.max(0, lineStart - TextAnchor.MAX_CONTEXT), lineStart);
+        String suffix = document.substring(lineEnd, Math.min(document.length(), lineEnd + TextAnchor.MAX_CONTEXT));
+        TextAnchor anchor = new TextAnchor(line, 0, line, lineText.length(), lineText, prefix, suffix);
+        return new NoteDraft(NoteScope.LINE, anchor);
     }
 
     @Override
@@ -262,10 +426,22 @@ final class ProjectMapPreview extends StackPane {
         }
         double width = boundedSize(preferredWidth, MIN_WIDTH, parent.getWidth() - EDGE_MARGIN * 2);
         double height = boundedSize(preferredHeight, MIN_HEIGHT, parent.getHeight() - EDGE_MARGIN * 2);
-        resize(width, height);
-        if (!placed) {
+        if (placementPending && placementResolver != null) {
+            Placement placement = placementResolver.resolve(width, height, parent.getWidth(), parent.getHeight());
+            width = boundedSize(placement.width(), MIN_WIDTH, parent.getWidth() - EDGE_MARGIN * 2);
+            height = boundedSize(placement.height(), MIN_HEIGHT, parent.getHeight() - EDGE_MARGIN * 2);
+            preferredWidth = width;
+            preferredHeight = height;
+            resize(width, height);
             placed = true;
-            relocate(Math.max(EDGE_MARGIN, parent.getWidth() - width - 24), 24);
+            placementPending = false;
+            relocate(placement.x(), placement.y());
+        } else {
+            resize(width, height);
+            if (!placed) {
+                placed = true;
+                relocate(Math.max(EDGE_MARGIN, parent.getWidth() - width - 24), 24);
+            }
         }
         constrainTo(parent.getWidth(), parent.getHeight());
     }
@@ -403,8 +579,39 @@ final class ProjectMapPreview extends StackPane {
         editor.replaceText(loaded.text());
         editor.moveTo(0);
         editor.scrollToPixel(0, 0);
+        fitTextWidth(loaded.text());
         status.setText(loaded.truncated() ? tr("project.map.preview.truncated") : "");
         return true;
+    }
+
+    private void fitTextWidth(String text) {
+        int columns = widestLineColumns(text);
+        Text glyph = new Text("M");
+        glyph.setFont(Font.font("Monospaced", 12 * contentZoom));
+        double glyphWidth = Math.max(1, glyph.getLayoutBounds().getWidth());
+        preferredWidth = Math.max(DEFAULT_WIDTH, columns * glyphWidth + TEXT_CHROME_WIDTH);
+        placementPending = true;
+        ensurePlaced();
+        requestLayout();
+    }
+
+    private static int widestLineColumns(String text) {
+        int widest = 0;
+        int current = 0;
+        for (int offset = 0; offset < text.length() && widest < MAX_MEASURED_COLUMNS; ) {
+            int codePoint = text.codePointAt(offset);
+            offset += Character.charCount(codePoint);
+            if (codePoint == '\n' || codePoint == '\r') {
+                widest = Math.max(widest, current);
+                current = 0;
+            } else if (codePoint == '\t') {
+                current += TAB_COLUMNS - current % TAB_COLUMNS;
+            } else {
+                current += codePoint >= 0x1100 ? 2 : 1;
+            }
+            current = Math.min(current, MAX_MEASURED_COLUMNS);
+        }
+        return Math.max(widest, current);
     }
 
     private void showStyles(

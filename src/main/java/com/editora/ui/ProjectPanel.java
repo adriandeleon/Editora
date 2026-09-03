@@ -46,6 +46,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.util.Duration;
 
+import com.editora.editor.NoteDraft;
 import com.editora.search.FuzzyMatch;
 
 import static com.editora.i18n.Messages.tr;
@@ -165,6 +166,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         void addBookmark(Path file);
 
         void addPersonalNote(Path file);
+
+        default void addBookmark(Path file, int line) {
+            addBookmark(file);
+        }
+
+        default void addPersonalNote(Path file, NoteDraft draft) {
+            addPersonalNote(file);
+        }
     }
 
     /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
@@ -982,6 +991,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /** Injects the window-owned print and PDF handlers for a full Project Map snapshot. */
+    public void setMapOutputActions(Consumer<javafx.scene.image.Image> print, Consumer<javafx.scene.image.Image> pdf) {
+        mapView.setOutputActions(print, pdf);
+    }
+
     /** One filesystem watcher event: what happened to which path (#677). */
     public record FsChange(Path path, FsKind kind) {}
 
@@ -1021,6 +1035,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Injects bookmark/note actions and state used by both Project renderers. */
     public void setMarkerActions(MarkerActions markerActions) {
         this.markerActions = markerActions;
+        mapView.setPreviewMarkerActions(
+                markerActions == null
+                        ? null
+                        : new ProjectMapPreview.MarkerActions() {
+                            @Override
+                            public boolean personalNotesEnabled() {
+                                return markerActions.personalNotesEnabled();
+                            }
+
+                            @Override
+                            public void addBookmark(Path file, int line) {
+                                markerActions.addBookmark(file, line);
+                            }
+
+                            @Override
+                            public void addPersonalNote(Path file, NoteDraft draft) {
+                                markerActions.addPersonalNote(file, draft);
+                            }
+                        });
         mapView.setMarkerStates(
                 path -> this.markerActions != null && this.markerActions.hasBookmarks(path),
                 path -> this.markerActions != null

@@ -13,15 +13,16 @@ the floating code preview.
 
 ## User model
 
-The map presents a focused Miller-column path through the project:
+The map presents branch-aware Miller columns through the project:
 
 1. The first column contains the project root.
-2. Expanding a directory shows its children in the next depth column.
-3. Expanding a sibling at the same depth replaces the previous sibling branch.
-4. Collapsing an open directory removes all of its descendant columns.
+2. Expanding a directory shows its children in a new column at the next depth.
+3. Expanding a sibling retains the existing branch and opens another independent column.
+4. Closing a column or collapsing its parent removes only that branch and its descendant columns.
 
-This invariant gives every non-root column one meaningful parent. It prevents unrelated expanded
-subtrees from being merged into a dense graph while keeping ancestor context visible.
+Every non-root column has one meaningful parent, but several parents may own independent columns at
+the same depth. This keeps parallel work visible without merging unrelated subtrees into one dense
+column.
 
 The default flow is right to left. The flow selector also supports left to right, top to bottom, and
 bottom to top. It changes column placement, connector direction, and the meaning of the arrow
@@ -36,7 +37,7 @@ last selected flow is stored in workspace state and restored when the editor is 
 | --- | --- |
 | Single-click a folder | Select and expand it, or collapse it if it is already expanded |
 | Single-click a file | Open it in a normal editor tab |
-| Click a file's preview icon | Show the floating read-only preview on the canvas |
+| Click a file's preview icon | Open or focus that file's floating read-only preview on the canvas |
 | Right-click a node | Select it and open the same context menu as the Project tree, including first-line bookmark and Personal Note actions |
 | Drag empty canvas space | Pan the map |
 | Middle-button drag | Pan the map |
@@ -46,14 +47,23 @@ last selected flow is stored in workspace state and restored when the editor is 
 | Alt + mouse wheel | Pan vertically |
 | Drag a column header | Move that column independently unless it is locked |
 | Click a column lock | Prevent or allow accidental header dragging |
+| Click a column close button | Close that branch and all of its descendant columns |
+| Click **Print…** | Open the standard print preview for the complete map layout |
+| Click **PDF…** | Export the complete map layout using the configured PDF page size |
 | Click the overview | Recenter the canvas around that content position |
 
-The floating preview stays at screen scale instead of participating in canvas zoom. Its title bar
-moves it, its lower corner resizes it, and its editor scrolls independently. It uses current unsaved
-text when the file is already open; otherwise it reads the file off the JavaFX application thread.
-It is visibly marked read-only, has independent text/image zoom controls, and renders common bitmap
-image formats as well as syntax-highlighted text. The **Open** action promotes the previewed file to
-a normal editor tab.
+Floating previews stay at screen scale instead of participating in canvas zoom. Each title bar moves
+its card, each lower corner resizes it, and each editor scrolls independently. Opening another file
+keeps existing cards visible; clicking an already-previewed file focuses its existing card, and each
+close button removes only that card. Initial placement tries to avoid other cards and cascades them
+when the viewport cannot fit them without overlap. Up to eight previews remain open, with a ninth
+replacing the least recently focused card to keep editor and loader memory bounded.
+
+A preview uses current unsaved text when the file is already open; otherwise it reads the file off
+the JavaFX application thread. It is visibly marked read-only, has independent text/image zoom
+controls, and renders common bitmap image formats as well as syntax-highlighted text. Its context menu
+can copy selected code, select all, add a bookmark at the clicked line, or add a Personal Note for the
+selected or clicked lines. The **Open** action promotes the previewed file to a normal editor tab.
 
 Context menus use JavaFX auto-hide plus a next-pulse owner-scene press filter. This mirrors the
 other Project menus and ensures a click elsewhere closes the menu even on platforms where the
@@ -119,16 +129,24 @@ in world coordinates, transformed by zoom and pan, stored as immutable hit boxes
 Connectors are drawn before nodes. Only connectors and nodes intersecting the viewport are rendered,
 while the overview summarizes the complete laid-out content.
 
-Column cards are content-sized rather than uniform. For each depth, the map measures every loaded
-entry name at the drawing font and reserves enough width for the full label, icon, status marks,
-directory arrow, and padding. The minimum node width is 164 pixels. Measuring the underlying loaded
-entries—not only the currently filtered rows—keeps widths stable when a filter or Hidden checkbox is
-toggled. Horizontal origins accumulate the actual preceding widths; vertical flows use the same
-depth width to space sibling nodes.
+Print and PDF output temporarily render every laid-out column and connector into a bounded snapshot,
+independent of the live viewport. The snapshot preserves the active flow, filters, open branches,
+manual column positions, and theme, but omits interactive column controls and the overview. Rendering
+is capped by dimension and pixel budgets for large projects. The live canvas size, pan, zoom, and
+hover state are restored before print preview or the PDF destination flow continues.
 
-Column filters, hidden-file checkboxes, and lock buttons are ordinary child controls positioned over
-the painted column headers after each layout. They are not drawn into the canvas, which preserves
-native text editing, focus traversal, and accessibility.
+Column cards are content-sized rather than uniform. For each branch column, the map measures every
+loaded entry name at the drawing font and reserves enough width for the full label, icon, status
+marks, directory arrow, and padding. The minimum node width is 164 pixels. Measuring the underlying
+loaded entries—not only the currently filtered rows—keeps widths stable when a filter or Hidden
+checkbox is toggled. New columns open beyond their actual parent card in the selected flow direction,
+try to center on the item that opened them, and are packed along the perpendicular axis so parallel
+branches never overlap.
+
+Column filters, hidden-file checkboxes, lock buttons, and close buttons are ordinary child controls
+positioned over the painted column headers after each layout. Detail controls are hidden when zoom
+leaves too little header space and return when space is available. They are not drawn into the
+canvas, which preserves native text editing, focus traversal, and accessibility.
 
 ## Architecture and data flow
 
@@ -149,12 +167,13 @@ Responsibilities are split as follows:
 - `ProjectPanel` owns the Tree/Map mode, shared search field, filesystem watcher, root, editor state,
   Git state, open-file action, and construction of the traditional context menu.
 - `ProjectMapView` owns expansion, selection history, breadcrumbs, global controls, async reloads,
-  and coordination between the surface and preview.
-- `ProjectMapModel` is JavaFX-free. It loads normalized metadata snapshots, maintains the focused
-  expansion rule, applies ordering and filters, and determines emphasized ancestor paths.
+  print/PDF snapshot actions, and the bounded collection of floating preview cards.
+- `ProjectMapModel` is JavaFX-free. It loads normalized metadata snapshots, maintains independent
+  branch expansions, groups entries by owning parent, applies ordering and filters, and determines
+  emphasized ancestor paths.
 - `ProjectMapView.MapSurface` owns paint, layout, transforms, hit-testing, pointer/keyboard input,
   column controls, icon snapshots, and accessibility text.
-- `ProjectMapPreview` owns the bounded read-only RichTextFX view, off-thread file loading and syntax
+- `ProjectMapPreview` owns one bounded read-only RichTextFX card, off-thread file loading and syntax
   highlighting, drag/resize behavior, and promotion to an editor tab.
 
 The Project tree is the source of truth for file-management actions. `ProjectPanel` injects a
@@ -170,11 +189,11 @@ thread. The model reads only the root and explicitly expanded directories breadt
 visible snapshot at `ProjectMapModel.MAX_VISIBLE_ITEMS` (1,200). A failure to read one directory does
 not discard the rest of the snapshot.
 
-Preview disk reads run on the single daemon `project-map-preview-loader`. The queue is coalesced so
-stale selections do not accumulate work. Closed text reads are capped at 1,000,000 bytes, image reads
-at 20,000,000 bytes, displayed text at 400,000 characters, and syntax highlighting at 160,000
-characters. Generation checks guard
-both loaded text and highlighting results. Binary and failed reads produce explicit preview states.
+Each open preview owns a daemon `project-map-preview-loader`; the eight-card limit bounds their total
+number. Every loader queue is coalesced so stale work for that card does not accumulate. Closed text
+reads are capped at 1,000,000 bytes, image reads at 20,000,000 bytes, displayed text at 400,000
+characters, and syntax highlighting at 160,000 characters. Per-card generation checks guard both
+loaded text and highlighting results. Binary and failed reads produce explicit preview states.
 
 All scene-graph mutation, paint, and control synchronization stays on the JavaFX application thread.
 No paint, hover, or per-keystroke path accesses the filesystem. `dispose()` invalidates generations,
@@ -189,16 +208,17 @@ active only in the current view.
 The focused coverage lives in:
 
 - `ProjectMapModelTest` for bounded loading, hidden files, filter semantics, ancestor emphasis,
-  focused expansion, sorting, and column filtering;
+  independent branch expansion, sorting, and column filtering;
 - `ProjectMapViewFxTest` for Tree/Map integration, native icon rasterization, open markers,
-  tooltips, single-click expansion, preview behavior, shared context menus and dismissal, text-field
+  tooltips, single-click expansion, multiple independent previews, shared context menus and dismissal, text-field
   key ownership, content-sized columns, hidden toggles, directional layouts and arrow semantics,
+  complete-map output snapshots and live viewport restoration,
   movable/locked columns, overview navigation, and wheel zoom.
 
 When extending the map:
 
 1. Keep filesystem and preview work off the FX thread and generation-guard every result.
-2. Preserve the focused-branch invariant unless the interaction model is intentionally redesigned.
+2. Keep column state keyed by both depth and owning parent so sibling branches remain independent.
 3. Reuse `ProjectPathOrder`, `FileIcons`, the Project context-menu factory, and registered commands.
 4. Update connector geometry, arrow semantics, fit bounds, overview bounds, and tests together when
    changing layout.

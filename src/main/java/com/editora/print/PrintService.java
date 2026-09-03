@@ -149,6 +149,26 @@ public final class PrintService {
         });
     }
 
+    /** Prepares already-rendered JavaFX images, such as a complete Project Map snapshot, for printing. */
+    public void prepareFxImages(List<Image> sourceImages, Consumer<Prepared> onReady) {
+        exec.submit(() -> {
+            try {
+                List<Image> images = sourceImages == null
+                        ? List.of()
+                        : sourceImages.stream()
+                                .filter(java.util.Objects::nonNull)
+                                .toList();
+                if (images.isEmpty()) {
+                    deliver(onReady, new Prepared(null, "nothing to print"));
+                    return;
+                }
+                deliver(onReady, new Prepared(layout -> imagePages(images, layout), null));
+            } catch (Throwable e) {
+                deliver(onReady, new Prepared(null, message(e)));
+            }
+        });
+    }
+
     /** Prints each page node, ends the job, and returns the result. Must run on the FX thread. */
     public static Result printPages(List<Node> pages, PageLayout layout, PrinterJob job) {
         boolean ok = true;

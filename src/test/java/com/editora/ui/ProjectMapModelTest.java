@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -90,18 +91,46 @@ class ProjectMapModelTest {
     }
 
     @Test
-    void focusedExpansionReplacesSiblingBranchesAndCollapsesDescendants() {
+    void expansionRetainsSiblingBranchesAndCollapsesOnlyItsOwnDescendants() {
         Path src = root.resolve("src");
         Path main = src.resolve("main");
         Path docs = root.resolve("docs");
-        Set<Path> srcBranch = ProjectMapModel.toggleFocusedExpansion(root, Set.of(root), src);
-        srcBranch = ProjectMapModel.toggleFocusedExpansion(root, srcBranch, main);
+        Set<Path> srcBranch = ProjectMapModel.toggleExpansion(root, Set.of(root), src);
+        srcBranch = ProjectMapModel.toggleExpansion(root, srcBranch, main);
         assertEquals(Set.of(normalize(root), normalize(src), normalize(main)), srcBranch);
 
-        Set<Path> docsBranch = ProjectMapModel.toggleFocusedExpansion(root, srcBranch, docs);
-        assertEquals(Set.of(normalize(root), normalize(docs)), docsBranch);
+        Set<Path> bothBranches = ProjectMapModel.toggleExpansion(root, srcBranch, docs);
+        assertEquals(Set.of(normalize(root), normalize(src), normalize(main), normalize(docs)), bothBranches);
 
-        assertEquals(Set.of(normalize(root)), ProjectMapModel.toggleFocusedExpansion(root, docsBranch, docs));
+        assertEquals(
+                Set.of(normalize(root), normalize(src), normalize(main)),
+                ProjectMapModel.toggleExpansion(root, bothBranches, docs));
+        assertEquals(
+                Set.of(normalize(root), normalize(docs)), ProjectMapModel.toggleExpansion(root, bothBranches, src));
+    }
+
+    @Test
+    void siblingBranchesProduceIndependentColumnsAtTheSameDepth() {
+        Path src = root.resolve("src");
+        Path docs = root.resolve("docs");
+        Path java = src.resolve("App.java");
+        Path markdown = docs.resolve("guide.md");
+        List<ProjectMapModel.Entry> entries = List.of(
+                new ProjectMapModel.Entry(root, null, 0, true),
+                new ProjectMapModel.Entry(src, root, 1, true),
+                new ProjectMapModel.Entry(docs, root, 1, true),
+                new ProjectMapModel.Entry(java, src, 2, false),
+                new ProjectMapModel.Entry(markdown, docs, 2, false));
+
+        List<ProjectMapModel.Column> columns = ProjectMapModel.columnsById(entries, Map.of(), Map.of());
+
+        assertEquals(4, columns.size());
+        assertEquals(
+                Set.of(normalize(src), normalize(docs)),
+                columns.stream()
+                        .filter(column -> column.depth() == 2)
+                        .map(ProjectMapModel.Column::parent)
+                        .collect(Collectors.toSet()));
     }
 
     @Test
@@ -156,7 +185,7 @@ class ProjectMapModelTest {
         List<ProjectMapModel.Column> hiddenAtDepthOne = ProjectMapModel.columns(entries, Map.of(), Map.of(1, false));
         assertFalse(hiddenAtDepthOne.get(1).entries().stream()
                 .anyMatch(entry -> entry.path().equals(normalize(hidden))));
-        assertTrue(hiddenAtDepthOne.get(2).entries().isEmpty(), "hidden ancestors must also hide descendants");
+        assertEquals(2, hiddenAtDepthOne.size(), "hidden ancestors must also hide descendant columns");
     }
 
     private static Path normalize(Path path) {

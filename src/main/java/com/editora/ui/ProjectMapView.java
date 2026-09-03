@@ -8,6 +8,7 @@ import java.time.format.FormatStyle;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -74,6 +75,9 @@ import static com.editora.i18n.Messages.tr;
  */
 final class ProjectMapView extends VBox {
 
+    private static final int MAX_OPEN_PREVIEWS = 8;
+    private static final double PREVIEW_CASCADE = 28;
+
     enum FlowDirection {
         LEFT_TO_RIGHT,
         RIGHT_TO_LEFT,
@@ -92,9 +96,11 @@ final class ProjectMapView extends VBox {
     private final ComboBox<FlowDirection> flowFilter = new ComboBox<>();
     private final Button backButton = new Button("‹");
     private final Button forwardButton = new Button("›");
+    private final Button printButton = new Button(tr("project.map.print"));
+    private final Button exportPdfButton = new Button(tr("project.map.exportPdf"));
     private final HBox breadcrumbs = new HBox(2);
     private final MapSurface surface = new MapSurface();
-    private final ProjectMapPreview preview;
+    private final Map<Path, ProjectMapPreview> previews = new LinkedHashMap<>(16, 0.75f, true);
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "project-map-loader");
         thread.setDaemon(true);
@@ -114,6 +120,10 @@ final class ProjectMapView extends VBox {
     private boolean navigatingHistory;
     private Path pendingSelection;
     private Consumer<FlowDirection> onFlowChanged = ignored -> {};
+    private Consumer<Image> onPrint = ignored -> {};
+    private Consumer<Image> onExportPdf = ignored -> {};
+    private ProjectMapPreview.MarkerActions previewMarkerActions;
+    private StackPane canvasHost;
 
     ProjectMapView(Consumer<Path> onOpenFile, Predicate<Path> isOpen, Predicate<Path> isModified) {
         this(onOpenFile, isOpen, isModified, path -> null);
@@ -128,7 +138,6 @@ final class ProjectMapView extends VBox {
         this.isOpen = isOpen == null ? path -> false : isOpen;
         this.isModified = isModified == null ? path -> false : isModified;
         this.previewContent = previewContent == null ? path -> null : previewContent;
-        this.preview = new ProjectMapPreview(onOpenFile);
         getStyleClass().add("project-map-view");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
@@ -136,6 +145,7 @@ final class ProjectMapView extends VBox {
         getChildren().addAll(buildFilters(), buildNavigation(), buildCanvasHost());
         VBox.setVgrow(getChildren().get(2), Priority.ALWAYS);
         surface.setOnActivate(this::activate);
+        surface.setOnCloseColumn(this::closeColumn);
         surface.setOnPreview(this::previewSelection);
         surface.setOnSelectionChanged(this::selectionChanged);
         surface.setStatusSuppliers(this.isOpen, this.isModified);
@@ -231,7 +241,7 @@ final class ProjectMapView extends VBox {
         Button fit = new Button(tr("project.map.zoom.fit"));
         Button center = new Button(tr("project.map.navigation.center"));
         Button reset = new Button(tr("project.map.zoom.reset"));
-        for (var node : List.of(zoomOut, zoom, zoomIn, fit, center, reset)) {
+        for (var node : List.of(zoomOut, zoom, zoomIn, fit, center, reset, printButton, exportPdfButton)) {
             node.getStyleClass().add("project-map-zoom-control");
         }
         zoomOut.setTooltip(new Tooltip(tr("project.map.zoom.out")));
@@ -239,6 +249,10 @@ final class ProjectMapView extends VBox {
         fit.setTooltip(new Tooltip(tr("project.map.zoom.fitHelp")));
         center.setTooltip(new Tooltip(tr("project.map.navigation.centerHelp")));
         reset.setTooltip(new Tooltip(tr("project.map.zoom.reset")));
+        printButton.setTooltip(new Tooltip(tr("project.map.print.help")));
+        exportPdfButton.setTooltip(new Tooltip(tr("project.map.exportPdf.help")));
+        printButton.setDisable(true);
+        exportPdfButton.setDisable(true);
         zoomOut.setOnAction(event -> {
             surface.zoomBy(0.9);
             zoom.setText(surface.zoomPercent());
@@ -253,20 +267,21 @@ final class ProjectMapView extends VBox {
             surface.resetViewport();
             zoom.setText(surface.zoomPercent());
         });
+        printButton.setOnAction(event -> snapshotForOutput(onPrint));
+        exportPdfButton.setOnAction(event -> snapshotForOutput(onExportPdf));
         surface.setOnZoomChanged(() -> zoom.setText(surface.zoomPercent()));
 
-        HBox zoomBar = new HBox(2, zoomOut, zoom, zoomIn, fit, center, reset);
+        HBox zoomBar = new HBox(2, zoomOut, zoom, zoomIn, fit, center, reset, printButton, exportPdfButton);
         zoomBar.getStyleClass().add("project-map-zoom");
         zoomBar.setAlignment(Pos.CENTER);
         zoomBar.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
-        StackPane host = new StackPane(surface, zoomBar, preview);
+        StackPane host = new StackPane(surface, zoomBar);
+        canvasHost = host;
         host.getStyleClass().add("project-map-host");
         StackPane.setAlignment(zoomBar, Pos.BOTTOM_LEFT);
         StackPane.setMargin(zoomBar, new Insets(8));
-        host.widthProperty()
-                .addListener((obs, old, value) -> preview.constrainTo(value.doubleValue(), host.getHeight()));
-        host.heightProperty()
-                .addListener((obs, old, value) -> preview.constrainTo(host.getWidth(), value.doubleValue()));
+        host.widthProperty().addListener((obs, old, value) -> constrainPreviews(value.doubleValue(), host.getHeight()));
+        host.heightProperty().addListener((obs, old, value) -> constrainPreviews(host.getWidth(), value.doubleValue()));
         return host;
     }
 
@@ -316,11 +331,12 @@ final class ProjectMapView extends VBox {
             return;
         }
         this.root = normalized;
-        preview.hidePreview();
+        closeAllPreviews();
         expanded.clear();
         selectionHistory.clear();
         historyIndex = -1;
         pendingSelection = normalized;
+        setOutputEnabled(false);
         surface.resetForRoot();
         if (normalized != null) {
             expanded.add(normalized);
@@ -370,6 +386,11 @@ final class ProjectMapView extends VBox {
         surface.stateChanged();
     }
 
+    void setPreviewMarkerActions(ProjectMapPreview.MarkerActions actions) {
+        previewMarkerActions = actions;
+        previews.values().forEach(preview -> preview.setMarkerActions(actions));
+    }
+
     void refresh() {
         reload();
     }
@@ -410,8 +431,13 @@ final class ProjectMapView extends VBox {
         surface.setContextMenuFactory(factory);
     }
 
+    void setOutputActions(Consumer<Image> print, Consumer<Image> exportPdf) {
+        onPrint = print == null ? ignored -> {} : print;
+        onExportPdf = exportPdf == null ? ignored -> {} : exportPdf;
+    }
+
     void hidePreview() {
-        preview.hidePreview();
+        closeAllPreviews();
     }
 
     void dispose() {
@@ -419,7 +445,7 @@ final class ProjectMapView extends VBox {
         generation.incrementAndGet();
         loader.shutdownNow();
         surface.dispose();
-        preview.dispose();
+        closeAllPreviews();
     }
 
     private void updateFilters() {
@@ -430,6 +456,18 @@ final class ProjectMapView extends VBox {
                 modifiedFilter.isSelected(),
                 gitFilter.isSelected(),
                 type == null ? ProjectMapModel.TypeFilter.ALL : type));
+    }
+
+    private void snapshotForOutput(Consumer<Image> output) {
+        Image image = surface.snapshotContent();
+        if (image != null) {
+            output.accept(image);
+        }
+    }
+
+    private void setOutputEnabled(boolean enabled) {
+        printButton.setDisable(!enabled);
+        exportPdfButton.setDisable(!enabled);
     }
 
     private void reload() {
@@ -447,6 +485,7 @@ final class ProjectMapView extends VBox {
                     return;
                 }
                 surface.setEntries(entries, requestedExpanded);
+                setOutputEnabled(!entries.isEmpty());
                 if (pendingSelection != null
                         && entries.stream().anyMatch(entry -> entry.path().equals(pendingSelection))) {
                     surface.setSelected(pendingSelection);
@@ -459,14 +498,27 @@ final class ProjectMapView extends VBox {
 
     private void activate(ProjectMapModel.Entry entry) {
         if (entry.directory()) {
-            Set<Path> focused = ProjectMapModel.toggleFocusedExpansion(root, expanded, entry.path());
+            Set<Path> nextExpansion = ProjectMapModel.toggleExpansion(root, expanded, entry.path());
             expanded.clear();
-            expanded.addAll(focused);
+            expanded.addAll(nextExpansion);
             reload();
             onExpandedChanged.run();
         } else {
             onOpenFile.accept(entry.path());
         }
+    }
+
+    private void closeColumn(Path parent) {
+        Path normalized = ProjectMapModel.normalize(parent);
+        if (normalized == null) {
+            return;
+        }
+        expanded.removeIf(path -> path.startsWith(normalized));
+        closePreviewsUnder(normalized);
+        pendingSelection = normalized;
+        surface.setSelected(normalized);
+        reload();
+        onExpandedChanged.run();
     }
 
     private void selectionChanged(Path path) {
@@ -484,7 +536,13 @@ final class ProjectMapView extends VBox {
                 .filter(candidate -> candidate.path().equals(path))
                 .orElse(null);
         if (entry == null || entry.directory()) {
-            preview.hidePreview();
+            return;
+        }
+        Path selected = entry.path().toAbsolutePath().normalize();
+        ProjectMapPreview preview = previews.get(selected);
+        if (preview != null) {
+            preview.toFront();
+            preview.requestFocus();
             return;
         }
         ProjectMapPreview.Content content;
@@ -493,7 +551,140 @@ final class ProjectMapView extends VBox {
         } catch (RuntimeException ignored) {
             content = null;
         }
-        preview.showFile(entry.path(), content);
+        preview = createPreview(selected);
+        ProjectMapPreview selectedPreview = preview;
+        preview.showFile(
+                entry.path(),
+                content,
+                (width, height, parentWidth, parentHeight) ->
+                        previewPlacement(selectedPreview, entry.path(), width, height, parentWidth, parentHeight));
+    }
+
+    private ProjectMapPreview createPreview(Path path) {
+        if (previews.size() >= MAX_OPEN_PREVIEWS) {
+            closePreview(previews.values().iterator().next());
+        }
+        ProjectMapPreview preview = new ProjectMapPreview(onOpenFile);
+        preview.setMarkerActions(previewMarkerActions);
+        preview.setOnClose(() -> closePreview(preview));
+        preview.setOnActivate(() -> touchPreview(path, preview));
+        previews.put(path, preview);
+        canvasHost.getChildren().add(preview);
+        return preview;
+    }
+
+    private void closePreview(ProjectMapPreview preview) {
+        if (preview == null) {
+            return;
+        }
+        previews.entrySet().removeIf(entry -> entry.getValue() == preview);
+        if (canvasHost != null) {
+            canvasHost.getChildren().remove(preview);
+        }
+        preview.dispose();
+    }
+
+    private void touchPreview(Path path, ProjectMapPreview preview) {
+        if (previews.get(path) != preview) {
+            return;
+        }
+        preview.toFront();
+    }
+
+    private void closeAllPreviews() {
+        List<ProjectMapPreview> open = List.copyOf(previews.values());
+        previews.clear();
+        for (ProjectMapPreview preview : open) {
+            if (canvasHost != null) {
+                canvasHost.getChildren().remove(preview);
+            }
+            preview.dispose();
+        }
+    }
+
+    private void closePreviewsUnder(Path directory) {
+        List<ProjectMapPreview> closing = previews.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith(directory))
+                .map(Map.Entry::getValue)
+                .toList();
+        closing.forEach(this::closePreview);
+    }
+
+    private void constrainPreviews(double width, double height) {
+        previews.values().forEach(preview -> preview.constrainTo(width, height));
+    }
+
+    private ProjectMapPreview.Placement previewPlacement(
+            ProjectMapPreview preview,
+            Path path,
+            double width,
+            double height,
+            double parentWidth,
+            double parentHeight) {
+        ProjectMapPreview.Placement preferred =
+                surface.previewPlacement(path, width, height, parentWidth, parentHeight);
+        if (!overlapsPreview(preview, preferred.x(), preferred.y(), preferred.width(), preferred.height())) {
+            return preferred;
+        }
+
+        boolean horizontal = flowFilter.getValue() == FlowDirection.LEFT_TO_RIGHT
+                || flowFilter.getValue() == FlowDirection.RIGHT_TO_LEFT;
+        double maximum = horizontal
+                ? Math.max(
+                        ProjectMapPreview.EDGE_MARGIN,
+                        parentHeight - preferred.height() - ProjectMapPreview.EDGE_MARGIN)
+                : Math.max(
+                        ProjectMapPreview.EDGE_MARGIN, parentWidth - preferred.width() - ProjectMapPreview.EDGE_MARGIN);
+        double origin = horizontal ? preferred.y() : preferred.x();
+        double step = (horizontal ? preferred.height() : preferred.width()) + PREVIEW_CASCADE;
+        for (int ring = 1; ring <= previews.size(); ring++) {
+            for (int sign : new int[] {1, -1}) {
+                double shifted = clampPreview(origin + sign * ring * step, ProjectMapPreview.EDGE_MARGIN, maximum);
+                double x = horizontal ? preferred.x() : shifted;
+                double y = horizontal ? shifted : preferred.y();
+                if (!overlapsPreview(preview, x, y, preferred.width(), preferred.height())) {
+                    return new ProjectMapPreview.Placement(x, y, preferred.width(), preferred.height());
+                }
+            }
+        }
+
+        int index = Math.max(1, previews.size() - 1);
+        double x = horizontal
+                ? preferred.x()
+                : clampPreview(
+                        preferred.x() + index * PREVIEW_CASCADE,
+                        ProjectMapPreview.EDGE_MARGIN,
+                        Math.max(
+                                ProjectMapPreview.EDGE_MARGIN,
+                                parentWidth - preferred.width() - ProjectMapPreview.EDGE_MARGIN));
+        double y = horizontal
+                ? clampPreview(
+                        preferred.y() + index * PREVIEW_CASCADE,
+                        ProjectMapPreview.EDGE_MARGIN,
+                        Math.max(
+                                ProjectMapPreview.EDGE_MARGIN,
+                                parentHeight - preferred.height() - ProjectMapPreview.EDGE_MARGIN))
+                : preferred.y();
+        return new ProjectMapPreview.Placement(x, y, preferred.width(), preferred.height());
+    }
+
+    private boolean overlapsPreview(ProjectMapPreview candidate, double x, double y, double width, double height) {
+        for (ProjectMapPreview other : previews.values()) {
+            if (other == candidate || !other.isVisible()) {
+                continue;
+            }
+            if (x < other.getLayoutX() + other.getWidth() + PREVIEW_CASCADE
+                    && x + width + PREVIEW_CASCADE > other.getLayoutX()
+                    && y < other.getLayoutY() + other.getHeight() + PREVIEW_CASCADE
+                    && y + height + PREVIEW_CASCADE > other.getLayoutY()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static double clampPreview(double value, double minimum, double maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
     }
 
     private void recordSelection(Path path) {
@@ -589,6 +780,13 @@ final class ProjectMapView extends VBox {
         private static final double COLUMN_HEADER_HEIGHT = 70;
         private static final double COLUMN_TOP_INSET = 5;
         private static final double COLUMN_BOTTOM_PADDING = 12;
+        private static final double COLUMN_CONTROL_GAP = 4;
+        private static final double MIN_COLUMN_CONTROL_HEIGHT = 20;
+        private static final double MIN_COLUMN_FILTER_WIDTH = 46;
+        private static final double MIN_COLUMN_HIDDEN_WIDTH = 50;
+        private static final double MIN_COLUMN_PIN_WIDTH = 22;
+        private static final double PREVIEW_EDGE_MARGIN = 14;
+        private static final double PREVIEW_COLUMN_GAP = 18;
         private static final DateTimeFormatter TOOLTIP_TIME = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
                 .withLocale(Locale.getDefault())
                 .withZone(ZoneId.systemDefault());
@@ -596,8 +794,13 @@ final class ProjectMapView extends VBox {
         private static final double ICON_RASTER_SCALE = 2;
         private static final double MIN_ZOOM = 0.4;
         private static final double MAX_ZOOM = 2.25;
+        private static final double OUTPUT_RENDER_SCALE = 2.0;
+        private static final double OUTPUT_MARGIN = 24;
+        private static final double MAX_OUTPUT_DIMENSION = 8_192;
+        private static final double MAX_OUTPUT_PIXELS = 12_000_000;
 
         private final Canvas canvas = new Canvas(1, 1);
+        private final Rectangle viewportClip = new Rectangle();
         private final StackPane iconRasterizer = new StackPane();
         private final Rectangle bgProbe = probe("project-map-probe-bg");
         private final Rectangle surfaceProbe = probe("project-map-probe-surface");
@@ -616,10 +819,10 @@ final class ProjectMapView extends VBox {
         private final List<NodeBox> boxes = new ArrayList<>();
         private final List<ColumnBox> columnBoxes = new ArrayList<>();
         private final Map<IconKey, Image> iconImages = new HashMap<>();
-        private final Map<Integer, ColumnControls> columnControls = new HashMap<>();
-        private final Map<Integer, ColumnLayout> columnLayouts = new HashMap<>();
-        private final Map<Integer, String> columnQueries = new HashMap<>();
-        private final Map<Integer, Boolean> columnShowHidden = new HashMap<>();
+        private final Map<ProjectMapModel.ColumnId, ColumnControls> columnControls = new HashMap<>();
+        private final Map<ProjectMapModel.ColumnId, ColumnLayout> columnLayouts = new HashMap<>();
+        private final Map<ProjectMapModel.ColumnId, String> columnQueries = new HashMap<>();
+        private final Map<ProjectMapModel.ColumnId, Boolean> columnShowHidden = new HashMap<>();
         private final Map<String, Double> measuredLabelWidths = new HashMap<>();
 
         private List<ProjectMapModel.Entry> entries = List.of();
@@ -641,6 +844,7 @@ final class ProjectMapView extends VBox {
         private Path selected;
         private Path hovered;
         private Consumer<ProjectMapModel.Entry> onActivate = entry -> {};
+        private Consumer<Path> onCloseColumn = path -> {};
         private Consumer<Path> onPreview = path -> {};
         private Consumer<Path> onSelectionChanged = path -> {};
         private Function<ProjectMapModel.Entry, ContextMenu> contextMenuFactory = entry -> null;
@@ -654,7 +858,7 @@ final class ProjectMapView extends VBox {
         private double pressOffsetY;
         private double columnPressOffsetX;
         private double columnPressOffsetY;
-        private Integer draggedColumn;
+        private ProjectMapModel.ColumnId draggedColumn;
         private OverviewBox overviewBox;
         private ContextMenu activeContextMenu;
         private Scene dismissScene;
@@ -669,6 +873,9 @@ final class ProjectMapView extends VBox {
             // The project-tree class supplies the same per-editor-theme folder/file looked-up colors used
             // by PathCell. It has no TreeView skin effect on this Region.
             getStyleClass().addAll("project-map-surface", "project-tree");
+            setClip(viewportClip);
+            viewportClip.widthProperty().bind(widthProperty());
+            viewportClip.heightProperty().bind(heightProperty());
             textMeasurer.setFont(Font.font("System", FontWeight.SEMI_BOLD, 12));
             iconRasterizer.setManaged(false);
             iconRasterizer.setMouseTransparent(true);
@@ -742,6 +949,10 @@ final class ProjectMapView extends VBox {
             this.onActivate = onActivate;
         }
 
+        void setOnCloseColumn(Consumer<Path> callback) {
+            onCloseColumn = callback == null ? path -> {} : callback;
+        }
+
         void setOnPreview(Consumer<Path> onPreview) {
             this.onPreview = onPreview == null ? path -> {} : onPreview;
         }
@@ -772,10 +983,9 @@ final class ProjectMapView extends VBox {
             int oldColumnCount = laidOutColumnCount;
             this.entries = entries == null ? List.of() : List.copyOf(entries);
             laidOutColumnCount = this.entries.stream()
-                            .mapToInt(ProjectMapModel.Entry::depth)
-                            .max()
-                            .orElse(-1)
-                    + 1;
+                    .map(entry -> new ProjectMapModel.ColumnId(entry.depth(), entry.parent()))
+                    .collect(java.util.stream.Collectors.toSet())
+                    .size();
             measuredLabelWidths.clear();
             expandedSnapshot = expanded == null ? Set.of() : Set.copyOf(expanded);
             clearNodeTooltip();
@@ -802,7 +1012,7 @@ final class ProjectMapView extends VBox {
 
         void resetForRoot() {
             for (ColumnControls controls : columnControls.values()) {
-                getChildren().removeAll(controls.filter(), controls.showHidden(), controls.pin());
+                getChildren().removeAll(controls.filter(), controls.showHidden(), controls.pin(), controls.close());
             }
             columnControls.clear();
             columnLayouts.clear();
@@ -894,6 +1104,80 @@ final class ProjectMapView extends VBox {
             }
         }
 
+        /**
+         * Renders every laid-out column into one bounded image, independent of the current pan and zoom.
+         * The live Canvas is restored before this method returns, so exporting has no visible navigation
+         * side effects. Interactive controls and the overview are intentionally omitted from printed output.
+         */
+        Image snapshotContent() {
+            repaint();
+            if (entries.isEmpty() || columnBoxes.isEmpty()) {
+                return null;
+            }
+            double minWorldX = columnBoxes.stream()
+                    .mapToDouble(box -> (box.x() - offsetX) / zoom)
+                    .min()
+                    .orElse(0);
+            double minWorldY = columnBoxes.stream()
+                    .mapToDouble(box -> (box.y() - offsetY) / zoom)
+                    .min()
+                    .orElse(0);
+            double maxWorldX = columnBoxes.stream()
+                    .mapToDouble(box -> (box.x() + box.width() - offsetX) / zoom)
+                    .max()
+                    .orElse(minWorldX + 1);
+            double maxWorldY = columnBoxes.stream()
+                    .mapToDouble(box -> (box.y() + box.height() - offsetY) / zoom)
+                    .max()
+                    .orElse(minWorldY + 1);
+            double contentWidth = Math.max(1, maxWorldX - minWorldX);
+            double contentHeight = Math.max(1, maxWorldY - minWorldY);
+            double availableDimension = MAX_OUTPUT_DIMENSION - OUTPUT_MARGIN * 2;
+            double outputScale = Math.min(
+                    OUTPUT_RENDER_SCALE,
+                    Math.min(
+                            Math.min(availableDimension / contentWidth, availableDimension / contentHeight),
+                            Math.sqrt(MAX_OUTPUT_PIXELS / (contentWidth * contentHeight))));
+            if (!Double.isFinite(outputScale) || outputScale <= 0) {
+                return null;
+            }
+            int outputWidth = Math.max(1, Math.min((int) MAX_OUTPUT_DIMENSION, (int)
+                    Math.ceil(contentWidth * outputScale + OUTPUT_MARGIN * 2)));
+            int outputHeight = Math.max(1, Math.min((int) MAX_OUTPUT_DIMENSION, (int)
+                    Math.ceil(contentHeight * outputScale + OUTPUT_MARGIN * 2)));
+
+            double liveCanvasWidth = canvas.getWidth();
+            double liveCanvasHeight = canvas.getHeight();
+            double liveZoom = zoom;
+            double liveOffsetX = offsetX;
+            double liveOffsetY = offsetY;
+            Path liveHovered = hovered;
+            painting = true;
+            try {
+                canvas.setWidth(outputWidth);
+                canvas.setHeight(outputHeight);
+                zoom = outputScale;
+                offsetX = OUTPUT_MARGIN - minWorldX * outputScale;
+                offsetY = OUTPUT_MARGIN - minWorldY * outputScale;
+                hovered = null;
+                paint();
+                WritableImage image = new WritableImage(outputWidth, outputHeight);
+                return canvas.snapshot(new SnapshotParameters(), image);
+            } finally {
+                canvas.setWidth(liveCanvasWidth);
+                canvas.setHeight(liveCanvasHeight);
+                zoom = liveZoom;
+                offsetX = liveOffsetX;
+                offsetY = liveOffsetY;
+                hovered = liveHovered;
+                try {
+                    paint();
+                } finally {
+                    painting = false;
+                }
+            }
+        }
+
         String zoomPercent() {
             return Math.round(zoom * 100) + "%";
         }
@@ -981,22 +1265,22 @@ final class ProjectMapView extends VBox {
         }
 
         private void syncColumnControls() {
-            Set<Integer> depths = entries.stream()
-                    .map(ProjectMapModel.Entry::depth)
-                    .filter(depth -> depth > 0)
+            Set<ProjectMapModel.ColumnId> ids = entries.stream()
+                    .filter(entry -> entry.depth() > 0)
+                    .map(entry -> new ProjectMapModel.ColumnId(entry.depth(), entry.parent()))
                     .collect(java.util.stream.Collectors.toSet());
-            List<Integer> removed = columnControls.keySet().stream()
-                    .filter(depth -> !depths.contains(depth))
+            List<ProjectMapModel.ColumnId> removed = columnControls.keySet().stream()
+                    .filter(id -> !ids.contains(id))
                     .toList();
-            for (int depth : removed) {
-                ColumnControls controls = columnControls.remove(depth);
-                getChildren().removeAll(controls.filter(), controls.showHidden(), controls.pin());
-                columnLayouts.remove(depth);
-                columnQueries.remove(depth);
-                columnShowHidden.remove(depth);
+            for (ProjectMapModel.ColumnId id : removed) {
+                ColumnControls controls = columnControls.remove(id);
+                getChildren().removeAll(controls.filter(), controls.showHidden(), controls.pin(), controls.close());
+                columnLayouts.remove(id);
+                columnQueries.remove(id);
+                columnShowHidden.remove(id);
             }
-            for (int depth : depths) {
-                if (columnControls.containsKey(depth)) {
+            for (ProjectMapModel.ColumnId id : ids) {
+                if (columnControls.containsKey(id)) {
                     continue;
                 }
                 TextField filter = new TextField();
@@ -1005,16 +1289,16 @@ final class ProjectMapView extends VBox {
                 filter.setAccessibleHelp(tr("project.map.column.filterHelp"));
                 filter.textProperty().addListener((obs, old, value) -> {
                     if (value == null || value.isBlank()) {
-                        columnQueries.remove(depth);
+                        columnQueries.remove(id);
                     } else {
-                        columnQueries.put(depth, value);
+                        columnQueries.put(id, value);
                     }
                     repaint();
                     if (selected != null
                             && boxes.stream()
                                     .noneMatch(box -> box.entry().path().equals(selected))) {
                         boxes.stream()
-                                .filter(box -> box.entry().depth() == depth)
+                                .filter(box -> columnId(box.entry()).equals(id))
                                 .findFirst()
                                 .ifPresent(box -> select(box.entry().path()));
                     }
@@ -1027,13 +1311,13 @@ final class ProjectMapView extends VBox {
                 showHidden.setTooltip(new Tooltip(tr("project.map.column.showHiddenHelp")));
                 showHidden.setAccessibleText(tr("project.map.column.showHidden"));
                 showHidden.selectedProperty().addListener((obs, old, selected) -> {
-                    columnShowHidden.put(depth, selected);
+                    columnShowHidden.put(id, selected);
                     repaint();
                     if (this.selected != null
                             && boxes.stream()
                                     .noneMatch(box -> box.entry().path().equals(this.selected))) {
                         boxes.stream()
-                                .filter(box -> box.entry().depth() == depth)
+                                .filter(box -> columnId(box.entry()).equals(id))
                                 .findFirst()
                                 .ifPresent(box -> select(box.entry().path()));
                     }
@@ -1045,11 +1329,18 @@ final class ProjectMapView extends VBox {
                 pin.setTooltip(new Tooltip(tr("project.map.column.pin")));
                 pin.setAccessibleText(tr("project.map.column.pin"));
                 pin.selectedProperty().addListener((obs, old, selected) -> {
-                    columnLayouts.computeIfAbsent(depth, ignored -> new ColumnLayout()).locked = selected;
+                    columnLayouts.computeIfAbsent(id, ignored -> new ColumnLayout()).locked = selected;
                     pin.setTooltip(new Tooltip(tr(selected ? "project.map.column.unpin" : "project.map.column.pin")));
                 });
-                columnControls.put(depth, new ColumnControls(filter, showHidden, pin));
-                getChildren().addAll(filter, showHidden, pin);
+
+                Button close = new Button("×");
+                close.getStyleClass().add("project-map-column-close");
+                close.setTooltip(new Tooltip(tr("project.map.column.close")));
+                close.setAccessibleText(tr("project.map.column.close"));
+                close.setOnAction(event -> onCloseColumn.accept(id.parent()));
+
+                columnControls.put(id, new ColumnControls(filter, showHidden, pin, close));
+                getChildren().addAll(filter, showHidden, pin, close);
             }
         }
 
@@ -1088,6 +1379,7 @@ final class ProjectMapView extends VBox {
                     controls.filter().setVisible(false);
                     controls.showHidden().setVisible(false);
                     controls.pin().setVisible(false);
+                    controls.close().setVisible(false);
                 });
                 g.setFill(color(mutedProbe, Color.web("#8b949e")));
                 g.setFont(Font.font(13));
@@ -1095,34 +1387,26 @@ final class ProjectMapView extends VBox {
                 return;
             }
 
-            List<ProjectMapModel.Column> columns = ProjectMapModel.columns(entries, columnQueries, columnShowHidden);
-            Map<Integer, Double> nodeWidths = new HashMap<>();
+            List<ProjectMapModel.Column> columns =
+                    ProjectMapModel.columnsById(entries, columnQueries, columnShowHidden);
+            Map<ProjectMapModel.ColumnId, Double> nodeWidths = new HashMap<>();
             for (ProjectMapModel.Column column : columns) {
-                nodeWidths.put(column.depth(), nodeWidthFor(column));
+                nodeWidths.put(column.id(), nodeWidthFor(column));
             }
-            Map<Integer, Double> horizontalOrigins = horizontalOrigins(columns, nodeWidths);
+            Map<Path, NodeBox> byPath = new HashMap<>();
+            Map<ProjectMapModel.ColumnId, ColumnBox> columnsById = new HashMap<>();
+            Map<Integer, Double> nextCrossEdge = new HashMap<>();
             for (ProjectMapModel.Column column : columns) {
                 int depth = column.depth();
-                ColumnLayout layout = columnLayouts.computeIfAbsent(depth, ignored -> new ColumnLayout());
+                ProjectMapModel.ColumnId id = column.id();
+                ColumnLayout layout = columnLayouts.computeIfAbsent(id, ignored -> new ColumnLayout());
                 double headerHeight = columnHeaderHeight(depth);
                 boolean verticalFlow = isVerticalFlow();
                 double direction = isReverseFlow() ? -1 : 1;
-                double nodeWidth = nodeWidths.get(depth);
+                double nodeWidth = nodeWidths.get(id);
                 double depthStep = verticalFlow
                         ? COLUMN_TOP_INSET + COLUMN_HEADER_HEIGHT + NODE_HEIGHT + COLUMN_BOTTOM_PADDING + COLUMN_GAP
                         : 0;
-                double columnWorldX = (verticalFlow ? WORLD_PADDING : horizontalOrigins.get(depth)) + layout.x;
-                double columnWorldY = WORLD_PADDING + (verticalFlow ? direction * depth * depthStep : 0) + layout.y;
-                for (int row = 0; row < column.entries().size(); row++) {
-                    double worldX = columnWorldX + (verticalFlow ? row * (nodeWidth + ROW_GAP) : 0);
-                    double worldY = columnWorldY + headerHeight + (verticalFlow ? 0 : row * (NODE_HEIGHT + ROW_GAP));
-                    boxes.add(new NodeBox(
-                            column.entries().get(row),
-                            screenX(worldX),
-                            screenY(worldY),
-                            nodeWidth * zoom,
-                            NODE_HEIGHT * zoom));
-                }
                 int rowCount = column.entries().size();
                 double rowsHeight = rowCount == 0 ? 0 : rowCount * NODE_HEIGHT + (rowCount - 1) * ROW_GAP;
                 double rowsWidth = rowCount == 0 ? nodeWidth : rowCount * nodeWidth + (rowCount - 1) * ROW_GAP;
@@ -1131,19 +1415,92 @@ final class ProjectMapView extends VBox {
                         + headerHeight
                         + (verticalFlow ? NODE_HEIGHT : rowsHeight)
                         + COLUMN_BOTTOM_PADDING;
-                columnBoxes.add(new ColumnBox(
+                double baseWorldX = WORLD_PADDING;
+                double baseWorldY = WORLD_PADDING + (verticalFlow ? direction * depth * depthStep : 0);
+                NodeBox parent = byPath.get(column.parent());
+                ColumnBox parentColumn = parent == null ? null : columnsById.get(columnId(parent.entry()));
+                if (parent != null && parentColumn != null) {
+                    // Centre the new card on the item that opened it along the cross-axis. Along the
+                    // flow axis, start beyond the parent's actual card bounds so differently sized
+                    // columns cannot overlap.
+                    double parentCenterX = (parent.x() + parent.width() / 2 - offsetX) / zoom;
+                    double parentCenterY = (parent.y() + parent.height() / 2 - offsetY) / zoom;
+                    double horizontalCardGap = COLUMN_GAP - 20;
+                    switch (flowDirection) {
+                        case LEFT_TO_RIGHT -> {
+                            baseWorldX =
+                                    (parentColumn.x() + parentColumn.width() - offsetX) / zoom + horizontalCardGap + 10;
+                            baseWorldY = parentCenterY + COLUMN_TOP_INSET - cardHeight / 2;
+                        }
+                        case RIGHT_TO_LEFT -> {
+                            baseWorldX = (parentColumn.x() - offsetX) / zoom - horizontalCardGap + 10 - cardWidth;
+                            baseWorldY = parentCenterY + COLUMN_TOP_INSET - cardHeight / 2;
+                        }
+                        case TOP_TO_BOTTOM -> {
+                            baseWorldX = parentCenterX + 10 - cardWidth / 2;
+                            baseWorldY = (parentColumn.y() + parentColumn.height() - offsetY) / zoom
+                                    + COLUMN_GAP
+                                    + COLUMN_TOP_INSET;
+                        }
+                        case BOTTOM_TO_TOP -> {
+                            baseWorldX = parentCenterX + 10 - cardWidth / 2;
+                            baseWorldY =
+                                    (parentColumn.y() - offsetY) / zoom - COLUMN_GAP + COLUMN_TOP_INSET - cardHeight;
+                        }
+                    }
+                }
+                double columnWorldX = baseWorldX + layout.x;
+                double columnWorldY = baseWorldY + layout.y;
+                if (parentColumn != null) {
+                    // Manual column offsets may move a child farther out or along the cross-axis, but
+                    // never back through its parent column.
+                    switch (flowDirection) {
+                        case LEFT_TO_RIGHT -> columnWorldX = Math.max(columnWorldX, baseWorldX);
+                        case RIGHT_TO_LEFT -> columnWorldX = Math.min(columnWorldX, baseWorldX);
+                        case TOP_TO_BOTTOM -> columnWorldY = Math.max(columnWorldY, baseWorldY);
+                        case BOTTOM_TO_TOP -> columnWorldY = Math.min(columnWorldY, baseWorldY);
+                    }
+                }
+                if (parentColumn != null) {
+                    if (verticalFlow) {
+                        double minimum = nextCrossEdge.getOrDefault(depth, Double.NEGATIVE_INFINITY);
+                        double cardLeft = columnWorldX - 10;
+                        if (cardLeft < minimum) {
+                            columnWorldX += minimum - cardLeft;
+                        }
+                        nextCrossEdge.put(depth, columnWorldX - 10 + cardWidth + COLUMN_GAP);
+                    } else {
+                        double minimum = nextCrossEdge.getOrDefault(depth, Double.NEGATIVE_INFINITY);
+                        double cardTop = columnWorldY - COLUMN_TOP_INSET;
+                        if (cardTop < minimum) {
+                            columnWorldY += minimum - cardTop;
+                        }
+                        nextCrossEdge.put(depth, columnWorldY - COLUMN_TOP_INSET + cardHeight + COLUMN_GAP);
+                    }
+                }
+                for (int row = 0; row < column.entries().size(); row++) {
+                    double worldX = columnWorldX + (verticalFlow ? row * (nodeWidth + ROW_GAP) : 0);
+                    double worldY = columnWorldY + headerHeight + (verticalFlow ? 0 : row * (NODE_HEIGHT + ROW_GAP));
+                    NodeBox box = new NodeBox(
+                            column.entries().get(row),
+                            screenX(worldX),
+                            screenY(worldY),
+                            nodeWidth * zoom,
+                            NODE_HEIGHT * zoom);
+                    boxes.add(box);
+                    byPath.put(box.entry().path(), box);
+                }
+                ColumnBox columnBox = new ColumnBox(
                         column,
                         screenX(columnWorldX - 10),
                         screenY(columnWorldY - COLUMN_TOP_INSET),
                         cardWidth * zoom,
-                        cardHeight * zoom));
+                        cardHeight * zoom);
+                columnBoxes.add(columnBox);
+                columnsById.put(id, columnBox);
             }
 
             drawColumns(g);
-            Map<Path, NodeBox> byPath = new HashMap<>();
-            for (NodeBox box : boxes) {
-                byPath.put(box.entry().path(), box);
-            }
             g.setStroke(color(accentProbe, Color.web("#58a6ff")));
             for (NodeBox child : boxes) {
                 NodeBox parent = byPath.get(child.entry().parent());
@@ -1166,27 +1523,10 @@ final class ProjectMapView extends VBox {
             g.setGlobalAlpha(1);
         }
 
-        private Map<Integer, Double> horizontalOrigins(
-                List<ProjectMapModel.Column> columns, Map<Integer, Double> nodeWidths) {
-            Map<Integer, Double> result = new HashMap<>();
-            double origin = WORLD_PADDING;
-            double previousWidth = 0;
-            for (int index = 0; index < columns.size(); index++) {
-                ProjectMapModel.Column column = columns.get(index);
-                double nodeWidth = nodeWidths.get(column.depth());
-                if (index > 0) {
-                    origin += isReverseFlow() ? -(nodeWidth + COLUMN_GAP) : previousWidth + COLUMN_GAP;
-                }
-                result.put(column.depth(), origin);
-                previousWidth = nodeWidth;
-            }
-            return result;
-        }
-
         private double nodeWidthFor(ProjectMapModel.Column column) {
-            double required = measuredLabelWidth(columnTitle(column)) + 28;
+            double required = measuredLabelWidth(columnTitle(column)) + 52;
             for (ProjectMapModel.Entry entry : entries) {
-                if (entry.depth() == column.depth()) {
+                if (columnId(entry).equals(column.id())) {
                     // File rows reserve a fixed tail for status dots, bookmark/note badges and Preview.
                     required = Math.max(required, measuredLabelWidth(entry.name()) + (entry.directory() ? 57 : 92));
                 }
@@ -1266,42 +1606,69 @@ final class ProjectMapView extends VBox {
         }
 
         private void layoutColumnControls() {
-            Set<Integer> visibleDepths = new HashSet<>();
+            Set<ProjectMapModel.ColumnId> visibleIds = new HashSet<>();
             for (ColumnBox box : columnBoxes) {
                 int depth = box.column().depth();
-                visibleDepths.add(depth);
-                ColumnControls controls = columnControls.get(depth);
+                ProjectMapModel.ColumnId id = box.column().id();
+                visibleIds.add(id);
+                ColumnControls controls = columnControls.get(id);
                 if (controls == null) {
                     continue;
                 }
+                double closeSize = Math.max(18, 20 * zoom);
+                boolean closeFits = zoom >= 0.65 && box.width() >= closeSize + 42;
+                controls.close().setVisible(closeFits);
+                if (closeFits) {
+                    controls.close().resize(closeSize, closeSize);
+                    controls.close().relocate(box.x() + box.width() - closeSize - 5 * zoom, box.y() + 2 * zoom);
+                }
                 double controlY = box.y() + 25 * zoom;
-                double controlHeight = Math.max(20, 24 * zoom);
-                double pinWidth = Math.max(22, 25 * zoom);
-                double hiddenWidth = Math.max(50, 55 * zoom);
+                double controlHeight = Math.max(MIN_COLUMN_CONTROL_HEIGHT, 24 * zoom);
+                double pinWidth = Math.max(MIN_COLUMN_PIN_WIDTH, 25 * zoom);
+                double hiddenWidth = Math.max(MIN_COLUMN_HIDDEN_WIDTH, 55 * zoom);
                 double left = box.x() + 10 * zoom;
                 double right = box.x() + box.width() - 8 * zoom;
-                controls.filter().setVisible(true);
-                controls.showHidden().setVisible(true);
-                controls.pin().setVisible(true);
+                double availableWidth = right - left;
+                double availableHeight = box.y() + columnHeaderHeight(depth) * zoom - controlY;
+                double minimumWidth = MIN_COLUMN_FILTER_WIDTH + hiddenWidth + pinWidth + COLUMN_CONTROL_GAP * 2;
+                boolean controlsFit = availableWidth >= minimumWidth && availableHeight >= controlHeight;
+                setColumnDetailControlsVisible(controls, controlsFit);
+                if (!controlsFit) {
+                    continue;
+                }
                 controls.filter()
                         .resize(
-                                Math.max(46, Math.min(150 * zoom, right - left - hiddenWidth - pinWidth - 8)),
+                                Math.max(
+                                        MIN_COLUMN_FILTER_WIDTH,
+                                        Math.min(
+                                                150 * zoom,
+                                                availableWidth - hiddenWidth - pinWidth - COLUMN_CONTROL_GAP * 2)),
                                 controlHeight);
                 controls.filter().relocate(left, controlY);
                 double hiddenX =
-                        controls.filter().getLayoutX() + controls.filter().getWidth() + 4;
+                        controls.filter().getLayoutX() + controls.filter().getWidth() + COLUMN_CONTROL_GAP;
                 controls.showHidden().resize(hiddenWidth, controlHeight);
                 controls.showHidden().relocate(hiddenX, controlY);
                 controls.pin().resize(pinWidth, controlHeight);
-                controls.pin().relocate(Math.min(right - pinWidth, hiddenX + hiddenWidth + 4), controlY);
+                controls.pin()
+                        .relocate(Math.min(right - pinWidth, hiddenX + hiddenWidth + COLUMN_CONTROL_GAP), controlY);
             }
-            columnControls.forEach((depth, controls) -> {
-                if (!visibleDepths.contains(depth)) {
-                    controls.filter().setVisible(false);
-                    controls.showHidden().setVisible(false);
-                    controls.pin().setVisible(false);
+            columnControls.forEach((id, controls) -> {
+                if (!visibleIds.contains(id)) {
+                    setColumnControlsVisible(controls, false);
                 }
             });
+        }
+
+        private void setColumnDetailControlsVisible(ColumnControls controls, boolean visible) {
+            controls.filter().setVisible(visible);
+            controls.showHidden().setVisible(visible);
+            controls.pin().setVisible(visible);
+        }
+
+        private void setColumnControlsVisible(ColumnControls controls, boolean visible) {
+            setColumnDetailControlsVisible(controls, visible);
+            controls.close().setVisible(visible);
         }
 
         /** Compact overview for large or manually spread layouts; the bright rectangle is the viewport. */
@@ -1381,7 +1748,8 @@ final class ProjectMapView extends VBox {
                 g.fillText(title, x + 10 * zoom, y + 17 * zoom);
                 g.setFill(color(mutedProbe, Color.web("#8b949e")));
                 g.setFont(Font.font(Math.max(8, 9 * zoom)));
-                g.fillText(count, x + w - 30 * zoom, y + 17 * zoom, 24 * zoom);
+                double countOffset = column.depth() == 0 ? 30 : 52;
+                g.fillText(count, x + w - countOffset * zoom, y + 17 * zoom, 24 * zoom);
             }
             g.setGlobalAlpha(1);
         }
@@ -1608,10 +1976,10 @@ final class ProjectMapView extends VBox {
             }
             ColumnBox header = headerHit(event.getX(), event.getY());
             if (header != null && event.getButton() == MouseButton.PRIMARY) {
-                ColumnLayout layout =
-                        columnLayouts.computeIfAbsent(header.column().depth(), ignored -> new ColumnLayout());
+                ProjectMapModel.ColumnId id = header.column().id();
+                ColumnLayout layout = columnLayouts.computeIfAbsent(id, ignored -> new ColumnLayout());
                 if (!layout.locked) {
-                    draggedColumn = header.column().depth();
+                    draggedColumn = id;
                     columnPressOffsetX = layout.x;
                     columnPressOffsetY = layout.y;
                     event.consume();
@@ -1650,7 +2018,7 @@ final class ProjectMapView extends VBox {
             Path next = hit == null ? null : hit.entry().path();
             ColumnBox header = headerHit(event.getX(), event.getY());
             boolean movableHeader = header != null
-                    && !columnLayouts.computeIfAbsent(header.column().depth(), ignored -> new ColumnLayout()).locked;
+                    && !columnLayouts.computeIfAbsent(header.column().id(), ignored -> new ColumnLayout()).locked;
             setCursor(movableHeader ? Cursor.MOVE : hit == null ? Cursor.DEFAULT : Cursor.HAND);
             if (overviewBox != null && overviewBox.contains(event.getX(), event.getY())) {
                 setCursor(Cursor.HAND);
@@ -1923,9 +2291,10 @@ final class ProjectMapView extends VBox {
 
         private void moveSibling(int delta) {
             ProjectMapModel.Entry current = selectedEntry().orElse(entries.getFirst());
+            ProjectMapModel.ColumnId currentColumn = columnId(current);
             List<ProjectMapModel.Entry> column = boxes.stream()
                     .map(NodeBox::entry)
-                    .filter(entry -> entry.depth() == current.depth())
+                    .filter(entry -> columnId(entry).equals(currentColumn))
                     .toList();
             if (column.isEmpty()) {
                 return;
@@ -1975,13 +2344,10 @@ final class ProjectMapView extends VBox {
         }
 
         private void focusSelectedColumnFilter() {
-            selectedEntry()
-                    .map(ProjectMapModel.Entry::depth)
-                    .map(columnControls::get)
-                    .ifPresent(controls -> {
-                        controls.filter().requestFocus();
-                        controls.filter().selectAll();
-                    });
+            selectedEntry().map(MapSurface::columnId).map(columnControls::get).ifPresent(controls -> {
+                controls.filter().requestFocus();
+                controls.filter().selectAll();
+            });
         }
 
         private void revealSelected() {
@@ -2032,7 +2398,8 @@ final class ProjectMapView extends VBox {
             for (Node current = node; current != null && current != this; current = current.getParent()) {
                 if (current.getStyleClass().contains("project-map-column-filter")
                         || current.getStyleClass().contains("project-map-column-hidden")
-                        || current.getStyleClass().contains("project-map-column-pin")) {
+                        || current.getStyleClass().contains("project-map-column-pin")
+                        || current.getStyleClass().contains("project-map-column-close")) {
                     return true;
                 }
             }
@@ -2055,6 +2422,92 @@ final class ProjectMapView extends VBox {
         private boolean contains(Path path) {
             return path != null
                     && entries.stream().anyMatch(entry -> entry.path().equals(path));
+        }
+
+        private ProjectMapPreview.Placement previewPlacement(
+                Path path, double requestedWidth, double requestedHeight, double parentWidth, double parentHeight) {
+            NodeBox node = boxes.stream()
+                    .filter(box -> box.entry().path().equals(path))
+                    .findFirst()
+                    .orElse(null);
+            ColumnBox column = node == null
+                    ? null
+                    : columnBoxes.stream()
+                            .filter(box -> box.column().id().equals(columnId(node.entry())))
+                            .findFirst()
+                            .orElse(null);
+            double fullWidth = boundedPreviewSize(
+                    requestedWidth, ProjectMapPreview.MIN_WIDTH, parentWidth - PREVIEW_EDGE_MARGIN * 2);
+            double fullHeight = boundedPreviewSize(
+                    requestedHeight, ProjectMapPreview.MIN_HEIGHT, parentHeight - PREVIEW_EDGE_MARGIN * 2);
+            if (node == null || column == null) {
+                return new ProjectMapPreview.Placement(
+                        Math.max(PREVIEW_EDGE_MARGIN, parentWidth - fullWidth - PREVIEW_EDGE_MARGIN),
+                        PREVIEW_EDGE_MARGIN,
+                        fullWidth,
+                        fullHeight);
+            }
+
+            if (flowDirection == FlowDirection.LEFT_TO_RIGHT || flowDirection == FlowDirection.RIGHT_TO_LEFT) {
+                double availableWidth = parentWidth - PREVIEW_EDGE_MARGIN * 2 - PREVIEW_COLUMN_GAP - column.width();
+                double width = boundedPreviewSize(requestedWidth, ProjectMapPreview.MIN_WIDTH, availableWidth);
+                double columnX;
+                if (flowDirection == FlowDirection.LEFT_TO_RIGHT) {
+                    double maximum = parentWidth - PREVIEW_EDGE_MARGIN - PREVIEW_COLUMN_GAP - width - column.width();
+                    columnX = clampPreview(column.x(), PREVIEW_EDGE_MARGIN, Math.max(PREVIEW_EDGE_MARGIN, maximum));
+                } else {
+                    double minimum = PREVIEW_EDGE_MARGIN + width + PREVIEW_COLUMN_GAP;
+                    double maximum = parentWidth - PREVIEW_EDGE_MARGIN - column.width();
+                    columnX = clampPreview(column.x(), minimum, Math.max(minimum, maximum));
+                }
+                double shift = columnX - column.x();
+                if (shift != 0) {
+                    offsetX += shift;
+                    repaint();
+                }
+                double x = flowDirection == FlowDirection.LEFT_TO_RIGHT
+                        ? columnX + column.width() + PREVIEW_COLUMN_GAP
+                        : columnX - PREVIEW_COLUMN_GAP - width;
+                double y = clampPreview(
+                        node.y() + node.height() / 2 - fullHeight / 2,
+                        PREVIEW_EDGE_MARGIN,
+                        Math.max(PREVIEW_EDGE_MARGIN, parentHeight - fullHeight - PREVIEW_EDGE_MARGIN));
+                return new ProjectMapPreview.Placement(x, y, width, fullHeight);
+            }
+
+            double availableHeight = parentHeight - PREVIEW_EDGE_MARGIN * 2 - PREVIEW_COLUMN_GAP - column.height();
+            double height = boundedPreviewSize(requestedHeight, ProjectMapPreview.MIN_HEIGHT, availableHeight);
+            double columnY;
+            if (flowDirection == FlowDirection.TOP_TO_BOTTOM) {
+                double maximum = parentHeight - PREVIEW_EDGE_MARGIN - PREVIEW_COLUMN_GAP - height - column.height();
+                columnY = clampPreview(column.y(), PREVIEW_EDGE_MARGIN, Math.max(PREVIEW_EDGE_MARGIN, maximum));
+            } else {
+                double minimum = PREVIEW_EDGE_MARGIN + height + PREVIEW_COLUMN_GAP;
+                double maximum = parentHeight - PREVIEW_EDGE_MARGIN - column.height();
+                columnY = clampPreview(column.y(), minimum, Math.max(minimum, maximum));
+            }
+            double shift = columnY - column.y();
+            if (shift != 0) {
+                offsetY += shift;
+                repaint();
+            }
+            double x = clampPreview(
+                    node.x() + node.width() / 2 - fullWidth / 2,
+                    PREVIEW_EDGE_MARGIN,
+                    Math.max(PREVIEW_EDGE_MARGIN, parentWidth - fullWidth - PREVIEW_EDGE_MARGIN));
+            double y = flowDirection == FlowDirection.TOP_TO_BOTTOM
+                    ? columnY + column.height() + PREVIEW_COLUMN_GAP
+                    : columnY - PREVIEW_COLUMN_GAP - height;
+            return new ProjectMapPreview.Placement(x, y, fullWidth, height);
+        }
+
+        private double boundedPreviewSize(double requested, double minimum, double available) {
+            double maximum = Math.max(1, available);
+            return Math.min(Math.max(Math.min(minimum, maximum), requested), maximum);
+        }
+
+        private double clampPreview(double value, double minimum, double maximum) {
+            return Math.max(minimum, Math.min(maximum, value));
         }
 
         private double screenX(double worldX) {
@@ -2093,11 +2546,15 @@ final class ProjectMapView extends VBox {
             return box.x() + box.width() >= 0 && box.y() + box.height() >= 0 && box.x() <= width && box.y() <= height;
         }
 
+        private static ProjectMapModel.ColumnId columnId(ProjectMapModel.Entry entry) {
+            return new ProjectMapModel.ColumnId(entry.depth(), entry.parent());
+        }
+
         private record NodeBox(ProjectMapModel.Entry entry, double x, double y, double width, double height) {}
 
         private record ColumnBox(ProjectMapModel.Column column, double x, double y, double width, double height) {}
 
-        private record ColumnControls(TextField filter, CheckBox showHidden, ToggleButton pin) {}
+        private record ColumnControls(TextField filter, CheckBox showHidden, ToggleButton pin, Button close) {}
 
         private record OverviewBox(
                 double x, double y, double width, double height, double minX, double minY, double scale) {

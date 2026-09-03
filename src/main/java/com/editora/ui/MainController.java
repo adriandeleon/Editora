@@ -2496,6 +2496,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         projectPanel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
         projectPanel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         projectPanel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
+        projectPanel.setMapOutputActions(this::printProjectMap, this::exportProjectMapPdf);
         // An external program (a terminal `git`, another editor, a build) changed files under the repo while
         // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
         // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
@@ -2599,8 +2600,18 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public void addBookmark(Path file, int line) {
+                bookmarkCoordinator.addBookmark(file, line);
+            }
+
+            @Override
             public void addPersonalNote(Path file) {
                 notesCoordinator.addPersonalNote(file);
+            }
+
+            @Override
+            public void addPersonalNote(Path file, com.editora.editor.NoteDraft draft) {
+                notesCoordinator.addPersonalNote(file, draft);
             }
         });
         bookmarkCoordinator.setOnChanged(projectPanel::refreshMarkers);
@@ -12807,6 +12818,37 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         setStatus(tr("status.print.preparing"));
         printService.prepareMarkdown(md, null, prepared -> openPrintPreview(job, prepared));
+    }
+
+    /** Exports the complete Project Map layout—not merely the visible viewport—to a paginated PDF. */
+    private void exportProjectMapPdf(javafx.scene.image.Image image) {
+        java.io.File file = choosePdfDestination(projectMapBaseName());
+        if (file == null) {
+            return;
+        }
+        setStatus(tr("status.pdf.exporting"));
+        pdfService.exportFxImages(
+                java.util.List.of(image),
+                config.getSettings().getPdfPageSize(),
+                file.toPath(),
+                result -> reportPdf(result, file));
+    }
+
+    /** Opens the normal Print Preview flow for the complete Project Map layout. */
+    private void printProjectMap(javafx.scene.image.Image image) {
+        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        if (job == null) {
+            setStatus(tr("status.print.noPrinter"));
+            return;
+        }
+        setStatus(tr("status.print.preparing"));
+        printService.prepareFxImages(java.util.List.of(image), prepared -> openPrintPreview(job, prepared));
+    }
+
+    private String projectMapBaseName() {
+        Path projectRoot = projectPanel == null ? null : projectPanel.getRoot();
+        Path name = projectRoot == null ? null : projectRoot.getFileName();
+        return (name == null ? "project" : name.toString()) + "-map";
     }
 
     /** Exports parsed CSV rows to a spreadsheet — {@code xlsx} true → Excel {@code .xlsx}, else ODF {@code .ods}. */

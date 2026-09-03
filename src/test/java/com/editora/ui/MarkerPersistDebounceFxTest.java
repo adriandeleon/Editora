@@ -11,9 +11,12 @@ import javafx.animation.PauseTransition;
 import javafx.event.ActionEvent;
 
 import com.editora.config.Bookmark;
+import com.editora.config.NoteScope;
 import com.editora.config.PersonalNote;
 import com.editora.config.Settings;
+import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.NoteDraft;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -142,8 +145,9 @@ class MarkerPersistDebounceFxTest {
             FxTestSupport.call(
                     notesCoordinator,
                     "addPersonalNote",
-                    new Class<?>[] {Path.class, String.class},
+                    new Class<?>[] {Path.class, NoteDraft.class, String.class},
                     file,
+                    null,
                     "Remember this file");
 
             assertTrue(bookmarksCoordinator.hasBookmarks(file));
@@ -159,6 +163,43 @@ class MarkerPersistDebounceFxTest {
         assertEquals(1, saves[1]);
         assertEquals(1, refreshes[0]);
         assertEquals(1, refreshes[1]);
+    }
+
+    @Test
+    void previewActionsPersistTheirExactCodeLocationWithoutOpeningTheFile() throws Exception {
+        Path file = Files.writeString(root.resolve("preview-marked.txt"), "first line\nsecond line\n")
+                .toAbsolutePath()
+                .normalize();
+        Map<String, List<Bookmark>> bookmarks = new HashMap<>();
+        Map<String, List<PersonalNote>> notes = new HashMap<>();
+        int[] saves = {0, 0};
+        NoteDraft draft =
+                new NoteDraft(NoteScope.WORD, new TextAnchor(1, 0, 1, 6, "second", "first line\n", " line\n"));
+
+        FxTestSupport.runOnFx(() -> {
+            BookmarkCoordinator bookmarksCoordinator =
+                    new BookmarkCoordinator(new CoordinatorHostStub(), bookmarkOps(bookmarks, saves));
+            bookmarksCoordinator.addBookmark(file, 1);
+
+            NotesCoordinator notesCoordinator = new NotesCoordinator(new CoordinatorHostStub(), noteOps(notes, saves));
+            FxTestSupport.call(
+                    notesCoordinator,
+                    "addPersonalNote",
+                    new Class<?>[] {Path.class, NoteDraft.class, String.class},
+                    file,
+                    draft,
+                    "Check this token");
+        });
+
+        Bookmark bookmark = bookmarks.values().iterator().next().getFirst();
+        PersonalNote note = notes.values().iterator().next().getFirst();
+        assertEquals(1, bookmark.line());
+        assertEquals(NoteScope.WORD, note.scope());
+        assertEquals(1, note.anchor().line());
+        assertEquals("second", note.anchor().selectedText());
+        assertEquals("Check this token", note.body());
+        assertEquals(1, saves[0]);
+        assertEquals(1, saves[1]);
     }
 
     private static BookmarkCoordinator.Ops bookmarkOps(Map<String, List<Bookmark>> map, int[] saves) {

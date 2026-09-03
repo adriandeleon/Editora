@@ -176,27 +176,37 @@ final class NotesCoordinator {
 
     /** Prompts for and adds a first-line note without opening the file in an editor tab. */
     void addPersonalNote(Path file) {
+        addPersonalNote(file, (NoteDraft) null);
+    }
+
+    /** Prompts for a note whose precise code anchor came from the read-only Project Map preview. */
+    void addPersonalNote(Path file, NoteDraft draft) {
         ifEnabled(() -> {
             if (file == null) {
                 return;
             }
-            showNoteDialog("", body -> addPersonalNote(file, body), null);
+            showNoteDialog("", body -> addPersonalNote(file, draft, body), null);
         });
     }
 
-    private void addPersonalNote(Path file, String body) {
+    private void addPersonalNote(Path file, NoteDraft requestedDraft, String body) {
         EditorBuffer open = ops.bufferForPath(file);
+        NoteDraft draft = requestedDraft;
         if (open != null) {
-            NoteDraft draft = open.captureLineNoteDraft(0);
+            if (draft == null) {
+                draft = open.captureLineNoteDraft(0);
+            }
             open.getNoteManager()
                     .add(PersonalNote.create(open.fileIdentity(), draft.scope(), draft.anchor(), body, List.of()));
-            open.refreshGutterLine(0);
+            open.refreshGutter();
             return;
         }
         String key = PathKeys.canonicalKey(file);
         FileIdentity identity = FileIdentity.of(file);
-        PersonalNote note =
-                PersonalNote.create(identity, NoteScope.LINE, new TextAnchor(0, 0, 0, 0, "", "", ""), body, List.of());
+        if (draft == null) {
+            draft = new NoteDraft(NoteScope.LINE, new TextAnchor(0, 0, 0, 0, "", "", ""));
+        }
+        PersonalNote note = PersonalNote.create(identity, draft.scope(), draft.anchor(), body, List.of());
         List<PersonalNote> updated = new ArrayList<>(ops.notes().getOrDefault(key, List.of()));
         updated.add(note);
         ops.notes().put(key, updated);

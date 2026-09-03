@@ -8,12 +8,13 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 
 import com.editora.search.FuzzyMatch;
 
@@ -69,11 +70,22 @@ final class ProjectMapModel {
         }
     }
 
-    /** One Miller-style depth column. A focused expansion path gives every non-root column one parent. */
+    /** Stable identity for one column. Several independently expanded parents can own columns at one depth. */
+    record ColumnId(int depth, Path parent) {
+        ColumnId {
+            parent = normalize(parent);
+        }
+    }
+
+    /** One Miller-style column containing the children of exactly one parent directory. */
     record Column(int depth, Path parent, List<Entry> entries, int totalEntries) {
         Column {
             parent = normalize(parent);
             entries = entries == null ? List.of() : List.copyOf(entries);
+        }
+
+        ColumnId id() {
+            return new ColumnId(depth, parent);
         }
     }
 
@@ -92,8 +104,6 @@ final class ProjectMapModel {
         if (expanded != null) {
             expanded.stream().map(ProjectMapModel::normalize).forEach(normalizedExpanded::add);
         }
-        normalizedExpanded.add(normalizedRoot);
-
         record Pending(Path path, Path parent, int depth) {}
         Deque<Pending> queue = new ArrayDeque<>();
         queue.add(new Pending(normalizedRoot, null, 0));
@@ -117,11 +127,10 @@ final class ProjectMapModel {
     }
 
     /**
-     * Opens one directory branch at a time. Selecting a sibling replaces the old branch at that depth,
-     * preventing unrelated children from being merged into the same visual column. Clicking an already-open
-     * directory closes it and every descendant; the project root itself always remains open.
+     * Toggles one directory independently. Opening a sibling retains existing branches; closing a directory
+     * removes its own descendant columns without affecting its siblings.
      */
-    static Set<Path> toggleFocusedExpansion(Path root, Set<Path> expanded, Path directory) {
+    static Set<Path> toggleExpansion(Path root, Set<Path> expanded, Path directory) {
         Path normalizedRoot = normalize(root);
         Path normalizedDirectory = normalize(directory);
         if (normalizedRoot == null || normalizedDirectory == null || !normalizedDirectory.startsWith(normalizedRoot)) {
@@ -134,14 +143,10 @@ final class ProjectMapModel {
                     .filter(java.util.Objects::nonNull)
                     .forEach(result::add);
         }
-        result.add(normalizedRoot);
         if (result.contains(normalizedDirectory)) {
-            result.removeIf(path -> path.startsWith(normalizedDirectory) && !path.equals(normalizedRoot));
+            result.removeIf(path -> path.startsWith(normalizedDirectory));
             return Set.copyOf(result);
         }
-
-        // Keep only the selected directory's ancestors, then add it as the new branch tip.
-        result.removeIf(path -> !normalizedDirectory.startsWith(path));
         result.add(normalizedDirectory);
         return Set.copyOf(result);
     }
@@ -156,33 +161,53 @@ final class ProjectMapModel {
 
     static List<Column> columns(
             List<Entry> entries, Map<Integer, String> columnQueries, Map<Integer, Boolean> showHiddenByDepth) {
+        Map<ColumnId, String> queries = new HashMap<>();
+        Map<ColumnId, Boolean> hidden = new HashMap<>();
+        if (entries != null) {
+            for (Entry entry : entries) {
+                ColumnId id = new ColumnId(entry.depth(), entry.parent());
+                if (columnQueries != null && columnQueries.containsKey(entry.depth())) {
+                    queries.put(id, columnQueries.get(entry.depth()));
+                }
+                if (showHiddenByDepth != null && showHiddenByDepth.containsKey(entry.depth())) {
+                    hidden.put(id, showHiddenByDepth.get(entry.depth()));
+                }
+            }
+        }
+        return columnsById(entries, queries, hidden);
+    }
+
+    static List<Column> columnsById(
+            List<Entry> entries, Map<ColumnId, String> columnQueries, Map<ColumnId, Boolean> showHiddenByColumn) {
         if (entries == null || entries.isEmpty()) {
             return List.of();
         }
-        Map<Integer, List<Entry>> grouped = new TreeMap<>();
+        Map<ColumnId, List<Entry>> grouped = new LinkedHashMap<>();
         for (Entry entry : entries) {
-            grouped.computeIfAbsent(entry.depth(), ignored -> new ArrayList<>()).add(entry);
+            grouped.computeIfAbsent(new ColumnId(entry.depth(), entry.parent()), ignored -> new ArrayList<>())
+                    .add(entry);
         }
         Set<Path> visible = new HashSet<>();
         List<Column> result = new ArrayList<>();
         for (var group : grouped.entrySet()) {
-            int depth = group.getKey();
+            ColumnId id = group.getKey();
+            int depth = id.depth();
             List<Entry> all = group.getValue().stream()
                     .sorted(ProjectPathOrder.directoriesFirst(Entry::directory, Entry::name))
                     .toList();
-            String query = columnQueries == null ? "" : columnQueries.getOrDefault(depth, "");
+            if (depth > 0 && id.parent() != null && !visible.contains(id.parent())) {
+                continue;
+            }
+            String query = columnQueries == null ? "" : columnQueries.getOrDefault(id, "");
             String normalizedQuery = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
-            boolean showHidden = showHiddenByDepth == null || showHiddenByDepth.getOrDefault(depth, true);
+            boolean showHidden = showHiddenByColumn == null || showHiddenByColumn.getOrDefault(id, true);
             List<Entry> shown = all.stream()
                     .filter(entry -> depth == 0 || entry.parent() == null || visible.contains(entry.parent()))
                     .filter(entry -> showHidden || !entry.name().startsWith("."))
                     .filter(entry -> normalizedQuery.isEmpty() || FuzzyMatch.of(entry.name(), normalizedQuery) != null)
                     .toList();
             shown.forEach(entry -> visible.add(entry.path()));
-            Path parent = all.stream().map(Entry::parent).distinct().limit(2).count() == 1
-                    ? all.getFirst().parent()
-                    : null;
-            result.add(new Column(depth, parent, shown, all.size()));
+            result.add(new Column(depth, id.parent(), shown, all.size()));
         }
         return List.copyOf(result);
     }
