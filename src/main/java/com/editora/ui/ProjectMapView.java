@@ -108,6 +108,7 @@ final class ProjectMapView extends VBox {
     });
     private final AtomicLong generation = new AtomicLong();
     private final Set<Path> expanded = new HashSet<>();
+    private Set<Path> searchExpanded = Set.of();
     private final List<Path> selectionHistory = new ArrayList<>();
 
     private Path root;
@@ -333,6 +334,7 @@ final class ProjectMapView extends VBox {
         this.root = normalized;
         closeAllPreviews();
         expanded.clear();
+        searchExpanded = Set.of();
         selectionHistory.clear();
         historyIndex = -1;
         pendingSelection = normalized;
@@ -352,6 +354,37 @@ final class ProjectMapView extends VBox {
         if (!this.query.equals(value)) {
             this.query = value;
             updateFilters();
+            if (value.isBlank() && !searchExpanded.isEmpty()) {
+                searchExpanded = Set.of();
+                reload();
+                onExpandedChanged.run();
+            }
+        }
+    }
+
+    void setSearchMatches(String query, List<Path> matches) {
+        String value = query == null ? "" : query;
+        if (disposed || value.isBlank() || !this.query.equals(value)) {
+            return;
+        }
+        Set<Path> nextExpansion = ProjectMapModel.expandedAncestors(root, matches);
+        Path firstMatch = matches == null
+                ? null
+                : matches.stream()
+                        .map(ProjectMapModel::normalize)
+                        .filter(java.util.Objects::nonNull)
+                        .filter(path -> root != null && path.startsWith(root))
+                        .findFirst()
+                        .orElse(null);
+        boolean expansionChanged = !searchExpanded.equals(nextExpansion);
+        searchExpanded = nextExpansion;
+        pendingSelection = firstMatch;
+        if (expansionChanged || firstMatch != null && !surface.contains(firstMatch)) {
+            reload();
+            onExpandedChanged.run();
+        } else if (firstMatch != null) {
+            pendingSelection = null;
+            surface.select(firstMatch);
         }
     }
 
@@ -396,7 +429,9 @@ final class ProjectMapView extends VBox {
     }
 
     Set<Path> expandedDirectories() {
-        return Set.copyOf(expanded);
+        Set<Path> result = new HashSet<>(expanded);
+        result.addAll(searchExpanded);
+        return Set.copyOf(result);
     }
 
     void focusMap() {
@@ -473,7 +508,7 @@ final class ProjectMapView extends VBox {
     private void reload() {
         long requested = generation.incrementAndGet();
         Path requestedRoot = root;
-        Set<Path> requestedExpanded = Set.copyOf(expanded);
+        Set<Path> requestedExpanded = expandedDirectories();
         if (requestedRoot == null) {
             surface.setEntries(List.of(), Set.of());
             return;

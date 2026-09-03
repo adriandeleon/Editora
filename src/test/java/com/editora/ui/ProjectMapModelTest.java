@@ -110,6 +110,25 @@ class ProjectMapModelTest {
     }
 
     @Test
+    void searchMatchesExpandEveryAncestorWithoutIncludingOutsidePaths() {
+        Path first = root.resolve("src/main/java/FileResult.java");
+        Path second = root.resolve("src/test/java/FileResultTest.java");
+
+        Set<Path> expanded = ProjectMapModel.expandedAncestors(
+                root, List.of(first, second, root.resolveSibling("outside/Other.java")));
+
+        assertEquals(
+                Set.of(
+                        normalize(root),
+                        normalize(root.resolve("src")),
+                        normalize(root.resolve("src/main")),
+                        normalize(root.resolve("src/main/java")),
+                        normalize(root.resolve("src/test")),
+                        normalize(root.resolve("src/test/java"))),
+                expanded);
+    }
+
+    @Test
     void siblingBranchesProduceIndependentColumnsAtTheSameDepth() {
         Path src = root.resolve("src");
         Path docs = root.resolve("docs");

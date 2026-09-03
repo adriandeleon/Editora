@@ -109,9 +109,11 @@ The Project tool window's search field becomes the map's global fuzzy name query
 - a per-column **Hidden** checkbox, enabled by default.
 
 The status chips are alternatives to one another: selecting Open and Modified matches either state.
-The type and text criteria constrain that working set. Global matches and their ancestors remain
-prominent while unrelated nodes fade, preserving spatial context. A column filter removes unmatched
-rows and their now-unreachable descendants so the remaining geometry is still a valid hierarchy.
+The type and text criteria constrain that working set. A global filename query uses the Project tree's
+bounded, off-thread search and temporarily opens every ancestor column needed to reveal its matches;
+clearing the query restores the manually expanded branches. Global matches and their ancestors remain
+prominent while unrelated nodes fade, preserving spatial context. A column filter removes unmatched rows
+and their now-unreachable descendants so the remaining geometry is still a valid hierarchy.
 
 Rows use `ProjectPathOrder`: directories first, then case-insensitive names with a deterministic
 case-sensitive tie-break. This is the same ordering contract as the traditional Project explorer.

@@ -151,6 +151,29 @@ final class ProjectMapModel {
         return Set.copyOf(result);
     }
 
+    /** Returns the directories that must be expanded to reveal every matching file beneath {@code root}. */
+    static Set<Path> expandedAncestors(Path root, List<Path> matches) {
+        Path normalizedRoot = normalize(root);
+        if (normalizedRoot == null || matches == null || matches.isEmpty()) {
+            return Set.of();
+        }
+        Set<Path> result = new HashSet<>();
+        for (Path match : matches) {
+            Path normalizedMatch = normalize(match);
+            if (normalizedMatch == null || !normalizedMatch.startsWith(normalizedRoot)) {
+                continue;
+            }
+            for (Path parent = normalizedMatch.getParent(); parent != null && parent.startsWith(normalizedRoot); ) {
+                result.add(parent);
+                if (parent.equals(normalizedRoot)) {
+                    break;
+                }
+                parent = parent.getParent();
+            }
+        }
+        return Set.copyOf(result);
+    }
+
     /**
      * Builds sorted depth columns and applies each column's local name filter. Descendants of a filtered-out
      * folder are omitted too, so the remaining geometry always represents a valid visible hierarchy.
