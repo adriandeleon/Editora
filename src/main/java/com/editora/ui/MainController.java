@@ -2333,7 +2333,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             refreshMenuEnablement(); // buffer-shaped menu items (preview, CSV, .http, Typst) follow the tab
         });
         editorArea.addTabsListener((ListChangeListener<Tab>) c -> {
+            boolean membershipChanged = false;
             while (c.next()) {
+                membershipChanged |= c.wasAdded() || c.wasRemoved();
                 // A tab added in the background (e.g. session restore opening many at once) starts
                 // rendering-inactive so it holds no minimap snapshot until it's first shown.
                 if (c.wasAdded()) {
@@ -2375,6 +2377,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                         }
                     }
                 }
+            }
+            if (membershipChanged && projectPanel != null) {
+                projectPanel.refreshOpenFiles();
             }
         });
     }
@@ -2457,7 +2462,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 : menuBar.node());
         toolWindows = new ToolWindowManager(workspace, editorFooter(), config, keymap);
         projectPanel = new ProjectPanel(
-                this::openPath, this::onProjectFileRenamed, this::onProjectFileDeleted, this::isPathModified);
+                this::openPath,
+                this::onProjectFileRenamed,
+                this::onProjectFileDeleted,
+                this::isPathModified,
+                this::hasFileOpen,
+                this::projectMapPreviewContent);
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
         // Lazy lambda: historyCoordinator is constructed later in this method, so defer the field read to call time.
         projectPanel.setOnBeforeDelete(
@@ -9585,6 +9595,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         EditorBuffer buffer = bufferOf(tab);
         return buffer != null && buffer.isDirty();
+    }
+
+    /** Captures an open editor's current text for the Map's floating preview, including unsaved changes. */
+    private ProjectMapPreview.Content projectMapPreviewContent(Path file) {
+        EditorBuffer buffer = bufferOf(tabForPath(file));
+        if (buffer == null) {
+            return null;
+        }
+        var area = buffer.getArea();
+        int length = area.getLength();
+        int end = Math.min(length, ProjectMapPreview.MAX_PREVIEW_CHARS);
+        return new ProjectMapPreview.Content(area.getText(0, end), end < length);
     }
 
     /**

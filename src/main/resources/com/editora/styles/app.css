@@ -964,6 +964,214 @@
     -fx-background-color: -color-neutral-muted;
     -fx-text-fill: -color-fg-default;
 }
+
+/* Project navigator mode switch. The tree remains the management surface; Map is the read-only spatial
+   Canvas view, so this control is intentionally small enough to live beside the shared search field. */
+.project-view-modes {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 5;
+    -fx-padding: 1;
+}
+.project-view-toggle {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-padding: 3 7 3 7;
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-view-toggle:selected {
+    -fx-background-color: -color-accent-subtle;
+    -fx-text-fill: -color-accent-fg;
+}
+
+/* Canvas project map. Filters are native controls for focus/accessibility; only the hierarchy is painted. */
+.project-map-view {
+    -fx-padding: 0;
+}
+.project-map-filters {
+    -fx-padding: 3 2 5 2;
+}
+.project-map-navigation {
+    -fx-padding: 0 2 4 2;
+}
+.project-map-nav-button,
+.project-map-breadcrumb {
+    -fx-background-color: transparent;
+    -fx-padding: 2 5 2 5;
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-nav-button:hover,
+.project-map-breadcrumb:hover {
+    -fx-background-color: -color-neutral-muted;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-nav-button:disabled {
+    -fx-opacity: 0.35;
+}
+.project-map-breadcrumbs {
+    -fx-alignment: center-left;
+}
+.project-map-breadcrumb-separator {
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-filter-heading {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 10px;
+    -fx-padding: 0 2 0 1;
+}
+.project-map-filter-chip,
+.project-map-type-filter,
+.project-map-flow-filter,
+.project-map-filter-clear {
+    -fx-font-size: 10px;
+}
+.project-map-filter-chip {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 10;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 10;
+    -fx-padding: 3 8 3 8;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-filter-chip:selected {
+    -fx-background-color: -color-accent-subtle;
+    -fx-border-color: -color-accent-muted;
+    -fx-text-fill: -color-accent-fg;
+}
+.project-map-filter-clear {
+    -fx-background-color: transparent;
+    -fx-padding: 3 5 3 5;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-filter-clear:hover {
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-type-filter {
+    -fx-pref-width: 92px;
+}
+.project-map-flow-filter {
+    -fx-pref-width: 132px;
+}
+.project-map-host {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1 0 0 0;
+}
+.project-map-surface:focused {
+    -fx-effect: innershadow(gaussian, -color-accent-muted, 4, 0.1, 0, 0);
+}
+.project-map-column-filter {
+    -fx-font-size: 10px;
+    -fx-padding: 2 6 2 6;
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 5;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 5;
+}
+.project-map-column-filter:focused {
+    -fx-border-color: -color-accent-emphasis;
+}
+.project-map-column-hidden {
+    -fx-font-size: 9px;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 1 0 1 0;
+}
+.project-map-column-pin {
+    -fx-background-color: transparent;
+    -fx-background-radius: 5;
+    -fx-padding: 3;
+}
+.project-map-column-pin:hover,
+.project-map-column-pin:selected {
+    -fx-background-color: -color-accent-subtle;
+}
+.project-map-column-pin .toolbar-icon {
+    -fx-fill: -color-fg-muted;
+}
+.project-map-column-pin:selected .toolbar-icon {
+    -fx-fill: -color-accent-fg;
+}
+.project-map-zoom {
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 5;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 5;
+    -fx-padding: 1;
+}
+.project-map-zoom-control {
+    -fx-background-color: transparent;
+    -fx-padding: 3 6 3 6;
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-zoom-control:hover {
+    -fx-background-color: -color-neutral-muted;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-preview {
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.42), 22, 0.16, 0, 7);
+}
+.project-map-preview-frame {
+    -fx-background-color: -color-bg-default;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+}
+.project-map-preview-header {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 8 8 0 0;
+    -fx-border-color: transparent transparent -color-border-default transparent;
+    -fx-padding: 5 6 5 10;
+    -fx-cursor: move;
+}
+.project-map-preview-title {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-preview-title .toolbar-icon {
+    -fx-fill: -project-file-color;
+}
+.project-map-preview-status {
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-preview-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-padding: 2 6 2 6;
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-preview-button:hover {
+    -fx-background-color: -color-neutral-muted;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-preview-editor {
+    -fx-font-size: 12px;
+}
+.project-map-preview-resize {
+    -fx-border-color: transparent -color-fg-muted -color-fg-muted transparent;
+    -fx-border-width: 0 2 2 0;
+    -fx-opacity: 0.72;
+}
+
+/* Zero-sized Shapes let Canvas painting consume the active AtlantaFX palette after CSS resolution. */
+.project-map-probe-bg { -fx-fill: -color-bg-default; }
+.project-map-probe-surface { -fx-fill: -color-bg-subtle; }
+.project-map-probe-border { -fx-fill: -color-border-default; }
+.project-map-probe-text { -fx-fill: -color-fg-default; }
+.project-map-probe-muted { -fx-fill: -color-fg-muted; }
+.project-map-probe-accent { -fx-fill: -color-accent-emphasis; }
+.project-map-probe-warning { -fx-fill: -state-amber; }
+.project-map-probe-success { -fx-fill: -state-green; }
+.project-map-probe-folder { -fx-fill: -project-folder-color; }
+.project-map-probe-file { -fx-fill: -project-file-color; }
+.project-map-probe-olive { -fx-fill: -state-olive; }
+.project-map-probe-violet { -fx-fill: -state-violet; }
 .project-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;

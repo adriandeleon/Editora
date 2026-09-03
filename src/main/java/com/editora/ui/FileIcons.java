@@ -330,6 +330,14 @@ public final class FileIcons {
     }
 
     /**
+     * The glyph used for an item in the Project navigator. Keeping this choice here ensures the Tree and
+     * Canvas views cannot drift to different folder or file-type icon families.
+     */
+    static Node forProjectItem(String fileName, boolean directory) {
+        return directory ? boxed(Icons.project()) : forFileName(fileName);
+    }
+
+    /**
      * Side of the fixed square every file/folder glyph is centered in. Each glyph's node bounds equal
      * its <em>ink</em> bounds, which vary per glyph (a wide document sheet vs. a narrow {@code <>}), so
      * placed raw they'd give the icon column a ragged width and shift the following label. Centering in

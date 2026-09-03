@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Project tool window now has a visual Map navigator.** A Tree/Map switch preserves the existing
+  file-management tree while offering a Canvas hierarchy with focused Miller-style columns, pan, pointer-
+  centered mouse-wheel zoom, mouse and keyboard navigation, and filters for open, modified, Git-changed, and
+  file-type working sets. Each column has its own live name filter, default-on hidden-file checkbox, and item
+  count, uses the Project tree's folder-first case-insensitive ordering, and expands to fit its longest name
+  without truncation. Columns can be repositioned by their headers and pinned against accidental movement,
+  and the map keeps a single active branch per depth so unrelated
+  sibling expansions no longer merge into a dense connection bundle. Fit/center controls, automatic initial
+  framing, selectable left-to-right, right-to-left, top-to-bottom, and bottom-to-top flows with matching
+  connector geometry and arrow-key semantics, a compact overview, selected-path highlighting, breadcrumbs,
+  Back/Forward history, Page Up/Down,
+  Backspace-to-parent, Alt-Left/Right history, and slash-to-filter make large projects practical. Filtering
+  fades unrelated nodes instead of removing their spatial context, and project scans remain bounded and off
+  the JavaFX thread. Canvas nodes use the same themed folder and file-type glyphs as the traditional Project
+  tree, folders expand or collapse with one click, and files already open in editor tabs carry a prominent
+  accent rail and label. Hover tooltips expose the full path, type, size, modification time, and relevant
+  editor or Git status without filesystem work on the JavaFX thread. Right-clicking any map node opens the
+  same file-management menu as the traditional tree, including New, Maven, rename/delete, reveal, terminal,
+  Local History, and Git actions when applicable. Selecting a file also opens a movable, resizable,
+  independently scrollable code preview above the canvas, with syntax highlighting, current unsaved content
+  for open buffers, and an explicit action to open the full editor tab.
+
 ### Changed
 
 - **Settled edit work now uses one timer sequence per buffer.** Highlighting, live previews, completion,
