@@ -41,6 +41,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   `SharedConfig`/`ConfigManager`, `ConfigWriter`, and schema versioning + migrations.
 - [subsystems/navigation.md](subsystems/navigation.md) — ranking (`FuzzyMatch`), the server-free
   symbol index, Search Everywhere, and the flow features (recent locations, peek, sticky scroll).
+- [subsystems/project-map.md](subsystems/project-map.md) — the Project tool window's Canvas-based
+  Miller-column navigator, interaction contract, layout, filtering, preview, and threading model.
 - [subsystems/lsp-and-dap.md](subsystems/lsp-and-dap.md) — Language Server + Debug Adapter
   integration, and the `process/ProcessRegistry` lifecycle that owns spawned servers.
 
