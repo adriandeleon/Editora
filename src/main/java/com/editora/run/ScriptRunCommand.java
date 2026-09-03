@@ -10,7 +10,8 @@ import java.util.List;
  * language server. Everything else Editora can already run — a Python script, a shell script, a make target —
  * needs none of that: an interpreter and a path is the whole story. Keeping those in a pure builder means the
  * argv is unit-testable, and that a script configuration launches with no project, no language server and no
- * open Java file anywhere.
+ * open Java file anywhere. NPM configurations name a package script and forward optional arguments after
+ * npm's {@code --} separator.
  *
  * <p>Mirrors what {@code RunCoordinator.buildRunCommand} does for the active file, but takes its target from
  * the configuration rather than from whatever is on screen.
@@ -22,13 +23,14 @@ public final class ScriptRunCommand {
 
     public static final String SHELL = "shell";
     public static final String MAKE = "make";
+    public static final String NPM = "npm";
     public static final String JAVA = "java";
 
     private ScriptRunCommand() {}
 
     /** Whether {@code type} is a script type this builder can launch (i.e. anything but {@code java}). */
     public static boolean isScript(String type) {
-        return PYTHON.equals(type) || SHELL.equals(type) || MAKE.equals(type);
+        return PYTHON.equals(type) || SHELL.equals(type) || MAKE.equals(type) || NPM.equals(type);
     }
 
     /**
@@ -38,14 +40,14 @@ public final class ScriptRunCommand {
      * {@code make} does, so it is a valid configuration rather than an incomplete one.
      */
     public static boolean needsTarget(String type) {
-        return PYTHON.equals(type) || SHELL.equals(type);
+        return PYTHON.equals(type) || SHELL.equals(type) || NPM.equals(type);
     }
 
     /**
      * Builds the argv.
      *
-     * @param type one of {@link #PYTHON}, {@link #SHELL}, {@link #MAKE}
-     * @param target the script path, or the make target ({@code ""} = make's default goal)
+     * @param type one of {@link #PYTHON}, {@link #SHELL}, {@link #MAKE}, or {@link #NPM}
+     * @param target the script path, make target ({@code ""} = make's default goal), or NPM script name
      * @param args already-tokenized program arguments
      * @return the argv, or an empty list when the type is unknown or a required target is missing — the
      *     caller reports that rather than launching something arbitrary
@@ -72,6 +74,17 @@ public final class ScriptRunCommand {
                 argv.add("make");
                 if (!t.isEmpty()) {
                     argv.add(t);
+                }
+            }
+            case NPM -> {
+                if (t.isEmpty()) {
+                    return List.of();
+                }
+                argv.add("npm");
+                argv.add("run");
+                argv.add(t);
+                if (args != null && !args.isEmpty()) {
+                    argv.add("--");
                 }
             }
             default -> {

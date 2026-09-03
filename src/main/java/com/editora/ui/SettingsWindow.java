@@ -4404,8 +4404,8 @@ public class SettingsWindow {
         });
 
         TextField name = new TextField();
-        ComboBox<String> type =
-                new ComboBox<>(javafx.collections.FXCollections.observableArrayList("java", "python", "shell", "make"));
+        ComboBox<String> type = new ComboBox<>(
+                javafx.collections.FXCollections.observableArrayList("java", "python", "shell", "make", "npm"));
         type.setConverter(enumConverter(t -> tr("settings.runConfig.type." + t)));
         TextField target = new TextField();
         target.setPromptText(tr("settings.runConfig.targetPrompt"));

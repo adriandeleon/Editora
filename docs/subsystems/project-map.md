@@ -23,9 +23,10 @@ The map presents a focused Miller-column path through the project:
 This invariant gives every non-root column one meaningful parent. It prevents unrelated expanded
 subtrees from being merged into a dense graph while keeping ancestor context visible.
 
-The default flow is left to right. The flow selector also supports right to left, top to bottom,
-and bottom to top. It changes column placement, connector direction, and the meaning of the arrow
-keys together. Changing flow clears manual column offsets and locks, then fits the new layout.
+The default flow is right to left. The flow selector also supports left to right, top to bottom, and
+bottom to top. It changes column placement, connector direction, and the meaning of the arrow
+keys together. Changing flow clears manual column offsets and locks, then fits the new layout. The
+last selected flow is stored in workspace state and restored when the editor is reopened.
 
 ## Interaction reference
 
@@ -34,9 +35,9 @@ keys together. Changing flow clears manual column offsets and locks, then fits t
 | Gesture | Result |
 | --- | --- |
 | Single-click a folder | Select and expand it, or collapse it if it is already expanded |
-| Single-click a file | Select it and show the floating read-only code preview |
-| Double-click a file | Open it in a normal editor tab |
-| Right-click a node | Select it and open the same context menu as the Project tree |
+| Single-click a file | Open it in a normal editor tab |
+| Click a file's preview icon | Show the floating read-only preview on the canvas |
+| Right-click a node | Select it and open the same context menu as the Project tree, including first-line bookmark and Personal Note actions |
 | Drag empty canvas space | Pan the map |
 | Middle-button drag | Pan the map |
 | Mouse wheel | Zoom around the pointer position |
@@ -50,11 +51,18 @@ keys together. Changing flow clears manual column offsets and locks, then fits t
 The floating preview stays at screen scale instead of participating in canvas zoom. Its title bar
 moves it, its lower corner resizes it, and its editor scrolls independently. It uses current unsaved
 text when the file is already open; otherwise it reads the file off the JavaFX application thread.
-The **Open** action promotes the previewed file to a normal editor tab.
+It is visibly marked read-only, has independent text/image zoom controls, and renders common bitmap
+image formats as well as syntax-highlighted text. The **Open** action promotes the previewed file to
+a normal editor tab.
 
 Context menus use JavaFX auto-hide plus a next-pulse owner-scene press filter. This mirrors the
 other Project menus and ensures a click elsewhere closes the menu even on platforms where the
 native popup grab misses the press.
+
+Files with one or more bookmarks or Personal Notes show compact, independently colored indicators
+in both the Tree and Map. Marker state is read from an open buffer when available and otherwise from
+the active project's persisted stores, so adding an annotation refreshes both views without opening
+the target file.
 
 ### Keyboard
 
@@ -163,17 +171,18 @@ visible snapshot at `ProjectMapModel.MAX_VISIBLE_ITEMS` (1,200). A failure to re
 not discard the rest of the snapshot.
 
 Preview disk reads run on the single daemon `project-map-preview-loader`. The queue is coalesced so
-stale selections do not accumulate work. Closed-file reads are capped at 1,000,000 bytes, displayed
-text at 400,000 characters, and syntax highlighting at 160,000 characters. Generation checks guard
+stale selections do not accumulate work. Closed text reads are capped at 1,000,000 bytes, image reads
+at 20,000,000 bytes, displayed text at 400,000 characters, and syntax highlighting at 160,000
+characters. Generation checks guard
 both loaded text and highlighting results. Binary and failed reads produce explicit preview states.
 
 All scene-graph mutation, paint, and control synchronization stays on the JavaFX application thread.
 No paint, hover, or per-keystroke path accesses the filesystem. `dispose()` invalidates generations,
 stops both executors, hides popups and tooltips, and clears control and measurement caches.
 
-Map-specific UI state is currently session-local. Changing roots clears expansion, selection
-history, per-column filters, positions, locks, zoom, and preview state. The selected flow and global
-status/type chips remain active in the view, but no map state is persisted in project settings.
+Changing roots clears expansion, selection history, per-column filters, positions, locks, zoom, and
+preview state. The selected flow is persisted in workspace state; global status/type filters remain
+active only in the current view.
 
 ## Tests and change checklist
 

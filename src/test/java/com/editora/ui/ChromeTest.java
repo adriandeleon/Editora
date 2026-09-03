@@ -21,6 +21,7 @@ class ChromeTest {
         boolean zen = true;
         boolean simple = false;
         assertFalse(Chrome.toolbar(true, zen));
+        assertFalse(Chrome.menuBar(true, zen));
         assertFalse(Chrome.statusBar(true, zen));
         assertFalse(Chrome.tabBar(true, zen));
         assertFalse(Chrome.breadcrumb(true, zen, simple));
@@ -45,6 +46,7 @@ class ChromeTest {
         assertFalse(Chrome.toolStripes(true, focus, simple));
         assertFalse(Chrome.whitespace(true, focus));
         // KEPT — Expert leaves the whole editor view + the status bar (all keyed on the real zen flag):
+        assertTrue(Chrome.menuBar(true, zen));
         assertTrue(Chrome.statusBar(true, zen));
         assertTrue(Chrome.lineNumbers(true, zen, simple));
         assertTrue(Chrome.columnRuler(true, zen));

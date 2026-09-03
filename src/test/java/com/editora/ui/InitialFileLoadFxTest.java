@@ -4,6 +4,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 
+import javafx.scene.control.Label;
+
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -47,6 +49,13 @@ class InitialFileLoadFxTest {
             assertTrue(waitUntil(() -> content.equals(buffer.getContent())), "background load did not complete");
             assertEquals(content, FxTestSupport.callOnFx(buffer::getContent));
             assertTrue(!FxTestSupport.callOnFx(buffer::isDirty), "a freshly loaded document must stay clean");
+            assertTrue(FxTestSupport.callOnFx(buffer::isEditable), "the completed small-file load is editable");
+            StatusBar statusBar = FxTestSupport.field(fx.controller, "statusBar");
+            Label readOnly = FxTestSupport.field(statusBar, "readOnly");
+            assertEquals(
+                    com.editora.i18n.Messages.tr("statusbar.editable"),
+                    FxTestSupport.callOnFx(readOnly::getText),
+                    "the status segment must leave the loading shell's temporary read-only state");
         } finally {
             fx.dispose();
             Files.deleteIfExists(file);

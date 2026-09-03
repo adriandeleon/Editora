@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Run configurations now support named NPM scripts (`npm run <script>`) and pass configuration
+  arguments after npm's `--` separator.
+- The Project Map preview now supports common bitmap images and independent text/image zoom controls.
+- Project Tree and Map file menus can add first-line bookmarks and Personal Notes directly, with small
+  per-file indicators for both kinds of annotation.
+
+### Changed
+
+- The Project Map defaults to a right-to-left flow, remembers the last selected direction, recentres newly
+  opened column paths, opens a file row directly in an editor tab, and exposes canvas preview through a dedicated icon. Preview
+  cards are visibly marked read-only.
+- Expert mode's floating **E** exit control now lives inside the active code viewport and clears the
+  minimap instead of overlapping the window title bar or minimap.
+- Expert mode, including `--expert` CLI launches, now keeps the menu bar visible from the first frame.
+- Files opened asynchronously from the command line no longer retain a stale **Read-Only** status after
+  their temporary loading shell becomes editable.
+- The Structure window now syntax-colors individual signature tokens, includes source-derived return types,
+  shows 1-based source line numbers, and no longer mistakes inner control-flow
+  blocks or calls such as `run()` for nested method declarations in its non-LSP fallback outline.
+
 ## [0.16.0] - 2026-09-02
 
 ### Added

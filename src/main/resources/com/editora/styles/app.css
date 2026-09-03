@@ -237,13 +237,17 @@
     -fx-padding: 1 4 1 4;
 }
 
-/* Two-tone method rows: the name in the default fill, the signature "(params) : ret" muted. (Raw Text
-   nodes don't inherit the cell's -fx-text-fill, so the name's fill is set explicitly for dark themes.) */
+/* Structure signature runs default to the normal foreground, then syntax.css/editor-theme token selectors
+   override each matched source token independently. Raw Text nodes don't inherit the cell's text fill. */
 .structure-tree .structure-name {
     -fx-fill: -color-fg-default;
 }
 
 .structure-tree .structure-detail {
+    -fx-fill: -color-fg-muted;
+}
+
+.structure-tree .structure-line-number {
     -fx-fill: -color-fg-muted;
 }
 
@@ -1137,6 +1141,14 @@
 }
 .project-map-preview-status {
     -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-preview-readonly {
+    -fx-background-color: -color-neutral-muted;
+    -fx-background-radius: 4;
+    -fx-padding: 1 5 1 5;
+    -fx-font-size: 8px;
+    -fx-font-weight: bold;
     -fx-text-fill: -color-fg-muted;
 }
 .project-map-preview-button {
@@ -3539,6 +3551,8 @@
 /* The project tree's folder/file glyphs follow the theme's tree colours. */
 .project-tree .folder-cell .icon-line { -fx-stroke: -project-folder-color; }
 .project-tree .file-cell .icon-line { -fx-stroke: -project-file-color; }
+.project-tree .project-bookmark-indicator.icon-line { -fx-stroke: -state-amber; }
+.project-tree .project-note-indicator.icon-line { -fx-stroke: -color-accent-fg; }
 .project-tree .modified-file .icon-line { -fx-stroke: -state-amber; }
 .project-tree .git-status-modified .icon-line, .git-tree .git-status-modified .icon-line { -fx-stroke: -color-accent-fg; }
 .project-tree .git-status-added .icon-line, .git-tree .git-status-added .icon-line { -fx-stroke: -color-success-fg; }

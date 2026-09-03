@@ -26,6 +26,20 @@ class ConfigVersioningTest {
     }
 
     @Test
+    void projectMapDefaultsRightToLeftAndPreservesAnExplicitFlow(@TempDir Path dir) {
+        ConfigManager first = new ConfigManager(dir);
+        first.load();
+        assertEquals("RIGHT_TO_LEFT", first.getWorkspaceState().getProjectMapFlow());
+
+        first.getWorkspaceState().setProjectMapFlow("LEFT_TO_RIGHT");
+        first.save();
+
+        ConfigManager reopened = new ConfigManager(dir);
+        reopened.load();
+        assertEquals("LEFT_TO_RIGHT", reopened.getWorkspaceState().getProjectMapFlow());
+    }
+
+    @Test
     void unversionedSettingsLoadCleanlyAndAreStampedOnSave(@TempDir Path dir) throws Exception {
         // A pre-versioning settings.json (no schemaVersion key) reads normally.
         Files.writeString(dir.resolve("settings.json"), "{\"fontFamily\": \"Iosevka\", \"fontSize\": 17}");

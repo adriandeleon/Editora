@@ -113,6 +113,7 @@ final class ProjectMapView extends VBox {
     private int historyIndex = -1;
     private boolean navigatingHistory;
     private Path pendingSelection;
+    private Consumer<FlowDirection> onFlowChanged = ignored -> {};
 
     ProjectMapView(Consumer<Path> onOpenFile, Predicate<Path> isOpen, Predicate<Path> isModified) {
         this(onOpenFile, isOpen, isModified, path -> null);
@@ -135,6 +136,7 @@ final class ProjectMapView extends VBox {
         getChildren().addAll(buildFilters(), buildNavigation(), buildCanvasHost());
         VBox.setVgrow(getChildren().get(2), Priority.ALWAYS);
         surface.setOnActivate(this::activate);
+        surface.setOnPreview(this::previewSelection);
         surface.setOnSelectionChanged(this::selectionChanged);
         surface.setStatusSuppliers(this.isOpen, this.isModified);
         updateFilters();
@@ -178,7 +180,7 @@ final class ProjectMapView extends VBox {
         typeFilter.setCellFactory(list -> typeCell());
 
         flowFilter.getItems().setAll(FlowDirection.values());
-        flowFilter.setValue(FlowDirection.LEFT_TO_RIGHT);
+        flowFilter.setValue(FlowDirection.RIGHT_TO_LEFT);
         flowFilter.getStyleClass().add("project-map-flow-filter");
         flowFilter.setConverter(new StringConverter<>() {
             @Override
@@ -188,7 +190,7 @@ final class ProjectMapView extends VBox {
 
             @Override
             public FlowDirection fromString(String value) {
-                return FlowDirection.LEFT_TO_RIGHT;
+                return FlowDirection.RIGHT_TO_LEFT;
             }
         });
         flowFilter.setButtonCell(flowCell());
@@ -209,7 +211,11 @@ final class ProjectMapView extends VBox {
             button.setOnAction(event -> updateFilters());
         }
         typeFilter.setOnAction(event -> updateFilters());
-        flowFilter.setOnAction(event -> surface.setFlowDirection(flowFilter.getValue()));
+        flowFilter.setOnAction(event -> {
+            FlowDirection flow = flowFilter.getValue();
+            surface.setFlowDirection(flow);
+            onFlowChanged.accept(flow);
+        });
 
         FlowPane filters =
                 new FlowPane(6, 4, heading, openFilter, modifiedFilter, gitFilter, typeFilter, flowFilter, clear);
@@ -299,7 +305,7 @@ final class ProjectMapView extends VBox {
 
     private static String flowName(FlowDirection flow) {
         if (flow == null) {
-            flow = FlowDirection.LEFT_TO_RIGHT;
+            flow = FlowDirection.RIGHT_TO_LEFT;
         }
         return tr("project.map.flow." + flow.name().toLowerCase(java.util.Locale.ROOT));
     }
@@ -359,6 +365,11 @@ final class ProjectMapView extends VBox {
         surface.stateChanged();
     }
 
+    void setMarkerStates(Predicate<Path> bookmarked, Predicate<Path> noted) {
+        surface.setMarkerSuppliers(bookmarked, noted);
+        surface.stateChanged();
+    }
+
     void refresh() {
         reload();
     }
@@ -381,6 +392,18 @@ final class ProjectMapView extends VBox {
 
     void setOnExpandedChanged(Runnable callback) {
         onExpandedChanged = callback == null ? () -> {} : callback;
+    }
+
+    void setRememberedFlow(String name, Consumer<FlowDirection> callback) {
+        FlowDirection remembered;
+        try {
+            remembered = FlowDirection.valueOf(name == null ? "" : name);
+        } catch (IllegalArgumentException ignored) {
+            remembered = FlowDirection.RIGHT_TO_LEFT;
+        }
+        onFlowChanged = callback == null ? ignored -> {} : callback;
+        flowFilter.setValue(remembered);
+        surface.setFlowDirection(remembered);
     }
 
     void setContextMenuFactory(Function<ProjectMapModel.Entry, ContextMenu> factory) {
@@ -453,7 +476,6 @@ final class ProjectMapView extends VBox {
         if (!navigatingHistory) {
             recordSelection(path);
         }
-        previewSelection(path);
         updateNavigation();
     }
 
@@ -606,15 +628,20 @@ final class ProjectMapView extends VBox {
                 new ProjectMapModel.Filters("", false, false, false, ProjectMapModel.TypeFilter.ALL);
         private Predicate<Path> openState = path -> false;
         private Predicate<Path> modifiedState = path -> false;
+        private Predicate<Path> bookmarkState = path -> false;
+        private Predicate<Path> noteState = path -> false;
         private Map<Path, GitFileStatus> gitState = Map.of();
         private Set<Path> gitDirectories = Set.of();
         private Set<Path> openPaths = Set.of();
         private Set<Path> modifiedPaths = Set.of();
+        private Set<Path> bookmarkedPaths = Set.of();
+        private Set<Path> notedPaths = Set.of();
         private Set<Path> emphasized = Set.of();
-        private FlowDirection flowDirection = FlowDirection.LEFT_TO_RIGHT;
+        private FlowDirection flowDirection = FlowDirection.RIGHT_TO_LEFT;
         private Path selected;
         private Path hovered;
         private Consumer<ProjectMapModel.Entry> onActivate = entry -> {};
+        private Consumer<Path> onPreview = path -> {};
         private Consumer<Path> onSelectionChanged = path -> {};
         private Function<ProjectMapModel.Entry, ContextMenu> contextMenuFactory = entry -> null;
         private Runnable onZoomChanged = () -> {};
@@ -636,6 +663,7 @@ final class ProjectMapView extends VBox {
         private boolean painting;
         private boolean viewportInitialized;
         private boolean initialFitPending;
+        private int laidOutColumnCount;
 
         MapSurface() {
             // The project-tree class supplies the same per-editor-theme folder/file looked-up colors used
@@ -714,6 +742,10 @@ final class ProjectMapView extends VBox {
             this.onActivate = onActivate;
         }
 
+        void setOnPreview(Consumer<Path> onPreview) {
+            this.onPreview = onPreview == null ? path -> {} : onPreview;
+        }
+
         void setOnSelectionChanged(Consumer<Path> callback) {
             onSelectionChanged = callback == null ? path -> {} : callback;
         }
@@ -731,8 +763,19 @@ final class ProjectMapView extends VBox {
             modifiedState = modified;
         }
 
+        void setMarkerSuppliers(Predicate<Path> bookmarked, Predicate<Path> noted) {
+            bookmarkState = bookmarked == null ? path -> false : bookmarked;
+            noteState = noted == null ? path -> false : noted;
+        }
+
         void setEntries(List<ProjectMapModel.Entry> entries, Set<Path> expanded) {
+            int oldColumnCount = laidOutColumnCount;
             this.entries = entries == null ? List.of() : List.copyOf(entries);
+            laidOutColumnCount = this.entries.stream()
+                            .mapToInt(ProjectMapModel.Entry::depth)
+                            .max()
+                            .orElse(-1)
+                    + 1;
             measuredLabelWidths.clear();
             expandedSnapshot = expanded == null ? Set.of() : Set.copyOf(expanded);
             clearNodeTooltip();
@@ -750,6 +793,10 @@ final class ProjectMapView extends VBox {
                 viewportInitialized = true;
                 initialFitPending = true;
                 Platform.runLater(this::fitIfPending);
+            } else if (laidOutColumnCount > oldColumnCount) {
+                // A freshly opened column should arrive inside the viewport and keep the complete path
+                // centred. This also prevents reverse/vertical flows from placing it above existing cards.
+                Platform.runLater(this::fitContent);
             }
         }
 
@@ -779,7 +826,7 @@ final class ProjectMapView extends VBox {
         }
 
         void setFlowDirection(FlowDirection requested) {
-            FlowDirection next = requested == null ? FlowDirection.LEFT_TO_RIGHT : requested;
+            FlowDirection next = requested == null ? FlowDirection.RIGHT_TO_LEFT : requested;
             if (flowDirection == next) {
                 return;
             }
@@ -1140,7 +1187,8 @@ final class ProjectMapView extends VBox {
             double required = measuredLabelWidth(columnTitle(column)) + 28;
             for (ProjectMapModel.Entry entry : entries) {
                 if (entry.depth() == column.depth()) {
-                    required = Math.max(required, measuredLabelWidth(entry.name()) + 57);
+                    // File rows reserve a fixed tail for status dots, bookmark/note badges and Preview.
+                    required = Math.max(required, measuredLabelWidth(entry.name()) + (entry.directory() ? 57 : 92));
                 }
             }
             return Math.max(MIN_NODE_WIDTH, Math.ceil(required));
@@ -1368,6 +1416,12 @@ final class ProjectMapView extends VBox {
             g.fillText(entry.name(), box.x() + 31 * zoom, box.y() + 20.5 * zoom);
 
             drawStatusDots(g, entry, box);
+            if (!entry.directory()) {
+                drawFileMarkers(g, entry, box, isSelected);
+                g.setFill(isSelected ? Color.WHITE : color(mutedProbe, Color.web("#8b949e")));
+                g.setFont(Font.font(Math.max(9, 11 * zoom)));
+                g.fillText("◉", box.x() + box.width() - 21 * zoom, box.y() + 20.5 * zoom);
+            }
             if (entry.directory() && expandedSnapshot.contains(entry.path())) {
                 g.setFill(isSelected ? Color.WHITE : color(mutedProbe, Color.web("#8b949e")));
                 String indicator =
@@ -1462,11 +1516,42 @@ final class ProjectMapView extends VBox {
                                 ? color(successProbe, Color.web("#3fb950"))
                                 : color(accentProbe, Color.web("#58a6ff")));
             }
-            double x = box.x() + box.width() - 10 * zoom;
+            double markerWidth =
+                    (bookmarkedPaths.contains(entry.path()) ? 13 : 0) + (notedPaths.contains(entry.path()) ? 13 : 0);
+            // Keep the Preview target in the final 29 px and the semantic markers immediately to its left.
+            double x = box.x() + box.width() - (33 + markerWidth) * zoom;
             for (Color dot : dots.reversed()) {
                 g.setFill(dot);
                 g.fillOval(x - 5 * zoom, box.y() + 13 * zoom, 5 * zoom, 5 * zoom);
                 x -= 7 * zoom;
+            }
+        }
+
+        /** Small bookmark and note outlines drawn directly on the Canvas (no scene-graph nodes per row). */
+        private void drawFileMarkers(
+                GraphicsContext g, ProjectMapModel.Entry entry, NodeBox box, boolean selectedNode) {
+            if (entry.directory()) {
+                return;
+            }
+            double x = box.x() + box.width() - 35 * zoom;
+            double y = box.y() + 10 * zoom;
+            g.setLineWidth(Math.max(1, 1.25 * zoom));
+            if (notedPaths.contains(entry.path())) {
+                g.setStroke(selectedNode ? Color.WHITE : color(accentProbe, Color.web("#388bfd")));
+                g.strokeRoundRect(x - 4 * zoom, y, 8 * zoom, 7 * zoom, 2 * zoom, 2 * zoom);
+                g.strokeLine(x - 2 * zoom, y + 7 * zoom, x - 4 * zoom, y + 9 * zoom);
+                x -= 13 * zoom;
+            }
+            if (bookmarkedPaths.contains(entry.path())) {
+                g.setStroke(selectedNode ? Color.WHITE : color(warningProbe, Color.web("#d29922")));
+                g.beginPath();
+                g.moveTo(x - 3.5 * zoom, y);
+                g.lineTo(x + 3.5 * zoom, y);
+                g.lineTo(x + 3.5 * zoom, y + 9 * zoom);
+                g.lineTo(x, y + 6.5 * zoom);
+                g.lineTo(x - 3.5 * zoom, y + 9 * zoom);
+                g.closePath();
+                g.stroke();
             }
         }
 
@@ -1481,6 +1566,8 @@ final class ProjectMapView extends VBox {
         private void snapshotStates() {
             Set<Path> open = new HashSet<>();
             Set<Path> modified = new HashSet<>();
+            Set<Path> bookmarked = new HashSet<>();
+            Set<Path> noted = new HashSet<>();
             for (ProjectMapModel.Entry entry : entries) {
                 if (entry.directory()) {
                     continue;
@@ -1491,9 +1578,17 @@ final class ProjectMapView extends VBox {
                 if (safeTest(modifiedState, entry.path())) {
                     modified.add(entry.path());
                 }
+                if (safeTest(bookmarkState, entry.path())) {
+                    bookmarked.add(entry.path());
+                }
+                if (safeTest(noteState, entry.path())) {
+                    noted.add(entry.path());
+                }
             }
             openPaths = Set.copyOf(open);
             modifiedPaths = Set.copyOf(modified);
+            bookmarkedPaths = Set.copyOf(bookmarked);
+            notedPaths = Set.copyOf(noted);
         }
 
         private void mousePressed(MouseEvent event) {
@@ -1593,7 +1688,7 @@ final class ProjectMapView extends VBox {
                         TOOLTIP_TIME.format(Instant.ofEpochMilli(entry.modifiedMillis()))));
             }
 
-            List<String> statuses = new ArrayList<>(3);
+            List<String> statuses = new ArrayList<>(5);
             if (openPaths.contains(entry.path())) {
                 statuses.add(tr("project.map.tooltip.open"));
             }
@@ -1602,6 +1697,12 @@ final class ProjectMapView extends VBox {
             }
             if (gitState.containsKey(entry.path()) || gitDirectories.contains(entry.path())) {
                 statuses.add(tr("project.map.tooltip.gitChanged"));
+            }
+            if (bookmarkedPaths.contains(entry.path())) {
+                statuses.add(tr("project.map.tooltip.bookmarked"));
+            }
+            if (notedPaths.contains(entry.path())) {
+                statuses.add(tr("project.map.tooltip.personalNotes"));
             }
             if (!statuses.isEmpty()) {
                 lines.add(tr("project.map.tooltip.status", String.join(", ", statuses)));
@@ -1636,10 +1737,16 @@ final class ProjectMapView extends VBox {
                 return;
             }
             select(hit.entry().path());
-            if (hit.entry().directory() ? event.getClickCount() == 1 : event.getClickCount() >= 2) {
+            if (!hit.entry().directory() && previewHit(hit, event.getX())) {
+                onPreview.accept(hit.entry().path());
+            } else if (event.getClickCount() == 1) {
                 onActivate.accept(hit.entry());
             }
             event.consume();
+        }
+
+        private boolean previewHit(NodeBox box, double x) {
+            return x >= box.x() + box.width() - 29 * zoom;
         }
 
         private void contextMenuRequested(ContextMenuEvent event) {

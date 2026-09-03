@@ -27,6 +27,15 @@ class ScriptRunCommandTest {
         assertEquals(List.of("make", "test"), ScriptRunCommand.build("make", "test", List.of()));
     }
 
+    @Test
+    void anNpmScriptRunsWithArgumentsAfterTheSeparator() {
+        assertEquals(
+                List.of("npm", "run", "dev", "--", "--host", "0.0.0.0"),
+                ScriptRunCommand.build("npm", "dev", List.of("--host", "0.0.0.0")));
+        assertEquals(List.of("npm", "run", "test"), ScriptRunCommand.build("npm", "test", List.of()));
+        assertTrue(ScriptRunCommand.needsTarget("npm"));
+    }
+
     /**
      * A blank make target is not an incomplete configuration — a bare {@code make} runs the default goal,
      * which is a perfectly ordinary thing to want.

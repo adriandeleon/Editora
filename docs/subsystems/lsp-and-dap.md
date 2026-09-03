@@ -145,7 +145,12 @@ plain `normalize()` matching silently dropped every diagnostic.
 - **Structure outline** comes from `textDocument/documentSymbol`, mapped by
   [`lsp/DocumentSymbolMapper`](../../src/main/java/com/editora/lsp/DocumentSymbolMapper.java) into the
   neutral `SymbolNode` tree (handling both the hierarchical `DocumentSymbol` and legacy flat
-  `SymbolInformation` forms).
+  `SymbolInformation` forms). Rows display the symbol's 1-based source line; names, parameter types, and
+  source-derived return types reuse the declaration's applied syntax classes (falling back from symbol
+  kind), so they follow the active editor color theme. When no LSP outline is available, the fold/TextMate
+  fallback only borrows a symbol from a
+  preceding line for a standalone Allman-style opening brace; control-flow folds must not reuse nearby
+  method or call symbols.
 - **Loading bar**: the status bar shows an indeterminate bar while a server starts. It is cleared when
   `initialize` resolves — `LanguageServerSession` emits a synthetic `onStatus("ServiceReady", null)` on
   success / `("Error", null)` on failure. This is universal across every server (and a clean file that

@@ -16,10 +16,12 @@ import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 
 import com.editora.config.FileIdentity;
+import com.editora.config.NoteScope;
 import com.editora.config.NoteStatus;
 import com.editora.config.NoteStore;
 import com.editora.config.PathKeys;
 import com.editora.config.PersonalNote;
+import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.NoteDraft;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -57,6 +59,9 @@ final class NotesCoordinator {
         /** The open buffer for a store key, or {@code null} if that file isn't open. */
         EditorBuffer bufferForKey(String fileKey);
 
+        /** The open buffer for a concrete path, or {@code null} if that file isn't open. */
+        EditorBuffer bufferForPath(Path file);
+
         /** Installs the user's configured caret/edit keybindings on a dialog text control. */
         void installEmacsKeys(javafx.scene.control.TextInputControl control);
 
@@ -87,6 +92,7 @@ final class NotesCoordinator {
     private final NotesPanel panel;
     private final QuickOpen<NoteEntry> jumpPalette;
     private final QuickOpen<NoteEntry> searchPalette;
+    private Runnable onChanged = () -> {};
 
     private boolean supportApplied;
 
@@ -152,6 +158,78 @@ final class NotesCoordinator {
         return panel;
     }
 
+    void setOnChanged(Runnable callback) {
+        onChanged = callback == null ? () -> {} : callback;
+    }
+
+    boolean hasPersonalNotes(Path file) {
+        if (!isEnabled() || file == null) {
+            return false;
+        }
+        EditorBuffer open = ops.bufferForPath(file);
+        if (open != null) {
+            return !open.getNoteManager().snapshot().isEmpty();
+        }
+        List<PersonalNote> stored = notesFor(file);
+        return stored != null && !stored.isEmpty();
+    }
+
+    /** Prompts for and adds a first-line note without opening the file in an editor tab. */
+    void addPersonalNote(Path file) {
+        ifEnabled(() -> {
+            if (file == null) {
+                return;
+            }
+            showNoteDialog("", body -> addPersonalNote(file, body), null);
+        });
+    }
+
+    private void addPersonalNote(Path file, String body) {
+        EditorBuffer open = ops.bufferForPath(file);
+        if (open != null) {
+            NoteDraft draft = open.captureLineNoteDraft(0);
+            open.getNoteManager()
+                    .add(PersonalNote.create(open.fileIdentity(), draft.scope(), draft.anchor(), body, List.of()));
+            open.refreshGutterLine(0);
+            return;
+        }
+        String key = PathKeys.canonicalKey(file);
+        FileIdentity identity = FileIdentity.of(file);
+        PersonalNote note =
+                PersonalNote.create(identity, NoteScope.LINE, new TextAnchor(0, 0, 0, 0, "", "", ""), body, List.of());
+        List<PersonalNote> updated = new ArrayList<>(ops.notes().getOrDefault(key, List.of()));
+        updated.add(note);
+        ops.notes().put(key, updated);
+        ops.saveNotes();
+        refreshViews();
+    }
+
+    private List<PersonalNote> notesFor(Path file) {
+        String literal = file.toString();
+        Map<String, List<PersonalNote>> map = ops.notes();
+        List<PersonalNote> direct = map.get(literal);
+        if (direct != null) {
+            return direct;
+        }
+        for (List<PersonalNote> notes : map.values()) {
+            if (notes == null) {
+                continue;
+            }
+            for (PersonalNote note : notes) {
+                FileIdentity identity = note.file();
+                if (identity != null && (literal.equals(identity.path()) || literal.equals(identity.canonicalPath()))) {
+                    return notes;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void refreshViews() {
+        panel.refresh();
+        onChanged.run();
+    }
+
     /** The cross-project view the panel renders on each refresh (every bucket + the current key + a name resolver). */
     private NotesPanel.Scope scope() {
         return new NotesPanel.Scope(ops.allNotes(), ops.currentProjectKey(), ops::projectName);
@@ -190,9 +268,10 @@ final class NotesCoordinator {
         if (on && !supportApplied) {
             // off→on: populate open buffers' notes (restoreNotes early-returns while disabled).
             host.forEachBuffer(this::restoreNotes);
-            panel.refresh();
+            refreshViews();
         }
         supportApplied = on;
+        onChanged.run();
     }
 
     // --- per-buffer persistence (called from addBuffer / session restore / save) ---------------------
@@ -206,6 +285,7 @@ final class NotesCoordinator {
     void schedulePersistNotes(EditorBuffer buffer) {
         pendingPersist = buffer;
         persistDebounce.playFromStart();
+        onChanged.run();
     }
 
     private void flushPendingPersist() {
@@ -236,7 +316,7 @@ final class NotesCoordinator {
             map.put(key, NoteStore.mergePreservingOrder(map.get(key), snap));
         }
         ops.saveNotes();
-        panel.refresh();
+        refreshViews();
     }
 
     /** Re-applies a file's saved notes after open, re-attaching by content hash if the file was renamed. */
@@ -261,7 +341,7 @@ final class NotesCoordinator {
         if (moved || rekeyed) {
             persistNotes(buffer); // self-heal corrected positions / re-key / orphan status
         } else {
-            panel.refresh();
+            refreshViews();
         }
     }
 
@@ -275,7 +355,7 @@ final class NotesCoordinator {
         if (moved != null) {
             map.put(newKey, moved);
             ops.saveNotes();
-            panel.refresh();
+            refreshViews();
         }
     }
 
@@ -543,7 +623,7 @@ final class NotesCoordinator {
             Map<String, List<PersonalNote>> bucket = bucketFor(projectKey);
             if (bucket != null && bucket.remove(fileKey) != null) {
                 ops.saveNotes();
-                panel.refresh();
+                refreshViews();
             }
         }
     }
@@ -581,7 +661,7 @@ final class NotesCoordinator {
             map.put(fileKey, list);
         }
         ops.saveNotes();
-        panel.refresh();
+        refreshViews();
     }
 
     void exportNotes() {
