@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-02
+
 ### Added
 
 - **The Project tool window now has a visual Map navigator.** A Tree/Map switch preserves the existing
