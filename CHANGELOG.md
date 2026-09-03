@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settled editor features now share one whole-document snapshot per revision.** Syntax highlighting,
+  folding, TODO and lint scans, LSP synchronization, previews, run-target detection, saves, and Undo History
+  no longer ask RichTextFX to copy the same complete document independently after one edit burst. Each buffer
+  invalidates its single cached snapshot on the next text edit; existing generation guards still reject stale
+  background results.
+
 - **Find in Files now has one clear visual toggle.** Its duplicate tool-stripe icon has been removed in
   favor of the toolbar button, which now stays highlighted for as long as the Search tool window is open.
 

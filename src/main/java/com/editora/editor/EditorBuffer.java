@@ -410,6 +410,8 @@ public class EditorBuffer implements TabContent {
      * caret back on the same offset). Bumped for edits made in either view (they share the document).
      */
     private long docVersion;
+    /** One full-text materialization shared by every consumer of the current {@link #docVersion}. */
+    private final DocumentSnapshots documentSnapshots = new DocumentSnapshots();
     /** Per-buffer Emacs mark ring (session-only); shifted through edits by the subscription in the ctor. */
     private final com.editora.editops.MarkRing markRing = new com.editora.editops.MarkRing();
     /**
@@ -584,7 +586,7 @@ public class EditorBuffer implements TabContent {
     /** Message currently shown by {@link #lspTooltip} — skips a re-{@code show()} (flicker) on each move. */
     private String lspTooltipText;
 
-    private final FoldManager folds = new FoldManager(area);
+    private final FoldManager folds = new FoldManager(area, this::documentTextSnapshot);
 
     /** Pinned enclosing-scope headers over the top of the code pane; see {@link StickyScroll}. */
     private final StickyScrollBar stickyScroll = new StickyScrollBar();
@@ -808,7 +810,12 @@ public class EditorBuffer implements TabContent {
         // synchronously by the edit) rather than the debounced stream, so a change is visible the instant it
         // happens; both views share the document, so this one subscription covers either. One long++ per
         // edit — off the per-keystroke cost budget.
-        area.plainTextChanges().subscribe(c -> docVersion++);
+        area.plainTextChanges().subscribe(c -> {
+            docVersion++;
+            // Drop our reference to the previous version immediately. In-flight background consumers keep
+            // their own immutable String; the next settled consumer materializes the new version once.
+            documentSnapshots.invalidate();
+        });
         // Mark ring: shift stored offsets across every edit so a mark still points at its text after
         // typing (one cheap pass over <=16 ints per edit; skipped when the ring is empty, the common case).
         area.plainTextChanges()
@@ -2652,7 +2659,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         TodoMatcher matcher = todoMatcher; // may be reassigned on the FX thread; capture the current one
-        String text = area.getText();
+        String text = documentTextSnapshot();
         HIGHLIGHT_POOL.execute(() -> {
             java.util.List<TodoMark> marks;
             try {
@@ -3153,7 +3160,7 @@ public class EditorBuffer implements TabContent {
         if (!mermaidLintEnabled || !isDiagram() || hugeFile || mermaidValidator == null) {
             return;
         }
-        mermaidValidator.accept(area.getText(), lintOverlay()::setDiagnostics);
+        mermaidValidator.accept(documentTextSnapshot(), lintOverlay()::setDiagnostics);
     }
 
     /** Shows the maid message(s) in a tooltip when hovering a squiggled span (overlay is mouse-transparent). */
@@ -3237,7 +3244,7 @@ public class EditorBuffer implements TabContent {
         if (!markdownLintEnabled || !isMarkdown() || hugeFile || markdownLintValidator == null) {
             return;
         }
-        markdownLintValidator.accept(area.getText(), this::applyMarkdownLintDiagnostics);
+        markdownLintValidator.accept(documentTextSnapshot(), this::applyMarkdownLintDiagnostics);
     }
 
     /** Pushes fresh lint diagnostics to the squiggle overlay + the scrollbar stripe + the minimap ticks. */
@@ -3435,7 +3442,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         lastLspSentVersion = docVersion;
-        lspChangeListener.accept(area.getText());
+        lspChangeListener.accept(documentTextSnapshot());
     }
 
     /** Injects the debounced pull-diagnostics request (fired on the same pulse as didChange); null disables. */
@@ -3733,7 +3740,7 @@ public class EditorBuffer implements TabContent {
         // Only materialize the whole document when we actually scan it (compact-source / .http / test/main
         // detection). Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on
         // every 150 ms edit pulse just to discard it as run-ineligible.
-        String text = (eligible || httpEligible || testEligible || mainEligible) ? area.getText() : "";
+        String text = (eligible || httpEligible || testEligible || mainEligible) ? documentTextSnapshot() : "";
         boolean nowRunnable;
         int nowLine;
         java.util.List<Integer> nowHttpLines = java.util.List.of();
@@ -4121,7 +4128,7 @@ public class EditorBuffer implements TabContent {
 
     /** Current document text (for an initial didOpen). */
     public String text() {
-        return area.getText();
+        return documentTextSnapshot();
     }
 
     /** Shows the LSP diagnostic message(s) in a tooltip when hovering a squiggled span. */
@@ -5186,6 +5193,7 @@ public class EditorBuffer implements TabContent {
         // largest thing hanging off it -- up to MAX whole-document snapshots -- and releasing them at the
         // moment the tab closes returns that memory now rather than at the next collection.
         undoHistory.clear();
+        documentSnapshots.invalidate();
         unsubscribePreview();
         disposeMultiCaret();
         previewGen++; // discard any in-flight preview result for this (now closed) buffer
@@ -5490,7 +5498,7 @@ public class EditorBuffer implements TabContent {
         if (hasGithubActionsPreview()) {
             // A workflow is also YAML, so this must precede the structured (YAML tree) branch to win. Parse
             // off-thread, build the specialized workflow digest on the FX thread into the shared host.
-            String src = area.getText();
+            String src = documentTextSnapshot();
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
                 try {
@@ -5511,7 +5519,7 @@ public class EditorBuffer implements TabContent {
             // docs on the FX thread into the self-scrolling structured host. The previewGen guard drops a
             // superseded render (mirrors the Markwhen branch).
             StructuredParser.Format sfmt = structuredFormat();
-            String src = area.getText();
+            String src = documentTextSnapshot();
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
                 try {
@@ -5534,7 +5542,7 @@ public class EditorBuffer implements TabContent {
             // dependencies, plugins, profiles), build the section list on the FX thread into the shared
             // self-scrolling host. Must precede the XML branch — a pom is XML, and its summary wins unless
             // the user switched this buffer to the generic tree.
-            String src = area.getText();
+            String src = documentTextSnapshot();
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
                 try {
@@ -5553,7 +5561,7 @@ public class EditorBuffer implements TabContent {
         if (hasXmlPreview()) {
             // Whole file is one XML doc: parse off-thread (JDK DOM), build the DOM tree on the FX thread into
             // the same self-scrolling host as the JSON/YAML/TOML tree. The previewGen guard drops a stale render.
-            String src = area.getText();
+            String src = documentTextSnapshot();
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
                 try {
@@ -5573,7 +5581,7 @@ public class EditorBuffer implements TabContent {
             // Whole file is a crontab: parse off-thread (pure, cheap), decode each schedule + compute the next
             // fire times, build the preview node on the FX thread into the shared self-scrolling host. The
             // "now" is captured here on the FX thread so the render is deterministic (mirrors the tree branch).
-            String src = area.getText();
+            String src = documentTextSnapshot();
             java.time.LocalDateTime now = java.time.LocalDateTime.now();
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
@@ -5593,7 +5601,7 @@ public class EditorBuffer implements TabContent {
         if (hasFstabPreview()) {
             // Whole file is an /etc/fstab: parse off-thread (pure, cheap), decode each mount line into English,
             // build the preview node on the FX thread into the shared self-scrolling host. previewGen-guarded.
-            String src = area.getText();
+            String src = documentTextSnapshot();
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
                 try {
@@ -5612,7 +5620,7 @@ public class EditorBuffer implements TabContent {
         if (hasSystemdPreview()) {
             // Whole file is a systemd unit: parse off-thread, decode directives (+ OnCalendar next runs) into
             // English, build the preview node on the FX thread into the shared self-scrolling host.
-            String src = area.getText();
+            String src = documentTextSnapshot();
             java.time.LocalDateTime now = java.time.LocalDateTime.now();
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
@@ -5631,7 +5639,7 @@ public class EditorBuffer implements TabContent {
         }
         if (hasSshConfigPreview()) {
             // Whole file is an SSH client config: parse off-thread into Host/Match blocks, decode into English.
-            String src = area.getText();
+            String src = documentTextSnapshot();
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
                 try {
@@ -5650,7 +5658,7 @@ public class EditorBuffer implements TabContent {
         }
         if (hasDockerfilePreview()) {
             // Whole file is a Dockerfile: parse off-thread into build stages, distill each into a digest.
-            String src = area.getText();
+            String src = documentTextSnapshot();
             long gen = ++previewGen;
             PREVIEW_POOL.submit(() -> {
                 try {
@@ -5676,8 +5684,8 @@ public class EditorBuffer implements TabContent {
             // A stable per-buffer surface key so live-editing pulses coalesce (only the latest render spawns
             // mmdc) instead of piling up ~4 s Chromium renders on every 250 ms pause (#458).
             String surfaceKey = path != null ? path.toString() : ("mmd@" + System.identityHashCode(this));
-            javafx.scene.layout.VBox box =
-                    new javafx.scene.layout.VBox(MermaidImages.node(area.getText(), lw -> lw * scale, surfaceKey));
+            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
+                    MermaidImages.node(documentTextSnapshot(), lw -> lw * scale, surfaceKey));
             box.getStyleClass().add("markdown-preview");
             StackPane wrap = new StackPane(box);
             wrap.getStyleClass().add("markdown-preview-wrap");
@@ -5692,7 +5700,7 @@ public class EditorBuffer implements TabContent {
             double v = previewPane().getVvalue();
             double scale = previewFontScale;
             javafx.scene.layout.VBox box =
-                    new javafx.scene.layout.VBox(SvgImages.node(area.getText(), lw -> lw * scale));
+                    new javafx.scene.layout.VBox(SvgImages.node(documentTextSnapshot(), lw -> lw * scale));
             box.getStyleClass().add("markdown-preview");
             StackPane wrap = new StackPane(box);
             wrap.getStyleClass().add("markdown-preview-wrap");
@@ -5708,8 +5716,8 @@ public class EditorBuffer implements TabContent {
             double v = previewPane().getVvalue();
             double scale = previewFontScale;
             String surfaceKey = "diagram@" + System.identityHashCode(this);
-            javafx.scene.layout.VBox box =
-                    new javafx.scene.layout.VBox(DiagramImages.node(dk, area.getText(), lw -> lw * scale, surfaceKey));
+            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
+                    DiagramImages.node(dk, documentTextSnapshot(), lw -> lw * scale, surfaceKey));
             box.getStyleClass().add("markdown-preview");
             StackPane wrap = new StackPane(box);
             wrap.getStyleClass().add("markdown-preview-wrap");
@@ -5734,7 +5742,7 @@ public class EditorBuffer implements TabContent {
             String retainKey = path != null ? path.toString() : ("untitled@" + System.identityHashCode(this));
             String surfaceKey = "typst@" + System.identityHashCode(this);
             javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(TypstImages.node(
-                    area.getText(), lw -> lw * scale, retainKey, surfaceKey, fileDir, root, getDisplayName()));
+                    documentTextSnapshot(), lw -> lw * scale, retainKey, surfaceKey, fileDir, root, getDisplayName()));
             box.getStyleClass().add("markdown-preview");
             StackPane wrap = new StackPane(box);
             wrap.getStyleClass().add("markdown-preview-wrap");
@@ -5746,7 +5754,7 @@ public class EditorBuffer implements TabContent {
             // Whole file is one timeline. Parse off-thread (pure, cheap), build the node on the FX thread.
             // Horizontal zoom scales the axis width; preserve both scroll positions (the axis scrolls
             // horizontally). The previewGen guard drops a superseded render.
-            String src = area.getText();
+            String src = documentTextSnapshot();
             double vw = previewPane().getViewportBounds().getWidth();
             double scale = previewFontScale;
             long gen = ++previewGen;
@@ -5772,7 +5780,7 @@ public class EditorBuffer implements TabContent {
             });
             return;
         }
-        String md = area.getText();
+        String md = documentTextSnapshot();
         Path baseDir = path == null ? null : path.getParent();
         long gen = ++previewGen;
         PREVIEW_POOL.submit(() -> {
@@ -6512,7 +6520,7 @@ public class EditorBuffer implements TabContent {
         if (disposed || largeFile || area.getLength() > UNDO_HISTORY_MAX_BYTES) {
             return;
         }
-        if (undoHistory.add(area.getText(), area.getCaretPosition(), System.currentTimeMillis())
+        if (undoHistory.add(documentTextSnapshot(), area.getCaretPosition(), System.currentTimeMillis())
                 && onUndoHistoryChanged != null) {
             onUndoHistoryChanged.run();
         }
@@ -9795,6 +9803,19 @@ public class EditorBuffer implements TabContent {
         return docVersion;
     }
 
+    /**
+     * Immutable whole-document text for the current version. Must be called on the FX thread, like
+     * RichTextFX's {@code getText()}; repeated consumers of the same version receive the same String.
+     */
+    private String documentTextSnapshot() {
+        return documentSnapshots.get(docVersion, area::getText).text();
+    }
+
+    /** Number of whole-document strings this buffer has materialized through the shared cache (tests). */
+    long documentSnapshotMaterializations() {
+        return documentSnapshots.materializations();
+    }
+
     /** Emacs {@code C-SPC}: record {@code pos} on this buffer's mark ring so {@code popMark} can return. */
     public void pushMark(int pos) {
         markRing.push(pos);
@@ -10092,7 +10113,7 @@ public class EditorBuffer implements TabContent {
      * the accessible portion.
      */
     public String getContent() {
-        return narrowPrefix == null ? area.getText() : narrowPrefix + area.getText() + narrowSuffix;
+        return narrowPrefix == null ? documentTextSnapshot() : narrowPrefix + documentTextSnapshot() + narrowSuffix;
     }
 
     // --- Narrowing -------------------------------------------------------------------------------
@@ -10187,7 +10208,7 @@ public class EditorBuffer implements TabContent {
 
     /** The accessible portion — the narrowed region, or the whole document when not narrowed. */
     public String getVisibleContent() {
-        return area.getText();
+        return documentTextSnapshot();
     }
 
     /** Length of {@link #getContent()} without building it — the per-keystroke dirty-check gate. */
@@ -10256,7 +10277,7 @@ public class EditorBuffer implements TabContent {
             symbols = List.of();
             onSymbolsChanged.run();
         }
-        String text = area.getText();
+        String text = documentTextSnapshot();
         int len = text.length();
         if (len == 0) {
             return;
@@ -10350,7 +10371,7 @@ public class EditorBuffer implements TabContent {
         }
         var startState = from == 0 ? null : lineStates.get(from - 1);
         int startDepth = from == 0 || !colorBrackets ? 0 : lineDepths.get(from - 1);
-        String text = area.getText();
+        String text = documentTextSnapshot();
         IGrammar g = grammar;
         int fromLine = from;
         long gen = ++highlightGen;
