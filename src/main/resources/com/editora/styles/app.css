@@ -1097,6 +1097,18 @@
 .project-map-column-pin:selected .toolbar-icon {
     -fx-fill: -color-accent-fg;
 }
+.project-map-column-close {
+    -fx-background-color: transparent;
+    -fx-background-radius: 5;
+    -fx-font-size: 13px;
+    -fx-padding: 0;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-column-close:hover,
+.project-map-column-close:focused {
+    -fx-background-color: -color-accent-subtle;
+    -fx-text-fill: -color-fg-default;
+}
 .project-map-zoom {
     -fx-background-color: -color-bg-overlay;
     -fx-background-radius: 5;

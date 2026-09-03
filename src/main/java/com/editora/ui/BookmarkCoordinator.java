@@ -146,22 +146,30 @@ final class BookmarkCoordinator {
 
     /** Adds a deterministic file-manager bookmark at the file's first line without opening a tab. */
     void addBookmark(Path file) {
+        addBookmark(file, 0);
+    }
+
+    /** Adds a bookmark to a specific line from a read-only code preview without opening an editor tab. */
+    void addBookmark(Path file, int requestedLine) {
         if (file == null) {
             return;
         }
+        int line = Math.max(0, requestedLine);
         EditorBuffer open = ops.bufferForPath(file);
         if (open != null) {
-            if (!open.getBookmarkManager().isBookmarked(0)) {
-                open.getBookmarkManager().add(0, "");
-                open.refreshGutterLine(0);
+            line = Math.min(line, open.getArea().getParagraphs().size() - 1);
+            if (!open.getBookmarkManager().isBookmarked(line)) {
+                open.getBookmarkManager().add(line, "");
+                open.refreshGutterLine(line);
             }
             return;
         }
         String key = normalizedKey(file);
         List<Bookmark> marks = bookmarksFor(file);
         List<Bookmark> updated = marks == null ? new ArrayList<>() : new ArrayList<>(marks);
-        if (updated.stream().noneMatch(mark -> mark.line() == 0)) {
-            updated.add(new Bookmark(0, "", ""));
+        int targetLine = line;
+        if (updated.stream().noneMatch(mark -> mark.line() == targetLine)) {
+            updated.add(new Bookmark(targetLine, "", ""));
             ops.bookmarks().put(key, updated);
             ops.saveBookmarks();
             refreshViews();

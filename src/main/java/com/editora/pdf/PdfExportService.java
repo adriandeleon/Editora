@@ -7,6 +7,8 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
+import javafx.scene.image.Image;
+import javafx.scene.image.PixelFormat;
 
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.TextMateHighlighter;
@@ -126,6 +128,49 @@ public final class PdfExportService {
             Result r = result;
             Platform.runLater(() -> onResult.accept(r));
         });
+    }
+
+    /** Exports already-rendered JavaFX images, such as a complete Project Map snapshot, off the FX thread. */
+    public void exportFxImages(java.util.List<Image> images, String pageSize, Path out, Consumer<Result> onResult) {
+        exec.submit(() -> {
+            Result result;
+            try {
+                java.util.List<java.awt.image.BufferedImage> converted = new java.util.ArrayList<>();
+                for (Image image : images == null ? java.util.List.<Image>of() : images) {
+                    java.awt.image.BufferedImage buffered = toBufferedImage(image);
+                    if (buffered != null) {
+                        converted.add(buffered);
+                    }
+                }
+                if (converted.isEmpty()) {
+                    throw new IllegalStateException("nothing to export (the map produced no image)");
+                }
+                ImagePdfWriter.write(converted, pageSize, out);
+                result = new Result(true, "");
+            } catch (Throwable e) {
+                LOG.log(java.util.logging.Level.SEVERE, "JavaFX image PDF export failed", e);
+                result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
+            }
+            Result delivered = result;
+            Platform.runLater(() -> onResult.accept(delivered));
+        });
+    }
+
+    private static java.awt.image.BufferedImage toBufferedImage(Image image) {
+        if (image == null || image.getPixelReader() == null) {
+            return null;
+        }
+        int width = (int) Math.ceil(image.getWidth());
+        int height = (int) Math.ceil(image.getHeight());
+        if (width < 1 || height < 1) {
+            return null;
+        }
+        int[] pixels = new int[Math.multiplyExact(width, height)];
+        image.getPixelReader().getPixels(0, 0, width, height, PixelFormat.getIntArgbInstance(), pixels, 0, width);
+        java.awt.image.BufferedImage buffered =
+                new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        buffered.setRGB(0, 0, width, height, pixels, 0, width);
+        return buffered;
     }
 
     /** Stops the background export thread (called when the owning window closes). */
