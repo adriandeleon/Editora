@@ -676,10 +676,21 @@ class ProjectMapViewFxTest {
                         origin(fileBox, "x") + (double) FxTestSupport.call(fileBox, "width", new Class<?>[0]) - 8;
                 click(surface, previewX, center(fileBox, "y", "height"));
                 ProjectMapPreview preview = previewFor(mapView, file);
+                mapView.applyCss();
+                mapView.layout();
+                preview.layout();
                 assertTrue(preview.isVisible());
                 assertEquals(file, preview.path());
                 assertTrue(preview.editor().getText().contains("value = 8"), "open-buffer content should win");
-                assertTrue(preview.getWidth() >= 600, "the preview should remain wide when sharing the viewport");
+                org.fxmisc.flowless.VirtualizedScrollPane<?> editorScroll =
+                        FxTestSupport.field(preview, "editorScroll");
+                double contentWidth = editorScroll.totalWidthEstimateProperty().getValue();
+                assertTrue(
+                        contentWidth <= editorScroll.getWidth(),
+                        () -> "the preview should fit its content without horizontal scrolling: "
+                                + contentWidth
+                                + " > "
+                                + editorScroll.getWidth());
                 assertEquals(420, preview.getHeight(), 0.001);
                 javafx.scene.layout.BorderPane frame = FxTestSupport.field(preview, "frame");
                 assertTrue(frame.getCenter() instanceof org.fxmisc.flowless.VirtualizedScrollPane<?>);
