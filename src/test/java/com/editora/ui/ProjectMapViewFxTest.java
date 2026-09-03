@@ -31,6 +31,9 @@ import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.scene.text.Font;
+import javafx.scene.text.FontWeight;
+import javafx.scene.text.Text;
 import javafx.stage.Stage;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -163,14 +166,16 @@ class ProjectMapViewFxTest {
 
     @Test
     void oneClickExpandsAndCollapsesFolderNodes() throws Exception {
+        Path project =
+                Files.createDirectory(root.resolve("project")).toAbsolutePath().normalize();
         Path source =
-                Files.createDirectory(root.resolve("src")).toAbsolutePath().normalize();
+                Files.createDirectory(project.resolve("src")).toAbsolutePath().normalize();
         ProjectMapView mapView =
                 FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
         try {
             FxTestSupport.runOnFx(() -> {
                 new Scene(mapView, 500, 300);
-                mapView.setRoot(root);
+                mapView.setRoot(project);
                 mapView.applyCss();
                 mapView.resize(500, 300);
                 mapView.layout();
@@ -179,10 +184,10 @@ class ProjectMapViewFxTest {
                 surface.resize(500, 240);
                 surface.layout();
                 List<ProjectMapModel.Entry> entries = List.of(
-                        new ProjectMapModel.Entry(root, null, 0, true),
-                        new ProjectMapModel.Entry(source, root, 1, true));
+                        new ProjectMapModel.Entry(project, null, 0, true),
+                        new ProjectMapModel.Entry(source, project, 1, true));
                 FxTestSupport.call(
-                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
+                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(project));
 
                 Object sourceBox = boxFor(surface, source);
                 double clickX = center(sourceBox, "x", "width");
@@ -201,11 +206,10 @@ class ProjectMapViewFxTest {
                 @SuppressWarnings("unchecked")
                 java.util.Optional<ProjectMapModel.Entry> selected = (java.util.Optional<ProjectMapModel.Entry>)
                         FxTestSupport.call(surface, "selectedEntry", new Class<?>[0]);
-                assertEquals(
-                        root.toAbsolutePath().normalize(),
-                        selected.orElseThrow().path());
+                assertEquals(project, selected.orElseThrow().path());
 
-                click(surface, clickX, clickY);
+                Object currentSourceBox = boxFor(surface, source);
+                click(surface, center(currentSourceBox, "x", "width"), center(currentSourceBox, "y", "height"));
                 assertFalse(mapView.expandedDirectories().contains(source));
             });
         } finally {
@@ -287,7 +291,9 @@ class ProjectMapViewFxTest {
 
     @Test
     void rightClickSelectsTheNodeAndRequestsItsSharedContextMenu() throws Exception {
-        Path file = Files.writeString(root.resolve("notes.txt"), "hello")
+        Path project =
+                Files.createDirectory(root.resolve("project")).toAbsolutePath().normalize();
+        Path file = Files.writeString(project.resolve("notes.txt"), "hello")
                 .toAbsolutePath()
                 .normalize();
         AtomicReference<ProjectMapModel.Entry> requested = new AtomicReference<>();
@@ -303,10 +309,10 @@ class ProjectMapViewFxTest {
                 Region surface = FxTestSupport.field(mapView, "surface");
                 surface.resize(500, 240);
                 List<ProjectMapModel.Entry> entries = List.of(
-                        new ProjectMapModel.Entry(root, null, 0, true),
-                        new ProjectMapModel.Entry(file, root, 1, false));
+                        new ProjectMapModel.Entry(project, null, 0, true),
+                        new ProjectMapModel.Entry(file, project, 1, false));
                 FxTestSupport.call(
-                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
+                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(project));
                 mapView.setContextMenuFactory(entry -> {
                     requested.set(entry);
                     return null;
@@ -366,7 +372,9 @@ class ProjectMapViewFxTest {
 
     @Test
     void mapContextMenuClosesOnTheNextPressAnywhereInTheWindow() throws Exception {
-        Path file = root.resolve("notes.txt").toAbsolutePath().normalize();
+        Path project =
+                Files.createDirectory(root.resolve("project")).toAbsolutePath().normalize();
+        Path file = project.resolve("notes.txt").toAbsolutePath().normalize();
         AtomicReference<Stage> stageRef = new AtomicReference<>();
         AtomicReference<ContextMenu> menuRef = new AtomicReference<>();
         ProjectMapView mapView =
@@ -388,9 +396,9 @@ class ProjectMapViewFxTest {
                         "setEntries",
                         new Class<?>[] {List.class, Set.class},
                         List.of(
-                                new ProjectMapModel.Entry(root, null, 0, true),
-                                new ProjectMapModel.Entry(file, root, 1, false)),
-                        Set.of(root));
+                                new ProjectMapModel.Entry(project, null, 0, true),
+                                new ProjectMapModel.Entry(file, project, 1, false)),
+                        Set.of(project));
                 ContextMenu menu = new ContextMenu(new MenuItem("Open"));
                 menu.setAutoHide(false); // exercise the map's explicit fallback, not the native popup grab
                 menuRef.set(menu);
@@ -468,6 +476,67 @@ class ProjectMapViewFxTest {
                         .orElseThrow();
                 double zoom = FxTestSupport.field(surface, "zoom");
                 assertEquals(12 * zoom, columnBottom - lastRowBottom, 0.001);
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
+    void columnsExpandToShowFullNamesWithoutBreakingDirectionalSpacing() throws Exception {
+        String longName = "a_very_long_directory_name_that_must_remain_fully_visible_in_the_canvas";
+        Path longFolder = root.resolve(longName).toAbsolutePath().normalize();
+        Path shortFile = root.resolve("z.txt").toAbsolutePath().normalize();
+        Path child = longFolder.resolve("Child.java");
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 1_000, 600);
+                mapView.resize(1_000, 600);
+                mapView.layout();
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        List.of(
+                                new ProjectMapModel.Entry(root, null, 0, true),
+                                new ProjectMapModel.Entry(longFolder, root, 1, true),
+                                new ProjectMapModel.Entry(shortFile, root, 1, false),
+                                new ProjectMapModel.Entry(child, longFolder, 2, false)),
+                        Set.of(root, longFolder));
+
+                double zoom = FxTestSupport.field(surface, "zoom");
+                Object folderBox = boxFor(surface, longFolder);
+                double folderWidth = (double) FxTestSupport.call(folderBox, "width", new Class<?>[0]);
+                Text measure = new Text(longName);
+                measure.setFont(Font.font("System", FontWeight.SEMI_BOLD, 12));
+                assertTrue(
+                        folderWidth / zoom >= measure.getLayoutBounds().getWidth() + 57,
+                        "node width must reserve the full label plus icon and status padding");
+
+                Object childBox = boxFor(surface, child);
+                assertEquals(
+                        origin(folderBox, "x") + folderWidth + 50 * zoom,
+                        origin(childBox, "x"),
+                        0.001,
+                        "the next column must follow the expanded width");
+
+                FxTestSupport.call(
+                        surface,
+                        "setFlowDirection",
+                        new Class<?>[] {ProjectMapView.FlowDirection.class},
+                        ProjectMapView.FlowDirection.TOP_TO_BOTTOM);
+                Object verticalLong = boxFor(surface, longFolder);
+                Object verticalShort = boxFor(surface, shortFile);
+                assertEquals(
+                        origin(verticalLong, "x")
+                                + (double) FxTestSupport.call(verticalLong, "width", new Class<?>[0])
+                                + 9 * zoom,
+                        origin(verticalShort, "x"),
+                        0.001,
+                        "vertical flows must use the content-sized width between siblings");
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);

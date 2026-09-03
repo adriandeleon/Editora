@@ -59,6 +59,7 @@ import javafx.scene.paint.Paint;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.scene.text.Text;
 import javafx.stage.WindowEvent;
 import javafx.util.Duration;
 import javafx.util.StringConverter;
@@ -558,7 +559,7 @@ final class ProjectMapView extends VBox {
     /** Canvas surface with a single keyboard focus target and deterministic screen-space hit boxes. */
     private final class MapSurface extends Region {
 
-        private static final double NODE_WIDTH = 164;
+        private static final double MIN_NODE_WIDTH = 164;
         private static final double NODE_HEIGHT = 32;
         private static final double COLUMN_GAP = 50;
         private static final double ROW_GAP = 9;
@@ -589,6 +590,7 @@ final class ProjectMapView extends VBox {
         private final Rectangle oliveProbe = probe("project-map-probe-olive");
         private final Rectangle violetProbe = probe("project-map-probe-violet");
         private final Tooltip nodeTooltip = new Tooltip();
+        private final Text textMeasurer = new Text();
         private final List<NodeBox> boxes = new ArrayList<>();
         private final List<ColumnBox> columnBoxes = new ArrayList<>();
         private final Map<IconKey, Image> iconImages = new HashMap<>();
@@ -596,6 +598,7 @@ final class ProjectMapView extends VBox {
         private final Map<Integer, ColumnLayout> columnLayouts = new HashMap<>();
         private final Map<Integer, String> columnQueries = new HashMap<>();
         private final Map<Integer, Boolean> columnShowHidden = new HashMap<>();
+        private final Map<String, Double> measuredLabelWidths = new HashMap<>();
 
         private List<ProjectMapModel.Entry> entries = List.of();
         private Set<Path> expandedSnapshot = Set.of();
@@ -638,6 +641,7 @@ final class ProjectMapView extends VBox {
             // The project-tree class supplies the same per-editor-theme folder/file looked-up colors used
             // by PathCell. It has no TreeView skin effect on this Region.
             getStyleClass().addAll("project-map-surface", "project-tree");
+            textMeasurer.setFont(Font.font("System", FontWeight.SEMI_BOLD, 12));
             iconRasterizer.setManaged(false);
             iconRasterizer.setMouseTransparent(true);
             iconRasterizer.setMinSize(ICON_SIZE, ICON_SIZE);
@@ -729,6 +733,7 @@ final class ProjectMapView extends VBox {
 
         void setEntries(List<ProjectMapModel.Entry> entries, Set<Path> expanded) {
             this.entries = entries == null ? List.of() : List.copyOf(entries);
+            measuredLabelWidths.clear();
             expandedSnapshot = expanded == null ? Set.of() : Set.copyOf(expanded);
             clearNodeTooltip();
             if (selected == null
@@ -756,6 +761,7 @@ final class ProjectMapView extends VBox {
             columnLayouts.clear();
             columnQueries.clear();
             columnShowHidden.clear();
+            measuredLabelWidths.clear();
             viewportInitialized = false;
             initialFitPending = false;
             resetViewport();
@@ -768,6 +774,7 @@ final class ProjectMapView extends VBox {
             }
             columnQueries.clear();
             columnShowHidden.clear();
+            measuredLabelWidths.clear();
             repaint();
         }
 
@@ -825,6 +832,7 @@ final class ProjectMapView extends VBox {
             columnLayouts.clear();
             columnQueries.clear();
             columnShowHidden.clear();
+            measuredLabelWidths.clear();
         }
 
         void repaint() {
@@ -1041,31 +1049,37 @@ final class ProjectMapView extends VBox {
             }
 
             List<ProjectMapModel.Column> columns = ProjectMapModel.columns(entries, columnQueries, columnShowHidden);
+            Map<Integer, Double> nodeWidths = new HashMap<>();
+            for (ProjectMapModel.Column column : columns) {
+                nodeWidths.put(column.depth(), nodeWidthFor(column));
+            }
+            Map<Integer, Double> horizontalOrigins = horizontalOrigins(columns, nodeWidths);
             for (ProjectMapModel.Column column : columns) {
                 int depth = column.depth();
                 ColumnLayout layout = columnLayouts.computeIfAbsent(depth, ignored -> new ColumnLayout());
                 double headerHeight = columnHeaderHeight(depth);
                 boolean verticalFlow = isVerticalFlow();
                 double direction = isReverseFlow() ? -1 : 1;
+                double nodeWidth = nodeWidths.get(depth);
                 double depthStep = verticalFlow
                         ? COLUMN_TOP_INSET + COLUMN_HEADER_HEIGHT + NODE_HEIGHT + COLUMN_BOTTOM_PADDING + COLUMN_GAP
-                        : NODE_WIDTH + COLUMN_GAP;
-                double columnWorldX = WORLD_PADDING + (verticalFlow ? 0 : direction * depth * depthStep) + layout.x;
+                        : 0;
+                double columnWorldX = (verticalFlow ? WORLD_PADDING : horizontalOrigins.get(depth)) + layout.x;
                 double columnWorldY = WORLD_PADDING + (verticalFlow ? direction * depth * depthStep : 0) + layout.y;
                 for (int row = 0; row < column.entries().size(); row++) {
-                    double worldX = columnWorldX + (verticalFlow ? row * (NODE_WIDTH + ROW_GAP) : 0);
+                    double worldX = columnWorldX + (verticalFlow ? row * (nodeWidth + ROW_GAP) : 0);
                     double worldY = columnWorldY + headerHeight + (verticalFlow ? 0 : row * (NODE_HEIGHT + ROW_GAP));
                     boxes.add(new NodeBox(
                             column.entries().get(row),
                             screenX(worldX),
                             screenY(worldY),
-                            NODE_WIDTH * zoom,
+                            nodeWidth * zoom,
                             NODE_HEIGHT * zoom));
                 }
                 int rowCount = column.entries().size();
                 double rowsHeight = rowCount == 0 ? 0 : rowCount * NODE_HEIGHT + (rowCount - 1) * ROW_GAP;
-                double rowsWidth = rowCount == 0 ? NODE_WIDTH : rowCount * NODE_WIDTH + (rowCount - 1) * ROW_GAP;
-                double cardWidth = verticalFlow ? rowsWidth + 20 : NODE_WIDTH + 20;
+                double rowsWidth = rowCount == 0 ? nodeWidth : rowCount * nodeWidth + (rowCount - 1) * ROW_GAP;
+                double cardWidth = verticalFlow ? rowsWidth + 20 : nodeWidth + 20;
                 double cardHeight = COLUMN_TOP_INSET
                         + headerHeight
                         + (verticalFlow ? NODE_HEIGHT : rowsHeight)
@@ -1103,6 +1117,40 @@ final class ProjectMapView extends VBox {
             drawOverview(g, width, height);
             layoutColumnControls();
             g.setGlobalAlpha(1);
+        }
+
+        private Map<Integer, Double> horizontalOrigins(
+                List<ProjectMapModel.Column> columns, Map<Integer, Double> nodeWidths) {
+            Map<Integer, Double> result = new HashMap<>();
+            double origin = WORLD_PADDING;
+            double previousWidth = 0;
+            for (int index = 0; index < columns.size(); index++) {
+                ProjectMapModel.Column column = columns.get(index);
+                double nodeWidth = nodeWidths.get(column.depth());
+                if (index > 0) {
+                    origin += isReverseFlow() ? -(nodeWidth + COLUMN_GAP) : previousWidth + COLUMN_GAP;
+                }
+                result.put(column.depth(), origin);
+                previousWidth = nodeWidth;
+            }
+            return result;
+        }
+
+        private double nodeWidthFor(ProjectMapModel.Column column) {
+            double required = measuredLabelWidth(columnTitle(column)) + 28;
+            for (ProjectMapModel.Entry entry : entries) {
+                if (entry.depth() == column.depth()) {
+                    required = Math.max(required, measuredLabelWidth(entry.name()) + 57);
+                }
+            }
+            return Math.max(MIN_NODE_WIDTH, Math.ceil(required));
+        }
+
+        private double measuredLabelWidth(String value) {
+            return measuredLabelWidths.computeIfAbsent(value == null ? "" : value, text -> {
+                textMeasurer.setText(text);
+                return textMeasurer.getLayoutBounds().getWidth();
+            });
         }
 
         private boolean isVerticalFlow() {
@@ -1282,7 +1330,7 @@ final class ProjectMapView extends VBox {
                 String count = column.entries().size() == column.totalEntries()
                         ? String.valueOf(column.totalEntries())
                         : column.entries().size() + "/" + column.totalEntries();
-                g.fillText(ellipsize(title, 18), x + 10 * zoom, y + 17 * zoom, w - 48 * zoom);
+                g.fillText(title, x + 10 * zoom, y + 17 * zoom);
                 g.setFill(color(mutedProbe, Color.web("#8b949e")));
                 g.setFont(Font.font(Math.max(8, 9 * zoom)));
                 g.fillText(count, x + w - 30 * zoom, y + 17 * zoom, 24 * zoom);
@@ -1317,8 +1365,7 @@ final class ProjectMapView extends VBox {
                             ? Color.WHITE
                             : openPaths.contains(entry.path()) ? accent : color(textProbe, Color.web("#d8dee9")));
             g.setFont(Font.font("System", isSelected ? FontWeight.SEMI_BOLD : FontWeight.NORMAL, 12 * zoom));
-            String label = ellipsize(entry.name(), Math.max(4, (int) (15 / zoom)));
-            g.fillText(label, box.x() + 31 * zoom, box.y() + 20.5 * zoom, box.width() - 51 * zoom);
+            g.fillText(entry.name(), box.x() + 31 * zoom, box.y() + 20.5 * zoom);
 
             drawStatusDots(g, entry, box);
             if (entry.directory() && expandedSnapshot.contains(entry.path())) {
@@ -1967,13 +2014,6 @@ final class ProjectMapView extends VBox {
         } catch (RuntimeException ignored) {
             return false;
         }
-    }
-
-    private static String ellipsize(String value, int max) {
-        if (value == null || value.length() <= max) {
-            return value;
-        }
-        return value.substring(0, Math.max(1, max - 1)) + "…";
     }
 
     private static Color mix(Color base, Color overlay, double amount) {

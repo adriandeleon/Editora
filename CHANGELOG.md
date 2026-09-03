@@ -13,8 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file-management tree while offering a Canvas hierarchy with focused Miller-style columns, pan, pointer-
   centered mouse-wheel zoom, mouse and keyboard navigation, and filters for open, modified, Git-changed, and
   file-type working sets. Each column has its own live name filter, default-on hidden-file checkbox, and item
-  count, uses the Project tree's folder-first case-insensitive ordering, can be repositioned by its header and
-  pinned against accidental movement, and keeps a single active branch per depth so unrelated
+  count, uses the Project tree's folder-first case-insensitive ordering, and expands to fit its longest name
+  without truncation. Columns can be repositioned by their headers and pinned against accidental movement,
+  and the map keeps a single active branch per depth so unrelated
   sibling expansions no longer merge into a dense connection bundle. Fit/center controls, automatic initial
   framing, selectable left-to-right, right-to-left, top-to-bottom, and bottom-to-top flows with matching
   connector geometry and arrow-key semantics, a compact overview, selected-path highlighting, breadcrumbs,

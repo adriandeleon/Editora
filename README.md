@@ -74,7 +74,8 @@ Editora is built with the help of AI coding tools.
   folder + its own saved session (open files, layout, folds), shown as a filterable file tree in the
   Project tool window with a project switcher in the toolbar. Its Tree/Map switch adds a spatial,
   Miller-column navigator with per-column filters and hidden-file toggles, Explorer-matched folder-first
-  sorting, movable/pinnable columns, four directional flows, mouse-wheel zoom, breadcrumbs, history,
+  sorting, content-sized columns that keep full names visible, movable/pinnable columns, four directional
+  flows, mouse-wheel zoom, breadcrumbs, history,
   fit/center controls, an overview, editor/Git status, metadata tooltips, and the tree's complete right-click
   menu. A file selection opens a floating, resizable, scrollable code preview on the map; use its
   Open action or double-click to promote the file to a normal editor tab. Open (`C-x C-p`)/switch (`C-x

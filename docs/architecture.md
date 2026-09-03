@@ -194,8 +194,8 @@ You will see these everywhere; learn them once:
   inactive. Recipe in [extending.md](extending.md#add-a-canvas-overlay).
 - **The Project Map hybrid** (`ProjectMapView` + `ProjectMapModel`): native JavaFX controls own
   global/per-column filters, per-column hidden-file visibility, flow direction, breadcrumbs, focus, pin state,
-  and history while a focusable Canvas draws and hit-tests the bounded visible hierarchy, movable column
-  cards, directional connections, and overview. Expansion follows
+  and history while a focusable Canvas measures labels, then draws and hit-tests the bounded visible
+  hierarchy, content-sized movable column cards, directional connections, and overview. Expansion follows
   one focused Miller-style branch: opening a sibling prunes the old sibling branch so a depth column has one
   meaningful parent. Filesystem listing runs on one daemon executor behind a generation guard. The existing
   `ProjectPanel` tree remains the accessible fallback and shares its root, watcher refresh, Git state,
