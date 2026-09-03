@@ -123,6 +123,9 @@ public class EditorBuffer implements TabContent {
     private boolean viewModeBarVisible;
 
     private Button enableEditingButton;
+    /** Expert-mode exit control hosted over this buffer's primary code viewport, when it is active. */
+    private Node expertExitControl;
+
     private Label viewModeNote;
     /** When true, a non-writable-on-disk file offers "Edit as Administrator" instead of a dead-end note. */
     private boolean adminEditAvailable;
@@ -6388,6 +6391,30 @@ public class EditorBuffer implements TabContent {
         if (viewModeControl != null && root.getChildren().contains(viewModeControl)) {
             AnchorPane.setRightAnchor(viewModeControl, codePaneControlInset());
         }
+        if (expertExitControl != null && root.getChildren().contains(expertExitControl)) {
+            AnchorPane.setRightAnchor(expertExitControl, codePaneControlInset());
+        }
+    }
+
+    /**
+     * Mounts the Expert-mode exit control inside the primary code pane, clear of its scrollbar and minimap.
+     * Passing {@code null} detaches the current control. A controller moves the one shared button as the
+     * active tab changes, so inactive buffers retain no overlay node.
+     */
+    public void setExpertExitControl(Node control) {
+        if (expertExitControl != null) {
+            root.getChildren().remove(expertExitControl);
+        }
+        expertExitControl = control;
+        if (control == null) {
+            return;
+        }
+        if (control.getParent() instanceof javafx.scene.layout.Pane parent) {
+            parent.getChildren().remove(control);
+        }
+        root.getChildren().add(control);
+        AnchorPane.setTopAnchor(control, 8d);
+        AnchorPane.setRightAnchor(control, codePaneControlInset());
     }
 
     /** Lazily builds the secondary view (scroll pane + its own minimap) sharing this document. */
@@ -6906,7 +6933,13 @@ public class EditorBuffer implements TabContent {
                     sp.getMajor(), sp.getMinor(), ep.getMajor(), ep.getMinor(), area.getSelectedText(), prefix, suffix);
             return new NoteDraft(scope, anchor);
         }
-        int line = area.getCurrentParagraph();
+        return captureLineNoteDraft(area.getCurrentParagraph());
+    }
+
+    /** Captures a LINE note anchor for a specific line, independent of the current selection/caret. */
+    public NoteDraft captureLineNoteDraft(int requestedLine) {
+        int line = Math.max(0, Math.min(requestedLine, area.getParagraphs().size() - 1));
+        String doc = area.getText();
         String lineText = area.getParagraph(line).getText();
         int lineLen = lineText.length();
         // Capture surrounding context for a LINE note too (like WORD/RANGE): the lines a LINE note lands on

@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -18,7 +19,10 @@ import javafx.scene.Cursor;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.OverrunStyle;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tooltip;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -43,6 +47,7 @@ final class ProjectMapPreview extends StackPane {
     static final int MAX_PREVIEW_CHARS = 400_000;
 
     private static final int MAX_PREVIEW_BYTES = 1_000_000;
+    private static final int MAX_IMAGE_BYTES = 20_000_000;
     private static final int MAX_HIGHLIGHT_CHARS = 160_000;
     private static final double DEFAULT_WIDTH = 640;
     private static final double DEFAULT_HEIGHT = 420;
@@ -63,16 +68,22 @@ final class ProjectMapPreview extends StackPane {
         FAILED
     }
 
-    private record Loaded(String text, boolean truncated, LoadProblem problem) {}
+    private record Loaded(String text, byte[] imageBytes, boolean truncated, LoadProblem problem) {}
 
     private final Consumer<Path> onOpenFile;
     private final BorderPane frame = new BorderPane();
     private final HBox titleBar = new HBox(7);
     private final Label title = new Label();
     private final Label status = new Label();
+    private final Label readOnly = new Label();
+    private final Button zoomOut = new Button("−");
+    private final Button zoomIn = new Button("+");
     private final Button open = new Button();
     private final Button close = new Button("×");
     private final CodeArea editor = new CodeArea();
+    private final VirtualizedScrollPane<CodeArea> editorScroll = new VirtualizedScrollPane<>(editor);
+    private final ImageView imageView = new ImageView();
+    private final ScrollPane imageScroll = new ScrollPane(imageView);
     private final Region resizeGrip = new Region();
     private final ThreadPoolExecutor loader =
             new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(), r -> {
@@ -95,6 +106,7 @@ final class ProjectMapPreview extends StackPane {
     private double resizeScreenY;
     private double resizeWidth;
     private double resizeHeight;
+    private double contentZoom = 1.0;
 
     ProjectMapPreview(Consumer<Path> onOpenFile) {
         this.onOpenFile = onOpenFile == null ? ignored -> {} : onOpenFile;
@@ -110,6 +122,16 @@ final class ProjectMapPreview extends StackPane {
         status.setMinWidth(0);
         status.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(status, Priority.ALWAYS);
+        readOnly.setText(tr("project.map.preview.readOnly"));
+        readOnly.getStyleClass().add("project-map-preview-readonly");
+
+        for (Button button : java.util.List.of(zoomOut, zoomIn)) {
+            button.getStyleClass().add("project-map-preview-button");
+        }
+        zoomOut.setTooltip(new Tooltip(tr("project.map.preview.zoomOut")));
+        zoomIn.setTooltip(new Tooltip(tr("project.map.preview.zoomIn")));
+        zoomOut.setOnAction(event -> setContentZoom(contentZoom / 1.1));
+        zoomIn.setOnAction(event -> setContentZoom(contentZoom * 1.1));
 
         open.setText(tr("project.map.preview.open"));
         open.getStyleClass().add("project-map-preview-button");
@@ -127,7 +149,7 @@ final class ProjectMapPreview extends StackPane {
 
         titleBar.getStyleClass().add("project-map-preview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);
-        titleBar.getChildren().setAll(title, status, open, close);
+        titleBar.getChildren().setAll(title, readOnly, status, zoomOut, zoomIn, open, close);
         titleBar.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
         titleBar.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::dragged);
 
@@ -138,7 +160,12 @@ final class ProjectMapPreview extends StackPane {
         editor.setAccessibleHelp(tr("project.map.preview.accessibleHelp"));
         frame.getStyleClass().add("project-map-preview-frame");
         frame.setTop(titleBar);
-        frame.setCenter(new VirtualizedScrollPane<>(editor));
+        imageView.setPreserveRatio(true);
+        imageView.setSmooth(true);
+        imageScroll.setPannable(true);
+        imageScroll.setFitToWidth(false);
+        imageScroll.setFitToHeight(false);
+        frame.setCenter(editorScroll);
 
         resizeGrip.getStyleClass().add("project-map-preview-resize");
         resizeGrip.setCursor(Cursor.SE_RESIZE);
@@ -170,7 +197,7 @@ final class ProjectMapPreview extends StackPane {
             String text = cap(openContent.text());
             boolean truncated = openContent.truncated()
                     || text.length() < openContent.text().length();
-            showLoaded(requested, path, new Loaded(text, truncated, LoadProblem.NONE));
+            showLoaded(requested, path, new Loaded(text, null, truncated, LoadProblem.NONE));
             highlight(requested, path, text, truncated);
             return;
         }
@@ -293,19 +320,24 @@ final class ProjectMapPreview extends StackPane {
 
     private Loaded load(Path requestedPath) {
         try (InputStream in = Files.newInputStream(requestedPath)) {
-            byte[] raw = in.readNBytes(MAX_PREVIEW_BYTES + 1);
-            boolean byteTruncated = raw.length > MAX_PREVIEW_BYTES;
-            byte[] bytes = byteTruncated ? Arrays.copyOf(raw, MAX_PREVIEW_BYTES) : raw;
+            boolean imageFile = isImage(requestedPath);
+            int limit = imageFile ? MAX_IMAGE_BYTES : MAX_PREVIEW_BYTES;
+            byte[] raw = in.readNBytes(limit + 1);
+            boolean byteTruncated = raw.length > limit;
+            byte[] bytes = byteTruncated ? Arrays.copyOf(raw, limit) : raw;
+            if (imageFile && !byteTruncated) {
+                return new Loaded("", bytes, false, LoadProblem.NONE);
+            }
             if (looksBinary(bytes)) {
-                return new Loaded("", false, LoadProblem.BINARY);
+                return new Loaded("", null, false, LoadProblem.BINARY);
             }
             String charset = EditorConfigCharset.resolveName(bytes, null);
             String decoded = EditorConfigCharset.decode(bytes, charset);
             String text = cap(decoded);
             boolean truncated = byteTruncated || text.length() < decoded.length();
-            return new Loaded(text, truncated, LoadProblem.NONE);
+            return new Loaded(text, null, truncated, LoadProblem.NONE);
         } catch (IOException | RuntimeException error) {
-            return new Loaded("", false, LoadProblem.FAILED);
+            return new Loaded("", null, false, LoadProblem.FAILED);
         }
     }
 
@@ -342,6 +374,7 @@ final class ProjectMapPreview extends StackPane {
             return false;
         }
         if (loaded.problem() != LoadProblem.NONE) {
+            frame.setCenter(editorScroll);
             editor.replaceText("");
             status.setText("");
             editor.setPlaceholder(new Label(tr(
@@ -350,6 +383,22 @@ final class ProjectMapPreview extends StackPane {
                             : "project.map.preview.failed")));
             return false;
         }
+        if (loaded.imageBytes() != null) {
+            Image image = new Image(new ByteArrayInputStream(loaded.imageBytes()));
+            if (image.isError()) {
+                editor.setPlaceholder(new Label(tr("project.map.preview.failed")));
+                frame.setCenter(editorScroll);
+                return false;
+            }
+            imageView.setImage(image);
+            frame.setCenter(imageScroll);
+            status.setText(
+                    image.getWidth() > 0 ? Math.round(image.getWidth()) + " × " + Math.round(image.getHeight()) : "");
+            setContentZoom(1.0);
+            return false;
+        }
+        frame.setCenter(editorScroll);
+        imageView.setImage(null);
         editor.setPlaceholder(null);
         editor.replaceText(loaded.text());
         editor.moveTo(0);
@@ -381,6 +430,24 @@ final class ProjectMapPreview extends StackPane {
             }
         }
         return false;
+    }
+
+    private static boolean isImage(Path path) {
+        String name = fileName(path).toLowerCase(java.util.Locale.ROOT);
+        return name.endsWith(".png")
+                || name.endsWith(".jpg")
+                || name.endsWith(".jpeg")
+                || name.endsWith(".gif")
+                || name.endsWith(".bmp");
+    }
+
+    private void setContentZoom(double requested) {
+        contentZoom = clamp(requested, 0.5, 3.0);
+        editor.setStyle("-fx-font-size: " + (12 * contentZoom) + "px;");
+        Image image = imageView.getImage();
+        if (image != null) {
+            imageView.setFitWidth(image.getWidth() * contentZoom);
+        }
     }
 
     private static String cap(String text) {

@@ -419,6 +419,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             roots = buildNodes(); // fallback: fold-region nesting + TextMate-scope names
         }
         attachDocs(roots);
+        attachSyntaxStyles(roots);
         sortNodes(roots);
         rebuildKindFilter();
         // A rebuild rebuilds the tree (applyFilter selects row 0); that must not move the editor caret,
@@ -518,6 +519,306 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
             attachDocs(n.children(), lines);
         }
+    }
+
+    /**
+     * Gives each symbol label the same token classes as its declaration in the editor. LSP outlines carry a
+     * line but not a column, so the callable stem is located within that source line and the remaining label
+     * tokens are matched in order. This preserves mixed syntax such as {@code method(List<String>)} instead
+     * of painting the whole signature like a method name. Return types are recovered from the declaration
+     * when the server omits them from its label.
+     */
+    private void attachSyntaxStyles(List<StructureNode> nodes) {
+        if (buffer == null || nodes.isEmpty()) {
+            return;
+        }
+        attachSyntaxStyles(buffer.getArea(), nodes);
+    }
+
+    private static void attachSyntaxStyles(CodeArea area, List<StructureNode> nodes) {
+        for (StructureNode node : nodes) {
+            attachSyntaxStyles(area, node);
+            attachSyntaxStyles(area, node.children());
+        }
+    }
+
+    private static void attachSyntaxStyles(CodeArea area, StructureNode node) {
+        String label = node.label() == null ? "" : node.label();
+        int line = node.line();
+        if (line < 0 || line >= area.getParagraphs().size()) {
+            node.setNameRuns(List.of(fallbackRun(label, node.kind())));
+            return;
+        }
+
+        String sourceLine = area.getParagraph(line).getText();
+        String stem = callableStem(label);
+        int column = sourceLine.indexOf(stem);
+        if (column < 0 || stem.isEmpty()) {
+            node.setNameRuns(List.of(fallbackRun(label, node.kind())));
+            return;
+        }
+
+        node.setNameRuns(styledDisplayRuns(area, line, label, sourceLine, column, node.kind()));
+        SourceSlice returnType = returnTypeSource(sourceLine, column, node.kind());
+        if (returnType != null) {
+            node.setReturnRuns(styledSourceRuns(area, line, returnType));
+        }
+    }
+
+    private static String callableStem(String label) {
+        String value = label == null ? "" : label.strip();
+        int signature = value.indexOf('(');
+        return signature > 0 ? value.substring(0, signature).strip() : value;
+    }
+
+    private static SyntaxRun fallbackRun(String text, String kind) {
+        String fallback = syntaxStyleForKind(kind);
+        return new SyntaxRun(text, fallback == null ? List.of() : List.of(fallback));
+    }
+
+    /** Maps the server's compact label back onto source tokens so every run keeps its own syntax classes. */
+    private static List<SyntaxRun> styledDisplayRuns(
+            CodeArea area, int line, String display, String sourceLine, int sourceStart, String kind) {
+        List<SyntaxRun> runs = new ArrayList<>();
+        int displayAt = 0;
+        int sourceAt = sourceStart;
+        boolean firstToken = true;
+        while (displayAt < display.length()) {
+            int end = tokenEnd(display, displayAt);
+            String token = display.substring(displayAt, end);
+            int found = sourceLine.indexOf(token, sourceAt);
+            List<String> styles = found < 0 ? List.of() : syntaxStylesAt(area, line, found);
+            if (styles.isEmpty() && firstToken) {
+                String fallback = syntaxStyleForKind(kind);
+                styles = fallback == null ? List.of() : List.of(fallback);
+            }
+            addRun(runs, token, styles);
+            if (found >= 0) {
+                sourceAt = found + token.length();
+            }
+            displayAt = end;
+            firstToken = false;
+        }
+        return List.copyOf(runs);
+    }
+
+    private static int tokenEnd(String text, int start) {
+        boolean identifier = Character.isJavaIdentifierPart(text.charAt(start));
+        int end = start + 1;
+        while (end < text.length() && Character.isJavaIdentifierPart(text.charAt(end)) == identifier) {
+            if (!identifier && text.charAt(end) != text.charAt(start)) {
+                break;
+            }
+            end++;
+        }
+        return end;
+    }
+
+    private static List<SyntaxRun> styledSourceRuns(CodeArea area, int line, SourceSlice slice) {
+        List<SyntaxRun> runs = new ArrayList<>();
+        int start = slice.column();
+        int runStart = 0;
+        List<String> previous = null;
+        for (int i = 0; i < slice.text().length(); i++) {
+            List<String> styles = syntaxStylesAt(area, line, start + i);
+            if (previous != null && !previous.equals(styles)) {
+                addRun(runs, slice.text().substring(runStart, i), previous);
+                runStart = i;
+            }
+            previous = styles;
+        }
+        if (previous == null) {
+            return List.of();
+        }
+        addRun(runs, slice.text().substring(runStart), previous.isEmpty() ? List.of("type") : previous);
+        return List.copyOf(runs);
+    }
+
+    private static void addRun(List<SyntaxRun> runs, String text, List<String> styles) {
+        if (text.isEmpty()) {
+            return;
+        }
+        List<String> safeStyles = styles == null ? List.of() : List.copyOf(styles);
+        if (!runs.isEmpty() && runs.getLast().styles().equals(safeStyles)) {
+            SyntaxRun previous = runs.removeLast();
+            runs.add(new SyntaxRun(previous.text() + text, safeStyles));
+        } else {
+            runs.add(new SyntaxRun(text, safeStyles));
+        }
+    }
+
+    private static List<String> syntaxStylesAt(CodeArea area, int line, int column) {
+        try {
+            int offset = area.getAbsolutePosition(line, column);
+            return area.getStyleOfChar(offset).stream()
+                    .filter(StructurePanel::isSyntaxNameStyle)
+                    .toList();
+        } catch (RuntimeException ignored) {
+            // A concurrent document replacement can invalidate the line/offset; an unstyled run is safe.
+            return List.of();
+        }
+    }
+
+    /** Finds a Java/C-family prefix return type, or a Kotlin/TypeScript/Rust suffix return type. */
+    private static SourceSlice returnTypeSource(String sourceLine, int nameColumn, String kind) {
+        if (!StructureCell.isCallable(kind) || "constructor".equals(kind)) {
+            return null;
+        }
+
+        int end = nameColumn;
+        while (end > 0 && Character.isWhitespace(sourceLine.charAt(end - 1))) {
+            end--;
+        }
+        int start = previousTopLevelTokenStart(sourceLine, end);
+        if (start < end) {
+            String candidate = sourceLine.substring(start, end).strip();
+            if (isReturnTypeCandidate(candidate)) {
+                int actualStart = sourceLine.indexOf(candidate, start);
+                return new SourceSlice(candidate, actualStart);
+            }
+        }
+
+        int close = closingParen(sourceLine, nameColumn);
+        if (close >= 0) {
+            int at = close + 1;
+            while (at < sourceLine.length() && Character.isWhitespace(sourceLine.charAt(at))) {
+                at++;
+            }
+            int markerLength = sourceLine.startsWith("->", at) ? 2 : sourceLine.startsWith(":", at) ? 1 : 0;
+            if (markerLength > 0) {
+                at += markerLength;
+                while (at < sourceLine.length() && Character.isWhitespace(sourceLine.charAt(at))) {
+                    at++;
+                }
+                int suffixEnd = at;
+                while (suffixEnd < sourceLine.length() && "{=;".indexOf(sourceLine.charAt(suffixEnd)) < 0) {
+                    suffixEnd++;
+                }
+                String candidate = sourceLine.substring(at, suffixEnd).strip();
+                if (isReturnTypeCandidate(candidate)) {
+                    return new SourceSlice(candidate, at);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static int previousTopLevelTokenStart(String text, int end) {
+        int angleDepth = 0;
+        int squareDepth = 0;
+        int start = end;
+        while (start > 0) {
+            char c = text.charAt(start - 1);
+            if (c == '>') {
+                angleDepth++;
+            } else if (c == '<' && angleDepth > 0) {
+                angleDepth--;
+            } else if (c == ']') {
+                squareDepth++;
+            } else if (c == '[' && squareDepth > 0) {
+                squareDepth--;
+            } else if (Character.isWhitespace(c) && angleDepth == 0 && squareDepth == 0) {
+                break;
+            }
+            start--;
+        }
+        return start;
+    }
+
+    private static boolean isReturnTypeCandidate(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        return switch (value) {
+            case "abstract",
+                    "async",
+                    "default",
+                    "def",
+                    "export",
+                    "final",
+                    "fn",
+                    "fun",
+                    "function",
+                    "native",
+                    "private",
+                    "protected",
+                    "public",
+                    "static",
+                    "synchronized" -> false;
+            default -> Character.isJavaIdentifierStart(value.charAt(0));
+        };
+    }
+
+    private static int closingParen(String text, int nameColumn) {
+        int open = text.indexOf('(', nameColumn);
+        if (open < 0) {
+            return -1;
+        }
+        int depth = 0;
+        for (int i = open; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')' && --depth == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private record SyntaxRun(String text, List<String> styles) {}
+
+    private record SourceSlice(String text, int column) {}
+
+    private static boolean isSyntaxNameStyle(String style) {
+        if (style == null) {
+            return false;
+        }
+        if (style.startsWith("sem-")) {
+            return true;
+        }
+        return switch (style) {
+            case "annotation",
+                    "attribute",
+                    "bold",
+                    "code",
+                    "constant",
+                    "function",
+                    "heading",
+                    "italic",
+                    "keyword",
+                    "link",
+                    "number",
+                    "property",
+                    "string",
+                    "tag",
+                    "type",
+                    "variable" -> true;
+            default -> false;
+        };
+    }
+
+    /** Syntax-token fallback for an LSP/TextMate outline kind when no styled source character is available. */
+    static String syntaxStyleForKind(String kind) {
+        return switch (kind == null ? "" : kind) {
+            case "class",
+                    "enum",
+                    "interface",
+                    "module",
+                    "namespace",
+                    "object",
+                    "package",
+                    "struct",
+                    "type",
+                    "typeparameter" -> "type";
+            case "constructor", "event", "function", "method", "operator" -> "function";
+            case "field", "key", "property" -> "property";
+            case "variable" -> "variable";
+            case "boolean", "constant", "enummember", "number", "string" -> "constant";
+            case "heading", "section" -> "heading";
+            case "tag" -> "tag";
+            default -> null;
+        };
     }
 
     /** Re-orders {@code nodes} (and their descendants) per the current {@link SortMode}. */
@@ -649,7 +950,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (haveSymbols) {
             Symbol symbol = symbolByLine.get(start);
             int line = start;
-            if (symbol == null && brace) {
+            // Only look above when the delimiter is on its own line (Allman style). Looking above every
+            // brace-backed fold lets an inner `if (...) {` reuse its enclosing method's symbol and lets
+            // `} else {` pick up the preceding call expression, producing outlines such as
+            // ifLsp() -> ifLsp() -> run(). A non-standalone opening brace belongs to its own header line;
+            // without a definition symbol there, the region is control flow/anonymous and is not structure.
+            if (symbol == null
+                    && brace
+                    && standaloneOpeningBrace(area.getParagraph(start).getText())) {
                 int probe = start - 1;
                 int examined = 0;
                 while (probe >= 0 && examined < 3) {
@@ -674,6 +982,15 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // No grammar/symbols: keep the old header-text label and show every region.
         String text = area.getParagraph(start).getText().trim();
         return new StructureNode(r, text.isEmpty() ? "line " + (start + 1) : text, null, start);
+    }
+
+    /** Whether an Allman-style opening delimiter may take its declaration symbol from a preceding line. */
+    static boolean standaloneOpeningBrace(String line) {
+        if (line == null) {
+            return false;
+        }
+        String stripped = line.strip();
+        return stripped.equals("{") || stripped.startsWith("{ //") || stripped.startsWith("{/*");
     }
 
     /** Builds the heading outline for a Markdown buffer (ATX/Setext), nested by heading level. */
@@ -822,28 +1139,52 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 setTooltip(null);
             }
             boolean real = item.kind() != null && item.line() >= 0;
-            String sig = signature(item);
-            if (sig.isEmpty()) {
-                // No signature to append: plain text + (for real rows) a kind icon.
+            if (!real) {
                 setText(item.label());
-                setGraphic(real ? StructureIcons.forKind(item.kind()) : null);
+                setGraphic(null);
                 return;
             }
-            // Method/function: render "name" then the signature "(params) : ret" in a muted colour, abutting
-            // the name (no inter-node gap), with the kind icon to the left.
+            String sig = signature(item);
+            // Render every real symbol as icon + syntax-colored label/return type + 1-based source line.
+            // Keeping the line as its own Text node lets themes mute it without muting the symbol signature.
             setText(null);
-            javafx.scene.text.Text name = new javafx.scene.text.Text(item.label());
-            name.getStyleClass().add("structure-name");
-            javafx.scene.text.Text detail = new javafx.scene.text.Text(sig);
-            detail.getStyleClass().add("structure-detail");
-            HBox box = new HBox(name, detail);
+            HBox box = new HBox();
             box.setAlignment(Pos.CENTER_LEFT);
-            if (real) {
-                Node icon = StructureIcons.forKind(item.kind());
-                HBox.setMargin(icon, new javafx.geometry.Insets(0, 4, 0, 0));
-                box.getChildren().add(0, icon);
+            Node icon = StructureIcons.forKind(item.kind());
+            HBox.setMargin(icon, new javafx.geometry.Insets(0, 4, 0, 0));
+            box.getChildren().add(icon);
+            for (SyntaxRun run : item.nameRuns()) {
+                box.getChildren().add(styledText(run, "structure-name"));
             }
+            if (!sig.isEmpty()) {
+                javafx.scene.text.Text detail = new javafx.scene.text.Text(sig);
+                detail.getStyleClass().add("structure-detail");
+                box.getChildren().add(detail);
+            }
+            if (!item.returnRuns().isEmpty()) {
+                javafx.scene.text.Text separator = new javafx.scene.text.Text(" : ");
+                separator.getStyleClass().add("structure-detail");
+                box.getChildren().add(separator);
+                for (SyntaxRun run : item.returnRuns()) {
+                    box.getChildren().add(styledText(run, "structure-return-type"));
+                }
+            }
+            javafx.scene.text.Text line = new javafx.scene.text.Text("  " + (item.line() + 1));
+            line.getStyleClass().add("structure-line-number");
+            box.getChildren().add(line);
             setGraphic(box);
+        }
+
+        private static javafx.scene.text.Text styledText(SyntaxRun run, String role) {
+            javafx.scene.text.Text text = new javafx.scene.text.Text(run.text());
+            // The shared `text` + syntax classes are exactly what syntax.css and every editor-theme
+            // override target, so changing the editor color theme recolors this run in the same pulse.
+            text.getStyleClass().addAll("structure-name", "text");
+            if (!"structure-name".equals(role)) {
+                text.getStyleClass().add(role);
+            }
+            text.getStyleClass().addAll(run.styles());
+            return text;
         }
 
         /**
@@ -870,14 +1211,16 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** A node in the structure tree: a foldable region, its symbol label/kind, the line to navigate to, an
-     *  optional detail (the LSP signature, e.g. {@code (String x) : void}), an optional doc comment (the
-     *  cleaned leading comment above the declaration, shown as a tooltip), and children. */
+     *  optional detail (the LSP signature, e.g. {@code (String x) : void}), syntax-styled label and return
+     *  runs, an optional doc comment (the cleaned leading comment above the declaration), and children. */
     private static final class StructureNode {
         private final Region region;
         private final String label;
         private final String kind;
         private final int line;
         private final String detail;
+        private List<SyntaxRun> nameRuns = List.of();
+        private List<SyntaxRun> returnRuns = List.of();
         private String doc = ""; // filled by attachDocs() from the buffer text; "" when none
         private final List<StructureNode> children = new ArrayList<>();
 
@@ -911,6 +1254,22 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
         String detail() {
             return detail;
+        }
+
+        List<SyntaxRun> nameRuns() {
+            return nameRuns;
+        }
+
+        void setNameRuns(List<SyntaxRun> runs) {
+            nameRuns = runs == null ? List.of() : List.copyOf(runs);
+        }
+
+        List<SyntaxRun> returnRuns() {
+            return returnRuns;
+        }
+
+        void setReturnRuns(List<SyntaxRun> runs) {
+            returnRuns = runs == null ? List.of() : List.copyOf(runs);
         }
 
         String doc() {

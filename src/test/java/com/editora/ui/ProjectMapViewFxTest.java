@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -20,6 +21,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
+import javafx.scene.control.TreeCell;
 import javafx.scene.image.Image;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
@@ -59,10 +61,42 @@ class ProjectMapViewFxTest {
     @Test
     void mapToggleShowsAndLaysOutTheCanvasNavigator() throws Exception {
         Files.createDirectory(root.resolve("src"));
-        Files.writeString(root.resolve("README.md"), "# Test");
+        Path readme = Files.writeString(root.resolve("README.md"), "# Test")
+                .toAbsolutePath()
+                .normalize();
+        Set<Path> bookmarked = new HashSet<>(Set.of(readme));
+        Set<Path> noted = new HashSet<>(Set.of(readme));
+        AtomicInteger bookmarkAdds = new AtomicInteger();
+        AtomicInteger noteAdds = new AtomicInteger();
 
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
             ProjectPanel value = new ProjectPanel(path -> {}, (from, to) -> {}, path -> {}, path -> false);
+            value.setMarkerActions(new ProjectPanel.MarkerActions() {
+                @Override
+                public boolean personalNotesEnabled() {
+                    return true;
+                }
+
+                @Override
+                public boolean hasBookmarks(Path file) {
+                    return bookmarked.contains(file.toAbsolutePath().normalize());
+                }
+
+                @Override
+                public boolean hasPersonalNotes(Path file) {
+                    return noted.contains(file.toAbsolutePath().normalize());
+                }
+
+                @Override
+                public void addBookmark(Path file) {
+                    bookmarkAdds.incrementAndGet();
+                }
+
+                @Override
+                public void addPersonalNote(Path file) {
+                    noteAdds.incrementAndGet();
+                }
+            });
             value.setRoot(root);
             return value;
         });
@@ -92,12 +126,35 @@ class ProjectMapViewFxTest {
                 @SuppressWarnings("unchecked")
                 Function<ProjectMapModel.Entry, ContextMenu> contextMenuFactory =
                         FxTestSupport.field(surface, "contextMenuFactory");
-                Path readme = root.resolve("README.md").toAbsolutePath().normalize();
                 ContextMenu menu = contextMenuFactory.apply(new ProjectMapModel.Entry(readme, root, 1, false));
                 assertTrue(menu.getItems().stream()
                         .anyMatch(item -> tr("project.menu.rename").equals(item.getText())));
                 assertTrue(menu.getItems().stream()
                         .anyMatch(item -> tr("project.menu.delete").equals(item.getText())));
+                MenuItem addBookmark = menu.getItems().stream()
+                        .filter(item -> tr("project.menu.addBookmark").equals(item.getText()))
+                        .findFirst()
+                        .orElseThrow();
+                MenuItem addNote = menu.getItems().stream()
+                        .filter(item -> tr("project.menu.addPersonalNote").equals(item.getText()))
+                        .findFirst()
+                        .orElseThrow();
+                addBookmark.fire();
+                addNote.fire();
+                assertEquals(1, bookmarkAdds.get());
+                assertEquals(1, noteAdds.get());
+
+                @SuppressWarnings("unchecked")
+                TreeCell<Path> cell = ((javafx.scene.control.TreeView<Path>) FxTestSupport.field(panel, "tree"))
+                        .getCellFactory()
+                        .call(FxTestSupport.field(panel, "tree"));
+                FxTestSupport.call(cell, "updateItem", new Class<?>[] {Path.class, boolean.class}, readme, false);
+                assertTrue(hasStyleClass(cell.getGraphic(), "project-bookmark-indicator"));
+                assertTrue(hasStyleClass(cell.getGraphic(), "project-note-indicator"));
+
+                mapView.refreshStates();
+                assertTrue(((Set<?>) FxTestSupport.field(surface, "bookmarkedPaths")).contains(readme));
+                assertTrue(((Set<?>) FxTestSupport.field(surface, "notedPaths")).contains(readme));
 
                 StackPane host = (StackPane) mapView.getChildren().getLast();
                 Region zoomBar = (Region) host.lookup(".project-map-zoom");
@@ -109,6 +166,17 @@ class ProjectMapViewFxTest {
         } finally {
             FxTestSupport.runOnFx(panel::dispose);
         }
+    }
+
+    private static boolean hasStyleClass(javafx.scene.Node node, String styleClass) {
+        if (node == null) {
+            return false;
+        }
+        if (node.getStyleClass().contains(styleClass)) {
+            return true;
+        }
+        return node instanceof javafx.scene.Parent parent
+                && parent.getChildrenUnmodifiable().stream().anyMatch(child -> hasStyleClass(child, styleClass));
     }
 
     @Test
@@ -130,6 +198,7 @@ class ProjectMapViewFxTest {
                 mapView.applyCss();
                 mapView.resize(500, 300);
                 mapView.layout();
+                mapView.setRememberedFlow("LEFT_TO_RIGHT", ignored -> {});
 
                 Region surface = FxTestSupport.field(mapView, "surface");
                 FxTestSupport.call(
@@ -218,7 +287,7 @@ class ProjectMapViewFxTest {
     }
 
     @Test
-    void oneClickShowsAMovableResizableScrollableCodePreview() throws Exception {
+    void fileClickOpensATabAndItsPreviewIconShowsAReadOnlyZoomablePreview() throws Exception {
         Path file = Files.writeString(root.resolve("Preview.java"), "class Preview {\n    int value = 7;\n}\n")
                 .toAbsolutePath()
                 .normalize();
@@ -238,6 +307,7 @@ class ProjectMapViewFxTest {
                 mapView.resize(900, 620);
                 mapView.applyCss();
                 mapView.layout();
+                mapView.setRememberedFlow("LEFT_TO_RIGHT", ignored -> {});
 
                 Region surface = FxTestSupport.field(mapView, "surface");
                 FxTestSupport.call(
@@ -253,6 +323,12 @@ class ProjectMapViewFxTest {
                 click(surface, center(fileBox, "x", "width"), center(fileBox, "y", "height"));
 
                 ProjectMapPreview preview = FxTestSupport.field(mapView, "preview");
+                assertEquals(file, opened.get(), "the file row itself opens a normal editor tab");
+                assertFalse(preview.isVisible());
+
+                double previewX =
+                        origin(fileBox, "x") + (double) FxTestSupport.call(fileBox, "width", new Class<?>[0]) - 8;
+                click(surface, previewX, center(fileBox, "y", "height"));
                 assertTrue(preview.isVisible());
                 assertEquals(file, preview.path());
                 assertTrue(preview.editor().getText().contains("value = 8"), "open-buffer content should win");
@@ -260,6 +336,11 @@ class ProjectMapViewFxTest {
                 assertEquals(420, preview.getHeight(), 0.001);
                 javafx.scene.layout.BorderPane frame = FxTestSupport.field(preview, "frame");
                 assertTrue(frame.getCenter() instanceof org.fxmisc.flowless.VirtualizedScrollPane<?>);
+                javafx.scene.control.Label readOnly = FxTestSupport.field(preview, "readOnly");
+                assertEquals(tr("project.map.preview.readOnly"), readOnly.getText());
+                Button zoomIn = FxTestSupport.field(preview, "zoomIn");
+                zoomIn.fire();
+                assertTrue((double) FxTestSupport.field(preview, "contentZoom") > 1.0);
 
                 preview.relocate(40, 40);
                 double beforeWidth = preview.getWidth();
@@ -495,6 +576,7 @@ class ProjectMapViewFxTest {
                 new Scene(mapView, 1_000, 600);
                 mapView.resize(1_000, 600);
                 mapView.layout();
+                mapView.setRememberedFlow("LEFT_TO_RIGHT", ignored -> {});
                 Region surface = FxTestSupport.field(mapView, "surface");
                 FxTestSupport.call(
                         surface,
@@ -611,11 +693,12 @@ class ProjectMapViewFxTest {
 
                 @SuppressWarnings("unchecked")
                 ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(mapView, "flowFilter");
+                assertEquals(ProjectMapView.FlowDirection.RIGHT_TO_LEFT, flow.getValue());
+                assertTrue(origin(boxFor(surface, java), "x") < origin(boxFor(surface, src), "x"));
+
+                mapView.setRememberedFlow("LEFT_TO_RIGHT", ignored -> {});
                 assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, flow.getValue());
                 assertTrue(origin(boxFor(surface, java), "x") > origin(boxFor(surface, src), "x"));
-
-                flow.setValue(ProjectMapView.FlowDirection.RIGHT_TO_LEFT);
-                assertTrue(origin(boxFor(surface, java), "x") < origin(boxFor(surface, src), "x"));
 
                 flow.setValue(ProjectMapView.FlowDirection.TOP_TO_BOTTOM);
                 assertTrue(origin(boxFor(surface, java), "y") > origin(boxFor(surface, src), "y"));

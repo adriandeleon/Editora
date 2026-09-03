@@ -114,6 +114,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private BiConsumer<Path, Boolean> onOpenTerminal;
     /** Injected by MainController: per-file Local History + Git actions for the cell menu (files only). */
     private FileActions fileActions;
+    /** Injected by MainController: file-level entry points into the line-anchored bookmark/note stores. */
+    private MarkerActions markerActions;
 
     /**
      * File-scoped actions the Project tree's cell menu offers — Local History and Git. Injected by
@@ -150,6 +152,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         /** Add {@code file} (a directory gets a trailing {@code /}) to the repo-root {@code .gitignore}. */
         void gitAddToGitignore(Path file);
+    }
+
+    /** Bookmark/note state and actions shared by the classic tree and Canvas map. */
+    public interface MarkerActions {
+        boolean personalNotesEnabled();
+
+        boolean hasBookmarks(Path file);
+
+        boolean hasPersonalNotes(Path file);
+
+        void addBookmark(Path file);
+
+        void addPersonalNote(Path file);
     }
 
     /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
@@ -373,6 +388,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Refreshes the Map's open-tab markers after the editor's tab membership changes. */
     public void refreshOpenFiles() {
+        mapView.refreshStates();
+    }
+
+    /** Re-renders bookmark and Personal Note indicators in both Project views. */
+    public void refreshMarkers() {
+        tree.refresh();
         mapView.refreshStates();
     }
 
@@ -952,6 +973,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.onStatus = onStatus == null ? m -> {} : onStatus;
     }
 
+    /** Restores and persists the Project Map's directional layout in workspace state. */
+    public void setRememberedMapFlow(String flow, Consumer<String> onChanged) {
+        mapView.setRememberedFlow(flow, value -> {
+            if (onChanged != null) {
+                onChanged.accept(value.name());
+            }
+        });
+    }
+
     /** One filesystem watcher event: what happened to which path (#677). */
     public record FsChange(Path path, FsKind kind) {}
 
@@ -986,6 +1016,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Injects the per-file Local History + Git actions shown on a file cell's menu. */
     public void setFileActions(FileActions fileActions) {
         this.fileActions = fileActions;
+    }
+
+    /** Injects bookmark/note actions and state used by both Project renderers. */
+    public void setMarkerActions(MarkerActions markerActions) {
+        this.markerActions = markerActions;
+        mapView.setMarkerStates(
+                path -> this.markerActions != null && this.markerActions.hasBookmarks(path),
+                path -> this.markerActions != null
+                        && this.markerActions.personalNotesEnabled()
+                        && this.markerActions.hasPersonalNotes(path));
+        refreshMarkers();
     }
 
     /**
@@ -1555,12 +1596,37 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // Box the folder glyph in the same fixed icon column as the (already-boxed) file glyphs, so
             // folder and file rows share one icon width and every label starts at the same x.
             Node glyph = FileIcons.forProjectItem(fileName == null ? label : fileName.toString(), isDir);
-            setGraphic(FileIcons.withStatusLetter(glyph, fileStatus == null ? null : fileStatus.letter()));
+            Node base = FileIcons.withStatusLetter(glyph, fileStatus == null ? null : fileStatus.letter());
+            if (!isDir && markerActions != null) {
+                HBox graphic = new HBox(3, base);
+                graphic.setAlignment(Pos.CENTER_LEFT);
+                if (markerActions.hasBookmarks(item)) {
+                    graphic.getChildren().add(smallMarker(Icons.bookmark(), "project-bookmark-indicator"));
+                }
+                if (markerActions.personalNotesEnabled() && markerActions.hasPersonalNotes(item)) {
+                    graphic.getChildren().add(smallMarker(Icons.notes(), "project-note-indicator"));
+                }
+                setGraphic(graphic);
+            } else {
+                setGraphic(base);
+            }
         }
 
         private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir, boolean isRoot) {
             return ProjectPanel.this.contextMenuFor(treeItem, isDir, isRoot);
         }
+    }
+
+    private static Node smallMarker(Node icon, String styleClass) {
+        icon.getStyleClass().add(styleClass);
+        icon.setScaleX(0.68);
+        icon.setScaleY(0.68);
+        StackPane box = new StackPane(icon);
+        box.setMinSize(12, 12);
+        box.setPrefSize(12, 12);
+        box.setMaxSize(12, 12);
+        box.setMouseTransparent(true);
+        return box;
     }
 
     /** One lazily built file-management menu shared by Tree rows and Canvas map nodes. */
@@ -1592,6 +1658,21 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // (the confirm dialog shows the count).
             delete.setOnAction(e -> deleteSelected(treeItem));
             menu.getItems().add(delete);
+            if (markerActions != null) {
+                Path file = treeItem.getValue();
+                menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+
+                MenuItem bookmark = new MenuItem(tr("project.menu.addBookmark"));
+                bookmark.setGraphic(Icons.bookmark());
+                bookmark.setOnAction(e -> markerActions.addBookmark(file));
+                menu.getItems().add(bookmark);
+
+                MenuItem note = new MenuItem(tr("project.menu.addPersonalNote"));
+                note.setGraphic(Icons.notes());
+                note.setDisable(!markerActions.personalNotesEnabled());
+                note.setOnAction(e -> markerActions.addPersonalNote(file));
+                menu.getItems().add(note);
+            }
         }
         if (onReveal != null || onOpenTerminal != null) {
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());

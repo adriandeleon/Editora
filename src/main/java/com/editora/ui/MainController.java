@@ -478,8 +478,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     private String currentEditorThemeCss;
     /** Floating "exit Zen" button overlaid top-right of the window; shown only while in Zen mode. */
     private Button zenExitButton;
-    /** Floating "exit Expert" button overlaid top-right of the window; shown only while in Expert mode. */
+    /** Floating "exit Expert" button hosted inside the active code viewport; shown only in Expert mode. */
     private Button expertExitButton;
+
+    private EditorBuffer expertExitButtonBuffer;
     /** Floating "show toolbar" button overlaid top-left; shown only when the toolbar is hidden (not in Zen). */
     private Button toolbarRestoreButton;
     /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
@@ -606,6 +608,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public EditorBuffer bufferForKey(String fileKey) {
                 return bufferOf(tabForKey(fileKey));
+            }
+
+            @Override
+            public EditorBuffer bufferForPath(java.nio.file.Path file) {
+                return bufferOf(tabForPath(file));
             }
 
             @Override
@@ -1053,7 +1060,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         statusBar.setManaged(statusOn);
         editorArea.setTabHeaderVisible(Chrome.tabBar(s.isShowTabBar(), focus));
         if (menuBar != null) {
-            boolean menuOn = Chrome.menuBar(s.isShowMenuBar(), focus);
+            // Expert keeps the command menu available; only Zen suppresses it. This must use the real Zen
+            // flag (not `focus`) so a CLI --expert launch has a menu on its very first frame.
+            boolean menuOn = Chrome.menuBar(s.isShowMenuBar(), zen);
             menuBar.node().setVisible(menuOn);
             menuBar.node().setManaged(menuOn);
             // Simple UI mode keeps the menu bar but swaps in the reduced table (a no-op when unchanged).
@@ -1262,8 +1271,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         expertExitButton.setTooltip(new Tooltip(tr("tooltip.expertExit")));
         expertExitButton.setFocusTraversable(false);
         expertExitButton.setOnAction(e -> setExpertMode(false));
-        StackPane.setAlignment(expertExitButton, Pos.TOP_RIGHT);
-        sceneRoot.getChildren().add(expertExitButton);
 
         // Floating "show toolbar" button (top-right): restores a hidden toolbar. Never coexists with the
         // Zen "Z" (that's shown only in Zen mode, this only when the toolbar is hidden outside Zen).
@@ -1350,21 +1357,29 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Shows the floating "exit Expert" ("E") button only while in Expert mode (mirrors {@link #updateZenButton};
-     * the two modes are mutually exclusive, so the E and Z never show together). Dropped below the Markdown
-     * preview controls when the active buffer has a preview, so they don't overlap.
+     * Shows the floating "exit Expert" ("E") button only while in Expert mode. Unlike the scene-root Zen
+     * control, Expert's button belongs inside the active code pane so it cannot overlap the title bar or
+     * minimap. The shared node is moved when tab selection changes.
      */
     private void updateExpertButton() {
         if (expertExitButton == null) {
             return;
         }
-        boolean expert = expertActive();
-        expertExitButton.setVisible(expert);
-        expertExitButton.setManaged(expert);
         EditorBuffer active = activeBuffer();
-        boolean belowMarkdownControls = expert && active != null && active.hasPreview();
-        double top = belowMarkdownControls ? 44 : 8;
-        StackPane.setMargin(expertExitButton, new javafx.geometry.Insets(top, 12, 0, 0));
+        if (expertExitButtonBuffer != active) {
+            if (expertExitButtonBuffer != null) {
+                expertExitButtonBuffer.setExpertExitControl(null);
+            }
+            expertExitButtonBuffer = active;
+        }
+        boolean show = expertActive() && active != null;
+        expertExitButton.setVisible(show);
+        expertExitButton.setManaged(show);
+        if (show) {
+            active.setExpertExitControl(expertExitButton);
+        } else if (active != null) {
+            active.setExpertExitControl(null);
+        }
     }
 
     private void setupRecentFiles() {
@@ -2468,6 +2483,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::isPathModified,
                 this::hasFileOpen,
                 this::projectMapPreviewContent);
+        projectPanel.setRememberedMapFlow(config.getWorkspaceState().getProjectMapFlow(), flow -> {
+            config.getWorkspaceState().setProjectMapFlow(flow);
+            config.save();
+        });
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
         // Lazy lambda: historyCoordinator is constructed later in this method, so defer the field read to call time.
         projectPanel.setOnBeforeDelete(
@@ -2558,6 +2577,34 @@ public class MainController implements com.editora.mcp.McpBridge {
                 git.ifEnabled(() -> git.addToGitignore(file));
             }
         });
+        projectPanel.setMarkerActions(new ProjectPanel.MarkerActions() {
+            @Override
+            public boolean personalNotesEnabled() {
+                return notesCoordinator.isEnabled();
+            }
+
+            @Override
+            public boolean hasBookmarks(Path file) {
+                return bookmarkCoordinator.hasBookmarks(file);
+            }
+
+            @Override
+            public boolean hasPersonalNotes(Path file) {
+                return notesCoordinator.hasPersonalNotes(file);
+            }
+
+            @Override
+            public void addBookmark(Path file) {
+                bookmarkCoordinator.addBookmark(file);
+            }
+
+            @Override
+            public void addPersonalNote(Path file) {
+                notesCoordinator.addPersonalNote(file);
+            }
+        });
+        bookmarkCoordinator.setOnChanged(projectPanel::refreshMarkers);
+        notesCoordinator.setOnChanged(projectPanel::refreshMarkers);
         projectToolWindow = new ToolWindow(
                 "project",
                 tr("toolwindow.project"),
@@ -8104,6 +8151,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         restoreReadOnly(buffer);
         restoreMarkdownMode(buffer);
         updateTabMeta(tab, buffer);
+        // The loading shell is deliberately read-only until its document lands. Selection attached the
+        // status bar while that temporary state was active; refresh after restoring the file's real view
+        // mode or the segment can keep saying Read-Only even though the CodeArea is now editable. This is
+        // especially visible for `--expert FILE`, where the status bar remains but the tab header is hidden.
+        statusBar.refresh();
         lspCoordinator.syncBuffer(buffer); // the temporary heavy-file shell deliberately suppressed this
         // Set the default caret before releasing queued navigation. A later runLater(goToStart) would erase
         // a file:line request that waited on this loading shell.

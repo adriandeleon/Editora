@@ -38,7 +38,8 @@ class CliChromeFirstFrameFxTest {
     }
 
     /** Chrome state sampled at build time, before any deferred startup work has run. */
-    private record Chrome(boolean toolbarVisible, boolean statusBarVisible, boolean tabHeaderCollapsed) {}
+    private record Chrome(
+            boolean toolbarVisible, boolean menuBarVisible, boolean statusBarVisible, boolean tabHeaderCollapsed) {}
 
     private Chrome firstFrame(boolean zen, boolean expert, boolean simple) throws Exception {
         List<Chrome> captured = new ArrayList<>();
@@ -46,8 +47,10 @@ class CliChromeFirstFrameFxTest {
             ToolBar toolBar = FxTestSupport.field(controller, "toolBar");
             javafx.scene.layout.Region statusBar = FxTestSupport.field(controller, "statusBar");
             TabPane tabPane = FxTestSupport.field(controller, "tabPane");
+            MainMenuBar menuBar = FxTestSupport.field(controller, "menuBar");
             captured.add(new Chrome(
                     toolBar.isVisible(),
+                    menuBar.node().isVisible(),
                     statusBar.isVisible(),
                     tabPane.getStyleClass().contains("no-tab-header")));
         });
@@ -62,6 +65,7 @@ class CliChromeFirstFrameFxTest {
     void plainLaunchShowsFullChrome() throws Exception {
         Chrome c = firstFrame(false, false, false);
         assertTrue(c.toolbarVisible(), "baseline: a flagless launch has its toolbar");
+        assertTrue(c.menuBarVisible(), "baseline: and its menu bar");
         assertTrue(c.statusBarVisible(), "baseline: and its status bar");
         assertFalse(c.tabHeaderCollapsed(), "baseline: and its tab bar");
     }
@@ -70,6 +74,7 @@ class CliChromeFirstFrameFxTest {
     void expertFlagIsAppliedBeforeTheWindowIsShown() throws Exception {
         Chrome c = firstFrame(false, true, false);
         assertFalse(c.toolbarVisible(), "--expert must hide the toolbar on the FIRST frame, not after restore");
+        assertTrue(c.menuBarVisible(), "--expert keeps the menu bar on the first frame");
         assertTrue(c.tabHeaderCollapsed(), "--expert must collapse the tab bar on the first frame");
         // Expert is the lighter focus mode: unlike Zen it deliberately KEEPS the status bar.
         assertTrue(c.statusBarVisible(), "--expert keeps the status bar");
@@ -79,6 +84,7 @@ class CliChromeFirstFrameFxTest {
     void zenFlagIsAppliedBeforeTheWindowIsShown() throws Exception {
         Chrome c = firstFrame(true, false, false);
         assertFalse(c.toolbarVisible(), "--zen must hide the toolbar on the first frame");
+        assertFalse(c.menuBarVisible(), "--zen hides the menu bar too");
         assertFalse(c.statusBarVisible(), "--zen hides the status bar too (unlike --expert)");
         assertTrue(c.tabHeaderCollapsed(), "--zen must collapse the tab bar on the first frame");
     }

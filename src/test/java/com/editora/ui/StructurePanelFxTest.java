@@ -1,13 +1,19 @@
 package com.editora.ui;
 
+import java.lang.reflect.Field;
 import java.util.List;
 
 import javafx.scene.Scene;
+import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
+import javafx.scene.text.Text;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.FoldRegions.Region;
+import com.editora.editor.TextMateHighlighter.Symbol;
 import com.editora.lsp.SymbolNode;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -15,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Headless-FX coverage of {@link StructurePanel}: attaching a buffer and feeding an LSP {@link SymbolNode}
@@ -67,6 +74,159 @@ class StructurePanelFxTest {
                 FxTestSupport.callOnFx(
                         () -> root.getChildren().get(0).getChildren().size()),
                 "class has two method children");
+
+        List<String> classStyles = FxTestSupport.callOnFx(() ->
+                renderedNameStyles(tree(p), tree(p).getRoot().getChildren().getFirst()));
+        List<String> methodStyles = FxTestSupport.callOnFx(() -> renderedNameStyles(
+                tree(p),
+                tree(p).getRoot().getChildren().getFirst().getChildren().getFirst()));
+        assertTrue(classStyles.containsAll(List.of("text", "type")), "class names use the editor's type token");
+        assertTrue(
+                methodStyles.containsAll(List.of("text", "function")), "method names use the editor's function token");
+    }
+
+    @Test
+    void rowsPreserveAppliedSemanticNameStyles() throws Exception {
+        List<String> styles = FxTestSupport.callOnFx(() -> {
+            StructurePanel panel = shownPanel();
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setContent("class OldType {}\n");
+            int start = buffer.getArea().getText().indexOf("OldType");
+            buffer.getArea().setStyle(start, start + "OldType".length(), List.of("sem-type", "sem-deprecated"));
+            panel.attach(buffer);
+            panel.setLspSymbols(buffer, List.of(new SymbolNode("OldType", "", "class", 0, 0, List.of())));
+            return renderedNameStyles(
+                    tree(panel), tree(panel).getRoot().getChildren().getFirst());
+        });
+
+        assertTrue(styles.containsAll(List.of("text", "sem-type", "sem-deprecated")));
+    }
+
+    @Test
+    void methodSignaturesKeepPerTokenStylesAndShowTheReturnType() throws Exception {
+        List<Text> runs = FxTestSupport.callOnFx(() -> {
+            StructurePanel panel = shownPanel();
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setContent("static boolean zenFlag(java.util.List<String> args) { return true; }\n");
+            style(buffer, "boolean", "keyword");
+            style(buffer, "zenFlag", "function");
+            style(buffer, "List", "type");
+            style(buffer, "String", "type");
+            panel.attach(buffer);
+            panel.setLspSymbols(
+                    buffer, List.of(new SymbolNode("zenFlag(List<String>)", "", "method", 0, 0, List.of())));
+            return renderedTexts(
+                    tree(panel), tree(panel).getRoot().getChildren().getFirst());
+        });
+
+        assertEquals(
+                "zenFlag(List<String>) : boolean  1",
+                runs.stream().map(Text::getText).reduce("", String::concat));
+        assertTextHasStyle(runs, "zenFlag", "function");
+        assertTextHasStyle(runs, "List", "type");
+        assertTextHasStyle(runs, "String", "type");
+        assertTextHasStyle(runs, "boolean", "keyword");
+    }
+
+    private static void style(EditorBuffer buffer, String token, String style) {
+        int start = buffer.getArea().getText().indexOf(token);
+        buffer.getArea().setStyle(start, start + token.length(), List.of(style));
+    }
+
+    private static void assertTextHasStyle(List<Text> runs, String text, String style) {
+        assertTrue(
+                runs.stream()
+                        .anyMatch(run -> text.equals(run.getText())
+                                && run.getStyleClass().contains(style)),
+                text + " should use the editor's " + style + " token style");
+    }
+
+    @Test
+    void rowsShowOneBasedLineNumbers() throws Exception {
+        StructurePanel p = FxTestSupport.callOnFx(StructurePanelFxTest::shownPanel);
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("java");
+            b.setContent("class MyClass {\n  void foo() {}\n}\n");
+            return b;
+        });
+        FxTestSupport.runOnFx(() -> p.attach(buffer));
+        FxTestSupport.runOnFx(() -> p.setLspSymbols(buffer, List.of(method("foo", 1))));
+
+        String renderedLine = FxTestSupport.callOnFx(() -> {
+            TreeView<Object> tree = tree(p);
+            Object value = tree.getRoot().getChildren().get(0).getValue();
+            @SuppressWarnings("unchecked")
+            TreeCell<Object> cell = (TreeCell<Object>) tree.getCellFactory().call(tree);
+            FxTestSupport.call(cell, "updateItem", new Class<?>[] {value.getClass(), boolean.class}, value, false);
+            HBox graphic = (HBox) cell.getGraphic();
+            return graphic.getChildren().stream()
+                    .filter(Text.class::isInstance)
+                    .map(Text.class::cast)
+                    .filter(t -> t.getStyleClass().contains("structure-line-number"))
+                    .map(Text::getText)
+                    .findFirst()
+                    .orElse("");
+        });
+
+        assertEquals("  2", renderedLine, "the stored zero-based line is displayed to users as line 2");
+    }
+
+    private static List<String> renderedNameStyles(TreeView<Object> tree, TreeItem<Object> item) {
+        return renderedTexts(tree, item).stream()
+                .filter(text -> text.getStyleClass().contains("structure-name"))
+                .findFirst()
+                .orElseThrow()
+                .getStyleClass();
+    }
+
+    private static List<Text> renderedTexts(TreeView<Object> tree, TreeItem<Object> item) {
+        Object value = item.getValue();
+        @SuppressWarnings("unchecked")
+        TreeCell<Object> cell = (TreeCell<Object>) tree.getCellFactory().call(tree);
+        FxTestSupport.call(cell, "updateItem", new Class<?>[] {value.getClass(), boolean.class}, value, false);
+        HBox graphic = (HBox) cell.getGraphic();
+        return graphic.getChildren().stream()
+                .filter(Text.class::isInstance)
+                .map(Text.class::cast)
+                .toList();
+    }
+
+    @Test
+    void fallbackOutlineDoesNotTurnInnerControlFlowOrCallsIntoMethods() throws Exception {
+        List<String> labels = FxTestSupport.callOnFx(() -> {
+            StructurePanel p = shownPanel();
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setLanguageOverride("java");
+            buffer.setContent("private void ifLsp(Runnable action) {\n"
+                    + "    if (lspEnabled()) {\n"
+                    + "        action.run();\n"
+                    + "    } else {\n"
+                    + "        setStatus();\n"
+                    + "    }\n"
+                    + "}\n");
+            // Pin the exact symbols/regions from the reported failure. The fallback used to associate the
+            // preceding ifLsp definition with the inner if fold, then the run call with the else fold.
+            setSymbols(buffer, List.of(new Symbol(0, "ifLsp", "function"), new Symbol(2, "run", "function")));
+            buffer.getFoldManager().setServerRegions(List.of(new Region(0, 6), new Region(1, 3), new Region(3, 5)));
+            p.attach(buffer);
+            TreeItem<Object> root = tree(p).getRoot();
+            assertEquals(1, root.getChildren().size(), "only the declaration-backed method is a root");
+            assertTrue(root.getChildren().get(0).getChildren().isEmpty(), "control-flow folds are not members");
+            return root.getChildren().stream().map(StructurePanelFxTest::label).toList();
+        });
+
+        assertEquals(List.of("ifLsp"), labels);
+    }
+
+    private static void setSymbols(EditorBuffer buffer, List<Symbol> symbols) {
+        try {
+            Field field = EditorBuffer.class.getDeclaredField("symbols");
+            field.setAccessible(true);
+            field.set(buffer, symbols);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
     }
 
     @Test

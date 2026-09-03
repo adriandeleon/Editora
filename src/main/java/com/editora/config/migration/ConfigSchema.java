@@ -190,7 +190,9 @@ public enum ConfigSchema {
                     // v8→9: + floatingToolWindows / floatingToolWindowBounds (additive)
                     8, ConfigMigrations::identity,
                     // v9→10: + toolWindowPresentationModes (additive; missing means docked)
-                    9, ConfigMigrations::identity)),
+                    9, ConfigMigrations::identity,
+                    // v10→v11: + projectMapFlow (additive; right-to-left is the default canvas layout)
+                    10, ConfigMigrations::identity)),
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.

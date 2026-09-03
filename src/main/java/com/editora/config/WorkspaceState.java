@@ -29,8 +29,10 @@ public class WorkspaceState {
      * <p>v6 → v7 <em>removed</em> {@code kind} from {@link RunConfiguration}. Identity all the same: an
      * unknown field is ignored on load and dropped on the next write, and running or debugging is now the
      * caller's choice rather than something the entry declares.
+     *
+     * <p>v10 → v11 added {@code projectMapFlow}; right-to-left is the default canvas layout.
      */
-    public static final int SCHEMA_VERSION = 10;
+    public static final int SCHEMA_VERSION = 11;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -110,6 +112,8 @@ public class WorkspaceState {
 
     /** Name of the configuration selected in the toolbar, so the choice survives a restart. */
     private String selectedRunConfig = "";
+    /** Last Project Map flow direction; blank/unknown values fall back to right-to-left. Additive in v11. */
+    private String projectMapFlow = "RIGHT_TO_LEFT";
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
     private String httpEnvironment = "";
 
@@ -392,6 +396,14 @@ public class WorkspaceState {
 
     public void setSelectedRunConfig(String selectedRunConfig) {
         this.selectedRunConfig = selectedRunConfig == null ? "" : selectedRunConfig;
+    }
+
+    public String getProjectMapFlow() {
+        return projectMapFlow == null ? "RIGHT_TO_LEFT" : projectMapFlow;
+    }
+
+    public void setProjectMapFlow(String projectMapFlow) {
+        this.projectMapFlow = projectMapFlow == null ? "RIGHT_TO_LEFT" : projectMapFlow;
     }
 
     public Map<String, String> getProgramArgs() {

@@ -76,9 +76,10 @@ Editora is built with the help of AI coding tools.
   Miller-column navigator with per-column filters and hidden-file toggles, Explorer-matched folder-first
   sorting, content-sized columns that keep full names visible, movable/pinnable columns, four directional
   flows, mouse-wheel zoom, breadcrumbs, history,
-  fit/center controls, an overview, editor/Git status, metadata tooltips, and the tree's complete right-click
-  menu. A file selection opens a floating, resizable, scrollable code preview on the map; use its
-  Open action or double-click to promote the file to a normal editor tab. Open (`C-x C-p`)/switch (`C-x
+  fit/center controls, an overview, editor/Git/bookmark/Personal Note status, metadata tooltips, and the
+  tree's complete right-click menu. Right-click a file in either view to add a first-line bookmark or
+  Personal Note. Clicking a file opens it in a normal editor tab; its dedicated preview icon opens a
+  floating, resizable, read-only text or image preview on the map. Open (`C-x C-p`)/switch (`C-x
   p`)/close via the palette or toolbar; switching restores that project's files and layout. With no project
   open, the Project tool window becomes a **"Current Folder"** explorer rooted at the active file's directory,
   tracking the focused tab.
@@ -326,8 +327,8 @@ Editora is built with the help of AI coding tools.
 - **Zen & Expert modes** — per-window distraction-free overlays that hide chrome without touching your saved
   preferences. **Zen** (`C-c z`, floating "Z" to exit) hides everything — toolbar, status bar, tab bar,
   breadcrumb, tool stripes, line numbers, minimap, ruler. **Expert** (`C-c C-e`, floating "E" to exit) is a
-  lighter version that strips only the surrounding window chrome (toolbar, tab bar, breadcrumb, tool stripes,
-  whitespace guides) and **keeps the whole editor view** — line numbers, status bar, minimap, ruler and
+  lighter version that strips most surrounding window chrome (toolbar, tab bar, breadcrumb, tool stripes,
+  whitespace guides) and **keeps the menu bar and whole editor view** — line numbers, status bar, minimap, ruler and
   current-line highlight — a focused coding surface that still shows where you are. The two are mutually
   exclusive; both are also in *Settings → Interface → Modes*, the palette (**View: Toggle Zen/Expert Mode**),
   and a launch flag (`--zen` / `--expert`).
@@ -346,7 +347,8 @@ Editora is built with the help of AI coding tools.
   remembered per file. **Links are clickable** — a hand cursor + click opens the destination in the
   system default browser. In Split mode the editor and preview scroll together (the pane under the mouse
   drives the other). Zoom the preview text with its `−`/`+` control or, in Preview mode,
-  **Ctrl + mouse wheel**. The **Structure** tool window shows the document's heading outline.
+  **Ctrl + mouse wheel**. The **Structure** tool window shows the document's heading outline, using the
+  active editor theme's syntax styling for item names, parameter types, and return types.
 - **Markdown authoring** — **paste or drag-drop images** into a saved Markdown file (saved into a sibling
   `assets/` folder with an `![](…)` link inserted), **smart link paste** (paste a URL over a selection to
   make `[selection](url)`), and **table editing** with **Tab** / **Shift-Tab** to move between cells and
@@ -511,7 +513,8 @@ Editora is built with the help of AI coding tools.
 - **Bookmarks** — toggle line bookmarks (`C-c m`) with a gutter marker and optional notes; the
   Bookmarks tool window lists them across all files, `C-c ]`/`C-c [` cycle within a file, and `M-g b`
   is a cross-file jump picker. Reorder bookmarks (and file groups) in the tool window with Alt+Up/Down,
-  the right-click menu, or drag-and-drop — the jump picker follows the same order. Saved in
+  the right-click menu, or drag-and-drop — the jump picker follows the same order. A Project Tree/Map
+  file menu can add a bookmark at line 1 without opening the file, and annotated files show a small badge. Saved in
   `bookmarks.json`, scoped per project (switching projects shows that project's bookmarks; deleting a
   project deletes its bookmarks).
 - **Personal Notes** — private annotations attached to a file *without modifying the file* (ideal for
@@ -522,7 +525,8 @@ Editora is built with the help of AI coding tools.
   outside the app (a note that can't be relocated is kept as *orphaned*, never lost). A gutter glyph, a
   soft in-editor highlight, and a hover tooltip mark each note (toggle via *Settings → Editor → Show note
   indicators*). The **Personal Notes** tool window (`M-5`) groups them per file with a filter and
-  edit/resolve/delete; `M-g n` jumps across files and notes export to JSON. Stored per project in
+  edit/resolve/delete; `M-g n` jumps across files and notes export to JSON. The Project Tree/Map file menu
+  can add a line-1 note directly, and files with notes show a small badge. Stored per project in
   `notes.json`. Separate from bookmarks — both coexist in the gutter. **On by default** — toggle
   under *Settings → Application → Enable Personal Notes*.
 - **Git** — uses your installed `git` (no bundled library). The status bar shows the current branch with

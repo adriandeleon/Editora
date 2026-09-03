@@ -69,6 +69,7 @@ final class BookmarkCoordinator {
     private final Ops ops;
     private final BookmarksPanel panel;
     private final QuickOpen<BookmarkEntry> jumpPalette;
+    private Runnable onChanged = () -> {};
 
     // The per-edit (line-shift) persist is coalesced: a synchronous atomic bookmarks.json write + a full
     // Bookmarks-tree rebuild per newline (holding Enter above a bookmark) would block the FX thread. Explicit
@@ -127,6 +128,65 @@ final class BookmarkCoordinator {
         return panel;
     }
 
+    void setOnChanged(Runnable callback) {
+        onChanged = callback == null ? () -> {} : callback;
+    }
+
+    boolean hasBookmarks(Path file) {
+        if (file == null) {
+            return false;
+        }
+        EditorBuffer open = ops.bufferForPath(file);
+        if (open != null) {
+            return !open.getBookmarkManager().snapshot().isEmpty();
+        }
+        List<Bookmark> stored = bookmarksFor(file);
+        return stored != null && !stored.isEmpty();
+    }
+
+    /** Adds a deterministic file-manager bookmark at the file's first line without opening a tab. */
+    void addBookmark(Path file) {
+        if (file == null) {
+            return;
+        }
+        EditorBuffer open = ops.bufferForPath(file);
+        if (open != null) {
+            if (!open.getBookmarkManager().isBookmarked(0)) {
+                open.getBookmarkManager().add(0, "");
+                open.refreshGutterLine(0);
+            }
+            return;
+        }
+        String key = normalizedKey(file);
+        List<Bookmark> marks = bookmarksFor(file);
+        List<Bookmark> updated = marks == null ? new ArrayList<>() : new ArrayList<>(marks);
+        if (updated.stream().noneMatch(mark -> mark.line() == 0)) {
+            updated.add(new Bookmark(0, "", ""));
+            ops.bookmarks().put(key, updated);
+            ops.saveBookmarks();
+            refreshViews();
+        }
+    }
+
+    private List<Bookmark> bookmarksFor(Path file) {
+        Map<String, List<Bookmark>> map = ops.bookmarks();
+        List<Bookmark> marks = map.get(file.toString());
+        return marks != null ? marks : map.get(normalizedKey(file));
+    }
+
+    private static String normalizedKey(Path file) {
+        try {
+            return file.toAbsolutePath().normalize().toString();
+        } catch (RuntimeException e) {
+            return file.toString();
+        }
+    }
+
+    private void refreshViews() {
+        panel.refresh();
+        onChanged.run();
+    }
+
     /** The cross-project view the panel renders on each refresh (every bucket + the current key + a name resolver). */
     private BookmarksPanel.Scope scope() {
         return new BookmarksPanel.Scope(ops.allBookmarks(), ops.currentProjectKey(), ops::projectName);
@@ -148,6 +208,7 @@ final class BookmarkCoordinator {
     void schedulePersistBookmarks(EditorBuffer buffer) {
         pendingPersist = buffer;
         persistDebounce.playFromStart();
+        onChanged.run();
     }
 
     private void flushPendingPersist() {
@@ -178,7 +239,7 @@ final class BookmarkCoordinator {
             map.put(file.toString(), BookmarkStore.mergePreservingOrder(map.get(file.toString()), marks));
         }
         ops.saveBookmarks();
-        panel.refresh();
+        refreshViews();
     }
 
     /** Re-applies a file's saved bookmarks after it is opened (and paints their gutter markers). */
@@ -205,7 +266,7 @@ final class BookmarkCoordinator {
         if (moved != null) {
             map.put(newKey, moved);
             ops.saveBookmarks();
-            panel.refresh();
+            refreshViews();
         }
     }
 
@@ -327,7 +388,7 @@ final class BookmarkCoordinator {
             ops.bookmarks().putAll(updated);
             ops.saveBookmarks();
             restoreBookmarks(b); // pull the mnemonic back into the live manager
-            panel.refresh();
+            refreshViews();
             host.setStatus(
                     m.isEmpty()
                             ? tr("status.bookmarks.mnemonicCleared")
@@ -379,7 +440,7 @@ final class BookmarkCoordinator {
         list.add(toIndex, list.remove(fromIndex));
         ops.bookmarks().put(file.toString(), list);
         ops.saveBookmarks();
-        panel.refresh();
+        refreshViews();
     }
 
     /** Reorders a whole file group among the file headers (Bookmarks tool window drag / Alt+Up/Down). */
@@ -395,7 +456,7 @@ final class BookmarkCoordinator {
         map.clear();
         map.putAll(reordered);
         ops.saveBookmarks();
-        panel.refresh();
+        refreshViews();
     }
 
     private static boolean inRange(int i, int size) {
@@ -455,7 +516,7 @@ final class BookmarkCoordinator {
         Map<String, List<Bookmark>> bucket = bucketFor(projectKey);
         if (bucket != null && bucket.remove(file.toString()) != null) {
             ops.saveBookmarks();
-            panel.refresh();
+            refreshViews();
         }
     }
 
@@ -492,6 +553,6 @@ final class BookmarkCoordinator {
             map.put(file.toString(), marks);
         }
         ops.saveBookmarks();
-        panel.refresh();
+        refreshViews();
     }
 }
