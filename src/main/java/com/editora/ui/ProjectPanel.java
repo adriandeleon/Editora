@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -490,7 +489,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         this.showHidden = showHidden;
-        mapView.setShowHidden(showHidden);
         if (root != null) {
             rebuildBody(); // recreate the tree (PathItems capture the flag) with the new visibility
         }
@@ -1394,9 +1392,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         } catch (IOException | RuntimeException ex) {
             return List.of();
         }
-        Comparator<Path> byName = Comparator.comparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER);
-        dirs.sort(byName);
-        files.sort(byName);
+        dirs.sort(ProjectPathOrder.DIRECTORIES_FIRST);
+        files.sort(ProjectPathOrder.DIRECTORIES_FIRST);
         List<Path> all = new ArrayList<>(dirs.size() + files.size());
         all.addAll(dirs);
         all.addAll(files);

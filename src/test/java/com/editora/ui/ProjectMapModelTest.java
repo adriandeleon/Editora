@@ -131,6 +131,34 @@ class ProjectMapModelTest {
         assertEquals(2, columns.get(1).totalEntries());
     }
 
+    @Test
+    void columnsUseExplorerOrderingAndCanHideDotEntriesPerDepth() {
+        Path src = root.resolve("src");
+        Path docs = root.resolve("Docs");
+        Path hidden = root.resolve(".config");
+        Path hiddenChild = hidden.resolve("settings.json");
+        Path readme = root.resolve("README.md");
+        Path authors = root.resolve("authors.txt");
+        List<ProjectMapModel.Entry> entries = List.of(
+                new ProjectMapModel.Entry(root, null, 0, true),
+                new ProjectMapModel.Entry(readme, root, 1, false),
+                new ProjectMapModel.Entry(src, root, 1, true),
+                new ProjectMapModel.Entry(authors, root, 1, false),
+                new ProjectMapModel.Entry(hidden, root, 1, true),
+                new ProjectMapModel.Entry(docs, root, 1, true),
+                new ProjectMapModel.Entry(hiddenChild, hidden, 2, false));
+
+        List<ProjectMapModel.Column> shown = ProjectMapModel.columns(entries, Map.of(), Map.of());
+        assertEquals(
+                List.of(normalize(hidden), normalize(docs), normalize(src), normalize(authors), normalize(readme)),
+                shown.get(1).entries().stream().map(ProjectMapModel.Entry::path).toList());
+
+        List<ProjectMapModel.Column> hiddenAtDepthOne = ProjectMapModel.columns(entries, Map.of(), Map.of(1, false));
+        assertFalse(hiddenAtDepthOne.get(1).entries().stream()
+                .anyMatch(entry -> entry.path().equals(normalize(hidden))));
+        assertTrue(hiddenAtDepthOne.get(2).entries().isEmpty(), "hidden ancestors must also hide descendants");
+    }
+
     private static Path normalize(Path path) {
         return ProjectMapModel.normalize(path);
     }

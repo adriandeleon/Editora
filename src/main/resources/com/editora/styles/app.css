@@ -1023,6 +1023,7 @@
 }
 .project-map-filter-chip,
 .project-map-type-filter,
+.project-map-flow-filter,
 .project-map-filter-clear {
     -fx-font-size: 10px;
 }
@@ -1050,6 +1051,9 @@
 .project-map-type-filter {
     -fx-pref-width: 92px;
 }
+.project-map-flow-filter {
+    -fx-pref-width: 132px;
+}
 .project-map-host {
     -fx-background-color: -color-bg-default;
     -fx-border-color: -color-border-default;
@@ -1068,6 +1072,11 @@
 }
 .project-map-column-filter:focused {
     -fx-border-color: -color-accent-emphasis;
+}
+.project-map-column-hidden {
+    -fx-font-size: 9px;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 1 0 1 0;
 }
 .project-map-column-pin {
     -fx-background-color: transparent;

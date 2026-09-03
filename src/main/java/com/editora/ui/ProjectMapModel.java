@@ -7,7 +7,6 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
@@ -152,6 +151,11 @@ final class ProjectMapModel {
      * folder are omitted too, so the remaining geometry always represents a valid visible hierarchy.
      */
     static List<Column> columns(List<Entry> entries, Map<Integer, String> columnQueries) {
+        return columns(entries, columnQueries, Map.of());
+    }
+
+    static List<Column> columns(
+            List<Entry> entries, Map<Integer, String> columnQueries, Map<Integer, Boolean> showHiddenByDepth) {
         if (entries == null || entries.isEmpty()) {
             return List.of();
         }
@@ -164,12 +168,14 @@ final class ProjectMapModel {
         for (var group : grouped.entrySet()) {
             int depth = group.getKey();
             List<Entry> all = group.getValue().stream()
-                    .sorted(Comparator.comparing(Entry::name, String.CASE_INSENSITIVE_ORDER))
+                    .sorted(ProjectPathOrder.directoriesFirst(Entry::directory, Entry::name))
                     .toList();
             String query = columnQueries == null ? "" : columnQueries.getOrDefault(depth, "");
             String normalizedQuery = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
+            boolean showHidden = showHiddenByDepth == null || showHiddenByDepth.getOrDefault(depth, true);
             List<Entry> shown = all.stream()
                     .filter(entry -> depth == 0 || entry.parent() == null || visible.contains(entry.parent()))
+                    .filter(entry -> showHidden || !entry.name().startsWith("."))
                     .filter(entry -> normalizedQuery.isEmpty() || FuzzyMatch.of(entry.name(), normalizedQuery) != null)
                     .toList();
             shown.forEach(entry -> visible.add(entry.path()));
@@ -189,7 +195,7 @@ final class ProjectMapModel {
                     path,
                     parent,
                     depth,
-                    attributes.isDirectory(),
+                    Files.isDirectory(path),
                     attributes.isRegularFile() ? attributes.size() : -1,
                     attributes.lastModifiedTime().toMillis(),
                     attributes.isSymbolicLink());
@@ -277,10 +283,7 @@ final class ProjectMapModel {
         } catch (IOException | RuntimeException ignored) {
             return List.of();
         }
-        Comparator<Path> order = Comparator.<Path, Boolean>comparing(
-                        path -> !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS))
-                .thenComparing(path -> path.getFileName().toString(), String.CASE_INSENSITIVE_ORDER);
-        result.sort(order);
+        result.sort(ProjectPathOrder.DIRECTORIES_FIRST);
         return result;
     }
 

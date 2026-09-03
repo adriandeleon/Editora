@@ -13,6 +13,8 @@ import javafx.event.Event;
 import javafx.geometry.Point2D;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
@@ -473,6 +475,139 @@ class ProjectMapViewFxTest {
     }
 
     @Test
+    void columnHiddenCheckboxStartsEnabledAndHidesTheWholeDotFolderBranch() throws Exception {
+        Path hidden = root.resolve(".config").toAbsolutePath().normalize();
+        Path hiddenChild = hidden.resolve("settings.json");
+        Path source = root.resolve("src").toAbsolutePath().normalize();
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 720, 420);
+                mapView.resize(720, 420);
+                mapView.layout();
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        List.of(
+                                new ProjectMapModel.Entry(root, null, 0, true),
+                                new ProjectMapModel.Entry(hidden, root, 1, true),
+                                new ProjectMapModel.Entry(source, root, 1, true),
+                                new ProjectMapModel.Entry(hiddenChild, hidden, 2, false)),
+                        Set.of(root, hidden));
+
+                Object controls = FxTestSupport.<Map<Integer, ?>>field(surface, "columnControls")
+                        .get(1);
+                CheckBox showHidden = (CheckBox) FxTestSupport.call(controls, "showHidden", new Class<?>[0]);
+                assertTrue(showHidden.isSelected());
+                assertTrue(FxTestSupport.<List<?>>field(surface, "boxes").stream()
+                        .anyMatch(box -> entryOf(box).path().equals(hidden)));
+
+                showHidden.fire();
+                assertFalse(FxTestSupport.<List<?>>field(surface, "boxes").stream()
+                        .anyMatch(box -> entryOf(box).path().equals(hidden)));
+                assertFalse(FxTestSupport.<List<?>>field(surface, "boxes").stream()
+                        .anyMatch(box -> entryOf(box).path().equals(hiddenChild)));
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
+    void flowSelectorReorientsColumnsAndRowsInAllFourDirections() throws Exception {
+        Path src = root.resolve("src").toAbsolutePath().normalize();
+        Path docs = root.resolve("docs").toAbsolutePath().normalize();
+        Path java = src.resolve("App.java");
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 900, 600);
+                mapView.resize(900, 600);
+                mapView.layout();
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        List.of(
+                                new ProjectMapModel.Entry(root, null, 0, true),
+                                new ProjectMapModel.Entry(src, root, 1, true),
+                                new ProjectMapModel.Entry(docs, root, 1, true),
+                                new ProjectMapModel.Entry(java, src, 2, false)),
+                        Set.of(root, src));
+
+                @SuppressWarnings("unchecked")
+                ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(mapView, "flowFilter");
+                assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, flow.getValue());
+                assertTrue(origin(boxFor(surface, java), "x") > origin(boxFor(surface, src), "x"));
+
+                flow.setValue(ProjectMapView.FlowDirection.RIGHT_TO_LEFT);
+                assertTrue(origin(boxFor(surface, java), "x") < origin(boxFor(surface, src), "x"));
+
+                flow.setValue(ProjectMapView.FlowDirection.TOP_TO_BOTTOM);
+                assertTrue(origin(boxFor(surface, java), "y") > origin(boxFor(surface, src), "y"));
+                assertTrue(origin(boxFor(surface, src), "x") > origin(boxFor(surface, docs), "x"));
+
+                flow.setValue(ProjectMapView.FlowDirection.BOTTOM_TO_TOP);
+                assertTrue(origin(boxFor(surface, java), "y") < origin(boxFor(surface, src), "y"));
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
+    void arrowKeysFollowTheSelectedFlowDirection() throws Exception {
+        Path src = root.resolve("src").toAbsolutePath().normalize();
+        Path java = src.resolve("App.java");
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 700, 420);
+                mapView.resize(700, 420);
+                mapView.layout();
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        List.of(
+                                new ProjectMapModel.Entry(root, null, 0, true),
+                                new ProjectMapModel.Entry(src, root, 1, true),
+                                new ProjectMapModel.Entry(java, src, 2, false)),
+                        Set.of(root, src));
+
+                FxTestSupport.call(surface, "setSelected", new Class<?>[] {Path.class}, src);
+                FxTestSupport.call(
+                        surface,
+                        "setFlowDirection",
+                        new Class<?>[] {ProjectMapView.FlowDirection.class},
+                        ProjectMapView.FlowDirection.TOP_TO_BOTTOM);
+                FxTestSupport.call(surface, "navigateArrow", new Class<?>[] {KeyCode.class}, KeyCode.DOWN);
+                assertEquals(java, selectedPath(surface));
+
+                FxTestSupport.call(surface, "navigateArrow", new Class<?>[] {KeyCode.class}, KeyCode.UP);
+                assertEquals(src, selectedPath(surface));
+
+                FxTestSupport.call(
+                        surface,
+                        "setFlowDirection",
+                        new Class<?>[] {ProjectMapView.FlowDirection.class},
+                        ProjectMapView.FlowDirection.RIGHT_TO_LEFT);
+                FxTestSupport.call(surface, "navigateArrow", new Class<?>[] {KeyCode.class}, KeyCode.LEFT);
+                assertEquals(java, selectedPath(surface));
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
     void columnFiltersReflowDescendantsAndPinnedColumnsDoNotDrag() throws Exception {
         Path src = root.resolve("src").toAbsolutePath().normalize();
         Path docs = root.resolve("docs").toAbsolutePath().normalize();
@@ -590,6 +725,14 @@ class ProjectMapViewFxTest {
         return (ProjectMapModel.Entry) FxTestSupport.call(box, "entry", new Class<?>[0]);
     }
 
+    @SuppressWarnings("unchecked")
+    private static Path selectedPath(Region surface) {
+        return ((java.util.Optional<ProjectMapModel.Entry>)
+                        FxTestSupport.call(surface, "selectedEntry", new Class<?>[0]))
+                .orElseThrow()
+                .path();
+    }
+
     private static Object columnBoxFor(Region surface, int depth) {
         List<?> boxes = FxTestSupport.field(surface, "columnBoxes");
         return boxes.stream()
@@ -605,6 +748,10 @@ class ProjectMapViewFxTest {
     private static double center(Object box, String origin, String size) {
         return (double) FxTestSupport.call(box, origin, new Class<?>[0])
                 + (double) FxTestSupport.call(box, size, new Class<?>[0]) / 2;
+    }
+
+    private static double origin(Object box, String coordinate) {
+        return (double) FxTestSupport.call(box, coordinate, new Class<?>[0]);
     }
 
     private static void move(Region target, double x, double y) {
