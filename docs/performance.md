@@ -61,8 +61,11 @@ private void scheduleRedraw() {
 }
 ```
 
-For text-driven work, debounce on the RichTextFX stream rather than per-change:
-`area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(...)`.
+For text-driven work inside `EditorBuffer`, register a milestone with its shared
+`SettledEditDispatcher` rather than adding another RichTextFX `successionEnds` subscription. One document
+subscription resets one JavaFX timer sequence, which preserves each feature's delay while inactive feature
+milestones are never armed. Standalone controls without that dispatcher should still debounce on their
+RichTextFX stream rather than doing expensive work per change.
 
 ### 3. Work incrementally, and only on what's visible
 

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settled edit work now uses one timer sequence per buffer.** Highlighting, live previews, completion,
+  TODO scans, LSP synchronization, Undo History, lint, and AI completion retain their existing idle delays,
+  but no longer keep separate ReactFX debounce pipelines. Disabled features do not arm timer milestones, and
+  both sides of a split editor share the same document-level dispatcher.
+
 - **Settled editor features now share one whole-document snapshot per revision.** Syntax highlighting,
   folding, TODO and lint scans, LSP synchronization, previews, run-target detection, saves, and Undo History
   no longer ask RichTextFX to copy the same complete document independently after one edit burst. Each buffer
