@@ -11,6 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -178,6 +179,84 @@ class ProjectMapViewFxTest {
         } finally {
             FxTestSupport.runOnFx(panel::dispose);
         }
+    }
+
+    @Test
+    void globalSearchOpensTheColumnsThatRevealMatchingFiles() throws Exception {
+        Path source = Files.createDirectories(root.resolve("src/main/java/com/editora/dap"));
+        Path match = Files.writeString(source.resolve("FileResult.java"), "record FileResult() {}")
+                .toAbsolutePath()
+                .normalize();
+        ProjectPanel panel = FxTestSupport.callOnFx(() -> {
+            ProjectPanel value = new ProjectPanel(path -> {}, (from, to) -> {}, path -> {}, path -> false);
+            value.setRoot(root);
+            return value;
+        });
+        try {
+            ProjectMapView mapView = FxTestSupport.field(panel, "mapView");
+            Region surface = FxTestSupport.field(mapView, "surface");
+            FxTestSupport.runOnFx(() -> {
+                HBox filterBar = FxTestSupport.field(panel, "filterBar");
+                HBox modes = (HBox) filterBar.getChildren().getLast();
+                ((ToggleButton) modes.getChildren().getLast()).fire();
+
+                Scene scene = new Scene(panel, 900, 620);
+                scene.getStylesheets()
+                        .add(ProjectMapViewFxTest.class
+                                .getResource("/com/editora/styles/app.css")
+                                .toExternalForm());
+                panel.resize(900, 620);
+                panel.applyCss();
+                panel.layout();
+
+                TextField filter = FxTestSupport.field(panel, "filterField");
+                filter.setText("FileResult.java");
+                FxTestSupport.<javafx.animation.PauseTransition>field(panel, "filterDebounce")
+                        .stop();
+                FxTestSupport.invoke(panel, "rebuildBody");
+            });
+
+            Set<Path> expectedExpansion = Set.of(
+                    root.toAbsolutePath().normalize(),
+                    root.resolve("src").toAbsolutePath().normalize(),
+                    root.resolve("src/main").toAbsolutePath().normalize(),
+                    root.resolve("src/main/java").toAbsolutePath().normalize(),
+                    root.resolve("src/main/java/com").toAbsolutePath().normalize(),
+                    root.resolve("src/main/java/com/editora").toAbsolutePath().normalize(),
+                    source.toAbsolutePath().normalize());
+            waitForFx(() -> mapView.expandedDirectories().containsAll(expectedExpansion)
+                    && (boolean) FxTestSupport.call(surface, "contains", new Class<?>[] {Path.class}, match));
+
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(match, FxTestSupport.field(surface, "selected"));
+                assertEquals(
+                        Set.of(root.toAbsolutePath().normalize()),
+                        FxTestSupport.<Set<Path>>field(mapView, "expanded"),
+                        "search expansion must not replace the user's manually opened branches");
+
+                TextField filter = FxTestSupport.field(panel, "filterField");
+                filter.clear();
+                FxTestSupport.<javafx.animation.PauseTransition>field(panel, "filterDebounce")
+                        .stop();
+                FxTestSupport.invoke(panel, "rebuildBody");
+            });
+            waitForFx(() -> mapView.expandedDirectories()
+                            .equals(Set.of(root.toAbsolutePath().normalize()))
+                    && !(boolean) FxTestSupport.call(surface, "contains", new Class<?>[] {Path.class}, match));
+        } finally {
+            FxTestSupport.runOnFx(panel::dispose);
+        }
+    }
+
+    private static void waitForFx(BooleanSupplier condition) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
+                return;
+            }
+            TimeUnit.MILLISECONDS.sleep(20);
+        }
+        assertTrue(FxTestSupport.callOnFx(condition::getAsBoolean), "timed out waiting for the FX state");
     }
 
     private static boolean hasStyleClass(javafx.scene.Node node, String styleClass) {

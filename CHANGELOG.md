@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Project Map filename searches now open the ancestor columns needed to reveal every matching file; clearing
+  the query restores the branches that were open before the search.
 - The Project Map defaults to a right-to-left flow, remembers the last selected direction, centres each newly
   opened column on the folder that opened it while keeping it beyond the parent column without overlap, opens a
   file row directly in an editor tab, clips panned content to the canvas below its toolbar, hides column controls when

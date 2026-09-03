@@ -547,11 +547,28 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         String q = filterField.getText().trim();
         if (mapMode) {
-            filtering = false;
+            filtering = !q.isEmpty();
             mapView.setQuery(q);
             getChildren().setAll(filterBar, mapView);
             VBox.setVgrow(mapView, Priority.ALWAYS);
             syncWatches();
+            if (!q.isEmpty()) {
+                Path searchRoot = root;
+                boolean includeHidden = showHidden;
+                boolean useGitignore = respectGitignore && com.editora.vfs.Vfs.isLocal(root);
+                searchExecutor.submit(() -> {
+                    com.editora.search.GitignoreFilter gitignore = useGitignore
+                            ? com.editora.search.GitignoreFilter.load(searchRoot)
+                            : com.editora.search.GitignoreFilter.NONE;
+                    List<Path> matches = search(searchRoot, q, includeHidden, gitignore);
+                    Platform.runLater(() -> {
+                        if (gen != searchGen.get() || !mapMode) {
+                            return;
+                        }
+                        mapView.setSearchMatches(q, matches);
+                    });
+                });
+            }
             return;
         }
         mapView.hidePreview();
