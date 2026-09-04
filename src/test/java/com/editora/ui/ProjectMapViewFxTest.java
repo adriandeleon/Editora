@@ -609,6 +609,8 @@ class ProjectMapViewFxTest {
         Path child = source.resolve("App.java");
         ProjectMapView mapView =
                 FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        AtomicReference<Region> surfaceRef = new AtomicReference<>();
+        AtomicReference<TextField> filterRef = new AtomicReference<>();
         try {
             FxTestSupport.runOnFx(() -> {
                 new Scene(mapView, 720, 500);
@@ -634,15 +636,21 @@ class ProjectMapViewFxTest {
 
                 Object controls = columnControlsFor(surface, root);
                 TextField filter = (TextField) FxTestSupport.call(controls, "filter", new Class<?>[0]);
-                drag(surface, 690, 370, 690, -130);
+                surfaceRef.set(surface);
+                filterRef.set(filter);
 
-                assertTrue(filter.getLayoutY() < 0, "the test must pan a column control above the viewport");
                 Rectangle clip = (Rectangle) surface.getClip();
                 assertEquals(0, clip.getX(), 0.001);
                 assertEquals(0, clip.getY(), 0.001);
                 assertEquals(surface.getWidth(), clip.getWidth(), 0.001);
                 assertEquals(surface.getHeight(), clip.getHeight(), 0.001);
             });
+            FxTestSupport.runOnFx(() -> {}); // let the initial fit settle before applying a manual pan
+            FxTestSupport.runOnFx(() -> drag(surfaceRef.get(), 690, 370, 690, -130));
+            waitForFx(() -> !(boolean) FxTestSupport.field(surfaceRef.get(), "viewportRepaintPending"));
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> filterRef.get().getLayoutY() < 0),
+                    "the test must pan a column control above the viewport");
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
         }
@@ -654,6 +662,10 @@ class ProjectMapViewFxTest {
         Path child = source.resolve("App.java");
         ProjectMapView mapView =
                 FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        AtomicReference<Region> surfaceRef = new AtomicReference<>();
+        AtomicReference<TextField> filterRef = new AtomicReference<>();
+        AtomicReference<CheckBox> showHiddenRef = new AtomicReference<>();
+        AtomicReference<ToggleButton> pinRef = new AtomicReference<>();
         try {
             FxTestSupport.runOnFx(() -> {
                 new Scene(mapView, 720, 500);
@@ -681,31 +693,43 @@ class ProjectMapViewFxTest {
                 TextField filter = (TextField) FxTestSupport.call(controls, "filter", new Class<?>[0]);
                 CheckBox showHidden = (CheckBox) FxTestSupport.call(controls, "showHidden", new Class<?>[0]);
                 ToggleButton pin = (ToggleButton) FxTestSupport.call(controls, "pin", new Class<?>[0]);
+                surfaceRef.set(surface);
+                filterRef.set(filter);
+                showHiddenRef.set(showHidden);
+                pinRef.set(pin);
                 assertTrue(filter.isVisible());
                 assertTrue(showHidden.isVisible());
                 assertTrue(pin.isVisible());
-
+            });
+            FxTestSupport.runOnFx(() -> {}); // let the initial fit settle before testing interactive zoom
+            FxTestSupport.runOnFx(() -> {
                 FxTestSupport.call(
-                        surface,
+                        surfaceRef.get(),
                         "setZoom",
                         new Class<?>[] {double.class, double.class, double.class},
                         0.4,
                         360.0,
                         200.0);
-                assertFalse(filter.isVisible());
-                assertFalse(showHidden.isVisible());
-                assertFalse(pin.isVisible());
+            });
+            waitForFx(() -> !(boolean) FxTestSupport.field(surfaceRef.get(), "viewportRepaintPending"));
+            FxTestSupport.runOnFx(() -> {
+                assertFalse(filterRef.get().isVisible());
+                assertFalse(showHiddenRef.get().isVisible());
+                assertFalse(pinRef.get().isVisible());
 
                 FxTestSupport.call(
-                        surface,
+                        surfaceRef.get(),
                         "setZoom",
                         new Class<?>[] {double.class, double.class, double.class},
                         1.0,
                         360.0,
                         200.0);
-                assertTrue(filter.isVisible());
-                assertTrue(showHidden.isVisible());
-                assertTrue(pin.isVisible());
+            });
+            waitForFx(() -> !(boolean) FxTestSupport.field(surfaceRef.get(), "viewportRepaintPending"));
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(filterRef.get().isVisible());
+                assertTrue(showHiddenRef.get().isVisible());
+                assertTrue(pinRef.get().isVisible());
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
@@ -1479,6 +1503,94 @@ class ProjectMapViewFxTest {
     }
 
     @Test
+    void connectorsForOffscreenDestinationRowsAreNotSubmittedToTheCanvas() throws Exception {
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 720, 420);
+                mapView.resize(720, 420);
+                mapView.layout();
+                Region surface = FxTestSupport.field(mapView, "surface");
+                surface.resize(720, 340);
+                surface.layout();
+                FxTestSupport.call(
+                        surface,
+                        "setFlowDirection",
+                        new Class<?>[] {ProjectMapView.FlowDirection.class},
+                        ProjectMapView.FlowDirection.LEFT_TO_RIGHT);
+
+                List<ProjectMapModel.Entry> entries = new ArrayList<>();
+                Path normalizedRoot = root.toAbsolutePath().normalize();
+                entries.add(new ProjectMapModel.Entry(normalizedRoot, null, 0, true));
+                for (int i = 0; i < 120; i++) {
+                    entries.add(new ProjectMapModel.Entry(
+                            normalizedRoot.resolve("file-" + i + ".txt"), normalizedRoot, 1, false));
+                }
+                FxTestSupport.call(
+                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(normalizedRoot));
+
+                int painted = FxTestSupport.field(surface, "lastPaintedConnectorCount");
+                assertTrue(painted > 0, "visible destination rows should retain their connectors");
+                assertTrue(
+                        painted < 20,
+                        "the visible parent must not make all 120 offscreen destination connectors render: " + painted);
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
+    void zoomAndPanRepaintsAreCoalescedToOneJavaFxPulse() throws Exception {
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        AtomicReference<Stage> stageRef = new AtomicReference<>();
+        AtomicReference<Region> surfaceRef = new AtomicReference<>();
+        AtomicReference<Long> paintsBeforeGesture = new AtomicReference<>();
+        try {
+            FxTestSupport.runOnFx(() -> {
+                Stage stage = new Stage();
+                stage.setScene(new Scene(mapView, 720, 420));
+                stage.show();
+                mapView.applyCss();
+                mapView.layout();
+                Region surface = FxTestSupport.field(mapView, "surface");
+                stageRef.set(stage);
+                surfaceRef.set(surface);
+            });
+            waitForFx(() -> surfaceRef.get().getWidth() > 1 && surfaceRef.get().getHeight() > 1);
+
+            FxTestSupport.runOnFx(() -> {
+                Region surface = surfaceRef.get();
+                long before = FxTestSupport.field(surface, "completedPaints");
+                paintsBeforeGesture.set(before);
+                for (int i = 0; i < 12; i++) {
+                    FxTestSupport.invokeWith(surface, "scrolled", ScrollEvent.class, scroll(surface, 4, i % 2 == 0));
+                }
+                assertEquals(
+                        before,
+                        (long) FxTestSupport.field(surface, "completedPaints"),
+                        "continuous viewport events must not paint synchronously");
+                assertTrue((boolean) FxTestSupport.field(surface, "viewportRepaintPending"));
+            });
+
+            waitForFx(() -> !FxTestSupport.<Boolean>field(surfaceRef.get(), "viewportRepaintPending"));
+            assertEquals(
+                    paintsBeforeGesture.get() + 1,
+                    (long) FxTestSupport.field(surfaceRef.get(), "completedPaints"),
+                    "all zoom and pan events queued before the pulse should share one Canvas paint");
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                mapView.dispose();
+                if (stageRef.get() != null) {
+                    stageRef.get().hide();
+                }
+            });
+        }
+    }
+
+    @Test
     void plainMouseWheelZoomsAroundThePointer() throws Exception {
         ProjectMapView mapView =
                 FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
@@ -1687,6 +1799,33 @@ class ProjectMapViewFxTest {
                 false,
                 false,
                 false,
+                new PickResult(target, x, y));
+    }
+
+    private static ScrollEvent scroll(Region target, double deltaY, boolean shiftDown) {
+        double x = target.getWidth() / 2;
+        double y = target.getHeight() / 2;
+        return new ScrollEvent(
+                ScrollEvent.SCROLL,
+                x,
+                y,
+                x,
+                y,
+                shiftDown,
+                false,
+                false,
+                false,
+                true,
+                false,
+                0,
+                deltaY,
+                0,
+                deltaY,
+                ScrollEvent.HorizontalTextScrollUnits.NONE,
+                0,
+                ScrollEvent.VerticalTextScrollUnits.NONE,
+                0,
+                0,
                 new PickResult(target, x, y));
     }
 

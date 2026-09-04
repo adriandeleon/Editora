@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Project Map pan and zoom gestures now coalesce rendering to one Canvas repaint per JavaFX pulse, and tall
+  columns no longer rasterize connectors for rows outside the viewport overscan.
 - Project Map filename searches now open the ancestor columns needed to reveal every matching file; clearing
   the query restores the branches that were open before the search.
 - The Project Map defaults to a right-to-left flow, remembers the last selected direction, centres each newly

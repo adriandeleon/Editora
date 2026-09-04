@@ -20,6 +20,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import javafx.animation.AnimationTimer;
 import javafx.application.Platform;
 import javafx.event.EventHandler;
 import javafx.geometry.Insets;
@@ -833,6 +834,7 @@ final class ProjectMapView extends VBox {
         private static final double OUTPUT_MARGIN = 24;
         private static final double MAX_OUTPUT_DIMENSION = 8_192;
         private static final double MAX_OUTPUT_PIXELS = 12_000_000;
+        private static final double CONNECTOR_VIEWPORT_OVERSCAN = 24;
 
         private final Canvas canvas = new Canvas(1, 1);
         private final Rectangle viewportClip = new Rectangle();
@@ -859,6 +861,17 @@ final class ProjectMapView extends VBox {
         private final Map<ProjectMapModel.ColumnId, String> columnQueries = new HashMap<>();
         private final Map<ProjectMapModel.ColumnId, Boolean> columnShowHidden = new HashMap<>();
         private final Map<String, Double> measuredLabelWidths = new HashMap<>();
+        private final AnimationTimer viewportRepaintTimer = new AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                stop();
+                if (!viewportRepaintPending) {
+                    return;
+                }
+                viewportRepaintPending = false;
+                repaint();
+            }
+        };
 
         private List<ProjectMapModel.Entry> entries = List.of();
         private Set<Path> expandedSnapshot = Set.of();
@@ -900,9 +913,12 @@ final class ProjectMapView extends VBox {
         private EventHandler<MouseEvent> dismissFilter;
         private boolean panning;
         private boolean painting;
+        private boolean viewportRepaintPending;
         private boolean viewportInitialized;
         private boolean initialFitPending;
         private int laidOutColumnCount;
+        private int lastPaintedConnectorCount;
+        private long completedPaints;
 
         MapSurface() {
             // The project-tree class supplies the same per-editor-theme folder/file looked-up colors used
@@ -1117,6 +1133,8 @@ final class ProjectMapView extends VBox {
         }
 
         void dispose() {
+            viewportRepaintPending = false;
+            viewportRepaintTimer.stop();
             dismissContextMenu();
             clearNodeTooltip();
             Tooltip.uninstall(this, nodeTooltip);
@@ -1131,12 +1149,24 @@ final class ProjectMapView extends VBox {
             if (painting || getWidth() <= 0 || getHeight() <= 0) {
                 return;
             }
+            viewportRepaintPending = false;
+            viewportRepaintTimer.stop();
             painting = true;
             try {
                 paint();
+                completedPaints++;
             } finally {
                 painting = false;
             }
+        }
+
+        /** Coalesces continuous viewport gestures so they submit no more than one Canvas render per pulse. */
+        private void requestViewportRepaint() {
+            if (viewportRepaintPending || getWidth() <= 0 || getHeight() <= 0) {
+                return;
+            }
+            viewportRepaintPending = true;
+            viewportRepaintTimer.start();
         }
 
         /**
@@ -1409,6 +1439,7 @@ final class ProjectMapView extends VBox {
             boxes.clear();
             columnBoxes.clear();
             overviewBox = null;
+            lastPaintedConnectorCount = 0;
             if (entries.isEmpty()) {
                 columnControls.values().forEach(controls -> {
                     controls.filter().setVisible(false);
@@ -1539,7 +1570,7 @@ final class ProjectMapView extends VBox {
             g.setStroke(color(accentProbe, Color.web("#58a6ff")));
             for (NodeBox child : boxes) {
                 NodeBox parent = byPath.get(child.entry().parent());
-                if (parent == null || !inViewport(parent, width, height) && !inViewport(child, width, height)) {
+                if (parent == null || !connectorInViewport(child, width, height)) {
                     continue;
                 }
                 boolean selectedPath = isOnSelectedPath(child.entry().path());
@@ -1547,6 +1578,7 @@ final class ProjectMapView extends VBox {
                 g.setGlobalAlpha(alpha);
                 g.setLineWidth(Math.max(1, (selectedPath ? 2.25 : 1.15) * zoom));
                 drawConnector(g, parent, child);
+                lastPaintedConnectorCount++;
             }
             for (NodeBox box : boxes) {
                 if (inViewport(box, width, height)) {
@@ -2031,7 +2063,7 @@ final class ProjectMapView extends VBox {
                 if (layout != null && !layout.locked) {
                     layout.x = columnPressOffsetX + (event.getX() - pressX) / zoom;
                     layout.y = columnPressOffsetY + (event.getY() - pressY) / zoom;
-                    repaint();
+                    requestViewportRepaint();
                 }
                 event.consume();
                 return;
@@ -2041,7 +2073,7 @@ final class ProjectMapView extends VBox {
             }
             offsetX = pressOffsetX + event.getX() - pressX;
             offsetY = pressOffsetY + event.getY() - pressY;
-            repaint();
+            requestViewportRepaint();
             event.consume();
         }
 
@@ -2221,10 +2253,10 @@ final class ProjectMapView extends VBox {
         private void scrolled(ScrollEvent event) {
             if (event.isShiftDown()) {
                 offsetX += event.getDeltaY();
-                repaint();
+                requestViewportRepaint();
             } else if (event.isAltDown()) {
                 offsetY += event.getDeltaY();
-                repaint();
+                requestViewportRepaint();
             } else {
                 double speed = event.isControlDown() || event.isMetaDown() ? 0.004 : 0.0025;
                 double exponent = Math.max(-0.45, Math.min(0.45, event.getDeltaY() * speed));
@@ -2243,7 +2275,7 @@ final class ProjectMapView extends VBox {
             offsetY = pivotY - (pivotY - offsetY) * ratio;
             zoom = next;
             onZoomChanged.run();
-            repaint();
+            requestViewportRepaint();
         }
 
         private void keyPressed(KeyEvent event) {
@@ -2579,6 +2611,13 @@ final class ProjectMapView extends VBox {
 
         private boolean inViewport(NodeBox box, double width, double height) {
             return box.x() + box.width() >= 0 && box.y() + box.height() >= 0 && box.x() <= width && box.y() <= height;
+        }
+
+        private boolean connectorInViewport(NodeBox child, double width, double height) {
+            return child.x() + child.width() >= -CONNECTOR_VIEWPORT_OVERSCAN
+                    && child.y() + child.height() >= -CONNECTOR_VIEWPORT_OVERSCAN
+                    && child.x() <= width + CONNECTOR_VIEWPORT_OVERSCAN
+                    && child.y() <= height + CONNECTOR_VIEWPORT_OVERSCAN;
         }
 
         private static ProjectMapModel.ColumnId columnId(ProjectMapModel.Entry entry) {
