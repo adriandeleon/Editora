@@ -128,8 +128,11 @@ filesystem work.
 
 `ProjectMapView.MapSurface` owns the canvas coordinate system. Node and column geometry is computed
 in world coordinates, transformed by zoom and pan, stored as immutable hit boxes, and then painted.
-Connectors are drawn before nodes. Only connectors and nodes intersecting the viewport are rendered,
-while the overview summarizes the complete laid-out content.
+Connectors are drawn before nodes. The live map submits connectors only for destination rows that intersect
+the viewport plus a small overscan, so one visible parent cannot make a tall offscreen column rasterize every
+Bezier curve. Nodes use the viewport itself, while the overview summarizes the complete laid-out content.
+Continuous pan, zoom, and column-drag events update their state immediately but coalesce Canvas rendering to
+one repaint per JavaFX pulse.
 
 Print and PDF output temporarily render every laid-out column and connector into a bounded snapshot,
 independent of the live viewport. The snapshot preserves the active flow, filters, open branches,
