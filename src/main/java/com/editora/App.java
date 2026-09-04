@@ -115,16 +115,21 @@ public class App extends Application {
         // WindowManager builds each window (reusing the primary stage for the first) and, with projects
         // enabled, restores every window that was open at last quit. CLI targets go to the first window.
         com.editora.ui.WindowManager windows = new com.editora.ui.WindowManager(shared, keymap, getHostServices());
-        windows.launch(
-                stage,
-                projectArg(rawArgs),
-                fileTargets(rawArgs),
-                zenFlag(rawArgs),
-                expertFlag(rawArgs),
-                newFileArg(rawArgs),
-                simpleFlag(rawArgs),
-                singleWindowArg(rawArgs),
-                noSessionFlag(rawArgs));
+        com.editora.ui.WindowManager.DiffUiRequest diffUi = diffUiArg(rawArgs);
+        if (diffUi != null) {
+            windows.launchDiffUi(stage, diffUi);
+        } else {
+            windows.launch(
+                    stage,
+                    projectArg(rawArgs),
+                    fileTargets(rawArgs),
+                    zenFlag(rawArgs),
+                    expertFlag(rawArgs),
+                    newFileArg(rawArgs),
+                    simpleFlag(rawArgs),
+                    singleWindowArg(rawArgs),
+                    noSessionFlag(rawArgs));
+        }
 
         // macOS: receive files opened via Finder's "Open With" (a CFBundleDocumentTypes association added by
         // the packaged app — written by scripts/aot_build.java's fixMacDocumentTypes, NOT jpackage's
@@ -289,6 +294,13 @@ public class App extends Application {
         // routing is done by the OS (Finder's openFiles Apple Event → MacOpenFiles), so this covers the
         // platforms where a file manager can only pass argv.
         java.util.List<String> argList = java.util.List.of(args);
+        try {
+            diffUiArg(argList); // validate the two operands before starting JavaFX
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
+            System.err.println("Run 'editora --help' for usage.");
+            System.exit(2);
+        }
         java.nio.file.Path configDir = ConfigManager.configDirFor(configDirArg(argList), devFlag(argList));
         singleInstance = com.editora.ipc.SingleInstance.start(configDir, argList, shouldForwardLaunch(argList));
         if (singleInstance.forwarded()) {
@@ -377,6 +389,7 @@ public class App extends Application {
                 %s — a keyboard-driven, cross-platform programmer's text editor.
 
                 Usage: editora [options] [FILE[:LINE[:COLUMN]] ...]
+                       editora --diff-ui LEFT RIGHT
 
                 Options:
                   --config-dir <path>   Use <path> as the config directory (or set EDITORA_CONFIG_DIR)
@@ -388,6 +401,7 @@ public class App extends Application {
                                         instead of restoring all windows; doesn't change the saved layout
                   --new-instance        Start a separate editor instead of opening the files in the
                                         already-running one (which is the default when only files are given)
+                  --diff-ui LEFT RIGHT  Compare two files or directories in a standalone diff window
                   --zen                 Start in Zen (distraction-free) mode (session only)
                   --expert              Start in Expert mode: like Zen, but keeps the editor
                                         view (line numbers, status bar) (session only)
@@ -435,6 +449,9 @@ public class App extends Application {
         if (args == null || newInstanceFlag(args)) {
             return false;
         }
+        if (diffUiFlag(args)) {
+            return false; // a standalone diff owns its window and startup chrome
+        }
         if (projectArg(args) != null || newFileArg(args) != null || configDirArg(args) != null || devFlag(args)) {
             return false;
         }
@@ -454,6 +471,40 @@ public class App extends Application {
     /** True if {@code --simple} is present (session-only Simple UI mode override). */
     static boolean simpleFlag(java.util.List<String> args) {
         return args != null && args.contains("--simple");
+    }
+
+    /** True when the standalone two-file diff viewer was requested. */
+    static boolean diffUiFlag(java.util.List<String> args) {
+        return args != null && args.contains("--diff-ui");
+    }
+
+    /**
+     * Parses {@code --diff-ui LEFT RIGHT}. The option consumes exactly two raw file-or-directory operands:
+     * unlike normal editor targets, diff sides do not accept a line/column suffix. A malformed request is rejected in
+     * {@link #main} before the JavaFX toolkit starts.
+     */
+    static com.editora.ui.WindowManager.DiffUiRequest diffUiArg(java.util.List<String> args) {
+        if (args == null) {
+            return null;
+        }
+        int index = args.indexOf("--diff-ui");
+        if (index < 0) {
+            return null;
+        }
+        if (index + 2 >= args.size()) {
+            throw new IllegalArgumentException("--diff-ui requires LEFT and RIGHT paths");
+        }
+        String left = args.get(index + 1);
+        String right = args.get(index + 2);
+        if (left == null || left.isBlank() || right == null || right.isBlank()) {
+            throw new IllegalArgumentException("--diff-ui requires LEFT and RIGHT paths");
+        }
+        try {
+            return new com.editora.ui.WindowManager.DiffUiRequest(
+                    java.nio.file.Path.of(left), java.nio.file.Path.of(right));
+        } catch (java.nio.file.InvalidPathException e) {
+            throw new IllegalArgumentException("--diff-ui received an invalid path: " + e.getInput(), e);
+        }
     }
 
     /**
@@ -552,6 +603,7 @@ public class App extends Application {
             "--zen",
             "--expert",
             "--simple",
+            "--diff-ui",
             "--no-session",
             "--new-file",
             "--new-instance",
@@ -624,6 +676,12 @@ public class App extends Application {
             }
             if (VALUE_OPTIONS.contains(a)) {
                 i++; // skip the value token
+                afterForeignOption = false;
+                continue;
+            }
+            if ("--diff-ui".equals(a)) {
+                // Its two operands belong to the comparison, not to the ordinary editor-tab target list.
+                i += Math.min(2, args.size() - i - 1);
                 afterForeignOption = false;
                 continue;
             }

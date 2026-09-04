@@ -105,5 +105,64 @@ class DiffEngineTest {
         assertEquals(DiffModels.UnifiedType.ADD, m.unified().get(2).type());
         assertEquals("B", m.unified().get(1).text());
         assertEquals("b", m.unified().get(2).text());
+        assertEquals(1, m.unified().get(1).wordRanges().length);
+        assertEquals(1, m.unified().get(2).wordRanges().length);
+    }
+
+    @Test
+    void finalNewlineIsARealDifference() {
+        DiffModel model = DiffEngine.compute("same\n", "same", DiffEngine.DiffOptions.DEFAULT);
+        assertTrue(model.finalNewlineDiffers());
+        assertEquals(0, model.added());
+        assertEquals(0, model.removed());
+        assertTrue(!model.isEmpty());
+    }
+
+    @Test
+    void trimWhitespaceKeepsInternalRunsSignificant() {
+        var trim = new DiffEngine.DiffOptions(DiffEngine.WhitespaceMode.TRIM, true);
+        assertTrue(DiffEngine.compute(List.of("  a b  "), List.of("a b"), trim).isEmpty());
+        assertTrue(!DiffEngine.compute(List.of("a  b"), List.of("a b"), trim).isEmpty());
+    }
+
+    @Test
+    void ignoreCaseChangesMatchingButRetainsBothOriginalLines() {
+        var options = DiffEngine.DiffOptions.DEFAULT.withIgnoreCase(true);
+        DiffModel model = DiffEngine.compute(List.of("Return VALUE;"), List.of("return value;"), options);
+
+        assertTrue(model.isEmpty());
+        assertEquals(RowType.EQUAL, model.rows().get(0).type());
+        assertEquals("Return VALUE;", model.rows().get(0).left());
+        assertEquals("return value;", model.rows().get(0).right());
+    }
+
+    @Test
+    void smartAlignmentLeavesInsertedLineUnpairedAndMatchesRelatedLines() {
+        List<String> left = List.of("start", "int alpha = loadAlpha();", "int beta = loadBeta();", "finish");
+        List<String> right = List.of(
+                "start", "log.debug(\"loading\");", "int alpha = readAlpha();", "int beta = readBeta();", "finish");
+
+        DiffModel positional =
+                DiffEngine.compute(left, right, DiffEngine.DiffOptions.DEFAULT.withSmartAlignment(false));
+        assertEquals("log.debug(\"loading\");", positional.rows().get(1).right());
+        assertEquals("int alpha = loadAlpha();", positional.rows().get(1).left());
+
+        DiffModel smart = DiffEngine.compute(left, right, DiffEngine.DiffOptions.DEFAULT);
+        assertEquals(RowType.ADDED, smart.rows().get(1).type());
+        assertEquals("log.debug(\"loading\");", smart.rows().get(1).right());
+        assertEquals(RowType.MODIFIED, smart.rows().get(2).type());
+        assertEquals("int alpha = loadAlpha();", smart.rows().get(2).left());
+        assertEquals("int alpha = readAlpha();", smart.rows().get(2).right());
+        assertEquals("int beta = loadBeta();", smart.rows().get(3).left());
+        assertEquals("int beta = readBeta();", smart.rows().get(3).right());
+    }
+
+    @Test
+    void coarseFallbackRetainsCommonEdges() {
+        DiffModel model = DiffEngine.computeCoarse("a\nold\nz\n", "a\nnew\nz\n");
+        assertEquals(DiffModels.Quality.LINE_ONLY, model.quality());
+        assertEquals(RowType.EQUAL, model.rows().get(0).type());
+        assertEquals(RowType.MODIFIED, model.rows().get(1).type());
+        assertEquals(RowType.EQUAL, model.rows().get(2).type());
     }
 }

@@ -114,6 +114,8 @@ final class GitCoordinator {
     private final GitService service = new GitService();
 
     private Path repoRoot;
+    /** Complete status snapshot paired with {@link #repoRoot}; consumed by repository-wide diff review. */
+    private GitStatus lastStatus = GitStatus.NOT_A_REPO;
     /** The last computed per-file status (absolute normalized path → status); used by the Project-tree
      *  actions to tell whether a file is untracked (so Revert = clean vs. checkout). */
     private java.util.Map<Path, com.editora.git.GitFileStatus> lastStatusByPath = java.util.Map.of();
@@ -135,6 +137,11 @@ final class GitCoordinator {
     /** The active repo root, or {@code null} when the current context isn't inside a repo. */
     Path repoRoot() {
         return repoRoot;
+    }
+
+    /** The most recently applied repository status, or {@link GitStatus#NOT_A_REPO}. */
+    GitStatus status() {
+        return lastStatus;
     }
 
     String branchName() {
@@ -206,6 +213,7 @@ final class GitCoordinator {
             ops.setCommitWindowAvailable(false);
             ops.setGitLogWindowAvailable(false);
             repoRoot = null;
+            lastStatus = GitStatus.NOT_A_REPO;
             branchName = "";
             upstream = "";
             ops.setGitPanelStatus(null);
@@ -252,6 +260,7 @@ final class GitCoordinator {
     /** Applies a completed Git refresh to the status bar, tool window, and active buffer's gutter. */
     void applyState(GitService.RepoState state) {
         repoRoot = state.root();
+        lastStatus = state.isRepo() ? state.status() : GitStatus.NOT_A_REPO;
         EditorBuffer b = host.activeBuffer();
         // The Commit / Log tool windows are only available inside a Git repo (transient, doesn't touch the
         // user's show/hide preference).

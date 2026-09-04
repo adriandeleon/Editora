@@ -3,28 +3,50 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
 
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
+import javafx.scene.AccessibleRole;
 import javafx.scene.Node;
+import javafx.scene.canvas.Canvas;
+import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckMenuItem;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.Separator;
+import javafx.scene.control.SplitPane;
+import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.util.Duration;
 
+import com.editora.diff.DiffEngine;
 import com.editora.diff.DiffModels.DiffModel;
 import com.editora.diff.DiffModels.Row;
 import com.editora.diff.DiffModels.RowType;
 import com.editora.diff.DiffModels.UnifiedRow;
+import com.editora.diff.DiffText;
 import com.editora.diff.PatchWriter;
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.TabContent;
@@ -48,12 +70,20 @@ public final class DiffViewerPane implements TabContent {
 
     private static final Collection<String> NONE = Collections.emptyList();
     private static final List<String> WORD = List.of("diff-word");
+    private static final int CONTEXT_LINES = 3;
+    private static volatile boolean rememberedCollapseContext = true;
+    private static volatile boolean rememberedWrapLines;
+    private static final ExecutorService HIGHLIGHT_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "diff-highlight");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final String title;
-    private final String leftName;
-    private final String rightName;
-    private final String headerLeft;
-    private final String headerRight;
+    private String leftName;
+    private String rightName;
+    private String headerLeft;
+    private String headerRight;
     private String leftText;
     private String rightText;
     private DiffModel model;
@@ -61,6 +91,7 @@ public final class DiffViewerPane implements TabContent {
     private String fontStyle; // mutable so text zoom can resize the diff areas live (#533)
     private final boolean showLineNumbers;
     private java.util.function.Consumer<String> onExportPatch = p -> {};
+    private java.util.function.Consumer<DiffEngine.DiffOptions> onOptionsChanged = o -> {};
     /** Re-fetches both sides + re-renders if changed (set by the controller); the file-on-disk refresh. */
     private Runnable refresher = () -> {};
 
@@ -73,19 +104,61 @@ public final class DiffViewerPane implements TabContent {
 
     private EditableSide editableSide = EditableSide.NONE;
     /** Receives the editable side's full new text after a hunk is applied (controller writes it back). */
-    private java.util.function.Consumer<String> onApply = t -> {};
+    private java.util.function.Predicate<String> onApply = t -> false;
 
     private final BorderPane root = new BorderPane();
     private final Label summary = new Label();
     private final Label changeNav = new Label();
     private final Button toggleButton = new Button();
+    private final Button swapButton = new Button();
+    private Button exportButton;
     private final Button applyAllButton = new Button();
     private final Button undoButton = new Button();
     private final Button saveButton = new Button();
+    private final Button whitespaceButton = new Button();
+    private final ToggleButton wordButton = new ToggleButton();
+    private final MenuButton rulesButton = new MenuButton();
+    private final CheckMenuItem ignoreCaseItem = new CheckMenuItem();
+    private final CheckMenuItem smartAlignmentItem = new CheckMenuItem();
+    private final ToggleButton contextButton = new ToggleButton();
+    private final ToggleButton wrapButton = new ToggleButton();
+    private final Button stageHunkButton = new Button();
+    private final Button unstageHunkButton = new Button();
+    private final Button revertHunkButton = new Button();
+    private final Button applyEofButton = new Button();
+    private final ToggleButton editResultButton = new ToggleButton();
+    private final Button applyResultButton = new Button();
+    private final Button resetResultButton = new Button();
+    private final Button exitDiffUiButton = new Button();
+    private Runnable onExitDiffUi = () -> {};
     private Runnable onUndo = () -> {};
     private Runnable onSave = () -> {};
+    private java.util.function.BiConsumer<String, String> onSwapRequested = (l, r) -> {};
+    private boolean swapEnabled;
+    private boolean swapPending;
+    private boolean sidesSwapped;
+    private java.util.function.Consumer<String> onResultEdited = t -> {};
+    private boolean resultEditingEnabled;
+    private int unappliedUndoDepth;
 
     private boolean unified; // false = side-by-side (default)
+    private DiffEngine.DiffOptions options = DiffEngine.DiffOptions.DEFAULT;
+    private boolean collapseContext = rememberedCollapseContext;
+    private boolean wrapLines = rememberedWrapLines;
+    private final AtomicLong highlightGeneration = new AtomicLong();
+    private final AtomicLong resultHighlightGeneration = new AtomicLong();
+    private EnumSet<GitHunkAction> gitHunkActions = EnumSet.noneOf(GitHunkAction.class);
+    private java.util.function.Consumer<GitHunkRequest> onGitHunkAction = r -> {};
+
+    public enum GitHunkAction {
+        STAGE,
+        UNSTAGE,
+        REVERT,
+        OPEN
+    }
+
+    public record GitHunkRequest(
+            GitHunkAction action, int startRow, int endRow, String beforeText, String afterText, int targetLine) {}
 
     /**
      * Width of the side-by-side view's left pane, or 0 in unified view. The toolbar's right-hand cluster
@@ -106,9 +179,35 @@ public final class DiffViewerPane implements TabContent {
     private CodeArea leftArea;
     private CodeArea rightArea;
     private Node sideBySideNode;
+    private javafx.scene.control.SplitPane sideSplit;
+    private DiffConnectorCanvas connectorCanvas;
     private CodeArea unifiedArea;
     private Node unifiedNode;
+    private CodeArea resultArea;
+    private Node resultNode;
+    private SplitPane resultSplit;
+    private final PauseTransition resultDiffDelay = new PauseTransition(Duration.millis(250));
+    private boolean resultEditing;
+    private boolean resultDirty;
+    private boolean updatingResult;
+    private String resultBaselineText;
     private boolean syncing; // re-entrancy guard for scroll sync
+    private int[] sideSourceRows = new int[0];
+    private int[] unifiedSourceRows = new int[0];
+
+    private record ViewState(
+            double leftScroll,
+            double rightScroll,
+            double unifiedScroll,
+            boolean leftFocused,
+            boolean rightFocused,
+            int selectedLeftLine,
+            int selectedRightLine,
+            double divider) {}
+
+    private record DisplayRow(Row row, int sourceStart, int sourceEnd, boolean collapsed) {}
+
+    private record DisplayUnified(UnifiedRow row, int sourceStart, int sourceEnd, boolean collapsed) {}
 
     public DiffViewerPane(
             String title,
@@ -139,7 +238,16 @@ public final class DiffViewerPane implements TabContent {
         this.grammar = g != null ? g : grammarFor(leftName);
 
         root.getStyleClass().add("diff-viewer");
+        root.setAccessibleRole(AccessibleRole.PARENT);
+        root.setAccessibleText(tr("diff.accessibleViewer", this.headerLeft, this.headerRight));
         root.setTop(buildToolbar());
+        resultDiffDelay.setOnFinished(e -> {
+            if (resultEditing && resultArea != null) {
+                String text = resultArea.getText();
+                onResultEdited.accept(text);
+                highlightResult(text);
+            }
+        });
         showSideBySide();
         installChangeNavKeys();
     }
@@ -175,6 +283,69 @@ public final class DiffViewerPane implements TabContent {
         this.onExportPatch = onExportPatch == null ? p -> {} : onExportPatch;
     }
 
+    public void setOnOptionsChanged(java.util.function.Consumer<DiffEngine.DiffOptions> listener) {
+        this.onOptionsChanged = listener == null ? o -> {} : listener;
+    }
+
+    /** Installs asynchronous side swapping. The callback receives the desired new left/right texts and
+     *  must finish with {@link #swapSides(DiffModel)} or {@link #cancelSwap()}. */
+    public void setOnSwapRequested(java.util.function.BiConsumer<String, String> listener) {
+        swapEnabled = listener != null;
+        onSwapRequested = listener == null ? (l, r) -> {} : listener;
+        swapButton.setVisible(swapEnabled);
+        swapButton.setManaged(swapEnabled);
+        updateResultControls();
+    }
+
+    /** Recomputes the comparison after a pause in the editable Result draft. */
+    public void setOnResultEdited(java.util.function.Consumer<String> listener) {
+        resultEditingEnabled = listener != null;
+        onResultEdited = listener == null ? t -> {} : listener;
+        boolean visible = resultEditingEnabled && editableSide != EditableSide.NONE;
+        editResultButton.setVisible(visible);
+        editResultButton.setManaged(visible);
+        if (!visible && resultEditing) {
+            closeResultEditor();
+        }
+    }
+
+    /** Shows a full-UI icon for standalone {@code --diff-ui}; passing {@code null} hides it again. */
+    public void setExitDiffUiAction(Runnable action) {
+        onExitDiffUi = action == null ? () -> {} : action;
+        boolean visible = action != null;
+        exitDiffUiButton.setVisible(visible);
+        exitDiffUiButton.setManaged(visible);
+    }
+
+    public void setOptions(DiffEngine.DiffOptions options) {
+        this.options = options == null ? DiffEngine.DiffOptions.DEFAULT : options;
+        wordButton.setSelected(this.options.wordLevel());
+        ignoreCaseItem.setSelected(this.options.ignoreCase());
+        smartAlignmentItem.setSelected(this.options.smartAlignment());
+        updateWhitespaceButton();
+    }
+
+    public void setGitHunkActions(Set<GitHunkAction> actions, java.util.function.Consumer<GitHunkRequest> handler) {
+        gitHunkActions =
+                actions == null || actions.isEmpty() ? EnumSet.noneOf(GitHunkAction.class) : EnumSet.copyOf(actions);
+        onGitHunkAction = handler == null ? r -> {} : handler;
+        stageHunkButton.setVisible(gitHunkActions.contains(GitHunkAction.STAGE));
+        stageHunkButton.setManaged(stageHunkButton.isVisible());
+        unstageHunkButton.setVisible(gitHunkActions.contains(GitHunkAction.UNSTAGE));
+        unstageHunkButton.setManaged(unstageHunkButton.isVisible());
+        revertHunkButton.setVisible(gitHunkActions.contains(GitHunkAction.REVERT));
+        revertHunkButton.setManaged(revertHunkButton.isVisible());
+        rebuildCurrentView();
+    }
+
+    /** Hides the general viewer options when an embedding surface supplies its own controls. */
+    public void setOptionsControlsVisible(boolean visible) {
+        for (Node n : List.of(whitespaceButton, wordButton, rulesButton, contextButton, wrapButton)) {
+            n.setVisible(visible);
+            n.setManaged(visible);
+        }
+    }
+
     /** Resizes the diff areas' font (text zoom): rebuilds the inline font style and re-applies it to whichever
      *  areas are currently built (side-by-side or unified). Newly built areas pick up the latest style (#533). */
     public void setFont(String family, int size) {
@@ -188,6 +359,9 @@ public final class DiffViewerPane implements TabContent {
         if (unifiedArea != null) {
             unifiedArea.setStyle(fontStyle);
         }
+        if (resultArea != null) {
+            resultArea.setStyle(fontStyle);
+        }
     }
 
     /** Installs the controller's re-fetch-and-rerender hook (run on focus-regain / after git mutation). */
@@ -197,13 +371,28 @@ public final class DiffViewerPane implements TabContent {
 
     /**
      * Marks which side is the editable/local file and the callback that writes the applied text back.
-     * When set (not {@link EditableSide#NONE}), each change block shows an "apply change" chevron in
-     * that side's gutter (side-by-side view) that replaces the hunk with the other side's content.
+     * When set (not {@link EditableSide#NONE}), each change block shows an "apply change" chevron at
+     * the center seam (side-by-side view) that replaces the hunk with the other side's content.
      */
     public void setEditable(
             EditableSide side, java.util.function.Consumer<String> onApply, Runnable onUndo, Runnable onSave) {
+        setEditable(
+                side,
+                text -> {
+                    if (onApply != null) {
+                        onApply.accept(text);
+                        return true;
+                    }
+                    return false;
+                },
+                onUndo,
+                onSave);
+    }
+
+    public void setEditable(
+            EditableSide side, java.util.function.Predicate<String> onApply, Runnable onUndo, Runnable onSave) {
         this.editableSide = side == null ? EditableSide.NONE : side;
-        this.onApply = onApply == null ? t -> {} : onApply;
+        this.onApply = onApply == null ? t -> false : onApply;
         this.onUndo = onUndo == null ? () -> {} : onUndo;
         this.onSave = onSave == null ? () -> {} : onSave;
         boolean editable = this.editableSide != EditableSide.NONE;
@@ -211,8 +400,14 @@ public final class DiffViewerPane implements TabContent {
             b.setVisible(editable);
             b.setManaged(editable);
         }
+        editResultButton.setVisible(editable && resultEditingEnabled);
+        editResultButton.setManaged(editable && resultEditingEnabled);
+        if (!editable) {
+            closeResultEditor();
+        }
+        updateEofButton();
         // Called after construction (the view is already built without arrows) — rebuild so the
-        // per-line "apply" chevrons appear in the editable side's gutter.
+        // per-line "apply" chevrons appear beside the center seam.
         sideBySideNode = null;
         leftPaneBox = null;
         unifiedNode = null;
@@ -237,12 +432,112 @@ public final class DiffViewerPane implements TabContent {
         return java.util.Objects.equals(leftText, l) && java.util.Objects.equals(rightText, r);
     }
 
+    public boolean matchesEditableText(String text) {
+        String baseline = resultEditing && resultBaselineText != null
+                ? resultBaselineText
+                : editableSide == EditableSide.RIGHT ? rightText : leftText;
+        return java.util.Objects.equals(baseline, text);
+    }
+
+    public boolean hasDirtyResult() {
+        return resultEditing && resultDirty;
+    }
+
+    public EditableSide editableSide() {
+        return editableSide;
+    }
+
+    public boolean hasResultEditor() {
+        return resultEditing && resultArea != null;
+    }
+
+    public String resultText() {
+        return resultArea == null ? null : resultArea.getText();
+    }
+
     /** Replaces the compared content + diff model and re-renders the current view (rebuilds both the
      *  side-by-side and unified nodes lazily). Keeps the toolbar, headers, grammar, and view mode. */
     public void updateContent(String newLeft, String newRight, DiffModel newModel) {
+        replaceContent(newLeft, newRight, newModel, true);
+    }
+
+    /** Updates only the rendered comparison for a Result draft, without rebasing or replacing the draft. */
+    public void updateDraftContent(String newLeft, String newRight, DiffModel newModel) {
+        replaceContent(newLeft, newRight, newModel, false);
+    }
+
+    /** Completes a requested side swap with its precomputed model. Labels, scroll state, patch names, and
+     *  the editable-side marker all follow the content; the local target itself remains unchanged. */
+    public void swapSides(DiffModel swappedModel) {
+        if (swappedModel == null) {
+            cancelSwap();
+            return;
+        }
+        ViewState state = captureViewState();
+        ViewState swappedState = new ViewState(
+                state.rightScroll(),
+                state.leftScroll(),
+                state.unifiedScroll(),
+                state.rightFocused(),
+                state.leftFocused(),
+                state.selectedRightLine(),
+                state.selectedLeftLine(),
+                1.0 - state.divider());
+        String oldLeftText = leftText;
+        leftText = rightText;
+        rightText = oldLeftText;
+        String oldLeftName = leftName;
+        leftName = rightName;
+        rightName = oldLeftName;
+        String oldLeftHeader = headerLeft;
+        headerLeft = headerRight;
+        headerRight = oldLeftHeader;
+        editableSide = switch (editableSide) {
+            case LEFT -> EditableSide.RIGHT;
+            case RIGHT -> EditableSide.LEFT;
+            case NONE -> EditableSide.NONE;
+        };
+        sidesSwapped = !sidesSwapped;
+        model = swappedModel;
+        root.setAccessibleText(tr("diff.accessibleViewer", headerLeft, headerRight));
+        if (resultEditing && !resultDirty) {
+            setResultText(editableSide == EditableSide.RIGHT ? rightText : leftText, true);
+        }
+        highlightGeneration.incrementAndGet();
+        sideBySideNode = null;
+        leftPaneBox = null;
+        unifiedNode = null;
+        leftArea = null;
+        rightArea = null;
+        unifiedArea = null;
+        swapPending = false;
+        restoreChangeCursor(swappedState);
+        updateSummary();
+        updateEofButton();
+        updateResultControls();
+        if (unified) {
+            showUnified();
+        } else {
+            showSideBySide();
+        }
+        restoreViewState(swappedState);
+    }
+
+    /** Re-enables swapping when an asynchronous recomputation cannot produce a model. */
+    public void cancelSwap() {
+        swapPending = false;
+        updateResultControls();
+    }
+
+    private void replaceContent(String newLeft, String newRight, DiffModel newModel, boolean syncCleanResult) {
+        ViewState state = captureViewState();
         this.leftText = newLeft;
         this.rightText = newRight;
         this.model = newModel;
+        if (syncCleanResult && resultEditing && !resultDirty) {
+            setResultText(editableSide == EditableSide.RIGHT ? newRight : newLeft, true);
+        }
+        highlightGeneration.incrementAndGet();
         // Drop cached nodes so the next show* rebuilds from the new model.
         sideBySideNode = null;
         leftPaneBox = null;
@@ -250,13 +545,15 @@ public final class DiffViewerPane implements TabContent {
         leftArea = null;
         rightArea = null;
         unifiedArea = null;
-        changeCursor = -1;
+        restoreChangeCursor(state);
         updateSummary();
+        updateEofButton();
         if (unified) {
             showUnified();
         } else {
             showSideBySide();
         }
+        restoreViewState(state);
     }
 
     /** The unified-diff text for the "export patch" action. */
@@ -281,10 +578,52 @@ public final class DiffViewerPane implements TabContent {
         updateSummary();
         Button next = iconButton(Icons.arrowDown(), tr("diff.nextChange"), this::nextChange);
         Button prev = iconButton(Icons.arrowUp(), tr("diff.prevChange"), this::prevChange);
-        Button export = iconButton(
+        exportButton = iconButton(
                 Icons.saveAs(),
-                tr("diff.exportPatch"),
+                tr("diff.tooltip.exportPatch"),
                 () -> onExportPatch.accept(patchText("a/" + leftName, "b/" + rightName)));
+        exportButton.setAccessibleText(tr("diff.exportPatch"));
+        whitespaceButton.getStyleClass().addAll("flat", "diff-option-button");
+        whitespaceButton.setFocusTraversable(false);
+        whitespaceButton.setOnAction(e -> cycleWhitespace());
+        updateWhitespaceButton();
+        configureToggle(wordButton, tr("diff.highlightWords"), tr("diff.tooltip.words"), true, selected -> {
+            options = options.withWordLevel(selected);
+            onOptionsChanged.accept(options);
+        });
+        rulesButton.setText(tr("diff.rules"));
+        rulesButton.setAccessibleText(tr("diff.rules"));
+        rulesButton.setTooltip(descriptiveTooltip(tr("diff.tooltip.rules")));
+        rulesButton.setFocusTraversable(false);
+        rulesButton.getStyleClass().addAll("flat", "diff-option-button");
+        ignoreCaseItem.setText(tr("diff.ignoreCase"));
+        ignoreCaseItem.setSelected(options.ignoreCase());
+        ignoreCaseItem.setOnAction(e -> updateIgnoreCase(ignoreCaseItem.isSelected()));
+        smartAlignmentItem.setText(tr("diff.smartAlignment"));
+        smartAlignmentItem.setSelected(options.smartAlignment());
+        smartAlignmentItem.setOnAction(e -> updateSmartAlignment(smartAlignmentItem.isSelected()));
+        rulesButton.getItems().addAll(ignoreCaseItem, smartAlignmentItem);
+        configureToggle(
+                contextButton, tr("diff.collapseContext"), tr("diff.tooltip.context"), collapseContext, selected -> {
+                    collapseContext = selected;
+                    rememberedCollapseContext = selected;
+                    rebuildCurrentView();
+                });
+        configureToggle(wrapButton, tr("diff.wrapLines"), tr("diff.tooltip.wrap"), wrapLines, selected -> {
+            wrapLines = selected;
+            rememberedWrapLines = selected;
+            applyWrapMode();
+        });
+        hunkButton(stageHunkButton, tr("diff.stageHunk"), GitHunkAction.STAGE);
+        hunkButton(unstageHunkButton, tr("diff.unstageHunk"), GitHunkAction.UNSTAGE);
+        hunkButton(revertHunkButton, tr("diff.revertHunk"), GitHunkAction.REVERT);
+        applyEofButton.setText(tr("diff.applyFinalNewline"));
+        applyEofButton.setAccessibleText(tr("diff.applyFinalNewline"));
+        applyEofButton.setTooltip(new Tooltip(tr("diff.applyFinalNewline")));
+        applyEofButton.setFocusTraversable(false);
+        applyEofButton.getStyleClass().addAll("flat", "diff-option-button");
+        applyEofButton.setOnAction(e -> applyFinalNewline());
+        updateEofButton();
         // "Apply all": replace the editable file with the other side entirely. Shown only when a side is
         // editable (set by setEditable, which runs after construction), so it starts hidden.
         applyAllButton.setGraphic(Icons.check());
@@ -295,12 +634,46 @@ public final class DiffViewerPane implements TabContent {
         applyAllButton.setVisible(false);
         applyAllButton.setManaged(false);
         // Undo / Save the applied changes (shown only when a side is editable).
-        editButton(undoButton, Icons.undo(), tr("diff.undo"), () -> onUndo.run());
-        editButton(saveButton, Icons.save(), tr("diff.save"), () -> onSave.run());
+        editButton(undoButton, Icons.undo(), tr("diff.undo"), () -> {
+            if (unappliedUndoDepth > 0) {
+                onUndo.run();
+                unappliedUndoDepth--;
+                updateEditButtons();
+            }
+        });
+        editButton(saveButton, Icons.save(), tr("diff.save"), () -> {
+            onSave.run();
+            saveButton.setDisable(true);
+        });
+        updateEditButtons();
+        editResultButton.setGraphic(Icons.edit());
+        editResultButton.setAccessibleText(tr("diff.editResult"));
+        editResultButton.setTooltip(descriptiveTooltip(tr("diff.tooltip.editResult")));
+        editResultButton.getStyleClass().addAll("flat", "diff-toolbar-button", "diff-option-button");
+        editResultButton.setFocusTraversable(false);
+        editResultButton.setOnAction(e -> toggleResultEditor());
+        editResultButton.setVisible(false);
+        editResultButton.setManaged(false);
         toggleButton.setOnAction(e -> toggleView());
         toggleButton.getStyleClass().addAll("flat", "diff-toolbar-button");
         toggleButton.setFocusTraversable(false);
         updateToggleButton();
+        swapButton.setGraphic(Icons.diff());
+        swapButton.setAccessibleText(tr("diff.swapSides"));
+        swapButton.setTooltip(descriptiveTooltip(tr("diff.tooltip.swapSides")));
+        swapButton.getStyleClass().addAll("flat", "diff-toolbar-button");
+        swapButton.setFocusTraversable(false);
+        swapButton.setOnAction(e -> requestSwap());
+        swapButton.setVisible(false);
+        swapButton.setManaged(false);
+        exitDiffUiButton.setGraphic(Icons.editora());
+        exitDiffUiButton.setAccessibleText(tr("tooltip.diffUiExit"));
+        exitDiffUiButton.setTooltip(new Tooltip(tr("tooltip.diffUiExit")));
+        exitDiffUiButton.getStyleClass().addAll("flat", "diff-toolbar-button", "diff-ui-exit");
+        exitDiffUiButton.setFocusTraversable(false);
+        exitDiffUiButton.setOnAction(e -> onExitDiffUi.run());
+        exitDiffUiButton.setVisible(false);
+        exitDiffUiButton.setManaged(false);
         // The gap grows as usual, but stops at the left pane's edge so the cluster lands at the start of
         // the second file. Uncapped in unified view (leftPaneWidth 0), where there is no second pane and
         // right-aligned is still the sensible place for it.
@@ -320,21 +693,227 @@ public final class DiffViewerPane implements TabContent {
                 next,
                 prev,
                 sep(),
+                editResultButton,
                 applyAllButton,
                 undoButton,
                 saveButton,
                 sep(),
+                stageHunkButton,
+                unstageHunkButton,
+                revertHunkButton,
+                applyEofButton,
+                sep(),
+                whitespaceButton,
+                wordButton,
+                rulesButton,
+                contextButton,
+                wrapButton,
+                sep(),
                 toggleButton,
-                export);
+                swapButton,
+                exportButton,
+                exitDiffUiButton);
         bar.getStyleClass().add("diff-toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setPadding(new Insets(3, TOOLBAR_H_PADDING, 3, TOOLBAR_H_PADDING));
         return bar;
     }
 
+    private void updateEofButton() {
+        boolean visible = editableSide != EditableSide.NONE && model.finalNewlineDiffers();
+        applyEofButton.setVisible(visible);
+        applyEofButton.setManaged(visible);
+        applyEofButton.setDisable(resultEditing);
+    }
+
+    private void applyFinalNewline() {
+        String editable = editableSide == EditableSide.RIGHT ? rightText : leftText;
+        DiffText parsed = DiffText.parse(editable);
+        boolean desired = editableSide == EditableSide.RIGHT ? model.leftFinalNewline() : model.rightFinalNewline();
+        deliverApply(new DiffText(parsed.lines(), parsed.lineSeparator(), desired).compose(parsed.lines()));
+    }
+
+    private void hunkButton(Button button, String label, GitHunkAction action) {
+        button.setText(label);
+        button.setAccessibleText(label);
+        button.setTooltip(new Tooltip(label));
+        button.setFocusTraversable(false);
+        button.getStyleClass().addAll("flat", "diff-option-button");
+        button.setOnAction(e -> performGitAction(action, currentBlockStart(), false));
+        button.setVisible(false);
+        button.setManaged(false);
+    }
+
+    private void configureToggle(
+            ToggleButton button,
+            String text,
+            String description,
+            boolean selected,
+            java.util.function.Consumer<Boolean> changed) {
+        button.setText(text);
+        button.setAccessibleText(text);
+        button.setTooltip(descriptiveTooltip(description));
+        button.setSelected(selected);
+        button.setFocusTraversable(false);
+        button.getStyleClass().addAll("flat", "diff-option-button");
+        button.setOnAction(e -> changed.accept(button.isSelected()));
+    }
+
+    private void cycleWhitespace() {
+        DiffEngine.WhitespaceMode next =
+                switch (options.whitespace()) {
+                    case NONE -> DiffEngine.WhitespaceMode.TRIM;
+                    case TRIM -> DiffEngine.WhitespaceMode.ALL;
+                    case ALL -> DiffEngine.WhitespaceMode.NONE;
+                };
+        options = options.withWhitespace(next);
+        updateWhitespaceButton();
+        onOptionsChanged.accept(options);
+    }
+
+    private void updateIgnoreCase(boolean selected) {
+        ignoreCaseItem.setSelected(selected);
+        options = options.withIgnoreCase(selected);
+        onOptionsChanged.accept(options);
+    }
+
+    private void updateSmartAlignment(boolean selected) {
+        smartAlignmentItem.setSelected(selected);
+        options = options.withSmartAlignment(selected);
+        onOptionsChanged.accept(options);
+    }
+
+    private void updateWhitespaceButton() {
+        whitespaceButton.setText(
+                switch (options.whitespace()) {
+                    case NONE -> tr("diff.whitespace.none");
+                    case TRIM -> tr("diff.whitespace.trim");
+                    case ALL -> tr("diff.whitespace.all");
+                });
+        whitespaceButton.setAccessibleText(whitespaceButton.getText());
+        whitespaceButton.setTooltip(descriptiveTooltip(
+                switch (options.whitespace()) {
+                    case NONE -> tr("diff.tooltip.whitespace.none");
+                    case TRIM -> tr("diff.tooltip.whitespace.trim");
+                    case ALL -> tr("diff.tooltip.whitespace.all");
+                }));
+    }
+
+    private void rebuildCurrentView() {
+        ViewState state = captureViewState();
+        highlightGeneration.incrementAndGet();
+        sideBySideNode = null;
+        unifiedNode = null;
+        leftArea = null;
+        rightArea = null;
+        unifiedArea = null;
+        leftPaneBox = null;
+        sideSplit = null;
+        connectorCanvas = null;
+        if (unified) {
+            showUnified();
+        } else {
+            showSideBySide();
+        }
+        restoreViewState(state);
+    }
+
+    private ViewState captureViewState() {
+        int leftLine = -1;
+        int rightLine = -1;
+        if (changeCursor >= 0 && changeCursor < model.changeBlockStarts().size()) {
+            Row row = model.rows().get(model.changeBlockStarts().get(changeCursor));
+            leftLine = row.leftLine();
+            rightLine = row.rightLine();
+        }
+        double divider = 0.5;
+        if (sideSplit != null && sideSplit.getDividerPositions().length > 0) {
+            divider = sideSplit.getDividerPositions()[0];
+        }
+        return new ViewState(
+                leftArea == null ? 0 : leftArea.getEstimatedScrollY(),
+                rightArea == null ? 0 : rightArea.getEstimatedScrollY(),
+                unifiedArea == null ? 0 : unifiedArea.getEstimatedScrollY(),
+                leftArea != null && leftArea.isFocused(),
+                rightArea != null && rightArea.isFocused(),
+                leftLine,
+                rightLine,
+                divider);
+    }
+
+    private void restoreChangeCursor(ViewState state) {
+        if (state.selectedLeftLine() < 0 && state.selectedRightLine() < 0) {
+            changeCursor = -1;
+            return;
+        }
+        int best = -1;
+        int distance = Integer.MAX_VALUE;
+        List<Integer> starts = model.changeBlockStarts();
+        for (int i = 0; i < starts.size(); i++) {
+            Row row = model.rows().get(starts.get(i));
+            int d = row.leftLine() >= 0 && state.selectedLeftLine() >= 0
+                    ? Math.abs(row.leftLine() - state.selectedLeftLine())
+                    : row.rightLine() >= 0 && state.selectedRightLine() >= 0
+                            ? Math.abs(row.rightLine() - state.selectedRightLine())
+                            : Integer.MAX_VALUE;
+            if (d < distance) {
+                best = i;
+                distance = d;
+            }
+        }
+        changeCursor = best;
+    }
+
+    private void restoreViewState(ViewState state) {
+        Platform.runLater(() -> {
+            syncing = true;
+            try {
+                if (sideSplit != null) {
+                    sideSplit.setDividerPositions(state.divider());
+                }
+                if (unified && unifiedArea != null) {
+                    unifiedArea.estimatedScrollYProperty().setValue(state.unifiedScroll());
+                } else {
+                    if (leftArea != null) {
+                        leftArea.estimatedScrollYProperty().setValue(state.leftScroll());
+                    }
+                    if (rightArea != null) {
+                        rightArea.estimatedScrollYProperty().setValue(state.rightScroll());
+                    }
+                }
+            } finally {
+                syncing = false;
+            }
+            if (state.leftFocused() && leftArea != null) {
+                leftArea.requestFocus();
+            } else if (state.rightFocused() && rightArea != null) {
+                rightArea.requestFocus();
+            }
+            if (changeCursor >= 0 && changeCursor < model.changeBlockStarts().size()) {
+                scrollToRow(model.changeBlockStarts().get(changeCursor));
+            }
+        });
+    }
+
+    private void applyWrapMode() {
+        if (leftArea != null) {
+            leftArea.setWrapText(wrapLines);
+        }
+        if (rightArea != null) {
+            rightArea.setWrapText(wrapLines);
+        }
+        if (unifiedArea != null) {
+            unifiedArea.setWrapText(wrapLines);
+        }
+        if (resultArea != null) {
+            resultArea.setWrapText(wrapLines);
+        }
+    }
+
     /** Configures an editable-only toolbar button (hidden until {@link #setEditable} shows it). */
     private void editButton(Button b, Node icon, String tip, Runnable action) {
         b.setGraphic(icon);
+        b.setAccessibleText(tip);
         b.setTooltip(new Tooltip(tip));
         b.getStyleClass().addAll("flat", "diff-toolbar-button");
         b.setFocusTraversable(false);
@@ -345,7 +924,9 @@ public final class DiffViewerPane implements TabContent {
 
     private void updateToggleButton() {
         toggleButton.setGraphic(unified ? Icons.splitVertical() : Icons.previewOnly());
-        toggleButton.setTooltip(new Tooltip(unified ? tr("diff.viewSideBySide") : tr("diff.viewUnified")));
+        toggleButton.setAccessibleText(unified ? tr("diff.viewSideBySide") : tr("diff.viewUnified"));
+        toggleButton.setTooltip(
+                descriptiveTooltip(unified ? tr("diff.tooltip.viewSideBySide") : tr("diff.tooltip.viewUnified")));
     }
 
     private Button iconButton(Node icon, String tip, Runnable action) {
@@ -353,9 +934,17 @@ public final class DiffViewerPane implements TabContent {
         b.setGraphic(icon);
         b.getStyleClass().addAll("flat", "diff-toolbar-button");
         b.setFocusTraversable(false);
-        b.setTooltip(new Tooltip(tip));
+        b.setTooltip(descriptiveTooltip(tip));
         b.setOnAction(e -> action.run());
         return b;
+    }
+
+    private static Tooltip descriptiveTooltip(String text) {
+        Tooltip tooltip = new Tooltip(text);
+        tooltip.setWrapText(true);
+        tooltip.setMaxWidth(360);
+        tooltip.setShowDelay(javafx.util.Duration.millis(350));
+        return tooltip;
     }
 
     /** Horizontal inset of the diff toolbar; also what the cluster cap has to allow for. */
@@ -384,12 +973,226 @@ public final class DiffViewerPane implements TabContent {
         }
     }
 
+    public void toggleResultEditing() {
+        if (resultEditingEnabled && editableSide != EditableSide.NONE) {
+            editResultButton.fire();
+        }
+    }
+
+    public void swapComparisonSides() {
+        if (swapEnabled) {
+            swapButton.fire();
+        }
+    }
+
+    public void toggleIgnoreCase() {
+        updateIgnoreCase(!options.ignoreCase());
+    }
+
+    public void toggleSmartAlignment() {
+        updateSmartAlignment(!options.smartAlignment());
+    }
+
     public void goNextChange() {
         nextChange();
     }
 
     public void goPreviousChange() {
         prevChange();
+    }
+
+    public void stageCurrentHunk() {
+        if (gitHunkActions.contains(GitHunkAction.STAGE))
+            performGitAction(GitHunkAction.STAGE, currentBlockStart(), false);
+    }
+
+    public void unstageCurrentHunk() {
+        if (gitHunkActions.contains(GitHunkAction.UNSTAGE))
+            performGitAction(GitHunkAction.UNSTAGE, currentBlockStart(), false);
+    }
+
+    public void revertCurrentHunk() {
+        if (gitHunkActions.contains(GitHunkAction.REVERT))
+            performGitAction(GitHunkAction.REVERT, currentBlockStart(), false);
+    }
+
+    public void copyCurrentHunk() {
+        int row = currentBlockStart();
+        if (row >= 0) copyHunk(row);
+    }
+
+    public void openCurrentChange() {
+        if (gitHunkActions.contains(GitHunkAction.OPEN))
+            performGitAction(GitHunkAction.OPEN, currentBlockStart(), true);
+    }
+
+    private void toggleResultEditor() {
+        if (editResultButton.isSelected()) {
+            openResultEditor();
+        } else if (resultDirty) {
+            // Applying or resetting is explicit; a toolbar click must not silently discard a draft.
+            editResultButton.setSelected(true);
+            if (resultArea != null) {
+                resultArea.requestFocus();
+            }
+        } else {
+            closeResultEditor();
+        }
+    }
+
+    private void openResultEditor() {
+        if (!resultEditingEnabled || editableSide == EditableSide.NONE) {
+            editResultButton.setSelected(false);
+            return;
+        }
+        resultEditing = true;
+        resultBaselineText = editableSide == EditableSide.RIGHT ? rightText : leftText;
+        if (resultArea == null) {
+            buildResultEditor();
+        }
+        setResultText(resultBaselineText, true);
+        editResultButton.setSelected(true);
+        updateResultControls();
+        rebuildCurrentView();
+        Platform.runLater(resultArea::requestFocus);
+    }
+
+    private void closeResultEditor() {
+        resultDiffDelay.stop();
+        resultHighlightGeneration.incrementAndGet();
+        resultEditing = false;
+        resultDirty = false;
+        resultBaselineText = null;
+        editResultButton.setSelected(false);
+        resultSplit = null;
+        updateResultControls();
+        if (unified) {
+            showUnified();
+        } else {
+            showSideBySide();
+        }
+    }
+
+    private void buildResultEditor() {
+        resultArea = new CodeArea();
+        resultArea.setId("diff-editable-result");
+        resultArea.getStyleClass().addAll("editor-area", "diff-result");
+        resultArea.setAccessibleText(tr("diff.resultDescription"));
+        resultArea.setWrapText(wrapLines);
+        resultArea.setStyle(fontStyle);
+        resultArea.textProperty().addListener((o, oldText, newText) -> {
+            if (updatingResult) {
+                return;
+            }
+            resultDirty = !java.util.Objects.equals(resultBaselineText, newText);
+            updateResultControls();
+            resultDiffDelay.playFromStart();
+        });
+
+        Label label = new Label(tr("diff.result"));
+        label.getStyleClass().add("diff-result-label");
+        applyResultButton.setText(tr("diff.applyResult"));
+        applyResultButton.setAccessibleText(tr("diff.applyResult"));
+        applyResultButton.setTooltip(descriptiveTooltip(tr("diff.tooltip.applyResult")));
+        applyResultButton.setOnAction(e -> applyResult());
+        resetResultButton.setText(tr("diff.resetResult"));
+        resetResultButton.setAccessibleText(tr("diff.resetResult"));
+        resetResultButton.setTooltip(descriptiveTooltip(tr("diff.tooltip.resetResult")));
+        resetResultButton.setOnAction(e -> resetResult());
+        HBox header = new HBox(6, label, spacer(), resetResultButton, applyResultButton);
+        header.setAlignment(Pos.CENTER_LEFT);
+        var scroll = new org.fxmisc.flowless.VirtualizedScrollPane<>(resultArea);
+        VBox box = new VBox(4, header, scroll);
+        box.getStyleClass().add("diff-result-box");
+        box.setPadding(new Insets(6, 8, 8, 8));
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+        resultNode = box;
+    }
+
+    private void setResultText(String text, boolean baseline) {
+        if (resultArea == null) {
+            return;
+        }
+        updatingResult = true;
+        try {
+            resultArea.replaceText(text == null ? "" : text);
+            resultArea.getUndoManager().forgetHistory();
+        } finally {
+            updatingResult = false;
+        }
+        if (baseline) {
+            resultBaselineText = resultArea.getText();
+            resultDirty = false;
+        }
+        updateResultControls();
+        highlightResult(resultArea.getText());
+    }
+
+    private void applyResult() {
+        if (!resultEditing || !resultDirty || resultArea == null) {
+            return;
+        }
+        String text = resultArea.getText();
+        if (onApply.test(text)) {
+            resultBaselineText = text;
+            resultDirty = false;
+            unappliedUndoDepth++;
+            updateResultControls();
+            updateEditButtons();
+            resultDiffDelay.stop();
+            onResultEdited.accept(text);
+        }
+    }
+
+    private void resetResult() {
+        if (!resultEditing || resultArea == null) {
+            return;
+        }
+        setResultText(resultBaselineText, true);
+        onResultEdited.accept(resultBaselineText);
+    }
+
+    private void updateResultControls() {
+        boolean active = resultEditing;
+        applyResultButton.setDisable(!active || !resultDirty);
+        resetResultButton.setDisable(!active || !resultDirty);
+        applyAllButton.setDisable(active);
+        applyEofButton.setDisable(active);
+        stageHunkButton.setDisable(active);
+        unstageHunkButton.setDisable(active);
+        revertHunkButton.setDisable(active);
+        swapButton.setDisable(!swapEnabled || swapPending || resultDirty);
+    }
+
+    private void requestSwap() {
+        if (!swapEnabled || swapPending || resultDirty) {
+            return;
+        }
+        swapPending = true;
+        updateResultControls();
+        onSwapRequested.accept(rightText, leftText);
+    }
+
+    private void highlightResult(String text) {
+        if (resultArea == null || text == null || text.isEmpty() || grammar == null) {
+            return;
+        }
+        long generation = resultHighlightGeneration.incrementAndGet();
+        HIGHLIGHT_EXECUTOR.submit(() -> {
+            StyleSpans<Collection<String>> styles;
+            try {
+                styles = TextMateHighlighter.compute(text, grammar);
+            } catch (RuntimeException ignored) {
+                return;
+            }
+            Platform.runLater(() -> {
+                if (generation == resultHighlightGeneration.get()
+                        && resultArea != null
+                        && text.equals(resultArea.getText())) {
+                    resultArea.setStyleSpans(0, styles);
+                }
+            });
+        });
     }
 
     private void toggleView() {
@@ -413,11 +1216,13 @@ public final class DiffViewerPane implements TabContent {
         if (leftPaneBox != null) {
             leftPaneWidth.bind(leftPaneBox.widthProperty());
         }
-        root.setCenter(sideBySideNode);
+        showComparison(sideBySideNode);
     }
 
     private void buildSideBySide() {
-        List<Row> rows = model.rows();
+        List<DisplayRow> display = sideDisplayRows();
+        List<Row> rows = display.stream().map(DisplayRow::row).toList();
+        sideSourceRows = display.stream().mapToInt(DisplayRow::sourceStart).toArray();
         leftArea = readOnlyArea("diff-left");
         rightArea = readOnlyArea("diff-right");
 
@@ -441,7 +1246,7 @@ public final class DiffViewerPane implements TabContent {
             }
             leftNos[i] = r.leftLine();
             rightNos[i] = r.rightLine();
-            if (r.type() == RowType.MODIFIED) {
+            if (!display.get(i).collapsed() && r.type() == RowType.MODIFIED) {
                 addAbs(leftWordAbs, leftOffset, r.leftWordRanges());
                 addAbs(rightWordAbs, rightOffset, r.rightWordRanges());
             }
@@ -456,11 +1261,22 @@ public final class DiffViewerPane implements TabContent {
         applyStyle(leftArea, left.toString(), leftWordAbs);
         applyStyle(rightArea, right.toString(), rightWordAbs);
         for (int i = 0; i < rows.size(); i++) {
-            leftArea.setParagraphStyle(i, leftLineClasses(rows.get(i).type()));
-            rightArea.setParagraphStyle(i, rightLineClasses(rows.get(i).type()));
+            if (display.get(i).collapsed()) {
+                leftArea.setParagraphStyle(i, List.of("diff-collapsed"));
+                rightArea.setParagraphStyle(i, List.of("diff-collapsed"));
+            } else {
+                leftArea.setParagraphStyle(i, leftLineClasses(rows.get(i).type()));
+                rightArea.setParagraphStyle(i, rightLineClasses(rows.get(i).type()));
+            }
         }
-        installGutter(leftArea, leftNos, editableSide == EditableSide.LEFT);
-        installGutter(rightArea, rightNos, editableSide == EditableSide.RIGHT);
+        // Keep transfer actions at the center seam. RichTextFX paragraph graphics are leading-edge
+        // gutters, so the right pane owns the action column even when the editable/local side is LEFT;
+        // the chevron direction still indicates which side receives the change. Putting LEFT actions in
+        // the left pane's gutter stranded them at the window's outer edge, far away from the comparison.
+        installGutter(leftArea, leftNos, sideSourceRows, false);
+        installGutter(rightArea, rightNos, sideSourceRows, editableSide != EditableSide.NONE && !resultEditing);
+        installContextMenu(leftArea, sideSourceRows);
+        installContextMenu(rightArea, sideSourceRows);
         installScrollFocus(leftArea);
         installScrollFocus(rightArea);
         syncScroll(leftArea, rightArea);
@@ -472,12 +1288,336 @@ public final class DiffViewerPane implements TabContent {
         Label rightHeader = paneHeader(headerRight);
         javafx.scene.layout.VBox leftBox = new javafx.scene.layout.VBox(leftHeader, leftScroll);
         javafx.scene.layout.VBox rightBox = new javafx.scene.layout.VBox(rightHeader, rightScroll);
+        // Reserve a narrow center track without changing SplitPane behavior. The transparent overlay below
+        // paints through this gap and slightly into each side, producing JetBrains-style hunk ribbons.
+        leftBox.setPadding(new Insets(0, 14, 0, 0));
+        rightBox.setPadding(new Insets(0, 0, 0, 14));
         javafx.scene.layout.VBox.setVgrow(leftScroll, Priority.ALWAYS);
         javafx.scene.layout.VBox.setVgrow(rightScroll, Priority.ALWAYS);
         javafx.scene.control.SplitPane split = new javafx.scene.control.SplitPane(leftBox, rightBox);
         split.setDividerPositions(0.5);
+        sideSplit = split;
+        StackPane layered = new StackPane(split);
+        connectorCanvas = new DiffConnectorCanvas(leftArea, rightArea, rows);
+        connectorCanvas.widthProperty().bind(layered.widthProperty());
+        connectorCanvas.heightProperty().bind(layered.heightProperty());
+        layered.getChildren().add(connectorCanvas);
         leftPaneBox = leftBox;
-        sideBySideNode = split;
+        sideBySideNode = layered;
+    }
+
+    /**
+     * Transparent, mouse-pass-through overlay for side-by-side change ribbons and right-edge overview
+     * markers. Geometry is derived only for visible RichTextFX paragraphs, so scrolling remains bounded by
+     * the number of change blocks on screen rather than document size.
+     */
+    private final class DiffConnectorCanvas extends Canvas {
+
+        private final CodeArea left;
+        private final CodeArea right;
+        private final List<DiffConnectorModel.Band> bands;
+        private boolean drawQueued;
+        private int selectedBand = -1;
+
+        DiffConnectorCanvas(CodeArea left, CodeArea right, List<Row> rows) {
+            this.left = left;
+            this.right = right;
+            bands = DiffConnectorModel.bands(rows);
+            setManaged(false);
+            setMouseTransparent(true);
+            setFocusTraversable(false);
+
+            widthProperty().addListener((o, oldValue, newValue) -> requestDraw());
+            heightProperty().addListener((o, oldValue, newValue) -> requestDraw());
+            left.estimatedScrollYProperty().addListener((o, oldValue, newValue) -> requestDraw());
+            right.estimatedScrollYProperty().addListener((o, oldValue, newValue) -> requestDraw());
+            left.widthProperty().addListener((o, oldValue, newValue) -> requestDraw());
+            right.widthProperty().addListener((o, oldValue, newValue) -> requestDraw());
+            left.layoutBoundsProperty().addListener((o, oldValue, newValue) -> requestDraw());
+            right.layoutBoundsProperty().addListener((o, oldValue, newValue) -> requestDraw());
+            sceneProperty().addListener((o, oldValue, newValue) -> requestDraw());
+            requestDraw();
+        }
+
+        void setSelectedBand(int selectedBand) {
+            this.selectedBand = selectedBand;
+            requestDraw();
+        }
+
+        private void requestDraw() {
+            if (drawQueued) {
+                return;
+            }
+            drawQueued = true;
+            Platform.runLater(() -> {
+                drawQueued = false;
+                draw();
+            });
+        }
+
+        private void draw() {
+            GraphicsContext graphics = getGraphicsContext2D();
+            graphics.clearRect(0, 0, getWidth(), getHeight());
+            if (getScene() == null || bands.isEmpty() || getWidth() <= 0 || getHeight() <= 0) {
+                return;
+            }
+            Bounds leftViewport = left.localToScreen(left.getBoundsInLocal());
+            Bounds rightViewport = right.localToScreen(right.getBoundsInLocal());
+            if (leftViewport == null || rightViewport == null) {
+                return;
+            }
+            double leftX = screenToLocal(leftViewport.getMaxX(), leftViewport.getMinY())
+                    .getX();
+            double rightX = screenToLocal(rightViewport.getMinX(), rightViewport.getMinY())
+                    .getX();
+            if (rightX <= leftX) {
+                return;
+            }
+
+            for (int i = 0; i < bands.size(); i++) {
+                DiffConnectorModel.Band band = bands.get(i);
+                VisibleBand leftBand = visibleBand(left, band, leftViewport);
+                VisibleBand rightBand = visibleBand(right, band, rightViewport);
+                if (leftBand == null || rightBand == null) {
+                    continue;
+                }
+                boolean selected = i == selectedBand;
+                Color color = bandColor(band.kind(), selected);
+                graphics.setFill(color);
+                graphics.setStroke(color.deriveColor(0, 1, 0.82, Math.min(0.9, color.getOpacity() + 0.22)));
+                graphics.setLineWidth(selected ? 1.5 : 1.0);
+                drawRibbon(graphics, leftX, rightX, leftBand, rightBand);
+            }
+            drawOverview(graphics, rightViewport);
+        }
+
+        private VisibleBand visibleBand(CodeArea area, DiffConnectorModel.Band band, Bounds viewport) {
+            int visibleCount = area.getVisibleParagraphs().size();
+            if (visibleCount == 0) {
+                return null;
+            }
+            int first = area.visibleParToAllParIndex(0);
+            int last = area.visibleParToAllParIndex(visibleCount - 1);
+            if (band.endRow() <= first || band.startRow() > last) {
+                return null;
+            }
+            double top = band.startRow() <= first
+                    ? viewport.getMinY()
+                    : area.getParagraphBoundsOnScreen(band.startRow())
+                            .map(Bounds::getMinY)
+                            .orElse(viewport.getMinY());
+            int finalRow = band.endRow() - 1;
+            double bottom = finalRow >= last
+                    ? viewport.getMaxY()
+                    : area.getParagraphBoundsOnScreen(finalRow)
+                            .map(Bounds::getMaxY)
+                            .orElse(viewport.getMaxY());
+            double localTop = screenToLocal(viewport.getMinX(), Math.max(viewport.getMinY(), top))
+                    .getY();
+            double localBottom = screenToLocal(viewport.getMinX(), Math.min(viewport.getMaxY(), bottom))
+                    .getY();
+            return localBottom > localTop ? new VisibleBand(localTop, localBottom) : null;
+        }
+
+        private void drawRibbon(
+                GraphicsContext graphics, double leftX, double rightX, VisibleBand leftBand, VisibleBand rightBand) {
+            double controlLeft = leftX + (rightX - leftX) * 0.45;
+            double controlRight = leftX + (rightX - leftX) * 0.55;
+            graphics.beginPath();
+            graphics.moveTo(leftX, leftBand.top());
+            graphics.bezierCurveTo(controlLeft, leftBand.top(), controlRight, rightBand.top(), rightX, rightBand.top());
+            graphics.lineTo(rightX, rightBand.bottom());
+            graphics.bezierCurveTo(
+                    controlRight, rightBand.bottom(), controlLeft, leftBand.bottom(), leftX, leftBand.bottom());
+            graphics.closePath();
+            graphics.fill();
+            graphics.stroke();
+        }
+
+        private void drawOverview(GraphicsContext graphics, Bounds rightViewport) {
+            double top = screenToLocal(rightViewport.getMinX(), rightViewport.getMinY())
+                    .getY();
+            double bottom = screenToLocal(rightViewport.getMinX(), rightViewport.getMaxY())
+                    .getY();
+            double trackHeight = Math.max(1, bottom - top);
+            double x = getWidth() - 5;
+            for (int i = 0; i < bands.size(); i++) {
+                DiffConnectorModel.Band band = bands.get(i);
+                double y = top
+                        + trackHeight
+                                * band.startRow()
+                                / Math.max(1, right.getParagraphs().size());
+                double height = Math.max(
+                        3,
+                        trackHeight
+                                * (band.endRow() - band.startRow())
+                                / Math.max(1, right.getParagraphs().size()));
+                graphics.setFill(bandColor(band.kind(), i == selectedBand).deriveColor(0, 1, 1, 0.88));
+                graphics.fillRoundRect(x, y, i == selectedBand ? 4 : 3, height, 2, 2);
+            }
+        }
+
+        private Color bandColor(DiffConnectorModel.Kind kind, boolean selected) {
+            double opacity = selected ? 0.52 : 0.30;
+            return switch (kind) {
+                case ADDED -> Color.rgb(63, 185, 80, opacity);
+                case REMOVED -> Color.rgb(248, 81, 73, opacity);
+                case MODIFIED -> Color.rgb(210, 153, 34, opacity);
+            };
+        }
+
+        private record VisibleBand(double top, double bottom) {}
+    }
+
+    private void installContextMenu(CodeArea area, int[] sourceRows) {
+        area.setOnContextMenuRequested(e -> {
+            int clicked;
+            try {
+                int offset = area.hit(e.getX(), e.getY()).getInsertionIndex();
+                clicked = area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                        .getMajor();
+            } catch (RuntimeException ignored) {
+                clicked = area.getCurrentParagraph();
+            }
+            int displayRow = Math.max(0, Math.min(clicked, sourceRows.length - 1));
+            int sourceRow = sourceRows.length == 0 ? -1 : sourceRows[displayRow];
+            if (sourceRow < 0
+                    || sourceRow >= model.rows().size()
+                    || model.rows().get(sourceRow).type() == RowType.EQUAL) {
+                return;
+            }
+            changeCursor = changeBlockIndexContaining(sourceRow);
+            updateChangeNav();
+            ContextMenu menu = new ContextMenu();
+            addGitMenuItem(menu, GitHunkAction.STAGE, tr("diff.stageHunk"), sourceRow, false);
+            addGitMenuItem(menu, GitHunkAction.STAGE, tr("diff.stageLine"), sourceRow, true);
+            addGitMenuItem(menu, GitHunkAction.UNSTAGE, tr("diff.unstageHunk"), sourceRow, false);
+            addGitMenuItem(menu, GitHunkAction.UNSTAGE, tr("diff.unstageLine"), sourceRow, true);
+            addGitMenuItem(menu, GitHunkAction.REVERT, tr("diff.revertHunk"), sourceRow, false);
+            addGitMenuItem(menu, GitHunkAction.REVERT, tr("diff.revertLine"), sourceRow, true);
+            MenuItem copy = new MenuItem(tr("diff.copyHunk"));
+            copy.setOnAction(a -> copyHunk(sourceRow));
+            menu.getItems().add(copy);
+            if (gitHunkActions.contains(GitHunkAction.OPEN)) {
+                MenuItem open = new MenuItem(tr("diff.openInEditor"));
+                open.setOnAction(a -> performGitAction(GitHunkAction.OPEN, sourceRow, true));
+                menu.getItems().add(open);
+            }
+            menu.show(area, e.getScreenX(), e.getScreenY());
+            e.consume();
+        });
+    }
+
+    private void addGitMenuItem(ContextMenu menu, GitHunkAction action, String label, int sourceRow, boolean lineOnly) {
+        if (!gitHunkActions.contains(action)) {
+            return;
+        }
+        MenuItem item = new MenuItem(label);
+        item.setOnAction(e -> performGitAction(action, sourceRow, lineOnly));
+        menu.getItems().add(item);
+    }
+
+    private int currentBlockStart() {
+        List<Integer> starts = model.changeBlockStarts();
+        if (starts.isEmpty()) {
+            return -1;
+        }
+        return changeCursor >= 0 && changeCursor < starts.size() ? starts.get(changeCursor) : starts.get(0);
+    }
+
+    private int changeBlockIndexContaining(int row) {
+        List<Integer> starts = model.changeBlockStarts();
+        for (int i = starts.size() - 1; i >= 0; i--) {
+            if (starts.get(i) <= row) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void performGitAction(GitHunkAction action, int row, boolean lineOnly) {
+        if (row < 0 || model.quality() == com.editora.diff.DiffModels.Quality.METADATA_ONLY) {
+            return;
+        }
+        int start = lineOnly ? row : model.changeBlockStarts().get(changeBlockIndexContaining(row));
+        int end = lineOnly ? row + 1 : blockEndFrom(start);
+        boolean leftTarget = action == GitHunkAction.STAGE;
+        if (sidesSwapped) {
+            leftTarget = !leftTarget;
+        }
+        String before = leftTarget ? leftText : rightText;
+        String after = action == GitHunkAction.OPEN
+                ? before
+                : computeAppliedFor(leftTarget ? EditableSide.LEFT : EditableSide.RIGHT, start, end);
+        Row target = model.rows().get(row);
+        int preferredLine = leftTarget ? target.leftLine() : target.rightLine();
+        int fallbackLine = leftTarget ? target.rightLine() : target.leftLine();
+        int line = preferredLine >= 0 ? preferredLine : fallbackLine;
+        onGitHunkAction.accept(new GitHunkRequest(action, start, end, before, after, Math.max(1, line)));
+    }
+
+    private void copyHunk(int row) {
+        int start = model.changeBlockStarts().get(changeBlockIndexContaining(row));
+        int end = blockEndFrom(start);
+        StringBuilder text = new StringBuilder();
+        for (int i = start; i < end; i++) {
+            Row r = model.rows().get(i);
+            if (r.left() != null) {
+                text.append('-').append(r.left()).append('\n');
+            }
+            if (r.right() != null) {
+                text.append('+').append(r.right()).append('\n');
+            }
+        }
+        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+        content.putString(text.toString());
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    private List<DisplayRow> sideDisplayRows() {
+        List<Row> rows = model.rows();
+        if (!collapseContext || rows.size() <= CONTEXT_LINES * 2 + 2) {
+            List<DisplayRow> out = new ArrayList<>(rows.size());
+            for (int i = 0; i < rows.size(); i++) {
+                out.add(new DisplayRow(rows.get(i), i, i + 1, false));
+            }
+            return out;
+        }
+        List<DisplayRow> out = new ArrayList<>();
+        int i = 0;
+        while (i < rows.size()) {
+            if (rows.get(i).type() != RowType.EQUAL) {
+                out.add(new DisplayRow(rows.get(i), i, i + 1, false));
+                i++;
+                continue;
+            }
+            int end = i + 1;
+            while (end < rows.size() && rows.get(end).type() == RowType.EQUAL) {
+                end++;
+            }
+            int leftKeep = i == 0 ? 0 : Math.min(CONTEXT_LINES, end - i);
+            int rightKeep = end == rows.size() ? 0 : Math.min(CONTEXT_LINES, end - i - leftKeep);
+            if (end - i <= leftKeep + rightKeep + 1) {
+                for (int j = i; j < end; j++) {
+                    out.add(new DisplayRow(rows.get(j), j, j + 1, false));
+                }
+            } else {
+                for (int j = i; j < i + leftKeep; j++) {
+                    out.add(new DisplayRow(rows.get(j), j, j + 1, false));
+                }
+                int hiddenStart = i + leftKeep;
+                int hiddenEnd = end - rightKeep;
+                String marker = tr("diff.unchangedLines", hiddenEnd - hiddenStart);
+                Row first = rows.get(hiddenStart);
+                Row collapsed = Row.equal(marker, first.leftLine(), first.rightLine());
+                out.add(new DisplayRow(collapsed, hiddenStart, hiddenEnd, true));
+                for (int j = hiddenEnd; j < end; j++) {
+                    out.add(new DisplayRow(rows.get(j), j, j + 1, false));
+                }
+            }
+            i = end;
+        }
+        return out;
     }
 
     private Label paneHeader(String text) {
@@ -529,11 +1669,34 @@ public final class DiffViewerPane implements TabContent {
         }
         leftPaneWidth.unbind(); // no second pane to align to; the cluster goes back to the right edge
         leftPaneWidth.set(0);
-        root.setCenter(unifiedNode);
+        showComparison(unifiedNode);
+    }
+
+    private void showComparison(Node comparison) {
+        if (!resultEditing || resultNode == null) {
+            root.setCenter(comparison);
+            return;
+        }
+        if (resultSplit == null) {
+            resultSplit = new SplitPane(comparison, resultNode);
+            resultSplit.setOrientation(Orientation.VERTICAL);
+            resultSplit.setDividerPositions(0.62);
+            resultSplit.getStyleClass().add("diff-result-split");
+        } else {
+            double divider = resultSplit.getDividerPositions().length == 0
+                    ? 0.62
+                    : resultSplit.getDividerPositions()[0];
+            resultSplit.getItems().setAll(comparison, resultNode);
+            resultSplit.setDividerPositions(divider);
+        }
+        root.setCenter(resultSplit);
     }
 
     private void buildUnified() {
-        List<UnifiedRow> rows = model.unified();
+        List<DisplayUnified> display = unifiedDisplayRows();
+        List<UnifiedRow> rows = display.stream().map(DisplayUnified::row).toList();
+        unifiedSourceRows =
+                display.stream().mapToInt(DisplayUnified::sourceStart).toArray();
         unifiedArea = readOnlyArea("diff-unified");
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < rows.size(); i++) {
@@ -544,11 +1707,26 @@ public final class DiffViewerPane implements TabContent {
         }
         String text = sb.toString();
         unifiedArea.replaceText(text);
-        applyStyle(unifiedArea, text, List.of());
+        List<int[]> wordAbs = new ArrayList<>();
+        int offset = 0;
+        for (int i = 0; i < rows.size(); i++) {
+            if (i > 0) {
+                offset++;
+            }
+            addAbs(wordAbs, offset, rows.get(i).wordRanges());
+            offset += rows.get(i).text().length();
+        }
+        applyStyle(unifiedArea, text, wordAbs);
         int[] nos = new int[rows.size()];
         String[] signs = new String[rows.size()];
         for (int i = 0; i < rows.size(); i++) {
             UnifiedRow r = rows.get(i);
+            if (display.get(i).collapsed()) {
+                unifiedArea.setParagraphStyle(i, List.of("diff-collapsed"));
+                nos[i] = r.rightLine();
+                signs[i] = "⋯";
+                continue;
+            }
             switch (r.type()) {
                 case ADD -> {
                     unifiedArea.setParagraphStyle(i, List.of("diff-added"));
@@ -570,15 +1748,74 @@ public final class DiffViewerPane implements TabContent {
         unifiedNode = new org.fxmisc.flowless.VirtualizedScrollPane<>(unifiedArea);
     }
 
+    private List<DisplayUnified> unifiedDisplayRows() {
+        List<UnifiedRow> rows = model.unified();
+        if (!collapseContext || rows.size() <= CONTEXT_LINES * 2 + 2) {
+            List<DisplayUnified> out = new ArrayList<>(rows.size());
+            for (int i = 0; i < rows.size(); i++) {
+                out.add(new DisplayUnified(rows.get(i), i, i + 1, false));
+            }
+            return out;
+        }
+        List<DisplayUnified> out = new ArrayList<>();
+        int i = 0;
+        while (i < rows.size()) {
+            if (rows.get(i).type() != com.editora.diff.DiffModels.UnifiedType.CONTEXT) {
+                out.add(new DisplayUnified(rows.get(i), i, i + 1, false));
+                i++;
+                continue;
+            }
+            int end = i + 1;
+            while (end < rows.size() && rows.get(end).type() == com.editora.diff.DiffModels.UnifiedType.CONTEXT) {
+                end++;
+            }
+            int leftKeep = i == 0 ? 0 : Math.min(CONTEXT_LINES, end - i);
+            int rightKeep = end == rows.size() ? 0 : Math.min(CONTEXT_LINES, end - i - leftKeep);
+            if (end - i <= leftKeep + rightKeep + 1) {
+                for (int j = i; j < end; j++) {
+                    out.add(new DisplayUnified(rows.get(j), j, j + 1, false));
+                }
+            } else {
+                for (int j = i; j < i + leftKeep; j++) {
+                    out.add(new DisplayUnified(rows.get(j), j, j + 1, false));
+                }
+                int hiddenStart = i + leftKeep;
+                int hiddenEnd = end - rightKeep;
+                UnifiedRow first = rows.get(hiddenStart);
+                out.add(new DisplayUnified(
+                        new UnifiedRow(
+                                com.editora.diff.DiffModels.UnifiedType.CONTEXT,
+                                tr("diff.unchangedLines", hiddenEnd - hiddenStart),
+                                first.leftLine(),
+                                first.rightLine(),
+                                null),
+                        hiddenStart,
+                        hiddenEnd,
+                        true));
+                for (int j = hiddenEnd; j < end; j++) {
+                    out.add(new DisplayUnified(rows.get(j), j, j + 1, false));
+                }
+            }
+            i = end;
+        }
+        return out;
+    }
+
     // --- shared rendering -----------------------------------------------------------------------
 
     private CodeArea readOnlyArea(String extraClass) {
         CodeArea area = new CodeArea();
         area.getStyleClass().addAll("editor-area", "diff-area", extraClass);
+        area.setAccessibleText(
+                extraClass.equals("diff-left")
+                        ? tr("diff.accessibleLeft", headerLeft)
+                        : extraClass.equals("diff-right")
+                                ? tr("diff.accessibleRight", headerRight)
+                                : tr("diff.accessibleUnified"));
         area.setEditable(false);
         area.setFocusTraversable(true);
         area.setShowCaret(org.fxmisc.richtext.Caret.CaretVisibility.OFF);
-        area.setWrapText(false);
+        area.setWrapText(wrapLines);
         area.setStyle(fontStyle);
         return area;
     }
@@ -588,22 +1825,28 @@ public final class DiffViewerPane implements TabContent {
         if (text.isEmpty()) {
             return; // RichTextFX rejects zero-length spans
         }
-        StyleSpans<Collection<String>> base = null;
-        if (grammar != null) {
+        StyleSpans<Collection<String>> words = wordRanges.isEmpty() ? null : buildWordSpans(text.length(), wordRanges);
+        if (words != null) {
+            area.setStyleSpans(0, words);
+        }
+        if (grammar == null) {
+            return;
+        }
+        long generation = highlightGeneration.get();
+        HIGHLIGHT_EXECUTOR.submit(() -> {
+            StyleSpans<Collection<String>> base;
             try {
                 base = TextMateHighlighter.compute(text, grammar);
             } catch (RuntimeException ignored) {
-                base = null;
+                return;
             }
-        }
-        StyleSpans<Collection<String>> words = wordRanges.isEmpty() ? null : buildWordSpans(text.length(), wordRanges);
-        if (base != null && words != null) {
-            area.setStyleSpans(0, base.overlay(words, DiffViewerPane::union));
-        } else if (base != null) {
-            area.setStyleSpans(0, base);
-        } else if (words != null) {
-            area.setStyleSpans(0, words);
-        }
+            StyleSpans<Collection<String>> combined = words == null ? base : base.overlay(words, DiffViewerPane::union);
+            Platform.runLater(() -> {
+                if (generation == highlightGeneration.get() && text.equals(area.getText())) {
+                    area.setStyleSpans(0, combined);
+                }
+            });
+        });
     }
 
     private static Collection<String> union(Collection<String> a, Collection<String> b) {
@@ -669,11 +1912,11 @@ public final class DiffViewerPane implements TabContent {
         };
     }
 
-    /** A right-aligned original-line-number gutter; filler lines (-1) show blank. When {@code editable}
-     *  (this side is the local file), each change block's first row also gets an "apply change" chevron
-     *  that copies that hunk from the other side into this file. */
-    private void installGutter(CodeArea area, int[] lineNos, boolean editable) {
-        boolean apply = editable && editableSide != EditableSide.NONE && onApply != null;
+    /** A right-aligned original-line-number gutter; filler lines (-1) show blank. When {@code showApply}
+     *  is true, each change block's first row also gets an "apply change" chevron that copies that hunk
+     *  into the editable side. The right pane owns this action gutter so it remains at the center seam. */
+    private void installGutter(CodeArea area, int[] lineNos, int[] sourceRows, boolean showApply) {
+        boolean apply = showApply && editableSide != EditableSide.NONE;
         List<Row> rows = model.rows();
         boolean right = editableSide == EditableSide.RIGHT;
         Set<Integer> blockStarts = apply ? new HashSet<>(model.changeBlockStarts()) : Set.of();
@@ -693,25 +1936,37 @@ public final class DiffViewerPane implements TabContent {
                 num.setPrefWidth(numW);
             }
             num.setAlignment(Pos.CENTER_RIGHT);
+            int sourceRow = i < sourceRows.length ? sourceRows[i] : -1;
+            Row source = sourceRow >= 0 && sourceRow < rows.size() ? rows.get(sourceRow) : null;
+            String symbol = source == null || source.type() == RowType.EQUAL
+                    ? ""
+                    : area == leftArea ? (source.left() == null ? "" : "−") : (source.right() == null ? "" : "+");
+            Label changeSign = new Label(symbol);
+            changeSign.getStyleClass().add("diff-change-sign");
+            changeSign.setMinWidth(12);
+            changeSign.setAccessibleText(
+                    symbol.isEmpty() ? "" : tr(area == leftArea ? "diff.accessibleRemoved" : "diff.accessibleAdded"));
             HBox gutter;
             if (!apply) {
-                gutter = new HBox(num);
+                gutter = new HBox(changeSign, num);
             } else {
                 // Hunk apply (double chevron, at each change block's first row) + per-line apply (single
                 // chevron, on every changed row). Both copy the other side's content into the local file.
                 HBox hunkSlot = arrowSlot(
-                        blockStarts.contains(i)
+                        blockStarts.contains(sourceRow)
                                 ? (right ? Icons.doubleChevronRight() : Icons.doubleChevronLeft())
                                 : null,
                         tr("diff.applyChange"),
-                        () -> applyBlock(i));
+                        () -> applyBlock(sourceRow));
                 HBox lineSlot = arrowSlot(
-                        i < rows.size() && rows.get(i).type() != RowType.EQUAL
+                        sourceRow >= 0
+                                        && sourceRow < rows.size()
+                                        && rows.get(sourceRow).type() != RowType.EQUAL
                                 ? (right ? Icons.chevronRight() : Icons.chevronLeft())
                                 : null,
                         tr("diff.applyLine"),
-                        () -> applyRow(i));
-                gutter = new HBox(hunkSlot, lineSlot, num);
+                        () -> applyRow(sourceRow));
+                gutter = new HBox(hunkSlot, lineSlot, changeSign, num);
             }
             // The "lineno" class gives the gutter the editor's opaque (theme-aware) background, so text
             // scrolled horizontally never bleeds under the line numbers.
@@ -732,10 +1987,20 @@ public final class DiffViewerPane implements TabContent {
         slot.setAlignment(Pos.CENTER);
         if (icon != null) {
             slot.getStyleClass().add("diff-apply");
+            slot.setAccessibleRole(AccessibleRole.BUTTON);
+            slot.setAccessibleText(tip);
+            slot.setFocusTraversable(true);
             Tooltip.install(slot, new Tooltip(tip));
             slot.setOnMouseClicked(e -> {
                 onClick.run();
                 e.consume();
+            });
+            slot.setOnKeyPressed(e -> {
+                if (e.getCode() == javafx.scene.input.KeyCode.ENTER
+                        || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
+                    onClick.run();
+                    e.consume();
+                }
             });
             slot.getChildren().add(icon);
         }
@@ -745,7 +2010,7 @@ public final class DiffViewerPane implements TabContent {
     /** Whole-hunk apply: replaces the editable side's contiguous change block at {@code start} with the
      *  other side's content. */
     private void applyBlock(int start) {
-        onApply.accept(computeApplied(start, blockEndFrom(start)));
+        deliverApply(computeApplied(start, blockEndFrom(start)));
     }
 
     /** The exclusive end of the contiguous non-equal run starting at {@code start}. */
@@ -761,7 +2026,7 @@ public final class DiffViewerPane implements TabContent {
     /** Per-line apply: replaces the editable side's row {@code i} with the other side's content (insert /
      *  delete / swap), then hands the editable side's new full text to {@link #onApply}. */
     private void applyRow(int i) {
-        onApply.accept(computeApplied(i, i + 1));
+        deliverApply(computeApplied(i, i + 1));
     }
 
     /** "Apply all": makes the editable file identical to the other side (its exact fetched text). Since
@@ -780,14 +2045,31 @@ public final class DiffViewerPane implements TabContent {
         }
         if (confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
                 == javafx.scene.control.ButtonType.OK) {
-            onApply.accept(otherText);
+            deliverApply(otherText);
         }
+    }
+
+    private void deliverApply(String text) {
+        if (onApply.test(text)) {
+            unappliedUndoDepth++;
+            updateEditButtons();
+        }
+    }
+
+    private void updateEditButtons() {
+        undoButton.setDisable(unappliedUndoDepth <= 0);
+        saveButton.setDisable(unappliedUndoDepth <= 0);
+        applyAllButton.setDisable(resultEditing);
     }
 
     /** The editable side's full text after taking the other side's content for rows in {@code [start,end)}
      *  and keeping the editable side's content elsewhere (filler = no line). */
     private String computeApplied(int start, int end) {
-        boolean rightEditable = editableSide == EditableSide.RIGHT;
+        return computeAppliedFor(editableSide, start, end);
+    }
+
+    private String computeAppliedFor(EditableSide side, int start, int end) {
+        boolean rightEditable = side == EditableSide.RIGHT;
         List<Row> rows = model.rows();
         List<String> out = new ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
@@ -801,7 +2083,8 @@ public final class DiffViewerPane implements TabContent {
                 out.add(text);
             }
         }
-        return String.join("\n", out);
+        String editableText = rightEditable ? rightText : leftText;
+        return DiffText.parse(editableText).compose(out);
     }
 
     private void installUnifiedGutter(CodeArea area, int[] lineNos, String[] signs) {
@@ -863,11 +2146,25 @@ public final class DiffViewerPane implements TabContent {
         } else {
             changeNav.setText(tr(total == 1 ? "diff.changeCount.one" : "diff.changeCount", total));
         }
+        if (connectorCanvas != null) {
+            connectorCanvas.setSelectedBand(changeCursor);
+        }
     }
 
     /** Refreshes the toolbar's +added/−removed summary and the change-count indicator from the model. */
     private void updateSummary() {
-        summary.setText(tr("diff.summary", model.added(), model.removed()));
+        String text = tr("diff.summary", model.added(), model.removed());
+        if (model.finalNewlineDiffers()) {
+            text += "  ·  " + tr("diff.finalNewlineDiffers");
+        }
+        if (model.quality() != com.editora.diff.DiffModels.Quality.FULL) {
+            text += "  ·  "
+                    + tr(
+                            model.quality() == com.editora.diff.DiffModels.Quality.LINE_ONLY
+                                    ? "diff.simplified"
+                                    : "diff.metadataOnly");
+        }
+        summary.setText(text);
         updateChangeNav();
     }
 
@@ -876,22 +2173,25 @@ public final class DiffViewerPane implements TabContent {
     private void scrollToRow(int sideRow) {
         int sideEnd = blockEndFrom(sideRow);
         if (unified && unifiedArea != null) {
-            int u = unifiedRowFor(sideRow);
+            int u = displayUnifiedRowForSource(unifiedRowFor(sideRow));
+            int displayEnd = displayUnifiedRowForSource(unifiedRowFor(sideEnd));
             int top = Math.max(0, u);
-            selectLines(unifiedArea, u, unifiedRowFor(sideEnd));
+            selectLines(unifiedArea, u, displayEnd);
             // Pin the row to the top AFTER the selection (selectRange schedules a caret-follow scroll that
             // would otherwise leave the block bottom-aligned). One pulse later runs after that follow.
             Platform.runLater(() -> unifiedArea.showParagraphAtTop(top));
         } else if (leftArea != null && rightArea != null) {
-            int top = Math.max(0, sideRow);
+            int displayStart = displaySideRowForSource(sideRow);
+            int displayEnd = displaySideRowForSource(sideEnd);
+            int top = Math.max(0, displayStart);
             // Highlight the block on both panes (caret at the block top — see selectLines). The rows are 1:1
             // aligned (filler lines), so navigation pins BOTH panes to the same top row explicitly, with the
             // scroll sync suppressed. Relying on the focus-gated sync listener to align the follower fails on a
             // backward jump: selectRange's caret-follow may already have left the driven pane at `top`, so its
             // estimatedScrollY never changes, the listener never fires, and the follower is stranded at its own
             // caret-follow position. Setting both deterministically can't desync.
-            selectLines(leftArea, sideRow, sideEnd);
-            selectLines(rightArea, sideRow, sideEnd);
+            selectLines(leftArea, displayStart, displayEnd);
+            selectLines(rightArea, displayStart, displayEnd);
             Platform.runLater(() -> {
                 syncing = true;
                 try {
@@ -902,6 +2202,24 @@ public final class DiffViewerPane implements TabContent {
                 }
             });
         }
+    }
+
+    private int displaySideRowForSource(int source) {
+        for (int i = 0; i < sideSourceRows.length; i++) {
+            if (sideSourceRows[i] >= source) {
+                return i;
+            }
+        }
+        return Math.max(0, sideSourceRows.length - 1);
+    }
+
+    private int displayUnifiedRowForSource(int source) {
+        for (int i = 0; i < unifiedSourceRows.length; i++) {
+            if (unifiedSourceRows[i] >= source) {
+                return i;
+            }
+        }
+        return Math.max(0, unifiedSourceRows.length - 1);
     }
 
     /** Selects whole lines {@code [start, end)} in {@code area} (clamped), as a visible block highlight. */

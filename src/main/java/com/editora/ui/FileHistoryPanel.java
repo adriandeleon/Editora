@@ -308,6 +308,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                         s.getFontSize(),
                         s.isShowLineNumbers(),
                         target == null ? null : target.toString());
+                pane.setOptionsControlsVisible(false);
                 // Per-hunk "apply change" chevrons on the current-file (right) side — IntelliJ-style
                 // selective restore. Each apply writes the whole-file result through the undoable buffer,
                 // then we re-diff so the remaining changes (and chevrons) update.

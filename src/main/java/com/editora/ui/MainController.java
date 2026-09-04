@@ -372,6 +372,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private boolean cliZenOverride;
     /** Session-only Expert override from the {@code --expert} CLI flag (the {@code --zen} twin). */
     private boolean cliExpertOverride;
+    /** Session-only standalone diff chrome from {@code --diff-ui}; never written to workspace state. */
+    private boolean cliDiffUiOverride;
     /**
      * The open tool windows a {@code --zen}/{@code --expert} session override closed, as the persisted
      * {left, right, bottom} ids. Entering a focus mode calls {@link ToolWindowManager#closeAllOpen()}, and
@@ -380,6 +382,8 @@ public class MainController implements com.editora.mcp.McpBridge {
      * focus-mode override is in effect (including after an in-app toggle takes over from the flag).
      */
     private String[] cliFocusToolWindows;
+    /** Tool windows closed by the transient standalone diff workspace, restored by its toolbar action. */
+    private List<String> cliDiffUiToolWindows = List.of();
     // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) — owned by RemoteCoordinator ---
     private RemoteCoordinator remoteCoordinator;
     // MCP server: a single app-wide loopback HTTP endpoint exposing live editor state + the command
@@ -1039,7 +1043,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // leaks into another (Zen lives in this window's WorkspaceState, not in Settings).
         boolean zen = zenActive();
         boolean expert = expertActive();
-        boolean focus = zen || expert; // the two "focus modes" hide the same chrome, except status bar (below)
+        boolean diffUi = diffUiActive();
+        boolean focus = zen || expert || diffUi;
+        boolean zenLike = zen || diffUi; // standalone diff strips menu + status like Zen
         boolean simple = simpleModeActive();
         // Effective visibility (Chrome, pure + unit-tested): a saved pref AND not hidden by a focus mode/Simple.
         boolean toolbarOn = Chrome.toolbar(s.isShowToolbar(), focus);
@@ -1055,14 +1061,14 @@ public class MainController implements com.editora.mcp.McpBridge {
             toolbarRow.setManaged(toolbarOn);
         }
         // The status bar is hidden by Zen but KEPT by Expert, so it keys on the real zen flag, not focus.
-        boolean statusOn = Chrome.statusBar(s.isShowStatusBar(), zen);
+        boolean statusOn = Chrome.statusBar(s.isShowStatusBar(), zenLike);
         statusBar.setVisible(statusOn);
         statusBar.setManaged(statusOn);
         editorArea.setTabHeaderVisible(Chrome.tabBar(s.isShowTabBar(), focus));
         if (menuBar != null) {
             // Expert keeps the command menu available; only Zen suppresses it. This must use the real Zen
             // flag (not `focus`) so a CLI --expert launch has a menu on its very first frame.
-            boolean menuOn = Chrome.menuBar(s.isShowMenuBar(), zen);
+            boolean menuOn = Chrome.menuBar(s.isShowMenuBar(), zenLike);
             menuBar.node().setVisible(menuOn);
             menuBar.node().setManaged(menuOn);
             // Simple UI mode keeps the menu bar but swaps in the reduced table (a no-op when unchanged).
@@ -1092,6 +1098,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** True when this window is in Expert mode — like Zen, but keeps line numbers + the status bar. */
     private boolean expertActive() {
         return config.getWorkspaceState().isExpertMode() || cliExpertOverride;
+    }
+
+    /** True only for the transient, command-line standalone diff workspace. */
+    private boolean diffUiActive() {
+        return cliDiffUiOverride;
     }
 
     /** Snapshot of which optional features are effectively enabled, for {@link Chrome#paletteVisible}. */
@@ -1333,7 +1344,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         boolean show = !config.getSettings().isShowToolbar()
                 && !zenActive()
-                && !expertActive(); // a focus mode hides the toolbar; its E/Z restores it
+                && !expertActive()
+                && !diffUiActive(); // a focus mode hides the toolbar; its own control restores it
         toolbarRestoreButton.setVisible(show);
         toolbarRestoreButton.setManaged(show);
     }
@@ -1708,7 +1720,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Opens the Welcome tab when the strip is empty (startup with no session, or after a project swap). */
     private void showWelcomeIfNoTabs() {
-        if (editorArea.isEmpty()) {
+        if (!suppressWelcome && editorArea.isEmpty()) {
             addWelcomeTab();
         }
     }
@@ -2706,6 +2718,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public void review(boolean staged) {
+                diffCoordinator.reviewGitChanges(staged);
+            }
+
+            @Override
             public void diff(String path, boolean staged) {
                 diffCoordinator.diffGitPanelFile(path, staged);
             }
@@ -3443,7 +3460,17 @@ public class MainController implements com.editora.mcp.McpBridge {
             new DiffCoordinator(coordinatorHost, git, new DiffCoordinator.Ops() {
                 @Override
                 public void addDiffTab(TabContent pane) {
+                    if (pane instanceof DiffViewerPane diffPane) {
+                        diffPane.setExitDiffUiAction(diffUiActive() ? MainController.this::exitDiffUiMode : null);
+                    } else if (pane instanceof DirectoryReviewPane reviewPane) {
+                        reviewPane.setExitDiffUiAction(diffUiActive() ? MainController.this::exitDiffUiMode : null);
+                    }
                     addContentTab(pane, true);
+                }
+
+                @Override
+                public void prepareDiffPane(DiffViewerPane pane) {
+                    pane.setExitDiffUiAction(diffUiActive() ? MainController.this::exitDiffUiMode : null);
                 }
 
                 @Override
@@ -3467,6 +3494,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                     for (Tab tab : editorArea.tabs()) {
                         if (tab.getUserData() instanceof DiffViewerPane dp) {
                             out.add(dp);
+                        } else if (tab.getUserData() instanceof PatchReviewPane review) {
+                            out.addAll(review.panes());
+                        } else if (tab.getUserData() instanceof DirectoryReviewPane review) {
+                            out.addAll(review.panes());
                         }
                     }
                     return out;
@@ -3475,7 +3506,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public DiffViewerPane activeDiffPane() {
                     Tab t = editorArea.selectedTab();
-                    return t != null && t.getUserData() instanceof DiffViewerPane dp ? dp : null;
+                    if (t == null) {
+                        return null;
+                    }
+                    if (t.getUserData() instanceof DiffViewerPane dp) {
+                        return dp;
+                    }
+                    if (t.getUserData() instanceof PatchReviewPane review) {
+                        return review.activePane();
+                    }
+                    return t.getUserData() instanceof DirectoryReviewPane review ? review.activePane() : null;
                 }
 
                 @Override
@@ -3486,6 +3526,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public String editorConfigCharset(Path file) {
                     return editorConfigCharsetFor(file);
+                }
+
+                @Override
+                public void openAt(Path file, int line) {
+                    openPath(file);
+                    Platform.runLater(() -> navigateToLine(Math.max(0, line - 1)));
                 }
             });
 
@@ -7121,6 +7167,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private boolean hasStartupWork;
     /** {@code --no-session}: don't restore the saved session's open files (see {@link #startup}). */
     private boolean skipSessionFiles;
+    /** Standalone diff startup is asynchronous, so don't insert Welcome while its worker is reading files. */
+    private boolean suppressWelcome;
 
     /**
      * The index in {@code files} of the first command-line {@code FILE} target that is also part of the
@@ -7171,6 +7219,11 @@ public class MainController implements com.editora.mcp.McpBridge {
      * afterwards picks the mode up because {@link #addBuffer} runs {@link #applyViewSettings} per buffer.
      */
     public void applyStartupChrome(boolean zen, boolean expert, boolean simple) {
+        applyStartupChrome(zen, expert, simple, false);
+    }
+
+    /** As above, with the session-only standalone diff workspace taking precedence over other focus flags. */
+    public void applyStartupChrome(boolean zen, boolean expert, boolean simple, boolean diffUi) {
         if (simple) {
             // --simple: a session-only override (doesn't change the saved setting).
             cliSimpleOverride = true;
@@ -7180,7 +7233,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // --zen / --expert: session-only overrides, like --simple. If both were given, Expert wins — the two
         // are mutually exclusive. (applyCliFocusMode stashes the restored tool windows for the quit-time
         // restore, so it must run after init's toolWindows.restore() — which buildWindow guarantees.)
-        if (expert) {
+        if (diffUi) {
+            applyCliDiffUiMode();
+        } else if (expert) {
             applyCliFocusMode(true);
         } else if (zen) {
             applyCliFocusMode(false);
@@ -7219,6 +7274,42 @@ public class MainController implements com.editora.mcp.McpBridge {
         // rather than waiting for the whole session to finish restoring.
         pendingAfterRestore = () -> applyStartupTargets(targets, newFile);
         openInitialBuffer();
+    }
+
+    /**
+     * Starts the transient {@code --diff-ui} workspace: no saved tabs are restored and the only content is
+     * the asynchronously loaded comparison. The normal session is left untouched on exit.
+     */
+    public void startupDiffUi(Path left, Path right) {
+        skipSessionFiles = true;
+        suppressWelcome = true;
+        startupTargets = List.of();
+        hasStartupWork = true;
+        pendingAfterRestore = () -> {
+            Path leftPath = left == null ? null : left.toAbsolutePath().normalize();
+            Path rightPath = right == null ? null : right.toAbsolutePath().normalize();
+            if (!readableDiffPath(leftPath) || !readableDiffPath(rightPath)) {
+                Path bad = !readableDiffPath(leftPath) ? leftPath : rightPath;
+                exitDiffUiMode();
+                suppressWelcome = false;
+                showWelcomeIfNoTabs();
+                setStatus(tr("status.diff.unreadable", bad == null ? "" : bad));
+                return;
+            }
+            if (Files.isDirectory(leftPath) != Files.isDirectory(rightPath)) {
+                exitDiffUiMode();
+                suppressWelcome = false;
+                showWelcomeIfNoTabs();
+                setStatus(tr("status.diff.pathTypeMismatch"));
+                return;
+            }
+            diffCoordinator.comparePaths(leftPath, rightPath);
+        };
+        openInitialBuffer();
+    }
+
+    private static boolean readableDiffPath(Path path) {
+        return path != null && (Files.isRegularFile(path) || Files.isDirectory(path)) && Files.isReadable(path);
     }
 
     private void applyStartupTargets(List<OpenTarget> targets, String newFile) {
@@ -11645,6 +11736,45 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Deliberately no requestSave(): the flag must leave the saved session untouched.
     }
 
+    /** Applies the chrome-only, session-free workspace used by {@code --diff-ui}. */
+    private void applyCliDiffUiMode() {
+        if (cliDiffUiOverride) {
+            return;
+        }
+        cliDiffUiToolWindows = toolWindows.closeAllOpen();
+        cliDiffUiOverride = true;
+        toolWindows.setZenStripesHidden(true);
+        applyChromeVisibility();
+        applyViewSettingsToAllBuffers(config.getSettings());
+    }
+
+    /** Leaves the standalone presentation while retaining the live diff tab and its loaded content. */
+    private void exitDiffUiMode() {
+        if (!cliDiffUiOverride) {
+            return;
+        }
+        cliDiffUiOverride = false;
+        toolWindows.setZenStripesHidden(zenActive() || expertActive());
+        toolWindows.openByIds(cliDiffUiToolWindows);
+        cliDiffUiToolWindows = List.of();
+        for (DiffViewerPane pane : diffCoordinatorPanes()) {
+            pane.setExitDiffUiAction(null);
+        }
+        applyChromeVisibility();
+        applyViewSettingsToAllBuffers(config.getSettings());
+        setStatus(tr("status.diff.fullUi"));
+    }
+
+    private List<DiffViewerPane> diffCoordinatorPanes() {
+        List<DiffViewerPane> panes = new ArrayList<>();
+        for (Tab tab : editorArea.tabs()) {
+            if (tab.getUserData() instanceof DiffViewerPane pane) {
+                panes.add(pane);
+            }
+        }
+        return panes;
+    }
+
     /** Drops a {@code --zen}/{@code --expert} session override — an in-app toggle now owns the state, so the
      *  quit-time tool-window restore must not fire. */
     private void clearCliFocusOverride() {
@@ -14090,7 +14220,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // prefs; Simple UI mode additionally removes the whole gutter + minimap. All effective overlays.
         // Expert keeps the full editor view — line numbers, ruler, current-line highlight, minimap — so those
         // key on the real zen flag; only the whitespace guides follow the combined focus flag like Zen.
-        boolean zen = zenActive();
+        boolean zen = zenActive() || diffUiActive();
         boolean focus = zen || expertActive();
         boolean simple = simpleModeActive();
         buffer.setColumnRulerVisible(Chrome.columnRuler(s.isShowColumnRuler(), zen));
@@ -17074,16 +17204,42 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Diff viewer + merge. The git-backed diffs are ifGit-gated; "Compare With…" and "Resolve
         // Conflicts" work on any file (no repo needed), so they are not gated.
         registry.register(Command.of("diff.vsHead", () -> git.ifEnabled(diffCoordinator::diffActiveVsHead)));
+        registry.register(
+                Command.of("diff.reviewUnstaged", () -> git.ifEnabled(() -> diffCoordinator.reviewGitChanges(false))));
+        registry.register(
+                Command.of("diff.reviewStaged", () -> git.ifEnabled(() -> diffCoordinator.reviewGitChanges(true))));
         // Diff viewer toolbar actions (act on the active diff tab).
         registry.register(
                 Command.of("diff.toggleView", () -> diffCoordinator.withActiveDiff(DiffViewerPane::toggleViewMode)));
         registry.register(
                 Command.of("diff.applyAll", () -> diffCoordinator.withActiveDiff(DiffViewerPane::applyAllChanges)));
+        registry.register(Command.of(
+                "diff.editResult", () -> diffCoordinator.withActiveDiff(DiffViewerPane::toggleResultEditing)));
+        registry.register(Command.of(
+                "diff.swapSides", () -> diffCoordinator.withActiveDiff(DiffViewerPane::swapComparisonSides)));
+        registry.register(Command.of(
+                "diff.toggleIgnoreCase", () -> diffCoordinator.withActiveDiff(DiffViewerPane::toggleIgnoreCase)));
+        registry.register(Command.of(
+                "diff.toggleSmartAlignment",
+                () -> diffCoordinator.withActiveDiff(DiffViewerPane::toggleSmartAlignment)));
         registry.register(
                 Command.of("diff.nextChange", () -> diffCoordinator.withActiveDiff(DiffViewerPane::goNextChange)));
         registry.register(Command.of(
                 "diff.previousChange", () -> diffCoordinator.withActiveDiff(DiffViewerPane::goPreviousChange)));
+        registry.register(
+                Command.of("diff.stageHunk", () -> diffCoordinator.withActiveDiff(DiffViewerPane::stageCurrentHunk)));
+        registry.register(Command.of(
+                "diff.unstageHunk", () -> diffCoordinator.withActiveDiff(DiffViewerPane::unstageCurrentHunk)));
+        registry.register(
+                Command.of("diff.revertHunk", () -> diffCoordinator.withActiveDiff(DiffViewerPane::revertCurrentHunk)));
+        registry.register(
+                Command.of("diff.copyHunk", () -> diffCoordinator.withActiveDiff(DiffViewerPane::copyCurrentHunk)));
+        registry.register(
+                Command.of("diff.openChange", () -> diffCoordinator.withActiveDiff(DiffViewerPane::openCurrentChange)));
         registry.register(Command.of("diff.compareWith", diffCoordinator::compareActiveWithFile));
+        registry.register(Command.of("diff.compareClipboard", diffCoordinator::compareActiveWithClipboard));
+        registry.register(Command.of("diff.compareBlank", diffCoordinator::compareActiveWithBlank));
+        registry.register(Command.of("diff.compareDirectories", diffCoordinator::compareDirectories));
         registry.register(Command.of("diff.openPatchFile", () -> diffCoordinator.openPatchFile(activeBuffer())));
         registry.register(Command.of("diff.vsCommit", () -> git.ifEnabled(diffCoordinator::diffActiveVsCommit)));
         registry.register(Command.of("merge.resolve", diffCoordinator::resolveConflicts));

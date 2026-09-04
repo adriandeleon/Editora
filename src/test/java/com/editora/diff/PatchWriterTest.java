@@ -21,4 +21,33 @@ class PatchWriterTest {
         assertTrue(patch.contains("+Y"), patch);
         assertTrue(patch.endsWith("\n"));
     }
+
+    @Test
+    void finalNewlineOnlyDifferenceProducesApplicablePatch() {
+        String patch = PatchWriter.unifiedDiff("a/f", "b/f", "same\n", "same");
+        assertTrue(patch.contains("-same"), patch);
+        assertTrue(patch.contains("+same"), patch);
+        assertTrue(patch.contains("\\ No newline at end of file"), patch);
+        PatchParser.FilePatch parsed = PatchParser.parse(patch).get(0);
+        assertTrue(parsed.oldFinalNewline());
+        assertTrue(!parsed.newFinalNewline());
+    }
+
+    @Test
+    void writesFinalNewlineMarkersAlongsideContentChanges() {
+        String patch = PatchWriter.unifiedDiff("a/f", "b/f", "first\nold\nlast", "first\nnew\nlast\n");
+
+        assertTrue(patch.contains("-old"), patch);
+        assertTrue(patch.contains("+new"), patch);
+        assertTrue(patch.contains("\\ No newline at end of file"), patch);
+    }
+
+    @Test
+    void appendsAnEofHunkWhenContentChangeIsFarFromFinalNewlineChange() {
+        String middle = "unchanged\n".repeat(12);
+        String patch = PatchWriter.unifiedDiff("a/f", "b/f", "old\n" + middle + "last", "new\n" + middle + "last\n");
+
+        assertTrue(patch.indexOf("@@") != patch.lastIndexOf("@@"), patch);
+        assertTrue(patch.contains("\\ No newline at end of file"), patch);
+    }
 }

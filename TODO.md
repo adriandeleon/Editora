@@ -1353,9 +1353,14 @@ A backlog of planned features and improvements. Unordered within each section.
       **JavaScript/Node** (vscode-js-debug): breakpoints (conditional/logpoints), step/resume/pause/
       run-to-cursor/jump-to-line, call stack + variables + watches + set-value, inline values + hover, an
       IntelliJ-style Debug tool window (`M-g d`); off by default
-- [x] Diff viewer & merge — side-by-side / unified diff (vs HEAD, a commit, or another file) with
-      word-level highlights, prev/next nav, apply-hunk / apply-all (undoable), live refresh, patch export;
-      a merge-conflict resolver (accept ours/theirs/both)
+- [x] Diff viewer & merge — loss-aware side-by-side / unified review (vs HEAD, a commit, another file,
+      clipboard or empty text, two directory trees, staged or working repository changes, or a multi-file
+      patch) with side swapping that preserves the editable local target,
+      word/context/whitespace controls, case-insensitive matching, bounded smart/positional line alignment,
+      guarded live refresh, line/hunk/all/EOF apply,
+      a live-recomputed editable Result draft with atomic guarded apply,
+      Git stage/unstage/revert, large/binary fallbacks, patch export, and ancestor-aware three-way conflict
+      resolution with automatic compatible-edit merging and an editable Result pane
 - [x] Multiple cursors & column/box selection — VS Code–style multi-caret editing (add caret at next
       occurrence / above / below) + Alt-drag column selection, via the personal RichTextFX fork
 - [x] LSP support — **21 language servers** auto-detected on PATH (per-server Settings command + enable,
@@ -1458,7 +1463,9 @@ A backlog of planned features and improvements. Unordered within each section.
 ## Files & version control
 - [x] Git support — native CLI (branch/status, gutter change bars, commit workflow, fetch/pull/push)
 - [x] Diff viewer + merge-conflict UI — side-by-side / unified diff (vs HEAD / commit / another file),
-      word-level highlights, apply-hunk / apply-all, patch export, merge-conflict resolver
+      lazy recursive directory comparison, multi-file staged and working-tree review, word-level highlights,
+      apply-hunk / apply-all, patch export, Git-stage Base/Ours/Theirs merge and an
+      editable Result pane
 - [x] Local file history — IntelliJ-style snapshots on save / auto-save / before an external reload; a
       **File History** tool window (`M-g l`) lists revisions (date/time, reason, size; latest tagged
       *Current*), double-click for a read-only diff vs current, restore = undoable whole-file replace.

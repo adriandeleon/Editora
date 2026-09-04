@@ -38,6 +38,11 @@ public final class DiffModels {
             return new Row(RowType.EQUAL, text, leftLine, text, rightLine, null, null);
         }
 
+        /** Equal for comparison purposes while retaining each side's original spelling. */
+        public static Row equal(String left, int leftLine, String right, int rightLine) {
+            return new Row(RowType.EQUAL, left, leftLine, right, rightLine, null, null);
+        }
+
         public static Row added(String text, int rightLine) {
             return new Row(RowType.ADDED, null, -1, text, rightLine, null, null);
         }
@@ -65,7 +70,14 @@ public final class DiffModels {
     }
 
     /** One unified-view row; {@code leftLine}/{@code rightLine} is -1 on the side that has no line. */
-    public record UnifiedRow(UnifiedType type, String text, int leftLine, int rightLine) {}
+    public record UnifiedRow(UnifiedType type, String text, int leftLine, int rightLine, int[][] wordRanges) {}
+
+    /** How much work was safe for the engine to perform for this input size. */
+    public enum Quality {
+        FULL,
+        LINE_ONLY,
+        METADATA_ONLY
+    }
 
     /**
      * A computed diff: aligned side-by-side {@code rows}, the derived {@code unified} rows, the added /
@@ -73,10 +85,26 @@ public final class DiffModels {
      * of non-equal rows (for prev/next-change navigation).
      */
     public record DiffModel(
-            List<Row> rows, List<UnifiedRow> unified, int added, int removed, List<Integer> changeBlockStarts) {
+            List<Row> rows,
+            List<UnifiedRow> unified,
+            int added,
+            int removed,
+            List<Integer> changeBlockStarts,
+            boolean leftFinalNewline,
+            boolean rightFinalNewline,
+            Quality quality) {
+
+        public DiffModel(
+                List<Row> rows, List<UnifiedRow> unified, int added, int removed, List<Integer> changeBlockStarts) {
+            this(rows, unified, added, removed, changeBlockStarts, false, false, Quality.FULL);
+        }
 
         public boolean isEmpty() {
-            return added == 0 && removed == 0;
+            return added == 0 && removed == 0 && leftFinalNewline == rightFinalNewline;
+        }
+
+        public boolean finalNewlineDiffers() {
+            return leftFinalNewline != rightFinalNewline;
         }
     }
 }

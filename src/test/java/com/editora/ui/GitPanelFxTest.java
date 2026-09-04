@@ -5,6 +5,8 @@ import java.util.List;
 
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.layout.HBox;
@@ -54,6 +56,9 @@ class GitPanelFxTest {
 
         @Override
         public void refresh() {}
+
+        @Override
+        public void review(boolean staged) {}
 
         @Override
         public void diff(String repoRelativePath, boolean staged) {}
@@ -123,6 +128,7 @@ class GitPanelFxTest {
         final List<List<String>> unstaged = new ArrayList<>();
         final List<List<String>> discardedTracked = new ArrayList<>();
         final List<List<String>> discardedUntracked = new ArrayList<>();
+        final List<Boolean> reviews = new ArrayList<>();
 
         @Override
         public void open(String repoRelativePath) {}
@@ -154,6 +160,11 @@ class GitPanelFxTest {
 
         @Override
         public void refresh() {}
+
+        @Override
+        public void review(boolean staged) {
+            reviews.add(staged);
+        }
 
         @Override
         public void diff(String repoRelativePath, boolean staged) {}
@@ -242,6 +253,29 @@ class GitPanelFxTest {
         assertFalse(
                 FxTestSupport.callOnFx(commit::isDisable),
                 "the commit affordances read the full status, not the filtered view");
+    }
+
+    @Test
+    void reviewMenuTracksAvailableSidesAndDispatchesEachReview() throws Exception {
+        Recording rec = new Recording();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(rec));
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+
+        MenuButton review = FxTestSupport.field(p, "reviewButton");
+        MenuItem working = FxTestSupport.field(p, "reviewWorkingItem");
+        MenuItem staged = FxTestSupport.field(p, "reviewStagedItem");
+        assertFalse(FxTestSupport.callOnFx(review::isDisable));
+        assertFalse(FxTestSupport.callOnFx(working::isDisable));
+        assertFalse(FxTestSupport.callOnFx(staged::isDisable));
+
+        FxTestSupport.runOnFx(working::fire);
+        FxTestSupport.runOnFx(staged::fire);
+        assertEquals(List.of(false, true), rec.reviews);
+
+        FxTestSupport.runOnFx(() -> p.setStatus(
+                new GitStatus(true, "main", "origin/main", 0, 0, List.of(new FileEntry("only.txt", '.', 'M', null)))));
+        assertFalse(FxTestSupport.callOnFx(working::isDisable));
+        assertTrue(FxTestSupport.callOnFx(staged::isDisable));
     }
 
     @Test

@@ -38,6 +38,14 @@ import com.editora.config.WorkspaceState;
  */
 public class WindowManager {
 
+    /** The two paths requested by {@code editora --diff-ui LEFT RIGHT}. */
+    public record DiffUiRequest(Path left, Path right) {
+        public DiffUiRequest {
+            java.util.Objects.requireNonNull(left, "left");
+            java.util.Objects.requireNonNull(right, "right");
+        }
+    }
+
     private final SharedConfig shared;
     private final KeymapManager keymap; // shared, read-only across windows
     private final HostServices hostServices;
@@ -197,6 +205,27 @@ public class WindowManager {
         pm.save();
         gcOrphanWindowSessions(toOpen);
         focusKey(primary);
+    }
+
+    /**
+     * Opens one isolated, session-free window containing only a two-file diff. A fresh untitled-window key
+     * keeps the normal no-project session (including its saved Zen/Expert state) out of this transient view.
+     */
+    public void launchDiffUi(Stage primaryStage, DiffUiRequest request) {
+        this.primaryStage = primaryStage;
+        this.noSession = true;
+        this.singleWindowSession = true;
+        String key = WindowKeys.UNTITLED_PREFIX + "diff-"
+                + java.util.UUID.randomUUID().toString().substring(0, 8);
+        try {
+            buildWindow(key, null, untitledStateFile(key), List.of(), false, false, null, false, request);
+            transientWindows.add(key);
+            focusKey(key);
+        } catch (RuntimeException | Error t) {
+            java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                    .log(java.util.logging.Level.WARNING, "Failed to build standalone diff window", t);
+            throw t;
+        }
     }
 
     /**
@@ -678,6 +707,19 @@ public class WindowManager {
             boolean expert,
             String newFile,
             boolean simple) {
+        return buildWindow(key, project, stateFile, targets, zen, expert, newFile, simple, null);
+    }
+
+    private Stage buildWindow(
+            String key,
+            Project project,
+            Path stateFile,
+            List<MainController.OpenTarget> targets,
+            boolean zen,
+            boolean expert,
+            String newFile,
+            boolean simple,
+            DiffUiRequest diffUi) {
         try {
             Stage stage = primaryStage != null ? primaryStage : new Stage();
             primaryStage = null; // only the first window reuses the JavaFX primary stage
@@ -755,7 +797,7 @@ public class WindowManager {
             // visibly stripped itself, a flash that grew with the number of restored files. Must stay after
             // init() (which runs toolWindows.restore(), whose state a focus mode stashes) and after
             // setWindowContext (which selects this window's session).
-            controller.applyStartupChrome(zen, expert, simple);
+            controller.applyStartupChrome(zen, expert, simple, diffUi != null);
             restoreWindowBounds(stage, config.getWorkspaceState());
             // Don't bury a secondary window full-screen on top of an existing one: drop maximized so it
             // falls back to normal (cascadable) bounds. (Projects carried identical saved bounds — incl.
@@ -791,7 +833,11 @@ public class WindowManager {
             focus(stage);
 
             windows.add(new Holder(key, stage, controller));
-            controller.startup(null, targets, newFile, noSession); // chrome flags already applied, pre-show()
+            if (diffUi != null) {
+                controller.startupDiffUi(diffUi.left(), diffUi.right());
+            } else {
+                controller.startup(null, targets, newFile, noSession); // chrome flags already applied, pre-show()
+            }
             return stage;
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException("Failed to build a window for project '" + key + "'", e);
@@ -827,6 +873,13 @@ public class WindowManager {
             boolean zen, boolean expert, boolean simple, List<MainController.OpenTarget> targets, boolean noSession) {
         this.noSession = noSession;
         buildWindow("", null, null, targets, zen, expert, null, simple);
+        return windows.get(windows.size() - 1).controller();
+    }
+
+    /** Builds the production standalone-diff path for headless JavaFX tests. */
+    MainController buildDiffWindowForTest(DiffUiRequest request) {
+        this.noSession = true;
+        buildWindow("", null, null, List.of(), false, false, null, false, request);
         return windows.get(windows.size() - 1).controller();
     }
 

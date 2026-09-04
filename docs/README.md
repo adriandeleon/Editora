@@ -18,6 +18,7 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 - [glossary.md](glossary.md) — the recurring Editora-specific terms in one place.
 - [gotchas.md](gotchas.md) — the non-obvious traps (JPMS opens, macOS classloader, the
   headless-AWT guard, the texture-pool black window, …) with symptom and fix.
+- [diff.md](diff.md) — concise guide to opening, reviewing, applying, and testing comparisons.
 
 ## Roadmaps
 
@@ -43,6 +44,9 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   symbol index, Search Everywhere, and the flow features (recent locations, peek, sticky scroll).
 - [subsystems/project-map.md](subsystems/project-map.md) — the Project tool window's Canvas-based
   Miller-column navigator, interaction contract, layout, filtering, preview, and threading model.
+- [subsystems/diff-and-merge.md](subsystems/diff-and-merge.md) — loss-aware diff text, background
+  computation, refresh guards, patch-set, repository, and directory review, Git hunk actions, ancestor-aware
+  merge, and accessibility.
 - [subsystems/lsp-and-dap.md](subsystems/lsp-and-dap.md) — Language Server + Debug Adapter
   integration, and the `process/ProcessRegistry` lifecycle that owns spawned servers.
 
