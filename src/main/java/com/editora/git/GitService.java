@@ -215,6 +215,39 @@ public final class GitService {
 
     // --- diff viewer: blob content + history -----------------------------------------------------
 
+    /** Raw blob lookup result. {@code found} distinguishes a valid empty blob from a missing stage/spec. */
+    public record BlobResult(boolean found, byte[] bytes) {
+        public BlobResult {
+            bytes = bytes == null ? new byte[0] : bytes.clone();
+        }
+
+        @Override
+        public byte[] bytes() {
+            return bytes.clone();
+        }
+    }
+
+    /**
+     * Fetches a blob's raw bytes while preserving whether the spec existed. This matters for merge-index
+     * stages: an empty file is a valid ancestor/side, whereas a missing {@code :1/:2/:3} stage means the
+     * file is not available for an ancestor-aware merge.
+     */
+    public void showBlob(Path root, String spec, Consumer<BlobResult> onResult) {
+        exec.submit(() -> {
+            BlobResult result = new BlobResult(false, new byte[0]);
+            if (gitAvailable() && root != null && spec != null) {
+                List<String> cmd = gitArgv("show", spec);
+                ProcessRunner.BytesResult r =
+                        ProcessRunner.runBytes(root, QUICK, cmd, Map.of("GIT_OPTIONAL_LOCKS", "0"));
+                if (r.ok()) {
+                    result = new BlobResult(true, r.out());
+                }
+            }
+            BlobResult posted = result;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
     /**
      * Fetches a blob's <em>raw bytes</em> via {@code git show <spec>} (e.g. {@code HEAD:rel/path} for the
      * committed version, {@code :rel/path} for the staged/index version, {@code <ref>:rel/path} for any
@@ -223,19 +256,7 @@ public final class GitService {
      * doesn't exist (a new/untracked file has no such blob) or on failure — callers treat empty as "empty side".
      */
     public void showBytes(Path root, String spec, Consumer<byte[]> onResult) {
-        exec.submit(() -> {
-            byte[] bytes = new byte[0];
-            if (gitAvailable() && root != null && spec != null) {
-                List<String> cmd = gitArgv("show", spec);
-                ProcessRunner.BytesResult r =
-                        ProcessRunner.runBytes(root, QUICK, cmd, Map.of("GIT_OPTIONAL_LOCKS", "0"));
-                if (r.ok()) {
-                    bytes = r.out();
-                }
-            }
-            byte[] posted = bytes;
-            Platform.runLater(() -> onResult.accept(posted));
-        });
+        showBlob(root, spec, result -> onResult.accept(result.found() ? result.bytes() : new byte[0]));
     }
 
     /** One commit from the log, for the "diff against commit" picker. */
@@ -637,6 +658,29 @@ public final class GitService {
         run(root, NETWORK, onResult, args);
     }
 
+    /**
+     * Applies a generated patch after first checking it against the current worktree/index. The check and
+     * mutation share the service's serial executor, so a stale diff fails cleanly instead of applying to a
+     * different file state. {@code cached} targets the index; otherwise the working tree is targeted.
+     */
+    public void applyPatch(Path root, String patch, boolean cached, Consumer<ProcessRunner.Result> onResult) {
+        exec.submit(() -> {
+            List<String> base = new ArrayList<>();
+            base.add("apply");
+            if (cached) {
+                base.add("--cached");
+            }
+            List<String> check = new ArrayList<>(base);
+            check.add("--check");
+            ProcessRunner.Result result = gitWithInput(root, patch, check);
+            if (result.ok()) {
+                result = gitWithInput(root, patch, base);
+            }
+            ProcessRunner.Result posted = result;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
     private void run(Path root, Duration timeout, Consumer<ProcessRunner.Result> onResult, String... args) {
         exec.submit(() -> {
             ProcessRunner.Result r = gitAvailable() && root != null
@@ -683,6 +727,17 @@ public final class GitService {
     private static ProcessRunner.Result git(Path dir, Duration timeout, String... args) {
         // GIT_OPTIONAL_LOCKS=0 so status never blocks on the index lock (git-specific).
         return ProcessRunner.run(dir, timeout, gitArgv(args), Map.of("GIT_OPTIONAL_LOCKS", "0"));
+    }
+
+    private ProcessRunner.Result gitWithInput(Path dir, String stdin, List<String> args) {
+        long startNanos = System.nanoTime();
+        List<String> argv = new ArrayList<>(GIT_CMD);
+        argv.addAll(args);
+        ProcessRunner.Result result =
+                ProcessRunner.run(dir, QUICK, argv, Map.of("GIT_OPTIONAL_LOCKS", "0"), stdin == null ? "" : stdin);
+        commandLog.record(new CommandLog.Entry(
+                argv, result.exit(), result.out(), result.err(), (System.nanoTime() - startNanos) / 1_000_000L));
+        return result;
     }
 
     /** Clears the cached repo roots (e.g. after switching projects or an external repo change). */

@@ -3169,17 +3169,23 @@
    is what groups the icons (see the identical treatment of .tool-bar above) — only the drawn line goes. */
 .diff-toolbar { -fx-background-color: -color-bg-subtle; -fx-border-width: 0; }
 .diff-toolbar-button { -fx-padding: 3 6 3 6; }
+.diff-option-button { -fx-padding: 2 6 2 6; -fx-font-size: 11px; }
+.diff-option-button:selected { -fx-background-color: -color-accent-muted; -fx-text-fill: -color-accent-fg; }
 .diff-toolbar-separator { -fx-padding: 0 3 0 3; }
 .diff-toolbar-separator:vertical > .line { -fx-border-color: transparent; }
 .diff-summary { -fx-text-fill: -color-fg-muted; -fx-font-size: 12px; }
 .diff-pane-header { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-padding: 2 6 2 6; -fx-background-color: -color-bg-subtle; -fx-border-width: 0; }
 .diff-lineno { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-padding: 0 6 0 0; -fx-opacity: 0.8; }
 .diff-sign { -fx-text-fill: -color-fg-muted; -fx-font-family: "JetBrains Mono", monospace; }
+.diff-change-sign { -fx-font-weight: bold; -fx-alignment: center; }
+.diff-left .diff-change-sign { -fx-text-fill: -color-danger-fg; }
+.diff-right .diff-change-sign { -fx-text-fill: -color-success-fg; }
 /* Per-line diff backgrounds (RichTextFX paragraph styles). */
 .diff-area .paragraph-text.diff-added { -fx-background-color: rgba(63, 185, 80, 0.16); }
 .diff-area .paragraph-text.diff-removed { -fx-background-color: rgba(248, 81, 73, 0.16); }
 .diff-area .paragraph-text.diff-modified { -fx-background-color: rgba(210, 153, 34, 0.16); }
 .diff-area .paragraph-text.diff-filler { -fx-background-color: rgba(140, 148, 158, 0.10); }
+.diff-area .paragraph-text.diff-collapsed { -fx-background-color: -color-bg-subtle; -fx-border-color: transparent transparent -color-border-muted transparent; -fx-font-style: italic; }
 /* Intra-line changed words: a stronger box behind the glyphs (RichTextFX's text-background property,
    since a JavaFX Text node can't paint -fx-background-color), keeping the syntax token color. */
 .diff-area .text.diff-word { -rtfx-background-color: rgba(210, 153, 34, 0.40); }
@@ -3187,6 +3193,18 @@
 .diff-apply { -fx-cursor: hand; }
 .diff-apply .toolbar-icon { -fx-fill: -color-accent-fg; }
 .diff-apply:hover .toolbar-icon { -fx-fill: -color-accent-emphasis; }
+.diff-result-box { -fx-background-color: -color-bg-default; }
+.diff-result-label { -fx-font-weight: bold; -fx-text-fill: -color-fg-default; }
+.diff-result { -fx-border-color: -color-border-muted; -fx-border-radius: 3; }
+.diff-result-split > .split-pane-divider { -fx-padding: 2; }
+.patch-review-sidebar { -fx-background-color: -color-bg-subtle; -fx-border-color: transparent -color-border-muted transparent transparent; }
+.patch-file-list { -fx-background-color: -color-bg-subtle; -fx-border-width: 0; }
+.patch-file-list .list-cell { -fx-padding: 6 8 6 8; }
+.patch-file-status {
+    -fx-min-width: 16;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-accent-fg;
+}
 
 /* --- Merge (conflict resolution) viewer ----------------------------------------------------------- */
 .merge-toolbar { -fx-background-color: -color-bg-subtle; -fx-border-color: transparent transparent -color-border-muted transparent; }
@@ -3200,6 +3218,9 @@
 .merge-theirs { -fx-control-inner-background: rgba(68, 147, 248, 0.10); }
 .merge-base { -fx-control-inner-background: rgba(139, 148, 158, 0.12); }
 .merge-chosen { -fx-text-fill: -color-success-fg; -fx-font-size: 11px; }
+.merge-result-box { -fx-background-color: -color-bg-default; }
+.merge-result-label { -fx-font-weight: bold; -fx-text-fill: -color-fg-default; }
+.merge-result { -fx-border-color: -color-border-muted; -fx-border-radius: 3; }
 
 /* Debug Log window: monospace read-only log area + a muted file-path footer. */
 .debug-log-area {

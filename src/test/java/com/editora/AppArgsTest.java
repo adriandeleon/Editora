@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Tests parsing the command-line program arguments (pure; no JavaFX launch). */
@@ -64,6 +65,22 @@ class AppArgsTest {
     void simpleFlag() {
         assertTrue(App.simpleFlag(List.of("--simple")));
         assertFalse(App.simpleFlag(List.of("--config-dir", "/x", "f.txt")));
+    }
+
+    @Test
+    void diffUiConsumesExactlyTwoFileOperands() {
+        var request = App.diffUiArg(List.of("--diff-ui", "before.java", "after.java"));
+        assertEquals(Path.of("before.java"), request.left());
+        assertEquals(Path.of("after.java"), request.right());
+        assertEquals(List.of(), App.fileTargets(List.of("--diff-ui", "before.java", "after.java")));
+        assertTrue(App.isEditoraOption("--diff-ui"));
+    }
+
+    @Test
+    void diffUiRequiresBothOperands() {
+        assertThrows(IllegalArgumentException.class, () -> App.diffUiArg(List.of("--diff-ui")));
+        assertThrows(IllegalArgumentException.class, () -> App.diffUiArg(List.of("--diff-ui", "left.txt")));
+        assertNull(App.diffUiArg(List.of("left.txt", "right.txt")));
     }
 
     @Test
@@ -333,6 +350,7 @@ class AppArgsTest {
         assertFalse(App.shouldForwardLaunch(List.of("--new-file=notes.md", "/src/Foo.java")));
         assertFalse(App.shouldForwardLaunch(List.of("--config-dir=/tmp/cfg", "/src/Foo.java")));
         assertFalse(App.shouldForwardLaunch(List.of("--dev", "/src/Foo.java")));
+        assertFalse(App.shouldForwardLaunch(List.of("--diff-ui", "/src/old.java", "/src/new.java")));
     }
 
     @Test

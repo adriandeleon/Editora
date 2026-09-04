@@ -12,6 +12,7 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TextArea;
@@ -73,6 +74,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         void push();
 
         void refresh();
+
+        /** Review all files on one side: staged changes or unstaged/untracked working changes. */
+        void review(boolean staged);
+
         /** Show a diff for the row: {@code staged} → index↔HEAD, else worktree↔index. */
         void diff(String repoRelativePath, boolean staged);
     }
@@ -106,6 +111,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private final Label aheadLabel = new Label();
 
     private Button pushButton;
+    private final MenuButton reviewButton;
+    private final MenuItem reviewWorkingItem;
+    private final MenuItem reviewStagedItem;
     /** The menu currently on screen, hidden before showing the next one (each is built per right-click,
      *  since its contents depend on the live selection). */
     private ContextMenu openMenu;
@@ -140,9 +148,21 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         HBox.setHgrow(branchLabel, Priority.ALWAYS);
         aheadLabel.getStyleClass().add("git-ahead");
         Button stageAll = iconButton(Icons.stageAll(), tr("gitpanel.stageAllTip"), actions::stageAll);
+        reviewWorkingItem = new MenuItem(tr("gitpanel.reviewWorking"));
+        reviewWorkingItem.setOnAction(e -> actions.review(false));
+        reviewStagedItem = new MenuItem(tr("gitpanel.reviewStaged"));
+        reviewStagedItem.setOnAction(e -> actions.review(true));
+        reviewButton = new MenuButton();
+        reviewButton.setGraphic(Icons.diff());
+        reviewButton.getItems().setAll(reviewWorkingItem, reviewStagedItem);
+        reviewButton.getStyleClass().addAll("flat", "git-toolbar-button");
+        reviewButton.setFocusTraversable(false);
+        reviewButton.setAccessibleText(tr("gitpanel.reviewTip"));
+        reviewButton.setTooltip(new Tooltip(tr("gitpanel.reviewTip")));
+        reviewButton.setDisable(true);
         pushButton = iconButton(Icons.gitPush(), tr("gitpanel.pushTip"), actions::push);
         Button refresh = iconButton(Icons.refresh(), tr("gitpanel.refreshTip"), actions::refresh);
-        HBox header = new HBox(2, branchLabel, aheadLabel, stageAll, pushButton, refresh);
+        HBox header = new HBox(2, branchLabel, aheadLabel, reviewButton, stageAll, pushButton, refresh);
         header.getStyleClass().add("git-toolbar");
         header.setAlignment(Pos.CENTER_LEFT);
 
@@ -277,6 +297,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     public void setStatus(GitStatus status) {
         if (status == null || !status.isRepo()) {
             lastStatus = null;
+            reviewButton.setDisable(true);
+            reviewWorkingItem.setDisable(true);
+            reviewStagedItem.setDisable(true);
             getChildren().setAll(placeholderPane);
             return;
         }
@@ -287,6 +310,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         // The commit affordances read the FULL status, never the filtered view: hiding a staged file behind
         // a filter must not disable Commit.
         boolean hasStaged = status.files().stream().anyMatch(FileEntry::staged);
+        boolean hasWorking = status.files().stream().anyMatch(file -> file.unstaged() || file.untracked());
+        reviewStagedItem.setDisable(!hasStaged);
+        reviewWorkingItem.setDisable(!hasWorking);
+        reviewButton.setDisable(!hasStaged && !hasWorking);
         commitButton.setDisable(!hasStaged);
         commitButton.setText(tr("gitpanel.commit"));
         // Nothing to summarize without a staged diff — grey it out instead of silently no-op'ing on click.

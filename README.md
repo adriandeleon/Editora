@@ -543,11 +543,23 @@ Editora is built with the help of AI coding tools.
   (`M-g a`, GitLens-style) annotates the current line with "author, time ago • summary" (toggle in
   *Settings → Git*, off by default). **Stash** push / pop / apply / drop from the palette or the branch
   dropdown. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
-- **Diff viewer & merge** _(Beta)_ — compare files in a dedicated tab: side-by-side or unified, with word-level
-  intra-line highlights, prev/next-change navigation, apply-a-hunk / apply-all (undoable), live refresh,
-  and patch export. Diff against `HEAD` (`C-x v =`), another commit, or any other file; open a `.patch`/
-  `.diff` file's own content as a structured diff (right-click a patch tab → "Open in Diff Viewer"); a
-  separate merge-conflict resolver accepts ours / theirs / both per conflict.
+- **Diff viewer & merge** — compare files in a dedicated tab: side-by-side or unified, with word-level
+  highlights, curved change ribbons and an overview track, collapsed unchanged context, whitespace/wrap
+  controls, case-insensitive matching, smart or positional changed-line alignment, state-preserving live
+  refresh, and loss-aware CRLF/final-newline handling. Apply a line, hunk,
+  EOF state, or the whole file through the
+  undoable editor path; Git-panel diffs can stage, unstage, or revert individual lines and hunks after a
+  stale-state check. Diff against `HEAD` (`C-x v =`), another commit, any file, clipboard text, or an empty
+  document, and swap the displayed sides without losing the editable local target; review all staged changes
+  or all unstaged/untracked changes from the Commit window or command palette; and open multi-file
+  `.patch`/`.diff` content as one navigable review with per-file status and stats. Recursive directory compare
+  opens changed, left-only, and right-only files in the same lazy review surface. Huge and binary inputs
+  degrade to bounded line/metadata comparisons. Diffs with a local target can open an editable Result draft
+  that recomputes the comparison while you type and applies as one undoable, explicitly saved editor change;
+  a dirty draft prevents side swapping until it is applied or reset.
+  For conflicted Git files, the resolver reads the actual ancestor/ours/theirs
+  index stages, auto-merges compatible changes, and presents Base/Ours/Theirs choices plus an editable Result;
+  marker-only files retain the same ours/theirs/base/both fallback.
 - **Local file history** — IntelliJ-style snapshots of local files, taken on save, auto-save, and before an
   external-change reload, independent of any VCS. A **File History** tool window (`M-g l`) lists each revision
   (date/time, reason, size; the latest tagged *Current*); double-click for a read-only diff against the
@@ -796,6 +808,8 @@ editora [options] [FILE[:LINE[:COLUMN]] ...]
   --new-file[=name]     Open a new buffer instead of the Welcome page (optionally named, e.g. notes.md)
   --single-window[=project]  Open just one window (the named project, else the no-project window)
                         instead of restoring all windows; session-only, doesn't change the saved layout
+  --no-session          Open only the files given here; don't restore the saved session
+  --diff-ui LEFT RIGHT  Compare two files or directories in a standalone diff window
   --zen                 Start in Zen (distraction-free) mode (session only)
   --expert              Start in Expert mode: like Zen, but keeps the editor
                         view (line numbers, status bar) (session only)
@@ -809,6 +823,12 @@ editora [options] [FILE[:LINE[:COLUMN]] ...]
 File and `--project` arguments are **additive**: your previous session restores as usual, then the
 given file(s) open on top (focused) and the editor jumps to any `LINE:COLUMN`. `--version`/`--help`
 print and exit without opening a window. Works on macOS, Linux, and Windows.
+
+Use `editora --diff-ui path/to/before.java path/to/after.java` as a standalone diff tool, or pass two
+directories for a recursive folder review. It opens an isolated window with only the comparison surface—no
+restored projects, tabs, or editor chrome. Folder scans run off-thread and load per-file editors lazily. The
+full-UI icon at the right of the diff toolbar restores the normal Editora interface in place, keeping the
+comparison open. This launch is never forwarded into an already-running Editora process.
 
 ## Configuration
 

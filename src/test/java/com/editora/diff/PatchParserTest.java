@@ -170,6 +170,8 @@ class PatchParserTest {
         assertEquals(1, files.size());
         assertEquals(List.of("old"), files.get(0).oldLines());
         assertEquals(List.of("new"), files.get(0).newLines());
+        assertTrue(!files.get(0).oldFinalNewline());
+        assertTrue(!files.get(0).newFinalNewline());
     }
 
     /** A removed line whose own text looks like a file-header marker ("--- fake header") must still be

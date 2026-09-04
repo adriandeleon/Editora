@@ -39,7 +39,20 @@ public final class PatchParser {
             List<String> oldLines,
             List<String> newLines,
             int additions,
-            int deletions) {}
+            int deletions,
+            boolean oldFinalNewline,
+            boolean newFinalNewline) {
+
+        public FilePatch(
+                String oldPath,
+                String newPath,
+                List<String> oldLines,
+                List<String> newLines,
+                int additions,
+                int deletions) {
+            this(oldPath, newPath, oldLines, newLines, additions, deletions, true, true);
+        }
+    }
 
     private static final class Pending {
         String oldPath = "";
@@ -48,6 +61,8 @@ public final class PatchParser {
         final List<String> newLines = new ArrayList<>();
         int additions;
         int deletions;
+        boolean oldFinalNewline = true;
+        boolean newFinalNewline = true;
 
         boolean hasContent() {
             return !oldLines.isEmpty() || !newLines.isEmpty() || !oldPath.isEmpty() || !newPath.isEmpty();
@@ -68,15 +83,24 @@ public final class PatchParser {
         int oldRemaining = 0;
         int newRemaining = 0;
         boolean inHunk = false;
+        char lastTag = 0;
 
         for (String line : text.split("\n", -1)) {
             if (line.endsWith("\r")) {
                 line = line.substring(0, line.length() - 1);
             }
-            if (inHunk && (oldRemaining > 0 || newRemaining > 0)) {
-                if (line.equals(NO_NEWLINE_MARKER)) {
-                    continue; // doesn't count against either side's remaining count
+            if (line.equals(NO_NEWLINE_MARKER)) {
+                if (cur != null && lastTag == '-') {
+                    cur.oldFinalNewline = false;
+                } else if (cur != null && lastTag == '+') {
+                    cur.newFinalNewline = false;
+                } else if (cur != null && lastTag == ' ') {
+                    cur.oldFinalNewline = false;
+                    cur.newFinalNewline = false;
                 }
+                continue;
+            }
+            if (inHunk && (oldRemaining > 0 || newRemaining > 0)) {
                 char tag = line.isEmpty() ? ' ' : line.charAt(0);
                 String rest = line.isEmpty() || line.length() == 1 ? "" : line.substring(1);
                 switch (tag) {
@@ -97,6 +121,7 @@ public final class PatchParser {
                         newRemaining--;
                     }
                 }
+                lastTag = tag;
                 if (oldRemaining <= 0 && newRemaining <= 0) {
                     inHunk = false;
                 }
@@ -140,7 +165,14 @@ public final class PatchParser {
 
     private static FilePatch toFilePatch(Pending p) {
         return new FilePatch(
-                p.oldPath, p.newPath, List.copyOf(p.oldLines), List.copyOf(p.newLines), p.additions, p.deletions);
+                p.oldPath,
+                p.newPath,
+                List.copyOf(p.oldLines),
+                List.copyOf(p.newLines),
+                p.additions,
+                p.deletions,
+                p.oldFinalNewline,
+                p.newFinalNewline);
     }
 
     /** Strips a trailing {@code \t<timestamp>} (GNU diff) and a leading git {@code a/}/{@code b/} prefix. */

@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `editora --diff-ui LEFT RIGHT` now opens an isolated, session-free diff workspace with only the comparison
+  UI visible. A full-UI icon in the diff toolbar restores normal Editora chrome without closing or reloading
+  the comparison.
+- Side-by-side diffs now draw JetBrains-style change ribbons between related hunks, with a compact
+  right-edge overview track for changes across the full document.
+- The diff viewer now opens multi-file patches as one navigable review with per-file statistics; supports
+  exact, trimmed, or ignored-whitespace matching, context collapsing, long-line wrapping, and word emphasis;
+  and exposes Stage/Unstage/Revert hunk and line actions, Copy Hunk, and Open Changed Line from Git diffs.
+- The Commit tool window and command palette can now open all staged files or all unstaged/untracked files
+  as one repository review, with per-file status, statistics, navigation, and the usual Git hunk actions.
+- Recursive folder comparison now scans off-thread and opens only changed, left-only, or right-only files in
+  a lazy multi-file review. It is available from the VCS menu, command palette, and `--diff-ui DIR DIR`.
+- Editable local comparisons can now open a syntax-highlighted Result draft below the diff. Draft changes
+  re-diff after a short idle delay and apply to the real editor as one guarded, undoable change; they are
+  never saved implicitly.
+- The VCS menu and command palette can compare clipboard or empty text with the active file. Every full diff
+  can swap left and right sides without changing which local file receives edits; dirty Result drafts block
+  swapping until they are applied or reset.
+- Diff comparison rules now support case-insensitive matching and bounded smart line alignment. Smart mode
+  pairs related changed lines around insertions/removals instead of cascading mismatched rows, with a
+  positional fallback for large blocks; comparison rules never replace either side's original displayed text.
+- Diff comparisons now retain CRLF and final-newline semantics (including exported patch markers), detect
+  binary inputs before decoding, and degrade very large inputs to bounded line or metadata comparisons.
+- Merge resolution now loads Git's common-ancestor, ours, and theirs index stages for a true three-way
+  merge. Independent and identical edits are combined automatically; divergent regions show Base/Ours/Theirs
+  choices above an editable Result pane, with stale-buffer protection when applying the resolution.
 - Run configurations now support named NPM scripts (`npm run <script>`) and pass configuration
   arguments after npm's `--` separator.
 - The Project Map preview now supports common bitmap images and independent text/image zoom controls.
@@ -21,6 +47,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   columns no longer rasterize connectors for rows outside the viewport overscan.
 - Project Map filename searches now open the ancestor columns needed to reveal every matching file; clearing
   the query restores the branches that were open before the search.
+- Diff-toolbar controls now provide descriptive, localized tooltips for whitespace matching, word emphasis,
+  comparison rules, context collapsing, wrapping, layout switching, and patch export.
+- Editable diff apply controls now stay beside the center seam even when the left file is the local target,
+  instead of appearing in the window's outer-left gutter.
+- The standalone diff control that restores the full interface now uses Editora's application mark instead
+  of a generic wrench.
+- Diff refreshes are generation-guarded and preserve the selected change, scroll positions, focused side,
+  and divider. Syntax highlighting now runs off the JavaFX thread and stale highlight work is discarded.
+- Diff apply actions reject stale local content, expose a dedicated final-newline apply action, and keep Undo
+  and Save disabled until an apply succeeds. Add/remove signs and keyboard-operable gutter actions supplement
+  color for accessibility.
 - The Project Map defaults to a right-to-left flow, remembers the last selected direction, centres each newly
   opened column on the folder that opened it while keeping it beyond the parent column without overlap, opens a
   file row directly in an editor tab, clips panned content to the canvas below its toolbar, hides column controls when

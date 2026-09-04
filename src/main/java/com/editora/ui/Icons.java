@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import javafx.scene.Group;
 import javafx.scene.Node;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.shape.SVGPath;
 
 /**
@@ -250,6 +252,18 @@ final class Icons {
     static Node tools() {
         return of("M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 "
                 + "10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z");
+    }
+
+    /** Editora's application mark, for actions that enter or return to the full application UI. */
+    static Node editora() {
+        var resource = java.util.Objects.requireNonNull(
+                Icons.class.getResource("/com/editora/icons/icon-32.png"), "Editora application icon");
+        ImageView view = new ImageView(new Image(resource.toExternalForm()));
+        view.setFitWidth(ICON_SCALE * 24.0);
+        view.setFitHeight(ICON_SCALE * 24.0);
+        view.setPreserveRatio(true);
+        view.setSmooth(true);
+        return view;
     }
 
     /** Problems / diagnostics: a warning triangle with an exclamation mark. */

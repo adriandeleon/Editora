@@ -5,11 +5,13 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -24,39 +26,52 @@ import com.editora.diff.ConflictParser.ConflictFile;
 import com.editora.diff.ConflictParser.ConflictSegment;
 import com.editora.diff.ConflictParser.PlainSegment;
 import com.editora.diff.ConflictParser.Segment;
+import com.editora.diff.DiffText;
 import com.editora.editor.TabContent;
 
 import static com.editora.i18n.Messages.tr;
 
 /**
  * A merge-conflict resolution tab ({@link TabContent}) for a file containing Git conflict markers. Each
- * conflict is shown as a card with the "ours" and "theirs" sides side-by-side and per-conflict
- * Accept&nbsp;Ours / Theirs / Both buttons; a toolbar tracks the resolved count and a Save action writes
- * the {@link ConflictParser#resolve resolved} text back through the injected callback. Unchanged regions
- * are summarized so the conflicts stay prominent. Pure view over a parsed {@link ConflictFile}.
+ * conflict is shown as a Base/Ours/Theirs card with per-conflict acceptance actions. The lower Result
+ * editor updates from those choices and remains directly editable for a hand-crafted resolution. A toolbar
+ * tracks the resolved count and applies the exact Result text through the injected callback. Unchanged
+ * regions are summarized so the conflicts stay prominent. Pure view over a parsed {@link ConflictFile}.
  */
 public final class MergeViewerPane implements TabContent {
 
     private final String title;
     private final ConflictFile file;
-    private final Consumer<List<String>> onSave;
+    private final Consumer<String> onSave;
     private final List<Choice> choices;
+    private final String lineSeparator;
+    private final boolean finalNewline;
 
     private final BorderPane root = new BorderPane();
     private final Label status = new Label();
+    private final TextArea resultArea = new TextArea();
     private final String fontStyle;
 
     public MergeViewerPane(
-            String title, ConflictFile file, String fontFamily, int fontSize, Consumer<List<String>> onSave) {
+            String title,
+            ConflictFile file,
+            String fontFamily,
+            int fontSize,
+            String lineSeparator,
+            boolean finalNewline,
+            Consumer<String> onSave) {
         this.title = title;
         this.file = file;
-        this.onSave = onSave == null ? lines -> {} : onSave;
+        this.onSave = onSave == null ? text -> {} : onSave;
+        this.lineSeparator = lineSeparator == null || lineSeparator.isEmpty() ? "\n" : lineSeparator;
+        this.finalNewline = finalNewline;
         this.fontStyle = "-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;";
         this.choices = new ArrayList<>(java.util.Collections.nCopies(file.conflictCount(), Choice.UNRESOLVED));
 
         root.getStyleClass().add("merge-viewer");
         root.setTop(buildToolbar());
         root.setCenter(buildBody());
+        refreshResult();
         refreshStatus();
     }
 
@@ -64,7 +79,7 @@ public final class MergeViewerPane implements TabContent {
         status.getStyleClass().add("merge-status");
         Button save = new Button(tr("merge.save"));
         save.getStyleClass().add("merge-save");
-        save.setOnAction(e -> onSave.accept(ConflictParser.resolve(file, choices)));
+        save.setOnAction(e -> onSave.accept(resultTextForSave()));
         HBox bar = new HBox(8, status, spacer(), save);
         bar.getStyleClass().add("merge-toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
@@ -72,7 +87,7 @@ public final class MergeViewerPane implements TabContent {
         return bar;
     }
 
-    private ScrollPane buildBody() {
+    private SplitPane buildBody() {
         VBox list = new VBox(8);
         list.setPadding(new Insets(8));
         int conflictIndex = 0;
@@ -91,7 +106,24 @@ public final class MergeViewerPane implements TabContent {
         ScrollPane scroll = new ScrollPane(list);
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("merge-scroll");
-        return scroll;
+
+        Label resultLabel = new Label(tr("merge.result"));
+        resultLabel.getStyleClass().add("merge-result-label");
+        resultArea.setId("merge-result");
+        resultArea.setWrapText(false);
+        resultArea.setStyle(fontStyle);
+        resultArea.getStyleClass().add("merge-result");
+        resultArea.setAccessibleText(tr("merge.resultDescription"));
+        VBox result = new VBox(4, resultLabel, resultArea);
+        result.getStyleClass().add("merge-result-box");
+        result.setPadding(new Insets(6, 8, 8, 8));
+        VBox.setVgrow(resultArea, Priority.ALWAYS);
+
+        SplitPane split = new SplitPane(scroll, result);
+        split.setOrientation(Orientation.VERTICAL);
+        split.setDividerPositions(0.62);
+        split.getStyleClass().add("merge-split");
+        return split;
     }
 
     private VBox buildConflictCard(int index, Conflict c) {
@@ -155,7 +187,24 @@ public final class MergeViewerPane implements TabContent {
     private void choose(int index, Choice choice, Label chosen, String text) {
         choices.set(index, choice);
         chosen.setText(text);
+        refreshResult();
         refreshStatus();
+    }
+
+    private void refreshResult() {
+        List<String> lines = ConflictParser.resolve(file, choices);
+        String text = String.join(lineSeparator, lines);
+        if (finalNewline && !lines.isEmpty()) {
+            text += lineSeparator;
+        }
+        resultArea.setText(text);
+    }
+
+    private String resultTextForSave() {
+        // JavaFX TextArea normalizes entered CRLF/CR to LF. Restore the source document's separator while
+        // retaining the user's current choice about whether the result ends with a newline.
+        DiffText edited = DiffText.parse(resultArea.getText());
+        return new DiffText(edited.lines(), lineSeparator, edited.finalNewline()).compose(edited.lines());
     }
 
     private void refreshStatus() {

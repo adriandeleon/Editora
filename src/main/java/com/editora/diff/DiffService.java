@@ -18,7 +18,9 @@ import com.editora.diff.DiffModels.DiffModel;
 public final class DiffService {
 
     /** Above this many lines on either side, skip diffing (post {@code null}) — the caller reports it. */
-    private static final int MAX_LINES = 60_000;
+    private static final int MAX_FULL_LINES = 60_000;
+
+    private static final int MAX_RENDERED_LINES = 120_000;
 
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "diff-service");
@@ -39,9 +41,12 @@ public final class DiffService {
         exec.submit(() -> {
             List<String> left = DiffEngine.lines(leftText);
             List<String> right = DiffEngine.lines(rightText);
-            DiffModel model = (left.size() > MAX_LINES || right.size() > MAX_LINES)
-                    ? null
-                    : DiffEngine.compute(left, right, opts);
+            int largest = Math.max(left.size(), right.size());
+            DiffModel model = largest <= MAX_FULL_LINES
+                    ? DiffEngine.compute(leftText, rightText, opts)
+                    : largest <= MAX_RENDERED_LINES
+                            ? DiffEngine.computeCoarse(leftText, rightText)
+                            : DiffEngine.metadataOnly(leftText, rightText);
             Platform.runLater(() -> onResult.accept(model));
         });
     }

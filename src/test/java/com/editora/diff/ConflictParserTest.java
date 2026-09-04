@@ -78,4 +78,15 @@ class ConflictParserTest {
         // Unresolved → the full diff3 markers (incl. the base region) are preserved verbatim.
         assertEquals(diff3, ConflictParser.resolve(f, List.of(Choice.UNRESOLVED)));
     }
+
+    @Test
+    void emptyDiff3BaseStillCountsAsPresent() {
+        List<String> diff3 = List.of("<<<<<<< ours", "x", "||||||| base", "=======", "y", ">>>>>>> theirs");
+        ConflictFile f = ConflictParser.parse(diff3);
+        Conflict c = ((ConflictSegment) f.segments().get(0)).conflict();
+
+        assertTrue(c.hasBase());
+        assertTrue(c.base().isEmpty());
+        assertEquals(diff3, ConflictParser.resolve(f, List.of(Choice.UNRESOLVED)));
+    }
 }

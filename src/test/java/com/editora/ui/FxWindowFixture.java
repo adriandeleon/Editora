@@ -91,6 +91,23 @@ final class FxWindowFixture {
         });
     }
 
+    /** Boots the production {@code --diff-ui LEFT RIGHT} path against an isolated config directory. */
+    static FxWindowFixture createDiff(Path dir, Path left, Path right, Consumer<MainController> onBuilt)
+            throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            ConfigManager bootstrap = new ConfigManager(dir);
+            bootstrap.load();
+            SharedConfig shared = bootstrap.shared();
+            KeymapManager keymap = new KeymapManager();
+            keymap.loadNamed(shared.getSettings().getKeymap());
+            keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
+            WindowManager wm = new WindowManager(shared, keymap, null);
+            MainController controller = wm.buildDiffWindowForTest(new WindowManager.DiffUiRequest(left, right));
+            onBuilt.accept(controller);
+            return new FxWindowFixture(dir, shared, wm, controller);
+        });
+    }
+
     /** Hide the window and delete the temp config dir. Programmatic close() doesn't fire onCloseRequest. */
     void dispose() throws Exception {
         FxTestSupport.runOnFx(() -> {

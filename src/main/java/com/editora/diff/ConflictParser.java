@@ -35,11 +35,31 @@ public final class ConflictParser {
             String baseLabel,
             List<String> base,
             String theirsLabel,
-            List<String> theirs) {
+            List<String> theirs,
+            boolean basePresent) {
+
+        public Conflict(
+                String oursLabel,
+                List<String> ours,
+                String baseLabel,
+                List<String> base,
+                String theirsLabel,
+                List<String> theirs) {
+            this(oursLabel, ours, baseLabel, base, theirsLabel, theirs, base != null && !base.isEmpty());
+        }
+
+        public Conflict {
+            oursLabel = oursLabel == null ? "" : oursLabel;
+            ours = List.copyOf(ours == null ? List.of() : ours);
+            baseLabel = baseLabel == null ? "" : baseLabel;
+            base = List.copyOf(base == null ? List.of() : base);
+            theirsLabel = theirsLabel == null ? "" : theirsLabel;
+            theirs = List.copyOf(theirs == null ? List.of() : theirs);
+        }
 
         /** Whether this conflict carries a captured 3-way common-ancestor region. */
         public boolean hasBase() {
-            return !base.isEmpty();
+            return basePresent;
         }
     }
 
@@ -106,6 +126,7 @@ public final class ConflictParser {
                 List<String> theirs = new ArrayList<>();
                 String baseLabel = "";
                 String theirsLabel = "";
+                boolean basePresent = false;
                 i++;
                 // ours lines until the base (|||||||) or separator (=======)
                 while (i < n
@@ -117,6 +138,7 @@ public final class ConflictParser {
                 }
                 // optional base region (3-way diff3/zdiff3 style) — capture it
                 if (i < n && lines.get(i).startsWith(BASE)) {
+                    basePresent = true;
                     baseLabel = label(lines.get(i), BASE);
                     i++;
                     while (i < n
@@ -138,7 +160,13 @@ public final class ConflictParser {
                     i++;
                 }
                 segments.add(new ConflictSegment(new Conflict(
-                        oursLabel, List.copyOf(ours), baseLabel, List.copyOf(base), theirsLabel, List.copyOf(theirs))));
+                        oursLabel,
+                        List.copyOf(ours),
+                        baseLabel,
+                        List.copyOf(base),
+                        theirsLabel,
+                        List.copyOf(theirs),
+                        basePresent)));
             } else {
                 plain.add(line);
                 i++;
