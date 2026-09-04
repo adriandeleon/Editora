@@ -44,9 +44,11 @@ class ThreeWayMergeIntegrationFxTest {
         Path repo = Files.createTempDirectory("editora-three-way");
         Path file = repo.resolve("story.txt");
         git(repo, true, "init", "-q");
+        git(repo, true, "config", "user.email", "editora-test@example.invalid");
+        git(repo, true, "config", "user.name", "Editora Test");
         Files.writeString(file, "before\nbase\nafter\n");
         git(repo, true, "add", "story.txt");
-        git(repo, true, "-c", "user.email=t@e.st", "-c", "user.name=Test", "commit", "-q", "-m", "base");
+        git(repo, true, "commit", "-q", "-m", "base");
         git(repo, true, "checkout", "-q", "-b", "incoming");
         Files.writeString(file, "before\ntheirs\nafter\n");
         git(repo, true, "commit", "-q", "-am", "theirs");
