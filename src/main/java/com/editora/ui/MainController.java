@@ -3020,7 +3020,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 gitLogToolWindow, false); // shown only inside a repo (gated by GitCoordinator#applyState)
         toolWindows.register(fileHistoryToolWindow);
         toolWindows.setAvailable(fileHistoryToolWindow, false); // shown only for a local file with history on
-        toolWindows.register(fileInfoToolWindow);
+        // The status-bar file-size segment is the File Information window's visual toggle. Keep the
+        // window registered for commands, restoration, docking, and Settings, but avoid a duplicate stripe icon.
+        toolWindows.registerWithoutStripe(fileInfoToolWindow);
         toolWindows.register(undoHistoryToolWindow, false); // stripe off by default; reachable via the
         // undoHistory.jump popup, the tool.undoHistory command, or Settings → Tool Windows
         // The toolbar is the sole visual toggle for Find in Files; a second icon on the stripe was

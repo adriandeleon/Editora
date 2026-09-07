@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- File Information now opens and closes from the file-size segment in the status bar; its redundant
+  tool-window stripe icon has been removed.
 - The Run console now matches Output's richer console behavior: recognized log levels are color-coded,
   HTTP(S) URLs are styled and open on click, and the standard Select All / Copy context menu is available.
 - NPM and Make run configurations with a blank working directory now run at the open project's root, as the
