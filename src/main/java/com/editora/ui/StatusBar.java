@@ -98,7 +98,9 @@ public final class StatusBar extends HBox {
     private final Label language = segment("buffer.setLanguage", tr("statusbar.tip.setLanguage"));
     private final Label indent = segment("buffer.setTabSize", tr("statusbar.tip.setTabSize"));
     private final Label endings = segment("buffer.convertLineEndings", tr("statusbar.tip.convertEndings"));
-    private final Label size = new Label();
+    /** File size; clicking it toggles the File Information tool window. */
+    private final Label size = segment("tool.fileInformation", tr("statusbar.tip.fileSize"));
+
     private final Label encoding = new Label("UTF-8");
 
     /**
@@ -159,8 +161,6 @@ public final class StatusBar extends HBox {
         backgroundTasks.getStyleClass().add("status-segment");
         backgroundProgress.setPrefWidth(60);
         setBackgroundTasks(null, 0);
-        size.getStyleClass().add("status-segment");
-        size.setTooltip(new Tooltip(tr("statusbar.tip.fileSize")));
         encoding.getStyleClass().add("status-segment");
 
         // Narrowing hides part of the file, so the indicator is not optional — without it a narrowed
