@@ -12,6 +12,7 @@ import com.editora.run.JavaMainClass;
 import com.editora.run.JavaRunCommand;
 import com.editora.run.ProgramArgs;
 import com.editora.run.RunConfigRouting;
+import com.editora.run.RunConfigWorkingDirectory;
 import com.editora.run.RunService;
 import com.editora.run.ScriptRunCommand;
 import com.editora.run.StackTraceLinks;
@@ -62,6 +63,9 @@ final class RunCoordinator {
 
         /** The nearest Maven/Gradle project root above {@code file}, or {@code null} if there is none. */
         Path javaProjectRoot(Path file);
+
+        /** This window's open project root, or {@code null} when it has no project. */
+        Path projectRoot();
 
         /** Whether a project main class can be resolved+run (jdtls + the java-debug bundle available today). */
         boolean javaLaunchAvailable();
@@ -187,11 +191,11 @@ final class RunCoordinator {
     }
 
     /**
-     * Runs a non-Java configuration — a Python or shell script, or a make target.
+     * Runs a non-Java configuration — a Python or shell script, a make target, or an NPM script.
      *
-     * <p>Needs no project, no language server and no open Java file: the whole launch is an interpreter and a
-     * path (see {@link ScriptRunCommand}). The working directory is the configuration's own when set, else the
-     * script's folder, which is what makes a script's relative paths resolve the way they do from a terminal.
+     * <p>Needs no language server and no open Java file (see {@link ScriptRunCommand}). The working directory
+     * is the configuration's own when set, else the open project root. A standalone file-backed script can
+     * still fall back to its target's folder; build-tool targets cannot because their targets are names.
      */
     private void runScriptConfig(RunConfiguration cfg) {
         List<String> argv = ScriptRunCommand.build(cfg.type(), cfg.target(), ProgramArgs.tokenize(cfg.args()));
@@ -204,7 +208,7 @@ final class RunCoordinator {
             }
             return;
         }
-        Path cwd = workingDirFor(cfg);
+        Path cwd = RunConfigWorkingDirectory.resolve(cfg, ops.projectRoot());
         if (cwd == null) {
             host.setStatus(tr("status.run.configNeedsWorkingDir", cfg.name()));
             return;
@@ -226,23 +230,6 @@ final class RunCoordinator {
     private void reportIncomplete(RunConfiguration cfg, String messageKey) {
         host.setStatus(tr(messageKey, cfg.name()));
         ops.editConfiguration(cfg.name());
-    }
-
-    /**
-     * Where a script configuration runs: its own working directory when set, else the target script's folder.
-     * Null when neither is known — a make target with no working directory, which has nothing to run against.
-     */
-    private static Path workingDirFor(RunConfiguration cfg) {
-        if (!cfg.workingDir().isBlank()) {
-            return Path.of(cfg.workingDir());
-        }
-        if (!cfg.target().isBlank()) {
-            Path parent = Path.of(cfg.target()).toAbsolutePath().getParent();
-            if (parent != null) {
-                return parent;
-            }
-        }
-        return null;
     }
 
     /** A before-launch step is usually a build, so it gets a generous ceiling rather than a quick-probe one. */
@@ -325,8 +312,9 @@ final class RunCoordinator {
 
     /** Where a before-launch command runs: the configuration's working directory, else the project root. */
     private Path beforeLaunchDir(RunConfiguration cfg) {
-        if (!cfg.workingDir().isBlank()) {
-            return Path.of(cfg.workingDir());
+        Path configured = RunConfigWorkingDirectory.resolve(cfg, ops.projectRoot());
+        if (configured != null) {
+            return configured;
         }
         Path routing = routingFor(host, cfg);
         Path root = routing == null ? null : ops.javaProjectRoot(routing);

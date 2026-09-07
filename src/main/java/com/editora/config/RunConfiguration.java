@@ -10,9 +10,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * (see {@code run/EnvVars}).
  *
  * <p>{@code type} says <em>what</em> is launched — {@code java} (the {@code mainClass}, resolved through
- * jdtls) or a script type handled by {@code run/ScriptRunCommand}, whose {@code target} is the script path or
- * make target. Absent from an older entry it defaults to {@code java}, so every configuration saved before
- * types existed keeps working.
+ * jdtls) or a script type handled by {@code run/ScriptRunCommand}, whose {@code target} is the script path,
+ * make target, or NPM script name. Absent from an older entry it defaults to {@code java}, so every
+ * configuration saved before types existed keeps working.
  *
  * <p>A configuration does <b>not</b> say whether to run or debug — that is the caller's choice, as in
  * IntelliJ and VS Code. One entry backs the toolbar's Run and Debug buttons and both synthetic commands

@@ -97,6 +97,11 @@ class RunConfigLaunchFxTest {
         }
 
         @Override
+        public Path projectRoot() {
+            return root;
+        }
+
+        @Override
         public boolean javaLaunchAvailable() {
             return true;
         }
