@@ -21,6 +21,23 @@ public interface OutputStyle {
         return line -> null;
     }
 
+    /** Generic process/log output: color a leading severity token without assuming a build-tool format. */
+    static OutputStyle console() {
+        return line -> {
+            LogLevel level = LogPatterns.levelOf(line);
+            if (level == null) {
+                return null;
+            }
+            return switch (level) {
+                case ERROR, FATAL -> "log-error";
+                case WARN -> "log-warn";
+                case INFO -> "log-info";
+                case DEBUG -> "log-debug";
+                case TRACE -> "log-trace";
+            };
+        };
+    }
+
     /** Maven's classifier: warnings/errors + the build result get a color; plain {@code [INFO]} noise doesn't. */
     static OutputStyle maven() {
         return OutputStyle::mavenStyle;

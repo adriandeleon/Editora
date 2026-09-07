@@ -41,4 +41,13 @@ class OutputStyleTest {
     void passthroughColorsNothing() {
         assertNull(OutputStyle.passthrough().styleClassFor("[ERROR] anything"));
     }
+
+    @Test
+    void genericConsoleColorsRecognizedLogLevels() {
+        OutputStyle console = OutputStyle.console();
+        assertEquals("log-info", console.styleClassFor("2026-09-07 10:00:00 INFO ready"));
+        assertEquals("log-warn", console.styleClassFor("[warning] nearing capacity"));
+        assertEquals("log-error", console.styleClassFor("level=error request failed"));
+        assertNull(console.styleClassFor("ordinary program output"));
+    }
 }

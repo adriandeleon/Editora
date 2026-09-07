@@ -61,6 +61,9 @@ final class RunCoordinator {
         /** A stack-trace location double-clicked in the console: resolve + jump (shared resolver). */
         void openLink(StackTraceLinks.Link link);
 
+        /** An HTTP(S) URL single-clicked in program output: open it in the system browser. */
+        default void openUrl(String url) {}
+
         /** The nearest Maven/Gradle project root above {@code file}, or {@code null} if there is none. */
         Path javaProjectRoot(Path file);
 
@@ -117,6 +120,7 @@ final class RunCoordinator {
         this.panel = new RunPanel(this::stopRun);
         panel.setOnInput(service::sendInput); // stdin field → the running process
         panel.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
+        panel.setOnUrl(ops::openUrl); // single-clicked HTTP(S) URL → browser
     }
 
     RunPanel panel() {
