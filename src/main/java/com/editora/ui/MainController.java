@@ -2331,6 +2331,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             // Sort the Problems / TODO tool windows so the active file's group is on top (IDE convention).
             // Problems is keyed by canonical (LSP) paths; TODO by as-walked (scan) paths.
             Path activePath = buffer == null ? null : buffer.getPath();
+            if (projectPanel != null) {
+                projectPanel.setActiveFile(activePath);
+            }
             lspCoordinator.setProblemsActiveFile(activePath == null ? null : canonicalPath(activePath));
             todoCoordinator.setActiveFile(
                     activePath == null ? null : activePath.toAbsolutePath().normalize());
@@ -2409,6 +2412,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                 projectPanel.refreshOpenFiles();
             }
         });
+        if (projectPanel != null) {
+            EditorBuffer selected = activeBuffer();
+            projectPanel.setActiveFile(selected == null ? null : selected.getPath());
+        }
     }
 
     private void closeTabFromSwitcher(Tab tab) {

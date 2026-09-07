@@ -1213,6 +1213,13 @@
 /* Open file with unsaved changes — mirrors the dirty-tab treatment (amber italic + "• " prefix). */
 .project-tree .modified-file { -fx-text-fill: -state-amber; -fx-font-style: italic; }
 .project-tree .modified-file .toolbar-icon { -fx-fill: -state-amber; }
+.project-tree .project-open-file { -fx-text-fill: -color-fg-default; -fx-font-style: italic; }
+.project-tree .project-current-open-file {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+    -fx-font-style: normal;
+}
+.project-tree .project-current-open-file .toolbar-icon { -fx-fill: -color-accent-fg; }
 /* Git working-tree status colors (IntelliJ-style): added = green, modified = blue, deleted = gray +
    renamed = violet, untracked = olive; a folder with changed descendants is tinted blue. Shared by the
    Project tree (file coloring + status letter) AND the Commit tool window (.git-tree), so the two match.

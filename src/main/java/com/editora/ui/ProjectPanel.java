@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -75,6 +76,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final BiConsumer<Path, Path> onFileRenamed;
     private final Consumer<Path> onFileDeleted;
     private final java.util.function.Predicate<Path> isModified;
+    private final java.util.function.Predicate<Path> isOpen;
     /** Git working-tree status per file (absolute normalized path → status), for IntelliJ-style tree coloring;
      *  empty when Git is off / not a repo. Pushed by the Git coordinator on each status refresh. */
     private java.util.Map<Path, com.editora.git.GitFileStatus> gitStatus = java.util.Map.of();
@@ -224,6 +226,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private boolean respectGitignore = true;
     /** The paths being drag-moved (in-panel drag onto a folder); empty when no drag is in progress. */
     private List<Path> draggedPaths = List.of();
+    /** The active file (absolute normalized path), or {@code null} when none is active. */
+    private Path activeFile;
 
     public ProjectPanel(
             Consumer<Path> onOpenFile,
@@ -253,6 +257,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.onFileRenamed = onFileRenamed;
         this.onFileDeleted = onFileDeleted;
         this.isModified = isModified;
+        this.isOpen = isOpen == null ? path -> false : isOpen;
         this.mapView = new ProjectMapView(onOpenFile, isOpen, isModified, previewContent);
         this.mapView.setOnExpandedChanged(this::syncWatches);
         this.mapView.setContextMenuFactory(entry -> contextMenuFor(
@@ -397,11 +402,23 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Refreshes the Map's open-tab markers after the editor's tab membership changes. */
     public void refreshOpenFiles() {
+        tree.refresh();
         mapView.refreshStates();
     }
 
     /** Re-renders bookmark and Personal Note indicators in both Project views. */
     public void refreshMarkers() {
+        tree.refresh();
+        mapView.refreshStates();
+    }
+
+    /** Updates the active-file marker used for current-file emphasis in the tree. */
+    public void setActiveFile(Path file) {
+        Path next = file == null ? null : file.toAbsolutePath().normalize();
+        if (Objects.equals(activeFile, next)) {
+            return;
+        }
+        activeFile = next;
         tree.refresh();
         mapView.refreshStates();
     }
@@ -1496,6 +1513,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         "folder-cell",
         "file-cell",
         "modified-file",
+        "project-open-file",
+        "project-current-open-file",
         "git-status-added",
         "git-status-modified",
         "git-status-deleted",
@@ -1603,6 +1622,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             boolean isDir = getTreeItem() instanceof PathItem pi ? !pi.isLeaf() : Files.isDirectory(item);
             // An open file with unsaved changes: mark it like a dirty tab ("• " + amber italic).
             boolean dirty = !isDir && isModified != null && isModified.test(item);
+            Path absolute = item.toAbsolutePath().normalize();
+            boolean open = !isDir && ProjectPanel.this.isOpen.test(absolute);
+            boolean active = !isDir && open && activeFile != null && absolute.equals(activeFile);
             // Mark the cell so the stylesheet can theme the folder vs. file icon color.
             getStyleClass().removeAll(CELL_CLASSES);
             getStyleClass().add(isDir ? "folder-cell" : "file-cell");
@@ -1611,6 +1633,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             com.editora.git.GitFileStatus fileStatus = null;
             if (dirty) {
                 getStyleClass().add("modified-file"); // unsaved-in-editor takes precedence over the Git color
+            } else if (active) {
+                getStyleClass().add("project-current-open-file");
+            } else if (open) {
+                getStyleClass().add("project-open-file");
             } else if (!gitStatus.isEmpty() || !gitChangedDirs.isEmpty()) {
                 Path norm = item.toAbsolutePath().normalize();
                 if (isDir) {
@@ -1639,6 +1665,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // on its own (a Labeled cannot weight part of its string).
             if (dirty) {
                 label = "• " + label;
+            } else if (active) {
+                label = "◉ " + label;
+            } else if (open) {
+                label = "◌ " + label;
             }
             setText(label);
             setContextMenu(null); // built lazily in setOnContextMenuRequested (see the PathCell constructor)
