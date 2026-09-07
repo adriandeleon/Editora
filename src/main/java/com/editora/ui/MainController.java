@@ -4247,6 +4247,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public java.nio.file.Path projectRoot() {
+            return windowProjectRoot();
+        }
+
+        @Override
         public boolean javaLaunchAvailable() {
             // Resolving a project main class + classpath rides jdtls's java-debug bundle (the same gate as
             // Java debugging). PR4 adds a build-tool fallback so Run works without it.

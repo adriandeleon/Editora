@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- NPM and Make run configurations with a blank working directory now run at the open project's root, as the
+  settings hint promises, instead of interpreting the target name as a path relative to Editora's install or
+  launch directory. Their before-launch commands use the same project-root default.
 - Project Map pan and zoom gestures now coalesce rendering to one Canvas repaint per JavaFX pulse, and tall
   columns no longer rasterize connectors for rows outside the viewport overscan.
 - Project Map filename searches now open the ancestor columns needed to reveal every matching file; clearing
