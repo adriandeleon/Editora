@@ -4249,6 +4249,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void openUrl(String url) {
+            openExternalUrl(url);
+        }
+
+        @Override
         public java.nio.file.Path javaProjectRoot(java.nio.file.Path file) {
             return JavaProjectRoot.find(file);
         }

@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Run console now matches Output's richer console behavior: recognized log levels are color-coded,
+  HTTP(S) URLs are styled and open on click, and the standard Select All / Copy context menu is available.
 - NPM and Make run configurations with a blank working directory now run at the open project's root, as the
   settings hint promises, instead of interpreting the target name as a path relative to Editora's install or
   launch directory. Their before-launch commands use the same project-root default.

@@ -44,4 +44,25 @@ class RunConsoleStderrColorFxTest {
         assertTrue(flags[0], "a stderr line is tinted with run-stderr so error output stands out");
         assertFalse(flags[1], "a stdout line is not tinted");
     }
+
+    @Test
+    void stdoutLogLevelsAndUrlsUseOutputConsoleStyles() throws Exception {
+        boolean[] flags = FxTestSupport.callOnFx(() -> {
+            RunPanel panel = new RunPanel(() -> {});
+            CodeArea out = FxTestSupport.field(panel, "output");
+
+            panel.appendOutput("[WARN] See https://example.com/docs.", false);
+            int warn = out.getText().indexOf("[WARN]");
+            int url = out.getText().indexOf("https://");
+            Collection<String> warningStyle = out.getStyleOfChar(warn);
+            Collection<String> urlStyle = out.getStyleOfChar(url);
+            return new boolean[] {
+                warningStyle.contains("log-warn"), urlStyle.contains("log-warn"), urlStyle.contains("console-url")
+            };
+        });
+
+        assertTrue(flags[0], "recognized stdout log levels use semantic console colors");
+        assertTrue(flags[1], "the URL keeps its line's semantic color");
+        assertTrue(flags[2], "HTTP(S) URLs are styled as clickable links");
+    }
 }

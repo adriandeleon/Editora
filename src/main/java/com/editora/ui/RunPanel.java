@@ -6,6 +6,7 @@ import java.util.function.Consumer;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
@@ -15,8 +16,11 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.build.OutputStyle;
+import com.editora.run.ConsoleUrls;
 import com.editora.run.StackTraceLinks;
 import org.fxmisc.flowless.VirtualizedScrollPane;
+import org.fxmisc.richtext.Caret;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
@@ -48,6 +52,10 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     private Consumer<String> onInput;
     /** Receives a double-clicked stack-trace location (controller resolves + jumps). */
     private Consumer<StackTraceLinks.Link> onLink;
+    /** Receives a clicked HTTP(S) URL (controller opens it in the system browser). */
+    private Consumer<String> onUrl;
+
+    private final OutputStyle lineStyle = OutputStyle.console();
 
     public RunPanel(Runnable onStop) {
         getStyleClass().add("run-panel");
@@ -72,9 +80,28 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
         output.setEditable(false);
         output.setWrapText(false);
+        output.setFocusTraversable(true);
+        output.setShowCaret(Caret.CaretVisibility.OFF);
         output.getStyleClass().addAll("editor-area", "run-output");
         installLinkClicks(output, () -> onLink);
+        output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_CLICKED, e -> {
+            if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY || e.getClickCount() != 1 || onUrl == null) {
+                return;
+            }
+            int offset = output.hit(e.getX(), e.getY()).getInsertionIndex();
+            ConsoleUrls.Link link = ConsoleUrls.at(output.getText(), offset);
+            if (link != null) {
+                onUrl.accept(link.url());
+                e.consume();
+            }
+        });
+        output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_MOVED, e -> {
+            int offset = output.hit(e.getX(), e.getY()).getInsertionIndex();
+            output.setCursor(ConsoleUrls.at(output.getText(), offset) == null ? Cursor.TEXT : Cursor.HAND);
+        });
+        output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_EXITED, e -> output.setCursor(null));
         ConsoleNav.installShared(output); // configured-keymap scrolling while the console has focus
+        ConsoleContextMenu.install(output); // right-click Select All / Copy
 
         // stdin: one line per Enter, echoed into the console (the program won't echo it back).
         input.getStyleClass().add("run-input");
@@ -102,6 +129,11 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
     public void setOnLink(Consumer<StackTraceLinks.Link> onLink) {
         this.onLink = onLink;
+    }
+
+    /** Sets the system-browser opener used by single-clicked HTTP(S) URLs in program output. */
+    public void setOnUrl(Consumer<String> onUrl) {
+        this.onUrl = onUrl;
     }
 
     /** Matches the console font to the editor's code-area font (family + effective size). */
@@ -176,17 +208,29 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         input.setDisable(false);
     }
 
-    /** Appends one line of program output (stdout or stderr), colors stderr, trims if over the cap, and
-     *  auto-scrolls. stderr lines get {@code .text.run-stderr} so error output stands out. */
+    /** Appends one line of program output, applying stderr/log-level colors and clickable URL styling. */
     public void appendOutput(String line, boolean stderr) {
         int start = output.getLength();
         int caretBefore = output.getCaretPosition();
         boolean follow = caretBefore >= start; // scrolled back? stay put
         output.appendText(line + "\n");
-        if (stderr && !line.isEmpty()) {
-            StyleSpans<Collection<String>> spans = new StyleSpansBuilder<Collection<String>>()
-                    .add(List.of("run-stderr"), line.length())
-                    .create();
+        if (!line.isEmpty()) {
+            String styleClass = stderr ? "run-stderr" : lineStyle.styleClassFor(line);
+            StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
+            int offset = 0;
+            for (ConsoleUrls.Link link : ConsoleUrls.find(line)) {
+                if (link.start() > offset) {
+                    builder.add(styleClass == null ? List.of() : List.of(styleClass), link.start() - offset);
+                }
+                builder.add(
+                        styleClass == null ? List.of("console-url") : List.of(styleClass, "console-url"),
+                        link.end() - link.start());
+                offset = link.end();
+            }
+            if (offset < line.length()) {
+                builder.add(styleClass == null ? List.of() : List.of(styleClass), line.length() - offset);
+            }
+            StyleSpans<Collection<String>> spans = builder.create();
             output.setStyleSpans(start, spans);
         }
         ConsoleNav.afterAppend(output, caretBefore, follow, MAX_CHARS);
