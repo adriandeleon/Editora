@@ -411,9 +411,9 @@ final class DiffCoordinator {
         diffPathVsHead(b.getPath());
     }
 
-    /** Opens a read-only diff of {@code path} at HEAD (left) vs its working-tree text (right). */
+    /** Opens a diff of a file or a multi-file review of a folder at HEAD vs the working tree. */
     void diffPathVsHead(Path path) {
-        if (path == null || Files.isDirectory(path)) {
+        if (path == null) {
             host.setStatus(tr("status.diff.noFile"));
             return;
         }
@@ -427,6 +427,10 @@ final class DiffCoordinator {
         String rel = GitService.repoRelative(root, path);
         if (rel == null) {
             host.setStatus(tr("status.diff.notInRepo"));
+            return;
+        }
+        if (Files.isDirectory(path)) {
+            diffDirectoryVsRef(path, root, rel, "HEAD", tr("diff.side.head"));
             return;
         }
         String name = path.getFileName().toString();
@@ -791,9 +795,9 @@ final class DiffCoordinator {
         diffPathVsCommit(b.getPath());
     }
 
-    /** Diff a project-tree file against a commit chosen from its history. */
+    /** Diff a project-tree file or folder against a commit chosen from its history. */
     void diffPathVsCommit(Path path) {
-        if (path == null || Files.isDirectory(path)) {
+        if (path == null) {
             host.setStatus(tr("status.diff.noFile"));
             return;
         }
@@ -806,7 +810,6 @@ final class DiffCoordinator {
             host.setStatus(tr("status.diff.notInRepo"));
             return;
         }
-        String name = path.getFileName().toString();
         git.service().log(root, path, 80, commits -> {
             if (commits.isEmpty()) {
                 host.setStatus(tr("status.diff.noHistory"));
@@ -819,24 +822,15 @@ final class DiffCoordinator {
                     c -> c.shortHash() + "  " + c.subject(),
                     c -> c.date() + " · " + c.author(),
                     c -> c.shortHash() + " " + c.subject() + " " + c.author() + " " + c.date(),
-                    chosen -> openDiff(
-                            tr("diff.title.vsCommit", name, chosen.shortHash()),
-                            chosen.shortHash(),
-                            tr("diff.side.working"),
-                            name,
-                            name,
-                            blobSide(root, chosen.hash() + ":" + rel, path),
-                            cb -> cb.accept(worktreeText(path)),
-                            DiffViewerPane.EditableSide.RIGHT,
-                            path));
+                    chosen -> openPathVsRef(path, root, rel, chosen.hash(), chosen.shortHash()));
             picker.setOverlayHost(host.overlayHost());
             picker.show(host.window());
         });
     }
 
-    /** Diff a project-tree file against its version on a branch chosen from the repo's branches. */
+    /** Diff a project-tree file or folder against a branch chosen from the repo's branches. */
     void diffPathVsBranch(Path path) {
-        if (path == null || Files.isDirectory(path)) {
+        if (path == null) {
             host.setStatus(tr("status.diff.noFile"));
             return;
         }
@@ -849,7 +843,6 @@ final class DiffCoordinator {
             host.setStatus(tr("status.diff.notInRepo"));
             return;
         }
-        String name = path.getFileName().toString();
         git.service().branches(root, branches -> {
             List<String> names = new ArrayList<>();
             for (GitService.BranchInfo bi : branches.local()) {
@@ -867,19 +860,128 @@ final class DiffCoordinator {
                     () -> names,
                     b -> b,
                     b -> tr(remote.contains(b) ? "diff.branch.remote" : "diff.branch.local"),
-                    chosen -> openDiff(
-                            tr("diff.title.vsBranch", name, chosen),
-                            chosen,
-                            tr("diff.side.working"),
-                            name,
-                            name,
-                            blobSide(root, chosen + ":" + rel, path),
-                            cb -> cb.accept(worktreeText(path)),
-                            DiffViewerPane.EditableSide.RIGHT,
-                            path));
+                    chosen -> openPathVsRef(path, root, rel, chosen, chosen));
             picker.setOverlayHost(host.overlayHost());
             picker.show(host.window());
         });
+    }
+
+    /** Diff a project-tree file or folder against a tag chosen from the repository. */
+    void diffPathVsTag(Path path) {
+        if (path == null) {
+            host.setStatus(tr("status.diff.noFile"));
+            return;
+        }
+        if (git.reportIfNoRepo()) {
+            return;
+        }
+        Path root = git.repoRoot();
+        String rel = GitService.repoRelative(root, path);
+        if (rel == null) {
+            host.setStatus(tr("status.diff.notInRepo"));
+            return;
+        }
+        git.service().tags(root, tags -> {
+            if (tags.isEmpty()) {
+                host.setStatus(tr("status.diff.noTags"));
+                return;
+            }
+            QuickOpen<String> picker = new QuickOpen<>(
+                    tr("diff.tagPickerTitle"),
+                    tr("diff.tagPickerPrompt"),
+                    () -> tags,
+                    tag -> tag,
+                    tag -> tr("diff.tag"),
+                    tag -> openPathVsRef(path, root, rel, tag, tag));
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        });
+    }
+
+    private void openPathVsRef(Path path, Path root, String rel, String ref, String displayRef) {
+        if (Files.isDirectory(path)) {
+            diffDirectoryVsRef(path, root, rel, ref, displayRef);
+            return;
+        }
+        String name = path.getFileName().toString();
+        openDiff(
+                tr("diff.title.vsBranch", name, displayRef),
+                displayRef,
+                tr("diff.side.working"),
+                name,
+                name,
+                blobSide(root, ref + ":" + rel, path),
+                cb -> cb.accept(worktreeText(path)),
+                DiffViewerPane.EditableSide.RIGHT,
+                path);
+    }
+
+    private void diffDirectoryVsRef(Path folder, Path root, String rel, String ref, String displayRef) {
+        host.setStatus(tr("status.diff.scanningGitFolder", displayRef));
+        git.service().workingTreeDiff(root, folder, ref, result -> {
+            if (!result.ok()) {
+                host.setStatus(tr("status.diff.gitFolderFailed", result.error()));
+                return;
+            }
+            openGitDirectoryReview(folder, root, rel, ref, displayRef, result);
+        });
+    }
+
+    private void openGitDirectoryReview(
+            Path folder,
+            Path root,
+            String folderRel,
+            String ref,
+            String displayRef,
+            GitService.WorkingTreeDiff result) {
+        String prefix = folderRel.isEmpty() ? "" : folderRel + "/";
+        List<DirectoryReviewPane.Entry> entries = result.files().stream()
+                .map(file -> new DirectoryReviewPane.Entry(
+                        file.path().startsWith(prefix) ? file.path().substring(prefix.length()) : file.path(),
+                        switch (file.status()) {
+                            case 'A' -> DirectoryDiff.Kind.RIGHT_ONLY;
+                            case 'D' -> DirectoryDiff.Kind.LEFT_ONLY;
+                            default -> DirectoryDiff.Kind.MODIFIED;
+                        },
+                        -1,
+                        -1))
+                .toList();
+        String summary = tr("diff.directory.gitSummary", entries.size(), displayRef)
+                + (result.truncated() ? " · " + tr("diff.directory.truncated") : "");
+        DirectoryReviewPane review = new DirectoryReviewPane(
+                tr("diff.title.vsBranch", pathName(folder), displayRef), entries, summary, (entry, ready) -> {
+                    String repoPath = prefix + entry.label();
+                    Path workingFile = root.resolve(repoPath);
+                    DiffSide leftSide = entry.kind() == DirectoryDiff.Kind.RIGHT_ONLY
+                            ? callback -> callback.accept("")
+                            : blobSide(root, ref + ":" + repoPath, workingFile);
+                    DiffSide rightSide = entry.kind() == DirectoryDiff.Kind.LEFT_ONLY
+                            ? callback -> callback.accept("")
+                            : fileSide(workingFile);
+                    buildDiffPane(
+                            tr("diff.title.vsBranch", entry.label(), displayRef),
+                            displayRef + ":" + repoPath,
+                            workingFile.toString(),
+                            entry.label(),
+                            entry.label(),
+                            leftSide,
+                            rightSide,
+                            DiffViewerPane.EditableSide.NONE,
+                            workingFile,
+                            pane -> pane.setExitDiffUiAction(null),
+                            built -> ready.accept(
+                                    built == null
+                                            ? null
+                                            : new DirectoryReviewPane.Loaded(
+                                                    built.pane(),
+                                                    built.model().added(),
+                                                    built.model().removed())));
+                });
+        ops.addDiffTab(review);
+        host.setStatus(
+                entries.isEmpty()
+                        ? tr("status.diff.gitFolderIdentical", displayRef)
+                        : tr("status.diff.directoryOpened", entries.size()));
     }
 
     /** Diff a Git-panel file row: staged → index↔HEAD, unstaged → worktree↔index. */

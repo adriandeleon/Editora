@@ -45,6 +45,34 @@ class NameStatusTest {
     }
 
     @Test
+    void parsesNulDelimitedNamesWithoutTreatingTabsOrNewlinesAsSeparators() {
+        String out = "M\0src/tab\tname.java\0D\0src/line\nname.java\0R100\0old.java\0new.java\0";
+
+        List<CommitFile> files = GitService.parseNameStatusZ(out);
+
+        assertEquals(
+                List.of(
+                        new CommitFile('M', "src/tab\tname.java", null),
+                        new CommitFile('D', "src/line\nname.java", null),
+                        new CommitFile('R', "new.java", "old.java")),
+                files);
+    }
+
+    @Test
+    void mergesUntrackedFilesSortsAndBoundsFolderReview() {
+        String changed = "D\0src/reborn.txt\0M\0src/z.txt\0";
+        String untracked = "src/reborn.txt\0src/a.txt\0";
+
+        GitService.WorkingTreeDiff result = GitService.mergeWorkingTreeDiff(changed, untracked, 2);
+
+        assertTrue(result.ok());
+        assertTrue(result.truncated());
+        assertEquals(
+                List.of(new CommitFile('A', "src/a.txt", null), new CommitFile('M', "src/reborn.txt", null)),
+                result.files());
+    }
+
+    @Test
     void relativeTimeBuckets() {
         assertEquals(new Span(Unit.NOW, 0), RelativeTime.of(1000, 1030));
         assertEquals(new Span(Unit.MINUTES, 5), RelativeTime.of(0, 5 * 60));

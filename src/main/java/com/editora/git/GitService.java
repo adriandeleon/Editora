@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -259,6 +261,105 @@ public final class GitService {
         showBlob(root, spec, result -> onResult.accept(result.found() ? result.bytes() : new byte[0]));
     }
 
+    /** Changed files below a folder when a Git tree is compared with the current working tree. */
+    public record WorkingTreeDiff(List<CommitFile> files, boolean truncated, String error) {
+        public WorkingTreeDiff {
+            files = List.copyOf(files);
+            error = error == null ? "" : error;
+        }
+
+        public boolean ok() {
+            return error.isEmpty();
+        }
+    }
+
+    /** Maximum changed paths admitted to one folder review. */
+    public static final int MAX_WORKING_TREE_DIFF_FILES = 20_000;
+
+    /**
+     * Lists tracked and untracked changes below {@code folder} between {@code ref} and the current working
+     * tree. Ignored files stay excluded. Rename detection is deliberately disabled so both old and new
+     * locations remain independently reviewable in a folder-scoped result.
+     */
+    public void workingTreeDiff(Path root, Path folder, String ref, Consumer<WorkingTreeDiff> onResult) {
+        exec.submit(() -> {
+            WorkingTreeDiff result = new WorkingTreeDiff(List.of(), false, "Git is not available");
+            String relative = repoRelative(root, folder);
+            if (gitAvailable() && root != null && relative != null && ref != null && !ref.isBlank()) {
+                List<String> diffArgs =
+                        new ArrayList<>(List.of("diff", "--name-status", "-z", "--no-renames", ref, "--"));
+                List<String> untrackedArgs =
+                        new ArrayList<>(List.of("ls-files", "--others", "--exclude-standard", "-z", "--"));
+                if (!relative.isEmpty()) {
+                    diffArgs.add(relative);
+                    untrackedArgs.add(relative);
+                }
+                ProcessRunner.Result changed = git(root, QUICK, diffArgs.toArray(String[]::new));
+                if (!changed.ok()) {
+                    result = new WorkingTreeDiff(List.of(), false, changed.message());
+                } else {
+                    ProcessRunner.Result untracked = git(root, QUICK, untrackedArgs.toArray(String[]::new));
+                    if (!untracked.ok()) {
+                        result = new WorkingTreeDiff(List.of(), false, untracked.message());
+                    } else {
+                        result = mergeWorkingTreeDiff(changed.out(), untracked.out(), MAX_WORKING_TREE_DIFF_FILES);
+                    }
+                }
+            }
+            WorkingTreeDiff posted = result;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** Pure merge of NUL-delimited {@code diff --name-status} and untracked-file output. */
+    static WorkingTreeDiff mergeWorkingTreeDiff(String changed, String untracked, int maxFiles) {
+        Map<String, CommitFile> byPath = new LinkedHashMap<>();
+        for (CommitFile file : parseNameStatusZ(changed)) {
+            byPath.put(file.path(), file);
+        }
+        for (String path : nulTokens(untracked)) {
+            CommitFile existing = byPath.get(path);
+            // A path deleted relative to the selected ref can simultaneously exist as an untracked working
+            // file. It is a modification between the two snapshots, not two one-sided entries.
+            byPath.put(path, new CommitFile(existing != null && existing.status() == 'D' ? 'M' : 'A', path, null));
+        }
+        List<CommitFile> sorted = byPath.values().stream()
+                .sorted(Comparator.comparing(CommitFile::path))
+                .toList();
+        int limit = Math.max(1, maxFiles);
+        boolean truncated = sorted.size() > limit;
+        return new WorkingTreeDiff(truncated ? sorted.subList(0, limit) : sorted, truncated, "");
+    }
+
+    /** Parses the NUL-safe form emitted by {@code git diff --name-status -z}. */
+    static List<CommitFile> parseNameStatusZ(String out) {
+        List<String> fields = nulTokens(out);
+        List<CommitFile> files = new ArrayList<>();
+        for (int i = 0; i < fields.size(); ) {
+            String statusText = fields.get(i++);
+            if (statusText.isEmpty() || i >= fields.size()) {
+                break;
+            }
+            char status = statusText.charAt(0);
+            String firstPath = fields.get(i++);
+            if ((status == 'R' || status == 'C') && i < fields.size()) {
+                files.add(new CommitFile(status, fields.get(i++), firstPath));
+            } else {
+                files.add(new CommitFile(status, firstPath, null));
+            }
+        }
+        return files;
+    }
+
+    private static List<String> nulTokens(String out) {
+        if (out == null || out.isEmpty()) {
+            return List.of();
+        }
+        return Arrays.stream(out.split("\u0000", -1))
+                .filter(token -> !token.isEmpty())
+                .toList();
+    }
+
     /** One commit from the log, for the "diff against commit" picker. */
     public record Commit(String hash, String shortHash, String subject, String author, String date) {}
 
@@ -487,6 +588,26 @@ public final class GitService {
                 result = new Branches(localBranches(root), remoteBranchNames(root), remoteUrl(root));
             }
             Branches posted = result;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** Lists tag short-names, sorted as returned by Git, and posts them on the FX thread. */
+    public void tags(Path root, Consumer<List<String>> onResult) {
+        exec.submit(() -> {
+            List<String> tags = List.of();
+            if (gitAvailable() && root != null) {
+                ProcessRunner.Result r = git(
+                        root, QUICK, "for-each-ref", "--format=%(refname:short)", "--sort=-creatordate", "refs/tags");
+                if (r.ok()) {
+                    tags = r.out()
+                            .lines()
+                            .map(String::strip)
+                            .filter(s -> !s.isEmpty())
+                            .toList();
+                }
+            }
+            List<String> posted = tags;
             Platform.runLater(() -> onResult.accept(posted));
         });
     }
