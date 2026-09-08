@@ -7,9 +7,12 @@ import java.util.Map;
 import java.util.function.Function;
 
 import javafx.scene.control.TextField;
+import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
+import javafx.scene.text.Text;
 
 import com.editora.config.Bookmark;
 import org.junit.jupiter.api.BeforeAll;
@@ -141,5 +144,44 @@ class BookmarksPanelFxTest {
         TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
         assertEquals(1, root.getChildren().size(), "one project group");
         assertEquals(1, root.getChildren().get(0).getChildren().size(), "only the Alpha file matches the filter");
+    }
+
+    @Test
+    void bookmarkRowsRenderTheLineAsSeparateSecondaryText() throws Exception {
+        source.clear();
+        source.put("/proj/Alpha.java", List.of(new Bookmark(1, "first", "line text")));
+
+        BookmarksPanel p = panel();
+        FxTestSupport.runOnFx(p::refresh);
+
+        List<Text> rendered = FxTestSupport.callOnFx(() -> {
+            TreeView<Object> tree = tree(p);
+            Object value = tree.getRoot()
+                    .getChildren()
+                    .getFirst()
+                    .getChildren()
+                    .getFirst()
+                    .getChildren()
+                    .getFirst()
+                    .getValue();
+            @SuppressWarnings("unchecked")
+            TreeCell<Object> cell = (TreeCell<Object>) tree.getCellFactory().call(tree);
+            FxTestSupport.call(
+                    cell,
+                    "updateItem",
+                    new Class<?>[] {value.getClass().getInterfaces()[0], boolean.class},
+                    value,
+                    false);
+            HBox row = (HBox) cell.getGraphic();
+            return row.getChildren().stream()
+                    .filter(Text.class::isInstance)
+                    .map(Text.class::cast)
+                    .toList();
+        });
+
+        assertEquals(
+                List.of("first", "line 2"), rendered.stream().map(Text::getText).toList());
+        assertTrue(rendered.get(0).getStyleClass().contains("bookmark-label"));
+        assertTrue(rendered.get(1).getStyleClass().contains("bookmark-line-number"));
     }
 }

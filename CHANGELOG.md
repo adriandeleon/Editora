@@ -77,7 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Files opened asynchronously from the command line no longer retain a stale **Read-Only** status after
   their temporary loading shell becomes editable.
 - The Structure window now syntax-colors individual signature tokens, includes source-derived return types,
-  shows 1-based source line numbers, and no longer mistakes inner control-flow
+  and shows source positions as compact, muted `line N` labels; Bookmarks uses the same line-label treatment.
+  Structure also no longer mistakes inner control-flow
   blocks or calls such as `run()` for nested method declarations in its non-LSP fallback outline.
 
 ## [0.16.0] - 2026-09-02

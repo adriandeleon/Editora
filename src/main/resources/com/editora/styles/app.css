@@ -247,8 +247,10 @@
     -fx-fill: -color-fg-muted;
 }
 
-.structure-tree .structure-line-number {
-    -fx-fill: -color-fg-muted;
+.structure-tree .structure-line-number,
+.bookmarks-tree .bookmark-line-number {
+    -fx-fill: -color-fg-subtle;
+    -fx-font-size: 0.85em;
 }
 
 /* Bookmarks tool window: same look as the Structure panel. */
@@ -262,6 +264,9 @@
 .bookmarks-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
+}
+.bookmarks-tree .bookmark-label {
+    -fx-fill: -color-fg-default;
 }
 .bookmarks-tree .bookmark-file-row {
     -fx-text-fill: -color-fg-muted;
