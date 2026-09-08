@@ -14,6 +14,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Separator;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -72,6 +73,8 @@ final class DirectoryReviewPane implements TabContent {
     private final List<Entry> entries;
     private final Loader loader;
     private final BorderPane root = new BorderPane();
+    private final SplitPane reviewSplit = new SplitPane();
+    private final StackPane content = new StackPane();
     private final ListView<Entry> files = new ListView<>();
     private final Label position = new Label();
     private final Button exitDiffUiButton = new Button();
@@ -119,13 +122,15 @@ final class DirectoryReviewPane implements TabContent {
         VBox left = new VBox(header, new Separator(), files);
         VBox.setVgrow(files, Priority.ALWAYS);
         left.getStyleClass().add("patch-review-sidebar");
-        root.setLeft(left);
+        reviewSplit.getItems().addAll(left, content);
+        SplitPane.setResizableWithParent(left, false);
+        root.setCenter(reviewSplit);
         if (!entries.isEmpty()) {
             files.getSelectionModel().select(0);
         } else {
             Label empty = new Label(tr("diff.directory.noDifferences"));
             empty.getStyleClass().add("tool-window-placeholder");
-            root.setCenter(new StackPane(empty));
+            content.getChildren().setAll(empty);
         }
     }
 
@@ -162,7 +167,7 @@ final class DirectoryReviewPane implements TabContent {
         long requested = ++loadGeneration;
         activePane = null;
         if (index < 0 || index >= entries.size()) {
-            root.setCenter(null);
+            content.getChildren().clear();
             position.setText("");
             return;
         }
@@ -171,16 +176,16 @@ final class DirectoryReviewPane implements TabContent {
         DiffViewerPane cached = cache.get(entry);
         if (cached != null) {
             activePane = cached;
-            root.setCenter(cached.node());
+            content.getChildren().setAll(cached.node());
             return;
         }
         Label loading = new Label(tr("status.diff.loadingFile", entry.label()));
         loading.getStyleClass().add("tool-window-placeholder");
-        root.setCenter(new StackPane(loading));
+        content.getChildren().setAll(loading);
         loader.load(entry, loaded -> {
             if (loaded == null) {
                 if (requested == loadGeneration) {
-                    root.setCenter(new StackPane(new Label(tr("status.diff.tooLarge"))));
+                    content.getChildren().setAll(new Label(tr("status.diff.tooLarge")));
                 }
                 return;
             }
@@ -189,7 +194,7 @@ final class DirectoryReviewPane implements TabContent {
             files.refresh();
             if (requested == loadGeneration) {
                 activePane = loaded.pane();
-                root.setCenter(loaded.pane().node());
+                content.getChildren().setAll(loaded.pane().node());
             }
         });
     }

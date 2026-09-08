@@ -98,6 +98,10 @@ class DiffUiStartupFxTest {
             assertEquals(
                     List.of("left.txt", "nested/changed.txt", "right.txt"),
                     entries.stream().map(DirectoryReviewPane.Entry::label).toList());
+            javafx.scene.control.SplitPane split = FxTestSupport.field(review, "reviewSplit");
+            assertEquals(javafx.geometry.Orientation.HORIZONTAL, split.getOrientation());
+            FxTestSupport.runOnFx(() -> split.setDividerPosition(0, 0.4));
+            assertEquals(0.4, FxTestSupport.callOnFx(() -> split.getDividerPositions()[0]), 0.02);
 
             DiffViewerPane active = awaitActiveDirectoryDiff(review);
             Button reviewExit = FxTestSupport.field(review, "exitDiffUiButton");

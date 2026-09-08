@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Multi-file diff and folder-review file lists can now be resized horizontally with a draggable divider.
 - File Information now opens and closes from the file-size segment in the status bar; its redundant
   tool-window stripe icon has been removed.
 - The Run console now matches Output's richer console behavior: recognized log levels are color-coded,

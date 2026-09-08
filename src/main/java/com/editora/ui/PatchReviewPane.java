@@ -10,10 +10,12 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Separator;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.editor.TabContent;
@@ -32,6 +34,8 @@ final class PatchReviewPane implements TabContent {
     private final String title;
     private final List<Entry> entries;
     private final BorderPane root = new BorderPane();
+    private final SplitPane reviewSplit = new SplitPane();
+    private final StackPane content = new StackPane();
     private final ListView<Entry> files = new ListView<>();
     private final Label position = new Label();
 
@@ -56,7 +60,9 @@ final class PatchReviewPane implements TabContent {
         VBox left = new VBox(nav, new Separator(), files);
         VBox.setVgrow(files, Priority.ALWAYS);
         left.getStyleClass().add("patch-review-sidebar");
-        root.setLeft(left);
+        reviewSplit.getItems().addAll(left, content);
+        SplitPane.setResizableWithParent(left, false);
+        root.setCenter(reviewSplit);
         if (!entries.isEmpty()) {
             files.getSelectionModel().select(0);
         }
@@ -85,11 +91,11 @@ final class PatchReviewPane implements TabContent {
 
     private void show(int index) {
         if (index < 0 || index >= entries.size()) {
-            root.setCenter(null);
+            content.getChildren().clear();
             position.setText("");
             return;
         }
-        root.setCenter(entries.get(index).pane().node());
+        content.getChildren().setAll(entries.get(index).pane().node());
         position.setText(tr("diff.filePosition", index + 1, entries.size()));
     }
 
