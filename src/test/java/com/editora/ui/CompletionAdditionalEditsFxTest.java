@@ -44,7 +44,12 @@ class CompletionAdditionalEditsFxTest {
             CodeArea area = FxTestSupport.field(b, "area");
             area.moveTo(b.getContent().indexOf("cons") + 4); // caret after the typed prefix
             Completion c = Completion.lsp("console", insert, "");
-            FxTestSupport.call(b, "acceptCompletion", new Class<?>[] {CodeArea.class, Completion.class}, area, c);
+            FxTestSupport.call(
+                    FxTestSupport.field(b, "completionActions"),
+                    "acceptCompletion",
+                    new Class<?>[] {CodeArea.class, Completion.class},
+                    area,
+                    c);
             b.applyCompletionAdditionalEdits(extra);
             return area.getText();
         });

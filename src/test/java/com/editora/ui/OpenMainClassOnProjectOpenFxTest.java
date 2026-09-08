@@ -71,7 +71,7 @@ class OpenMainClassOnProjectOpenFxTest {
             Object state = FxTestSupport.call(config, "getWorkspaceState", new Class[] {});
             FxTestSupport.call(state, "setRunConfigurations", new Class[] {List.class}, List.of(cfg));
             FxTestSupport.call(state, "setSelectedRunConfig", new Class[] {String.class}, cfg.name());
-            FxTestSupport.invoke(fx.controller, "openMainClassForRunConfig");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "sessions"), "openMainClassForRunConfig");
         });
     }
 

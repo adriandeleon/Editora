@@ -2,6 +2,15 @@
 
 A backlog of planned features and improvements. Unordered within each section.
 
+## Controller decomposition
+
+- [x] Extract exports, editing, templates, settings, run configurations, navigation, previews, Git actions,
+      chrome, MCP operations, file workflows, sessions, test navigation and install prompts into owners.
+- [x] Extract buffer completion/popups into `BufferCompletion`.
+- [x] Keep production Java files below 10,000 lines and enforce that ceiling in `SourceFileSizeTest`.
+- [ ] Continue reducing window composition and buffer presentation complexity through cohesive owners;
+      the size ceiling is not a target. See [window coordinators](docs/subsystems/window-coordinators.md).
+
 ## Recently shipped
 - [x] **Global and project settings use JSON instead of TOML** — `settings.json` now shares the same
       Jackson format and tooling as the rest of Editora's persisted state. Existing global TOML is

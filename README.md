@@ -740,6 +740,9 @@ show it.
 
 ## Contributing
 
+Window and buffer responsibilities are mapped in [window coordinators](docs/subsystems/window-coordinators.md).
+Production Java files have a tested 10,000-line ceiling.
+
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow, and the **developer documentation** in
 [`docs/`](docs/README.md) — architecture, the conventions a change must follow, performance rules, an
 extension cookbook (add a command / LSP server / grammar / tool window / overlay), and build/test/release

@@ -105,7 +105,7 @@ class ComboItemsMutationFxTest {
                         .setRunConfigurations(new java.util.ArrayList<>(List.of(
                                 new RunConfiguration("A", "com.example.A", "", "", "", ""),
                                 new RunConfiguration("B", "com.example.B", "", "", "", ""))));
-                FxTestSupport.invoke(fx.controller, "refreshRunConfigs");
+                FxTestSupport.invoke(FxTestSupport.field(fx.controller, "runConfigurations"), "refreshRunConfigs");
             });
 
             assertTrue(sizes.size() == 1, "one change event, not a shrink then a grow: " + sizes);

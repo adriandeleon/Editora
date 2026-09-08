@@ -66,7 +66,8 @@ class DebugPanelFocusRetentionFxTest {
         Files.writeString(real, "class Focus {\n  void go() {}\n}\n");
 
         FxTestSupport.runOnFx(() -> {
-            FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, real);
+            FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, real);
             ToolWindow tw = FxTestSupport.field(fx.controller, "debugToolWindow");
             ToolWindowManager tws = FxTestSupport.field(fx.controller, "toolWindows");
             tws.setAvailable(tw, true); // buffer-gated; make its stripe/panel available for the test

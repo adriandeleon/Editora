@@ -52,7 +52,7 @@ class SimpleModeFxTest {
 
         FxTestSupport.runOnFx(() -> {
             settings.setSimpleMode(true);
-            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
         });
         assertFalse(FxTestSupport.callOnFx(findInFiles::isVisible), "Find-in-Files hidden in Simple mode");
         assertFalse(FxTestSupport.callOnFx(splitVertical::isVisible), "split button hidden in Simple mode");
@@ -60,7 +60,7 @@ class SimpleModeFxTest {
 
         FxTestSupport.runOnFx(() -> {
             settings.setSimpleMode(false);
-            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
         });
         assertTrue(FxTestSupport.callOnFx(findInFiles::isVisible), "Find-in-Files restored after Simple mode");
         assertTrue(FxTestSupport.callOnFx(splitVertical::isVisible), "split button restored after Simple mode");
@@ -82,7 +82,7 @@ class SimpleModeFxTest {
 
         FxTestSupport.runOnFx(() -> {
             settings.setSimpleMode(true);
-            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
         });
         assertTrue(
                 FxTestSupport.callOnFx(() -> simpleButton.getPseudoClassStates().contains(open)),
@@ -90,7 +90,7 @@ class SimpleModeFxTest {
 
         FxTestSupport.runOnFx(() -> {
             settings.setSimpleMode(false);
-            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
         });
         assertFalse(
                 FxTestSupport.callOnFx(() -> simpleButton.getPseudoClassStates().contains(open)),
@@ -111,7 +111,7 @@ class SimpleModeFxTest {
         try {
             FxTestSupport.runOnFx(() -> {
                 settings.setSimpleMode(true);
-                FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+                FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
             });
             assertTrue(FxTestSupport.callOnFx(bar::isVisible), "the menu bar stays visible in Simple mode");
             int simpleMenus = FxTestSupport.callOnFx(() -> bar.getMenus().size());
@@ -131,7 +131,7 @@ class SimpleModeFxTest {
         } finally {
             FxTestSupport.runOnFx(() -> {
                 settings.setSimpleMode(false);
-                FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+                FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
             });
         }
         assertEquals(fullMenus, FxTestSupport.callOnFx(() -> bar.getMenus().size()), "the full menu is restored");

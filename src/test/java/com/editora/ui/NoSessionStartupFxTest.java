@@ -90,7 +90,8 @@ class NoSessionStartupFxTest {
         // config save (window bounds, tool windows) — what must survive is the open-file list, so that's what
         // this asserts rather than byte-equality.
         assertTrue(sessionBefore.contains("a.py"), "sanity: the seeded session really listed a.py");
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(fx.controller, "persistSession"));
+        FxTestSupport.runOnFx(
+                () -> FxTestSupport.invoke(FxTestSupport.field(fx.controller, "sessions"), "persistSession"));
         fx.shared.flushWrites();
 
         assertEquals(List.of("a.py", "b.py"), savedOpenFiles(dir));

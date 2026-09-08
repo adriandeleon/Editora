@@ -7,7 +7,7 @@ get its own page.)
 ## Every feature is a Command
 
 Editora is command-driven. Every user-facing action is a registered
-`command/Command` (id + title + runnable) in `MainController.registerCommands()`. The command
+`command/Command` (id + title + runnable) through `WindowCommandRegistrar.registerCommands()`. The command
 palette, the keybinding editor, and toolbar buttons all dispatch through the registry, so a
 properly registered command is discoverable for free.
 
@@ -109,3 +109,9 @@ follow-up. User-facing documentation lives in the separate website repo; **this 
 is for developers**. Keep `AGENTS.md` concise and operational. Put durable explanations in the
 focused guides and preserve established implementation detail in the
 [reference catalogs](reference/README.md).
+
+## Source file size
+
+Keep production Java files below 10,000 lines, enforced by `SourceFileSizeTest`. This is an upper
+bound; prefer small classes with cohesive responsibilities. Extract feature state and behavior
+behind explicit callbacks before a file approaches the limit. See [window coordinators](subsystems/window-coordinators.md).

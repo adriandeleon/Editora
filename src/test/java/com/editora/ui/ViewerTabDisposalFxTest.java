@@ -74,8 +74,12 @@ class ViewerTabDisposalFxTest {
 
         int before = threadNamesContaining("pdf-render").size();
 
-        Tab tab = FxTestSupport.callOnFx(() -> (Tab)
-                FxTestSupport.call(fx.controller, "openPdfTab", new Class<?>[] {Path.class, boolean.class}, pdf, true));
+        Tab tab = FxTestSupport.callOnFx(() -> (Tab) FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "fileWorkflows"),
+                "openPdfTab",
+                new Class<?>[] {Path.class, boolean.class},
+                pdf,
+                true));
         assertTrue(tab.getUserData() instanceof PdfViewerPane, "a PDF opens in the PDF viewer");
         assertTrue(threadNamesContaining("pdf-render").size() > before, "the pane started its render thread");
 
@@ -103,7 +107,11 @@ class ViewerTabDisposalFxTest {
         Files.write(png, pngBytes());
 
         Tab tab = FxTestSupport.callOnFx(() -> (Tab) FxTestSupport.call(
-                fx.controller, "openImageTab", new Class<?>[] {Path.class, boolean.class}, png, true));
+                FxTestSupport.field(fx.controller, "fileWorkflows"),
+                "openImageTab",
+                new Class<?>[] {Path.class, boolean.class},
+                png,
+                true));
         ImageViewerPane pane = (ImageViewerPane) tab.getUserData();
 
         TabPane tabs = FxTestSupport.field(fx.controller, "tabPane");

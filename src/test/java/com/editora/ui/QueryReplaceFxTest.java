@@ -47,7 +47,7 @@ class QueryReplaceFxTest {
             FxTestSupport.call(fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, b, true);
             b.getArea().moveTo(0);
             FxTestSupport.call(
-                    fx.controller,
+                    FxTestSupport.field(fx.controller, "editing"),
                     "beginQueryReplace",
                     new Class[] {EditorBuffer.class, QueryReplace.Spec.class},
                     b,
@@ -73,7 +73,8 @@ class QueryReplaceFxTest {
     }
 
     private boolean sessionActive() throws Exception {
-        return FxTestSupport.callOnFx(() -> FxTestSupport.field(fx.controller, "queryReplaceSession") != null);
+        return FxTestSupport.callOnFx(() ->
+                FxTestSupport.field(FxTestSupport.field(fx.controller, "editing"), "queryReplaceSession") != null);
     }
 
     private boolean ownsKeys(EditorBuffer b) throws Exception {
@@ -164,7 +165,7 @@ class QueryReplaceFxTest {
             FxTestSupport.call(fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, buf, true);
             buf.getArea().moveTo(4); // just before the second foo
             FxTestSupport.call(
-                    fx.controller,
+                    FxTestSupport.field(fx.controller, "editing"),
                     "beginQueryReplace",
                     new Class[] {EditorBuffer.class, QueryReplace.Spec.class},
                     buf,

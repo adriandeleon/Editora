@@ -61,7 +61,8 @@ class BufferReleasedOnCloseFxTest {
 
     /** Opens the file, edits it (so undo checkpoints exist), saves and closes it. Returns a weak handle. */
     private WeakReference<EditorBuffer> openEditAndClose(Path file) throws Exception {
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, file));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
         EditorBuffer buffer = FxTestSupport.callOnFx(
                 () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
         assertNotNull(buffer, "the file opened into a buffer");

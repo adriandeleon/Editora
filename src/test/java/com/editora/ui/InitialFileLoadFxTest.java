@@ -34,13 +34,19 @@ class InitialFileLoadFxTest {
         try {
             AtomicReference<EditorBuffer> opened = new AtomicReference<>();
             FxTestSupport.runOnFx(() -> {
-                FxTestSupport.call(fx.controller, "openPath", new Class<?>[] {Path.class}, file);
+                FxTestSupport.call(
+                        FxTestSupport.field(fx.controller, "fileWorkflows"),
+                        "openPath",
+                        new Class<?>[] {Path.class},
+                        file);
                 EditorBuffer shell =
                         (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
                 opened.set(shell);
                 assertEquals("", shell.getContent(), "the disk result must not land during the initiating FX task");
                 assertTrue(
-                        ((java.util.Set<?>) FxTestSupport.field(fx.controller, "loadingBuffers")).contains(shell),
+                        ((java.util.Set<?>) FxTestSupport.field(
+                                        FxTestSupport.field(fx.controller, "fileWorkflows"), "loadingBuffers"))
+                                .contains(shell),
                         "even a small local text file should start as a loading shell");
             });
 
@@ -74,7 +80,11 @@ class InitialFileLoadFxTest {
         try {
             AtomicReference<EditorBuffer> opened = new AtomicReference<>();
             FxTestSupport.runOnFx(() -> {
-                FxTestSupport.call(fx.controller, "openPath", new Class<?>[] {Path.class}, file);
+                FxTestSupport.call(
+                        FxTestSupport.field(fx.controller, "fileWorkflows"),
+                        "openPath",
+                        new Class<?>[] {Path.class},
+                        file);
                 EditorBuffer shell =
                         (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
                 opened.set(shell);
@@ -102,12 +112,15 @@ class InitialFileLoadFxTest {
         Path file = dir.resolve("minified.js");
         // The former async-load fixture accidentally exposed this exact shape: one ~320 KiB paragraph
         // monopolized the Linux FX thread and caused cascading suite timeouts. Keep it as an explicit guard.
-        String content = "x".repeat(MainController.LONG_LINE_FILE_CHARS * 5);
+        String content = "x".repeat(FileWorkflowCoordinator.LONG_LINE_FILE_CHARS * 5);
         Files.writeString(file, content);
         FxWindowFixture fx = FxWindowFixture.create();
         try {
-            FxTestSupport.runOnFx(
-                    () -> FxTestSupport.call(fx.controller, "openPath", new Class<?>[] {Path.class}, file));
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "fileWorkflows"),
+                    "openPath",
+                    new Class<?>[] {Path.class},
+                    file));
             EditorBuffer buffer = FxTestSupport.callOnFx(
                     () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {}));
             assertTrue(waitUntil(() -> content.equals(buffer.getContent())), "background load did not complete");

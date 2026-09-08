@@ -47,14 +47,14 @@ class ChromeVisibilityFxTest {
 
         FxTestSupport.runOnFx(() -> {
             settings.setShowToolbar(false);
-            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
         });
         assertFalse(FxTestSupport.callOnFx(toolBar::isVisible), "toolbar hidden when showToolbar=false");
         assertFalse(FxTestSupport.callOnFx(toolBar::isManaged), "toolbar unmanaged when hidden");
 
         FxTestSupport.runOnFx(() -> {
             settings.setShowToolbar(true);
-            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
         });
         assertTrue(FxTestSupport.callOnFx(toolBar::isVisible), "toolbar shown when showToolbar=true");
     }
@@ -65,13 +65,13 @@ class ChromeVisibilityFxTest {
 
         FxTestSupport.runOnFx(() -> {
             settings.setShowStatusBar(false);
-            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
         });
         assertFalse(FxTestSupport.callOnFx(statusBar::isVisible), "status bar hidden when showStatusBar=false");
 
         FxTestSupport.runOnFx(() -> {
             settings.setShowStatusBar(true);
-            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
         });
         assertTrue(FxTestSupport.callOnFx(statusBar::isVisible), "status bar shown when showStatusBar=true");
     }

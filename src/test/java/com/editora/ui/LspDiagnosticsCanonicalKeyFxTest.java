@@ -61,7 +61,8 @@ class LspDiagnosticsCanonicalKeyFxTest {
 
         // Open the file (so bufferForPath finds a buffer), then feed a diagnostic keyed by the symlink path —
         // exactly what a server that echoes the sent URI does.
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class<?>[] {Path.class}, opened));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class<?>[] {Path.class}, opened));
         List<LspDiagnostic> diags = List.of(new LspDiagnostic(1, 0, 1, 5, Severity.ERROR, "boom", "E1", "test"));
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 fx.controller, "onLspDiagnostics", new Class<?>[] {Path.class, List.class}, opened, diags));

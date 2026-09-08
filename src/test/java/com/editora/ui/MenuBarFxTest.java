@@ -136,7 +136,7 @@ class MenuBarFxTest {
         FxTestSupport.runOnFx(() -> {
             com.editora.config.ConfigManager cfg = FxTestSupport.field(fx.controller, "config");
             change.accept(cfg.getSettings());
-            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
         });
     }
 

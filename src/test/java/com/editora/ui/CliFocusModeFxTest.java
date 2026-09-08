@@ -51,11 +51,15 @@ class CliFocusModeFxTest {
     /** Applies the CLI flag exactly as {@code applyStartupChrome} does. (That it runs before the window is
      *  shown — not after the session restore — is guarded by {@link CliChromeFirstFrameFxTest}.) */
     private void applyCliFocusMode(boolean expert) throws Exception {
-        FxTestSupport.call(fx.controller, "applyCliFocusMode", new Class<?>[] {boolean.class}, expert);
+        FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "chrome"),
+                "applyCliFocusMode",
+                new Class<?>[] {boolean.class},
+                expert);
     }
 
     private void persistSession() throws Exception {
-        FxTestSupport.invoke(fx.controller, "persistSession");
+        FxTestSupport.invoke(FxTestSupport.field(fx.controller, "sessions"), "persistSession");
     }
 
     @Test
@@ -74,8 +78,8 @@ class CliFocusModeFxTest {
         // The window IS in Zen for this session...
         assertFalse(FxTestSupport.callOnFx(toolBar::isVisible), "--zen hides the chrome for this session");
         assertTrue(
-                FxTestSupport.callOnFx(
-                        () -> (Boolean) FxTestSupport.call(fx.controller, "zenActive", new Class<?>[] {})),
+                FxTestSupport.callOnFx(() -> (Boolean) FxTestSupport.call(
+                        FxTestSupport.field(fx.controller, "chrome"), "zenActive", new Class<?>[] {})),
                 "zenActive() reflects the flag");
         // ...but nothing was written to the saved session, so the next flagless launch is normal.
         assertFalse(state().isZenMode(), "--zen must not persist Zen into the saved session");
@@ -146,8 +150,8 @@ class CliFocusModeFxTest {
 
         FxTestSupport.runOnFx(() -> fx.controller.setZenMode(false)); // exit: the override is dropped
         assertFalse(
-                FxTestSupport.callOnFx(
-                        () -> (Boolean) FxTestSupport.call(fx.controller, "zenActive", new Class<?>[] {})),
+                FxTestSupport.callOnFx(() -> (Boolean) FxTestSupport.call(
+                        FxTestSupport.field(fx.controller, "chrome"), "zenActive", new Class<?>[] {})),
                 "exiting the flag's Zen actually leaves Zen");
 
         FxTestSupport.runOnFx(() -> fx.controller.setZenMode(true)); // now an explicit in-app enter

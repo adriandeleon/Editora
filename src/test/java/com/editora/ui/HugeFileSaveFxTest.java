@@ -87,8 +87,11 @@ class HugeFileSaveFxTest {
 
         // Save-As wouldn't destroy the original, but it would write a SLICE of the file to a new path and
         // present it as a copy — a corrupt file the user has no reason to distrust. Refused too.
-        boolean wrote = FxTestSupport.callOnFx(() ->
-                (Boolean) FxTestSupport.call(fx.controller, "saveAs", new Class<?>[] {EditorBuffer.class}, buffer));
+        boolean wrote = FxTestSupport.callOnFx(() -> (Boolean) FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "fileWorkflows"),
+                "saveAs",
+                new Class<?>[] {EditorBuffer.class},
+                buffer));
         assertFalse(wrote, "Save-As is refused for a partially-loaded buffer");
         assertEquals("aaa\nbbb\nccc\n", Files.readString(file), "and the original is untouched");
     }

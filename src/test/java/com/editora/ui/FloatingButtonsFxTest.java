@@ -45,8 +45,8 @@ class FloatingButtonsFxTest {
 
     @Test
     void restoreAndZenExitButtonsTrackChromeState() throws Exception {
-        Button restore = FxTestSupport.field(fx.controller, "toolbarRestoreButton");
-        Button zenExit = FxTestSupport.field(fx.controller, "zenExitButton");
+        Button restore = FxTestSupport.field(FxTestSupport.field(fx.controller, "chrome"), "toolbarRestoreButton");
+        Button zenExit = FxTestSupport.field(FxTestSupport.field(fx.controller, "chrome"), "zenExitButton");
 
         // Default: toolbar shown, not Zen → neither floating button is shown.
         applyChrome(() -> settings.setShowToolbar(true));
@@ -74,7 +74,7 @@ class FloatingButtonsFxTest {
 
     @Test
     void expertExitFloatsInsideTheCodePaneAndClearsTheMinimap() throws Exception {
-        Button expertExit = FxTestSupport.field(fx.controller, "expertExitButton");
+        Button expertExit = FxTestSupport.field(FxTestSupport.field(fx.controller, "chrome"), "expertExitButton");
         EditorBuffer buffer = new EditorBuffer();
         FxTestSupport.runOnFx(() -> {
             FxTestSupport.call(
@@ -97,7 +97,7 @@ class FloatingButtonsFxTest {
     private void applyChrome(Runnable mutateSettings) throws Exception {
         FxTestSupport.runOnFx(() -> {
             mutateSettings.run();
-            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
         });
     }
 }

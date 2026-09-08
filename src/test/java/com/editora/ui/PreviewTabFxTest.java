@@ -54,7 +54,8 @@ class PreviewTabFxTest {
     }
 
     private void open(Path p) {
-        FxTestSupport.runOnFxUnchecked(() -> FxTestSupport.invokeWith(fx.controller, "openPath", Path.class, p));
+        FxTestSupport.runOnFxUnchecked(() -> FxTestSupport.invokeWith(
+                FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", Path.class, p));
     }
 
     private int tabCount() throws Exception {

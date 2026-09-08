@@ -76,7 +76,8 @@ class TypingLatencyBenchmarkTest {
         Path file = Files.createTempFile("editora-leakguard-", ".java");
         Files.writeString(file, sample(400));
         try {
-            FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, file));
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
             EditorBuffer b = FxTestSupport.callOnFx(
                     () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
             assertNotNull(b, "the file opened into a buffer");
@@ -119,7 +120,8 @@ class TypingLatencyBenchmarkTest {
         Path file = Files.createTempFile("editora-popupleak-", ".java");
         Files.writeString(file, sample(200));
         try {
-            FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, file));
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
             EditorBuffer b = FxTestSupport.callOnFx(
                     () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
             assertNotNull(b, "the file opened into a buffer");
@@ -275,8 +277,11 @@ class TypingLatencyBenchmarkTest {
             Files.writeString(file, sample(400));
             FxWindowFixture w = FxWindowFixture.create(dir, false, false, false, List.of(), true, x -> {});
             try {
-                FxTestSupport.runOnFx(
-                        () -> FxTestSupport.call(w.controller, "openPath", new Class[] {Path.class}, file));
+                FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                        FxTestSupport.field(w.controller, "fileWorkflows"),
+                        "openPath",
+                        new Class[] {Path.class},
+                        file));
                 EditorBuffer b = FxTestSupport.callOnFx(
                         () -> (EditorBuffer) FxTestSupport.call(w.controller, "activeBuffer", new Class[] {}));
                 FxTestSupport.runOnFx(() -> b.getFocusedArea().requestFocus());
@@ -312,8 +317,11 @@ class TypingLatencyBenchmarkTest {
             Files.writeString(file, sample(400));
             FxWindowFixture w = FxWindowFixture.create(dir, false, false, false, List.of(), true, x -> {});
             try {
-                FxTestSupport.runOnFx(
-                        () -> FxTestSupport.call(w.controller, "openPath", new Class[] {Path.class}, file));
+                FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                        FxTestSupport.field(w.controller, "fileWorkflows"),
+                        "openPath",
+                        new Class[] {Path.class},
+                        file));
                 EditorBuffer b = FxTestSupport.callOnFx(
                         () -> (EditorBuffer) FxTestSupport.call(w.controller, "activeBuffer", new Class[] {}));
                 for (int i = 0; i < 8; i++) {
@@ -377,7 +385,8 @@ class TypingLatencyBenchmarkTest {
         Path file = Files.createTempFile("editora-own-", ".java");
         Files.writeString(file, text);
         try {
-            FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, file));
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
             EditorBuffer inApp = FxTestSupport.callOnFx(
                     () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
             leakRun("EditorBuffer in app ", inApp::getFocusedArea);
@@ -413,7 +422,8 @@ class TypingLatencyBenchmarkTest {
         Path file = Files.createTempFile("editora-leak-", ".java");
         Files.writeString(file, sample(400));
         try {
-            FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, file));
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
             EditorBuffer b = FxTestSupport.callOnFx(
                     () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
             for (int i = 0; i < 10; i++) {
@@ -454,7 +464,8 @@ class TypingLatencyBenchmarkTest {
     void typingCostVsOpenTabs() throws Exception {
         Path first = Files.createTempFile("editora-tabs-", ".java");
         Files.writeString(first, sample(400));
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, first));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, first));
         EditorBuffer active = FxTestSupport.callOnFx(
                 () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
         List<Path> extra = new ArrayList<>();
@@ -466,15 +477,21 @@ class TypingLatencyBenchmarkTest {
                     Path p = Files.createTempFile("editora-tabs-" + opened + "-", ".java");
                     Files.writeString(p, sample(400));
                     extra.add(p);
-                    FxTestSupport.runOnFx(
-                            () -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, p));
+                    FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                            FxTestSupport.field(fx.controller, "fileWorkflows"),
+                            "openPath",
+                            new Class[] {Path.class},
+                            p));
                     opened++;
                 }
                 // Re-select the original buffer's TAB so we type into the visible, selected buffer.
                 // requestFocus() alone is not enough: a node inside a non-selected tab cannot take focus,
                 // so without this we would be measuring typing into a background buffer.
-                FxTestSupport.runOnFx(
-                        () -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, first));
+                FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                        FxTestSupport.field(fx.controller, "fileWorkflows"),
+                        "openPath",
+                        new Class[] {Path.class},
+                        first));
                 FxTestSupport.runOnFx(() -> active.getFocusedArea().requestFocus());
                 EditorBuffer sel = FxTestSupport.callOnFx(
                         () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
@@ -639,7 +656,8 @@ class TypingLatencyBenchmarkTest {
         Path file = Files.createTempFile("editora-profile-", ".java");
         Files.writeString(file, sample(2_000));
         try {
-            FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, file));
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
             EditorBuffer buffer = FxTestSupport.callOnFx(
                     () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
             for (int i = 0; i < 10; i++) {
@@ -704,8 +722,11 @@ class TypingLatencyBenchmarkTest {
             Files.writeString(file, text);
             FxWindowFixture w = FxWindowFixture.create(dir, false, false, false, List.of(), true, x -> {});
             try {
-                FxTestSupport.runOnFx(
-                        () -> FxTestSupport.call(w.controller, "openPath", new Class[] {Path.class}, file));
+                FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                        FxTestSupport.field(w.controller, "fileWorkflows"),
+                        "openPath",
+                        new Class[] {Path.class},
+                        file));
                 EditorBuffer buffer = FxTestSupport.callOnFx(
                         () -> (EditorBuffer) FxTestSupport.call(w.controller, "activeBuffer", new Class[] {}));
                 if (buffer == null) {
@@ -741,8 +762,11 @@ class TypingLatencyBenchmarkTest {
             Path file = Files.createTempFile("editora-typing-" + lines + "-", ".java");
             Files.writeString(file, sample(lines));
             try {
-                FxTestSupport.runOnFx(
-                        () -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, file));
+                FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                        FxTestSupport.field(fx.controller, "fileWorkflows"),
+                        "openPath",
+                        new Class[] {Path.class},
+                        file));
                 EditorBuffer buffer = FxTestSupport.callOnFx(
                         () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
                 if (buffer == null) {

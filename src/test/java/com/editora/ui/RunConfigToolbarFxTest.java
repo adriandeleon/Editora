@@ -51,7 +51,7 @@ class RunConfigToolbarFxTest {
         FxTestSupport.runOnFx(() -> {
             com.editora.config.ConfigManager cfg = FxTestSupport.field(fx.controller, "config");
             cfg.getWorkspaceState().setRunConfigurations(new java.util.ArrayList<>(configs));
-            FxTestSupport.invoke(fx.controller, "refreshRunConfigs");
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "runConfigurations"), "refreshRunConfigs");
         });
     }
 
@@ -347,7 +347,7 @@ class RunConfigToolbarFxTest {
 
     /** The controller's sentinel instance. {@code Field.get} ignores the target for a static field. */
     private RunConfiguration editRow() throws Exception {
-        return FxTestSupport.field(fx.controller, "EDIT_CONFIGS_ROW");
+        return FxTestSupport.field(FxTestSupport.field(fx.controller, "runConfigurations"), "EDIT_CONFIGS_ROW");
     }
 
     /**

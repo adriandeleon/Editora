@@ -44,7 +44,8 @@ class AutoRenameTagWindowFxTest {
         Path file = Files.createTempFile("editora-tag-test", ".html");
         Files.writeString(file, "<div>text</div>");
         try {
-            FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, file));
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
             EditorBuffer buffer = FxTestSupport.callOnFx(
                     () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
             assertNotNull(buffer, "the html file opened into a buffer");

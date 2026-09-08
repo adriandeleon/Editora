@@ -108,7 +108,8 @@ class NarrowingFxTest {
 
         FxTestSupport.runOnFx(() -> {
             b.getArea().insertText(0, "X");
-            FxTestSupport.call(fx.controller, "save", new Class[] {EditorBuffer.class}, b);
+            FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "fileWorkflows"), "save", new Class[] {EditorBuffer.class}, b);
         });
         assertEquals(
                 "one\nXtwo\nthree\nfour\nfive",

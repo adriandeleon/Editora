@@ -32,8 +32,9 @@ themed by AtlantaFX.
    `ui/main.fxml` into a **`MainController`**.
 4. **`MainController`** ([`ui/MainController.java`](../src/main/java/com/editora/ui/MainController.java))
    is the per-window hub: toolbar, the tabbed `EditorBuffer`s, the status bar, tool windows,
-   and the wiring for every feature. It is large by design — most features are wired here and
-   delegate into their own packages.
+   and the wiring for every feature. Feature workflows belong in focused coordinators; the
+   controller should retain window composition and lifecycle wiring rather than accumulate
+   feature implementations.
 
 ```mermaid
 sequenceDiagram
@@ -206,12 +207,20 @@ You will see these everywhere; learn them once:
 - **The feature-coordinator pattern** (`LogViewerCoordinator`/`MermaidCoordinator`/…): pull a
   feature's logic out of `MainController` behind a `CoordinatorHost` interface so it is
   unit-testable. Recipe in [extending.md](extending.md#extract-a-feature-coordinator).
+  `ExportCoordinator` owns source/preview PDF, HTML, Office and timeline exports, preview copying,
+  CSV/spreadsheet and Project Map output, and print preparation. It owns the PDF, Office and print
+  services and shuts them down when its window closes; Mermaid, Diagram and Typst renderers remain
+  window-owned dependencies. Its command registration is called at the original position to preserve
+  palette order. Preview menus and CSV/Map callbacks delegate to the same coordinator. Active buffers,
+  settings and the owning window are resolved through `CoordinatorHost` at invocation time.
+  The full ownership map is in [window coordinators](subsystems/window-coordinators.md), including
+  the buffer completion boundary and lifecycle constraints.
 - **Injected hooks** keep `editor`/`completion` free of `ui`. Don't add a `ui` import to
   `editor`; inject a `Supplier`/`Consumer`/small interface instead.
 
 ## Where to start reading
 
-- A feature end-to-end: pick one in `MainController` (e.g. `applyMarkdownLint`), follow it
+- A feature end-to-end: pick one in its [window coordinator](subsystems/window-coordinators.md) (e.g. `PreviewCoordinator.applyMarkdownLint`), follow it
   into its package's pure core + its `EditorBuffer` hooks + its overlay/panel.
 - The command system: `command/Command`, `CommandRegistry`, `KeymapManager`, `KeyDispatcher`.
 - The build: [building-and-packaging.md](building-and-packaging.md).

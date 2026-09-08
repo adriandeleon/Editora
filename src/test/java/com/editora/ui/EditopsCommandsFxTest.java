@@ -90,16 +90,16 @@ class EditopsCommandsFxTest {
     @Test
     void alignRegexpPadsTheWholeBufferToLineUpTheMatch() throws Exception {
         EditorBuffer b = open("a = 1\nbbb = 2");
-        FxTestSupport.runOnFx(
-                () -> FxTestSupport.call(fx.controller, "applyAlignRegexp", new Class[] {String.class}, "="));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "editing"), "applyAlignRegexp", new Class[] {String.class}, "="));
         assertEquals("a   = 1\nbbb = 2", text(b));
     }
 
     @Test
     void alignRegexpWithABadPatternLeavesTheBufferAlone() throws Exception {
         EditorBuffer b = open("a=1\nbb=2");
-        FxTestSupport.runOnFx(
-                () -> FxTestSupport.call(fx.controller, "applyAlignRegexp", new Class[] {String.class}, "("));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "editing"), "applyAlignRegexp", new Class[] {String.class}, "("));
         assertEquals("a=1\nbb=2", text(b));
     }
 
@@ -110,7 +110,11 @@ class EditopsCommandsFxTest {
     void occurMatchesListsEveryMatchingLineWithItsNumber() throws Exception {
         EditorBuffer b = open("alpha\nbeta TODO\ngamma\ndelta TODO done");
         List<LineMatch> matches = (List<LineMatch>) FxTestSupport.callOnFx(() -> FxTestSupport.call(
-                fx.controller, "occurMatches", new Class[] {String.class, String.class}, text(b), "todo"));
+                FxTestSupport.field(fx.controller, "editing"),
+                "occurMatches",
+                new Class[] {String.class, String.class},
+                text(b),
+                "todo"));
         assertEquals(2, matches.size(), "case-insensitive regex over the buffer");
         assertEquals(2, matches.get(0).line(), "1-based line numbers");
         assertEquals(4, matches.get(1).line());
