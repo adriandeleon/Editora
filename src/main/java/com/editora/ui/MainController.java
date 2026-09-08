@@ -2565,6 +2565,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public void gitCompareWithTag(Path file) {
+                git.ifEnabled(() -> diffCoordinator.diffPathVsTag(file));
+            }
+
+            @Override
             public void gitCompareWithRevision(Path file) {
                 git.ifEnabled(() -> diffCoordinator.diffPathVsCommit(file));
             }
@@ -9605,6 +9610,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         MenuItem diffBranch = new MenuItem(tr("project.menu.git.compareBranch"));
         diffBranch.setGraphic(Icons.diff());
         diffBranch.setOnAction(e -> git.ifEnabled(() -> diffCoordinator.diffPathVsBranch(buffer.getPath())));
+        MenuItem diffTag = new MenuItem(tr("project.menu.git.compareTag"));
+        diffTag.setGraphic(Icons.diff());
+        diffTag.setOnAction(e -> git.ifEnabled(() -> diffCoordinator.diffPathVsTag(buffer.getPath())));
         MenuItem diffCommit = new MenuItem(tr("project.menu.git.compareRevision"));
         diffCommit.setGraphic(Icons.diff());
         diffCommit.setOnAction(e -> git.ifEnabled(() -> diffCoordinator.diffPathVsCommit(buffer.getPath())));
@@ -9626,6 +9634,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         new SeparatorMenuItem(),
                         diffHead,
                         diffBranch,
+                        diffTag,
                         diffCommit,
                         annotate,
                         history);

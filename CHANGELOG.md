@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Project-tree folders can now be compared recursively with HEAD, a branch, a tag, or a selected revision.
+  The lazy multi-file review is scoped to that folder and includes staged, unstaged, deleted, and untracked
+  files while respecting Git ignore rules.
 - `editora --diff-ui LEFT RIGHT` now opens an isolated, session-free diff workspace with only the comparison
   UI visible. A full-UI icon in the diff toolbar restores normal Editora chrome without closing or reloading
   the comparison.

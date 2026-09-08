@@ -140,6 +140,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         /** Diff {@code file} against its version on a branch chosen from the repo. */
         void gitCompareWithBranch(Path file);
 
+        /** Diff {@code file} or folder against its version at a tag chosen from the repo. */
+        void gitCompareWithTag(Path file);
+
         /** Diff {@code file} against a commit chosen from its history. */
         void gitCompareWithRevision(Path file);
 
@@ -1802,6 +1805,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
             compareRevision.setGraphic(Icons.diff());
             compareRevision.setOnAction(e -> fileActions.gitCompareWithRevision(file));
+            MenuItem compareTag = new MenuItem(tr("project.menu.git.compareTag"));
+            compareTag.setGraphic(Icons.diff());
+            compareTag.setOnAction(e -> fileActions.gitCompareWithTag(file));
             MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
             annotate.setGraphic(Icons.blame());
             annotate.setOnAction(e -> fileActions.gitAnnotate(file));
@@ -1817,6 +1823,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                             new javafx.scene.control.SeparatorMenuItem(),
                             compareHead,
                             compareBranch,
+                            compareTag,
                             compareRevision,
                             annotate,
                             fileHistory);
@@ -1832,7 +1839,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 ignore.setDisable(st != com.editora.git.GitFileStatus.UNTRACKED); // ignore = for new files
             });
         }
-        // On a folder: Local History (folder view) + Git Stage/Revert of the whole subtree.
+        // On a folder: Local History plus subtree-wide Git mutation and comparison actions.
         if (fileActions != null && isDir) {
             Path dir = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
@@ -1849,7 +1856,27 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
             revert.setGraphic(Icons.undo());
             revert.setOnAction(e -> fileActions.gitRevert(dir));
-            git.getItems().addAll(stage, revert);
+            MenuItem compareHead = new MenuItem(tr("project.menu.git.compareHead"));
+            compareHead.setGraphic(Icons.diff());
+            compareHead.setOnAction(e -> fileActions.gitCompareWithHead(dir));
+            MenuItem compareBranch = new MenuItem(tr("project.menu.git.compareBranch"));
+            compareBranch.setGraphic(Icons.diff());
+            compareBranch.setOnAction(e -> fileActions.gitCompareWithBranch(dir));
+            MenuItem compareTag = new MenuItem(tr("project.menu.git.compareTag"));
+            compareTag.setGraphic(Icons.diff());
+            compareTag.setOnAction(e -> fileActions.gitCompareWithTag(dir));
+            MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
+            compareRevision.setGraphic(Icons.diff());
+            compareRevision.setOnAction(e -> fileActions.gitCompareWithRevision(dir));
+            git.getItems()
+                    .addAll(
+                            stage,
+                            revert,
+                            new javafx.scene.control.SeparatorMenuItem(),
+                            compareHead,
+                            compareBranch,
+                            compareTag,
+                            compareRevision);
             menu.getItems().add(git);
 
             menu.setOnShowing(e -> {

@@ -553,7 +553,8 @@ Editora is built with the help of AI coding tools.
   document, and swap the displayed sides without losing the editable local target; review all staged changes
   or all unstaged/untracked changes from the Commit window or command palette; and open multi-file
   `.patch`/`.diff` content as one navigable review with per-file status and stats. Recursive directory compare
-  opens changed, left-only, and right-only files in the same lazy review surface. Huge and binary inputs
+  opens changed, left-only, and right-only files in the same lazy review surface; a Project-tree folder can
+  also be compared with HEAD, a branch, a tag, or a revision while respecting Git ignores. Huge and binary inputs
   degrade to bounded line/metadata comparisons. Diffs with a local target can open an editable Result draft
   that recomputes the comparison while you type and applies as one undoable, explicitly saved editor change;
   a dirty draft prevents side swapping until it is applied or reset.

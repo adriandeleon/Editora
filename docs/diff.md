@@ -11,6 +11,9 @@ developer and manual-test reference.
   for any saved local file.
 - Git changes, staged and unstaged review, file history, `.patch`/`.diff` files, and directory comparisons
   reuse the same viewer.
+- A Project-tree folder's Git menu can compare that subtree with HEAD, a branch, a tag, or a selected
+  revision. The review includes staged, unstaged, deleted, and untracked files, excludes ignored files, and
+  loads each changed file only when selected.
 - `editora --diff-ui LEFT RIGHT` launches an isolated, focused viewer for two files or two directories. The
   Editora-mark button restores the normal application chrome without closing the comparison.
 

@@ -66,7 +66,10 @@ left. Active-diff commands route through the currently selected file.
 symbolic links, bounds each scan to 20,000 files, compares candidates with `Files.mismatch`, counts identical
 files, and returns only modified and one-sided paths. The scan runs on the file-read executor. Selecting an
 entry loads its two sides and builds a normal `DiffViewerPane` on demand; an access-ordered cache retains at
-most 32 visited panes. `diff.compareDirectories` opens the two-folder picker.
+most 32 visited panes. `diff.compareDirectories` opens the two-folder picker. Project-tree Git comparisons
+reuse this surface for a selected subtree against HEAD, a branch, tag, or revision. `GitService` obtains a
+NUL-safe, rename-disabled changed-path list plus non-ignored untracked files; each selected entry lazily reads
+the ref blob and current working file instead of materializing a temporary snapshot tree.
 
 Comparisons backed by a local editable file expose an optional Result editor below the rendered diff. It is
 a separate exact-text draft rather than one of the aligned display areas, whose filler and collapsed rows are
