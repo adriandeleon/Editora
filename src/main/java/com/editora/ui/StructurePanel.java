@@ -1169,7 +1169,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                     box.getChildren().add(styledText(run, "structure-return-type"));
                 }
             }
-            javafx.scene.text.Text line = new javafx.scene.text.Text("  " + (item.line() + 1));
+            javafx.scene.text.Text line = new javafx.scene.text.Text("  line " + (item.line() + 1));
             line.getStyleClass().add("structure-line-number");
             box.getChildren().add(line);
             setGraphic(box);

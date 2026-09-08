@@ -32,6 +32,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.text.Text;
 
 import com.editora.config.Bookmark;
 
@@ -674,8 +675,15 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 addMoveItems(menu);
                 setContextMenu(menu);
             } else if (item instanceof MarkRow m) {
-                setText(markLabel(m.bm()) + "    line " + (m.bm().line() + 1));
-                setGraphic(Icons.bookmark());
+                setText(null);
+                HBox row = new HBox(4);
+                row.setAlignment(Pos.CENTER_LEFT);
+                Text label = new Text(markLabel(m.bm()));
+                label.getStyleClass().add("bookmark-label");
+                Text line = new Text("line " + (m.bm().line() + 1));
+                line.getStyleClass().add("bookmark-line-number");
+                row.getChildren().addAll(Icons.bookmark(), label, line);
+                setGraphic(row);
                 setTooltip(new Tooltip(m.file() + ":" + (m.bm().line() + 1)));
                 MenuItem edit = new MenuItem(tr("bookmarks.editNoteItem"));
                 edit.setGraphic(Icons.edit());

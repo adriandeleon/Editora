@@ -120,7 +120,7 @@ class StructurePanelFxTest {
         });
 
         assertEquals(
-                "zenFlag(List<String>) : boolean  1",
+                "zenFlag(List<String>) : boolean  line 1",
                 runs.stream().map(Text::getText).reduce("", String::concat));
         assertTextHasStyle(runs, "zenFlag", "function");
         assertTextHasStyle(runs, "List", "type");
@@ -169,7 +169,7 @@ class StructurePanelFxTest {
                     .orElse("");
         });
 
-        assertEquals("  2", renderedLine, "the stored zero-based line is displayed to users as line 2");
+        assertEquals("  line 2", renderedLine, "the stored zero-based line matches the Bookmarks line label");
     }
 
     private static List<String> renderedNameStyles(TreeView<Object> tree, TreeItem<Object> item) {
