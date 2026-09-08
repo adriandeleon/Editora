@@ -36,7 +36,12 @@ class CompletionAcceptRangeFxTest {
             // Caret right after the lone '$' on line 2 (0-based line 2, col 1): offset of that '$' + 1.
             int dollar = b.getContent().lastIndexOf('$');
             area.moveTo(dollar + 1);
-            FxTestSupport.call(b, "acceptCompletion", new Class<?>[] {CodeArea.class, Completion.class}, area, c);
+            FxTestSupport.call(
+                    FxTestSupport.field(b, "completionActions"),
+                    "acceptCompletion",
+                    new Class<?>[] {CodeArea.class, Completion.class},
+                    area,
+                    c);
             return area.getText();
         });
     }
@@ -68,7 +73,12 @@ class CompletionAcceptRangeFxTest {
             int after = b.getContent().indexOf("$us") + 3; // caret after "us"
             area.moveTo(after);
             Completion c = Completion.lsp("user", "user", "");
-            FxTestSupport.call(b, "acceptCompletion", new Class<?>[] {CodeArea.class, Completion.class}, area, c);
+            FxTestSupport.call(
+                    FxTestSupport.field(b, "completionActions"),
+                    "acceptCompletion",
+                    new Class<?>[] {CodeArea.class, Completion.class},
+                    area,
+                    c);
             return area.getText();
         });
         assertEquals("<?php\n$user\n", result);

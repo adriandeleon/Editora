@@ -46,7 +46,7 @@ class SearchEverywhereFxTest {
     // These wrap their reflection rather than declaring `throws`, so they can be used inside the
     // Runnable lambdas runOnFx takes — which cannot throw a checked exception.
     private SearchEverywherePopup popup() {
-        return FxTestSupport.field(fx.controller, "searchEverywherePopup");
+        return FxTestSupport.field(FxTestSupport.field(fx.controller, "chrome"), "searchEverywherePopup");
     }
 
     private void hide() {

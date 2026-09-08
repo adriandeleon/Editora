@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- Split `MainController` workflows into per-window coordinators for commands, editing, templates,
+  settings, run configurations, navigation, previews/exports, Git actions, chrome, MCP, files, sessions,
+  test navigation and install prompts. Preserve command IDs/order, FXML and public window APIs.
+- Extracted completion, ghost text and popup state from `EditorBuffer` into `BufferCompletion`.
+  Production Java files now stay below 10,000 lines, with a regression check enforcing the ceiling.
+
 ### Added
 
 - Project-tree folders can now be compared recursively with HEAD, a branch, a tag, or a selected revision.

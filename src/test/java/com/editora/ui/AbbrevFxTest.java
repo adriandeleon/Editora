@@ -129,7 +129,11 @@ class AbbrevFxTest {
     void defineAbbreviationAddsToTheDictionaryAndPersists() throws Exception {
         int before = FxTestSupport.callOnFx(() -> fx.shared.getAbbreviations().size());
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
-                fx.controller, "addAbbreviation", new Class[] {String.class, String.class}, "omw", "on my way"));
+                FxTestSupport.field(fx.controller, "editing"),
+                "addAbbreviation",
+                new Class[] {String.class, String.class},
+                "omw",
+                "on my way"));
         List<Abbreviation> after = FxTestSupport.callOnFx(() -> fx.shared.getAbbreviations());
         assertEquals(before + 1, after.size());
         assertTrue(after.stream()
@@ -140,9 +144,17 @@ class AbbrevFxTest {
     @Test
     void definingAnExistingAbbreviationReplacesItCaseInsensitively() throws Exception {
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
-                fx.controller, "addAbbreviation", new Class[] {String.class, String.class}, "ty", "thank you"));
+                FxTestSupport.field(fx.controller, "editing"),
+                "addAbbreviation",
+                new Class[] {String.class, String.class},
+                "ty",
+                "thank you"));
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
-                fx.controller, "addAbbreviation", new Class[] {String.class, String.class}, "TY", "thanks"));
+                FxTestSupport.field(fx.controller, "editing"),
+                "addAbbreviation",
+                new Class[] {String.class, String.class},
+                "TY",
+                "thanks"));
         List<Abbreviation> after = FxTestSupport.callOnFx(() -> fx.shared.getAbbreviations());
         long ty = after.stream()
                 .filter(a -> a.getAbbreviation().equalsIgnoreCase("ty"))

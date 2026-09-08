@@ -51,7 +51,8 @@ class LspDisableClearsDiagnosticsFxTest {
         Object lsp = FxTestSupport.field(fx.controller, "lspCoordinator");
 
         // Open the Python file and simulate the server publishing two diagnostics for it.
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class<?>[] {Path.class}, py));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class<?>[] {Path.class}, py));
         List<LspDiagnostic> diags = List.of(
                 new LspDiagnostic(0, 0, 0, 5, Severity.ERROR, "boom", "E0", "pyright"),
                 new LspDiagnostic(1, 0, 1, 5, Severity.WARNING, "meh", "W1", "pyright"));

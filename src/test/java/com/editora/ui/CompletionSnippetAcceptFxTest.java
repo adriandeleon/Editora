@@ -66,7 +66,12 @@ class CompletionSnippetAcceptFxTest {
             b.getNode();
             CodeArea area = FxTestSupport.field(b, "area");
             area.moveTo(caret);
-            FxTestSupport.call(b, "acceptCompletion", new Class<?>[] {CodeArea.class, Completion.class}, area, c);
+            FxTestSupport.call(
+                    FxTestSupport.field(b, "completionActions"),
+                    "acceptCompletion",
+                    new Class<?>[] {CodeArea.class, Completion.class},
+                    area,
+                    c);
             IndexRange sel = area.getSelection();
             return new Accepted(area.getText(), area.getText().substring(sel.getStart(), sel.getEnd()), (Boolean)
                     FxTestSupport.call(b, "hasActiveSnippet", new Class<?>[] {}));

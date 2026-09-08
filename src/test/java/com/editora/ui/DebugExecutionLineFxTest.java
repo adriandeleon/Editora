@@ -77,7 +77,8 @@ class DebugExecutionLineFxTest {
         Path real = fx.configDir.resolve("Real.java");
         java.nio.file.Files.writeString(real, "package p;\nclass Real {\n  void go() {}\n}\n");
 
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, real));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, real));
         DapModels.StackFrameInfo frame = new DapModels.StackFrameInfo(1, "Real.go", real, 2, 0);
         FxTestSupport.runOnFx(
                 () -> FxTestSupport.call(debug, "highlightFrame", new Class[] {DapModels.StackFrameInfo.class}, frame));

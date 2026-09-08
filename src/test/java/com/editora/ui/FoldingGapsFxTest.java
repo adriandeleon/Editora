@@ -181,7 +181,11 @@ class FoldingGapsFxTest {
         try {
             EditorBuffer b = FxTestSupport.callOnFx(() -> {
                 try {
-                    FxTestSupport.call(fx.controller, "openPath", new Class[] {java.nio.file.Path.class}, file);
+                    FxTestSupport.call(
+                            FxTestSupport.field(fx.controller, "fileWorkflows"),
+                            "openPath",
+                            new Class[] {java.nio.file.Path.class},
+                            file);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }

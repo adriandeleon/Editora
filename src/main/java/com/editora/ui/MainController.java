@@ -11,10 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
-import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
@@ -34,7 +31,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
-import javafx.scene.control.Separator;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
@@ -55,28 +51,19 @@ import javafx.scene.paint.Color;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
-import javafx.util.Duration;
 
 import com.editora.build.BuildTool;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
-import com.editora.config.HistoryRevision;
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
 import com.editora.config.RecentFiles;
 import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
-import com.editora.editops.KillRing;
-import com.editora.editops.Rectangle;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.LanguageRegistry;
-import com.editora.editor.SpellDictionaries;
 import com.editora.editor.TabContent;
-import com.editora.editor.TextNav;
-import com.editora.markdown.MarkdownTable;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 
@@ -113,78 +100,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The window's menu bar — a browsable map over the command registry (#763). */
     private MainMenuBar menuBar;
 
-    /**
-     * The dropdown's trailing "Edit Configurations…" row.
-     *
-     * <p>A sentinel item rather than a fifth toolbar button: the dropdown is where you already are when you
-     * want to change the thing you just picked, and it is where every IDE puts this. Compared by
-     * <b>identity</b>, never by name — a real configuration a user happens to name "Edit Configurations…"
-     * must still behave like a configuration.
-     *
-     * <p>It is not a selectable value. Choosing it reverts the selection and opens Settings, so
-     * {@code runConfigCombo.getValue()} is never the sentinel by the time anything reads it.
-     */
-    private static final com.editora.config.RunConfiguration EDIT_CONFIGS_ROW =
-            new com.editora.config.RunConfiguration("", "", "", "", "", "");
-
-    /** True while the value listener is reverting a click on {@link #EDIT_CONFIGS_ROW}, so it ignores itself. */
-    private boolean revertingRunConfigRow;
-
-    /**
-     * Opens the Run Configurations page on a named configuration (null ⇒ whatever was selected there).
-     *
-     * <p>The single indirection for all three routes to that page — the dropdown's
-     * {@link #EDIT_CONFIGS_ROW}, and the Run and Debug guards that take you to a configuration too
-     * incomplete to launch. Always {@link #openRunConfigEditor} in production.
-     *
-     * <p>A seam (the {@code *ForTest} shape used by {@code LanguageServerSession.attachForTest} and
-     * {@code DoctorCoordinator.probeOverrideForTest}) because opening the real Settings window builds every
-     * page: tests that drove it passed alone and timed out under the full suite. Measured, not assumed —
-     * both times.
-     */
-    private java.util.function.Consumer<String> runConfigEditor = this::openRunConfigEditor;
-
     /** Replaces where the Run Configurations page is opened. Tests only. */
     void setRunConfigEditorForTest(java.util.function.Consumer<String> editor) {
-        this.runConfigEditor = editor == null ? this::openRunConfigEditor : editor;
+        runConfigurations.runConfigEditor = editor == null ? runConfigurations::openRunConfigEditor : editor;
     }
-
-    private void openRunConfigEditor(String name) {
-        settingsWindow.showRunConfigs(name, stage);
-    }
-
-    /** Project root the makefile probe last ran for, so it runs once per root rather than per refresh. */
-    private Path makefileProbedRoot;
-
-    /** Whether {@link #makefileProbedRoot} holds a makefile — the cached answer for that root. */
-    private boolean makefileAtProjectRoot;
-
-    /**
-     * True while {@link #refreshRunConfigs()} is repopulating the selector, so its value listener can tell a
-     * programmatic reset from a user's choice.
-     *
-     * <p>Without this the listener persisted on every repopulation — including the one during {@code init},
-     * which runs <em>before</em> {@code setWindowContext} points the config at this window's session file. It
-     * therefore wrote the default, empty workspace state over the saved one and wiped the open-file list.
-     * Caught by {@code NoSessionStartupFxTest}, which exists for exactly that class of clobber.
-     */
-    private boolean populatingRunConfigs;
-
-    /** Width of the toolbar's run-configuration selector — see {@code setupRunConfigCombo}. */
-    private static final double RUN_CONFIG_COMBO_WIDTH = 150;
-
-    /** Toolbar run-configuration selector + its Run/Debug/Stop buttons (#765). */
-    @FXML
-    private javafx.scene.control.ComboBox<com.editora.config.RunConfiguration> runConfigCombo;
-
-    @FXML
-    private Button runConfigRunButton;
-
-    @FXML
-    private Button runConfigDebugButton;
-
-    @FXML
-    private Button runConfigStopButton;
 
     @FXML
     private VBox topBox;
@@ -280,39 +199,18 @@ public class MainController implements com.editora.mcp.McpBridge {
     private SettingsWindow settingsWindow;
     private final DebugLogWindow debugLogWindow = new DebugLogWindow();
 
-    /** Back/forward jump list of visited editor locations. */
-    private final NavigationHistory navHistory = new NavigationHistory();
-    /** True while a back/forward jump is executing — suppresses re-recording the jump into history. */
-    private boolean navigating;
-    /** True while {@code openAndGoto} drives {@code gotoInFile} — so only the outer call records the jump. */
-    private boolean suppressNavRecord;
     /** Shared in-scene overlay host for the command palette + pickers (replaces focus-stealing Popups). */
     private final OverlayHost overlayHost = new OverlayHost();
 
-    /** Max grid the Markdown table-size picker offers (rows × columns). */
-    private static final int TABLE_PICKER_MAX_ROWS = 8;
-
-    private static final int TABLE_PICKER_MAX_COLS = 8;
-
-    private QuickOpen<Path> recentPalette;
-    private QuickOpen<StructurePanel.Outline> structurePalette;
-    private QuickOpen<Tab> openFilesPalette;
-    private QuickOpen<ToolWindow> toolWindowPalette;
-    private QuickOpen<ToolWindow> splitToolWindowPalette;
-    private QuickOpen<com.editora.editor.UndoHistory.Checkpoint> undoHistoryPalette;
-    private QuickOpen<NavigationHistory.Location> recentLocationsPalette;
-    private QuickOpen<Path> relatedPalette;
-    private QuickOpen<com.editora.snippet.Snippet> snippetPalette;
     private com.editora.snippet.SnippetManager snippets;
-    private com.editora.template.TemplateRegistry templates;
+
     /** Shared across windows (owned by WindowManager); plugin classes load once, instances are per-window. */
     private com.editora.plugin.PluginManager pluginManager;
     /** Plugin support (discovery/apply/install + the per-window PluginContext); see {@link PluginCoordinator}. */
     private PluginCoordinator pluginCoordinator;
 
     private com.editora.completion.CompletionEngine completion;
-    private FileFinder fileFinder;
-    private FileFinder folderFinder;
+
     private ProjectPanel projectPanel;
     private ProjectManager projects;
     /** The multi-window coordinator (null in single-window/test use); set right after {@link #init}. */
@@ -329,23 +227,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private boolean projectSupportApplied;
 
     // Auto save. Mode keys: "off" | "afterDelay" | "onFocusChange".
-    static final String AUTOSAVE_OFF = "off";
-    static final String AUTOSAVE_DELAY = "afterDelay";
-    static final String AUTOSAVE_FOCUS = "onFocusChange";
-    private final PauseTransition autoSaveIdleTimer = new PauseTransition(Duration.millis(1000));
-    private final ExecutorService autoSaveExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "editora-autosave");
-        t.setDaemon(true);
-        return t;
-    });
-    /** Disk reads/charset decoding for file opens. Virtual threads also keep remote-provider waits cheap. */
-    private final ExecutorService fileLoadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    /** A paragraph this wide makes RichTextFX layout pathological even when the file itself is small. */
-    static final int LONG_LINE_FILE_CHARS = 64 * 1024;
-    /** Buffers whose tab shell exists but whose document has not reached the FX thread yet. FX-thread only. */
-    private final Set<EditorBuffer> loadingBuffers = Collections.newSetFromMap(new IdentityHashMap<>());
-    /** Navigation requested while a shell is loading (CLI file:line, diagnostics, external-open). */
-    private final Map<EditorBuffer, List<Runnable>> afterBufferLoad = new IdentityHashMap<>();
 
     private ToolWindowManager toolWindows;
     private ToolWindow projectToolWindow;
@@ -364,26 +245,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ToolWindow todoToolWindow;
     private MarkdownLintPanel markdownLintPanel;
     private ToolWindow markdownLintToolWindow;
-    private final com.editora.editor.MarkdownLintService markdownLintService =
-            new com.editora.editor.MarkdownLintService();
-    /** Session-only Simple-UI override from the {@code --simple} CLI flag; OR'd with the saved setting. */
-    private boolean cliSimpleOverride;
-    /** Session-only Zen override from the {@code --zen} CLI flag; OR'd with this window's saved Zen state. */
-    private boolean cliZenOverride;
-    /** Session-only Expert override from the {@code --expert} CLI flag (the {@code --zen} twin). */
-    private boolean cliExpertOverride;
-    /** Session-only standalone diff chrome from {@code --diff-ui}; never written to workspace state. */
-    private boolean cliDiffUiOverride;
-    /**
-     * The open tool windows a {@code --zen}/{@code --expert} session override closed, as the persisted
-     * {left, right, bottom} ids. Entering a focus mode calls {@link ToolWindowManager#closeAllOpen()}, and
-     * {@code close()} persists "nothing open" — so without restoring these at quit, a session-only focus
-     * mode would silently lose the user's docked tool windows on the next launch. {@code null} = no CLI
-     * focus-mode override is in effect (including after an in-app toggle takes over from the flag).
-     */
-    private String[] cliFocusToolWindows;
-    /** Tool windows closed by the transient standalone diff workspace, restored by its toolbar action. */
-    private List<String> cliDiffUiToolWindows = List.of();
+
     // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) — owned by RemoteCoordinator ---
     private RemoteCoordinator remoteCoordinator;
     // MCP server: a single app-wide loopback HTTP endpoint exposing live editor state + the command
@@ -392,12 +254,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     // window closes, the server stops until a settings re-apply re-arms it from another window.)
     private static com.editora.mcp.McpServer mcpServer;
     private static MainController mcpOwner;
-    private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
-    private final com.editora.office.OfficeExportService officeService = new com.editora.office.OfficeExportService();
-    private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
-    /** Buffers whose install banner the user dismissed this session (don't re-offer). Weak keys, like above. */
-    private final java.util.Set<EditorBuffer> installDismissed =
-            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
     /** LSP: manager (one server per workspace root). Diagnostics route to {@link #lspCoordinator} via the
      *  thin {@link #onLspDiagnostics} delegate — a method ref (not a direct field read) so it isn't an
      *  illegal forward reference to the later-declared coordinator; the field read defers to call time. */
@@ -457,8 +313,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private GitHubPanel githubPanel;
 
     private ToolWindow githubToolWindow;
-    /** The path the Git Log is currently filtered to (file history), or null for the whole repo. */
-    private Path gitLogFilter;
+
     /** Local File History: snapshots local files on save/auto-save/external reload (off-thread). */
     private HistoryCoordinator historyCoordinator;
 
@@ -466,8 +321,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private java.util.Map<String, javafx.scene.Node> toolbarBaseWidgets;
 
     private ToolWindow fileHistoryToolWindow;
-    /** IntelliJ-style branch dropdown (actions + Local/Remote branches), anchored to the status bar. */
-    private final BranchPopup branchPopup = new BranchPopup();
 
     private Switcher switcher;
     /** Most-recently-used tab order, head = most recent. */
@@ -480,45 +333,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Tab draggedTab;
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
     private String currentEditorThemeCss;
-    /** Floating "exit Zen" button overlaid top-right of the window; shown only while in Zen mode. */
-    private Button zenExitButton;
-    /** Floating "exit Expert" button hosted inside the active code viewport; shown only in Expert mode. */
-    private Button expertExitButton;
-
-    private EditorBuffer expertExitButtonBuffer;
-    /** Floating "show toolbar" button overlaid top-left; shown only when the toolbar is hidden (not in Zen). */
-    private Button toolbarRestoreButton;
-    /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
-    private boolean markActive;
-    /** Expand/shrink-selection history (the pure stack); see {@link #expandSelection}/{@link #shrinkSelection}. */
-    private final com.editora.editops.SmartSelectStack smartSelect = new com.editora.editops.SmartSelectStack();
-    /**
-     * The Emacs kill ring. Per window rather than app-global: every kill is also written to the system
-     * clipboard, so the most recent kill still crosses windows — only the ring's *history* is per-window.
-     */
-    private final KillRing killRing = new KillRing();
-    /**
-     * Where the previous kill left off: buffer identity + document version + caret. A kill starting at
-     * exactly that point accumulates into the same ring entry (Emacs' consecutive-kill behaviour), and
-     * anything the user does in between — typing, moving, switching tabs — moves one of the three and so
-     * starts a fresh entry. Keying off {@link EditorBuffer#docVersion()} avoids needing a
-     * command-sequencing hook (the single {@code CommandRegistry} execution listener belongs to macro
-     * recording).
-     */
-    private EditorBuffer lastKillBuffer;
-
-    private long lastKillDocVersion = -1;
-    private int lastKillCaret = -1;
-    /** The range the last yank/yank-pop inserted, so {@code M-y} knows what to replace. Same guard shape. */
-    private EditorBuffer lastYankBuffer;
-
-    private long lastYankDocVersion = -1;
-    private int lastYankStart = -1;
-    private int lastYankEnd = -1;
-    /** Cycle state for {@code move-to-window-line-top-bottom} (M-r): center → top → bottom. */
-    private int windowLineCycle = -1;
-    /** Re-entrancy guard so the external-change prompt (which steals focus) doesn't re-trigger itself. */
-    private boolean checkingExternalChanges;
 
     private RecentFiles recentFiles;
     /** Persistent Find-in-Files query history (backs the query combo's dropdown). */
@@ -533,6 +347,101 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Tab doctorTab;
     /** Opens external URLs (the Welcome page's home-page link) in the system browser; set from {@code App}. */
     private javafx.application.HostServices hostServices;
+
+    public void installZenOverlay(StackPane sceneRoot) {
+        chrome.installZenOverlay(sceneRoot);
+    }
+
+    @Override
+    public java.util.List<OpenFile> listOpenFiles() {
+        return mcpBridge.listOpenFiles();
+    }
+
+    @Override
+    public BufferContent readBuffer(String path) {
+        return mcpBridge.readBuffer(path);
+    }
+
+    @Override
+    public java.util.List<Diagnostic> getDiagnostics(String path) {
+        return mcpBridge.getDiagnostics(path);
+    }
+
+    @Override
+    public java.util.List<SearchMatch> findInFiles(
+            String query, boolean caseSensitive, boolean regex, boolean wholeWord) {
+        return mcpBridge.findInFiles(query, caseSensitive, regex, wholeWord);
+    }
+
+    @Override
+    public java.util.List<CommandInfo> listCommands() {
+        return mcpBridge.listCommands();
+    }
+
+    @Override
+    public boolean executeCommand(String id) {
+        return mcpBridge.executeCommand(id);
+    }
+
+    @Override
+    public boolean openFile(String path, int line, int col) {
+        return mcpBridge.openFile(path, line, col);
+    }
+
+    @Override
+    public String editBuffer(String path, String oldText, String newText, boolean replaceAll) {
+        return mcpBridge.editBuffer(path, oldText, newText, replaceAll);
+    }
+
+    @Override
+    public String saveBuffer(String path) {
+        return mcpBridge.saveBuffer(path);
+    }
+
+    @Override
+    public Selection getSelection() {
+        return mcpBridge.getSelection();
+    }
+
+    @Override
+    public java.util.List<Symbol> documentSymbols(String path) {
+        return mcpBridge.documentSymbols(path);
+    }
+
+    @Override
+    public GitState gitStatus() {
+        return mcpBridge.gitStatus();
+    }
+
+    @Override
+    public java.util.List<TabInfo> listTabs() {
+        return mcpBridge.listTabs();
+    }
+
+    @Override
+    public java.util.List<TodoItem> todoScan() {
+        return mcpBridge.todoScan();
+    }
+
+    public void openInitialBuffer() {
+        sessions.openInitialBuffer();
+    }
+
+    public void openExternalFiles(java.util.List<OpenTarget> files) {
+        sessions.openExternalFiles(files);
+    }
+
+    public void startup(Path projectDir, List<OpenTarget> targets, String newFile) {
+        sessions.startup(projectDir, targets, newFile);
+    }
+
+    public void startup(Path projectDir, List<OpenTarget> targets, String newFile, boolean noSession) {
+        sessions.startup(projectDir, targets, newFile, noSession);
+    }
+
+    public void startupDiffUi(Path left, Path right) {
+        sessions.startupDiffUi(left, right);
+    }
 
     public void init(Stage stage, ConfigManager config, CommandRegistry registry, KeymapManager keymap) {
         this.stage = stage;
@@ -563,7 +472,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (Boolean.TRUE.equals(now)) {
                 // The filesystem may have shifted while we were away — drop cached canonical paths (#680).
                 com.editora.config.PathKeys.invalidateCanonicalCache();
-                checkExternalChanges();
+                fileWorkflows.checkExternalChanges();
                 git.refresh(); // another tool may have changed the repo while we were away
                 refreshBuildTools(); // a marker file (or the active file's project) may have changed while away
                 refreshPasteState(); // clipboard may have changed in another app while we were away
@@ -591,7 +500,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.notesCoordinator = new NotesCoordinator(coordinatorHost, new NotesCoordinator.Ops() {
             @Override
             public void openPath(java.nio.file.Path file) {
-                MainController.this.openPath(file);
+                fileWorkflows.openPath(file);
             }
 
             @Override
@@ -659,7 +568,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.bookmarkCoordinator = new BookmarkCoordinator(coordinatorHost, new BookmarkCoordinator.Ops() {
             @Override
             public void openPath(java.nio.file.Path file) {
-                MainController.this.openPath(file);
+                fileWorkflows.openPath(file);
             }
 
             @Override
@@ -712,7 +621,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Record every executed command into an in-progress macro (the service no-ops unless recording).
         registry.setExecutionListener(macroCoordinator::onCommand);
         this.snippets = new com.editora.snippet.SnippetManager(config);
-        this.templates = new com.editora.template.TemplateRegistry(config);
+        templateActions.templates = new com.editora.template.TemplateRegistry(config);
         this.completion = new com.editora.completion.CompletionEngine(snippets, config::getUserDictionary);
         // Project commands (incl. the Project tool window) are hidden from the palette unless project
         // support is enabled.
@@ -734,7 +643,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
         this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
-        this.breadcrumb = new FileBreadcrumb(this::openPath);
+        this.breadcrumb = new FileBreadcrumb(fileWorkflows::openPath);
         // The breadcrumb is NOT part of the bottom bar stack — see setupToolWindows, which hangs it under
         // the editor area itself.
         bottomBox.getChildren().setAll(statusBar);
@@ -753,7 +662,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::onSettingsApplied,
                 this::setZenMode,
                 this::setExpertMode,
-                this::openPath,
+                fileWorkflows::openPath,
                 this::exportConfig,
                 this::showDebugLog);
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
@@ -762,7 +671,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 registry,
                 keymap,
                 snippets,
-                templates,
+                templateActions.templates,
                 toolWindows,
                 statusBar,
                 settingsWindow,
@@ -792,7 +701,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
         // Read on each Add click, not now: the Settings window outlives whichever tab is in front.
         this.settingsWindow.setRunConfigSuggestion(this::suggestedMainClass);
-        this.settingsWindow.setTemplateRegistry(templates); // backs the Settings → Templates management page
+        this.settingsWindow.setTemplateRegistry(
+                templateActions.templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
         this.settingsWindow.setTrustActions(new SettingsWindow.TrustActions() {
             @Override
@@ -816,11 +726,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 searchCoordinator::probeRipgrep); // Settings → Search found/not-found status
         this.settingsWindow.setAiConnectionProbe(
                 aiCoordinator::checkConnection); // Settings → AI Actions green/red connection status
-        this.settingsWindow.setOnKeymapChanged(this::reloadKeymap); // picker/combo → live keymap switch
+        this.settingsWindow.setOnKeymapChanged(editorSettings::reloadKeymap); // picker/combo → live keymap switch
         this.settingsWindow.setShortcutActions(new SettingsWindow.ShortcutActions() {
             @Override
             public java.util.List<SettingsWindow.Shortcut> rows() {
-                return shortcutRows();
+                return editorSettings.shortcutRows();
             }
 
             @Override
@@ -831,21 +741,22 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void rebind(String commandId, String chordSeq) {
-                rebindShortcut(commandId, chordSeq);
+                editorSettings.rebindShortcut(commandId, chordSeq);
             }
 
             @Override
             public void reset(String commandId) {
-                resetShortcut(commandId);
+                editorSettings.resetShortcut(commandId);
             }
 
             @Override
             public void resetAll() {
-                resetAllShortcuts();
+                editorSettings.resetAllShortcuts();
             }
         });
         this.settingsWindow.setRunConfigsChangedHandler(
-                this::refreshRunConfigs); // Run Configurations page edits → repopulate the toolbar selector
+                runConfigurations
+                        ::refreshRunConfigs); // Run Configurations page edits → repopulate the toolbar selector
         this.settingsWindow.setMacrosChangedHandler(
                 this::refreshSavedMacroCommandsAllWindows); // Macros page edits → re-register commands everywhere
         this.settingsWindow.setAgentCoordinator(agentCoordinator); // AI Agent page: per-client status + combo
@@ -877,11 +788,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             statusBar.setBackgroundTasks(t == null ? null : t.label(), backgroundTasks.count());
         });
         setupMruTracking();
-        registerCommands();
+        windowCommands.registerCommands();
         setupToolbar();
-        refreshRunConfigs(); // populate the selector + register run.config.<slug> for the saved set
+        runConfigurations.refreshRunConfigs(); // populate the selector + register run.config.<slug> for the saved set
         setupRecentFiles();
-        setupJumpPickers();
+        navigation.setupJumpPickers();
         setupProjects();
         pluginCoordinator
                 .applyPlugins(); // register plugin commands/tool windows/hooks (before restore, so visibility restores)
@@ -891,7 +802,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // persisted closed when a focus mode was entered).
         toolWindows.setZenStripesHidden(config.getWorkspaceState().isZenMode()
                 || config.getWorkspaceState().isExpertMode());
-        applyChromeVisibility();
+        chrome.applyChromeVisibility();
         applyProjectSupport(); // hide project UI when disabled (default)
         git.applySupport(); // hide Git UI when disabled (default)
         github.applySupport(); // detect gh + gate the GitHub PR/issue surfaces (on by default, inert until gh is found)
@@ -915,18 +826,19 @@ public class MainController implements com.editora.mcp.McpBridge {
                 .applySupport(); // configure DAP; debugging off when disabled (default) — after LSP (it layers on
         // jdtls)
         todoCoordinator.applyHighlight(); // compile TODO/FIXME patterns + highlight (on by default)
-        applyMarkdownLint(); // push Markdown-lint enabled state to buffers (on by default)
-        applyAdminSaveSupport(); // detect the elevation tool (pkexec/osascript) for save-as-admin (off by default)
+        previews.applyMarkdownLint(); // push Markdown-lint enabled state to buffers (on by default)
+        fileWorkflows.applyAdminSaveSupport(); // detect the elevation tool (pkexec/osascript) for save-as-admin (off by
+        // default)
         setupWelcome(); // Welcome empty-state shown when no file tabs are open
 
         // Auto save: idle timer fires a save; the window losing focus saves in onFocusChange mode.
-        autoSaveIdleTimer.setOnFinished(e -> autoSaveAllDirty());
+        fileWorkflows.autoSaveIdleTimer.setOnFinished(e -> fileWorkflows.autoSaveAllDirty());
         stage.focusedProperty().addListener((obs, was, focused) -> {
-            if (!focused && AUTOSAVE_FOCUS.equals(autoSaveMode())) {
-                autoSaveAllDirty();
+            if (!focused && FileWorkflowCoordinator.AUTOSAVE_FOCUS.equals(fileWorkflows.autoSaveMode())) {
+                fileWorkflows.autoSaveAllDirty();
             }
         });
-        applyAutoSave();
+        fileWorkflows.applyAutoSave();
         refreshUpdateNotice(); // reflect any update an earlier window already found
         maybeCheckForUpdates(); // background check (once/session, once/day, only if enabled)
     }
@@ -1009,7 +921,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Whether plugins may load — the master gate (also off in Simple UI mode). */
     private boolean pluginsEnabled() {
-        return pluginManager != null && config.getSettings().isPluginSupport() && !simpleModeActive();
+        return pluginManager != null && config.getSettings().isPluginSupport() && !chrome.simpleModeActive();
     }
 
     /** Stops this window's plugins (window close); WindowManager calls this by name. */
@@ -1024,7 +936,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         return new PluginCoordinator.Ops() {
             @Override
             public void openPath(java.nio.file.Path file) {
-                MainController.this.openPath(file);
+                fileWorkflows.openPath(file);
             }
 
             @Override
@@ -1032,77 +944,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 git.gitError(summary, detail);
             }
         };
-    }
-
-    /** Shows/hides the toolbar and status bar per the saved settings (hidden nodes also unmanaged so
-     *  they don't reserve layout space). Cheap: two visibility flags + one layout pass. */
-    private void applyChromeVisibility() {
-        Settings s = config.getSettings();
-        // Zen and Simple are per-window effective overlays: they hide chrome without mutating the shared
-        // saved prefs, so the prefs return untouched when the mode is left, and one window's Zen never
-        // leaks into another (Zen lives in this window's WorkspaceState, not in Settings).
-        boolean zen = zenActive();
-        boolean expert = expertActive();
-        boolean diffUi = diffUiActive();
-        boolean focus = zen || expert || diffUi;
-        boolean zenLike = zen || diffUi; // standalone diff strips menu + status like Zen
-        boolean simple = simpleModeActive();
-        // Effective visibility (Chrome, pure + unit-tested): a saved pref AND not hidden by a focus mode/Simple.
-        boolean toolbarOn = Chrome.toolbar(s.isShowToolbar(), focus);
-        toolBar.setVisible(toolbarOn);
-        toolBar.setManaged(toolbarOn);
-        // The bar is TWO containers on one row (see appendFixedTail): the ToolBar's icon cluster and the
-        // pinned toolbarTail (project combo, Open Folder, the snapshot/--dev badges, Settings).
-        // Hiding only the ToolBar left the tail's icons stranded on an otherwise-stripped window in Zen and
-        // Expert, so the row that holds both is what gets hidden. Unmanaged too, or the row's pinned
-        // minHeight (stabilizeToolbarHeight) would keep reserving a bar-height strip of empty space.
-        if (toolbarRow != null) {
-            toolbarRow.setVisible(toolbarOn);
-            toolbarRow.setManaged(toolbarOn);
-        }
-        // The status bar is hidden by Zen but KEPT by Expert, so it keys on the real zen flag, not focus.
-        boolean statusOn = Chrome.statusBar(s.isShowStatusBar(), zenLike);
-        statusBar.setVisible(statusOn);
-        statusBar.setManaged(statusOn);
-        editorArea.setTabHeaderVisible(Chrome.tabBar(s.isShowTabBar(), focus));
-        if (menuBar != null) {
-            // Expert keeps the command menu available; only Zen suppresses it. This must use the real Zen
-            // flag (not `focus`) so a CLI --expert launch has a menu on its very first frame.
-            boolean menuOn = Chrome.menuBar(s.isShowMenuBar(), zenLike);
-            menuBar.node().setVisible(menuOn);
-            menuBar.node().setManaged(menuOn);
-            // Simple UI mode keeps the menu bar but swaps in the reduced table (a no-op when unchanged).
-            menuBar.setSimple(simple);
-            menuBar.refresh(); // features and keybindings may have moved since the last apply
-        }
-        breadcrumb.setEnabled(Chrome.breadcrumb(s.isShowBreadcrumb(), focus, simple));
-        // Tool stripes (UI only): hidden stripes still let tool windows open via keybinding/palette.
-        toolWindows.setStripesEnabled(Chrome.toolStripes(s.isShowToolStripe(), focus, simple));
-        applySimpleMode();
-        updateZenButton();
-        updateExpertButton();
-        updateToolbarRestoreButton();
-    }
-
-    /** True when Simple UI mode is active (the saved setting OR the session-only {@code --simple} flag). */
-    private boolean simpleModeActive() {
-        return config.getSettings().isSimpleMode() || cliSimpleOverride;
-    }
-
-    /** True when this window is in distraction-free Zen mode — this window's saved state OR the session-only
-     *  {@code --zen} flag (which, like {@code --simple}, never touches the saved session). */
-    private boolean zenActive() {
-        return config.getWorkspaceState().isZenMode() || cliZenOverride;
-    }
-
-    /** True when this window is in Expert mode — like Zen, but keeps line numbers + the status bar. */
-    private boolean expertActive() {
-        return config.getWorkspaceState().isExpertMode() || cliExpertOverride;
-    }
-
-    /** True only for the transient, command-line standalone diff workspace. */
-    private boolean diffUiActive() {
-        return cliDiffUiOverride;
     }
 
     /** Snapshot of which optional features are effectively enabled, for {@link Chrome#paletteVisible}. */
@@ -1125,7 +966,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 pluginsEnabled(),
                 externalToolsEnabled(),
                 logViewer.isEnabled(),
-                s.isTestRunner() && !simpleModeActive(),
+                s.isTestRunner() && !chrome.simpleModeActive(),
                 // debugCoordinator is assigned during init(); the palette can't be shown before then, but
                 // the predicate is lazy so guard rather than assume the ordering.
                 debugCoordinator != null && debugCoordinator.debugSupportEnabled(),
@@ -1137,9 +978,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 s.isStructuredPreview(),
                 s.isPomPreview(),
                 indexCoordinator.isEnabled(),
-                markdownLintEnabled(),
-                editorConfigEnabled(),
-                simpleModeActive());
+                previews.markdownLintEnabled(),
+                editorSettings.editorConfigEnabled(),
+                chrome.simpleModeActive());
     }
 
     /**
@@ -1164,12 +1005,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         return tr(reason.messageKey(), tr("command." + reason.commandArg()));
     }
 
-    /**
-     * Snapshot of what the window can act on right now, for {@link Chrome#contextEnabled} — the second half
-     * of the palette's enabled test. Unlike {@link #paletteGates()} these are all fully-enabled features
-     * that simply have nothing to operate on (no buffer, no repo, no suspended debug session), so their
-     * commands would no-op with a status message if run.
-     */
     /**
      * Re-evaluates the main menu's enabled/disabled state for the context as it stands now.
      *
@@ -1198,200 +1033,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 b != null && b.hasPreview(),
                 debugActive,
                 suspended);
-    }
-
-    /**
-     * Simple UI mode: hide the marked toolbar groups + status-bar segments (line numbers/minimap are
-     * handled via {@link #applyViewSettings}; the project trio via {@link #applyProjectSupport}). Inert
-     * when Simple mode is off (everything returns to its normal, gate-respecting state).
-     */
-    private void applySimpleMode() {
-        boolean simple = simpleModeActive();
-        // Curated toolbar buttons hidden in Simple mode (project trio + openFolder are gated in
-        // applyProjectSupport so its later pass doesn't re-show them). The Open icon is deliberately
-        // KEPT so opening a file stays one click away in Simple mode.
-        for (Button b : new Button[] {
-            newFromTemplateButton, clearRecentButton, findInFilesButton, splitVerticalButton, splitHorizontalButton
-        }) {
-            b.setVisible(!simple);
-            b.setManaged(!simple);
-        }
-        recentButton.setVisible(!simple);
-        recentButton.setManaged(!simple);
-        // The run-config group has its own rule (project + launchable), which already folds in Simple mode.
-        refreshRunConfigToolbar();
-        // Each build-tool button's visibility otherwise follows marker-file detection (BuildCoordinator), not
-        // this unconditional show/hide — re-derive it from the cached detection now that isEnabled() (which
-        // folds in !simpleModeActive()) may have changed, rather than forcing it shown.
-        buildCoordinators.forEach(BuildCoordinator::reapplyVisibility);
-        collapseToolbarSeparators();
-        // The toolbar button reads as "on" while the mode is, like the find/palette/split toggles — Simple
-        // mode is a state you are IN, and its own button is the most likely way back out, so it must not look
-        // identical whether or not it is engaged. Driven from here rather than from toggleSimpleMode() because
-        // this is the one place the effective state is computed (the setting OR the --simple session flag).
-        simpleModeButton.pseudoClassStateChanged(OPEN, simple);
-        statusBar.setSimpleMode(simple);
-    }
-
-    /**
-     * Hide toolbar {@link Separator}s that would be orphaned (leading, trailing, or with no visible
-     * control between them and the previous separator), so hiding button groups leaves no stray dividers.
-     * Self-correcting — when nothing is hidden, every separator is shown.
-     */
-    private void collapseToolbarSeparators() {
-        Separator pending = null; // a separator with a visible item before it, awaiting one after
-        boolean visibleSincePending = false;
-        for (javafx.scene.Node item : toolBar.getItems()) {
-            if (item instanceof Separator sep) {
-                sep.setVisible(false);
-                sep.setManaged(false);
-                if (visibleSincePending) {
-                    pending = sep;
-                    visibleSincePending = false;
-                }
-            } else if (item.isVisible()) {
-                if (pending != null) {
-                    pending.setVisible(true);
-                    pending.setManaged(true);
-                    pending = null;
-                }
-                visibleSincePending = true;
-            }
-        }
-    }
-
-    /**
-     * Installs the floating "exit Zen" button into the scene-root overlay (top-right of the window).
-     * Called by {@code App} after the scene is built. Hidden until Zen mode is entered.
-     */
-    public void installZenOverlay(StackPane sceneRoot) {
-        zenExitButton = new Button();
-        zenExitButton.setGraphic(Icons.zen());
-        zenExitButton.getStyleClass().addAll("zen-exit", "flat");
-        zenExitButton.setTooltip(new Tooltip(tr("tooltip.zenExit")));
-        zenExitButton.setFocusTraversable(false);
-        zenExitButton.setOnAction(e -> setZenMode(false));
-        StackPane.setAlignment(zenExitButton, Pos.TOP_RIGHT);
-        sceneRoot.getChildren().add(zenExitButton);
-
-        // Floating "exit Expert" button (top-right, an "E"): shown only in Expert mode. Mirrors the Zen "Z";
-        // the two never coexist (the modes are mutually exclusive).
-        expertExitButton = new Button();
-        expertExitButton.setGraphic(Icons.expert());
-        expertExitButton.getStyleClass().addAll("expert-exit", "flat");
-        expertExitButton.setTooltip(new Tooltip(tr("tooltip.expertExit")));
-        expertExitButton.setFocusTraversable(false);
-        expertExitButton.setOnAction(e -> setExpertMode(false));
-
-        // Floating "show toolbar" button (top-right): restores a hidden toolbar. Never coexists with the
-        // Zen "Z" (that's shown only in Zen mode, this only when the toolbar is hidden outside Zen).
-        toolbarRestoreButton = new Button();
-        toolbarRestoreButton.setGraphic(Icons.tools());
-        toolbarRestoreButton.getStyleClass().addAll("toolbar-restore", "flat");
-        toolbarRestoreButton.setTooltip(new Tooltip(tr("tooltip.showToolbar")));
-        toolbarRestoreButton.setFocusTraversable(false);
-        toolbarRestoreButton.setOnAction(e -> toggleToolbar());
-        StackPane.setAlignment(toolbarRestoreButton, Pos.TOP_RIGHT);
-        StackPane.setMargin(toolbarRestoreButton, new javafx.geometry.Insets(8, 12, 0, 0));
-        sceneRoot.getChildren().add(toolbarRestoreButton);
-
-        // In-scene overlay host (replaces focus-stealing Popups): the command palette and pickers show
-        // their card here so keyboard focus works on every platform. Installed last so it sits on top.
-        overlayHost.install(sceneRoot);
-        wireOverlayHost();
-
-        updateZenButton();
-        updateExpertButton();
-        updateToolbarRestoreButton();
-    }
-
-    /**
-     * Injects the shared {@link OverlayHost} into every keyboard picker/popup so they render their card
-     * in the main scene (focus works on every platform) instead of a focus-stealing {@link javafx.stage.Popup}.
-     * Called once from {@link #installZenOverlay}, after all the field pickers are built in {@link #init}.
-     * On-demand pickers (LSP references, spell language) get the host at their construction sites.
-     */
-    private void wireOverlayHost() {
-        palette.setOverlayHost(overlayHost);
-        palette.setDocsOpener(this::openExternalUrl); // C-h → command docs in the system browser
-        recentPalette.setOverlayHost(overlayHost);
-        structurePalette.setOverlayHost(overlayHost);
-        openFilesPalette.setOverlayHost(overlayHost);
-        toolWindowPalette.setOverlayHost(overlayHost);
-        undoHistoryPalette.setOverlayHost(overlayHost);
-        indexCoordinator.setOverlayHost(overlayHost);
-        searchEverywherePopup = new SearchEverywherePopup(overlayHost, searchEverywhereOps);
-        recentLocationsPalette.setOverlayHost(overlayHost);
-        bookmarkCoordinator.wireOverlayHost();
-        notesCoordinator.wireOverlayHost();
-        snippetPalette.setOverlayHost(overlayHost);
-        projectPicker.setOverlayHost(overlayHost);
-        fileFinder.setOverlayHost(overlayHost);
-        folderFinder.setOverlayHost(overlayHost);
-        switcher.setOverlayHost(overlayHost);
-        branchPopup.setOverlayHost(overlayHost);
-        statusBar.setOverlayHost(overlayHost);
-        buildCoordinators.forEach(c -> c.setOverlayHost(overlayHost));
-    }
-
-    /**
-     * Shows the floating "show toolbar" button only when the toolbar is hidden and we're not in Zen mode
-     * (Zen hides the whole chrome and the "Z" already restores it). Cheap visibility toggle.
-     */
-    private void updateToolbarRestoreButton() {
-        if (toolbarRestoreButton == null) {
-            return;
-        }
-        boolean show = !config.getSettings().isShowToolbar()
-                && !zenActive()
-                && !expertActive()
-                && !diffUiActive(); // a focus mode hides the toolbar; its own control restores it
-        toolbarRestoreButton.setVisible(show);
-        toolbarRestoreButton.setManaged(show);
-    }
-
-    /**
-     * Shows the floating exit button only while in Zen mode (so it never overlaps normal chrome). When
-     * the active file is Markdown its floating preview controls also sit top-right, so the Z is dropped
-     * below them to avoid overlapping.
-     */
-    private void updateZenButton() {
-        if (zenExitButton == null) {
-            return;
-        }
-        boolean zen = zenActive();
-        zenExitButton.setVisible(zen);
-        zenExitButton.setManaged(zen);
-        EditorBuffer active = activeBuffer();
-        boolean belowMarkdownControls = zen && active != null && active.hasPreview();
-        double top = belowMarkdownControls ? 44 : 8; // clear the Markdown preview toggle when present
-        StackPane.setMargin(zenExitButton, new javafx.geometry.Insets(top, 12, 0, 0));
-    }
-
-    /**
-     * Shows the floating "exit Expert" ("E") button only while in Expert mode. Unlike the scene-root Zen
-     * control, Expert's button belongs inside the active code pane so it cannot overlap the title bar or
-     * minimap. The shared node is moved when tab selection changes.
-     */
-    private void updateExpertButton() {
-        if (expertExitButton == null) {
-            return;
-        }
-        EditorBuffer active = activeBuffer();
-        if (expertExitButtonBuffer != active) {
-            if (expertExitButtonBuffer != null) {
-                expertExitButtonBuffer.setExpertExitControl(null);
-            }
-            expertExitButtonBuffer = active;
-        }
-        boolean show = expertActive() && active != null;
-        expertExitButton.setVisible(show);
-        expertExitButton.setManaged(show);
-        if (show) {
-            active.setExpertExitControl(expertExitButton);
-        } else if (active != null) {
-            active.setExpertExitControl(null);
-        }
     }
 
     private void setupRecentFiles() {
@@ -1509,7 +1150,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         // This window now knows its project, which is half of what gates the run-config group; the other
         // half (marker detection) re-runs on the tab-selection and focus-regain paths.
-        refreshRunConfigToolbar();
+        runConfigurations.refreshRunConfigToolbar();
     }
 
     /**
@@ -1540,7 +1181,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Re-applies preferences + the editor theme to this window after a Settings change in any window. */
     public void reapplyAfterSharedSettingsChange(Settings settings) {
-        applyViewSettingsToAllBuffers(settings);
+        editorSettings.applyViewSettingsToAllBuffers(settings);
         updateBufferToolWindows(); // a feature toggle (Markdown lint, external tools, …) may re-gate a window
         // A build tool may have just been switched back on in Settings. Its cached detection was cleared the
         // last time refresh() ran while it was off, and every other apply path only re-derives the stripe from
@@ -1563,9 +1204,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (welcomePane != null) {
             welcomePane.refresh();
         }
-        maybeOfferInstall(activeBuffer()); // the install-prompts toggle / a feature gate may have changed
-        applyAdminSaveSupport(); // the admin-save toggle may have flipped
-        refreshRunConfigs(); // the Settings page edits the same list this selector shows
+        installPrompts.maybeOfferInstall(
+                activeBuffer()); // the install-prompts toggle / a feature gate may have changed
+        fileWorkflows.applyAdminSaveSupport(); // the admin-save toggle may have flipped
+        runConfigurations.refreshRunConfigs(); // the Settings page edits the same list this selector shows
         lspCoordinator.reloadProjectSettings(); // pick up an edited .editora/settings.json
     }
 
@@ -1579,7 +1221,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             windowManager.broadcastSettingsApplied(); // re-applies to every window, including this one
             windowManager.broadcastExternalToolsChanged(); // re-sync externalTool.run.* after a Settings edit
         } else {
-            applyViewSettingsToAllBuffers(settings);
+            editorSettings.applyViewSettingsToAllBuffers(settings);
             refreshBuildTools(); // as in reapplyAfterSharedSettingsChange: a re-enabled tool must re-detect
             refreshExternalToolCommands();
         }
@@ -1619,7 +1261,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         searchCoordinator.shutdown();
         todoCoordinator.shutdown();
-        markdownLintService.shutdown();
+        previews.markdownLintService.shutdown();
         mermaid.shutdown();
         diagram.shutdown();
         typst.shutdown();
@@ -1631,16 +1273,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         stopMcpIfOwner(); // stop the MCP server if this window owns it
         agentCoordinator.shutdown(); // kill the ACP agent process tree
         aiCoordinator.shutdown(); // cancel any in-flight AI generation
-        pdfService.shutdown();
-        officeService.shutdown();
-        printService.shutdown();
+        exports.shutdown();
         runCoordinator.shutdown();
         testRunCoordinator.shutdown(); // stop the report poller + elapsed timer
         if (installCoordinator != null) {
             installCoordinator.shutdown();
         }
-        autoSaveExecutor.shutdownNow();
-        fileLoadExecutor.shutdownNow();
+        fileWorkflows.autoSaveExecutor.shutdownNow();
+        fileWorkflows.fileLoadExecutor.shutdownNow();
         diffCoordinator.shutdown(); // the diff-service worker thread
         mavenProjectCoordinator.shutdown(); // archetype:generate process + catalog fetch thread
         externalToolCoordinator.shutdown(); // the external-tool worker thread
@@ -1688,7 +1328,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Prefix argument (C-u): setMark reads it (C-u C-SPC = pop-to-mark); every other command is repeated;
         // a self-inserting character is typed N times.
         dispatcher.setPrefixArgumentSupport(
-                "edit.setMark"::equals, arg -> currentPrefixArg = arg, this::selfInsertRepeat);
+                "edit.setMark"::equals, arg -> editing.currentPrefixArg = arg, editing::selfInsertRepeat);
         dispatcher.setPreDispatch((token, target) -> {
             if (!"M-g".equals(token)) {
                 return false;
@@ -1720,158 +1360,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Opens the Welcome tab when the strip is empty (startup with no session, or after a project swap). */
     private void showWelcomeIfNoTabs() {
-        if (!suppressWelcome && editorArea.isEmpty()) {
+        if (!sessions.suppressWelcome && editorArea.isEmpty()) {
             addWelcomeTab();
         }
-    }
-
-    /** Builds the keyboard "Jump to…" pickers (recent files, structure) — command-palette-style popups. */
-    private void setupJumpPickers() {
-        recentPalette = new QuickOpen<>(
-                "Jump to Recent File",
-                "Type to filter recent files…",
-                () -> List.copyOf(recentFiles.getList()),
-                p -> p.getFileName() == null ? p.toString() : p.getFileName().toString(),
-                p -> p.getParent() == null ? "" : p.getParent().toString(),
-                this::openRecent);
-        recentPalette.setItemIcon(p -> FileIcons.forFileName(
-                p.getFileName() == null ? p.toString() : p.getFileName().toString()));
-        structurePalette = new QuickOpen<>(
-                "Jump to Structure",
-                "Type to filter symbols…",
-                () -> structurePanel.outline(),
-                StructurePanel.Outline::label,
-                StructurePanel.Outline::kind,
-                entry -> navigateToLine(entry.line()));
-        openFilesPalette = new QuickOpen<>(
-                "Jump to Open File",
-                "Type to filter open files…",
-                this::openTabsForSwitcher,
-                tab -> (isTabDirty(tab) ? "• " : "") + bufferTitle(tab), // dirty marker, like the tab
-                tab -> bufferParentDir(tab),
-                tab -> bufferTitle(tab), // search by the plain name (no "• " prefix)
-                this::activateAndFocusTab);
-        openFilesPalette.setItemStyleClass(
-                tab -> isTabDirty(tab) ? "dirty-name" : null); // amber/italic, like a dirty tab
-        openFilesPalette.setItemIcon(tab -> FileIcons.forFileName(bufferTitle(tab))); // file-type glyph
-        toolWindowPalette = new QuickOpen<>(
-                "Jump to Tool Window",
-                "Type to filter tool windows…",
-                () -> toolWindows.getRegisteredToolWindows().stream()
-                        .filter(tw -> git.isEnabled() || !"tool.commit".equals(tw.getCommandId()))
-                        .filter(tw -> projectsEnabled() || !"tool.project".equals(tw.getCommandId()))
-                        .collect(java.util.stream.Collectors.toCollection(ArrayList::new)),
-                ToolWindow::getTitle,
-                tw -> invertBindings().getOrDefault(tw.getCommandId(), ""),
-                toolWindows::open);
-        splitToolWindowPalette = new QuickOpen<>(
-                tr("toolwindow.openInSplit"),
-                tr("toolwindow.splitPrompt"),
-                () -> toolWindows.getRegisteredToolWindows().stream()
-                        .filter(toolWindows::canSplitWith)
-                        .collect(java.util.stream.Collectors.toCollection(ArrayList::new)),
-                ToolWindow::getTitle,
-                tw -> invertBindings().getOrDefault(tw.getCommandId(), ""),
-                toolWindows::openInSplit);
-        undoHistoryPalette = new QuickOpen<>(
-                tr("toolwindow.undoHistory"),
-                tr("undoHistory.popupPrompt"),
-                this::undoHistoryCheckpoints,
-                c -> c.linePreview().isEmpty() ? tr("undoHistory.blankLine") : c.linePreview(),
-                MainController::undoCheckpointTime, // detail column = the capture time
-                this::restoreUndoCheckpoint);
-        recentLocationsPalette = new QuickOpen<>(
-                tr("nav.recentLocations.title"),
-                tr("nav.recentLocations.prompt"),
-                () -> new ArrayList<>(navHistory.recent()),
-                loc -> loc.snippet().isEmpty() ? tr("nav.recentLocations.blankLine") : loc.snippet(),
-                MainController::locationLabel, // detail column = file:line
-                // Matching the snippet alone would make "the file I was in" unfindable, and matching the
-                // label alone would make "the line about X" unfindable; the row shows both, so both match.
-                loc -> loc.snippet() + " " + locationLabel(loc),
-                loc -> openAndGoto(loc.path(), loc.line(), loc.column()));
-        recentLocationsPalette.setPreview(this::previewLocation, this::restorePreviewOrigin);
-        relatedPalette = new QuickOpen<>(
-                tr("related.title"),
-                tr("related.prompt"),
-                () -> new ArrayList<>(relatedCandidates),
-                path -> path.getFileName().toString(),
-                path -> homeCollapsed(path.toString()),
-                this::openPath);
-        relatedPalette.setOverlayHost(overlayHost);
-        snippetPalette = new QuickOpen<>(
-                "Insert Snippet",
-                "Type to filter snippets…",
-                () -> {
-                    EditorBuffer b = activeBuffer();
-                    return new ArrayList<>(snippets.forLanguage(b == null ? "global" : b.getLanguage()));
-                },
-                s -> s.prefix() + " — " + s.name(),
-                com.editora.snippet.Snippet::description,
-                s -> {
-                    EditorBuffer b = activeBuffer();
-                    if (b != null) {
-                        b.insertSnippet(s);
-                    }
-                });
-        fileFinder = new FileFinder(this::finderStartDir, this::findFileChosen);
-    }
-
-    /** Start directory for the keyboard file finder: the active file's folder, else the home dir. */
-    private Path finderStartDir() {
-        EditorBuffer buffer = activeBuffer();
-        Path path = buffer == null ? null : buffer.getPath();
-        if (path != null && path.getParent() != null) {
-            return path.getParent();
-        }
-        Project active = projects == null ? null : projects.active();
-        if (active != null) {
-            return Path.of(active.root());
-        }
-        return Path.of(System.getProperty("user.home", "."));
-    }
-
-    /** Opens an existing file, or creates a new buffer for a not-yet-existing path (written on save). */
-    private void findFileChosen(Path target) {
-        if (Files.isRegularFile(target)) {
-            openPath(target);
-            return;
-        }
-        Tab existing = tabForPath(target);
-        if (existing != null) {
-            editorArea.select(existing);
-            EditorBuffer existingBuffer = bufferOf(existing);
-            if (existingBuffer != null) {
-                existingBuffer.getArea().requestFocus();
-            }
-            return;
-        }
-        EditorBuffer buffer = new EditorBuffer();
-        buffer.setPath(target);
-        addBuffer(buffer);
-        setStatus(tr("status.newFile", target.getFileName()));
-    }
-
-    private static String bufferTitle(Tab tab) {
-        EditorBuffer b = bufferOf(tab);
-        if (b != null) {
-            return b.getTitle();
-        }
-        // Non-buffer tabs (the Welcome tab) carry their title in the TabContent (the tab text is empty
-        // because the title lives in a draggable graphic header).
-        return tab != null && tab.getUserData() instanceof com.editora.editor.TabContent tc ? tc.title() : "";
-    }
-
-    private static String bufferParentDir(Tab tab) {
-        EditorBuffer b = bufferOf(tab);
-        Path p = b == null ? null : b.getPath();
-        return p == null || p.getParent() == null ? "" : p.getParent().toString();
-    }
-
-    /** Whether {@code tab}'s buffer has unsaved changes (used to mark dirty files in the pickers). */
-    private static boolean isTabDirty(Tab tab) {
-        EditorBuffer b = bufferOf(tab);
-        return b != null && b.isDirty();
     }
 
     // --- Projects (single-folder, VSCode-style) ---
@@ -1888,7 +1379,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 p -> p.id().isEmpty() ? "global session" : p.root(),
                 this::switchToProject);
         // Keyboard "Open Project Folder" — mirrors the file finder, but picks a directory.
-        folderFinder = new FileFinder(this::finderStartDir, this::openProjectRoot, true, "Open Project Folder");
+        navigation.folderFinder =
+                new FileFinder(navigation::finderStartDir, this::openProjectRoot, true, "Open Project Folder");
         // Which project this window edits (and its session file) is set by WindowManager via
         // setWindowContext(); the global window just keeps the default workspace-state.json.
         refreshProjectPanelList();
@@ -1957,7 +1449,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // off, WindowManager opens a single global window.
         // The project toolbar group is also hidden by Simple UI mode (it stays a project even though the
         // selector is hidden); kept here so this later pass doesn't re-show it over applySimpleMode.
-        boolean showProjectGroup = on && !simpleModeActive();
+        boolean showProjectGroup = on && !chrome.simpleModeActive();
         openFolderButton.setVisible(showProjectGroup);
         openFolderButton.setManaged(showProjectGroup);
         toolbarProjectCombo.setVisible(showProjectGroup);
@@ -2181,14 +1673,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (area == null || line < 0 || line >= area.getParagraphs().size()) {
             return;
         }
-        NavigationHistory.Location origin = navigating ? null : captureCurrent();
+        NavigationHistory.Location origin = navigation.navigating ? null : navigation.captureCurrent();
         // Reveal the target if it's hidden inside a collapsed fold, so we don't scroll to a hidden line.
         if (buffer != null) {
             buffer.getFoldManager().unfoldContaining(line);
         }
         area.moveTo(line, 0);
-        if (!navigating && buffer != null && buffer.getPath() != null) {
-            recordJump(origin, new NavigationHistory.Location(buffer.getPath(), line, 0));
+        if (!navigation.navigating && buffer != null && buffer.getPath() != null) {
+            navigation.recordJump(origin, new NavigationHistory.Location(buffer.getPath(), line, 0));
         }
         Platform.runLater(() -> {
             try {
@@ -2211,7 +1703,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void openInProjectWindow(String projectKey, Path file, int line) {
         String key = projectKey == null ? "" : projectKey;
         if (windowManager == null || !projectsEnabled() || key.equals(config.currentProjectKey())) {
-            openPath(file);
+            fileWorkflows.openPath(file);
             Platform.runLater(() -> navigateToLine(line));
             return;
         }
@@ -2224,13 +1716,12 @@ public class MainController implements com.editora.mcp.McpBridge {
      * {@link WindowManager#openInWindow} on the target window's controller once it exists and is restored.
      */
     public void openAndNavigate(Path file, int line) {
-        openPath(file);
+        fileWorkflows.openPath(file);
         if (line >= 0) {
             Platform.runLater(() -> navigateToLine(line));
         }
     }
 
-    /** Repopulates the recent-files menu from the persisted list (most-recent first). */
     /**
      * The recent entries still worth offering — see {@link RecentFiles#showable}. Kept here so the toolbar
      * dropdown and the Welcome page filter identically; a deleted file must not be offered by either.
@@ -2302,7 +1793,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void setupMruTracking() {
         // A mouse click in the editor area repositions the caret, which ends an Emacs mark session.
-        editorArea.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> deactivateMark());
+        editorArea.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> editing.deactivateMark());
         editorArea.addSelectionListener((obs, was, now) -> {
             if (now != null) {
                 mru.remove(now);
@@ -2340,15 +1831,15 @@ public class MainController implements com.editora.mcp.McpBridge {
             updateWindowTitle(); // show the active file's name + path in the window title bar
             updateProjectFolderView(); // global window: retarget the tree at the new file's folder
             searchCoordinator.refreshScope(); // Find-in-Files "current folder" tracks the active file
-            if (AUTOSAVE_FOCUS.equals(autoSaveMode())) {
-                autoSaveAllDirty(); // saves the outgoing buffer (and any other dirty ones)
+            if (FileWorkflowCoordinator.AUTOSAVE_FOCUS.equals(fileWorkflows.autoSaveMode())) {
+                fileWorkflows.autoSaveAllDirty(); // saves the outgoing buffer (and any other dirty ones)
             }
             refreshSplitButtons();
             refreshEditState(); // save/undo/redo/cut/copy enablement for the new tab
             refreshPasteState(); // clipboard read off the keystroke path
-            updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
-            updateExpertButton(); // and the Expert "E"
-            checkExternalChanges(); // prompt if the file we just switched to changed on disk
+            chrome.updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
+            chrome.updateExpertButton(); // and the Expert "E"
+            fileWorkflows.checkExternalChanges(); // prompt if the file we just switched to changed on disk
             git.refresh(); // update branch/status + this file's gutter change bars
             refreshBuildTools(); // re-detect marker files for the newly active file/project
             lspCoordinator
@@ -2359,7 +1850,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             csvCoordinator.refreshFor(activeBuffer()); // re-target the CSV grid at the new active buffer
             httpClient.refreshFor(activeBuffer()); // …and the .http response preview
             historyCoordinator.refresh(); // re-gate + reload the Local File History list for the new active file
-            maybeOfferInstall(activeBuffer()); // offer to install this language's LSP/DAP if it's missing
+            installPrompts.maybeOfferInstall(
+                    activeBuffer()); // offer to install this language's LSP/DAP if it's missing
             refreshMenuEnablement(); // buffer-shaped menu items (preview, CSV, .http, Typst) follow the tab
         });
         editorArea.addTabsListener((ListChangeListener<Tab>) c -> {
@@ -2496,7 +1988,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 : menuBar.node());
         toolWindows = new ToolWindowManager(workspace, editorFooter(), config, keymap);
         projectPanel = new ProjectPanel(
-                this::openPath,
+                fileWorkflows::openPath,
                 this::onProjectFileRenamed,
                 this::onProjectFileDeleted,
                 this::isPathModified,
@@ -2510,12 +2002,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Lazy lambda: historyCoordinator is constructed later in this method, so defer the field read to call time.
         projectPanel.setOnBeforeDelete(
                 file -> historyCoordinator.captureBeforeDelete(file)); // snapshot to Local History before delete
-        projectPanel.setOnNewFile(this::newFileOfType); // folder "New ▸ <type>"
-        projectPanel.setOnNewFromTemplate(this::newFromTemplate); // folder "New From Template…"
+        projectPanel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
+        projectPanel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
         projectPanel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
         projectPanel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         projectPanel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
-        projectPanel.setMapOutputActions(this::printProjectMap, this::exportProjectMapPdf);
+        projectPanel.setMapOutputActions(
+                exports::printProjectMap, image -> exports.exportProjectMapPdf(image, projectMapBaseName()));
         // An external program (a terminal `git`, another editor, a build) changed files under the repo while
         // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
         // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
@@ -2551,7 +2044,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void gitShowFileHistory(Path file) {
-                git.ifEnabled(() -> gitFileHistoryForPath(file));
+                git.ifEnabled(() -> gitWindows.gitFileHistoryForPath(file));
             }
 
             @Override
@@ -2577,7 +2070,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void gitAnnotate(Path file) {
                 git.ifEnabled(() -> {
-                    openPath(file);
+                    fileWorkflows.openPath(file);
                     git.annotateActive();
                 });
             }
@@ -2689,7 +2182,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void open(String path) {
                 if (git.repoRoot() != null) {
-                    openPath(git.repoRoot().resolve(path));
+                    fileWorkflows.openPath(git.repoRoot().resolve(path));
                 }
             }
 
@@ -2743,10 +2236,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         gitPanel.setOnGenerateCommitMessage(aiCoordinator::generateCommitMessage);
         commitToolWindow = new ToolWindow(
                 "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, gitPanel, "tool.commit");
-        gitLogPanel = new GitLogPanel(gitLogOps = gitLogActions());
+        gitLogPanel = new GitLogPanel(gitLogOps = gitWindows.gitLogActions());
         gitLogToolWindow = new ToolWindow(
                 "gitLog", tr("toolwindow.gitLog"), ToolWindow.Side.BOTTOM, Icons::gitLog, gitLogPanel, "tool.gitLog");
-        githubPanel = new GitHubPanel(githubActions());
+        githubPanel = new GitHubPanel(gitWindows.githubActions());
         githubToolWindow = new ToolWindow(
                 "github", tr("toolwindow.github"), ToolWindow.Side.BOTTOM, Icons::github, githubPanel, "tool.github");
         historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps());
@@ -2776,13 +2269,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         markdownLintPanel = new MarkdownLintPanel(new MarkdownLintPanel.Actions() {
             @Override
             public void open(java.nio.file.Path file, int line, int col) {
-                openPath(file);
-                Platform.runLater(() -> gotoInFile(file, line, col));
+                fileWorkflows.openPath(file);
+                Platform.runLater(() -> sessions.gotoInFile(file, line, col));
             }
 
             @Override
             public void refresh() {
-                runMarkdownLintScan();
+                previews.runMarkdownLintScan();
             }
         });
         markdownLintToolWindow = new ToolWindow(
@@ -2824,7 +2317,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                     @Override
                     public void editConfiguration(String name) {
-                        runConfigEditor.accept(name);
+                        runConfigurations.runConfigEditor.accept(name);
                     }
 
                     @Override
@@ -2852,7 +2345,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                     @Override
                     public boolean saveBuffer(EditorBuffer buffer) {
-                        return save(buffer);
+                        return fileWorkflows.save(buffer);
                     }
 
                     @Override
@@ -2862,12 +2355,12 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                     @Override
                     public void openLink(com.editora.run.StackTraceLinks.Link link) {
-                        openRunLink(link);
+                        testNavigation.openRunLink(link);
                     }
 
                     @Override
                     public void openPath(Path file) {
-                        MainController.this.openPath(file);
+                        fileWorkflows.openPath(file);
                     }
 
                     @Override
@@ -2877,8 +2370,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                     @Override
                     public void afterBufferLoad(EditorBuffer buffer, Runnable action) {
-                        if (loadingBuffers.contains(buffer)) {
-                            afterBufferLoad
+                        if (fileWorkflows.loadingBuffers.contains(buffer)) {
+                            fileWorkflows
+                                    .afterBufferLoad
                                     .computeIfAbsent(buffer, ignored -> new ArrayList<>())
                                     .add(action);
                         } else {
@@ -2938,7 +2432,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             "tool." + tool.id()));
         }
         // A single shared "Output" console for every build tool (auto-opens on a run).
-        buildOutputPanel.setOnLink(this::openRunLink);
+        buildOutputPanel.setOnLink(testNavigation::openRunLink);
         buildOutputPanel.setOnUrl(this::openExternalUrl);
         installCommandLogs();
         buildOutputToolWindow = new ToolWindow(
@@ -2995,7 +2489,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 if (settingsWindow != null) {
                     settingsWindow.refreshDetectionStatus(); // flip the Settings Install buttons to "Installed"
                 }
-                maybeOfferInstall(activeBuffer()); // re-evaluate the editor install banner after re-detection
+                installPrompts.maybeOfferInstall(
+                        activeBuffer()); // re-evaluate the editor install banner after re-detection
             }
         });
         remoteCoordinator = new RemoteCoordinator(coordinatorHost, remoteOps());
@@ -3071,13 +2566,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // Refresh the log whenever the window is opened — via the stripe button (which toggles
                 // directly, bypassing showGitLog) or a command. open() only fires this on a real open.
                 if (opened && git.isEnabled()) {
-                    loadGitLog(gitLogFilter);
+                    gitWindows.loadGitLog(gitWindows.gitLogFilter);
                 }
                 return;
             }
             if (tw == githubToolWindow) {
                 if (opened && github.isEnabled()) {
-                    reloadGithubPanel(); // fetch the current mode's list when the window is opened
+                    gitWindows.reloadGithubPanel(); // fetch the current mode's list when the window is opened
                 }
                 return;
             }
@@ -3119,10 +2614,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- Git integration -------------------------------------------------------------------------
 
-    /** The file/dir used to locate the repo: the active file, else the open project's root, else null. */
     /** Effective Local File History gate: the setting, but off in Simple UI mode (saved setting unchanged). */
     private boolean localHistoryEnabled() {
-        return config.getSettings().isLocalHistory() && !simpleModeActive();
+        return config.getSettings().isLocalHistory() && !chrome.simpleModeActive();
     }
 
     /** Window hooks for {@link HistoryCoordinator} (config history buckets + tool window + tree + current text). */
@@ -3135,7 +2629,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void openPath(Path file) {
-                MainController.this.openPath(file);
+                fileWorkflows.openPath(file);
             }
 
             @Override
@@ -3211,7 +2705,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void openPath(java.nio.file.Path file) {
-                MainController.this.openPath(file);
+                fileWorkflows.openPath(file);
             }
 
             @Override
@@ -3221,7 +2715,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public String currentTextOf(java.nio.file.Path file) {
-                return MainController.this.currentTextOf(file);
+                return gitWindows.currentTextOf(file);
             }
         };
     }
@@ -3240,18 +2734,2683 @@ public class MainController implements com.editora.mcp.McpBridge {
     // --- Feature coordinators (each peeled off MainController; share one CoordinatorHost adapter) -----
 
     /** One shared adapter handed to every feature coordinator (replaces a per-feature anonymous Host). */
+    private final EditingCoordinator editing = new EditingCoordinator(new EditingCoordinator.Host() {
+        @Override
+        public EditorSettingsCoordinator editorSettings() {
+            return editorSettings;
+        }
+
+        @Override
+        public Stage stage() {
+            return stage;
+        }
+
+        @Override
+        public ConfigManager config() {
+            return config;
+        }
+
+        @Override
+        public CommandRegistry registry() {
+            return registry;
+        }
+
+        @Override
+        public FindReplaceBar findBar() {
+            return findBar;
+        }
+
+        @Override
+        public StatusBar statusBar() {
+            return statusBar;
+        }
+
+        @Override
+        public SettingsWindow settingsWindow() {
+            return settingsWindow;
+        }
+
+        @Override
+        public OverlayHost overlayHost() {
+            return overlayHost;
+        }
+
+        @Override
+        public void updateWindowTitle() {
+            MainController.this.updateWindowTitle();
+        }
+
+        @Override
+        public void navigateToLine(int line) {
+            MainController.this.navigateToLine(line);
+        }
+
+        @Override
+        public GitCoordinator git() {
+            return git;
+        }
+
+        @Override
+        public LspCoordinator lspCoordinator() {
+            return lspCoordinator;
+        }
+
+        @Override
+        public boolean isLocalBuffer(EditorBuffer b) {
+            return MainController.this.isLocalBuffer(b);
+        }
+
+        @Override
+        public void refreshPasteState() {
+            MainController.this.refreshPasteState();
+        }
+
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
+        }
+
+        @Override
+        public CodeArea activeArea() {
+            return MainController.this.activeArea();
+        }
+
+        @Override
+        public void promptText(
+                String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+            MainController.this.promptText(title, label, initial, onAccept);
+        }
+
+        @Override
+        public SelectionPolicy selPolicy() {
+            return MainController.this.selPolicy();
+        }
+    });
+
+    @FXML
+    private void onUndo() {
+        editing.onUndo();
+    }
+
+    @FXML
+    private void onRedo() {
+        editing.onRedo();
+    }
+
+    @FXML
+    private void onCut() {
+        editing.onCut();
+    }
+
+    @FXML
+    private void onCopy() {
+        editing.onCopy();
+    }
+
+    @FXML
+    private void onPaste() {
+        editing.onPaste();
+    }
+
+    @FXML
+    private void onFind() {
+        editing.onFind();
+    }
+
+    private final TemplateCoordinator templateActions = new TemplateCoordinator(new TemplateCoordinator.Host() {
+        @Override
+        public FileWorkflowCoordinator fileWorkflows() {
+            return fileWorkflows;
+        }
+
+        @Override
+        public Stage stage() {
+            return stage;
+        }
+
+        @Override
+        public ConfigManager config() {
+            return config;
+        }
+
+        @Override
+        public KeymapManager keymap() {
+            return keymap;
+        }
+
+        @Override
+        public OverlayHost overlayHost() {
+            return overlayHost;
+        }
+
+        @Override
+        public ProjectPanel projectPanel() {
+            return projectPanel;
+        }
+
+        @Override
+        public ProjectManager projects() {
+            return projects;
+        }
+
+        @Override
+        public WindowManager windowManager() {
+            return windowManager;
+        }
+
+        @Override
+        public boolean projectsEnabled() {
+            return MainController.this.projectsEnabled();
+        }
+
+        @Override
+        public String homeCollapsed(String full) {
+            return MainController.this.homeCollapsed(full);
+        }
+
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+
+        @Override
+        public void setError(String message) {
+            MainController.this.setError(message);
+        }
+
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
+        }
+
+        @Override
+        public Tab addBuffer(EditorBuffer buffer) {
+            return MainController.this.addBuffer(buffer);
+        }
+
+        @Override
+        public Tab addBuffer(EditorBuffer buffer, boolean select) {
+            return MainController.this.addBuffer(buffer, select);
+        }
+
+        @Override
+        public Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings) {
+            return MainController.this.addBuffer(buffer, select, resolvePathSettings);
+        }
+
+        @Override
+        public void promptText(
+                String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+            MainController.this.promptText(title, label, initial, onAccept);
+        }
+    });
+
+    private final EditorSettingsCoordinator editorSettings =
+            new EditorSettingsCoordinator(new EditorSettingsCoordinator.Host() {
+                @Override
+                public TestNavigationCoordinator testNavigation() {
+                    return testNavigation;
+                }
+
+                @Override
+                public FileWorkflowCoordinator fileWorkflows() {
+                    return fileWorkflows;
+                }
+
+                @Override
+                public WindowChromeCoordinator chrome() {
+                    return chrome;
+                }
+
+                @Override
+                public PreviewCoordinator previews() {
+                    return previews;
+                }
+
+                @Override
+                public EditorArea editorArea() {
+                    return editorArea;
+                }
+
+                @Override
+                public Stage stage() {
+                    return stage;
+                }
+
+                @Override
+                public ConfigManager config() {
+                    return config;
+                }
+
+                @Override
+                public CommandRegistry registry() {
+                    return registry;
+                }
+
+                @Override
+                public KeymapManager keymap() {
+                    return keymap;
+                }
+
+                @Override
+                public StatusBar statusBar() {
+                    return statusBar;
+                }
+
+                @Override
+                public SettingsWindow settingsWindow() {
+                    return settingsWindow;
+                }
+
+                @Override
+                public OverlayHost overlayHost() {
+                    return overlayHost;
+                }
+
+                @Override
+                public WindowManager windowManager() {
+                    return windowManager;
+                }
+
+                @Override
+                public BuildOutputPanel buildOutputPanel() {
+                    return buildOutputPanel;
+                }
+
+                @Override
+                public DebugCoordinator debugCoordinator() {
+                    return debugCoordinator;
+                }
+
+                @Override
+                public HistoryCoordinator historyCoordinator() {
+                    return historyCoordinator;
+                }
+
+                @Override
+                public WelcomePane welcomePane() {
+                    return welcomePane;
+                }
+
+                @Override
+                public Tab welcomeTab() {
+                    return welcomeTab;
+                }
+
+                @Override
+                public Tab doctorTab() {
+                    return doctorTab;
+                }
+
+                @Override
+                public void applyProjectSupport() {
+                    MainController.this.applyProjectSupport();
+                }
+
+                @Override
+                public void applyMathSupport() {
+                    MainController.this.applyMathSupport();
+                }
+
+                @Override
+                public EditingCoordinator editing() {
+                    return editing;
+                }
+
+                @Override
+                public CoordinatorHost coordinatorHost() {
+                    return coordinatorHost;
+                }
+
+                @Override
+                public GitCoordinator git() {
+                    return git;
+                }
+
+                @Override
+                public GitHubCoordinator github() {
+                    return github;
+                }
+
+                @Override
+                public MermaidCoordinator mermaid() {
+                    return mermaid;
+                }
+
+                @Override
+                public DiagramCoordinator diagram() {
+                    return diagram;
+                }
+
+                @Override
+                public TypstCoordinator typst() {
+                    return typst;
+                }
+
+                @Override
+                public HtmlPreviewCoordinator htmlPreview() {
+                    return htmlPreview;
+                }
+
+                @Override
+                public LogViewerCoordinator logViewer() {
+                    return logViewer;
+                }
+
+                @Override
+                public ExternalToolCoordinator externalToolCoordinator() {
+                    return externalToolCoordinator;
+                }
+
+                @Override
+                public IndexCoordinator indexCoordinator() {
+                    return indexCoordinator;
+                }
+
+                @Override
+                public TodoCoordinator todoCoordinator() {
+                    return todoCoordinator;
+                }
+
+                @Override
+                public CsvCoordinator csvCoordinator() {
+                    return csvCoordinator;
+                }
+
+                @Override
+                public SearchCoordinator searchCoordinator() {
+                    return searchCoordinator;
+                }
+
+                @Override
+                public RunCoordinator runCoordinator() {
+                    return runCoordinator;
+                }
+
+                @Override
+                public TestRunCoordinator testRunCoordinator() {
+                    return testRunCoordinator;
+                }
+
+                @Override
+                public LspCoordinator lspCoordinator() {
+                    return lspCoordinator;
+                }
+
+                @Override
+                public NotesCoordinator notesCoordinator() {
+                    return notesCoordinator;
+                }
+
+                @Override
+                public HttpClientCoordinator httpClient() {
+                    return httpClient;
+                }
+
+                @Override
+                public void applyAgentSupport() {
+                    MainController.this.applyAgentSupport();
+                }
+
+                @Override
+                public AiCoordinator aiCoordinator() {
+                    return aiCoordinator;
+                }
+
+                @Override
+                public DoctorCoordinator doctorCoordinator() {
+                    return doctorCoordinator;
+                }
+
+                @Override
+                public void applyMcpSupport() {
+                    MainController.this.applyMcpSupport();
+                }
+
+                @Override
+                public void applyMainGutter(EditorBuffer buffer) {
+                    testNavigation.applyMainGutter(buffer);
+                }
+
+                @Override
+                public java.util.Map<String, String> invertBindings() {
+                    return MainController.this.invertBindings();
+                }
+
+                @Override
+                public void setStatus(String message) {
+                    MainController.this.setStatus(message);
+                }
+
+                @Override
+                public EditorBuffer activeBuffer() {
+                    return MainController.this.activeBuffer();
+                }
+
+                @Override
+                public void openPath(Path file) {
+                    fileWorkflows.openPath(file);
+                }
+
+                @Override
+                public void openPath(Path file, boolean quietIfOpen) {
+                    fileWorkflows.openPath(file, quietIfOpen);
+                }
+
+                @Override
+                public EditorBuffer bufferOf(Tab tab) {
+                    return MainController.this.bufferOf(tab);
+                }
+
+                @Override
+                public void requestSave() {
+                    MainController.this.requestSave();
+                }
+
+                @Override
+                public void promptText(
+                        String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+                    MainController.this.promptText(title, label, initial, onAccept);
+                }
+
+                @Override
+                public void refreshSpellAllTabs() {
+                    MainController.this.refreshSpellAllTabs();
+                }
+
+                @Override
+                public void applyEditorTheme(String themeName) {
+                    MainController.this.applyEditorTheme(themeName);
+                }
+            });
+
+    private final RunConfigurationCoordinator runConfigurations =
+            new RunConfigurationCoordinator(new RunConfigurationCoordinator.Host() {
+                @Override
+                public WindowChromeCoordinator chrome() {
+                    return chrome;
+                }
+
+                @Override
+                public Button runConfigStopButton() {
+                    return runConfigStopButton;
+                }
+
+                @Override
+                public Button runConfigDebugButton() {
+                    return runConfigDebugButton;
+                }
+
+                @Override
+                public Button runConfigRunButton() {
+                    return runConfigRunButton;
+                }
+
+                @Override
+                public javafx.scene.control.ComboBox<com.editora.config.RunConfiguration> runConfigCombo() {
+                    return runConfigCombo;
+                }
+
+                @Override
+                public Stage stage() {
+                    return stage;
+                }
+
+                @Override
+                public ConfigManager config() {
+                    return config;
+                }
+
+                @Override
+                public CommandRegistry registry() {
+                    return registry;
+                }
+
+                @Override
+                public SettingsWindow settingsWindow() {
+                    return settingsWindow;
+                }
+
+                @Override
+                public OverlayHost overlayHost() {
+                    return overlayHost;
+                }
+
+                @Override
+                public DebugCoordinator debugCoordinator() {
+                    return debugCoordinator;
+                }
+
+                @Override
+                public String homeCollapsed(String full) {
+                    return MainController.this.homeCollapsed(full);
+                }
+
+                @Override
+                public List<BuildCoordinator> buildCoordinators() {
+                    return buildCoordinators;
+                }
+
+                @Override
+                public RunCoordinator runCoordinator() {
+                    return runCoordinator;
+                }
+
+                @Override
+                public String readGradleBuildFile(java.nio.file.Path root) {
+                    return MainController.this.readGradleBuildFile(root);
+                }
+
+                @Override
+                public void setStatus(String message) {
+                    MainController.this.setStatus(message);
+                }
+
+                @Override
+                public void setError(String message) {
+                    MainController.this.setError(message);
+                }
+
+                @Override
+                public EditorBuffer activeBuffer() {
+                    return MainController.this.activeBuffer();
+                }
+
+                @Override
+                public boolean save(EditorBuffer buffer) {
+                    return fileWorkflows.save(buffer);
+                }
+
+                @Override
+                public void requestSave() {
+                    MainController.this.requestSave();
+                }
+
+                @Override
+                public String programArgsFor(Path path) {
+                    return MainController.this.programArgsFor(path);
+                }
+
+                @Override
+                public String suggestedMainClass() {
+                    return MainController.this.suggestedMainClass();
+                }
+
+                @Override
+                public Path windowProjectRoot() {
+                    return MainController.this.windowProjectRoot();
+                }
+
+                @Override
+                public Path activeProjectRoot() {
+                    return MainController.this.activeProjectRoot();
+                }
+
+                @Override
+                public void promptText(
+                        String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+                    MainController.this.promptText(title, label, initial, onAccept);
+                }
+            });
+
+    @FXML
+    private javafx.scene.control.ComboBox<com.editora.config.RunConfiguration> runConfigCombo;
+
+    @FXML
+    private Button runConfigRunButton;
+
+    @FXML
+    private Button runConfigDebugButton;
+
+    @FXML
+    private Button runConfigStopButton;
+
+    @FXML
+    private void onRunSelectedConfig() {
+        runConfigurations.onRunSelectedConfig();
+    }
+
+    @FXML
+    private void onDebugSelectedConfig() {
+        runConfigurations.onDebugSelectedConfig();
+    }
+
+    @FXML
+    private void onStopRun() {
+        runConfigurations.onStopRun();
+    }
+
+    private final WindowCommandRegistrar windowCommands = new WindowCommandRegistrar(new WindowCommandRegistrar.Host() {
+        @Override
+        public WindowChromeCoordinator chrome() {
+            return chrome;
+        }
+
+        @Override
+        public GitWindowCoordinator gitWindows() {
+            return gitWindows;
+        }
+
+        @Override
+        public NavigationCoordinator navigation() {
+            return navigation;
+        }
+
+        @Override
+        public PreviewCoordinator previews() {
+            return previews;
+        }
+
+        @Override
+        public Stage stage() {
+            return stage;
+        }
+
+        @Override
+        public ConfigManager config() {
+            return config;
+        }
+
+        @Override
+        public CommandRegistry registry() {
+            return registry;
+        }
+
+        @Override
+        public MacroCoordinator macroCoordinator() {
+            return macroCoordinator;
+        }
+
+        @Override
+        public StatusBar statusBar() {
+            return statusBar;
+        }
+
+        @Override
+        public SettingsWindow settingsWindow() {
+            return settingsWindow;
+        }
+
+        @Override
+        public com.editora.snippet.SnippetManager snippets() {
+            return snippets;
+        }
+
+        @Override
+        public PluginCoordinator pluginCoordinator() {
+            return pluginCoordinator;
+        }
+
+        @Override
+        public ProjectPanel projectPanel() {
+            return projectPanel;
+        }
+
+        @Override
+        public WindowManager windowManager() {
+            return windowManager;
+        }
+
+        @Override
+        public QuickOpen<Project> projectPicker() {
+            return projectPicker;
+        }
+
+        @Override
+        public ToolWindowManager toolWindows() {
+            return toolWindows;
+        }
+
+        @Override
+        public ToolWindow projectToolWindow() {
+            return projectToolWindow;
+        }
+
+        @Override
+        public ToolWindow structureToolWindow() {
+            return structureToolWindow;
+        }
+
+        @Override
+        public ToolWindow bookmarksToolWindow() {
+            return bookmarksToolWindow;
+        }
+
+        @Override
+        public ToolWindow notesToolWindow() {
+            return notesToolWindow;
+        }
+
+        @Override
+        public ToolWindow fileInfoToolWindow() {
+            return fileInfoToolWindow;
+        }
+
+        @Override
+        public ToolWindow undoHistoryToolWindow() {
+            return undoHistoryToolWindow;
+        }
+
+        @Override
+        public BookmarkCoordinator bookmarkCoordinator() {
+            return bookmarkCoordinator;
+        }
+
+        @Override
+        public ToolWindow searchToolWindow() {
+            return searchToolWindow;
+        }
+
+        @Override
+        public ToolWindow markdownLintToolWindow() {
+            return markdownLintToolWindow;
+        }
+
+        @Override
+        public RemoteCoordinator remoteCoordinator() {
+            return remoteCoordinator;
+        }
+
+        @Override
+        public ToolWindow problemsToolWindow() {
+            return problemsToolWindow;
+        }
+
+        @Override
+        public ToolWindow referencesToolWindow() {
+            return referencesToolWindow;
+        }
+
+        @Override
+        public ToolWindow hierarchyToolWindow() {
+            return hierarchyToolWindow;
+        }
+
+        @Override
+        public ToolWindow runToolWindow() {
+            return runToolWindow;
+        }
+
+        @Override
+        public ToolWindow externalToolToolWindow() {
+            return externalToolToolWindow;
+        }
+
+        @Override
+        public ToolWindow buildOutputToolWindow() {
+            return buildOutputToolWindow;
+        }
+
+        @Override
+        public ToolWindow testResultsToolWindow() {
+            return testResultsToolWindow;
+        }
+
+        @Override
+        public ToolWindow remoteToolWindow() {
+            return remoteToolWindow;
+        }
+
+        @Override
+        public com.editora.dap.DapManager dapManager() {
+            return dapManager;
+        }
+
+        @Override
+        public ToolWindow debugToolWindow() {
+            return debugToolWindow;
+        }
+
+        @Override
+        public DebugCoordinator debugCoordinator() {
+            return debugCoordinator;
+        }
+
+        @Override
+        public InstallCoordinator installCoordinator() {
+            return installCoordinator;
+        }
+
+        @Override
+        public ToolWindow commitToolWindow() {
+            return commitToolWindow;
+        }
+
+        @Override
+        public GitLogPanel.Actions gitLogOps() {
+            return gitLogOps;
+        }
+
+        @Override
+        public GitHubPanel githubPanel() {
+            return githubPanel;
+        }
+
+        @Override
+        public ToolWindow githubToolWindow() {
+            return githubToolWindow;
+        }
+
+        @Override
+        public HistoryCoordinator historyCoordinator() {
+            return historyCoordinator;
+        }
+
+        @Override
+        public ToolbarCoordinator toolbarCoordinator() {
+            return toolbarCoordinator;
+        }
+
+        @Override
+        public Switcher switcher() {
+            return switcher;
+        }
+
+        @Override
+        public void checkForUpdatesNow() {
+            MainController.this.checkForUpdatesNow();
+        }
+
+        @Override
+        public void openUpdateDownloadPage() {
+            MainController.this.openUpdateDownloadPage();
+        }
+
+        @Override
+        public void showDoctor() {
+            MainController.this.showDoctor();
+        }
+
+        @Override
+        public void showWelcome() {
+            MainController.this.showWelcome();
+        }
+
+        @Override
+        public boolean projectsEnabled() {
+            return MainController.this.projectsEnabled();
+        }
+
+        @Override
+        public void applyProjectSupport() {
+            MainController.this.applyProjectSupport();
+        }
+
+        @Override
+        public void closeProject() {
+            MainController.this.closeProject();
+        }
+
+        @Override
+        public void deleteProject() {
+            MainController.this.deleteProject();
+        }
+
+        @Override
+        public void deleteProject(Project p) {
+            MainController.this.deleteProject(p);
+        }
+
+        @Override
+        public void startAceJump() {
+            MainController.this.startAceJump();
+        }
+
+        @Override
+        public void startAceJumpLine() {
+            MainController.this.startAceJumpLine();
+        }
+
+        @Override
+        public void applyMathSupport() {
+            MainController.this.applyMathSupport();
+        }
+
+        @Override
+        public EditingCoordinator editing() {
+            return editing;
+        }
+
+        @Override
+        public TemplateCoordinator templateActions() {
+            return templateActions;
+        }
+
+        @Override
+        public EditorSettingsCoordinator editorSettings() {
+            return editorSettings;
+        }
+
+        @Override
+        public RunConfigurationCoordinator runConfigurations() {
+            return runConfigurations;
+        }
+
+        @Override
+        public GitCoordinator git() {
+            return git;
+        }
+
+        @Override
+        public DiffCoordinator diffCoordinator() {
+            return diffCoordinator;
+        }
+
+        @Override
+        public GitHubCoordinator github() {
+            return github;
+        }
+
+        @Override
+        public MermaidCoordinator mermaid() {
+            return mermaid;
+        }
+
+        @Override
+        public DiagramCoordinator diagram() {
+            return diagram;
+        }
+
+        @Override
+        public TypstCoordinator typst() {
+            return typst;
+        }
+
+        @Override
+        public ExportCoordinator exports() {
+            return exports;
+        }
+
+        @Override
+        public HtmlPreviewCoordinator htmlPreview() {
+            return htmlPreview;
+        }
+
+        @Override
+        public LogViewerCoordinator logViewer() {
+            return logViewer;
+        }
+
+        @Override
+        public MavenProjectCoordinator mavenProjectCoordinator() {
+            return mavenProjectCoordinator;
+        }
+
+        @Override
+        public ExternalToolCoordinator externalToolCoordinator() {
+            return externalToolCoordinator;
+        }
+
+        @Override
+        public List<BuildCoordinator> buildCoordinators() {
+            return buildCoordinators;
+        }
+
+        @Override
+        public void refreshBuildTools() {
+            MainController.this.refreshBuildTools();
+        }
+
+        @Override
+        public IndexCoordinator indexCoordinator() {
+            return indexCoordinator;
+        }
+
+        @Override
+        public TodoCoordinator todoCoordinator() {
+            return todoCoordinator;
+        }
+
+        @Override
+        public CsvCoordinator csvCoordinator() {
+            return csvCoordinator;
+        }
+
+        @Override
+        public SearchCoordinator searchCoordinator() {
+            return searchCoordinator;
+        }
+
+        @Override
+        public RunCoordinator runCoordinator() {
+            return runCoordinator;
+        }
+
+        @Override
+        public TestRunCoordinator testRunCoordinator() {
+            return testRunCoordinator;
+        }
+
+        @Override
+        public LspCoordinator lspCoordinator() {
+            return lspCoordinator;
+        }
+
+        @Override
+        public NotesCoordinator notesCoordinator() {
+            return notesCoordinator;
+        }
+
+        @Override
+        public HttpClientCoordinator httpClient() {
+            return httpClient;
+        }
+
+        @Override
+        public AgentCoordinator agentCoordinator() {
+            return agentCoordinator;
+        }
+
+        @Override
+        public void applyAgentSupport() {
+            MainController.this.applyAgentSupport();
+        }
+
+        @Override
+        public AiCoordinator aiCoordinator() {
+            return aiCoordinator;
+        }
+
+        @Override
+        public void showTrustedFolders() {
+            MainController.this.showTrustedFolders();
+        }
+
+        @Override
+        public void revokeTrustForActiveRoot() {
+            MainController.this.revokeTrustForActiveRoot();
+        }
+
+        @Override
+        public void ifMcp(Runnable action) {
+            MainController.this.ifMcp(action);
+        }
+
+        @Override
+        public void toggleMcpSupport() {
+            MainController.this.toggleMcpSupport();
+        }
+
+        @Override
+        public void copyMcpEndpoint() {
+            MainController.this.copyMcpEndpoint();
+        }
+
+        @Override
+        public void ifLsp(Runnable action) {
+            MainController.this.ifLsp(action);
+        }
+
+        @Override
+        public void toggleLsp() {
+            MainController.this.toggleLsp();
+        }
+
+        @Override
+        public void runTestsForContext() {
+            testNavigation.runTestsForContext();
+        }
+
+        @Override
+        public void runTestAtCaret(boolean classLevel) {
+            testNavigation.runTestAtCaret(classLevel);
+        }
+
+        @Override
+        public void applyTestRunner() {
+            testNavigation.applyTestRunner();
+        }
+
+        @Override
+        public void findNextMatch() {
+            MainController.this.findNextMatch();
+        }
+
+        @Override
+        public void findPreviousMatch() {
+            MainController.this.findPreviousMatch();
+        }
+
+        @Override
+        public void findReplaceCurrentMatch() {
+            MainController.this.findReplaceCurrentMatch();
+        }
+
+        @Override
+        public void findReplaceAllMatches() {
+            MainController.this.findReplaceAllMatches();
+        }
+
+        @Override
+        public void openDocumentation() {
+            MainController.this.openDocumentation();
+        }
+
+        @Override
+        public void onSplitVertical() {
+            MainController.this.onSplitVertical();
+        }
+
+        @Override
+        public void onSplitHorizontal() {
+            MainController.this.onSplitHorizontal();
+        }
+
+        @Override
+        public void unsplit() {
+            MainController.this.unsplit();
+        }
+
+        @Override
+        public void splitEditorGroup(Orientation orientation) {
+            MainController.this.splitEditorGroup(orientation);
+        }
+
+        @Override
+        public void moveTabToNextGroup() {
+            MainController.this.moveTabToNextGroup();
+        }
+
+        @Override
+        public void focusNextEditorGroup() {
+            MainController.this.focusNextEditorGroup();
+        }
+
+        @Override
+        public void unsplitEditorGroups() {
+            MainController.this.unsplitEditorGroups();
+        }
+
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
+        }
+
+        @Override
+        public void onNew() {
+            MainController.this.onNew();
+        }
+
+        @Override
+        public void onOpen() {
+            MainController.this.onOpen();
+        }
+
+        @Override
+        public void openActiveAsText() {
+            MainController.this.openActiveAsText();
+        }
+
+        @Override
+        public void openActiveAsHex() {
+            fileWorkflows.openActiveAsHex();
+        }
+
+        @Override
+        public void onClearRecent() {
+            MainController.this.onClearRecent();
+        }
+
+        @Override
+        public void onSave() {
+            MainController.this.onSave();
+        }
+
+        @Override
+        public void onSaveAsAdmin() {
+            fileWorkflows.onSaveAsAdmin();
+        }
+
+        @Override
+        public void applyAdminSaveSupport() {
+            fileWorkflows.applyAdminSaveSupport();
+        }
+
+        @Override
+        public void saveAsPrompt(EditorBuffer buffer) {
+            fileWorkflows.saveAsPrompt(buffer);
+        }
+
+        @Override
+        public void applyAutoSave() {
+            fileWorkflows.applyAutoSave();
+        }
+
+        @Override
+        public void toggleAutoSave() {
+            fileWorkflows.toggleAutoSave();
+        }
+
+        @Override
+        public void onCloseTab() {
+            MainController.this.onCloseTab();
+        }
+
+        @Override
+        public Tab activeTab() {
+            return MainController.this.activeTab();
+        }
+
+        @Override
+        public void closeOtherTabs(Tab keep) {
+            MainController.this.closeOtherTabs(keep);
+        }
+
+        @Override
+        public void closeAllTabs() {
+            MainController.this.closeAllTabs();
+        }
+
+        @Override
+        public void closeUnmodifiedTabs() {
+            MainController.this.closeUnmodifiedTabs();
+        }
+
+        @Override
+        public void closeTabsToLeft(Tab pivot) {
+            MainController.this.closeTabsToLeft(pivot);
+        }
+
+        @Override
+        public void closeTabsToRight(Tab pivot) {
+            MainController.this.closeTabsToRight(pivot);
+        }
+
+        @Override
+        public void copyPath(EditorBuffer buffer) {
+            MainController.this.copyPath(buffer);
+        }
+
+        @Override
+        public void revealActiveBuffer() {
+            MainController.this.revealActiveBuffer();
+        }
+
+        @Override
+        public void openTerminalForActiveBuffer() {
+            MainController.this.openTerminalForActiveBuffer();
+        }
+
+        @Override
+        public void togglePin(Tab tab) {
+            MainController.this.togglePin(tab);
+        }
+
+        @Override
+        public void renameFile(EditorBuffer buffer, Tab tab) {
+            MainController.this.renameFile(buffer, tab);
+        }
+
+        @Override
+        public void onQuit() {
+            MainController.this.onQuit();
+        }
+
+        @Override
+        public void requestSave() {
+            MainController.this.requestSave();
+        }
+
+        @Override
+        public void nextBuffer() {
+            MainController.this.nextBuffer();
+        }
+
+        @Override
+        public void findShowOrNext() {
+            MainController.this.findShowOrNext();
+        }
+
+        @Override
+        public void findShowOrPrevious() {
+            MainController.this.findShowOrPrevious();
+        }
+
+        @Override
+        public void showReplace() {
+            MainController.this.showReplace();
+        }
+
+        @Override
+        public void updateBufferToolWindows() {
+            MainController.this.updateBufferToolWindows();
+        }
+
+        @Override
+        public void maybeOfferInstall(EditorBuffer buffer) {
+            installPrompts.maybeOfferInstall(buffer);
+        }
+
+        @Override
+        public void onPalette() {
+            MainController.this.onPalette();
+        }
+
+        @Override
+        public void onSettings() {
+            MainController.this.onSettings();
+        }
+
+        @Override
+        public void onAbout() {
+            MainController.this.onAbout();
+        }
+
+        @Override
+        public void showSplitToolWindowPalette() {
+            MainController.this.showSplitToolWindowPalette();
+        }
+
+        @Override
+        public void toggleFloatingToolWindow() {
+            MainController.this.toggleFloatingToolWindow();
+        }
+
+        @Override
+        public void toggleMaximizedToolWindow() {
+            MainController.this.toggleMaximizedToolWindow();
+        }
+
+        @Override
+        public void toggleToolStripe() {
+            MainController.this.toggleToolStripe();
+        }
+
+        @Override
+        public void withMultiCaret(java.util.function.Consumer<EditorBuffer> action) {
+            MainController.this.withMultiCaret(action);
+        }
+
+        @Override
+        public void selectAllOccurrences() {
+            MainController.this.selectAllOccurrences();
+        }
+
+        @Override
+        public void selectAllFindMatches() {
+            MainController.this.selectAllFindMatches();
+        }
+
+        @Override
+        public void chooseInstallServer() {
+            installPrompts.chooseInstallServer();
+        }
+
+        @Override
+        public void toggleReadOnly() {
+            MainController.this.toggleReadOnly();
+        }
+
+        @Override
+        public void textZoom(int direction) {
+            MainController.this.textZoom(direction);
+        }
+
+        @Override
+        public void insertSnippetPicker() {
+            MainController.this.insertSnippetPicker();
+        }
+
+        @Override
+        public void editUserSnippets() {
+            MainController.this.editUserSnippets();
+        }
+
+        @Override
+        public void editProjectSettings() {
+            MainController.this.editProjectSettings();
+        }
+
+        @Override
+        public void showDebugLog() {
+            MainController.this.showDebugLog();
+        }
+
+        @Override
+        public void exportConfig() {
+            MainController.this.exportConfig();
+        }
+
+        @Override
+        public void cancel() {
+            MainController.this.cancel();
+        }
+
+        @Override
+        public SelectionPolicy selPolicy() {
+            return MainController.this.selPolicy();
+        }
+    });
+
+    private final NavigationCoordinator navigation = new NavigationCoordinator(new NavigationCoordinator.Host() {
+        @Override
+        public WindowSessionCoordinator sessions() {
+            return sessions;
+        }
+
+        @Override
+        public WindowChromeCoordinator chrome() {
+            return chrome;
+        }
+
+        @Override
+        public FileWorkflowCoordinator fileWorkflows() {
+            return fileWorkflows;
+        }
+
+        @Override
+        public EditorArea editorArea() {
+            return editorArea;
+        }
+
+        @Override
+        public Stage stage() {
+            return stage;
+        }
+
+        @Override
+        public KeymapManager keymap() {
+            return keymap;
+        }
+
+        @Override
+        public OverlayHost overlayHost() {
+            return overlayHost;
+        }
+
+        @Override
+        public com.editora.snippet.SnippetManager snippets() {
+            return snippets;
+        }
+
+        @Override
+        public ProjectManager projects() {
+            return projects;
+        }
+
+        @Override
+        public ToolWindowManager toolWindows() {
+            return toolWindows;
+        }
+
+        @Override
+        public StructurePanel structurePanel() {
+            return structurePanel;
+        }
+
+        @Override
+        public RecentFiles recentFiles() {
+            return recentFiles;
+        }
+
+        @Override
+        public boolean projectsEnabled() {
+            return MainController.this.projectsEnabled();
+        }
+
+        @Override
+        public void navigateToLine(int line) {
+            MainController.this.navigateToLine(line);
+        }
+
+        @Override
+        public void activateAndFocusTab(Tab tab) {
+            MainController.this.activateAndFocusTab(tab);
+        }
+
+        @Override
+        public List<Tab> openTabsForSwitcher() {
+            return MainController.this.openTabsForSwitcher();
+        }
+
+        @Override
+        public String homeCollapsed(String full) {
+            return MainController.this.homeCollapsed(full);
+        }
+
+        @Override
+        public EditingCoordinator editing() {
+            return editing;
+        }
+
+        @Override
+        public GitCoordinator git() {
+            return git;
+        }
+
+        @Override
+        public IndexCoordinator indexCoordinator() {
+            return indexCoordinator;
+        }
+
+        @Override
+        public LspCoordinator lspCoordinator() {
+            return lspCoordinator;
+        }
+
+        @Override
+        public void openAndGoto(Path file, int line0, int col0) {
+            MainController.this.openAndGoto(file, line0, col0);
+        }
+
+        @Override
+        public java.util.Map<String, String> invertBindings() {
+            return MainController.this.invertBindings();
+        }
+
+        @Override
+        public void splitEditorGroup(Orientation orientation) {
+            MainController.this.splitEditorGroup(orientation);
+        }
+
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
+        }
+
+        @Override
+        public java.util.List<com.editora.editor.UndoHistory.Checkpoint> undoHistoryCheckpoints() {
+            return MainController.this.undoHistoryCheckpoints();
+        }
+
+        @Override
+        public void restoreUndoCheckpoint(com.editora.editor.UndoHistory.Checkpoint c) {
+            MainController.this.restoreUndoCheckpoint(c);
+        }
+
+        @Override
+        public CodeArea activeArea() {
+            return MainController.this.activeArea();
+        }
+
+        @Override
+        public Tab addBuffer(EditorBuffer buffer) {
+            return MainController.this.addBuffer(buffer);
+        }
+
+        @Override
+        public Tab addBuffer(EditorBuffer buffer, boolean select) {
+            return MainController.this.addBuffer(buffer, select);
+        }
+
+        @Override
+        public Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings) {
+            return MainController.this.addBuffer(buffer, select, resolvePathSettings);
+        }
+
+        @Override
+        public void openRecent(Path file) {
+            MainController.this.openRecent(file);
+        }
+
+        @Override
+        public void openPathPreview(Path file) {
+            MainController.this.openPathPreview(file);
+        }
+
+        @Override
+        public EditorBuffer bufferOf(Tab tab) {
+            return MainController.this.bufferOf(tab);
+        }
+
+        @Override
+        public Tab tabForPath(Path file) {
+            return MainController.this.tabForPath(file);
+        }
+
+        @Override
+        public void persistFolds(EditorBuffer buffer) {
+            MainController.this.persistFolds(buffer);
+        }
+    });
+
+    private final PreviewCoordinator previews = new PreviewCoordinator(new PreviewCoordinator.Host() {
+        @Override
+        public EditorArea editorArea() {
+            return editorArea;
+        }
+
+        @Override
+        public ConfigManager config() {
+            return config;
+        }
+
+        @Override
+        public SettingsWindow settingsWindow() {
+            return settingsWindow;
+        }
+
+        @Override
+        public OverlayHost overlayHost() {
+            return overlayHost;
+        }
+
+        @Override
+        public ToolWindowManager toolWindows() {
+            return toolWindows;
+        }
+
+        @Override
+        public MarkdownLintPanel markdownLintPanel() {
+            return markdownLintPanel;
+        }
+
+        @Override
+        public ToolWindow markdownLintToolWindow() {
+            return markdownLintToolWindow;
+        }
+
+        @Override
+        public EditingCoordinator editing() {
+            return editing;
+        }
+
+        @Override
+        public EditorSettingsCoordinator editorSettings() {
+            return editorSettings;
+        }
+
+        @Override
+        public MermaidCoordinator mermaid() {
+            return mermaid;
+        }
+
+        @Override
+        public ExportCoordinator exports() {
+            return exports;
+        }
+
+        @Override
+        public CsvCoordinator csvCoordinator() {
+            return csvCoordinator;
+        }
+
+        @Override
+        public HttpClientCoordinator httpClient() {
+            return httpClient;
+        }
+
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
+        }
+
+        @Override
+        public EditorBuffer bufferOf(Tab tab) {
+            return MainController.this.bufferOf(tab);
+        }
+
+        @Override
+        public void requestSave() {
+            MainController.this.requestSave();
+        }
+
+        @Override
+        public boolean appThemeDark() {
+            return MainController.this.appThemeDark();
+        }
+
+        @Override
+        public void promptText(
+                String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+            MainController.this.promptText(title, label, initial, onAccept);
+        }
+    });
+
+    private final GitWindowCoordinator gitWindows = new GitWindowCoordinator(new GitWindowCoordinator.Host() {
+        @Override
+        public FileWorkflowCoordinator fileWorkflows() {
+            return fileWorkflows;
+        }
+
+        @Override
+        public Stage stage() {
+            return stage;
+        }
+
+        @Override
+        public StatusBar statusBar() {
+            return statusBar;
+        }
+
+        @Override
+        public ToolWindowManager toolWindows() {
+            return toolWindows;
+        }
+
+        @Override
+        public GitPanel gitPanel() {
+            return gitPanel;
+        }
+
+        @Override
+        public ToolWindow commitToolWindow() {
+            return commitToolWindow;
+        }
+
+        @Override
+        public GitLogPanel gitLogPanel() {
+            return gitLogPanel;
+        }
+
+        @Override
+        public GitLogPanel.Actions gitLogOps() {
+            return gitLogOps;
+        }
+
+        @Override
+        public ToolWindow gitLogToolWindow() {
+            return gitLogToolWindow;
+        }
+
+        @Override
+        public GitHubPanel githubPanel() {
+            return githubPanel;
+        }
+
+        @Override
+        public GitCoordinator git() {
+            return git;
+        }
+
+        @Override
+        public DiffCoordinator diffCoordinator() {
+            return diffCoordinator;
+        }
+
+        @Override
+        public GitHubCoordinator github() {
+            return github;
+        }
+
+        @Override
+        public EditorBuffer openBufferFor(Path target) {
+            return MainController.this.openBufferFor(target);
+        }
+
+        @Override
+        public void reloadAllFromDiskSilently() {
+            MainController.this.reloadAllFromDiskSilently();
+        }
+
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
+        }
+
+        @Override
+        public void promptText(
+                String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+            MainController.this.promptText(title, label, initial, onAccept);
+        }
+    });
+
+    private final WindowChromeCoordinator chrome = new WindowChromeCoordinator(new WindowChromeCoordinator.Host() {
+        @Override
+        public PseudoClass OPEN() {
+            return OPEN;
+        }
+
+        @Override
+        public BorderPane root() {
+            return root;
+        }
+
+        @Override
+        public EditorArea editorArea() {
+            return editorArea;
+        }
+
+        @Override
+        public MainMenuBar menuBar() {
+            return menuBar;
+        }
+
+        @Override
+        public ToolBar toolBar() {
+            return toolBar;
+        }
+
+        @Override
+        public HBox toolbarRow() {
+            return toolbarRow;
+        }
+
+        @Override
+        public Button newFromTemplateButton() {
+            return newFromTemplateButton;
+        }
+
+        @Override
+        public Button findInFilesButton() {
+            return findInFilesButton;
+        }
+
+        @Override
+        public Button splitVerticalButton() {
+            return splitVerticalButton;
+        }
+
+        @Override
+        public Button splitHorizontalButton() {
+            return splitHorizontalButton;
+        }
+
+        @Override
+        public Button simpleModeButton() {
+            return simpleModeButton;
+        }
+
+        @Override
+        public MenuButton recentButton() {
+            return recentButton;
+        }
+
+        @Override
+        public Button clearRecentButton() {
+            return clearRecentButton;
+        }
+
+        @Override
+        public ConfigManager config() {
+            return config;
+        }
+
+        @Override
+        public CommandPalette palette() {
+            return palette;
+        }
+
+        @Override
+        public StatusBar statusBar() {
+            return statusBar;
+        }
+
+        @Override
+        public FileBreadcrumb breadcrumb() {
+            return breadcrumb;
+        }
+
+        @Override
+        public SettingsWindow settingsWindow() {
+            return settingsWindow;
+        }
+
+        @Override
+        public OverlayHost overlayHost() {
+            return overlayHost;
+        }
+
+        @Override
+        public QuickOpen<Project> projectPicker() {
+            return projectPicker;
+        }
+
+        @Override
+        public ToolWindowManager toolWindows() {
+            return toolWindows;
+        }
+
+        @Override
+        public BookmarkCoordinator bookmarkCoordinator() {
+            return bookmarkCoordinator;
+        }
+
+        @Override
+        public Switcher switcher() {
+            return switcher;
+        }
+
+        @Override
+        public void openExternalUrl(String url) {
+            MainController.this.openExternalUrl(url);
+        }
+
+        @Override
+        public EditorSettingsCoordinator editorSettings() {
+            return editorSettings;
+        }
+
+        @Override
+        public RunConfigurationCoordinator runConfigurations() {
+            return runConfigurations;
+        }
+
+        @Override
+        public NavigationCoordinator navigation() {
+            return navigation;
+        }
+
+        @Override
+        public GitWindowCoordinator gitWindows() {
+            return gitWindows;
+        }
+
+        @Override
+        public List<BuildCoordinator> buildCoordinators() {
+            return buildCoordinators;
+        }
+
+        @Override
+        public SearchEverywherePopup.Ops searchEverywhereOps() {
+            return searchEverywhereOps;
+        }
+
+        @Override
+        public IndexCoordinator indexCoordinator() {
+            return indexCoordinator;
+        }
+
+        @Override
+        public NotesCoordinator notesCoordinator() {
+            return notesCoordinator;
+        }
+
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
+        }
+
+        @Override
+        public CodeArea activeArea() {
+            return MainController.this.activeArea();
+        }
+
+        @Override
+        public void requestSave() {
+            MainController.this.requestSave();
+        }
+
+        @Override
+        public void setZenMode(boolean on) {
+            MainController.this.setZenMode(on);
+        }
+
+        @Override
+        public void setExpertMode(boolean on) {
+            MainController.this.setExpertMode(on);
+        }
+    });
+
+    private final WindowMcpBridge mcpBridge = new WindowMcpBridge(new WindowMcpBridge.Host() {
+        @Override
+        public WindowSessionCoordinator sessions() {
+            return sessions;
+        }
+
+        @Override
+        public FileWorkflowCoordinator fileWorkflows() {
+            return fileWorkflows;
+        }
+
+        @Override
+        public EditorArea editorArea() {
+            return editorArea;
+        }
+
+        @Override
+        public CommandRegistry registry() {
+            return registry;
+        }
+
+        @Override
+        public ProjectManager projects() {
+            return projects;
+        }
+
+        @Override
+        public com.editora.lsp.LspManager lspManager() {
+            return lspManager;
+        }
+
+        @Override
+        public NavigationCoordinator navigation() {
+            return navigation;
+        }
+
+        @Override
+        public GitCoordinator git() {
+            return git;
+        }
+
+        @Override
+        public TodoCoordinator todoCoordinator() {
+            return todoCoordinator;
+        }
+
+        @Override
+        public SearchCoordinator searchCoordinator() {
+            return searchCoordinator;
+        }
+
+        @Override
+        public LspCoordinator lspCoordinator() {
+            return lspCoordinator;
+        }
+
+        @Override
+        public boolean lspEnabled() {
+            return MainController.this.lspEnabled();
+        }
+
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
+        }
+
+        @Override
+        public ImageViewerPane imagePaneOf(Tab tab) {
+            return MainController.this.imagePaneOf(tab);
+        }
+
+        @Override
+        public HexViewerPane hexPaneOf(Tab tab) {
+            return MainController.this.hexPaneOf(tab);
+        }
+
+        @Override
+        public PdfViewerPane pdfPaneOf(Tab tab) {
+            return MainController.this.pdfPaneOf(tab);
+        }
+
+        @Override
+        public EditorBuffer bufferOf(Tab tab) {
+            return MainController.this.bufferOf(tab);
+        }
+
+        @Override
+        public Path tabPath(Tab tab) {
+            return MainController.this.tabPath(tab);
+        }
+
+        @Override
+        public Path canonicalPath(Path p) {
+            return MainController.this.canonicalPath(p);
+        }
+    });
+
+    private final FileWorkflowCoordinator fileWorkflows =
+            new FileWorkflowCoordinator(new FileWorkflowCoordinator.Host() {
+
+                @Override
+                public EditorArea editorArea() {
+                    return editorArea;
+                }
+
+                @Override
+                public Stage stage() {
+                    return stage;
+                }
+
+                @Override
+                public ConfigManager config() {
+                    return config;
+                }
+
+                @Override
+                public FileBreadcrumb breadcrumb() {
+                    return breadcrumb;
+                }
+
+                @Override
+                public ProjectPanel projectPanel() {
+                    return projectPanel;
+                }
+
+                @Override
+                public HistoryCoordinator historyCoordinator() {
+                    return historyCoordinator;
+                }
+
+                @Override
+                public RecentFiles recentFiles() {
+                    return recentFiles;
+                }
+
+                @Override
+                public void updateProjectFolderView() {
+                    MainController.this.updateProjectFolderView();
+                }
+
+                @Override
+                public EditorSettingsCoordinator editorSettings() {
+                    return editorSettings;
+                }
+
+                @Override
+                public PreviewCoordinator previews() {
+                    return previews;
+                }
+
+                @Override
+                public GitCoordinator git() {
+                    return git;
+                }
+
+                @Override
+                public HtmlPreviewCoordinator htmlPreview() {
+                    return htmlPreview;
+                }
+
+                @Override
+                public LogViewerCoordinator logViewer() {
+                    return logViewer;
+                }
+
+                @Override
+                public void refreshBuildTools() {
+                    MainController.this.refreshBuildTools();
+                }
+
+                @Override
+                public IndexCoordinator indexCoordinator() {
+                    return indexCoordinator;
+                }
+
+                @Override
+                public LspCoordinator lspCoordinator() {
+                    return lspCoordinator;
+                }
+
+                @Override
+                public boolean isLocalBuffer(EditorBuffer b) {
+                    return MainController.this.isLocalBuffer(b);
+                }
+
+                @Override
+                public void setStatus(String message) {
+                    MainController.this.setStatus(message);
+                }
+
+                @Override
+                public EditorBuffer activeBuffer() {
+                    return MainController.this.activeBuffer();
+                }
+
+                @Override
+                public Tab addBuffer(EditorBuffer buffer) {
+                    return MainController.this.addBuffer(buffer);
+                }
+
+                @Override
+                public Tab addBuffer(EditorBuffer buffer, boolean select) {
+                    return MainController.this.addBuffer(buffer, select);
+                }
+
+                @Override
+                public Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings) {
+                    return MainController.this.addBuffer(buffer, select, resolvePathSettings);
+                }
+
+                @Override
+                public Tab addContentTab(TabContent content, boolean select) {
+                    return MainController.this.addContentTab(content, select);
+                }
+
+                @Override
+                public void updateTabMeta(Tab tab, EditorBuffer buffer) {
+                    MainController.this.updateTabMeta(tab, buffer);
+                }
+
+                @Override
+                public void promoteTab(Tab tab) {
+                    MainController.this.promoteTab(tab);
+                }
+
+                @Override
+                public void finishAsyncOpen(Tab tab, EditorBuffer buffer, FileWorkflowCoordinator.PreparedLoad load) {
+                    MainController.this.finishAsyncOpen(tab, buffer, load);
+                }
+
+                @Override
+                public void failAsyncOpen(Tab tab, EditorBuffer buffer, Path file, Exception error) {
+                    MainController.this.failAsyncOpen(tab, buffer, file, error);
+                }
+
+                @Override
+                public String autoSaveModeOf(String mode) {
+                    return MainController.this.autoSaveModeOf(mode);
+                }
+
+                @Override
+                public String autoSaveLabel(String mode) {
+                    return MainController.this.autoSaveLabel(mode);
+                }
+
+                @Override
+                public EditorBuffer bufferOf(Tab tab) {
+                    return MainController.this.bufferOf(tab);
+                }
+
+                @Override
+                public Tab tabFor(EditorBuffer buffer) {
+                    return MainController.this.tabFor(buffer);
+                }
+
+                @Override
+                public Tab tabForPath(Path file) {
+                    return MainController.this.tabForPath(file);
+                }
+
+                @Override
+                public Path tabPath(Tab tab) {
+                    return MainController.this.tabPath(tab);
+                }
+
+                @Override
+                public void requestSave() {
+                    MainController.this.requestSave();
+                }
+
+                @Override
+                public Tab tabForBuffer(EditorBuffer buffer) {
+                    return MainController.this.tabForBuffer(buffer);
+                }
+
+                @Override
+                public void promptText(
+                        String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+                    MainController.this.promptText(title, label, initial, onAccept);
+                }
+
+                @Override
+                public Path pathOf(java.io.File file) {
+                    return MainController.this.pathOf(file);
+                }
+            });
+
+    @FXML
+    private void onSave() {
+        fileWorkflows.onSave();
+    }
+
+    @FXML
+    private void onSaveAs() {
+        fileWorkflows.onSaveAs();
+    }
+
+    private final WindowSessionCoordinator sessions = new WindowSessionCoordinator(new WindowSessionCoordinator.Host() {
+
+        @Override
+        public TabPane tabPane() {
+            return tabPane;
+        }
+
+        @Override
+        public EditorArea editorArea() {
+            return editorArea;
+        }
+
+        @Override
+        public Stage stage() {
+            return stage;
+        }
+
+        @Override
+        public ConfigManager config() {
+            return config;
+        }
+
+        @Override
+        public ProjectPanel projectPanel() {
+            return projectPanel;
+        }
+
+        @Override
+        public ProjectManager projects() {
+            return projects;
+        }
+
+        @Override
+        public ToolWindowManager toolWindows() {
+            return toolWindows;
+        }
+
+        @Override
+        public BookmarkCoordinator bookmarkCoordinator() {
+            return bookmarkCoordinator;
+        }
+
+        @Override
+        public DebugCoordinator debugCoordinator() {
+            return debugCoordinator;
+        }
+
+        @Override
+        public Set<Tab> pinned() {
+            return pinned;
+        }
+
+        @Override
+        public void showWelcomeIfNoTabs() {
+            MainController.this.showWelcomeIfNoTabs();
+        }
+
+        @Override
+        public void refreshProjectPanelList() {
+            MainController.this.refreshProjectPanelList();
+        }
+
+        @Override
+        public boolean projectsEnabled() {
+            return MainController.this.projectsEnabled();
+        }
+
+        @Override
+        public void updateWindowTitle() {
+            MainController.this.updateWindowTitle();
+        }
+
+        @Override
+        public NavigationCoordinator navigation() {
+            return navigation;
+        }
+
+        @Override
+        public PreviewCoordinator previews() {
+            return previews;
+        }
+
+        @Override
+        public WindowChromeCoordinator chrome() {
+            return chrome;
+        }
+
+        @Override
+        public FileWorkflowCoordinator fileWorkflows() {
+            return fileWorkflows;
+        }
+
+        @Override
+        public DiffCoordinator diffCoordinator() {
+            return diffCoordinator;
+        }
+
+        @Override
+        public LspCoordinator lspCoordinator() {
+            return lspCoordinator;
+        }
+
+        @Override
+        public NotesCoordinator notesCoordinator() {
+            return notesCoordinator;
+        }
+
+        @Override
+        public EditorBuffer openBackgroundBuffer(Path target) {
+            return MainController.this.openBackgroundBuffer(target);
+        }
+
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+
+        @Override
+        public Tab addBuffer(EditorBuffer buffer) {
+            return MainController.this.addBuffer(buffer);
+        }
+
+        @Override
+        public Tab addBuffer(EditorBuffer buffer, boolean select) {
+            return MainController.this.addBuffer(buffer, select);
+        }
+
+        @Override
+        public Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings) {
+            return MainController.this.addBuffer(buffer, select, resolvePathSettings);
+        }
+
+        @Override
+        public void updateTabMeta(Tab tab, EditorBuffer buffer) {
+            MainController.this.updateTabMeta(tab, buffer);
+        }
+
+        @Override
+        public void clearLoading(EditorBuffer buffer) {
+            MainController.this.clearLoading(buffer);
+        }
+
+        @Override
+        public void discardLoading(EditorBuffer buffer) {
+            MainController.this.discardLoading(buffer);
+        }
+
+        @Override
+        public EditorBuffer bufferOf(Tab tab) {
+            return MainController.this.bufferOf(tab);
+        }
+
+        @Override
+        public Tab tabForPath(Path file) {
+            return MainController.this.tabForPath(file);
+        }
+
+        @Override
+        public Path tabPath(Tab tab) {
+            return MainController.this.tabPath(tab);
+        }
+
+        @Override
+        public Path windowProjectRoot() {
+            return MainController.this.windowProjectRoot();
+        }
+
+        @Override
+        public void restoreFolds(EditorBuffer buffer) {
+            MainController.this.restoreFolds(buffer);
+        }
+
+        @Override
+        public Tab tabForBuffer(EditorBuffer buffer) {
+            return MainController.this.tabForBuffer(buffer);
+        }
+
+        @Override
+        public void restoreReadOnly(EditorBuffer buffer) {
+            MainController.this.restoreReadOnly(buffer);
+        }
+    });
+
+    private final TestNavigationCoordinator testNavigation =
+            new TestNavigationCoordinator(new TestNavigationCoordinator.Host() {
+
+                @Override
+                public EditorArea editorArea() {
+                    return editorArea;
+                }
+
+                @Override
+                public ConfigManager config() {
+                    return config;
+                }
+
+                @Override
+                public ProjectManager projects() {
+                    return projects;
+                }
+
+                @Override
+                public Project windowProject() {
+                    return windowProject;
+                }
+
+                @Override
+                public ToolWindowManager toolWindows() {
+                    return toolWindows;
+                }
+
+                @Override
+                public com.editora.lsp.LspManager lspManager() {
+                    return lspManager;
+                }
+
+                @Override
+                public ToolWindow testResultsToolWindow() {
+                    return testResultsToolWindow;
+                }
+
+                @Override
+                public WindowChromeCoordinator chrome() {
+                    return chrome;
+                }
+
+                @Override
+                public FileWorkflowCoordinator fileWorkflows() {
+                    return fileWorkflows;
+                }
+
+                @Override
+                public WindowSessionCoordinator sessions() {
+                    return sessions;
+                }
+
+                @Override
+                public CoordinatorHost coordinatorHost() {
+                    return coordinatorHost;
+                }
+
+                @Override
+                public List<BuildCoordinator> buildCoordinators() {
+                    return buildCoordinators;
+                }
+
+                @Override
+                public RunCoordinator runCoordinator() {
+                    return runCoordinator;
+                }
+
+                @Override
+                public LspCoordinator lspCoordinator() {
+                    return lspCoordinator;
+                }
+
+                @Override
+                public boolean isLocalBuffer(EditorBuffer b) {
+                    return MainController.this.isLocalBuffer(b);
+                }
+
+                @Override
+                public boolean lspEnabled() {
+                    return MainController.this.lspEnabled();
+                }
+
+                @Override
+                public void openAndGoto(Path file, int line0, int col0) {
+                    MainController.this.openAndGoto(file, line0, col0);
+                }
+
+                @Override
+                public void setStatus(String message) {
+                    MainController.this.setStatus(message);
+                }
+
+                @Override
+                public EditorBuffer activeBuffer() {
+                    return MainController.this.activeBuffer();
+                }
+
+                @Override
+                public EditorBuffer bufferOf(Tab tab) {
+                    return MainController.this.bufferOf(tab);
+                }
+
+                @Override
+                public Tab tabForPath(Path file) {
+                    return MainController.this.tabForPath(file);
+                }
+            });
+
+    private final InstallPromptCoordinator installPrompts =
+            new InstallPromptCoordinator(new InstallPromptCoordinator.Host() {
+                @Override
+                public Stage stage() {
+                    return stage;
+                }
+
+                @Override
+                public ConfigManager config() {
+                    return config;
+                }
+
+                @Override
+                public OverlayHost overlayHost() {
+                    return overlayHost;
+                }
+
+                @Override
+                public InstallCoordinator installCoordinator() {
+                    return installCoordinator;
+                }
+
+                @Override
+                public WindowChromeCoordinator chrome() {
+                    return chrome;
+                }
+
+                @Override
+                public MermaidCoordinator mermaid() {
+                    return mermaid;
+                }
+
+                @Override
+                public LspCoordinator lspCoordinator() {
+                    return lspCoordinator;
+                }
+
+                @Override
+                public boolean isLocalBuffer(EditorBuffer b) {
+                    return MainController.this.isLocalBuffer(b);
+                }
+
+                @Override
+                public boolean lspEnabled() {
+                    return MainController.this.lspEnabled();
+                }
+            });
+
     private final CoordinatorHost coordinatorHost = new Services();
 
     /** Implements {@link CoordinatorHost} by delegating to this controller's private helpers. */
     private final class Services implements CoordinatorHost {
         @Override
-        public Settings settings() {
-            return config.getSettings();
+        public long fileSize(Path file) {
+            return FileWorkflowCoordinator.fileSize(file);
         }
 
         @Override
-        public boolean simpleModeActive() {
-            return MainController.this.simpleModeActive();
+        public Settings settings() {
+            return config.getSettings();
         }
 
         @Override
@@ -3296,13 +5455,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public long fileSize(Path file) {
-            return MainController.this.fileSize(file);
-        }
-
-        @Override
         public String bufferBaseName(EditorBuffer buffer) {
-            return MainController.this.bufferBaseName(buffer);
+            return ExportCoordinator.bufferBaseName(buffer);
         }
 
         @Override
@@ -3320,21 +5474,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (settingsWindow != null) {
                 settingsWindow.syncAll();
             }
-        }
-
-        @Override
-        public void applyAutocomplete() {
-            MainController.this.applyAutocomplete();
-        }
-
-        @Override
-        public void ensurePreviewControls(EditorBuffer buffer) {
-            MainController.this.ensurePreviewControls(buffer);
-        }
-
-        @Override
-        public void restoreMarkdownMode(EditorBuffer buffer) {
-            MainController.this.restoreMarkdownMode(buffer);
         }
 
         @Override
@@ -3361,6 +5500,26 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public javafx.stage.Window window() {
             return stage;
+        }
+
+        @Override
+        public void applyAutocomplete() {
+            editorSettings.applyAutocomplete();
+        }
+
+        @Override
+        public void ensurePreviewControls(EditorBuffer buffer) {
+            previews.ensurePreviewControls(buffer);
+        }
+
+        @Override
+        public void restoreMarkdownMode(EditorBuffer buffer) {
+            previews.restoreMarkdownMode(buffer);
+        }
+
+        @Override
+        public boolean simpleModeActive() {
+            return chrome.simpleModeActive();
         }
     }
 
@@ -3423,11 +5582,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void checkExternalChanges() {
-            MainController.this.checkExternalChanges();
-        }
-
-        @Override
         public void reloadAllFromDiskSilently() {
             MainController.this.reloadAllFromDiskSilently();
         }
@@ -3453,11 +5607,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void openPath(Path file) {
-            MainController.this.openPath(file);
-        }
-
-        @Override
         public void syncBlameCheck() {
             settingsWindow.syncGitBlameCheck();
         }
@@ -3465,6 +5614,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void openCommitFileDiff(String hash, String repoRel) {
             diffCoordinator.diffCommitFile(hash, repoRel);
+        }
+
+        @Override
+        public void checkExternalChanges() {
+            fileWorkflows.checkExternalChanges();
+        }
+
+        @Override
+        public void openPath(Path file) {
+            fileWorkflows.openPath(file);
         }
     });
 
@@ -3475,16 +5634,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public void addDiffTab(TabContent pane) {
                     if (pane instanceof DiffViewerPane diffPane) {
-                        diffPane.setExitDiffUiAction(diffUiActive() ? MainController.this::exitDiffUiMode : null);
+                        diffPane.setExitDiffUiAction(chrome.diffUiActive() ? chrome::exitDiffUiMode : null);
                     } else if (pane instanceof DirectoryReviewPane reviewPane) {
-                        reviewPane.setExitDiffUiAction(diffUiActive() ? MainController.this::exitDiffUiMode : null);
+                        reviewPane.setExitDiffUiAction(chrome.diffUiActive() ? chrome::exitDiffUiMode : null);
                     }
                     addContentTab(pane, true);
                 }
 
                 @Override
                 public void prepareDiffPane(DiffViewerPane pane) {
-                    pane.setExitDiffUiAction(diffUiActive() ? MainController.this::exitDiffUiMode : null);
+                    pane.setExitDiffUiAction(chrome.diffUiActive() ? chrome::exitDiffUiMode : null);
                 }
 
                 @Override
@@ -3499,7 +5658,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public boolean saveBuffer(EditorBuffer buffer) {
-                    return save(buffer);
+                    return fileWorkflows.save(buffer);
                 }
 
                 @Override
@@ -3534,7 +5693,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public Path finderStartDir() {
-                    return MainController.this.finderStartDir();
+                    return navigation.finderStartDir();
                 }
 
                 @Override
@@ -3544,7 +5703,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void openAt(Path file, int line) {
-                    openPath(file);
+                    fileWorkflows.openPath(file);
                     Platform.runLater(() -> navigateToLine(Math.max(0, line - 1)));
                 }
             });
@@ -3562,7 +5721,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void checkExternalChanges() {
-                    MainController.this.checkExternalChanges();
+                    fileWorkflows.checkExternalChanges();
                 }
 
                 @Override
@@ -3620,7 +5779,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void reloadGitHubPanel() {
-                    MainController.this.reloadGithubPanel();
+                    gitWindows.reloadGithubPanel();
                 }
 
                 // The Output console is owner-routed, so passing the GitHub coordinator as the owner
@@ -3660,6 +5819,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The Typst document feature (multi-page rendered preview + export); see {@link TypstCoordinator}. */
     private final TypstCoordinator typst = new TypstCoordinator(coordinatorHost, this::resolveTypstRoot);
 
+    /** Owns all document export/print services and their window lifecycle. */
+    private final ExportCoordinator exports =
+            new ExportCoordinator(coordinatorHost, mermaid, diagram, typst, fileWorkflows::openPath);
+
     // --- HTML Live Preview (serve via a loopback HttpServer + open in a detected browser) ---------
 
     /** The HTML Live Preview feature; see {@link HtmlPreviewCoordinator}. */
@@ -3676,7 +5839,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             new MavenProjectCoordinator.Ops() {
                 @Override
                 public java.nio.file.Path defaultParentDir() {
-                    return defaultNewDir();
+                    return templateActions.defaultNewDir();
                 }
 
                 @Override
@@ -3707,7 +5870,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void openPath(java.nio.file.Path file) {
-                    MainController.this.openPath(file);
+                    fileWorkflows.openPath(file);
                 }
 
                 @Override
@@ -3744,7 +5907,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void onOutputLink(com.editora.run.StackTraceLinks.Link link) {
-                    openRunLink(link);
+                    testNavigation.openRunLink(link);
                 }
             });
 
@@ -3789,13 +5952,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                             // (or once a Git/GitHub command has written a transcript tab into it).
                             refreshBuildOutputAvailability();
                             // Detection is what decides whether the project is launchable at all.
-                            refreshRunConfigToolbar();
+                            runConfigurations.refreshRunConfigToolbar();
                             // A JVM marker (pom/build.gradle) appearing/vanishing flips the JUnit test gutter and
                             // the project main-method gutter — re-gate every open buffer (both no-op on an
                             // unchanged flag).
                             if (tool == BuildTool.MAVEN || tool == BuildTool.GRADLE) {
-                                coordinatorHost.forEachBuffer(MainController.this::applyTestGutter);
-                                coordinatorHost.forEachBuffer(MainController.this::applyMainGutter);
+                                coordinatorHost.forEachBuffer(testNavigation::applyTestGutter);
+                                coordinatorHost.forEachBuffer(testNavigation::applyMainGutter);
                             }
                             // Detection is async, so an open Settings page read its status row before this
                             // landed — restate it now rather than leaving a stale "not detected".
@@ -3859,7 +6022,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         refreshBuildOutputAvailability();
     }
 
-    /** The shared console is offered once any build tool is detected, or once anything has written to it. */
     /**
      * The shared Output console is available whenever something can write into it: a detected build tool, a
      * tab already written (a finished build, a CI log), or <b>a Git repository</b> — Git and GitHub log every
@@ -3912,9 +6074,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         return disabled;
     }
-
-    /** TODO / highlight-pattern feature; owns the service/panel/scan/commands (the tool window stays here). */
-    private SearchEverywherePopup searchEverywherePopup;
 
     /**
      * The three sources behind Search Everywhere. Commands come from the registry and cost nothing;
@@ -4005,7 +6164,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         public void choose(com.editora.search.SearchEverywhere.Item item) {
             switch (item.payload()) {
                 case Command c -> registry.run(c.id());
-                case java.nio.file.Path file -> openPath(file);
+                case java.nio.file.Path file -> fileWorkflows.openPath(file);
                 case com.editora.index.SymbolIndex.Hit hit ->
                     openAndGoto(hit.file(), hit.symbol().line(), hit.symbol().column());
                 default -> {
@@ -4040,8 +6199,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void openMatch(java.nio.file.Path file, int line, int col) {
-            openPath(file);
-            Platform.runLater(() -> gotoInFile(file, line, col));
+            fileWorkflows.openPath(file);
+            Platform.runLater(() -> sessions.gotoInFile(file, line, col));
         }
 
         @Override
@@ -4074,7 +6233,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private void applyTodoLineEdit(
             java.nio.file.Path file, int line, String expectedLine, String newLine, Runnable afterApply) {
-        openPath(file);
+        fileWorkflows.openPath(file);
         Platform.runLater(() -> {
             EditorBuffer b = activeBuffer();
             if (b == null || b.getPath() == null || !canonicalPath(b.getPath()).equals(canonicalPath(file))) {
@@ -4083,7 +6242,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // Say so rather than doing nothing: a TODO in a read-only buffer is common (a .log opens in View
             // mode, as does anything not writable on disk — i.e. exactly the vendored/generated code a scan
             // turns up), and a menu click that produced no status, no error and no change looked like a bug.
-            if (!activeEditable()) {
+            if (!editing.activeEditable()) {
                 setStatus(tr("status.todo.readOnly"));
                 return;
             }
@@ -4133,22 +6292,22 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void exportPdf(String csvText, String baseName) {
-            csvExportPdf(csvText, baseName);
+            exports.csvExportPdf(csvText, baseName);
         }
 
         @Override
         public void printCsv(String csvText) {
-            csvPrint(csvText);
+            exports.csvPrint(csvText);
         }
 
         @Override
         public void exportExcel(java.util.List<java.util.List<String>> rows, boolean hasHeader, String baseName) {
-            csvExportSpreadsheet(rows, hasHeader, baseName, true);
+            exports.csvExportSpreadsheet(rows, hasHeader, baseName, true);
         }
 
         @Override
         public void exportOds(java.util.List<java.util.List<String>> rows, boolean hasHeader, String baseName) {
-            csvExportSpreadsheet(rows, hasHeader, baseName, false);
+            exports.csvExportSpreadsheet(rows, hasHeader, baseName, false);
         }
     });
 
@@ -4164,9 +6323,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void openMatch(java.nio.file.Path file, int line, int col, boolean focusEditor) {
-                    openPath(file);
+                    fileWorkflows.openPath(file);
                     Platform.runLater(() -> {
-                        gotoInFile(file, line, col, focusEditor);
+                        sessions.gotoInFile(file, line, col, focusEditor);
                         // A preview (single click / keyboard selection) keeps focus in the results so the user
                         // can keep arrowing — openPath/gotoInFile would otherwise have grabbed editor focus.
                         if (!focusEditor) {
@@ -4226,17 +6385,17 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void onRunStateChanged() {
-            updateRunConfigButtons();
+            runConfigurations.updateRunConfigButtons();
         }
 
         @Override
         public void editConfiguration(String name) {
-            runConfigEditor.accept(name);
+            runConfigurations.runConfigEditor.accept(name);
         }
 
         @Override
         public boolean saveBuffer(EditorBuffer buffer) {
-            return save(buffer);
+            return fileWorkflows.save(buffer);
         }
 
         @Override
@@ -4252,7 +6411,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void openLink(com.editora.run.StackTraceLinks.Link link) {
-            openRunLink(link);
+            testNavigation.openRunLink(link);
         }
 
         @Override
@@ -4423,22 +6582,22 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void openLink(com.editora.run.StackTraceLinks.Link link) {
-                    openRunLink(link);
+                    testNavigation.openRunLink(link);
                 }
 
                 @Override
                 public void jumpToTest(com.editora.test.TestNode node, BuildTool tool) {
-                    jumpToTestSource(node, tool);
+                    testNavigation.jumpToTestSource(node, tool);
                 }
 
                 @Override
                 public void runTest(BuildTool tool, Path root, List<String> taskArgs, List<String> toggleArgs) {
-                    buildCoordinatorFor(tool).ifPresent(c -> c.runTask(taskArgs, toggleArgs));
+                    testNavigation.buildCoordinatorFor(tool).ifPresent(c -> c.runTask(taskArgs, toggleArgs));
                 }
 
                 @Override
                 public void stopTest(BuildTool tool) {
-                    buildCoordinatorFor(tool).ifPresent(BuildCoordinator::stop);
+                    testNavigation.buildCoordinatorFor(tool).ifPresent(BuildCoordinator::stop);
                 }
 
                 @Override
@@ -4450,7 +6609,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public void attachDebugger(String className, String host, int port) {
                     // Anchor the session on the test's own source when we can find it, else the active buffer.
                     String hint = com.editora.test.TestSourceLocator.fileHint(className, BuildTool.MAVEN);
-                    Path anchor = hint == null ? null : resolveTestSourceFile(hint);
+                    Path anchor = hint == null ? null : testNavigation.resolveTestSourceFile(hint);
                     if (anchor == null) {
                         EditorBuffer b = activeBuffer();
                         anchor = b == null ? null : b.getPath();
@@ -4501,7 +6660,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public boolean activeEditable() {
-                    return MainController.this.activeEditable();
+                    return editing.activeEditable();
                 }
 
                 @Override
@@ -4598,7 +6757,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void onDetectionSettled() {
-                    maybeOfferInstall(activeBuffer()); // hide/show the install banner per fresh LSP detection
+                    installPrompts.maybeOfferInstall(
+                            activeBuffer()); // hide/show the install banner per fresh LSP detection
                 }
 
                 @Override
@@ -4606,7 +6766,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     // A jdtls that ships java-debug (e.g. Homebrew's) advertises the debug commands here —
                     // there is no local plugin jar to locate, so this is what un-gates debugging (#711).
                     debugCoordinator.refreshJavaDebugAvailability();
-                    maybeOfferInstall(activeBuffer()); // the install banner may no longer be warranted
+                    installPrompts.maybeOfferInstall(activeBuffer()); // the install banner may no longer be warranted
                 }
 
                 @Override
@@ -4656,7 +6816,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public EditorBuffer bufferForPath(String path) {
-            return openBufferForPath(path);
+            return mcpBridge.openBufferForPath(path);
         }
 
         @Override
@@ -4695,7 +6855,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void openPath(Path file) {
-            MainController.this.openPath(file);
+            fileWorkflows.openPath(file);
         }
 
         @Override
@@ -4758,19 +6918,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             gitPanel.setAiAvailable(available);
         }
     });
-
-    /**
-     * Stages (or unstages) the Commit window's selected rows — the palette twins of its context menu, so
-     * the whole flow works without the mouse. Opens the window first, since acting on a selection the user
-     * can't see would be a surprise, and echoes when the selection holds nothing to act on.
-     */
-    private void stageSelectedInCommitWindow(boolean stage) {
-        toolWindows.open(commitToolWindow, true);
-        boolean acted = stage ? gitPanel.stageSelected() : gitPanel.unstageSelected();
-        if (!acted) {
-            setStatus(tr(stage ? "status.git.nothingToStage" : "status.git.nothingToUnstage"));
-        }
-    }
 
     // --- Doctor (external-tool health screen, a Welcome-style tab; see doctor/ + DoctorCoordinator) ---
 
@@ -4847,7 +6994,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private boolean mcpEnabled() {
         // Simple UI mode disables the MCP server too (without changing the saved setting).
-        return config.getSettings().isMcpSupport() && !simpleModeActive();
+        return config.getSettings().isMcpSupport() && !chrome.simpleModeActive();
     }
 
     /**
@@ -4917,12 +7064,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                         : root.getFileName().toString()));
     }
 
-    /**
-     * The workspace-trust confirmation, shown before a build tool executes a script the <em>repository</em>
-     * supplies ({@code ./mvnw}, {@code ./gradlew}) from a folder the user has not trusted yet. Returns true
-     * to grant trust. Mirrors {@link #confirmEnableMcp} / {@code confirmEnablePlugin} — the default button is
-     * Cancel, so dismissing the dialog never grants trust.
-     */
     /**
      * Consent before generating from an archetype we did not vet (a user-typed GAV, or one pulled from the
      * remote catalog). {@code archetype:generate} downloads and executes third-party Maven plugin code, and
@@ -5078,377 +7219,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- McpBridge: marshals editor reads onto the FX thread for the off-FX HTTP worker -----------
 
-    /** Runs {@code task} on the FX thread and blocks (with a timeout) for its result. */
-    private static <T> T mcpOnFx(java.util.function.Supplier<T> task) {
-        if (javafx.application.Platform.isFxApplicationThread()) {
-            return task.get();
-        }
-        java.util.concurrent.CompletableFuture<T> f = new java.util.concurrent.CompletableFuture<>();
-        javafx.application.Platform.runLater(() -> {
-            try {
-                f.complete(task.get());
-            } catch (Throwable t) {
-                f.completeExceptionally(t);
-            }
-        });
-        try {
-            return f.get(5, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Override
-    public java.util.List<OpenFile> listOpenFiles() {
-        return mcpOnFx(() -> {
-            EditorBuffer active = activeBuffer();
-            java.util.List<OpenFile> out = new java.util.ArrayList<>();
-            for (Tab tab : editorArea.tabs()) {
-                EditorBuffer b = bufferOf(tab);
-                if (b == null) {
-                    continue;
-                }
-                out.add(new OpenFile(
-                        b.getPath() == null ? null : b.getPath().toString(),
-                        b.getTitle(),
-                        b.getLanguage(),
-                        b.isDirty(),
-                        b == active));
-            }
-            return out;
-        });
-    }
-
-    @Override
-    public BufferContent readBuffer(String path) {
-        return mcpOnFx(() -> {
-            EditorBuffer b = path == null ? activeBuffer() : openBufferForPath(path);
-            if (b == null) {
-                return null;
-            }
-            return new BufferContent(
-                    b.getPath() == null ? null : b.getPath().toString(),
-                    b.getTitle(),
-                    b.getLanguage(),
-                    b.isDirty(),
-                    b.getContent());
-        });
-    }
-
-    @Override
-    public java.util.List<Diagnostic> getDiagnostics(String path) {
-        return mcpOnFx(() -> {
-            Path target = path != null
-                    ? Path.of(path)
-                    : (activeBuffer() == null ? null : activeBuffer().getPath());
-            if (target == null) {
-                return java.util.List.<Diagnostic>of();
-            }
-            Path key = canonicalPath(target);
-            java.util.List<Diagnostic> out = new java.util.ArrayList<>();
-            for (var e : lspCoordinator.problems().entrySet()) {
-                if (!canonicalPath(e.getKey()).equals(key)) {
-                    continue;
-                }
-                for (com.editora.editor.LspDiagnostic d : e.getValue()) {
-                    out.add(new Diagnostic(
-                            d.startLine() + 1, d.startCol() + 1, d.severity().name(), d.message(), d.origin()));
-                }
-            }
-            return out;
-        });
-    }
-
-    @Override
-    public java.util.List<SearchMatch> findInFiles(
-            String query, boolean caseSensitive, boolean regex, boolean wholeWord) {
-        com.editora.search.SearchQuery q = new com.editora.search.SearchQuery(query, caseSensitive, regex, wholeWord);
-        java.util.concurrent.CompletableFuture<com.editora.search.SearchService.Outcome> fut =
-                new java.util.concurrent.CompletableFuture<>();
-        javafx.application.Platform.runLater(() -> {
-            java.util.Map<Path, String> open = new java.util.HashMap<>();
-            for (Tab tab : editorArea.tabs()) {
-                EditorBuffer b = bufferOf(tab);
-                if (b != null && b.getPath() != null) {
-                    open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
-                }
-            }
-            Path root = null;
-            Project p = projects == null ? null : projects.active();
-            if (p != null) {
-                root = Path.of(p.root());
-            }
-            searchCoordinator.service().search(q, root, open, fut::complete);
-        });
-        com.editora.search.SearchService.Outcome outcome;
-        try {
-            outcome = fut.get(20, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        java.util.List<SearchMatch> out = new java.util.ArrayList<>();
-        for (com.editora.search.FileResult fr : outcome.files()) {
-            for (com.editora.search.LineMatch lm : fr.matches()) {
-                out.add(new SearchMatch(fr.file().toString(), lm.line(), lm.col(), lm.lineText()));
-            }
-        }
-        return out;
-    }
-
-    @Override
-    public java.util.List<CommandInfo> listCommands() {
-        return mcpOnFx(() -> {
-            java.util.List<CommandInfo> out = new java.util.ArrayList<>();
-            for (com.editora.command.Command c : registry.all()) {
-                out.add(new CommandInfo(c.id(), c.title(), c.description()));
-            }
-            return out;
-        });
-    }
-
-    @Override
-    public boolean executeCommand(String id) {
-        return mcpOnFx(() -> registry.run(id));
-    }
-
-    @Override
-    public boolean openFile(String path, int line, int col) {
-        Path file = Path.of(path);
-        if (!java.nio.file.Files.exists(file)) {
-            return false;
-        }
-        return mcpOnFx(() -> {
-            openPath(file);
-            // Navigate only for text buffers — an image/hex/binary tab has no caret to move.
-            if (line > 0 && openBufferForPath(file.toString()) != null) {
-                gotoInFile(file, line, Math.max(col, 1));
-            }
-            return true;
-        });
-    }
-
-    @Override
-    public String editBuffer(String path, String oldText, String newText, boolean replaceAll) {
-        return mcpOnFx(() -> {
-            EditorBuffer b = path == null ? activeBuffer() : openBufferForPath(path);
-            if (b == null) {
-                return path == null ? "No active buffer." : "No open buffer for: " + path;
-            }
-            if (!b.isEditable()) {
-                return "Buffer is read-only.";
-            }
-            CodeArea area = b.getArea();
-            String replacement = newText == null ? "" : newText;
-            if (oldText == null || oldText.isEmpty()) {
-                area.replaceText(replacement); // whole-buffer rewrite, one undo step
-                return null;
-            }
-            String text = area.getText();
-            int first = text.indexOf(oldText);
-            if (first < 0) {
-                return "old_text not found in the buffer.";
-            }
-            if (replaceAll) {
-                area.replaceText(text.replace(oldText, replacement));
-                return null;
-            }
-            if (text.indexOf(oldText, first + 1) >= 0) {
-                return "old_text occurs more than once; pass replace_all or a longer, unique old_text.";
-            }
-            area.replaceText(first, first + oldText.length(), replacement);
-            return null;
-        });
-    }
-
-    @Override
-    public String saveBuffer(String path) {
-        return mcpOnFx(() -> {
-            EditorBuffer b = path == null ? activeBuffer() : openBufferForPath(path);
-            if (b == null) {
-                return path == null ? "No active buffer." : "No open buffer for: " + path;
-            }
-            if (b.getPath() == null) {
-                // save() would open a Save-As dialog — never pop UI from an agent call.
-                return "Untitled buffer has no file path; Save As must be done in the editor.";
-            }
-            return save(b) ? null : "Save did not complete (elevated write pending or the write failed).";
-        });
-    }
-
-    @Override
-    public Selection getSelection() {
-        return mcpOnFx(() -> {
-            EditorBuffer b = activeBuffer();
-            if (b == null) {
-                return null;
-            }
-            CodeArea area = b.getFocusedArea() != null ? b.getFocusedArea() : b.getArea();
-            var fwd = org.fxmisc.richtext.model.TwoDimensional.Bias.Forward;
-            var sel = area.getSelection();
-            var sp = area.offsetToPosition(sel.getStart(), fwd);
-            var ep = area.offsetToPosition(sel.getEnd(), fwd);
-            return new Selection(
-                    b.getPath() == null ? null : b.getPath().toString(),
-                    b.getTitle(),
-                    area.getCurrentParagraph() + 1,
-                    area.getCaretColumn() + 1,
-                    sp.getMajor() + 1,
-                    sp.getMinor() + 1,
-                    ep.getMajor() + 1,
-                    ep.getMinor() + 1,
-                    area.getSelectedText());
-        });
-    }
-
-    @Override
-    public java.util.List<Symbol> documentSymbols(String path) {
-        java.util.concurrent.CompletableFuture<java.util.List<com.editora.lsp.SymbolNode>> fut =
-                new java.util.concurrent.CompletableFuture<>();
-        javafx.application.Platform.runLater(() -> {
-            Path target = path != null
-                    ? Path.of(path)
-                    : (activeBuffer() == null ? null : activeBuffer().getPath());
-            if (target == null
-                    || !lspEnabled()
-                    || !lspManager.isManaged(target)
-                    || !lspManager.supportsDocumentSymbols(target)) {
-                fut.complete(java.util.List.of());
-                return;
-            }
-            lspManager.documentSymbols(target, fut::complete);
-        });
-        try {
-            return mapMcpSymbols(fut.get(10, java.util.concurrent.TimeUnit.SECONDS));
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    /** Maps the LSP outline to the bridge's neutral records, shifting lines to 1-based. */
-    private static java.util.List<Symbol> mapMcpSymbols(java.util.List<com.editora.lsp.SymbolNode> in) {
-        java.util.List<Symbol> out = new java.util.ArrayList<>(in.size());
-        for (com.editora.lsp.SymbolNode n : in) {
-            out.add(new Symbol(
-                    n.name(), n.detail(), n.kind(), n.line() + 1, n.endLine() + 1, mapMcpSymbols(n.children())));
-        }
-        return out;
-    }
-
-    @Override
-    public GitState gitStatus() {
-        java.util.concurrent.CompletableFuture<com.editora.git.GitService.RepoState> fut =
-                new java.util.concurrent.CompletableFuture<>();
-        javafx.application.Platform.runLater(() -> {
-            Path context = git.isEnabled() ? git.contextPath() : null;
-            if (context == null) {
-                fut.complete(com.editora.git.GitService.RepoState.NONE);
-                return;
-            }
-            git.service().status(context, fut::complete);
-        });
-        com.editora.git.GitService.RepoState state;
-        try {
-            state = fut.get(15, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        if (!state.isRepo()) {
-            return new GitState(false, null, null, null, 0, 0, java.util.List.of());
-        }
-        com.editora.git.GitStatus st = state.status();
-        java.util.List<GitFileState> files = new java.util.ArrayList<>();
-        for (com.editora.git.GitStatus.FileEntry f : st.files()) {
-            files.add(
-                    new GitFileState(f.path(), String.valueOf(f.index()), String.valueOf(f.worktree()), f.origPath()));
-        }
-        return new GitState(true, state.root().toString(), st.branch(), st.upstream(), st.ahead(), st.behind(), files);
-    }
-
-    @Override
-    public java.util.List<TabInfo> listTabs() {
-        return mcpOnFx(() -> {
-            Tab active = editorArea.selectedTab();
-            java.util.List<TabInfo> out = new java.util.ArrayList<>();
-            for (Tab tab : editorArea.tabs()) {
-                Path p = tabPath(tab);
-                out.add(new TabInfo(tabType(tab), bufferTitle(tab), p == null ? null : p.toString(), tab == active));
-            }
-            return out;
-        });
-    }
-
-    @Override
-    public java.util.List<TodoItem> todoScan() {
-        java.util.concurrent.CompletableFuture<com.editora.todo.TodoService.Outcome> fut =
-                new java.util.concurrent.CompletableFuture<>();
-        javafx.application.Platform.runLater(() -> todoCoordinator.scanForMcp(fut::complete));
-        com.editora.todo.TodoService.Outcome outcome;
-        try {
-            outcome = fut.get(30, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        java.util.List<TodoItem> out = new java.util.ArrayList<>();
-        for (com.editora.todo.TodoService.FileTodos ft : outcome.files()) {
-            String file = ft.file().toString();
-            for (com.editora.todo.TodoMatch m : ft.matches()) {
-                com.editora.todo.TodoComment c = m.parsed();
-                out.add(new TodoItem(
-                        file,
-                        m.line() + 1,
-                        m.col() + 1,
-                        c == null ? m.patternName() : c.keyword(),
-                        c == null ? null : c.tag(),
-                        c == null ? null : c.priority(),
-                        m.lineText()));
-            }
-        }
-        return out;
-    }
-
-    /** The MCP {@code type} label for a tab: {@code editor}/{@code image}/{@code hex}/{@code diff}/
-     *  {@code merge}/{@code welcome}/{@code other}. */
-    private static String tabType(Tab tab) {
-        if (bufferOf(tab) != null) {
-            return "editor";
-        }
-        if (imagePaneOf(tab) != null) {
-            return "image";
-        }
-        if (pdfPaneOf(tab) != null) {
-            return "pdf";
-        }
-        if (hexPaneOf(tab) != null) {
-            return "hex";
-        }
-        Object data = tab == null ? null : tab.getUserData();
-        if (data instanceof DiffViewerPane) {
-            return "diff";
-        }
-        if (data instanceof MergeViewerPane) {
-            return "merge";
-        }
-        if (data instanceof WelcomePane) {
-            return "welcome";
-        }
-        if (data instanceof DoctorPane) {
-            return "doctor";
-        }
-        return "other";
-    }
-
-    /** Finds the open buffer whose file matches {@code path} (by canonical path), or null. */
-    private EditorBuffer openBufferForPath(String path) {
-        Path key = canonicalPath(Path.of(path));
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null && b.getPath() != null && canonicalPath(b.getPath()).equals(key)) {
-                return b;
-            }
-        }
-        return null;
-    }
-
     /** True when {@code b}'s file is on the local filesystem (or untitled) — the gate for every feature
      *  that shells out to a local process (LSP/DAP/git/run/HTTP). Remote (SFTP) buffers are text-only. */
     private boolean isLocalBuffer(EditorBuffer b) {
@@ -5459,7 +7229,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private boolean lspEnabled() {
         // Simple UI mode disables LSP (servers, diagnostics, completion, navigation); saved setting unchanged.
-        return config.getSettings().isLspSupport() && !simpleModeActive();
+        return config.getSettings().isLspSupport() && !chrome.simpleModeActive();
     }
 
     /** Thin LspManager diagnostics callback — delegates to {@link LspCoordinator#onDiagnostics} (kept here
@@ -5496,564 +7266,18 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Opens {@code file} (if needed) and moves the caret to a 0-based LSP line/column. */
     private void openAndGoto(Path file, int line0, int col0) {
-        NavigationHistory.Location origin = navigating ? null : captureCurrent();
-        openPath(file);
+        NavigationHistory.Location origin = navigation.navigating ? null : navigation.captureCurrent();
+        fileWorkflows.openPath(file);
         Platform.runLater(() -> {
-            suppressNavRecord = true; // let this outer call own the recording, not the nested gotoInFile
-            gotoInFile(file, line0 + 1, col0 + 1);
-            suppressNavRecord = false;
-            if (!navigating) {
-                recordJump(origin, new NavigationHistory.Location(file, line0, col0));
+            navigation.suppressNavRecord = true; // let this outer call own the recording, not the nested gotoInFile
+            sessions.gotoInFile(file, line0 + 1, col0 + 1);
+            navigation.suppressNavRecord = false;
+            if (!navigation.navigating) {
+                navigation.recordJump(origin, new NavigationHistory.Location(file, line0, col0));
             }
-            navigating = false; // a back/forward jump has landed
+            navigation.navigating = false; // a back/forward jump has landed
         });
     }
-
-    /** The active file-backed buffer's current caret location (0-based), or {@code null} when none. */
-    private NavigationHistory.Location captureCurrent() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null) {
-            return null;
-        }
-        CodeArea a = b.getArea();
-        return a == null
-                ? null
-                : new NavigationHistory.Location(b.getPath(), a.getCurrentParagraph(), a.getCaretColumn());
-    }
-
-    /** Records a jump into the back/forward history: the {@code origin} we left, then the {@code dest}. */
-    private void recordJump(NavigationHistory.Location origin, NavigationHistory.Location dest) {
-        if (dest == null) {
-            return;
-        }
-        if (origin != null) {
-            navHistory.record(withSnippet(origin));
-        }
-        navHistory.record(withSnippet(dest));
-    }
-
-    /** Cap on a recorded line's text, so one minified line can't sit in the history at full length. */
-    private static final int MAX_LOCATION_SNIPPET = 120;
-
-    /**
-     * Attaches the location's line text, so a recent-locations list can show what is there rather than
-     * only where it is. Both call sites record after the target buffer is on screen, so the line is
-     * readable; a location whose file is not open keeps an empty snippet rather than putting a disk read
-     * on the navigation path.
-     */
-    private NavigationHistory.Location withSnippet(NavigationHistory.Location loc) {
-        if (loc == null || !loc.snippet().isEmpty()) {
-            return loc;
-        }
-        return new NavigationHistory.Location(loc.path(), loc.line(), loc.column(), lineTextAt(loc.path(), loc.line()));
-    }
-
-    /** The trimmed, length-capped text of {@code line} in an open buffer for {@code path}; "" if not open. */
-    private String lineTextAt(Path path, int line) {
-        Tab tab = tabForPath(path);
-        EditorBuffer buffer = tab == null ? null : bufferOf(tab);
-        CodeArea area = buffer == null ? null : buffer.getArea();
-        if (area == null || line < 0 || line >= area.getParagraphs().size()) {
-            return "";
-        }
-        String text = area.getParagraph(line).getText().strip();
-        return text.length() <= MAX_LOCATION_SNIPPET ? text : text.substring(0, MAX_LOCATION_SNIPPET) + "…";
-    }
-
-    /** {@code nav.back}: return to the previous location in the jump list. */
-    private void navBack() {
-        NavigationHistory.Location loc = navHistory.back();
-        if (loc == null) {
-            setStatus(tr("status.nav.noBack"));
-            return;
-        }
-        navigating = true;
-        openAndGoto(loc.path(), loc.line(), loc.column()); // clears `navigating` in its runLater
-    }
-
-    /** {@code nav.forward}: go to the next location in the jump list (after going back). */
-    private void navForward() {
-        NavigationHistory.Location loc = navHistory.forward();
-        if (loc == null) {
-            setStatus(tr("status.nav.noForward"));
-            return;
-        }
-        navigating = true;
-        openAndGoto(loc.path(), loc.line(), loc.column());
-    }
-
-    /**
-     * {@code nav.recentLocations}: a picker over the places visited in this session, newest first.
-     *
-     * <p>The counterpart to Recent Files, and a different question: recent files answers "which file",
-     * this answers "where in it" — which is what you actually lost when a jump took you elsewhere. It
-     * reads the same trail Back walks, so the two can never disagree about where you have been.
-     */
-    private void showRecentLocations() {
-        if (navHistory.recent().isEmpty()) {
-            setStatus(tr("status.nav.noRecentLocations"));
-            return;
-        }
-        previewOrigin = captureCurrent();
-        recentLocationsPalette.show(stage);
-    }
-
-    /** Where the editor was when a previewing picker opened, so cancelling can put it back. */
-    private NavigationHistory.Location previewOrigin;
-
-    /**
-     * Shows a highlighted location in the editor without committing to it: no focus change, and nothing
-     * recorded in the jump list, so browsing the picker cannot itself become history.
-     *
-     * <p>A location whose file is not open is opened into the <em>preview slot</em>, so arrowing down a
-     * list of twenty locations leaves one tab rather than twenty. Before preview tabs existed this case
-     * was skipped entirely, which made the feature useless for exactly the locations you had navigated
-     * away from.
-     */
-    private void previewLocation(NavigationHistory.Location loc) {
-        if (loc == null) {
-            return;
-        }
-        if (tabForPath(loc.path()) == null) {
-            if (!java.nio.file.Files.isReadable(loc.path())) {
-                return; // deleted or unreadable since it was visited
-            }
-            suppressNavRecord = true;
-            try {
-                openPathPreview(loc.path());
-            } finally {
-                suppressNavRecord = false;
-            }
-            if (tabForPath(loc.path()) == null) {
-                return;
-            }
-        }
-        suppressNavRecord = true;
-        try {
-            gotoInFile(loc.path(), loc.line() + 1, loc.column() + 1, false);
-        } finally {
-            suppressNavRecord = false;
-        }
-    }
-
-    /** Puts the editor back where it was before previewing — the picker was dismissed, not used. */
-    private void restorePreviewOrigin() {
-        NavigationHistory.Location origin = previewOrigin;
-        previewOrigin = null;
-        previewLocation(origin);
-    }
-
-    /**
-     * {@code search.everywhere}: one picker over commands, project files and symbols.
-     *
-     * <p>Seeded from a single-line selection, like the find bar and Find in Files — if you have selected
-     * the thing you are looking for, retyping it is busywork.
-     */
-    private void showSearchEverywhere() {
-        if (searchEverywherePopup == null) {
-            return; // overlay host not installed yet (very early in init)
-        }
-        searchEverywherePopup.show(singleLineSelection());
-    }
-
-    /**
-     * The active buffer's selection when it is non-empty and on one line, else "". A multi-line selection
-     * is never a sensible search term, which is the same rule the find bar and Find in Files apply.
-     */
-    private String singleLineSelection() {
-        EditorBuffer b = activeBuffer();
-        CodeArea a = b == null ? null : b.getFocusedArea();
-        if (a == null) {
-            return "";
-        }
-        String selection = a.getSelectedText();
-        return selection == null || selection.isBlank() || selection.contains("\n") ? "" : selection.strip();
-    }
-
-    /**
-     * {@code nav.relatedFile}: jump between a file and its counterpart — a test and its subject, a header
-     * and its implementation, a component and its stylesheet.
-     *
-     * <p>The candidate names come from the pure {@link com.editora.search.RelatedFiles}; this half decides
-     * which of them exist. A counterpart rarely sits beside its partner (a test lives under
-     * {@code src/test}, a header under {@code include}), so the sibling directory is only the first place
-     * looked — the project index knows every file, and matching on name there finds the rest for free.
-     *
-     * <p>One match opens; several offer a picker, since {@code Foo.css} and {@code Foo.scss} can both
-     * exist and only the user knows which was meant.
-     */
-    private void gotoRelatedFile() {
-        EditorBuffer b = activeBuffer();
-        Path current = b == null ? null : b.getPath();
-        if (current == null) {
-            setStatus(tr("status.related.noFile"));
-            return;
-        }
-        List<String> names =
-                com.editora.search.RelatedFiles.candidates(current.getFileName().toString());
-        if (names.isEmpty()) {
-            setStatus(tr("status.related.none", current.getFileName()));
-            return;
-        }
-        indexCoordinator.ensureBuilt(() -> openRelated(current, names));
-    }
-
-    private void openRelated(Path current, List<String> names) {
-        List<Path> found = new ArrayList<>();
-        Path dir = current.getParent();
-        for (String name : names) {
-            // Beside the file first: when a counterpart IS a sibling that is nearly always the right one,
-            // and it costs a single exists() rather than a scan.
-            if (dir != null) {
-                Path sibling = dir.resolve(name);
-                if (java.nio.file.Files.isRegularFile(sibling) && !sibling.equals(current)) {
-                    found.add(sibling);
-                }
-            }
-            for (IndexCoordinator.FileHit hit : indexCoordinator.searchFiles(name, 20)) {
-                if (hit.file().getFileName().toString().equals(name)
-                        && !hit.file().equals(current)
-                        && !found.contains(hit.file())) {
-                    found.add(hit.file());
-                }
-            }
-        }
-        if (found.isEmpty()) {
-            setStatus(tr("status.related.none", current.getFileName()));
-            return;
-        }
-        if (found.size() == 1) {
-            openPath(found.get(0));
-            return;
-        }
-        relatedCandidates = found;
-        relatedPalette.show(stage);
-    }
-
-    private List<Path> relatedCandidates = List.of();
-
-    /**
-     * {@code lsp.gotoDefinitionInSplit}: open the definition beside the code that referenced it.
-     *
-     * <p>The pair you want on screen together is the call and the thing called — comparing them is the
-     * usual reason for going there at all. Splitting after the jump puts the definition in the new group
-     * and leaves the origin where it was.
-     *
-     * <p>A definition in the SAME file is jumped to without splitting: there is only one tab, so the split
-     * would move it and leave the group it came from empty.
-     */
-    private void gotoDefinitionInSplit() {
-        EditorBuffer origin = activeBuffer();
-        Path originPath = origin == null ? null : origin.getPath();
-        lspCoordinator.gotoDefinition(() -> {
-            EditorBuffer landed = activeBuffer();
-            Path landedPath = landed == null ? null : landed.getPath();
-            if (landedPath != null && !landedPath.equals(originPath)) {
-                splitEditorGroup(Orientation.HORIZONTAL);
-            }
-        });
-    }
-
-    /** {@code file.java:214} — a location's file and 1-based line, for a picker's detail column. */
-    private static String locationLabel(NavigationHistory.Location loc) {
-        return loc.path().getFileName() + ":" + (loc.line() + 1);
-    }
-
-    /** A stack-trace location double-clicked in the Run/Debug console: resolve + jump. An absolute
-     *  path opens directly; a bare Java file name resolves against the open tabs, then the run file's
-     *  directory, then the active project root's top level. */
-    private void openRunLink(com.editora.run.StackTraceLinks.Link link) {
-        // Ask the Java server first when one is running (#744): it resolves the frame against the real
-        // classpath, so it can place a frame inside a dependency or the JDK — which the local
-        // regex + filesystem walk below can never do, because there is no such file in the project.
-        Path anchor = lspStackTraceAnchor();
-        if (anchor != null && link.raw() != null) {
-            lspManager.resolveStackTraceLocation(anchor, link.raw(), uri -> {
-                if (uri == null || !openResolvedFrame(anchor, uri, link)) {
-                    openRunLinkLocally(link); // no answer, or an answer we can't open — heuristic as before
-                }
-            });
-            return;
-        }
-        openRunLinkLocally(link);
-    }
-
-    /** The file whose session answers stack-trace resolution: the active buffer if the Java server serves
-     *  it, else null (which keeps the local heuristic as the only path — e.g. a Python traceback). */
-    private Path lspStackTraceAnchor() {
-        if (!lspEnabled()) {
-            return null;
-        }
-        EditorBuffer b = activeBuffer();
-        Path path = b == null ? null : b.getPath();
-        return path != null && lspManager.isManaged(path) && "java".equals(b.getLanguage()) ? path : null;
-    }
-
-    /** Opens a server-resolved frame URI; false when it names something we can't open, so the caller falls
-     *  back. A {@code jdt://} answer is a library frame and opens as read-only class-file source (#665). */
-    private boolean openResolvedFrame(Path anchor, String uri, com.editora.run.StackTraceLinks.Link link) {
-        if (uri.startsWith("jdt:")) {
-            lspCoordinator.openLibraryFrame(anchor, uri, link.line() - 1);
-            return true;
-        }
-        try {
-            Path file = Path.of(java.net.URI.create(uri));
-            if (java.nio.file.Files.isRegularFile(file)) {
-                openAndGoto(file, link.line() - 1, 0); // console lines are 1-based
-                return true;
-            }
-        } catch (RuntimeException notAUsableUri) {
-            return false;
-        }
-        return false;
-    }
-
-    private void openRunLinkLocally(com.editora.run.StackTraceLinks.Link link) {
-        Path resolved = resolveRunLinkFile(link.file());
-        if (resolved == null) {
-            setStatus(tr("status.run.linkNotFound", link.file()));
-            return;
-        }
-        openAndGoto(resolved, link.line() - 1, 0); // console lines are 1-based
-    }
-
-    private Path resolveRunLinkFile(String fileToken) {
-        try {
-            Path p = Path.of(fileToken);
-            if (p.isAbsolute() && java.nio.file.Files.isRegularFile(p)) {
-                return p; // a genuinely local absolute path (a local run/build log)
-            }
-            // A CI log carries the *runner's* paths (absolute /home/runner/work/<r>/<r>/… or repo-relative),
-            // which don't exist locally — try progressively shorter repo-relative suffixes under the project
-            // root so a GitHub Actions failure frame still jumps to the local file. Exact paths are tried
-            // first (candidate 0), so local behaviour is unchanged.
-            Project activeProject = projects == null ? null : projects.active();
-            if (activeProject != null) {
-                Path root = Path.of(activeProject.root());
-                for (String candidate : com.editora.run.RunnerPaths.candidates(fileToken)) {
-                    Path c = root.resolve(candidate);
-                    if (java.nio.file.Files.isRegularFile(c)) {
-                        return c;
-                    }
-                }
-            }
-            if (p.isAbsolute()) {
-                return null; // absolute, not local, and no repo-relative suffix matched
-            }
-            String name = p.getFileName().toString();
-            for (Tab t : editorArea.tabs()) { // an open tab with that file name wins
-                EditorBuffer b = bufferOf(t);
-                if (b != null
-                        && b.getPath() != null
-                        && b.getPath().getFileName().toString().equals(name)) {
-                    return b.getPath();
-                }
-            }
-            Path lastRunDir = runCoordinator.lastRunDir();
-            if (lastRunDir != null) {
-                Path sibling = lastRunDir.resolve(name);
-                if (java.nio.file.Files.isRegularFile(sibling)) {
-                    return sibling;
-                }
-            }
-            // (The old "<project root>/<bare name>" fallback is subsumed by the candidate walk above — the
-            // last candidate is always the bare file name, resolved against the same root.)
-        } catch (RuntimeException ignored) {
-            // Malformed path token — treat as unresolvable.
-        }
-        return null;
-    }
-
-    /** The build coordinator that owns {@code tool} (for the Test Results rerun/stop hooks). */
-    private java.util.Optional<BuildCoordinator> buildCoordinatorFor(BuildTool tool) {
-        return buildCoordinators.stream().filter(c -> c.tool() == tool).findFirst();
-    }
-
-    /** {@code test.run}: run the {@code test} task of the first detected build tool for the active context. */
-    private void runTestsForContext() {
-        for (BuildCoordinator c : buildCoordinators) {
-            if (c.isEnabled() && c.isDetected()) {
-                c.runTask(com.editora.test.TestRunRecognizer.defaultTestTask(c.tool()), List.of());
-                return;
-            }
-        }
-        setStatus(tr("status.testrunner.noBuildTool"));
-    }
-
-    /** Whether a JVM build tool (Maven/Gradle) is detected + enabled — the JUnit test gutter's build-side gate. */
-    private boolean jvmBuildDetected() {
-        return buildCoordinators.stream()
-                .anyMatch(c -> (c.tool() == BuildTool.MAVEN || c.tool() == BuildTool.GRADLE)
-                        && c.isEnabled()
-                        && c.isDetected());
-    }
-
-    /** Pushes the project main-method gutter gate to a buffer (not Simple mode + local + a detected Maven/Gradle
-     *  project). */
-    private void applyMainGutter(EditorBuffer buffer) {
-        // Show the ▶ for any detected Maven/Gradle project; run/debug availability (jdtls, or the mvn
-        // classpath fallback) is checked at click time so the gutter isn't hidden when only the fallback works.
-        buffer.setMainGutterEnabled(!simpleModeActive() && isLocalBuffer(buffer) && jvmBuildDetected());
-    }
-
-    /** Pushes the JUnit test-gutter gate to a buffer (Test Runner on + not Simple mode + local + JVM project). */
-    private void applyTestGutter(EditorBuffer buffer) {
-        boolean eligible = config.getSettings().isTestRunner()
-                && !simpleModeActive()
-                && isLocalBuffer(buffer)
-                && jvmBuildDetected();
-        buffer.setTestGutterEnabled(eligible);
-        if (eligible) {
-            refineTestGutterWithServer(buffer); // #745 — asynchronous; only ever turns the gutter OFF
-        }
-    }
-
-    /**
-     * Confirms the test gutter against jdtls's project model ({@code java.project.isTestFile}, #745).
-     *
-     * <p>{@code JavaTestScanner} decides syntactically — a class carrying {@code @Test} methods — which is
-     * right nearly always but can't see source roots, so it decorates a {@code src/main/java} class that
-     * happens to carry such an annotation. The server knows which folders are test folders.
-     *
-     * <p>Deliberately a <b>refinement, not a gate</b>: the scanner's answer is applied immediately and this
-     * only ever removes the gutter, and only on a definite {@code false}. A null (no session, command
-     * failed, server still starting) leaves the scanner's answer alone, so the gutter never disappears
-     * merely because the server isn't ready. Cached per path — this runs on every tab switch.
-     */
-    private void refineTestGutterWithServer(EditorBuffer buffer) {
-        Path path = buffer.getPath();
-        if (path == null || !lspEnabled() || !lspManager.isManaged(path)) {
-            return;
-        }
-        Boolean cached = testFileByPath.get(path);
-        if (cached != null) {
-            if (!cached) {
-                buffer.setTestGutterEnabled(false);
-            }
-            return;
-        }
-        lspManager.isTestFile(path, isTest -> {
-            if (isTest == null) {
-                return; // "don't know" — keep the scanner's answer
-            }
-            testFileByPath.put(path, isTest);
-            if (!isTest && buffer.getPath() == path) {
-                buffer.setTestGutterEnabled(false);
-            }
-        });
-    }
-
-    /** jdtls's verdict on whether a path is a test source (#745); session-scoped, cleared on LSP restart. */
-    private final Map<Path, Boolean> testFileByPath = new java.util.concurrent.ConcurrentHashMap<>();
-
-    /** Gutter test ▶ / {@code test.runAtCaret}: run one class/method via the detected JVM build tool. */
-    private void runSingleTest(com.editora.test.JavaTestScanner.TestTarget target) {
-        for (BuildCoordinator c : buildCoordinators) {
-            if ((c.tool() == BuildTool.MAVEN || c.tool() == BuildTool.GRADLE) && c.isEnabled() && c.isDetected()) {
-                c.runTask(
-                        com.editora.test.TestRunRecognizer.singleTestTask(
-                                c.tool(), target.className(), target.methodName()),
-                        List.of());
-                return;
-            }
-        }
-        setStatus(tr("status.testrunner.noBuildTool"));
-    }
-
-    /** {@code test.runAtCaret} (method) / {@code test.runClassAtCaret} (whole class) at the caret. */
-    private void runTestAtCaret(boolean classLevel) {
-        EditorBuffer b = activeBuffer();
-        com.editora.test.JavaTestScanner.TestTarget target = b == null ? null : b.testTargetAtCaret(classLevel);
-        if (target == null) {
-            setStatus(tr("status.testrunner.noTestAtCaret"));
-            return;
-        }
-        runSingleTest(target);
-    }
-
-    /** Gates the Test Results tool window: hidden when the feature is off or in Simple UI mode (it becomes
-     *  available again on the next test run). Also re-gates every buffer's JUnit test gutter. */
-    private void applyTestRunner() {
-        if (testResultsToolWindow == null) {
-            return;
-        }
-        if (!config.getSettings().isTestRunner() || simpleModeActive()) {
-            toolWindows.setAvailable(testResultsToolWindow, false);
-        }
-        coordinatorHost.forEachBuffer(this::applyTestGutter);
-    }
-
-    /** Test Results double-click: open the test's source file and jump to the method (name-based; the failure
-     *  path already prefers the exact stack-trace frame via {@link #openRunLink}). */
-    private void jumpToTestSource(com.editora.test.TestNode node, BuildTool tool) {
-        String hint = com.editora.test.TestSourceLocator.fileHint(node.className(), tool);
-        Path file = hint == null ? null : resolveTestSourceFile(hint);
-        if (file == null) {
-            setStatus(tr("status.testrunner.noSource", node.displayName()));
-            return;
-        }
-        openPath(file);
-        jumpToTestMethod(file, node.methodName());
-    }
-
-    /** Resolves a test source file by name: an open tab / last-run dir / project root first, else a bounded
-     *  walk of the project tree (test sources live deep under src/test/…). */
-    private Path resolveTestSourceFile(String name) {
-        Path direct = resolveRunLinkFile(name);
-        if (direct != null) {
-            return direct;
-        }
-        Path root = windowProject != null ? Path.of(windowProject.root()) : null;
-        if (root == null || !java.nio.file.Files.isDirectory(root)) {
-            return null;
-        }
-        try (java.util.stream.Stream<Path> walk = java.nio.file.Files.walk(root, 12)) {
-            return walk.filter(java.nio.file.Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().equals(name))
-                    .filter(p -> {
-                        String s = p.toString();
-                        return !s.contains("/target/") && !s.contains("/node_modules/") && !s.contains("/build/");
-                    })
-                    .findFirst()
-                    .orElse(null);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /** Moves the caret to a test method's declaration in an already-open file (text search; strips param/
-     *  parameterized/subtest suffixes). Best-effort — leaves the caret at the top if not found. */
-    private void jumpToTestMethod(Path file, String methodName) {
-        EditorBuffer buffer = bufferOf(tabForPath(file));
-        if (buffer == null || methodName == null || methodName.isBlank()) {
-            return;
-        }
-        String name = methodName;
-        for (char sep : new char[] {'(', '[', '/', ' '}) {
-            int cut = name.indexOf(sep);
-            if (cut > 0) {
-                name = name.substring(0, cut);
-            }
-        }
-        String text = buffer.getContent();
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(name) + "\\b")
-                .matcher(text);
-        if (!m.find()) {
-            return;
-        }
-        int idx = m.start();
-        int line = 1;
-        int lineStart = 0;
-        for (int i = 0; i < idx; i++) {
-            if (text.charAt(i) == '\n') {
-                line++;
-                lineStart = i + 1;
-            }
-        }
-        gotoInFile(file, line, idx - lineStart + 1, true);
-    }
-
-    /** Whether the Personal Notes feature is enabled in Settings (default off). */
 
     /** The open buffer for {@code target} (canonical-path match), or null if not open. */
     private EditorBuffer openBufferFor(Path target) {
@@ -6073,7 +7297,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         try {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(target);
-            loadInto(buffer, target);
+            fileWorkflows.loadInto(buffer, target);
             addBuffer(buffer, false); // background: keep the caller's current tab focused
             return buffer;
         } catch (IOException e) {
@@ -6081,322 +7305,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /** Toggles the IntelliJ-style branch dropdown, fetching local + remote branches off-thread first. */
-    private void chooseBranch() {
-        // Toggle: a second click on the git status segment closes the open dropdown. (autoHide fires on
-        // the same click, hiding it, so also treat a just-now hide as "was open" and leave it closed.)
-        if (branchPopup.isShown()) {
-            branchPopup.hide();
-            return;
-        }
-        if (branchPopup.justHidden()) {
-            return;
-        }
-        if (git.repoRoot() == null) {
-            // Not under version control: the dropdown offers only "Clone Git repository…".
-            branchPopup.showNoVcs(stage, statusBar.gitSegmentNode(), git::cloneRepo);
-            return;
-        }
-        git.service().branches(git.repoRoot(), branches -> {
-            List<BranchPopup.MenuAction> actions = List.of(
-                    // Each row names its command so the popup takes the VCS menu's own glyph for it.
-                    new BranchPopup.MenuAction(tr("branch.newBranch"), "", "git.newBranch", git::newBranch),
-                    new BranchPopup.MenuAction(
-                            tr("branch.pull"),
-                            "",
-                            "git.pull",
-                            () -> git.gitSync(tr("gitlabel.pull"), "pull", "--ff-only")),
-                    new BranchPopup.MenuAction(
-                            tr("branch.fetch"),
-                            "",
-                            "git.fetch",
-                            () -> git.gitSync(tr("gitlabel.fetch"), "fetch", "--all")),
-                    new BranchPopup.MenuAction(tr("branch.push"), "", "git.push", git::gitPush),
-                    new BranchPopup.MenuAction(tr("branch.stash"), "", "git.stash", git::gitStash),
-                    new BranchPopup.MenuAction(tr("branch.unstash"), "", "git.unstash", git::gitUnstash),
-                    new BranchPopup.MenuAction(tr("branch.commit"), "C-x g", "git.commit", git::gitCommitFocus));
-            branchPopup.show(
-                    stage,
-                    statusBar.gitSegmentNode(),
-                    git.branchName(),
-                    branches.local(),
-                    branches.remote(),
-                    branches.remoteUrl(),
-                    actions,
-                    git::checkoutBranch,
-                    git::checkoutRemoteBranch);
-        });
-    }
-
     // --- GitHub tool window ----------------------------------------------------------------------
-
-    /** The {@link GitHubPanel.Actions} the GitHub tool window routes user actions through. */
-    private GitHubPanel.Actions githubActions() {
-        return new GitHubPanel.Actions() {
-            @Override
-            public void refresh() {
-                reloadGithubPanel();
-            }
-
-            @Override
-            public void createPr() {
-                github.createPr();
-            }
-
-            @Override
-            public void showPrs() {
-                github.fetchPrs(githubPanel::setPrs);
-            }
-
-            @Override
-            public void showIssues() {
-                github.fetchIssues(githubPanel::setIssues);
-            }
-
-            @Override
-            public void showRuns() {
-                github.fetchRuns(githubPanel::setRuns);
-            }
-
-            @Override
-            public void viewRunLog(long runId, String workflowName) {
-                github.viewRunLog(runId, workflowName);
-            }
-
-            @Override
-            public void rerunRun(long runId, boolean failedOnly) {
-                github.rerunRun(runId, failedOnly);
-            }
-
-            @Override
-            public void cancelRun(long runId) {
-                github.cancelRun(runId);
-            }
-
-            @Override
-            public void checkoutPr(int number) {
-                github.checkoutNumber(number);
-            }
-
-            @Override
-            public void reviewPr(int number) {
-                github.reviewPrNumber(number);
-            }
-
-            @Override
-            public void openUrl(String url) {
-                github.openUrl(url);
-            }
-
-            @Override
-            public void copyUrl(String url) {
-                github.copyUrl(url);
-            }
-        };
-    }
-
-    /** Re-fetches the GitHub tool window's current segment (PRs, Issues, or Runs). */
-    private void reloadGithubPanel() {
-        githubPanel.showLoading();
-        switch (githubPanel.mode()) {
-            case PRS -> github.fetchPrs(githubPanel::setPrs);
-            case ISSUES -> github.fetchIssues(githubPanel::setIssues);
-            case RUNS -> github.fetchRuns(githubPanel::setRuns);
-        }
-    }
 
     // --- Git Log / History tool window -----------------------------------------------------------
 
-    /** The {@link GitLogPanel.Actions} the Git Log tool window routes user actions through. */
-    private GitLogPanel.Actions gitLogActions() {
-        return new GitLogPanel.Actions() {
-            @Override
-            public void refresh() {
-                loadGitLog(gitLogFilter);
-            }
-
-            @Override
-            public void showAll() {
-                loadGitLog(null);
-            }
-
-            @Override
-            public void selected(String hash) {
-                if (git.repoRoot() != null) {
-                    git.service().commitFiles(git.repoRoot(), hash, gitLogPanel::setCommitFiles);
-                }
-            }
-
-            @Override
-            public void openFileDiff(String hash, String repoRel, String origRepoRel) {
-                diffCoordinator.diffCommitFile(hash, repoRel, origRepoRel);
-            }
-
-            @Override
-            public void openFile(String repoRel) {
-                Path root = git.repoRoot();
-                if (root == null) {
-                    return;
-                }
-                Path file = root.resolve(repoRel);
-                if (Files.exists(file)) {
-                    openPath(file);
-                } else {
-                    setStatus(tr("status.git.fileGone", repoRel));
-                }
-            }
-
-            @Override
-            public void showFileHistory(String repoRel) {
-                Path root = git.repoRoot();
-                if (root != null) {
-                    openGitLog(root.resolve(repoRel));
-                }
-            }
-
-            @Override
-            public void copyPath(String repoRel) {
-                ClipboardContent content = new ClipboardContent();
-                content.putString(repoRel);
-                Clipboard.getSystemClipboard().setContent(content);
-                setStatus(tr("status.copiedPath"));
-            }
-
-            @Override
-            public void copyHash(String hash) {
-                ClipboardContent content = new ClipboardContent();
-                content.putString(hash);
-                Clipboard.getSystemClipboard().setContent(content);
-                setStatus(tr("status.git.copiedHash", com.editora.git.GitFormat.shortHash(hash)));
-            }
-
-            @Override
-            public void checkout(String hash) {
-                gitMutate(tr("status.git.checkedOut", com.editora.git.GitFormat.shortHash(hash)), "checkout", hash);
-            }
-
-            @Override
-            public void reset(String hash, String mode) {
-                gitMutate(
-                        tr("status.git.reset", mode, com.editora.git.GitFormat.shortHash(hash)),
-                        "reset",
-                        "--" + mode,
-                        hash);
-                Platform.runLater(MainController.this::checkExternalChanges);
-            }
-
-            @Override
-            public void revert(String hash) {
-                gitMutate(
-                        tr("status.git.reverted", com.editora.git.GitFormat.shortHash(hash)),
-                        "revert",
-                        "--no-edit",
-                        hash);
-            }
-
-            @Override
-            public void cherryPick(String hash) {
-                gitMutate(
-                        tr("status.git.cherryPicked", com.editora.git.GitFormat.shortHash(hash)), "cherry-pick", hash);
-            }
-
-            @Override
-            public void newBranch(String hash) {
-                promptText(tr("dialog.newBranch.title"), tr("dialog.newBranch.content"), "", input -> {
-                    String name = input.strip();
-                    if (!name.isEmpty()) {
-                        gitMutate(tr("status.createdBranch", name), "checkout", "-b", name, hash);
-                        Platform.runLater(MainController.this::reloadAllFromDiskSilently);
-                    }
-                });
-            }
-        };
-    }
-
-    /** Runs {@code op} on the Git Log panel's selected commit, or reports that none is selected. Git-gated. */
-    private void withSelectedCommit(java.util.function.Consumer<String> op) {
-        git.ifEnabled(() -> {
-            String hash = gitLogPanel.selectedHash();
-            if (hash == null || hash.isBlank()) {
-                setStatus(tr("status.git.noCommitSelected"));
-                return;
-            }
-            op.accept(hash);
-        });
-    }
-
-    /** Asks for the reset mode (soft/mixed/hard) then resets the selected commit (the {@code git.log.reset} command). */
-    private void promptGitReset(String hash) {
-        javafx.scene.control.ChoiceDialog<String> d =
-                new javafx.scene.control.ChoiceDialog<>("mixed", java.util.List.of("soft", "mixed", "hard"));
-        d.initOwner(stage);
-        d.setTitle(tr("dialog.gitReset.title"));
-        d.setHeaderText(null);
-        d.setContentText(tr("dialog.gitReset.content"));
-        d.showAndWait().ifPresent(mode -> gitLogOps.reset(hash, mode));
-    }
-
-    /**
-     * Opens the Git Log tool window with the given filter (null = whole repo). A fresh open triggers the
-     * load via the tool-window state listener; if the window is already open (no state change, so no
-     * listener), the log is refreshed explicitly — so opening always shows current history.
-     */
-    private void openGitLog(Path filter) {
-        gitLogFilter = filter;
-        boolean wasOpen = toolWindows.isOpen(gitLogToolWindow);
-        toolWindows.open(gitLogToolWindow);
-        if (wasOpen) {
-            loadGitLog(filter);
-        }
-    }
-
-    /** Opens the Git Log tool window showing the whole-repo history. */
-    private void showGitLog() {
-        openGitLog(null);
-    }
-
-    /** Opens the Git Log filtered to the active file's history. */
-    private void showFileHistory() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null) {
-            setStatus(tr("status.diff.noFile"));
-            return;
-        }
-        openGitLog(b.getPath());
-    }
-
-    /** Loads up to 200 commits (whole-repo when {@code file} is null, else that file's history). */
-    private void loadGitLog(Path file) {
-        gitLogFilter = file;
-        if (git.repoRoot() == null) {
-            gitLogPanel.setLog(List.of(), null);
-            git.reportIfNoRepo(); // echoes "not a repo" / "git not installed"
-            return;
-        }
-        String name = file != null ? file.getFileName().toString() : null;
-        git.service().log(git.repoRoot(), file, 200, commits -> gitLogPanel.setLog(commits, name));
-    }
-
     /** Read-only diff of one file at a commit vs its first parent (from the Git Log file list). */
-    /** A history mutation (checkout/reset/revert/cherry-pick/branch): run, report, refresh + reload log. */
-    private void gitMutate(String successMessage, String... args) {
-        if (git.reportIfNoRepo()) {
-            return;
-        }
-        git.service()
-                .run(
-                        git.repoRoot(),
-                        r -> {
-                            if (r.ok()) {
-                                setStatus(successMessage);
-                            } else {
-                                git.gitError(tr("status.git.opFailed"), r.message());
-                            }
-                            git.afterMutation();
-                            loadGitLog(gitLogFilter); // HEAD/refs moved → refresh the log
-                        },
-                        args);
-    }
 
     // --- TODO / highlight patterns ---------------------------------------------------------------
 
@@ -6404,174 +7317,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- Markdown lint ---------------------------------------------------------------------------
 
-    /** Whether Markdown linting is effective (the setting; the per-buffer gate adds Markdown + non-huge). */
-    private boolean markdownLintEnabled() {
-        return config.getSettings().isMarkdownLint();
-    }
-
-    /** Pushes the Markdown-lint enabled state to every buffer (init + each settings apply). */
-    private void applyMarkdownLint() {
-        boolean on = markdownLintEnabled();
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null) {
-                b.setMarkdownLintEnabled(on);
-            }
-        }
-        if (markdownLintToolWindow != null && markdownLintPanel != null && toolWindows.isOpen(markdownLintToolWindow)) {
-            runMarkdownLintScan();
-        }
-    }
-
-    /** Lints the active Markdown buffer once and fills the Lint tool window (off-thread). */
-    private void runMarkdownLintScan() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isMarkdown() || !markdownLintEnabled()) {
-            markdownLintPanel.setResults(null, java.util.List.of());
-            return;
-        }
-        markdownLintService.validate(
-                b.getContent(),
-                effectiveMarkdownLintDisabled(b),
-                diags -> markdownLintPanel.setResults(b.getPath(), diags));
-    }
-
-    /** Toggles the Markdown Lint tool window; opening it auto-scans via {@code focusFirstItem}. */
-    private void toggleMarkdownLintWindow() {
-        toolWindows.toggle(markdownLintToolWindow);
-    }
-
     /** A cached parse of one {@code .markdownlint.json} (keyed by path, invalidated by mtime). */
-    private record MarkdownLintConfigEntry(long mtime, java.util.Set<String> disabled) {}
-
-    private final java.util.Map<java.nio.file.Path, MarkdownLintConfigEntry> markdownLintConfigCache =
-            new java.util.HashMap<>();
-
-    /** The rule codes disabled for {@code buffer}: the Settings list ∪ the nearest {@code .markdownlint.json}. */
-    private java.util.Set<String> effectiveMarkdownLintDisabled(EditorBuffer buffer) {
-        java.util.Set<String> off = new java.util.HashSet<>();
-        for (String code : config.getSettings().getMarkdownLintDisabledRules()) {
-            if (code != null && !code.isBlank()) {
-                off.add(code.strip().toUpperCase(java.util.Locale.ROOT));
-            }
-        }
-        java.nio.file.Path path = buffer == null ? null : buffer.getPath();
-        if (path != null && com.editora.vfs.Vfs.isLocal(path)) {
-            off.addAll(markdownLintConfigDisabled(path));
-        }
-        return off;
-    }
-
-    /** Walks up from {@code file} for the nearest {@code .markdownlint.json} and returns the rules it disables. */
-    private java.util.Set<String> markdownLintConfigDisabled(java.nio.file.Path file) {
-        java.nio.file.Path dir = file.getParent();
-        while (dir != null) {
-            java.nio.file.Path cfg = dir.resolve(".markdownlint.json");
-            if (java.nio.file.Files.isRegularFile(cfg)) {
-                try {
-                    long mtime = java.nio.file.Files.getLastModifiedTime(cfg).toMillis();
-                    MarkdownLintConfigEntry cached = markdownLintConfigCache.get(cfg);
-                    if (cached == null || cached.mtime() != mtime) {
-                        java.util.Set<String> rules = com.editora.markdown.MarkdownLintConfig.disabledRules(
-                                java.nio.file.Files.readString(cfg));
-                        cached = new MarkdownLintConfigEntry(mtime, rules);
-                        markdownLintConfigCache.put(cfg, cached);
-                    }
-                    return cached.disabled();
-                } catch (java.io.IOException e) {
-                    return java.util.Set.of();
-                }
-            }
-            dir = dir.getParent();
-        }
-        return java.util.Set.of();
-    }
-
-    /** Applies the safe-to-automate Markdown-lint fixes to the active buffer (undoable). */
-    private void fixMarkdownLint() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isMarkdown()) {
-            setStatus(tr("status.markdownLint.notMarkdown"));
-            return;
-        }
-        if (!markdownLintEnabled()) {
-            setStatus(tr("status.markdownLint.off"));
-            return;
-        }
-        String text = b.getContent();
-        String fixed = com.editora.markdown.MarkdownLintFix.fix(
-                text, effectiveMarkdownLintDisabled(b), config.getSettings().getTabSize());
-        if (fixed.equals(text)) {
-            setStatus(tr("status.markdownLint.fixNone"));
-            return;
-        }
-        b.getArea().replaceText(fixed); // whole-document replace (undoable)
-        setStatus(tr("status.markdownLint.fixed"));
-    }
-
-    /** Picker to enable/disable an individual Markdown-lint rule (writes Settings + re-lints live). */
-    private void chooseMarkdownLintRule() {
-        chooseSetting(
-                "markdownLint.toggleRule",
-                () -> com.editora.markdown.MarkdownLint.RULES.stream()
-                        .map(com.editora.markdown.MarkdownLint.Rule::code)
-                        .toList(),
-                code -> {
-                    boolean on = !markdownLintRuleDisabled(code);
-                    String name = tr("mdlint.rule." + code);
-                    return (on ? "✓ " : "✗ ") + code + " — " + name;
-                },
-                this::toggleMarkdownLintRule);
-    }
-
-    private boolean markdownLintRuleDisabled(String code) {
-        for (String c : config.getSettings().getMarkdownLintDisabledRules()) {
-            if (code.equalsIgnoreCase(c)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void toggleMarkdownLintRule(String code) {
-        java.util.List<String> list =
-                new java.util.ArrayList<>(config.getSettings().getMarkdownLintDisabledRules());
-        boolean wasDisabled = list.removeIf(c -> code.equalsIgnoreCase(c));
-        if (!wasDisabled) {
-            list.add(code);
-        }
-        config.getSettings().setMarkdownLintDisabledRules(list);
-        requestSave();
-        applyMarkdownLint(); // re-kicks every buffer's validator (new disabled set) + refreshes the panel
-        if (settingsWindow != null) {
-            settingsWindow.syncAll();
-        }
-        setStatus(tr(wasDisabled ? "status.markdownLint.ruleEnabled" : "status.markdownLint.ruleDisabled", code));
-    }
 
     // --- Local File History --------------------------------------------------------------------
-
-    /** Project-tree Git ▸ Show File History for {@code file}: loads that file's Git log + opens the window. */
-    private void gitFileHistoryForPath(Path file) {
-        if (file == null || Files.isDirectory(file)) {
-            setStatus(tr("status.diff.noFile"));
-            return;
-        }
-        openGitLog(file);
-    }
-
-    /** The current text of {@code file}: the open buffer's live text when open, else the on-disk content. */
-    private String currentTextOf(Path file) {
-        EditorBuffer open = openBufferFor(file);
-        if (open != null) {
-            return open.getContent();
-        }
-        try {
-            return Files.readString(file);
-        } catch (IOException e) {
-            return "";
-        }
-    }
 
     private void findNextMatch() {
         if (findBar.isShown()) {
@@ -6616,8 +7364,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 continue; // never clobber unsaved edits
             }
             Path file = buffer.getPath();
-            if (Files.exists(file) && buffer.diskChangedFrom(lastModifiedMillis(file), fileSize(file))) {
-                reloadFromDisk(tab, buffer);
+            if (Files.exists(file)
+                    && buffer.diskChangedFrom(fileWorkflows.lastModifiedMillis(file), fileWorkflows.fileSize(file))) {
+                fileWorkflows.reloadFromDisk(tab, buffer);
                 reloaded.add(file);
             }
         }
@@ -6651,7 +7400,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         runConfigRunButton.getStyleClass().add("run-config-play");
         runConfigDebugButton.getStyleClass().add("run-config-bug");
         runConfigStopButton.getStyleClass().add("run-config-stop");
-        setupRunConfigCombo();
+        runConfigurations.setupRunConfigCombo();
         setupButton(paletteButton, Icons.palette(), tr("tooltip.palette"), "palette.show");
         setupButton(closeTabButton, Icons.closeTab(), tr("tooltip.closeTab"), "buffer.close");
         setupButton(simpleModeButton, Icons.simpleMode(), tr("tooltip.simpleMode"), "view.toggleSimpleMode");
@@ -6831,7 +7580,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void afterRebuild() {
-                applySimpleMode(); // hides the curated Simple-mode buttons + collapses orphaned separators
+                chrome.applySimpleMode(); // hides the curated Simple-mode buttons + collapses orphaned separators
             }
 
             @Override
@@ -6999,235 +7748,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         pasteButton.setDisable(!editable || !hasClip);
     }
 
-    /**
-     * Restores last session's open files (with their carets); falls back to one empty buffer.
-     *
-     * <p>Two phases so the UI is responsive immediately: first every tab is created (empty), so all
-     * tab headers show at once; then content + folds are filled one file per pulse — the active file
-     * first. Filling a non-selected tab is cheap (its editor isn't rendered), so a heavily-folded
-     * background file can't freeze startup. Tab order and pinning are preserved.
-     */
-    public void openInitialBuffer() {
-        WorkspaceState state = config.getWorkspaceState();
-        List<WorkspaceState.OpenFile> files = new ArrayList<>();
-        for (WorkspaceState.OpenFile f : skipSessionFiles ? List.<WorkspaceState.OpenFile>of() : state.getOpenFiles()) {
-            // parseStorable reconstructs a local path directly, or a remote (sftp://) one via the resolver —
-            // which is null until its connection is open, so a remote entry is skipped at startup rather than
-            // reopened as a same-named *local* file.
-            Path rp = f.getPath() == null || f.getPath().isBlank()
-                    ? null
-                    : com.editora.vfs.Vfs.parseStorable(f.getPath());
-            if (rp != null && Files.isReadable(rp)) {
-                files.add(f);
-            }
-        }
-        if (files.isEmpty()) {
-            // No session to restore (empty, or --no-session): open the CLI action's file (--new-file / FILE
-            // target) synchronously, so it's on the first frame exactly as in the with-session path — there
-            // is nothing to restore around it, so there's no reason to wait a pulse. Then flip the
-            // restore-complete bookkeeping, and show Welcome only if nothing got opened.
-            runPendingStartupAction(hasStartupWork);
-            runPendingAfterRestore(); // action already ran when hasStartupWork; this does the bookkeeping
-            Platform.runLater(this::showWelcomeIfNoTabs);
-            return;
-        }
-        String activePath = state.getActiveFile();
-        List<EditorBuffer> buffers = new ArrayList<>();
-        int activeIndex = 0;
-        for (int i = 0; i < files.size(); i++) {
-            if (files.get(i).getPath().equals(activePath)) {
-                activeIndex = i;
-                break;
-            }
-        }
-        // A command-line FILE must be on screen from the first frame — otherwise the session's own active
-        // file is selected + filled first and the user watches an unrelated file (with its LSP starting)
-        // before theirs appears. So: if the requested file is itself part of the session, make *its* tab the
-        // selected one and fill it first; if it isn't (or --new-file was given), open it up front so the
-        // restored tabs are appended around it without ever stealing the selection.
-        int cliIndex = indexOfStartupTarget(files);
-        if (cliIndex < 0 && pendingAfterRestore != null && hasStartupWork) {
-            runPendingStartupAction(true); // synchronous: its tab must exist before any restored tab
-        }
-        int selectIndex = cliIndex >= 0 ? cliIndex : (hasStartupWork ? -1 : activeIndex);
-        // Rebuild the split shape *before* opening anything, so each file can be inserted straight into its
-        // group rather than opened into one group and moved afterwards.
-        com.editora.config.EditorGroupLayout layout = state.getEditorLayout();
-        editorArea.restoreLayout(layout);
-        for (int i = 0; i < files.size(); i++) {
-            WorkspaceState.OpenFile f = files.get(i);
-            editorArea.setRestoreTargetGroup(layout == null ? -1 : f.getGroup());
-            Path p = com.editora.vfs.Vfs.parseStorable(f.getPath()); // non-null: the filter above kept only readable
-            boolean active = i == selectIndex;
-            // A raster image restores into the read-only image viewer (a null buffer placeholder keeps the
-            // per-file fill indices aligned; fillSessionFiles skips nulls).
-            if (ImageFormats.isSupported(p.getFileName().toString())) {
-                Tab tab = openImageTab(p, active);
-                if (f.isPinned()) {
-                    pinned.add(tab);
-                }
-                buffers.add(null);
-                continue;
-            }
-            // A PDF restores into the read-only PDF viewer (null placeholder keeps the fill indices aligned).
-            if (PdfViewerPane.isPdf(p.getFileName().toString())) {
-                Tab tab = openPdfTab(p, active);
-                if (f.isPinned()) {
-                    pinned.add(tab);
-                }
-                buffers.add(null);
-                continue;
-            }
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setPath(p); // sets the tab title/language; content comes later
-            buffer.setHeavyFile(true); // suppress LSP/minimap while this restored tab is only a shell
-            buffer.setViewMode(true);
-            loadingBuffers.add(buffer);
-            Tab tab = addBuffer(buffer, active, false);
-            if (f.isPinned()) {
-                pinned.add(tab);
-                updateTabMeta(tab, buffer);
-            }
-            buffers.add(buffer);
-        }
-        editorArea.setRestoreTargetGroup(-1);
-        if (layout != null) {
-            // A saved file can be gone from disk; a group that loses every file would otherwise come back as
-            // a blank pane the user has to close by hand.
-            editorArea.pruneEmptyGroups();
-            editorArea.applyRestoredSelection(layout);
-            Tab active = selectIndex >= 0 && selectIndex < editorArea.size()
-                    ? editorArea.tabs().get(selectIndex)
-                    : null;
-            if (active != null) {
-                editorArea.select(active); // re-assert the active file after the per-group selections
-            }
-        }
-        // Fill order: the selected file first (the CLI target when there is one, else the session's active
-        // file), then the rest in tab order.
-        int firstIndex = selectIndex >= 0 ? selectIndex : activeIndex;
-        List<Integer> order = new ArrayList<>();
-        order.add(firstIndex);
-        for (int i = 0; i < files.size(); i++) {
-            if (i != firstIndex) {
-                order.add(i);
-            }
-        }
-        fillSessionFiles(files, buffers, order, 0);
-    }
-
-    /** Fills one restored buffer per pulse (in {@code order}), keeping the UI responsive between files. */
-    private void fillSessionFiles(
-            List<WorkspaceState.OpenFile> files, List<EditorBuffer> buffers, List<Integer> order, int k) {
-        if (k >= order.size()) {
-            runPendingAfterRestore(); // session fully restored — now safe to apply CLI targets
-            return;
-        }
-        Platform.runLater(() -> {
-            int i = order.get(k);
-            EditorBuffer buffer = buffers.get(i);
-            Runnable continued = () -> {
-                if (k == 0) {
-                    // The requested file (already selected + just filled) is the one the CLI action targets,
-                    // so run it now rather than after the whole restore — a caret jump needs its content.
-                    runPendingStartupAction(false);
-                    // Keep background tabs out of the visible file's first rendered frames.
-                    afterNextPaint(() -> fillSessionFiles(files, buffers, order, k + 1));
-                    return;
-                }
-                fillSessionFiles(files, buffers, order, k + 1);
-            };
-            if (buffer == null) { // image/PDF/hex viewer: nothing to fill
-                continued.run();
-            } else {
-                fillSessionBuffer(files.get(i), buffer, continued);
-            }
-        });
-    }
-
-    /**
-     * Runs {@code action} once the current content has had a frame to paint. A pulse's {@code handle()} runs
-     * at the <em>start</em> of a pulse, before that pulse renders, so two ticks is what proves a frame
-     * completed — the same reasoning as the startup instrumentation's first-paint mark.
-     */
-    private static void afterNextPaint(Runnable action) {
-        new javafx.animation.AnimationTimer() {
-            private int ticks;
-
-            @Override
-            public void handle(long now) {
-                if (++ticks >= 2) {
-                    stop();
-                    action.run();
-                }
-            }
-        }.start();
-    }
-
     /** A startup file to open, with an optional 1-based line/column ({@code 0} = unspecified). */
-    /**
-     * Opens OS-delivered files in this window (macOS Finder "Open With" — routed here by
-     * {@code MacOpenFiles.install} → {@code WindowManager.openExternalFiles}). Each target is opened like any
-     * other file (an already-open file just re-focuses its tab) and, when it carries one, jumped to its line.
-     */
-    public void openExternalFiles(java.util.List<OpenTarget> files) {
-        if (files == null || files.isEmpty()) {
-            return;
-        }
-        // The command line's own path, rather than a second one beside it. The two used to differ — this one
-        // could not honour a line number — and a difference between them is invisible until someone opens the
-        // same file both ways and gets two different results.
-        applyStartupTargets(files, null);
-    }
-
     public record OpenTarget(Path file, int line, int column) {}
-
-    /** A one-shot action applying the command-line startup targets; see {@link #runPendingStartupAction}. */
-    private Runnable pendingAfterRestore;
-    /** The command-line {@code FILE} targets, consulted by {@link #openInitialBuffer()} to pick the tab to
-     *  select + fill first, so the requested file is on screen from the first frame. */
-    private List<OpenTarget> startupTargets = List.of();
-    /** True when the command line asked for anything to be opened (a {@code FILE} target or --new-file). */
-    private boolean hasStartupWork;
-    /** {@code --no-session}: don't restore the saved session's open files (see {@link #startup}). */
-    private boolean skipSessionFiles;
-    /** Standalone diff startup is asynchronous, so don't insert Welcome while its worker is reading files. */
-    private boolean suppressWelcome;
-
-    /**
-     * The index in {@code files} of the first command-line {@code FILE} target that is also part of the
-     * restored session, or {@code -1} (no targets, or none of them is a session file).
-     */
-    private int indexOfStartupTarget(List<WorkspaceState.OpenFile> files) {
-        for (OpenTarget t : startupTargets) {
-            Path want = t.file().toAbsolutePath().normalize();
-            for (int i = 0; i < files.size(); i++) {
-                Path p = com.editora.vfs.Vfs.parseStorable(files.get(i).getPath());
-                if (p != null && p.toAbsolutePath().normalize().equals(want)) {
-                    return i;
-                }
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * Runs the one-shot command-line startup action (opening {@code FILE} targets / --new-file), if it hasn't
-     * run yet. {@code now} runs it synchronously — used when its tab must exist before the restored tabs are
-     * appended; otherwise it's deferred one pulse.
-     */
-    private void runPendingStartupAction(boolean now) {
-        Runnable r = pendingAfterRestore;
-        pendingAfterRestore = null;
-        if (r == null) {
-            return;
-        }
-        if (now) {
-            r.run();
-        } else {
-            Platform.runLater(r);
-        }
-    }
 
     /**
      * Applies the <b>session-only chrome flags</b> — {@code --simple}, {@code --zen}, {@code --expert} — and is
@@ -7250,388 +7772,20 @@ public class MainController implements com.editora.mcp.McpBridge {
     public void applyStartupChrome(boolean zen, boolean expert, boolean simple, boolean diffUi) {
         if (simple) {
             // --simple: a session-only override (doesn't change the saved setting).
-            cliSimpleOverride = true;
-            applyViewSettingsToAllBuffers(config.getSettings());
+            chrome.cliSimpleOverride = true;
+            editorSettings.applyViewSettingsToAllBuffers(config.getSettings());
             settingsWindow.syncSimpleModeCheck();
         }
         // --zen / --expert: session-only overrides, like --simple. If both were given, Expert wins — the two
         // are mutually exclusive. (applyCliFocusMode stashes the restored tool windows for the quit-time
         // restore, so it must run after init's toolWindows.restore() — which buildWindow guarantees.)
         if (diffUi) {
-            applyCliDiffUiMode();
+            chrome.applyCliDiffUiMode();
         } else if (expert) {
-            applyCliFocusMode(true);
+            chrome.applyCliFocusMode(true);
         } else if (zen) {
-            applyCliFocusMode(false);
+            chrome.applyCliFocusMode(false);
         }
-    }
-
-    /**
-     * Startup entry point (replaces the bare {@code openInitialBuffer()} call): optionally activates a
-     * project, restores the session, then — once restore completes — opens any command-line files (jumping to
-     * line:column), additive on top of the restored session. With no arguments it's exactly the old
-     * {@code openInitialBuffer()}. The chrome flags are applied earlier, by {@link #applyStartupChrome}.
-     */
-    public void startup(Path projectDir, List<OpenTarget> targets, String newFile) {
-        startup(projectDir, targets, newFile, false);
-    }
-
-    /**
-     * As above; {@code noSession} ({@code --no-session}) skips the saved session's files entirely and opens
-     * only what the command line asked for.
-     *
-     * <p>For a file-manager "Open With" launch the saved tabs are pure cost — every restored file is a buffer
-     * to load and highlight, and (once looked at) a language server to run, for files the user didn't ask to
-     * see. Measured on an 8-file session opening one file: 4 fewer server processes, roughly half the CPU
-     * Editora burns while starting, ~225 MB less. The saved session is left untouched, so the next ordinary
-     * launch restores everything as usual.
-     */
-    public void startup(Path projectDir, List<OpenTarget> targets, String newFile, boolean noSession) {
-        if (projectDir != null && projectsEnabled()) {
-            activateStartupProject(projectDir); // swap to the project's session before it's restored
-        }
-        this.skipSessionFiles = noSession;
-        startupTargets = targets == null ? List.of() : List.copyOf(targets);
-        hasStartupWork = !startupTargets.isEmpty() || newFile != null;
-        // The CLI action still runs after the requested file's own content is in place (so a restored caret
-        // can't override a requested line:column) — but openInitialBuffer now front-loads that one file
-        // rather than waiting for the whole session to finish restoring.
-        pendingAfterRestore = () -> applyStartupTargets(targets, newFile);
-        openInitialBuffer();
-    }
-
-    /**
-     * Starts the transient {@code --diff-ui} workspace: no saved tabs are restored and the only content is
-     * the asynchronously loaded comparison. The normal session is left untouched on exit.
-     */
-    public void startupDiffUi(Path left, Path right) {
-        skipSessionFiles = true;
-        suppressWelcome = true;
-        startupTargets = List.of();
-        hasStartupWork = true;
-        pendingAfterRestore = () -> {
-            Path leftPath = left == null ? null : left.toAbsolutePath().normalize();
-            Path rightPath = right == null ? null : right.toAbsolutePath().normalize();
-            if (!readableDiffPath(leftPath) || !readableDiffPath(rightPath)) {
-                Path bad = !readableDiffPath(leftPath) ? leftPath : rightPath;
-                exitDiffUiMode();
-                suppressWelcome = false;
-                showWelcomeIfNoTabs();
-                setStatus(tr("status.diff.unreadable", bad == null ? "" : bad));
-                return;
-            }
-            if (Files.isDirectory(leftPath) != Files.isDirectory(rightPath)) {
-                exitDiffUiMode();
-                suppressWelcome = false;
-                showWelcomeIfNoTabs();
-                setStatus(tr("status.diff.pathTypeMismatch"));
-                return;
-            }
-            diffCoordinator.comparePaths(leftPath, rightPath);
-        };
-        openInitialBuffer();
-    }
-
-    private static boolean readableDiffPath(Path path) {
-        return path != null && (Files.isRegularFile(path) || Files.isDirectory(path)) && Files.isReadable(path);
-    }
-
-    private void applyStartupTargets(List<OpenTarget> targets, String newFile) {
-        if (newFile != null) {
-            // --new-file[=NAME]: open a fresh buffer instead of the Welcome page. "" = blank untitled.
-            EditorBuffer buffer = new EditorBuffer();
-            if (!newFile.isBlank()) {
-                buffer.setDisplayName(newFile);
-            }
-            addBuffer(buffer, true);
-            setStatus(newFile.isBlank() ? tr("status.newBuffer") : tr("status.newFile", newFile));
-        }
-        if (targets != null) {
-            for (OpenTarget t : targets) {
-                openPath(t.file().toAbsolutePath().normalize(), true);
-            }
-            if (targets.stream().anyMatch(t -> t.line() > 0)) {
-                // Defer once more so it runs after openPath's own goToStart for any newly-opened file.
-                Platform.runLater(() -> {
-                    for (OpenTarget t : targets) {
-                        if (t.line() > 0) {
-                            gotoInFile(t.file().toAbsolutePath().normalize(), t.line(), t.column());
-                        }
-                    }
-                });
-            }
-        }
-    }
-
-    /** Marks the restore complete, running the CLI startup action first if it hasn't already run. */
-    private void runPendingAfterRestore() {
-        runPendingStartupAction(false);
-        openMainClassForRunConfig();
-    }
-
-    /**
-     * Opens the class a saved Java run configuration launches, when the restored session has no Java file.
-     *
-     * <p>A Java launch resolves its classpath through jdtls <b>routed via an open Java file</b>
-     * ({@link com.editora.run.RunConfigRouting}), so a project whose session holds only {@code pom.xml}
-     * cannot run its own saved configuration — it reports "open a Java file from the project", which reads
-     * like a bug when the configuration is sitting right there in the toolbar.
-     *
-     * <p>Deliberately conservative, so it can't be a surprise:
-     *
-     * <ul>
-     *   <li>only when this window has a project and a Java configuration with a real main class;
-     *   <li>only when <b>no</b> Java file was restored — an existing Java tab already routes fine;
-     *   <li>only if the file actually exists under the project root (no disk search, just the standard
-     *       source layouts — see {@link com.editora.run.MainClassSource});
-     *   <li>in the <b>background</b> when other tabs restored, so it never steals the tab the user left on.
-     * </ul>
-     */
-    private void openMainClassForRunConfig() {
-        Path root = windowProjectRoot();
-        if (root == null) {
-            return;
-        }
-        String fqn = mainClassOfSelectedJavaConfig();
-        if (fqn == null) {
-            return;
-        }
-        boolean hasJavaOpen = false;
-        boolean hasAnyTab = false;
-        for (Tab t : tabPane.getTabs()) {
-            EditorBuffer b = bufferOf(t);
-            hasAnyTab = true;
-            if (b != null && b.getPath() != null && "java".equals(b.getLanguage())) {
-                hasJavaOpen = true;
-                break;
-            }
-        }
-        if (hasJavaOpen) {
-            return; // an open Java tab already gives the launch something to route through
-        }
-        for (String relative : com.editora.run.MainClassSource.candidates(fqn)) {
-            Path candidate = root.resolve(relative);
-            if (java.nio.file.Files.isRegularFile(candidate)) {
-                if (hasAnyTab) {
-                    openBackgroundBuffer(candidate); // don't steal the tab the session restored
-                } else {
-                    openPath(candidate);
-                }
-                return;
-            }
-        }
-    }
-
-    /** The main class of this window's selected Java run configuration (else the first one), or null. */
-    private String mainClassOfSelectedJavaConfig() {
-        List<com.editora.config.RunConfiguration> configs =
-                config.getWorkspaceState().getRunConfigurations();
-        if (configs == null || configs.isEmpty()) {
-            return null;
-        }
-        String selected = config.getWorkspaceState().getSelectedRunConfig();
-        com.editora.config.RunConfiguration chosen = configs.stream()
-                .filter(c -> c.name().equals(selected))
-                .findFirst()
-                .orElse(configs.get(0));
-        // A file name in the field is a mistake caught with its own message at launch; do not act on it here.
-        return chosen.isJava() && !chosen.missingMainClass() && !chosen.mainClassLooksLikeAFile()
-                ? chosen.mainClass()
-                : null;
-    }
-
-    /** Activates {@code dir} as the active project (startup-safe; no open buffers to confirm). */
-    private void activateStartupProject(Path dir) {
-        Path root = dir.toAbsolutePath().normalize();
-        String name = root.getFileName() == null
-                ? root.toString()
-                : root.getFileName().toString();
-        Project p = projects.createOrGet(name, root);
-        projects.setActive(p.id());
-        projects.save();
-        config.setWorkspaceStateFile(projects.stateFile(p)); // openInitialBuffer() then restores it
-        projectPanel.setRoot(Path.of(p.root()));
-        refreshProjectPanelList();
-        updateWindowTitle();
-    }
-
-    /** Selects the tab for {@code file} (if open) and moves the caret to a 1-based line/column. */
-    private void gotoInFile(Path file, int line1, int col1) {
-        gotoInFile(file, line1, col1, true);
-    }
-
-    /** Jumps to {@code file}:{@code line1}:{@code col1}; {@code focusEditor} false leaves focus where it is. */
-    private void gotoInFile(Path file, int line1, int col1, boolean focusEditor) {
-        NavigationHistory.Location origin = (suppressNavRecord || navigating) ? null : captureCurrent();
-        Tab tab = tabForPath(file);
-        if (tab == null) {
-            return;
-        }
-        editorArea.select(tab);
-        EditorBuffer buffer = bufferOf(tab);
-        if (loadingBuffers.contains(buffer)) {
-            afterBufferLoad
-                    .computeIfAbsent(buffer, ignored -> new ArrayList<>())
-                    .add(() -> gotoInFile(file, line1, col1, focusEditor));
-            return;
-        }
-        CodeArea area = buffer.getArea();
-        int total = area.getParagraphs().size();
-        int line = Math.max(1, Math.min(total, line1)) - 1;
-        int col = 0;
-        if (col1 > 0) {
-            int lineLen = area.getParagraphLength(line);
-            col = Math.max(1, Math.min(lineLen + 1, col1)) - 1;
-        }
-        buffer.getFoldManager().unfoldContaining(line);
-        int targetLine = line;
-        int targetCol = col;
-        area.moveTo(targetLine, targetCol);
-        if (!suppressNavRecord && !navigating) {
-            recordJump(origin, new NavigationHistory.Location(file, targetLine, targetCol));
-        }
-        area.requestFollowCaret();
-        Platform.runLater(() -> {
-            try {
-                area.showParagraphAtTop(targetLine);
-            } catch (RuntimeException ignored) {
-                // Viewport not ready; ignore.
-            }
-        });
-        if (focusEditor) {
-            area.requestFocus();
-        }
-    }
-
-    /** Loads a restored tab's content, large-file mode, folds, and caret (the tab already exists). */
-    private void fillSessionBuffer(WorkspaceState.OpenFile f, EditorBuffer buffer, Runnable onComplete) {
-        Path file = Path.of(f.getPath());
-        fileLoadExecutor.execute(() -> {
-            try {
-                PreparedLoad load = prepareLoad(file, true);
-                Platform.runLater(() -> {
-                    Tab tab = tabForBuffer(buffer);
-                    if (tab != null) {
-                        if (load.binary()) {
-                            boolean selected = editorArea.selectedTab() == tab;
-                            boolean wasPinned = pinned.remove(tab);
-                            discardLoading(buffer);
-                            editorArea.remove(tab);
-                            Tab hex = openHexTab(load.file(), selected);
-                            if (wasPinned) {
-                                pinned.add(hex);
-                            }
-                        } else {
-                            buffer.setViewMode(false);
-                            finishSessionBuffer(f, buffer, load);
-                            clearLoading(buffer);
-                        }
-                    } else {
-                        discardLoading(buffer);
-                    }
-                    onComplete.run();
-                });
-            } catch (IOException | RuntimeException e) {
-                Platform.runLater(() -> {
-                    discardLoading(buffer); // unreadable now — leave the restored tab empty
-                    onComplete.run();
-                });
-            }
-        });
-    }
-
-    private void finishSessionBuffer(WorkspaceState.OpenFile f, EditorBuffer buffer, PreparedLoad load) {
-        String note = applyPreparedLoad(buffer, load);
-        notePerfContentLoaded(buffer);
-        if (!note.isEmpty()) {
-            setStatus(note);
-        }
-        restoreFolds(buffer);
-        bookmarkCoordinator.restoreBookmarks(buffer);
-        debugCoordinator.restoreBreakpoints(buffer);
-        notesCoordinator.restoreNotes(buffer);
-        restoreReadOnly(buffer);
-        restoreMarkdownMode(buffer);
-        // The tab was set up before content loaded; start or close its server now that its real tier is known.
-        lspCoordinator.syncBuffer(buffer);
-        CodeArea area = buffer.getArea();
-        int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
-        area.moveTo(caret);
-        scrollRestoredCaretIntoView(buffer, SCROLL_SETTLE_ATTEMPTS);
-    }
-
-    /** Pulses to keep defending a restored buffer's scroll while the layout is still moving under it. */
-    private static final int SCROLL_SETTLE_ATTEMPTS = 24;
-
-    /**
-     * Parks a restored buffer's viewport on its saved caret, retrying while the viewport isn't ready.
-     *
-     * <p>{@code replaceText} leaves the caret — and the viewport — at the <em>end</em> of the document (the
-     * same reason {@link EditorBuffer#goToStart()} exists), so until the view is positioned the file paints
-     * scrolled to its tail. {@code moveTo} alone doesn't move the viewport, and this scroll used to be a
-     * single {@code Platform.runLater} whose failure was swallowed: on a freshly-added tab the viewport
-     * isn't laid out yet, that one attempt did nothing, and the file sat at its tail until some unrelated
-     * event happened to scroll it — for a command-line file, the {@code requestFocus} in {@code openPath},
-     * which is why opening from the file manager showed a visible scroll jump (the line numbers running
-     * from the end of the file back to the top).
-     *
-     * <p>So: try in this same pulse — when the tab is already laid out that removes the jump entirely — and
-     * otherwise retry on the next few pulses until the viewport has a height to scroll. Bounded, so a
-     * background tab that never lays out costs at most {@link #SCROLL_SETTLE_ATTEMPTS} no-op calls.
-     *
-     * <p>Positioning it once isn't enough, though: the virtual flow <b>re-anchors itself to the top during a
-     * later layout pass</b> — stack-traced to {@code Parent.layout → VirtualFlow.layoutChildren →
-     * Navigator.fillViewportFrom → CellListManager.cropTo}, with no app code involved — which showed as a
-     * file restored deep in the document flashing to line 1 and back. (A second, distinct collapse from the
-     * one inside {@code setStyleSpans} that {@code EditorBuffer.setStyleSpansPreservingScroll} handles.) So
-     * once the target offset is known, a listener defends it for the settle window: a drop to the top while
-     * we wanted a non-zero offset is put back <em>in the same pulse</em>, before that frame renders.
-     * Correcting it a pulse later instead — the obvious poll — only turns the jump into a bounce.
-     */
-    private void scrollRestoredCaretIntoView(EditorBuffer buffer, int attemptsLeft) {
-        CodeArea area = buffer.getArea();
-        double[] targetY = {-1}; // the scroll offset the restore produced, once it's known
-        boolean[] applying = {false}; // re-entrancy guard: our own set fires the listener again
-        javafx.beans.value.ChangeListener<Number> hold = (o, ov, nv) -> {
-            if (applying[0] || targetY[0] <= 1 || nv == null || nv.doubleValue() > 1) {
-                return;
-            }
-            applying[0] = true;
-            try {
-                area.estimatedScrollYProperty().setValue(targetY[0]);
-            } catch (RuntimeException ignored) {
-                // Flow not in a state to scroll; the pulse loop will retry.
-            } finally {
-                applying[0] = false;
-            }
-        };
-        area.estimatedScrollYProperty().addListener(hold);
-        holdRestoredScroll(
-                buffer,
-                targetY,
-                attemptsLeft,
-                () -> area.estimatedScrollYProperty().removeListener(hold));
-    }
-
-    /** Positions the viewport once the area is laid out, then disarms the hold listener. */
-    private void holdRestoredScroll(EditorBuffer buffer, double[] targetY, int attemptsLeft, Runnable disarm) {
-        CodeArea area = buffer.getArea();
-        try {
-            if (targetY[0] <= 1 && area.getHeight() > 0) { // not positioned yet, and now laid out
-                area.showParagraphAtTop(area.getCurrentParagraph());
-                Double y = area.estimatedScrollYProperty().getValue();
-                targetY[0] = y == null ? -1 : y; // a file restored at the top needs no defending
-            }
-        } catch (RuntimeException ignored) {
-            // Viewport not ready; retry below.
-        }
-        if (attemptsLeft > 1) {
-            Platform.runLater(() -> holdRestoredScroll(buffer, targetY, attemptsLeft - 1, disarm));
-            return;
-        }
-        disarm.run();
-        // The minimap's first render can run before layout settles; refresh once it has.
-        buffer.refreshMinimap();
     }
 
     public void setStatus(String message) {
@@ -7675,20 +7829,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    private static final java.time.format.DateTimeFormatter UNDO_TIME =
-            java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault());
-
-    /** The checkpoint's capture time as {@code HH:mm:ss} for the popup's detail column. */
-    private static String undoCheckpointTime(com.editora.editor.UndoHistory.Checkpoint c) {
-        return UNDO_TIME.format(java.time.Instant.ofEpochMilli(c.epochMillis()));
-    }
-
-    /** Pages the active buffer's Markdown preview if it's the active scroll target (C-v / M-v). */
-    private boolean pageActivePreview(boolean down) {
-        EditorBuffer b = activeBuffer();
-        return b != null && b.pagePreview(down);
-    }
-
     private CodeArea activeArea() {
         EditorBuffer buffer = activeBuffer();
         return buffer == null ? null : buffer.getFocusedArea();
@@ -7712,13 +7852,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Spell checking: share the user dictionary + persist "Add to Dictionary" (before applyViewSettings,
         // which sets the per-file language and enables checking).
         buffer.setSpellUserWords(config.getUserDictionary());
-        buffer.setOnAddToDictionary(this::addUserWordAndRefreshAll);
-        applyViewSettings(buffer, resolvePathSettings);
+        buffer.setOnAddToDictionary(editorSettings::addUserWordAndRefreshAll);
+        editorSettings.applyViewSettings(buffer, resolvePathSettings);
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.schedulePersistBookmarks(buffer));
         buffer.setBookmarkToggleRequest(bookmarkCoordinator::onBookmarkToggleRequest);
         buffer.setOnNotesChanged(() -> notesCoordinator.schedulePersistNotes(buffer));
-        buffer.setOnNarrowChanged(() -> afterNarrowChanged(buffer));
+        buffer.setOnNarrowChanged(() -> editing.afterNarrowChanged(buffer));
         buffer.setNoteMarkerClick(notesCoordinator::onNoteMarkerClick);
         buffer.setGutterBlameClick(git::onGutterBlameClick);
         todoCoordinator.applyToBuffer(buffer); // push the compiled TODO/highlight matcher (on by default)
@@ -7732,39 +7872,41 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean local = isLocalBuffer(buffer); // remote (SFTP) files can't run a local process
         buffer.setRunEnabled(lspEnabled() && local); // the Run affordance is gated by the LSP feature
         buffer.setShellRunEnabled(lspEnabled() && local && config.getSettings().isBashLspEnabled());
-        buffer.setAdminEditAvailable(elevationAvailable() && local); // "Edit as Administrator" on a locked file
+        buffer.setAdminEditAvailable(
+                fileWorkflows.elevationAvailable() && local); // "Edit as Administrator" on a locked file
         buffer.setHttpRunHandler(line -> httpClient.runRequest(buffer, line)); // .http request ▶
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
         // Makefile-run rides the same Run-feature gate as Java/Python/shell (setRunEnabled above).
-        buffer.setTestRunHandler(this::runSingleTest); // JUnit class/method gutter ▶ → the build tool
-        applyTestGutter(buffer); // gated by the Test Runner feature + a detected JVM (Maven/Gradle) project
+        buffer.setTestRunHandler(testNavigation::runSingleTest); // JUnit class/method gutter ▶ → the build tool
+        testNavigation.applyTestGutter(
+                buffer); // gated by the Test Runner feature + a detected JVM (Maven/Gradle) project
         buffer.setMainRunHandler(m -> runCoordinator.runMainClassNamed(m.fqn())); // project main() ▶ → run
         buffer.setMainDebugHandler(m -> debugCoordinator.debugMainClassNamed(m.fqn())); // editor menu → debug
-        applyMainGutter(buffer); // gated by not-Simple + local + JVM project + Java run/debug available
+        testNavigation.applyMainGutter(buffer); // gated by not-Simple + local + JVM project + Java run/debug available
         // Debugging: the breakpoint gutter gate + change/hover hooks (debuggable languages only).
         debugCoordinator.wireBuffer(buffer);
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
         buffer.setNotesEnabled(notesCoordinator.isEnabled());
         buffer.setOpenUrlHandler(this::openExternalUrl); // Ctrl/Cmd-click + open-link command
         buffer.setAiActionHandlers(aiCoordinator::explainSelection, aiCoordinator::rewriteSelection); // AI sel. bar
-        buffer.setTableFileExporter(this::exportMarkdownTableFile); // Markdown table → CSV/Excel/ODS file
-        buffer.setInsertTableHandler(this::markdownInsertTable); // Markdown format-bar "insert table" button
-        buffer.setInsertTypstTableHandler(() -> showTableSizePicker(buffer::insertTypstTable)); // Typst #table
-        buffer.setTypstImageHandler(() -> insertTypstImageFromChooser(buffer)); // Typst "Insert Image" menu
+        buffer.setTableFileExporter(previews::exportMarkdownTableFile); // Markdown table → CSV/Excel/ODS file
+        buffer.setInsertTableHandler(previews::markdownInsertTable); // Markdown format-bar "insert table" button
+        buffer.setInsertTypstTableHandler(() -> previews.showTableSizePicker(buffer::insertTypstTable)); // Typst #table
+        buffer.setTypstImageHandler(() -> editing.insertTypstImageFromChooser(buffer)); // Typst "Insert Image" menu
         buffer.setPreviewExportPngHandler(typst::exportPng); // Typst preview right-click → PNG
         buffer.setPreviewExportSvgHandler(typst::exportSvg); // Typst preview right-click → SVG
         // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).
         buffer.setHtmlPreviewDirtyListener(() -> htmlPreview.onBufferEdited(buffer));
         buffer.setFormatBarEnabled(config.getSettings().isMarkdownFormatBar());
-        buffer.setPreviewExportPdfHandler(this::exportPreviewPdf); // preview right-click menu
-        buffer.setPreviewPrintHandler(this::printPreview);
-        buffer.setPomViewToggleHandler(this::togglePomView); // pom preview right-click: summary ⇄ XML tree
-        buffer.setPreviewExportDocxHandler(this::exportPreviewDocx); // preview → MS Word
-        buffer.setPreviewExportOdtHandler(this::exportPreviewOdt); // preview → OpenDocument
-        buffer.setPreviewExportJsonHandler(this::exportMarkwhenJson); // Markwhen preview → JSON
+        buffer.setPreviewExportPdfHandler(exports::exportPreviewPdf); // preview right-click menu
+        buffer.setPreviewPrintHandler(exports::printPreview);
+        buffer.setPomViewToggleHandler(previews::togglePomView); // pom preview right-click: summary ⇄ XML tree
+        buffer.setPreviewExportDocxHandler(exports::exportPreviewDocx); // preview → MS Word
+        buffer.setPreviewExportOdtHandler(exports::exportPreviewOdt); // preview → OpenDocument
+        buffer.setPreviewExportJsonHandler(exports::exportMarkwhenJson); // Markwhen preview → JSON
         buffer.setTypstRootResolver(this::resolveTypstRoot); // typst --root: nearest typst.toml / project root
-        buffer.setOnMarkwhenViewChanged(() -> persistMarkwhenView(buffer)); // persist timeline/calendar choice
+        buffer.setOnMarkwhenViewChanged(() -> previews.persistMarkwhenView(buffer)); // persist timeline/calendar choice
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
         buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
         buffer.setCompletionProvider(completion::complete);
@@ -7790,12 +7932,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 acs.isAutocompleteSnippets(),
                 mermaid.effectiveAutocomplete());
         buffer.setMultiCaretEnabled(
-                multiCaretEnabled()); // multiple cursors + Alt+drag column selection (off in Simple UI mode)
+                editorSettings
+                        .multiCaretEnabled()); // multiple cursors + Alt+drag column selection (off in Simple UI mode)
         mermaid.wireBuffer(buffer); // live maid validator + initial lint state
         // Markdown linting: the overlay gets the diagnostics; the Lint tool window mirrors them live when
         // this buffer is the active one and the window is open.
         buffer.setMarkdownLintValidator((text, cb) ->
-                markdownLintService.validate(text, effectiveMarkdownLintDisabled(buffer), diags -> {
+                previews.markdownLintService.validate(text, previews.effectiveMarkdownLintDisabled(buffer), diags -> {
                     cb.accept(diags);
                     if (activeBuffer() == buffer
                             && markdownLintToolWindow != null
@@ -7803,12 +7946,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                         markdownLintPanel.setResults(buffer.getPath(), diags);
                     }
                 }));
-        buffer.setMarkdownLintEnabled(markdownLintEnabled());
-        buffer.setImageDropHandler(files -> insertDroppedImages(buffer, files)); // drag image → assets/ + ![](…)
-        buffer.setWebImageDropHandler((image, url) -> insertWebImage(buffer, image, url)); // browser image → assets/
+        buffer.setMarkdownLintEnabled(previews.markdownLintEnabled());
+        buffer.setImageDropHandler(
+                files -> editing.insertDroppedImages(buffer, files)); // drag image → assets/ + ![](…)
+        buffer.setWebImageDropHandler(
+                (image, url) -> editing.insertWebImage(buffer, image, url)); // browser image → assets/
         // LSP: wire didChange/diagnostics/completion/format/nav hooks + open+activate if eligible.
         lspCoordinator.wireBuffer(buffer);
-        ensurePreviewControls(buffer);
+        previews.ensurePreviewControls(buffer);
         htmlPreview.ensureControl(buffer); // the floating "open in browser" globe (HTML buffers, feature on)
         logViewer.ensureControl(buffer); // the floating Follow / level / regex control (log buffers, feature on)
         Tab tab = addContentTab(buffer, false); // added to the strip; selected below (focus the area, not the node)
@@ -7824,8 +7969,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         // Auto save (after-delay mode): each edit restarts the idle timer; cheap (no full-text build).
         buffer.getArea().multiPlainChanges().subscribe(c -> {
-            if (AUTOSAVE_DELAY.equals(autoSaveMode())) {
-                autoSaveIdleTimer.playFromStart();
+            if (FileWorkflowCoordinator.AUTOSAVE_DELAY.equals(fileWorkflows.autoSaveMode())) {
+                fileWorkflows.autoSaveIdleTimer.playFromStart();
             }
             if (buffer == activeBuffer()) {
                 refreshEditState(); // edits change undo/redo (and dirty) availability
@@ -8030,7 +8175,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     @FXML
     private void onNewFromTemplate() {
-        newFromTemplate(null);
+        templateActions.newFromTemplate(null);
     }
 
     @FXML
@@ -8039,7 +8184,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         chooser.setTitle(tr("dialog.openFile.title"));
         Path file = pathOf(chooser.showOpenDialog(stage));
         if (file != null) {
-            openPath(file);
+            fileWorkflows.openPath(file);
         }
     }
 
@@ -8056,7 +8201,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 return; // user cancelled the switch (e.g. unsaved changes) — don't open elsewhere
             }
         }
-        openPath(file);
+        fileWorkflows.openPath(file);
     }
 
     /** The enabled project whose root is the closest ancestor of {@code file}, or {@code null}. */
@@ -8076,7 +8221,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         return best;
     }
 
-    /** Open a file by path; refreshes recent files and reports status. */
     /** Opens the personal dictionary ({@code dictionary.txt}) in the editor, creating it empty if it doesn't
      *  exist yet (so the link works even before any word is added). Backs the Settings → Spell Check link. */
     private void openPersonalDictionary() {
@@ -8089,7 +8233,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.dict.openFailed"));
             return;
         }
-        openPath(file);
+        fileWorkflows.openPath(file);
     }
 
     /** Opens the bundled technical-terms dictionary in a read-only tab so the user can browse what it covers.
@@ -8145,7 +8289,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 editorArea.remove(previous); // tabs() is unmodifiable by design; remove() is the seam
             }
         }
-        openPath(file, true);
+        fileWorkflows.openPath(file, true);
         Tab opened = tabForPath(file);
         if (opened != null) {
             previewTab = opened;
@@ -8168,90 +8312,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    private void openPath(Path file) {
-        openPath(file, false);
-    }
-
-    /**
-     * Opens a file, or re-selects its tab when it is already open.
-     *
-     * <p>{@code quietIfOpen} suppresses the "Already open" echo for the startup path: a command-line
-     * {@code FILE} that is also part of the restored session has its tab created + selected by
-     * {@link #openInitialBuffer()} a pulse earlier, so the CLI action's own {@code openPath} always finds it
-     * there — reporting "Already open" for a tab Editora itself just made is noise, not information.
-     */
-    private void openPath(Path file, boolean quietIfOpen) {
-        Tab existing = tabForPath(file);
-        if (existing != null) {
-            // Already open — switch to its tab instead of opening a duplicate. Asking for it explicitly
-            // is a choice, so if it was only being previewed it stops being disposable.
-            promoteTab(existing);
-            editorArea.select(existing);
-            EditorBuffer existingBuffer = bufferOf(existing);
-            if (existingBuffer != null) {
-                existingBuffer.getArea().requestFocus();
-            }
-            if (recentFiles != null) {
-                recentFiles.add(file);
-            }
-            if (!quietIfOpen) {
-                setStatus(tr("status.alreadyOpen", file.getFileName()));
-            }
-            return;
-        }
-        // A raster image opens in the read-only image viewer instead of dumping its bytes into a text buffer.
-        if (ImageFormats.isSupported(file.getFileName().toString())) {
-            openImageTab(file, true);
-            if (recentFiles != null) {
-                recentFiles.add(file);
-            }
-            setStatus(tr("status.opened", com.editora.config.PathDisplay.of(file)));
-            return;
-        }
-        // A PDF opens in the read-only PDF viewer (rasterized pages) instead of the hex viewer.
-        if (PdfViewerPane.isPdf(file.getFileName().toString())) {
-            openPdfTab(file, true);
-            if (recentFiles != null) {
-                recentFiles.add(file);
-            }
-            setStatus(tr("status.opened", com.editora.config.PathDisplay.of(file)));
-            return;
-        }
-        // Every text candidate is classified/read/decoded in the background. Even a tiny local file can live
-        // on a cold, network-mounted, or FUSE-backed path, so size is not a safe proxy for FX-thread latency.
-        openTextBufferAsync(file, true);
-    }
-
     /** Loads {@code file} into a new text {@link EditorBuffer} tab (the normal text path, bypassing the
      *  image/binary routing in {@link #openPath}). Used by {@code openPath}'s fall-through and by the
      *  {@code view.openAsText} command (which forces a text open even for a binary / already-hex file). */
     private void openTextBuffer(Path file) {
-        openTextBufferAsync(file, false); // explicit Open as Text bypasses binary routing
+        fileWorkflows.openTextBufferAsync(file, false); // explicit Open as Text bypasses binary routing
     }
 
-    /**
-     * Adds a responsive tab shell immediately, then reads/decodes on a virtual thread and performs exactly
-     * one RichTextFX insertion back on the FX thread. {@code classifyBinary} is false for Open as Text.
-     */
-    private void openTextBufferAsync(Path file, boolean classifyBinary) {
-        EditorBuffer buffer = new EditorBuffer();
-        buffer.setPath(file);
-        // Prevent the empty shell from starting LSP/minimap work or accepting edits before its document lands.
-        buffer.setHeavyFile(true);
-        buffer.setViewMode(true);
-        loadingBuffers.add(buffer);
-        Tab tab = addBuffer(buffer, true, false);
-        fileLoadExecutor.execute(() -> {
-            try {
-                PreparedLoad load = prepareLoad(file, classifyBinary);
-                Platform.runLater(() -> finishAsyncOpen(tab, buffer, load));
-            } catch (IOException | RuntimeException e) {
-                Platform.runLater(() -> failAsyncOpen(tab, buffer, file, e));
-            }
-        });
-    }
-
-    private void finishAsyncOpen(Tab tab, EditorBuffer buffer, PreparedLoad load) {
+    private void finishAsyncOpen(Tab tab, EditorBuffer buffer, FileWorkflowCoordinator.PreparedLoad load) {
         if (tabForBuffer(buffer) != tab) {
             discardLoading(buffer); // the user closed the shell while its disk read was running
             return;
@@ -8260,7 +8328,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             boolean selected = editorArea.selectedTab() == tab;
             discardLoading(buffer);
             editorArea.remove(tab);
-            openHexTab(load.file(), selected);
+            fileWorkflows.openHexTab(load.file(), selected);
             if (recentFiles != null) {
                 recentFiles.add(load.file());
             }
@@ -8268,14 +8336,14 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         buffer.setViewMode(false);
-        String note = applyPreparedLoad(buffer, load);
-        notePerfContentLoaded(buffer);
+        String note = fileWorkflows.applyPreparedLoad(buffer, load);
+        fileWorkflows.notePerfContentLoaded(buffer);
         restoreFolds(buffer);
         bookmarkCoordinator.restoreBookmarks(buffer);
         debugCoordinator.restoreBreakpoints(buffer);
         notesCoordinator.restoreNotes(buffer);
         restoreReadOnly(buffer);
-        restoreMarkdownMode(buffer);
+        previews.restoreMarkdownMode(buffer);
         updateTabMeta(tab, buffer);
         // The loading shell is deliberately read-only until its document lands. Selection attached the
         // status bar while that temporary state was active; refresh after restoring the file's real view
@@ -8305,16 +8373,16 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void clearLoading(EditorBuffer buffer) {
-        loadingBuffers.remove(buffer);
-        List<Runnable> queued = afterBufferLoad.remove(buffer);
+        fileWorkflows.loadingBuffers.remove(buffer);
+        List<Runnable> queued = fileWorkflows.afterBufferLoad.remove(buffer);
         if (queued != null) {
             queued.forEach(Runnable::run);
         }
     }
 
     private void discardLoading(EditorBuffer buffer) {
-        loadingBuffers.remove(buffer);
-        afterBufferLoad.remove(buffer);
+        fileWorkflows.loadingBuffers.remove(buffer);
+        fileWorkflows.afterBufferLoad.remove(buffer);
     }
 
     /** Command {@code view.openAsText}: opens the active file's bytes in a normal text buffer, bypassing the
@@ -8329,26 +8397,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         openTextBuffer(p);
     }
 
-    /** Opens {@code file} in a read-only {@link ImageViewerPane} tab (raster images render, not their bytes). */
-    private Tab openImageTab(Path file, boolean select) {
-        ImageViewerPane pane = new ImageViewerPane(file);
-        Tab tab = addContentTab(pane, select);
-        // Disposal is driven by the tabs ListChangeListener (see disposeViewerTab) — setOnClosed here would
-        // only fire for a click on the ✕, never for Ctrl-W / Close All / window close.
-        Platform.runLater(pane::relayout); // fit-to-window once the tab is laid out
-        return tab;
-    }
-
     /** The {@link ImageViewerPane} in {@code tab}, or {@code null} for a buffer / non-image tab. */
     private static ImageViewerPane imagePaneOf(Tab tab) {
         return tab != null && tab.getUserData() instanceof ImageViewerPane pane ? pane : null;
-    }
-
-    /** Opens {@code file} in a read-only {@link HexViewerPane} tab (a binary shows its bytes, not garbage text). */
-    private Tab openHexTab(Path file, boolean select) {
-        HexViewerPane pane = new HexViewerPane(file);
-        Tab tab = addContentTab(pane, select);
-        return tab;
     }
 
     /** The {@link HexViewerPane} in {@code tab}, or {@code null} for a buffer / non-hex tab. */
@@ -8356,427 +8407,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         return tab != null && tab.getUserData() instanceof HexViewerPane pane ? pane : null;
     }
 
-    /** Opens {@code file} in a read-only {@link PdfViewerPane} tab (a PDF renders its pages, not its bytes). */
-    private Tab openPdfTab(Path file, boolean select) {
-        PdfViewerPane pane = new PdfViewerPane(file);
-        Tab tab = addContentTab(pane, select);
-        Platform.runLater(pane::relayout); // fit-to-window once the tab is laid out
-        return tab;
-    }
-
     /** The {@link PdfViewerPane} in {@code tab}, or {@code null} for a buffer / non-PDF tab. */
     private static PdfViewerPane pdfPaneOf(Tab tab) {
         return tab != null && tab.getUserData() instanceof PdfViewerPane pane ? pane : null;
     }
 
-    /**
-     * True when {@code file} looks like a binary (so it opens in the hex viewer, not as garbage text): reads a
-     * small sample and applies the {@link BinarySniff} heuristic. Unreadable ⇒ false (the text path reports the
-     * error). Skipped for the huge-file case is unnecessary — only a bounded {@link BinarySniff#SAMPLE_BYTES}
-     * prefix is read regardless of file size.
-     */
-    private static boolean looksBinaryFile(Path file) {
-        try (java.io.InputStream in = java.nio.file.Files.newInputStream(file)) {
-            return BinarySniff.looksBinary(in.readNBytes(BinarySniff.SAMPLE_BYTES));
-        } catch (java.io.IOException | RuntimeException e) {
-            return false;
-        }
-    }
-
-    /** Command {@code view.openAsHex}: opens the active file's bytes in a read-only hex tab (forces hex even
-     *  for a text file). No-op with a status when the active tab has no file (an untitled buffer / Welcome). */
-    private void openActiveAsHex() {
-        Path p = tabPath(editorArea.selectedTab());
-        if (p == null) {
-            setStatus(tr("status.hex.noFile"));
-            return;
-        }
-        openHexTab(p, true);
-        setStatus(tr("status.opened", com.editora.config.PathDisplay.of(p)));
-    }
-
-    /**
-     * Reads {@code file} into {@code buffer} and applies the size-based mode, returning a status note
-     * ({@code ""} for a normal file):
-     * <ul>
-     *   <li>≥ {@link EditorBuffer#HUGE_FILE_BYTES}: read at most that many chars (so a multi-GB file
-     *       can't exhaust memory) and open read-only;</li>
-     *   <li>≥ {@link EditorBuffer#LARGE_FILE_BYTES}: full read, but highlighting + minimap disabled;</li>
-     *   <li>otherwise: full read, normal editing.</li>
-     * </ul>
-     */
-    private String loadInto(EditorBuffer buffer, Path file) throws IOException {
-        String note = applyPreparedLoad(buffer, prepareLoad(file, false));
-        notePerfContentLoaded(buffer);
-        return note;
-    }
-
-    /**
-     * Startup instrumentation (inert unless {@code -Deditora.perf}): a buffer's content is in place, so the
-     * next rendered frame is the one that shows the user their file.
-     *
-     * <p>The <b>first</b> loaded buffer is the one that counts, and it is deliberately not gated on being the
-     * active buffer: on the fresh-open path ({@code --no-session}, or any file not in the session)
-     * {@code loadInto} runs <em>before</em> the tab is added, so the buffer isn't selected yet and such a
-     * guard silently never fired — the run then never marked first paint at all. Taking the first load is
-     * correct in both paths anyway, since the CLI target is front-loaded: with a session it's the selected
-     * tab filled first, without one it's the only file opened.
-     */
-    private void notePerfContentLoaded(EditorBuffer buffer) {
-        if (!com.editora.perf.Startup.enabled() || perfPaintTimerStarted) {
-            return;
-        }
-        perfPaintTimerStarted = true;
-        com.editora.perf.Startup.mark(com.editora.perf.Startup.FILE_LOADED);
-        // A pulse's handle() runs at the *start* of a pulse, before that pulse renders. So the first tick
-        // only means "a pulse is beginning"; it's the second tick that proves the pulse in between — the one
-        // that laid out and painted this content — completed. Accurate to about one frame (~16 ms), which is
-        // the honest resolution of "when did the user first see it" without hooking Prism internals.
-        new javafx.animation.AnimationTimer() {
-            private int ticks;
-
-            @Override
-            public void handle(long now) {
-                if (++ticks >= 2) {
-                    stop();
-                    com.editora.perf.Startup.mark(com.editora.perf.Startup.FIRST_PAINT);
-                }
-            }
-        }.start();
-    }
-
-    /** True once the first-paint timer has been armed, so it arms for one buffer only. */
-    private boolean perfPaintTimerStarted;
-
-    /** Immutable disk-side result; no JavaFX object is touched while this is prepared. */
-    private record PreparedLoad(
-            Path file,
-            String content,
-            long size,
-            long mtime,
-            int lines,
-            int maxLineLength,
-            String charset,
-            com.editora.editorconfig.EditorConfigProperties editorConfig,
-            boolean binary,
-            boolean large,
-            boolean heavy,
-            boolean longLine,
-            boolean truncated,
-            boolean log,
-            long logOffset,
-            boolean tail) {}
-
-    /** Document shape computed while the decoded text is already in background-thread memory. */
-    record TextStats(int lines, int maxLineLength) {}
-
-    static TextStats textStats(String text) {
-        int lines = 1;
-        int lineLength = 0;
-        int maxLineLength = 0;
-        for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') {
-                lines++;
-                maxLineLength = Math.max(maxLineLength, lineLength);
-                lineLength = 0;
-            } else {
-                lineLength++;
-            }
-        }
-        return new TextStats(lines, Math.max(maxLineLength, lineLength));
-    }
-
-    private PreparedLoad prepareLoad(Path file, boolean sniffBinary) throws IOException {
-        // One stat call for both size + mtime instead of two separate syscalls per file load.
-        long size;
-        long mtime;
-        try {
-            var attrs = Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
-            size = attrs.size();
-            mtime = attrs.lastModifiedTime().toMillis();
-        } catch (IOException e) {
-            size = fileSize(file);
-            mtime = lastModifiedMillis(file);
-        }
-        boolean isLog = logViewer.handlesLogFile(file);
-        com.editora.editorconfig.EditorConfigProperties editorConfig =
-                editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)
-                        ? com.editora.editorconfig.EditorConfig.resolveFor(file)
-                        : com.editora.editorconfig.EditorConfigProperties.EMPTY;
-        if (size >= EditorBuffer.HUGE_FILE_BYTES) {
-            boolean binary = sniffBinary && looksBinaryFile(file);
-            if (binary) {
-                return new PreparedLoad(
-                        file,
-                        null,
-                        size,
-                        mtime,
-                        0,
-                        0,
-                        null,
-                        editorConfig,
-                        true,
-                        true,
-                        false,
-                        false,
-                        true,
-                        isLog,
-                        0,
-                        false);
-            }
-            if (isLog) {
-                // A huge log opens at its END (the tail is what matters) instead of the first chunk.
-                com.editora.logviewer.LogTail.Tail tail =
-                        com.editora.logviewer.LogTail.readTail(file, EditorBuffer.HUGE_FILE_BYTES);
-                TextStats stats = textStats(tail.text());
-                return new PreparedLoad(
-                        file,
-                        tail.text(),
-                        size,
-                        mtime,
-                        stats.lines(),
-                        stats.maxLineLength(),
-                        com.editora.editorconfig.EditorConfigCharset.UTF_8,
-                        editorConfig,
-                        false,
-                        true,
-                        false,
-                        stats.maxLineLength() >= LONG_LINE_FILE_CHARS,
-                        true,
-                        true,
-                        tail.offset(),
-                        true);
-            }
-            String content = readCapped(file, (int) EditorBuffer.HUGE_FILE_BYTES);
-            TextStats stats = textStats(content);
-            return new PreparedLoad(
-                    file,
-                    content,
-                    size,
-                    mtime,
-                    stats.lines(),
-                    stats.maxLineLength(),
-                    com.editora.editorconfig.EditorConfigCharset.UTF_8,
-                    editorConfig,
-                    false,
-                    true,
-                    false,
-                    stats.maxLineLength() >= LONG_LINE_FILE_CHARS,
-                    true,
-                    false,
-                    0,
-                    false);
-        }
-        byte[] bytes = Files.readAllBytes(file);
-        if (sniffBinary) {
-            byte[] sample = bytes.length <= BinarySniff.SAMPLE_BYTES
-                    ? bytes
-                    : java.util.Arrays.copyOf(bytes, BinarySniff.SAMPLE_BYTES);
-            if (BinarySniff.looksBinary(sample)) {
-                return new PreparedLoad(
-                        file,
-                        null,
-                        size,
-                        mtime,
-                        0,
-                        0,
-                        null,
-                        editorConfig,
-                        true,
-                        false,
-                        false,
-                        false,
-                        false,
-                        false,
-                        0,
-                        false);
-            }
-        }
-        String charset = com.editora.editorconfig.EditorConfigCharset.resolveName(bytes, editorConfig.charset());
-        String content = com.editora.editorconfig.EditorConfigCharset.decode(bytes, charset);
-        boolean large = size >= EditorBuffer.LARGE_FILE_BYTES;
-        // Intermediate tier: a very long single file (e.g. a 13k-line source) keeps highlighting + editing
-        // but drops the minimap + LSP — the two heaviest features for a huge source — so it stays responsive.
-        int threshold = config.getSettings().getLargeFileThreshold();
-        TextStats stats = textStats(content);
-        boolean longLine = stats.maxLineLength() >= LONG_LINE_FILE_CHARS;
-        boolean heavy = !large && !longLine && threshold > 0 && stats.lines() >= threshold;
-        return new PreparedLoad(
-                file,
-                content,
-                size,
-                mtime,
-                stats.lines(),
-                stats.maxLineLength(),
-                charset,
-                editorConfig,
-                false,
-                large,
-                heavy,
-                longLine,
-                false,
-                isLog,
-                size,
-                false);
-    }
-
-    /** Applies a prepared document atomically on the FX thread, with all expensive-mode flags already active. */
-    private String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load) {
-        buffer.setDiskSnapshot(load.mtime(), load.size());
-        buffer.setTruncatedLoad(load.truncated());
-        applyResolvedEditorConfig(buffer, load.editorConfig());
-        buffer.setDetectedCharset(load.charset());
-        buffer.setLargeFile(load.large() || load.longLine());
-        buffer.setHeavyFile(load.heavy());
-        if (load.longLine()) {
-            // Wrapping a giant RichTextFX paragraph multiplies layout work. The user can explicitly turn it
-            // back on after loading, but the first rendered frame must use the safe profile.
-            buffer.setWordWrap(false);
-        }
-        if (load.truncated()) {
-            buffer.setReadOnly(true);
-        }
-        buffer.setInitialContent(load.content(), load.longLine());
-        if (load.log()) {
-            logViewer.recordLoadOffset(buffer, load.logOffset());
-        }
-        if (load.truncated()) {
-            return load.file().getFileName()
-                    + (load.tail() ? " — very large log (" : " — very large file (")
-                    + StatusBar.formatSize(load.size())
-                    + (load.tail() ? "): read-only, showing last " : "): read-only, showing first ")
-                    + StatusBar.formatSize(load.content().length());
-        }
-        if (load.large()) {
-            return largeFileNote(load.file(), load.size());
-        }
-        if (load.longLine()) {
-            return tr("status.longLineFileTier", load.maxLineLength());
-        }
-        return load.heavy() ? tr("status.largeFileTier", load.lines()) : "";
-    }
-
     /** The file's resolved {@code .editorconfig} charset, or null (EditorConfig off / remote / no rule). The
      *  BOM check that overrides it lives in {@link com.editora.editorconfig.EditorConfigCharset#resolveName}. */
     String editorConfigCharsetFor(Path file) {
-        if (editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)) {
+        if (editorSettings.editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)) {
             return com.editora.editorconfig.EditorConfig.resolveFor(file).charset();
         }
         return null;
-    }
-
-    /** Reads up to {@code maxChars} characters (UTF-8) from {@code file}, bounding memory use. */
-    private static String readCapped(Path file, int maxChars) throws IOException {
-        StringBuilder sb = new StringBuilder(Math.min(maxChars, 1 << 20));
-        char[] buf = new char[1 << 16];
-        try (java.io.Reader r = Files.newBufferedReader(file, java.nio.charset.StandardCharsets.UTF_8)) {
-            int read;
-            while (sb.length() < maxChars
-                    && (read = r.read(buf, 0, Math.min(buf.length, maxChars - sb.length()))) != -1) {
-                sb.append(buf, 0, read);
-            }
-        }
-        return sb.toString();
-    }
-
-    private String largeFileNote(Path file) {
-        return largeFileNote(file, fileSize(file));
-    }
-
-    private static String largeFileNote(Path file, long size) {
-        return file.getFileName() + " — large file (" + StatusBar.formatSize(size)
-                + "): syntax highlighting and minimap disabled";
-    }
-
-    private static long fileSize(Path file) {
-        try {
-            return Files.size(file);
-        } catch (IOException e) {
-            return 0;
-        }
-    }
-
-    /** The file's last-modified time in epoch millis, or {@code -1} when unavailable. */
-    private static long lastModifiedMillis(Path file) {
-        try {
-            return Files.getLastModifiedTime(file).toMillis();
-        } catch (IOException e) {
-            return -1;
-        }
-    }
-
-    /**
-     * Checks the <em>active</em> tab's file against its on-disk snapshot (taken at load/save) and, if it
-     * was modified by another program, prompts to reload or keep the in-editor version. Run when the
-     * window regains focus and when the user switches tabs — so the prompt only appears for the file the
-     * user is actually looking at (background tabs are checked when switched to). Deleted files are left
-     * alone (the in-editor copy is kept).
-     */
-    private void checkExternalChanges() {
-        if (checkingExternalChanges || editorArea == null) {
-            return;
-        }
-        checkingExternalChanges = true;
-        try {
-            Tab tab = editorArea.selectedTab();
-            EditorBuffer buffer = bufferOf(tab);
-            if (buffer == null || buffer.getPath() == null) {
-                return;
-            }
-            Path file = buffer.getPath();
-            if (com.editora.vfs.Vfs.isRemote(file)) {
-                return; // remote (SFTP) mtime polling would be a network call per focus — skipped for now
-            }
-            if (!Files.exists(file)) {
-                return; // deleted/renamed externally — keep what's open (no prompt)
-            }
-            long mtime = lastModifiedMillis(file);
-            long size = fileSize(file);
-            if (buffer.diskChangedFrom(mtime, size)) {
-                promptExternalChange(tab, buffer, mtime, size);
-            }
-        } finally {
-            checkingExternalChanges = false;
-        }
-    }
-
-    /** Asks whether to reload an externally-modified file; "keep" just re-baselines so it stops prompting. */
-    private void promptExternalChange(Tab tab, EditorBuffer buffer, long mtime, long size) {
-        String name = buffer.getPath().getFileName().toString();
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.initOwner(stage);
-        alert.setTitle(tr("dialog.externalChange.title"));
-        alert.setHeaderText(tr("dialog.externalChange.header", name));
-        alert.setContentText(buffer.isDirty() ? tr("dialog.externalChange.dirty") : tr("dialog.externalChange.clean"));
-        ButtonType reload = new ButtonType(tr("dialog.externalChange.reload"));
-        ButtonType keep = new ButtonType(
-                buffer.isDirty() ? tr("dialog.externalChange.keepMine") : tr("dialog.externalChange.keep"),
-                ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(reload, keep);
-        if (alert.showAndWait().filter(b -> b == reload).isPresent()) {
-            reloadFromDisk(tab, buffer);
-        } else {
-            buffer.setDiskSnapshot(mtime, size); // keep the editor's version, stop nagging about this change
-        }
-    }
-
-    /** Reloads a buffer's content from disk, preserving the caret position as best it can. */
-    private void reloadFromDisk(Tab tab, EditorBuffer buffer) {
-        Path file = buffer.getPath();
-        try {
-            CodeArea area = buffer.getArea();
-            int caret = area.getCaretPosition();
-            historyCoordinator.record(
-                    buffer, HistoryRevision.REASON_EXTERNAL); // snapshot the in-memory version before disk wins
-            String note = loadInto(buffer, file); // replaces content + re-baselines the disk snapshot
-            buffer.markClean();
-            area.moveTo(Math.min(caret, area.getLength()));
-            updateTabMeta(tab, buffer);
-            lspCoordinator.watchedFilesReloaded(java.util.List.of(file)); // the server's model too (#677)
-            setStatus(note.isEmpty() ? tr("status.reloaded", file.getFileName()) : note);
-        } catch (IOException e) {
-            setStatus(tr("status.failedReload", file.getFileName(), e.getMessage()));
-        }
     }
 
     @FXML
@@ -8798,484 +8440,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    @FXML
-    private void onSave() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            save(buffer);
-        }
-    }
-
-    /** {@code file.saveAsAdmin}: write the active buffer via the OS auth agent (root-owned files). */
-    private void onSaveAsAdmin() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        if (buffer.getPath() == null) {
-            saveAs(buffer);
-            return;
-        }
-        if (!elevationAvailable()) {
-            setStatus(tr("status.admin.unavailable"));
-            return;
-        }
-        saveAsAdmin(buffer);
-    }
-
-    @FXML
-    private void onSaveAs() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            saveAs(buffer);
-        }
-    }
-
-    /** @return true if the buffer is on disk afterwards (either already saved or just saved). */
-    /** Whether the elevation tool is present (macOS osascript always; Linux pkexec probed on PATH). */
-    private boolean adminToolAvailable;
-
-    /** Admin-save is enabled in Settings and the OS supports it (Linux/polkit or macOS/osascript). */
-    private boolean adminSaveEnabled() {
-        return config.getSettings().isAdminSave()
-                && com.editora.process.ElevatedSave.supportedOnOs(System.getProperty("os.name"));
-    }
-
-    /** Admin-save is enabled and the elevation tool (pkexec/osascript) is actually available. */
-    private boolean elevationAvailable() {
-        return adminSaveEnabled() && adminToolAvailable;
-    }
-
-    /** True when a plain save of {@code p} would fail for permissions but an elevated save could succeed. */
-    private boolean adminSaveApplicable(Path p) {
-        return elevationAvailable()
-                && p != null
-                && com.editora.vfs.Vfs.isLocal(p)
-                && Files.exists(p)
-                && !Files.isWritable(p);
-    }
-
-    /**
-     * Detects the elevation tool when admin-save is enabled and pushes the "Edit as Administrator"
-     * affordance to every open buffer. macOS ships {@code osascript}, so it's available immediately;
-     * Linux probes {@code pkexec} off the FX thread (it spawns a process) and updates the gate when it
-     * returns. Mirrors {@code applyRipgrepSupport}.
-     */
-    private void applyAdminSaveSupport() {
-        if (!adminSaveEnabled()) {
-            adminToolAvailable = false;
-            pushAdminEditAvailable();
-            return;
-        }
-        if (com.editora.process.ElevatedSave.isMac(System.getProperty("os.name"))) {
-            adminToolAvailable = true; // osascript is always present on macOS
-            pushAdminEditAvailable();
-            return;
-        }
-        new Thread(
-                        () -> {
-                            boolean ok;
-                            try {
-                                ok = com.editora.process.ProcessRunner.run(
-                                                        null,
-                                                        java.time.Duration.ofSeconds(5),
-                                                        List.of(com.editora.process.ElevatedSave.PKEXEC, "--version"))
-                                                .exit()
-                                        == 0;
-                            } catch (RuntimeException e) {
-                                ok = false;
-                            }
-                            boolean available = ok;
-                            Platform.runLater(() -> {
-                                adminToolAvailable = available;
-                                pushAdminEditAvailable();
-                            });
-                        },
-                        "pkexec-detect")
-                .start();
-    }
-
-    /** Pushes the current "Edit as Administrator" availability to every open buffer's banner. */
-    private void pushAdminEditAvailable() {
-        boolean available = elevationAvailable();
-        for (Tab t : editorArea.tabs()) {
-            EditorBuffer b = bufferOf(t);
-            if (b != null) {
-                b.setAdminEditAvailable(available && isLocalBuffer(b));
-            }
-        }
-    }
-
-    /**
-     * Blocks every write path for a buffer the loader could only read <em>part</em> of (a file at/over
-     * {@link EditorBuffer#HUGE_FILE_BYTES}: the first 50 MB, or a log's <em>last</em> 50 MB). Such a buffer is
-     * a slice, not the file — writing it back with {@code Files.write} would truncate the real file on disk
-     * and destroy everything outside the slice. The buffer is read-only, but that only stops <em>typing</em>:
-     * {@code file.save} (Ctrl/Cmd-S) needs no edit and no dirty flag to fire, so it has to be refused here.
-     *
-     * @return true when the save was refused (the caller must not write).
-     */
-    private boolean refuseTruncatedSave(EditorBuffer buffer) {
-        if (buffer == null || !buffer.isTruncatedLoad()) {
-            return false;
-        }
-        setStatus(tr("status.truncatedNoSave"));
-        return true;
-    }
-
-    private boolean save(EditorBuffer buffer) {
-        if (refuseTruncatedSave(buffer)) {
-            return false;
-        }
-        if (buffer.getPath() == null) {
-            return saveAs(buffer);
-        }
-        if (adminSaveApplicable(buffer.getPath())) {
-            saveAsAdmin(buffer); // async elevated write; the buffer stays dirty until it completes
-            return false;
-        }
-        return writeBuffer(buffer, buffer.getPath());
-    }
-
-    /**
-     * Writes {@code buffer} to its (e.g. root-owned) file via the OS auth agent ({@code pkexec}/polkit),
-     * which prompts for the password itself — Editora never handles it. The bytes go to a private temp
-     * file, then {@code cat tmp > target} runs as root, truncating the target in place so its owner and
-     * permissions are preserved. Runs off the FX thread (the auth dialog blocks); the result is applied back
-     * on the FX thread.
-     */
-    private void saveAsAdmin(EditorBuffer buffer) {
-        Path target = buffer.getPath();
-        if (target == null) {
-            saveAs(buffer);
-            return;
-        }
-        if (!elevationAvailable()) {
-            setStatus(tr("status.admin.unavailable"));
-            return;
-        }
-        byte[] bytes = saveBytes(buffer); // pure transform + encode on the FX thread
-        setStatus(tr("status.admin.saving", com.editora.config.PathDisplay.of(target)));
-        new Thread(
-                        () -> {
-                            Path tmp = null;
-                            int exit;
-                            String err;
-                            try {
-                                tmp = Files.createTempFile("editora-admin-", ".tmp");
-                                try {
-                                    Files.setPosixFilePermissions(
-                                            tmp,
-                                            java.util.Set.of(
-                                                    java.nio.file.attribute.PosixFilePermission.OWNER_READ,
-                                                    java.nio.file.attribute.PosixFilePermission.OWNER_WRITE));
-                                } catch (UnsupportedOperationException | IOException ignore) {
-                                    // Non-POSIX filesystem: the temp file keeps default permissions.
-                                }
-                                Files.write(tmp, bytes);
-                                var r = com.editora.process.ProcessRunner.run(
-                                        null,
-                                        java.time.Duration.ofMinutes(2),
-                                        com.editora.process.ElevatedSave.elevatedArgv(
-                                                System.getProperty("os.name"),
-                                                com.editora.process.ElevatedSave.PKEXEC,
-                                                tmp,
-                                                target));
-                                exit = r.exit();
-                                err = r.err();
-                            } catch (IOException | RuntimeException e) {
-                                exit = -1;
-                                err = e.getMessage();
-                            } finally {
-                                if (tmp != null) {
-                                    try {
-                                        Files.deleteIfExists(tmp);
-                                    } catch (IOException ignore) {
-                                        // best-effort cleanup
-                                    }
-                                }
-                            }
-                            int code = exit;
-                            String detail = err;
-                            Platform.runLater(() -> onAdminSaveDone(buffer, target, code, detail));
-                        },
-                        "admin-save")
-                .start();
-    }
-
-    /** Applies the outcome of an elevated save on the FX thread (ok / user-cancelled / failed). */
-    private void onAdminSaveDone(EditorBuffer buffer, Path target, int exit, String err) {
-        if (exit == 0) {
-            historyCoordinator.record(buffer, HistoryRevision.REASON_SAVE);
-            buffer.markClean();
-            buffer.setDiskSnapshot(lastModifiedMillis(target), fileSize(target));
-            setStatus(tr("status.admin.saved", com.editora.config.PathDisplay.of(target)));
-            git.refresh();
-            lspCoordinator.notifyDocumentSaved(buffer);
-            Tab tab = tabForBuffer(buffer);
-            if (tab != null) {
-                updateTabMeta(tab, buffer);
-            }
-        } else if (com.editora.process.ElevatedSave.isCancellation(System.getProperty("os.name"), exit, err)) {
-            setStatus(tr("status.admin.cancelled")); // user dismissed the auth dialog / not authorized
-        } else {
-            setStatus(tr("status.admin.failed", err == null || err.isBlank() ? String.valueOf(exit) : err));
-        }
-    }
-
-    private boolean saveAs(EditorBuffer buffer) {
-        if (refuseTruncatedSave(buffer)) {
-            return false;
-        }
-        if (com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
-            // A remote buffer always opens with a path, so plain Save writes it back over SFTP; choosing a
-            // new remote destination (an async prompt) isn't supported yet.
-            setStatus(tr("status.remote.saveAsUnsupported"));
-            return false;
-        }
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle(tr("dialog.saveAs.title"));
-        if (buffer.getDisplayName() != null) {
-            chooser.setInitialFileName(buffer.getDisplayName()); // suggested name from --new-file=NAME
-        }
-        Path file = pathOf(chooser.showSaveDialog(stage));
-        if (file == null) {
-            return false;
-        }
-        return applySaveAsTarget(buffer, file);
-    }
-
-    /** Points {@code buffer} at {@code file}, refreshes its previews/tab/breadcrumb, and writes it. */
-    private boolean applySaveAsTarget(EditorBuffer buffer, Path file) {
-        buffer.setPath(file);
-        // The buffer's EditorConfig properties + charset were resolved against the OLD path. Without
-        // re-resolving, a Save-As into another tree writes with the previous project's charset/EOL/trim rules
-        // (and keeps doing so on every later save), while an untitled buffer saved INTO a project with an
-        // .editorconfig gets none of its rules.
-        applyEditorConfig(buffer);
-        ensurePreviewControls(buffer); // a new untitled saved as .md/.mmd now gets the preview toggle
-        htmlPreview.ensureControl(buffer); // a save-as to .html now gets the "open in browser" globe
-        logViewer.ensureControl(buffer); // a save-as to .log now gets the log control + level overlay
-        boolean ok = writeBuffer(buffer, file);
-        Tab tab = tabFor(buffer);
-        if (tab != null) {
-            updateTabMeta(tab, buffer);
-        }
-        if (buffer == activeBuffer()) {
-            breadcrumb.setActiveFile(buffer.getPath());
-            updateProjectFolderView(); // global window: an untitled buffer just gained a folder to show
-        }
-        return ok;
-    }
-
-    /**
-     * The keyboard-first Save As: instead of the native file chooser (which the toolbar button uses), prompt
-     * for the target path in the in-scene overlay so the command palette / a keybinding stay mouse-free. The
-     * field is pre-filled with the current path (or the project folder + suggested name for an untitled
-     * buffer); a relative name resolves against that folder, {@code ~} expands to home. Confirms before
-     * overwriting a different existing file.
-     */
-    private void saveAsPrompt(EditorBuffer buffer) {
-        if (buffer == null || refuseTruncatedSave(buffer)) {
-            return;
-        }
-        if (buffer.getPath() != null && com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
-            setStatus(tr("status.remote.saveAsUnsupported"));
-            return;
-        }
-        Path base = saveAsBaseDir(buffer);
-        promptText(tr("dialog.saveAs.title"), tr("dialog.saveAs.prompt"), saveAsInitial(buffer, base), value -> {
-            Path target = com.editora.config.PathKeys.resolveUserInput(value, base, System.getProperty("user.home"));
-            if (target == null) {
-                setStatus(tr("status.saveAs.invalidPath"));
-                return;
-            }
-            Path current = buffer.getPath();
-            boolean overwritingOther = Files.exists(target)
-                    && (current == null || !com.editora.config.PathKeys.sameNormalized(target, current));
-            if (overwritingOther && !confirmOverwrite(target)) {
-                return;
-            }
-            applySaveAsTarget(buffer, target);
-        });
-    }
-
-    /** The folder a typed Save-As name resolves against: the current file's folder, else project root/home. */
-    private Path saveAsBaseDir(EditorBuffer buffer) {
-        Path p = buffer.getPath();
-        if (p != null && com.editora.vfs.Vfs.isLocal(p) && p.getParent() != null) {
-            return p.getParent();
-        }
-        Path root = projectPanel == null ? null : projectPanel.getRoot();
-        if (root != null && com.editora.vfs.Vfs.isLocal(root)) {
-            return root;
-        }
-        return Path.of(System.getProperty("user.home"));
-    }
-
-    /** The Save-As prompt's pre-filled value: the current absolute path, else the base folder + a name. */
-    private String saveAsInitial(EditorBuffer buffer, Path base) {
-        Path p = buffer.getPath();
-        if (p != null && com.editora.vfs.Vfs.isLocal(p)) {
-            return p.toString();
-        }
-        String name = buffer.getDisplayName() != null ? buffer.getDisplayName() : "untitled.txt";
-        return base.resolve(name).toString();
-    }
-
-    /** Native confirmation before overwriting an existing (different) file from the keyboard Save-As prompt. */
-    private boolean confirmOverwrite(Path target) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.initOwner(stage);
-        alert.setTitle(tr("dialog.saveAs.overwrite.title"));
-        alert.setHeaderText(tr("dialog.saveAs.overwrite.header", target.getFileName()));
-        alert.setContentText(tr("dialog.saveAs.overwrite.content"));
-        return alert.showAndWait().filter(b -> b == ButtonType.OK).isPresent();
-    }
-
-    /**
-     * The exact bytes to write for {@code buffer}: the EditorConfig save transforms (trim trailing
-     * whitespace / final newline / end-of-line) applied to the text, then encoded in the effective charset
-     * (BOM-aware). The live document is not mutated — only what we write. Inert (content + detected charset)
-     * when EditorConfig is off.
-     */
-    private byte[] saveBytes(EditorBuffer buffer) {
-        com.editora.editorconfig.EditorConfigProperties p = editorConfigEnabled()
-                ? buffer.getEditorConfigProps()
-                : com.editora.editorconfig.EditorConfigProperties.EMPTY;
-        String text = com.editora.editorconfig.EditorConfigTransform.transform(buffer.getContent(), p);
-        String charset = buffer.getEffectiveCharset();
-        // A charset that can't represent what the user typed (an em dash / curly quote / emoji under
-        // `charset = latin1`) would be written as '?' by String.getBytes — and the editor keeps showing the
-        // real character until the file is reopened, so the corruption is invisible until it's permanent.
-        // Fall back to UTF-8 and say so: a changed encoding is recoverable, mangled text is not.
-        if (!com.editora.editorconfig.EditorConfigCharset.canEncode(text, charset)) {
-            setStatus(tr("status.charsetFallback", com.editora.editorconfig.EditorConfigCharset.displayName(charset)));
-            charset = com.editora.editorconfig.EditorConfigCharset.UTF_8;
-        }
-        return com.editora.editorconfig.EditorConfigCharset.encode(text, charset);
-    }
-
-    private boolean writeBuffer(EditorBuffer buffer, Path file) {
-        try {
-            byte[] bytes = saveBytes(buffer);
-            // Serialized against auto-save (see autoSaveBuffer): a queued auto-save holding an OLDER snapshot
-            // must not land after this write and rewind the file.
-            synchronized (fileWriteLock) {
-                com.editora.io.AtomicFileWrite.write(file, bytes);
-            }
-            historyCoordinator.record(buffer, HistoryRevision.REASON_SAVE); // snapshot the just-saved version
-            buffer.markClean();
-            buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our own write isn't "external"
-            setStatus(tr("status.saved", com.editora.config.PathDisplay.of(file)));
-            git.refresh(); // a save changes the working tree → update gutter + status
-            refreshBuildTools(); // a saved marker file (or a project-root change) may change the detected model
-            // LSP: a save-as of a new Java file opens it on the server; then notify didSave.
-            lspCoordinator.syncBuffer(buffer);
-            lspCoordinator.notifyDocumentSaved(buffer);
-            indexCoordinator.onBufferSaved(buffer); // rescan just this file, from the text already in memory
-            return true;
-        } catch (IOException e) {
-            setStatus(tr("status.failedSave", e.getMessage()));
-            return false;
-        }
-    }
-
     /** Normalizes a stored auto-save mode string to a known key (unknown ⇒ off). */
     static String autoSaveModeOf(String mode) {
-        return AUTOSAVE_DELAY.equals(mode) || AUTOSAVE_FOCUS.equals(mode) ? mode : AUTOSAVE_OFF;
-    }
-
-    /** Current auto-save mode, parsed leniently from settings. */
-    private String autoSaveMode() {
-        return autoSaveModeOf(config.getSettings().getAutoSave());
-    }
-
-    /** Applies the auto-save setting: refreshes the idle-timer delay and stops it unless in delay mode. */
-    private void applyAutoSave() {
-        autoSaveIdleTimer.setDuration(
-                Duration.millis(Math.max(100, config.getSettings().getAutoSaveDelayMillis())));
-        if (!AUTOSAVE_DELAY.equals(autoSaveMode())) {
-            autoSaveIdleTimer.stop();
-        }
-    }
-
-    /** Auto-saves every dirty, file-backed, writable buffer (untitled/read-only buffers are skipped). */
-    private void autoSaveAllDirty() {
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer buffer = bufferOf(tab);
-            if (buffer != null && buffer.isDirty() && buffer.getPath() != null && buffer.isEditable()) {
-                autoSaveBuffer(buffer);
-            }
-        }
-    }
-
-    /**
-     * Writes {@code buffer} to disk off the UI thread: snapshots the text + path here, writes on a
-     * background thread, then clears the dirty flag on the FX thread only if the content is unchanged
-     * (so we never mark clean over edits made after the snapshot).
-     */
-    private void autoSaveBuffer(EditorBuffer buffer) {
-        Path file = buffer.getPath();
-        // Never auto-save over a file that changed underneath us. checkExternalChanges() only inspects the
-        // ACTIVE tab, so a dirty background buffer whose file was rewritten (a git checkout, a generator)
-        // would otherwise be silently overwritten by a timer, with no prompt and no way back.
-        if (buffer.diskChangedFrom(lastModifiedMillis(file), fileSize(file))) {
-            return; // leave it dirty: the external-change prompt handles it when the user comes back to it
-        }
-        String content = buffer.getContent();
-        byte[] bytes = saveBytes(buffer); // transform + encode on the FX thread (pure); write off-thread
-        historyCoordinator.record(buffer, HistoryRevision.REASON_AUTOSAVE); // snapshot before the off-thread write
-        autoSaveExecutor.submit(() -> {
-            try {
-                // Take the same lock a manual save takes, and re-check the buffer is still dirty inside it:
-                // a Ctrl-S landing between the snapshot above and this write has already written NEWER bytes,
-                // and writing our stale snapshot on top would silently rewind the user's file.
-                synchronized (fileWriteLock) {
-                    if (!buffer.isDirty()) {
-                        return; // already saved (manually) — our snapshot is stale
-                    }
-                    com.editora.io.AtomicFileWrite.write(file, bytes);
-                }
-                Platform.runLater(() -> {
-                    if (content.equals(buffer.getContent())) {
-                        buffer.markClean();
-                    }
-                    buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our write, not external
-                    setStatus(tr("status.autoSaved", file.getFileName()));
-                    git.refresh();
-                });
-            } catch (IOException e) {
-                Platform.runLater(() -> setStatus(tr("status.autoSaveFailed", e.getMessage())));
-            }
-        });
-    }
-
-    /**
-     * Serializes writes to the user's files. A manual save writes synchronously on the FX thread while
-     * auto-save writes an earlier snapshot on its own executor — without this, the queued auto-save could land
-     * after the manual save and put the older content back on disk, while the buffer showed "saved".
-     */
-    private final Object fileWriteLock = new Object();
-
-    private void toggleAutoSave() {
-        String next =
-                switch (autoSaveMode()) {
-                    case AUTOSAVE_OFF -> AUTOSAVE_DELAY;
-                    case AUTOSAVE_DELAY -> AUTOSAVE_FOCUS;
-                    default -> AUTOSAVE_OFF;
-                };
-        config.getSettings().setAutoSave(next);
-        requestSave();
-        applyAutoSave();
-        setStatus(tr("status.autoSave", autoSaveLabel(next)));
+        return FileWorkflowCoordinator.AUTOSAVE_DELAY.equals(mode)
+                        || FileWorkflowCoordinator.AUTOSAVE_FOCUS.equals(mode)
+                ? mode
+                : FileWorkflowCoordinator.AUTOSAVE_OFF;
     }
 
     /** Human-readable label for an auto-save mode key (also used by the settings combo). */
     static String autoSaveLabel(String mode) {
         return switch (mode) {
-            case AUTOSAVE_DELAY -> tr("autosave.delay");
-            case AUTOSAVE_FOCUS -> tr("autosave.focus");
+            case FileWorkflowCoordinator.AUTOSAVE_DELAY -> tr("autosave.delay");
+            case FileWorkflowCoordinator.AUTOSAVE_FOCUS -> tr("autosave.focus");
             default -> tr("autosave.off");
         };
     }
@@ -9528,7 +8705,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         return;
                     }
                     buffer.setPath(target); // re-detects language/grammar
-                    ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
+                    previews.ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
                     htmlPreview.ensureControl(buffer); // a rename to/from .html flips the browser globe
                     logViewer.ensureControl(buffer); // a rename to/from .log flips the log control
                     // Migrate state keyed by the absolute path string.
@@ -9558,10 +8735,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void installTabMenu(Tab tab, EditorBuffer buffer) {
         MenuItem save = new MenuItem(tr("menu.save"));
         save.setGraphic(Icons.save());
-        save.setOnAction(e -> save(buffer));
+        save.setOnAction(e -> fileWorkflows.save(buffer));
         MenuItem saveAs = new MenuItem(tr("menu.saveAs"));
         saveAs.setGraphic(Icons.saveAs());
-        saveAs.setOnAction(e -> saveAs(buffer));
+        saveAs.setOnAction(e -> fileWorkflows.saveAs(buffer));
         MenuItem close = new MenuItem(tr("menu.close"));
         close.setGraphic(Icons.closeTab());
         close.setOnAction(e -> closeTab(tab));
@@ -9619,12 +8796,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
         annotate.setGraphic(Icons.blame());
         annotate.setOnAction(e -> git.ifEnabled(() -> {
-            openPath(buffer.getPath());
+            fileWorkflows.openPath(buffer.getPath());
             git.annotateActive();
         }));
         MenuItem history = new MenuItem(tr("project.menu.git.fileHistory"));
         history.setGraphic(Icons.gitLog());
-        history.setOnAction(e -> git.ifEnabled(() -> gitFileHistoryForPath(buffer.getPath())));
+        history.setOnAction(e -> git.ifEnabled(() -> gitWindows.gitFileHistoryForPath(buffer.getPath())));
         gitMenu.getItems()
                 .addAll(
                         stage,
@@ -9750,7 +8927,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return false;
         }
         if (result.get() == save) {
-            return save(buffer);
+            return fileWorkflows.save(buffer);
         }
         return true; // discard
     }
@@ -9764,11 +8941,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         return null;
     }
 
-    /**
-     * The tab whose buffer is backed by {@code file}, or {@code null} if it isn't open. Paths are
-     * compared as normalized absolute paths so relative vs. absolute (or {@code .}/{@code ..})
-     * spellings of the same file still match. Untitled buffers (no path) are skipped.
-     */
     /** True if {@code file} is open in a tab whose buffer has unsaved changes. */
     private boolean isPathModified(Path file) {
         Tab tab = tabForPath(file);
@@ -9886,7 +9058,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 return false;
             }
         }
-        persistSession();
+        sessions.persistSession();
         return true;
     }
 
@@ -9925,79 +9097,6 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private boolean sessionClosed;
 
-    private void persistSession() {
-        if (skipSessionFiles) {
-            // --no-session opened only the command line's file, so this window's tab list is *not* the
-            // session — writing it back would replace the user's saved tabs with the single file they
-            // happened to open from the file manager. Window bounds are equally unrepresentative here, so
-            // the whole session write is skipped and the saved session is left exactly as it was.
-            return;
-        }
-        List<WorkspaceState.OpenFile> files = new ArrayList<>();
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer buffer = bufferOf(tab);
-            Path p = tabPath(tab); // buffer or image-viewer path (image tabs restore too)
-            if (p != null) {
-                int caret = buffer != null ? buffer.getArea().getCaretPosition() : 0;
-                // Vfs.toStorableString keeps a remote file's sftp:// URI — a bare path would be reopened as a
-                // *local* file on restart (a same-named local file could silently open in its place).
-                files.add(new WorkspaceState.OpenFile(
-                        com.editora.vfs.Vfs.toStorableString(p),
-                        caret,
-                        pinned.contains(tab),
-                        editorArea.groupIndexOf(tab)));
-            }
-        }
-        WorkspaceState state = config.getWorkspaceState();
-        state.setOpenFiles(files);
-        // Same predicate the loop above filters on, so the saved selection index counts the same tabs.
-        state.setEditorLayout(editorArea.snapshotLayout(t -> tabPath(t) != null));
-        Path activePath = tabPath(editorArea.selectedTab());
-        state.setActiveFile(activePath != null ? com.editora.vfs.Vfs.toStorableString(activePath) : "");
-        persistWindowBounds(state);
-        toolWindows.persistDividers(); // capture a divider dragged but left open (close() only saves on hide)
-        restoreCliFocusToolWindows(state);
-        config.save(); // durable flush on quit — not coalesced
-    }
-
-    /**
-     * Undoes the persisted side-effects of a {@code --zen}/{@code --expert} session override, so the flag
-     * really is session-only: entering the mode closed the docked tool windows and {@code close()} persisted
-     * "nothing open", which would otherwise lose them on the next (flagless) launch. Only fills a side the
-     * user hasn't since reopened by hand, and leaves the pre-focus snapshots out of the saved file.
-     */
-    private void restoreCliFocusToolWindows(WorkspaceState state) {
-        if (cliFocusToolWindows == null) {
-            return;
-        }
-        if (state.getOpenLeftToolWindow().isEmpty()) {
-            state.setOpenLeftToolWindow(cliFocusToolWindows[0]);
-        }
-        if (state.getOpenRightToolWindow().isEmpty()) {
-            state.setOpenRightToolWindow(cliFocusToolWindows[1]);
-        }
-        if (state.getOpenBottomToolWindow().isEmpty()) {
-            state.setOpenBottomToolWindow(cliFocusToolWindows[2]);
-        }
-        state.getPreZenToolWindows().clear(); // a snapshot of a mode that was never saved as "on"
-        state.getPreExpertToolWindows().clear();
-    }
-
-    /** Records the main window's geometry. When maximized, keep the last normal bounds so
-     *  un-maximizing on the next launch restores a sensible size. */
-    private void persistWindowBounds(WorkspaceState state) {
-        if (stage == null) {
-            return;
-        }
-        state.setWindowMaximized(stage.isMaximized());
-        if (!stage.isMaximized()) {
-            state.setWindowX(stage.getX());
-            state.setWindowY(stage.getY());
-            state.setWindowWidth(stage.getWidth());
-            state.setWindowHeight(stage.getHeight());
-        }
-    }
-
     private void nextBuffer() {
         int count = editorArea.size();
         if (count > 1) {
@@ -10008,413 +9107,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- Edit actions (delegate to active CodeArea) ---
 
-    @FXML
-    private void onUndo() {
-        withArea(CodeArea::undo);
-    }
-
-    @FXML
-    private void onRedo() {
-        withArea(CodeArea::redo);
-    }
-
-    @FXML
-    private void onCut() {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer b = activeBuffer();
-        if (b != null && b.multiCaretCut()) { // every caret's selection, one undoable step
-            adoptClipboardAsKill();
-            deactivateMark();
-            refreshPasteState();
-            setStatus(tr("status.cut"));
-            return;
-        }
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        boolean had = area.getSelection().getLength() > 0;
-        if (!had && config.getSettings().isCopyLineWhenNoSelection() && b != null) {
-            b.cutCurrentLine(); // empty selection → cut the whole current line (VS Code editor.emptySelectionClipboard)
-            adoptClipboardAsKill();
-            deactivateMark();
-            refreshPasteState();
-            setStatus(tr("status.cutLine"));
-            return;
-        }
-        area.cut();
-        adoptClipboardAsKill(); // Emacs kill-region: the cut text joins the kill ring
-        deactivateMark();
-        refreshPasteState(); // clipboard now has content
-        setStatus(tr(had ? "status.cut" : "status.nothingToCut"));
-    }
-
-    @FXML
-    private void onCopy() {
-        EditorBuffer b = activeBuffer();
-        if (b != null && b.multiCaretCopy()) { // every caret's selection (VS Code one-line-per-caret)
-            adoptClipboardAsKill();
-            deactivateMark();
-            refreshPasteState();
-            setStatus(tr("status.copied"));
-            return;
-        }
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        boolean had = area.getSelection().getLength() > 0;
-        if (!had && config.getSettings().isCopyLineWhenNoSelection() && b != null) {
-            b.copyCurrentLine(); // empty selection → copy the whole current line (VS Code
-            // editor.emptySelectionClipboard)
-            adoptClipboardAsKill();
-            deactivateMark();
-            refreshPasteState();
-            setStatus(tr("status.copiedLine"));
-            return;
-        }
-        // Copy the selection as plain text plus, when enabled, a syntax-highlighted HTML flavor; fall back
-        // to RichTextFX's own copy when there's no selection or no buffer.
-        if (b == null || !copySelectionRich(area, b, false)) {
-            area.copy();
-        }
-        if (had) {
-            area.deselect(); // collapse the selection once copied (leaves the caret in place)
-        }
-        adoptClipboardAsKill(); // Emacs kill-ring-save
-        deactivateMark();
-        refreshPasteState(); // clipboard now has content
-        setStatus(tr(had ? "status.copied" : "status.nothingToCopy"));
-    }
-
-    /** VS Code cap: above this many chars the auto path skips the (potentially large) HTML flavor. */
-    private static final int COPY_HTML_CHAR_CAP = 65_536;
-
-    /**
-     * Copies {@code area}'s selection to the clipboard as plain text plus — when enabled and within the
-     * size cap, or {@code force} — a syntax-highlighted {@code text/html} flavor (VS Code
-     * {@code copyWithSyntaxHighlighting}). Returns false when there is no selection (caller falls back).
-     */
-    private boolean copySelectionRich(CodeArea area, EditorBuffer b, boolean force) {
-        String sel = area.getSelectedText();
-        if (sel.isEmpty()) {
-            return false;
-        }
-        int start = area.getSelection().getStart();
-        int end = area.getSelection().getEnd();
-        ClipboardContent cc = new ClipboardContent();
-        cc.putString(sel);
-        boolean wantHtml =
-                force || (config.getSettings().isCopyWithSyntaxHighlighting() && sel.length() <= COPY_HTML_CHAR_CAP);
-        if (wantHtml && b.hasHighlighting()) {
-            // Read the already-applied spans (FX-thread-safe); never re-tokenize on the FX thread.
-            cc.putHtml(com.editora.pdf.CodeHtml.toHtml(sel, area.getStyleSpans(start, end), b.getTabSize()));
-        }
-        Clipboard.getSystemClipboard().setContent(cc);
-        return true;
-    }
-
-    /**
-     * Forced copy-with-highlighting (VS Code's {@code clipboardCopyWithSyntaxHighlightingAction}): always
-     * attaches the HTML flavor, bypassing both the setting and the size cap. Acts on the selection, else the
-     * current line.
-     */
-    private void copyWithHighlighting() {
-        EditorBuffer b = activeBuffer();
-        CodeArea area = activeArea();
-        if (area == null || b == null) {
-            return;
-        }
-        boolean hasSel = !area.getSelectedText().isEmpty();
-        int para = area.getCurrentParagraph();
-        int start = hasSel ? area.getSelection().getStart() : area.getAbsolutePosition(para, 0);
-        int end = hasSel
-                ? area.getSelection().getEnd()
-                : start + area.getParagraph(para).length();
-        String htmlText = area.getText(start, end); // the line/selection without any trailing newline
-        // A whole-line copy includes its newline in the plain-text flavor (like copyCurrentLine); the HTML
-        // flavor uses the line itself so it doesn't render a trailing empty line.
-        String plainText = hasSel ? htmlText : htmlText + "\n";
-        ClipboardContent cc = new ClipboardContent();
-        cc.putString(plainText);
-        if (b.hasHighlighting()) {
-            // Read the already-applied spans (FX-thread-safe); never re-tokenize on the FX thread.
-            cc.putHtml(com.editora.pdf.CodeHtml.toHtml(htmlText, area.getStyleSpans(start, end), b.getTabSize()));
-        }
-        Clipboard.getSystemClipboard().setContent(cc);
-        adoptClipboardAsKill();
-        deactivateMark();
-        refreshPasteState();
-        setStatus(tr("status.copiedHighlighted"));
-    }
-
-    @FXML
-    private void onPaste() {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer b = activeBuffer();
-        if (b != null && tryMarkdownImagePaste(b)) { // a clipboard image → save to assets/ + insert ![](…)
-            deactivateMark();
-            return;
-        }
-        if (b != null && b.trySmartLinkPaste()) { // a clipboard URL over a selection → [selection](url)
-            deactivateMark();
-            setStatus(tr("status.markdown.linkPasted"));
-            return;
-        }
-        if (b != null && b.multiCaretPaste()) { // distribute clipboard lines one per caret
-            deactivateMark();
-            setStatus(tr("status.pasted"));
-            return;
-        }
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        // Capture where the paste will land so the LSP paste auto-import (#742) can name the span: a
-        // selection is replaced from its start; otherwise text inserts at the caret.
-        int pasteStart =
-                area.getSelection().getLength() > 0 ? area.getSelection().getStart() : area.getCaretPosition();
-        if (b == null || !yankFromRing(b, area)) {
-            area.paste(); // nothing on the ring — fall back to the platform paste
-        }
-        if (b != null) {
-            b.requestLspPasteImports(pasteStart, area.getCaretPosition());
-        }
-        deactivateMark();
-        setStatus(tr("status.pasted"));
-    }
-
     // --- Markdown image paste / drop -------------------------------------------------------------
-
-    /** If the clipboard holds an image and the active buffer is a saved local Markdown file, save it under
-     *  {@code assets/} and insert {@code ![](…)}. Returns true if it handled (or claimed) the paste. */
-    /** The image-reference snippet for {@code b}: Typst {@code #image("rel")} or Markdown {@code ![alt](rel)}. */
-    private static String markupImageSnippet(EditorBuffer b, String rel, String alt) {
-        return b.isTypst()
-                ? com.editora.typst.TypstMarkup.image(rel)
-                : com.editora.markdown.MarkdownImagePaste.snippet(rel, alt);
-    }
-
-    /** The Typst "Insert Image" menu action: pick an image file, copy it into the doc's {@code assets/}
-     *  dir, and insert {@code #image("assets/…")}. Requires a saved local buffer (so assets/ resolves). */
-    private void insertTypstImageFromChooser(EditorBuffer b) {
-        if (b.getPath() == null || !isLocalBuffer(b)) {
-            setStatus(tr("status.markdown.imageNeedsSave"));
-            return;
-        }
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("command.typst.insertImage"));
-        chooser.getExtensionFilters()
-                .add(new javafx.stage.FileChooser.ExtensionFilter(
-                        "Images", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.svg", "*.bmp"));
-        java.io.File f = chooser.showOpenDialog(stage);
-        if (f != null) {
-            insertDroppedImages(b, java.util.List.of(f));
-        }
-    }
-
-    private boolean tryMarkdownImagePaste(EditorBuffer b) {
-        if ((!b.isMarkdown() && !b.isTypst()) || !b.isEditable()) {
-            return false;
-        }
-        if (!javafx.scene.input.Clipboard.getSystemClipboard().hasImage()) {
-            return false;
-        }
-        if (!isLocalBuffer(b) || b.getPath() == null) {
-            setStatus(tr("status.markdown.imageNeedsSave"));
-            return true; // claim it: a raw image can't be pasted as text anyway
-        }
-        javafx.scene.image.Image img =
-                javafx.scene.input.Clipboard.getSystemClipboard().getImage();
-        if (img == null) {
-            return false;
-        }
-        try {
-            java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
-            java.nio.file.Path assets = baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
-            java.nio.file.Files.createDirectories(assets);
-            String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
-                    n -> java.nio.file.Files.exists(assets.resolve(n)), "pasted-image", "png");
-            java.nio.file.Path target = assets.resolve(name);
-            writeFxImageToPng(img, target);
-            String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
-            b.insertAtCaret(markupImageSnippet(b, rel, ""));
-            setStatus(tr("status.markdown.imagePasted", rel));
-        } catch (Exception ex) {
-            setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
-        }
-        return true;
-    }
-
-    /** Copies dropped image files into the Markdown file's {@code assets/} dir and inserts a link for each. */
-    private void insertDroppedImages(EditorBuffer b, java.util.List<java.io.File> files) {
-        if (b.getPath() == null || !isLocalBuffer(b)) {
-            setStatus(tr("status.markdown.imageNeedsSave"));
-            return;
-        }
-        try {
-            java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
-            java.nio.file.Path assets = baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
-            java.nio.file.Files.createDirectories(assets);
-            StringBuilder out = new StringBuilder();
-            for (java.io.File f : files) {
-                String ext = extensionOf(f.getName());
-                String base = stripExtension(f.getName());
-                String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
-                        n -> java.nio.file.Files.exists(assets.resolve(n)), base, ext);
-                java.nio.file.Path target = assets.resolve(name);
-                java.nio.file.Files.copy(f.toPath(), target);
-                String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
-                if (out.length() > 0) {
-                    out.append('\n');
-                }
-                out.append(markupImageSnippet(b, rel, base));
-            }
-            b.insertAtCaret(out.toString());
-            setStatus(tr("status.markdown.imageDropped", files.size()));
-        } catch (Exception ex) {
-            setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
-        }
-    }
-
-    /**
-     * Handles a raw image / image URL dragged from a web browser onto a Markdown buffer: encodes a raw
-     * dragged image now (FX thread), then off the FX thread downloads the URL (or uses the encoded bytes)
-     * into {@code assets/} and inserts {@code ![](assets/…)}. If everything fails but a URL exists, it
-     * falls back to referencing the remote URL directly (the preview loads http(s) images).
-     */
-    private void insertWebImage(EditorBuffer b, javafx.scene.image.Image image, String url) {
-        if (b.getPath() == null || !isLocalBuffer(b)) {
-            setStatus(tr("status.markdown.imageNeedsSave"));
-            return;
-        }
-        // Encode a raw dragged image now, on the FX thread (PixelReader), before going off-thread.
-        byte[] inlinePng = image != null ? com.editora.editor.PreviewImageLoader.imageToPng(image) : null;
-        java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
-        setStatus(tr("status.markdown.imageDownloading"));
-        new Thread(
-                        () -> {
-                            byte[] bytes = null;
-                            String ext = "png";
-                            if (url != null && !url.isBlank()) {
-                                try {
-                                    bytes = com.editora.editor.PreviewImageLoader.fetchBytes(url);
-                                    if (bytes != null && bytes.length > 0) {
-                                        ext = com.editora.markdown.MarkdownImagePaste.extensionForUrl(
-                                                url,
-                                                com.editora.editor.PreviewImageLoader.looksLikeSvg(bytes)
-                                                        ? "svg"
-                                                        : "png");
-                                    } else {
-                                        bytes = null;
-                                    }
-                                } catch (Exception ignore) {
-                                    bytes = null; // fall back to the encoded image / remote reference below
-                                }
-                            }
-                            if (bytes == null) {
-                                bytes = inlinePng;
-                                ext = "png";
-                            }
-                            if (bytes == null) {
-                                javafx.application.Platform.runLater(() -> {
-                                    if (url != null) {
-                                        b.insertAtCaret(markupImageSnippet(b, url, ""));
-                                        setStatus(tr("status.markdown.imageDropped", 1));
-                                    } else {
-                                        setStatus(tr("status.markdown.imageFailed", ""));
-                                    }
-                                });
-                                return;
-                            }
-                            byte[] finalBytes = bytes;
-                            String finalExt = ext;
-                            try {
-                                java.nio.file.Path assets =
-                                        baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
-                                java.nio.file.Files.createDirectories(assets);
-                                String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
-                                        n -> java.nio.file.Files.exists(assets.resolve(n)),
-                                        webImageBaseName(url),
-                                        finalExt);
-                                java.nio.file.Path target = assets.resolve(name);
-                                java.nio.file.Files.write(target, finalBytes);
-                                String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
-                                javafx.application.Platform.runLater(() -> {
-                                    b.insertAtCaret(markupImageSnippet(b, rel, ""));
-                                    setStatus(tr("status.markdown.imageDropped", 1));
-                                });
-                            } catch (Exception ex) {
-                                javafx.application.Platform.runLater(() ->
-                                        setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage()))));
-                            }
-                        },
-                        "md-web-image")
-                .start();
-    }
-
-    /** A file-name base for a dragged web image: the URL's last path segment (sans extension), else "image". */
-    private static String webImageBaseName(String url) {
-        if (url == null || url.startsWith("data:")) {
-            return "image";
-        }
-        String u = url;
-        int q = u.indexOf('?');
-        if (q >= 0) {
-            u = u.substring(0, q);
-        }
-        int h = u.indexOf('#');
-        if (h >= 0) {
-            u = u.substring(0, h);
-        }
-        int slash = u.lastIndexOf('/');
-        String seg = slash >= 0 ? u.substring(slash + 1) : u;
-        int dot = seg.lastIndexOf('.');
-        if (dot > 0) {
-            seg = seg.substring(0, dot);
-        }
-        seg = seg.replaceAll("[^A-Za-z0-9_-]", "");
-        return seg.isBlank() ? "image" : seg;
-    }
-
-    private static String extensionOf(String name) {
-        int dot = name.lastIndexOf('.');
-        return dot > 0 && dot < name.length() - 1 ? name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT) : "png";
-    }
-
-    private static String stripExtension(String name) {
-        int dot = name.lastIndexOf('.');
-        return dot > 0 ? name.substring(0, dot) : name;
-    }
-
-    /** Writes a JavaFX {@code Image} to a PNG via headless Java2D (no {@code javafx.swing} dependency). */
-    private static void writeFxImageToPng(javafx.scene.image.Image img, java.nio.file.Path target)
-            throws java.io.IOException {
-        int w = (int) Math.round(img.getWidth());
-        int h = (int) Math.round(img.getHeight());
-        java.awt.image.BufferedImage bi =
-                new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-        javafx.scene.image.PixelReader reader = img.getPixelReader();
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                bi.setRGB(x, y, reader.getArgb(x, y));
-            }
-        }
-        javax.imageio.ImageIO.write(bi, "png", target.toFile());
-    }
-
-    @FXML
-    private void onFind() {
-        if (findBar.isShown()) {
-            findBar.hideBar();
-        } else {
-            findBar.show(false);
-        }
-    }
 
     /** Shows the find/replace bar, or hides it if it's already open. */
     /** C-s: show the find bar, or — if already showing — cycle to the next match. */
@@ -10486,7 +9179,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             toolWindows.setAvailable(todoToolWindow, buffer);
         }
         if (markdownLintToolWindow != null) {
-            toolWindows.setAvailable(markdownLintToolWindow, buffer && b.isMarkdown() && markdownLintEnabled());
+            toolWindows.setAvailable(
+                    markdownLintToolWindow, buffer && b.isMarkdown() && previews.markdownLintEnabled());
         }
         if (externalToolToolWindow != null) {
             toolWindows.setAvailable(externalToolToolWindow, buffer && externalToolsEnabled());
@@ -10513,121 +9207,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /**
-     * Shows the in-editor "install language support?" banner on {@code buffer} when the file's language has an
-     * installer (Java/Python/JS/Mermaid), the relevant feature is enabled but that language server (or the
-     * Mermaid CLI) isn't installed, the user hasn't dismissed it for this buffer, and the master nudge toggle
-     * is on. Otherwise it hides the banner. Driven on tab switch / addBuffer / after an install.
-     */
-    private void maybeOfferInstall(EditorBuffer buffer) {
-        if (buffer == null) {
-            return;
-        }
-        if (!installPromptsEligible(buffer)) {
-            buffer.showInstallBar(false);
-            return;
-        }
-        // A live LSP session already serving this file ⇒ its server is present; never nag.
-        if (lspCoordinator.isManaged(buffer.getPath())) {
-            buffer.showInstallBar(false);
-            return;
-        }
-        // The rich bundles (Java/Python/JS LSP+DAP, Mermaid CLI) first…
-        java.util.Optional<com.editora.install.InstallCatalog.Lang> lang =
-                com.editora.install.InstallCatalog.forBufferLanguage(buffer.getLanguage());
-        if (lang.isPresent() && langSupportMissing(lang.get())) {
-            com.editora.install.InstallCatalog.Lang l = lang.get();
-            offerInstall(
-                    buffer,
-                    tr("install.lang." + l.name().toLowerCase(java.util.Locale.ROOT)),
-                    "install.banner.message",
-                    cb -> installCoordinator.installSupport(l, cb));
-            return;
-        }
-        // A pom.xml prefers the Maven-aware server (JVM lemminx + lemminx-maven) — offer *that* when it's
-        // enabled but not installed, rather than the native lemminx the generic branch below would pick (which
-        // gives base XML but no dependency/plugin/GAV completion — the whole point of opening this banner).
-        String pomServer = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
-        boolean isPom = buffer.getPath() != null
-                && buffer.getPath().getFileName() != null
-                && com.editora.lsp.LspServerRegistry.isPomFile(
-                        buffer.getPath().getFileName().toString());
-        if (isPom
-                && lspEnabled()
-                && lspCoordinator.serverEnabled(pomServer)
-                && lspCoordinator.isServerMissing(pomServer)
-                && com.editora.install.InstallCatalog.installableServerIds().contains(pomServer)) {
-            offerInstall(
-                    buffer,
-                    installCoordinator.serverName(pomServer),
-                    "install.banner.serverMessage",
-                    cb -> installCoordinator.installServer(pomServer, cb));
-            return;
-        }
-        // …then the LSP-only servers (json/bash/yaml/dockerfile/toml/typst/…). This offers the *language
-        // server* (code intelligence) — distinct from a language's render/run tool that may already work
-        // (e.g. the typst preview renders via the typst CLI even when tinymist isn't installed), so the
-        // banner says "language server", not "language support".
-        String serverId = com.editora.lsp.LspServerRegistry.serverIdFor(buffer.getLanguage());
-        if (serverId != null
-                && lspEnabled()
-                && lspCoordinator.isServerMissing(serverId)
-                && com.editora.install.InstallCatalog.installableServerIds().contains(serverId)) {
-            String id = serverId;
-            offerInstall(
-                    buffer,
-                    installCoordinator.serverName(id),
-                    "install.banner.serverMessage",
-                    cb -> installCoordinator.installServer(id, cb));
-            return;
-        }
-        buffer.showInstallBar(false);
-    }
-
-    /** Builds + shows the install banner for {@code buffer} with a display name and an install trigger that
-     *  is handed a settled-callback (so it can spin the banner + hide on success). */
-    private void offerInstall(
-            EditorBuffer buffer,
-            String displayName,
-            String messageKey,
-            java.util.function.Consumer<java.util.function.Consumer<Boolean>> installer) {
-        buffer.setInstallPrompt(
-                tr(messageKey, displayName),
-                tr("install.banner.install"),
-                () -> {
-                    buffer.setInstallBarBusy(true);
-                    installer.accept(ok -> {
-                        buffer.setInstallBarBusy(false);
-                        if (ok) {
-                            buffer.showInstallBar(false);
-                        }
-                    });
-                },
-                () -> {
-                    installDismissed.add(buffer);
-                    buffer.showInstallBar(false);
-                });
-        buffer.showInstallBar(true);
-    }
-
-    /** The common gates for offering the install banner (toggle on, not Simple, not dismissed, local file). */
-    private boolean installPromptsEligible(EditorBuffer buffer) {
-        return config.getSettings().isLspInstallPrompts()
-                && !simpleModeActive()
-                && !installDismissed.contains(buffer)
-                && isLocalBuffer(buffer);
-    }
-
-    /** Whether the rich bundle for {@code lang} is missing its primary tool (feature on but tool absent). */
-    private boolean langSupportMissing(com.editora.install.InstallCatalog.Lang lang) {
-        return switch (lang) {
-            case JAVA -> lspEnabled() && lspCoordinator.isServerMissing("java");
-            case PYTHON -> lspEnabled() && lspCoordinator.isServerMissing("python");
-            case JAVASCRIPT -> lspEnabled() && lspCoordinator.isServerMissing("typescript");
-            case MERMAID -> mermaid.isEnabled() && mermaid.mmdcDetected() && !mermaid.mmdcAvailable();
-        };
-    }
-
     /** The remembered program-arguments string for {@code path} ("" when none); shared with debug launches. */
     private String programArgsFor(Path path) {
         String s = config.getWorkspaceState().getProgramArgs().get(path.toString());
@@ -10644,8 +9223,8 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     @FXML
     private void onPalette() {
-        if (config.getSettings().isPaletteUsesSearchEverywhere() && searchEverywherePopup != null) {
-            searchEverywherePopup.show("");
+        if (config.getSettings().isPaletteUsesSearchEverywhere() && chrome.searchEverywherePopup != null) {
+            chrome.searchEverywherePopup.show("");
             return;
         }
         palette.show();
@@ -10658,28 +9237,19 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     @FXML
     private void onToggleSimpleMode() {
-        toggleSimpleMode();
+        chrome.toggleSimpleMode();
     }
 
     private void onAbout() {
         SettingsWindow.showAbout(
                 stage,
                 config.getSettingsFile(),
-                this::openPath,
+                fileWorkflows::openPath,
                 this::openExternalUrl,
                 config.isDev() ? com.editora.AppInfo.gitCommit() : "", // build commit shown only in --dev
                 latestKnownUpdate); // "Update available" row when a newer release is known
     }
 
-    private void toggleColumnRuler() {
-        Settings s = config.getSettings();
-        s.setShowColumnRuler(!s.isShowColumnRuler());
-        requestSave();
-        applyViewSettingsToAllBuffers(s);
-        setStatus(tr("status.toggle.ruler", tr(s.isShowColumnRuler() ? "common.on" : "common.off")));
-    }
-
-    /** Shows/hides the tool stripes (UI only; tool windows still open via keybinding/palette). */
     /**
      * Expands the active tool window over its split, or hands the space back if it already holds it.
      *
@@ -10697,7 +9267,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.toolwindow.nothingToSplit"));
             return;
         }
-        splitToolWindowPalette.show(stage);
+        navigation.splitToolWindowPalette.show(stage);
     }
 
     /**
@@ -10733,152 +9303,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         Settings s = config.getSettings();
         s.setShowToolStripe(!s.isShowToolStripe());
         requestSave();
-        applyViewSettingsToAllBuffers(s); // → applyChromeVisibility → toolWindows.setStripesEnabled
+        editorSettings.applyViewSettingsToAllBuffers(s); // → applyChromeVisibility → toolWindows.setStripesEnabled
         settingsWindow.syncToolStripeCheck();
         setStatus(tr("status.toggle.toolStripe", tr(s.isShowToolStripe() ? "common.on" : "common.off")));
-    }
-
-    /**
-     * Flips the master "Enable plugins" gate. Plugins load only at startup (no hot classloader/UI unload),
-     * so this just persists the preference and reports that a restart is needed; the Settings checkbox is
-     * re-synced for discoverability.
-     */
-    private void toggleSimpleMode() {
-        Settings s = config.getSettings();
-        cliSimpleOverride = false; // an explicit in-app toggle takes over from the --simple session flag
-        s.setSimpleMode(!s.isSimpleMode());
-        requestSave();
-        if (simpleModeActive()) {
-            // Entering Simple mode hides the tool stripe, so close any docked tool window too.
-            for (ToolWindow tw : toolWindows.getOpenToolWindows()) {
-                toolWindows.close(tw);
-            }
-        }
-        applyViewSettingsToAllBuffers(s); // → applyChromeVisibility/applySimpleMode + per-buffer gutter/minimap
-        settingsWindow.syncSimpleModeCheck();
-        setStatus(tr("status.toggle.simpleMode", tr(s.isSimpleMode() ? "common.on" : "common.off")));
-    }
-
-    private void toggleLineHighlight() {
-        Settings s = config.getSettings();
-        s.setHighlightCurrentLine(!s.isHighlightCurrentLine());
-        requestSave();
-        applyViewSettingsToAllBuffers(s);
-        setStatus(tr("status.toggle.lineHighlight", tr(s.isHighlightCurrentLine() ? "common.on" : "common.off")));
-    }
-
-    private void toggleLineNumbers() {
-        Settings s = config.getSettings();
-        s.setShowLineNumbers(!s.isShowLineNumbers());
-        requestSave();
-        applyViewSettingsToAllBuffers(s);
-        setStatus(tr("status.toggle.lineNumbers", tr(s.isShowLineNumbers() ? "common.on" : "common.off")));
-    }
-
-    private void toggleMinimap() {
-        Settings s = config.getSettings();
-        s.setShowMinimap(!s.isShowMinimap());
-        requestSave();
-        applyViewSettingsToAllBuffers(s);
-        setStatus(tr("status.toggle.minimap", tr(s.isShowMinimap() ? "common.on" : "common.off")));
-    }
-
-    private void toggleWordWrap() {
-        Settings s = config.getSettings();
-        s.setWordWrap(!s.isWordWrap());
-        requestSave();
-        applyViewSettingsToAllBuffers(s);
-        if (settingsWindow != null) {
-            settingsWindow.syncViewChecks();
-        }
-        setStatus(tr("status.toggle.wordWrap", tr(s.isWordWrap() ? "common.on" : "common.off")));
-    }
-
-    private void toggleWhitespace() {
-        Settings s = config.getSettings();
-        s.setShowWhitespace(!s.isShowWhitespace());
-        requestSave();
-        applyViewSettingsToAllBuffers(s);
-        setStatus(tr("status.toggle.whitespace", tr(s.isShowWhitespace() ? "common.on" : "common.off")));
-    }
-
-    private void toggleSpellCheck() {
-        Settings s = config.getSettings();
-        s.setSpellCheck(!s.isSpellCheck());
-        requestSave();
-        applyViewSettingsToAllBuffers(s);
-        setStatus(tr("status.toggle.spellCheck", tr(s.isSpellCheck() ? "common.on" : "common.off")));
-    }
-
-    private void togglePersonalDictionary() {
-        Settings s = config.getSettings();
-        s.setPersonalDictionary(!s.isPersonalDictionary());
-        requestSave();
-        applyViewSettingsToAllBuffers(s);
-        settingsWindow.syncPersonalDictionaryCheck();
-        setStatus(tr("status.toggle.personalDictionary", tr(s.isPersonalDictionary() ? "common.on" : "common.off")));
-    }
-
-    private void toggleTechnicalDictionary() {
-        Settings s = config.getSettings();
-        s.setTechnicalDictionary(!s.isTechnicalDictionary());
-        requestSave();
-        applyViewSettingsToAllBuffers(s);
-        settingsWindow.syncTechnicalDictionaryCheck();
-        setStatus(tr("status.toggle.technicalDictionary", tr(s.isTechnicalDictionary() ? "common.on" : "common.off")));
-    }
-
-    private void toggleAutocomplete() {
-        Settings s = config.getSettings();
-        s.setAutocomplete(!s.isAutocomplete());
-        requestSave();
-        applyAutocomplete();
-        settingsWindow.syncAutocompleteChecks(); // keep the Settings window in step if it's open
-        setStatus(tr("status.toggle.autocomplete", tr(s.isAutocomplete() ? "common.on" : "common.off")));
-    }
-
-    private void toggleAutocompleteProse() {
-        Settings s = config.getSettings();
-        s.setAutocompleteProse(!s.isAutocompleteProse());
-        requestSave();
-        applyAutocomplete();
-        settingsWindow.syncAutocompleteChecks();
-        setStatus(tr("status.toggle.autocompleteProse", tr(s.isAutocompleteProse() ? "common.on" : "common.off")));
-    }
-
-    private void toggleAutocompleteSnippets() {
-        Settings s = config.getSettings();
-        s.setAutocompleteSnippets(!s.isAutocompleteSnippets());
-        requestSave();
-        applyAutocomplete();
-        settingsWindow.syncAutocompleteChecks();
-        setStatus(
-                tr("status.toggle.autocompleteSnippets", tr(s.isAutocompleteSnippets() ? "common.on" : "common.off")));
-    }
-
-    private void toggleAutocompleteMermaid() {
-        Settings s = config.getSettings();
-        s.setAutocompleteMermaid(!s.isAutocompleteMermaid());
-        requestSave();
-        applyAutocomplete();
-        settingsWindow.syncAutocompleteChecks();
-        setStatus(tr("status.toggle.autocompleteMermaid", tr(s.isAutocompleteMermaid() ? "common.on" : "common.off")));
-    }
-
-    private void toggleMultiCaret() {
-        Settings s = config.getSettings();
-        s.setMultiCaret(!s.isMultiCaret());
-        requestSave();
-        applyMultiCaret();
-        settingsWindow.syncMultiCaretCheck(); // keep the Settings window in step if it's open
-        setStatus(tr("status.toggle.multiCaret", tr(s.isMultiCaret() ? "common.on" : "common.off")));
     }
 
     // --- Multiple cursors / column selection commands (delegate to the active buffer's fork add-on) ---
 
     /** Runs {@code action} on the active buffer when multi-caret is enabled; else reports it. */
     private void withMultiCaret(java.util.function.Consumer<EditorBuffer> action) {
-        if (!multiCaretEnabled()) {
+        if (!editorSettings.multiCaretEnabled()) {
             setStatus(tr("status.multiCaret.disabled"));
             return;
         }
@@ -10915,348 +9349,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
-    /** Opens a picker to set the spell-check dictionary language for the active file (persisted per file). */
-    private void chooseSpellLanguage() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            setStatus(tr("status.noFileOpen"));
-            return;
-        }
-        QuickOpen<String> picker = new QuickOpen<>(
-                "Set Spell Check Language",
-                "Type to filter languages…",
-                SpellDictionaries::available,
-                id -> id,
-                id -> "",
-                id -> setSpellLanguage(buffer, id));
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    private void setSpellLanguage(EditorBuffer buffer, String langId) {
-        buffer.setSpellLanguage(langId);
-        Path p = buffer.getPath();
-        if (p != null) {
-            config.getWorkspaceState().getSpellLanguages().put(p.toString(), langId);
-            requestSave();
-        }
-        setStatus(tr("status.spellLanguage", langId));
-    }
-
-    /**
-     * A configuration's detail line in the pickers: what it actually launches.
-     *
-     * <p>This slot used to hold the {@code run}/{@code debug} tag. With that gone the useful thing to show is
-     * the target itself — which also disambiguates two configurations that differ only in their arguments.
-     * No i18n: a class name and a script path are technical identifiers, not prose.
-     */
-    private static String runConfigDetail(com.editora.config.RunConfiguration cfg) {
-        return cfg.isJava() ? cfg.mainClass() : cfg.target();
-    }
-
-    /** {@code run.config}: pick a saved configuration and run it. */
-    private void runSavedConfig() {
-        if (config.getWorkspaceState().getRunConfigurations().isEmpty()) {
-            setStatus(tr("status.run.noConfigs"));
-            return;
-        }
-        QuickOpen<com.editora.config.RunConfiguration> picker = new QuickOpen<>(
-                tr("run.config.title"),
-                tr("run.config.prompt"),
-                () -> List.copyOf(config.getWorkspaceState().getRunConfigurations()),
-                com.editora.config.RunConfiguration::name,
-                MainController::runConfigDetail,
-                cfg -> {
-                    if (cfg != null) {
-                        runCoordinator.runConfig(cfg);
-                    }
-                });
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** {@code debug.config}: pick a saved configuration and debug it — the same entries, the other verb. */
-    private void debugSavedConfig() {
-        if (config.getWorkspaceState().getRunConfigurations().isEmpty()) {
-            setStatus(tr("status.run.noConfigs"));
-            return;
-        }
-        QuickOpen<com.editora.config.RunConfiguration> picker = new QuickOpen<>(
-                tr("run.config.debugPickerTitle"),
-                tr("run.config.prompt"),
-                () -> List.copyOf(config.getWorkspaceState().getRunConfigurations()),
-                com.editora.config.RunConfiguration::name,
-                MainController::runConfigDetail,
-                cfg -> {
-                    if (cfg != null) {
-                        debugCoordinator.debugConfig(cfg);
-                    }
-                });
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** Renders the selector's rows by name and remembers the choice across restarts. */
-    private void setupRunConfigCombo() {
-        runConfigCombo.getStyleClass().add("run-config-combo");
-        runConfigCombo.setPromptText(tr("toolbar.runConfig.none"));
-        // Bounded, because the toolbar is saturated: JavaFX pushes what does not fit into the ">>" overflow
-        // popup, and an unbounded ComboBox sized to its widest configuration name would evict several
-        // buttons — or itself. A fixed, modest width keeps the whole run group on the bar at normal window
-        // sizes; long names still show in full in the dropdown.
-        runConfigCombo.setPrefWidth(RUN_CONFIG_COMBO_WIDTH);
-        runConfigCombo.setMinWidth(RUN_CONFIG_COMBO_WIDTH);
-        runConfigCombo.setMaxWidth(RUN_CONFIG_COMBO_WIDTH);
-        runConfigCombo.setConverter(new javafx.util.StringConverter<>() {
-            @Override
-            public String toString(com.editora.config.RunConfiguration cfg) {
-                if (cfg == null) {
-                    return "";
-                }
-                if (cfg == EDIT_CONFIGS_ROW) {
-                    return tr("toolbar.runConfig.edit");
-                }
-                // Just the name: the row no longer carries a run/debug tag, because the two buttons beside
-                // this combo are what choose between them.
-                return cfg.name();
-            }
-
-            @Override
-            public com.editora.config.RunConfiguration fromString(String s) {
-                return null; // not editable
-            }
-        });
-        runConfigCombo.valueProperty().addListener((o, was, now) -> {
-            if (revertingRunConfigRow) {
-                return; // our own revert below, not a choice
-            }
-            if (populatingRunConfigs) {
-                updateRunConfigButtons(); // a rebuild, not a choice: reflect it but persist nothing
-                return;
-            }
-            if (now == EDIT_CONFIGS_ROW) {
-                // Put the real selection back first, so nothing downstream — the Run buttons, the persisted
-                // selectedRunConfig, a launch — ever sees the sentinel as the chosen configuration.
-                revertingRunConfigRow = true;
-                try {
-                    runConfigCombo.setValue(was == EDIT_CONFIGS_ROW ? null : was);
-                } finally {
-                    revertingRunConfigRow = false;
-                }
-                editRunConfigs();
-                return;
-            }
-            config.getWorkspaceState().setSelectedRunConfig(now == null ? "" : now.name());
-            requestSave();
-            updateRunConfigButtons();
-        });
-    }
-
-    /**
-     * Rebuilds the toolbar selector from the saved configurations and re-registers <b>two</b> synthetic
-     * commands per configuration — {@code run.config.<slug>} and {@code debug.config.<slug>} — so each is
-     * palette-visible and can be given a keybinding, the same shape macros ({@code macro.run.*}) and
-     * external tools already use.
-     *
-     * <p>Two rather than one because a command id is what a keybinding binds to. A configuration used to
-     * declare a {@code kind}, and the single command honoured it; that was the only way to bind a key that
-     * debugged a named configuration, and it came at the cost of making such an entry impossible to plain-run
-     * from the toolbar. A command each gives both without the trade.
-     *
-     * <p>Called after any change to the list: the save/delete commands, and every settings apply (the
-     * Settings page edits the same list).
-     */
-    private void refreshRunConfigs() {
-        List<com.editora.config.RunConfiguration> configs =
-                List.copyOf(config.getWorkspaceState().getRunConfigurations());
-
-        // Drop stale synthetic commands before re-registering, or a renamed configuration would leave its old
-        // id behind in the palette pointing at something that no longer exists. Both prefixes: missing one
-        // here would strand every debug twin the moment a configuration was renamed.
-        List<String> stale = new ArrayList<>();
-        for (Command c : registry.all()) {
-            if (c.id().startsWith(com.editora.config.RunConfiguration.COMMAND_PREFIX)
-                    || c.id().startsWith(com.editora.config.RunConfiguration.DEBUG_COMMAND_PREFIX)) {
-                stale.add(c.id());
-            }
-        }
-        stale.forEach(registry::remove);
-        for (com.editora.config.RunConfiguration cfg : configs) {
-            registry.register(Command.of(
-                    com.editora.config.RunConfiguration.commandIdFor(cfg.name()),
-                    tr("run.config.runCommandTitle", cfg.name()),
-                    () -> runCoordinator.runConfig(cfg)));
-            registry.register(Command.of(
-                    com.editora.config.RunConfiguration.debugCommandIdFor(cfg.name()),
-                    tr("run.config.debugCommandTitle", cfg.name()),
-                    () -> debugCoordinator.debugConfig(cfg)));
-        }
-
-        if (runConfigCombo == null) {
-            return;
-        }
-        com.editora.config.RunConfiguration previous = runConfigCombo.getValue();
-        populatingRunConfigs = true;
-        try {
-            repopulate(configs, previous);
-        } finally {
-            populatingRunConfigs = false;
-        }
-        updateRunConfigButtons();
-        refreshRunConfigToolbar(); // saved configurations keep the group visible even in a plain folder
-    }
-
-    /** Replaces the selector's items, re-selecting the previous choice by name. */
-    private void repopulate(
-            List<com.editora.config.RunConfiguration> configs, com.editora.config.RunConfiguration previous) {
-        // One setAll, not setAll-then-add. The sentinel is always offered — including with no configurations
-        // at all, where it is how you make the first — and building the row list first means the combo's items
-        // never pass through a state that is missing it. Two mutations fire two change events, and the popup's
-        // own ListView is a listener on them: a combo whose items shrink under a selection in flight is the
-        // shape that makes JavaFX's ListViewBehavior read a stale added-range and throw
-        // IndexOutOfBoundsException out to the uncaught handler (reproduced against JavaFX 26 in
-        // ComboItemsMutationFxTest). Whether that is the crash seen in the wild is unproven — this closes the
-        // one place in the app carrying the shape.
-        List<com.editora.config.RunConfiguration> rows = new ArrayList<>(configs);
-        rows.add(EDIT_CONFIGS_ROW);
-        runConfigCombo.getItems().setAll(rows);
-        // Re-select by name: the list is rebuilt from the store on every refresh, so the old instance is not
-        // the same object even when the configuration is unchanged. Searches `configs`, not the combo's items,
-        // so the sentinel can never be re-selected — it has a blank name and would otherwise match an unnamed
-        // configuration.
-        com.editora.config.RunConfiguration reselect = null;
-        String wanted = previous != null && previous != EDIT_CONFIGS_ROW
-                ? previous.name()
-                : config.getWorkspaceState().getSelectedRunConfig();
-        for (com.editora.config.RunConfiguration cfg : configs) {
-            if (cfg.name().equals(wanted)) {
-                reselect = cfg;
-                break;
-            }
-        }
-        runConfigCombo.setValue(reselect != null ? reselect : (configs.isEmpty() ? null : configs.get(0)));
-    }
-
-    /**
-     * Shows or hides the toolbar's whole run-configuration group per {@link com.editora.run.RunConfigToolbar#visible}.
-     *
-     * <p>Re-run whenever any of its inputs can have moved: a build tool detected or lost (the
-     * {@code BuildCoordinator.Ops} hook), the configuration list edited, the project switched, and every
-     * chrome pass (which is also every toolbar rebuild, which re-adds the group to the tail).
-     */
-    private void refreshRunConfigToolbar() {
-        if (runConfigCombo == null) {
-            return; // called before the FXML is injected
-        }
-        boolean show = com.editora.run.RunConfigToolbar.visible(
-                simpleModeActive(),
-                isLaunchableContext(),
-                config.getWorkspaceState().getRunConfigurations().size());
-        for (Node n : new Node[] {runConfigCombo, runConfigRunButton, runConfigDebugButton, runConfigStopButton}) {
-            if (n != null) {
-                n.setVisible(show);
-                n.setManaged(show);
-            }
-        }
-        // The group lives in the tail, which has no separators to orphan — but this runs on the same passes
-        // that hide other icons, and the walk is cheap and self-correcting.
-        collapseToolbarSeparators();
-    }
-
-    /**
-     * Whether this window's project root holds a makefile, cached per root.
-     *
-     * <p>The probe is a stat, but the visibility refresh runs on the tab-switch/focus/save cadence and the
-     * root changes far more rarely than that — and an SFTP root would make it a network round trip, hence the
-     * locality guard.
-     */
-    private boolean projectHasMakefile() {
-        Path root = windowProjectRoot();
-        if (root == null) {
-            makefileProbedRoot = null;
-            return false;
-        }
-        if (!root.equals(makefileProbedRoot)) {
-            makefileProbedRoot = root;
-            makefileAtProjectRoot =
-                    com.editora.vfs.Vfs.isLocal(root) && com.editora.run.RunConfigToolbar.hasMakefile(root);
-        }
-        return makefileAtProjectRoot;
-    }
-
-    /**
-     * Whether this window is pointed at something launchable — see
-     * {@link com.editora.run.RunConfigToolbar#launchable}.
-     *
-     * <p>Each build tool is asked separately rather than folding them through {@link #anyBuildDetected()},
-     * because with a project open <em>where</em> the marker was found decides the answer, not merely that one
-     * was.
-     */
-    private boolean isLaunchableContext() {
-        Path project = windowProjectRoot();
-        boolean makefile = projectHasMakefile();
-        for (BuildCoordinator c : buildCoordinators) {
-            Path marker = c.isEnabled() ? c.markerRoot() : null;
-            if (com.editora.run.RunConfigToolbar.launchable(project, marker, makefile)) {
-                return true;
-            }
-        }
-        // No tool detected anything; a makefile at the project root still makes it launchable.
-        return com.editora.run.RunConfigToolbar.launchable(project, null, makefile);
-    }
-
-    /** Enables the toolbar Run/Debug buttons only when a configuration is selected; Stop only while running. */
-    private void updateRunConfigButtons() {
-        boolean hasSelection = runConfigCombo != null && runConfigCombo.getValue() != null;
-        if (runConfigRunButton != null) {
-            runConfigRunButton.setDisable(!hasSelection);
-            runConfigDebugButton.setDisable(!hasSelection);
-            runConfigStopButton.setDisable(!runCoordinator.isRunning());
-        }
-    }
-
-    /**
-     * Opens Settings → Run Configurations on the configuration the dropdown currently has selected.
-     *
-     * <p>Reached from the dropdown's "Edit Configurations…" row and the {@code run.editConfigs} command. With
-     * nothing selected it opens the page, which is also how you create the first configuration.
-     */
-    private void editRunConfigs() {
-        com.editora.config.RunConfiguration selected = runConfigCombo == null ? null : runConfigCombo.getValue();
-        String name = selected == null || selected == EDIT_CONFIGS_ROW ? null : selected.name();
-        runConfigEditor.accept(name);
-    }
-
-    /** The configuration the toolbar's Run/Debug buttons act on, or null with nothing selected. */
-    private com.editora.config.RunConfiguration selectedRunConfig() {
-        return runConfigCombo == null ? null : runConfigCombo.getValue();
-    }
-
-    /** Runs the selected configuration. The button chooses the verb; the configuration never does. */
-    @FXML
-    private void onRunSelectedConfig() {
-        com.editora.config.RunConfiguration cfg = selectedRunConfig();
-        if (cfg != null) {
-            runCoordinator.runConfig(cfg);
-        }
-    }
-
-    /** Debugs the selected configuration — the same entry, the other verb. */
-    @FXML
-    private void onDebugSelectedConfig() {
-        com.editora.config.RunConfiguration cfg = selectedRunConfig();
-        if (cfg != null) {
-            debugCoordinator.debugConfig(cfg);
-        }
-    }
-
-    @FXML
-    private void onStopRun() {
-        runCoordinator.stopRun();
-        updateRunConfigButtons();
-    }
-
-    /** {@code run.saveConfig}: save the active Java file's main class as a run configuration. */
     /**
      * The main class a new run configuration should start from: the one the active Java file's project
      * declares, else the first {@code main} in that file. Null when there is nothing to suggest.
@@ -11281,33 +9373,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         return mains.isEmpty() ? null : mains.get(0).fqn();
     }
 
-    private void saveRunConfig() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
-            setStatus(tr("status.run.needJavaFile"));
-            return;
-        }
-        String fqn = suggestedMainClass();
-        if (fqn == null) {
-            setStatus(tr("status.run.noMainInFile"));
-            return;
-        }
-        String simple = com.editora.test.TestSourceLocator.simpleName(fqn);
-        String args = programArgsFor(b.getPath());
-        promptText(tr("run.config.saveTitle"), tr("run.config.saveName"), simple, name -> {
-            if (name == null || name.isBlank()) {
-                return;
-            }
-            List<com.editora.config.RunConfiguration> list =
-                    new java.util.ArrayList<>(config.getWorkspaceState().getRunConfigurations());
-            list.add(new com.editora.config.RunConfiguration(name.strip(), fqn, "", args, "", ""));
-            config.getWorkspaceState().setRunConfigurations(list);
-            config.save();
-            refreshRunConfigs();
-            setStatus(tr("status.run.configSaved", name.strip()));
-        });
-    }
-
     /**
      * This <em>window's</em> project root, or null when it has no project open.
      *
@@ -11325,341 +9390,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         return active == null ? null : Path.of(active.root());
     }
 
-    /**
-     * {@code run.exportConfigs}: writes this window's run configurations into the project, so they can be
-     * committed and shared. Needs a project — there is nowhere else they would belong.
-     */
-    private void exportRunConfigs() {
-        Path root = activeProjectRoot();
-        if (root == null) {
-            setStatus(tr("status.run.configsNeedProject"));
-            return;
-        }
-        List<com.editora.config.RunConfiguration> configs =
-                config.getWorkspaceState().getRunConfigurations();
-        if (configs.isEmpty()) {
-            setStatus(tr("status.run.noConfigs"));
-            return;
-        }
-        try {
-            com.editora.config.SharedRunConfigs.save(new com.fasterxml.jackson.databind.ObjectMapper(), root, configs);
-            setStatus(tr(
-                    "status.run.configsExported",
-                    configs.size(),
-                    homeCollapsed(
-                            com.editora.config.SharedRunConfigs.fileFor(root).toString())));
-        } catch (java.io.IOException e) {
-            setError(tr("status.run.configsExportFailed", e.getMessage()));
-        }
-    }
-
-    /**
-     * {@code run.importConfigs}: merges the project's shared configurations into this window's, matching by
-     * name so importing twice does not duplicate and a colleague's edit updates rather than doubles.
-     */
-    private void importRunConfigs() {
-        Path root = activeProjectRoot();
-        if (root == null) {
-            setStatus(tr("status.run.configsNeedProject"));
-            return;
-        }
-        List<com.editora.config.RunConfiguration> incoming =
-                com.editora.config.SharedRunConfigs.load(new com.fasterxml.jackson.databind.ObjectMapper(), root);
-        if (incoming.isEmpty()) {
-            setStatus(tr(
-                    "status.run.noSharedConfigs",
-                    homeCollapsed(
-                            com.editora.config.SharedRunConfigs.fileFor(root).toString())));
-            return;
-        }
-        List<com.editora.config.RunConfiguration> merged = com.editora.config.SharedRunConfigs.merge(
-                config.getWorkspaceState().getRunConfigurations(), incoming);
-        config.getWorkspaceState().setRunConfigurations(merged);
-        config.save();
-        refreshRunConfigs();
-        setStatus(tr("status.run.configsImported", incoming.size()));
-    }
-
-    /** {@code run.deleteConfig}: pick a saved run configuration and remove it. */
-    private void deleteRunConfig() {
-        if (config.getWorkspaceState().getRunConfigurations().isEmpty()) {
-            setStatus(tr("status.run.noConfigs"));
-            return;
-        }
-        QuickOpen<com.editora.config.RunConfiguration> picker = new QuickOpen<>(
-                tr("run.config.deleteTitle"),
-                tr("run.config.prompt"),
-                () -> List.copyOf(config.getWorkspaceState().getRunConfigurations()),
-                com.editora.config.RunConfiguration::name,
-                MainController::runConfigDetail,
-                cfg -> {
-                    if (cfg == null) {
-                        return;
-                    }
-                    List<com.editora.config.RunConfiguration> list =
-                            new java.util.ArrayList<>(config.getWorkspaceState().getRunConfigurations());
-                    list.removeIf(
-                            c -> c.name().equals(cfg.name()) && c.mainClass().equals(cfg.mainClass()));
-                    config.getWorkspaceState().setRunConfigurations(list);
-                    config.save();
-                    refreshRunConfigs();
-                    setStatus(tr("status.run.configDeleted", cfg.name()));
-                });
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /**
-     * {@code debug.viaBuild}: debug a Maven/Gradle app by launching it under a suspended JDWP agent via the
-     * build tool, then attaching when the "Listening for transport…" banner appears. Complements jdtls's
-     * launch — the clean path for Gradle ({@code run}/{@code bootRun} {@code --debug-jvm}) and Maven Spring
-     * Boot ({@code spring-boot:run} + JDWP {@code jvmArguments}). Still needs the java-debug bundle (that's the
-     * attach adapter); plain Maven {@code main} has no uniform build-tool debug mechanism (use Debug Main Class).
-     */
-    private void debugViaBuild() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
-            setStatus(tr("status.debug.needJavaFile"));
-            return;
-        }
-        if (!debugCoordinator.debugEffectiveFor("java")) {
-            setStatus(tr("status.debug.unavailable"));
-            return;
-        }
-        java.nio.file.Path routing = b.getPath();
-        java.nio.file.Path root = JavaProjectRoot.find(routing);
-        if (root == null) {
-            setStatus(tr("status.debug.noProject"));
-            return;
-        }
-        if (b.isDirty() && !save(b)) {
-            return;
-        }
-        BuildCoordinator gradle = detectedBuildCoordinator(BuildTool.GRADLE);
-        if (gradle != null) {
-            String task = com.editora.build.SpringBoot.gradleRunTask(readGradleBuildFile(root)); // run / bootRun
-            armDebugAttach(gradle, routing);
-            setStatus(tr("status.debug.viaBuildStarting"));
-            gradle.runTask(com.editora.build.BuildDebug.gradleDebugArgs(task), List.of());
-            return;
-        }
-        BuildCoordinator maven = detectedBuildCoordinator(BuildTool.MAVEN);
-        if (maven != null
-                && com.editora.build.BuildDebug.isSpringBootMavenPom(readTextOrEmpty(root.resolve("pom.xml")))) {
-            armDebugAttach(maven, routing);
-            setStatus(tr("status.debug.viaBuildStarting"));
-            maven.runTask(com.editora.build.BuildDebug.mavenSpringBootDebugArgs(), List.of());
-            return;
-        }
-        setStatus(tr("status.debug.viaBuildUnsupported"));
-    }
-
-    /** The enabled+detected build coordinator for {@code tool}, or null. */
-    private BuildCoordinator detectedBuildCoordinator(BuildTool tool) {
-        for (BuildCoordinator c : buildCoordinators) {
-            if (c.tool() == tool && c.isEnabled() && c.isDetected()) {
-                return c;
-            }
-        }
-        return null;
-    }
-
-    /** Watches {@code c}'s next-run output for the JDWP banner, then attaches the debugger (one-shot). */
-    private void armDebugAttach(BuildCoordinator c, java.nio.file.Path routing) {
-        c.setOutputWatcher((line, stderr) -> {
-            int port = com.editora.test.TestDebug.jdwpPort(line);
-            if (port > 0) {
-                c.setOutputWatcher(null);
-                debugCoordinator.attachToPort(routing, "localhost", port);
-            }
-        });
-    }
-
-    private static String readTextOrEmpty(java.nio.file.Path f) {
-        try {
-            return java.nio.file.Files.isRegularFile(f) ? java.nio.file.Files.readString(f) : "";
-        } catch (java.io.IOException e) {
-            return "";
-        }
-    }
-
-    /** Picker for the active keybinding theme (the same set as the Settings → Keymaps combo). */
-    private void chooseKeymap() {
-        QuickOpen<String> picker = new QuickOpen<>(
-                tr("command.keymap.select"),
-                tr("palette.keymap.prompt"),
-                () -> new java.util.ArrayList<>(com.editora.command.KeymapManager.AVAILABLE.keySet()),
-                com.editora.command.KeymapManager::displayName,
-                id -> "",
-                this::applyKeymap);
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** {@code install.languageServer}: pick an installable LSP server (json/bash/go/…) and install it. */
-    private void chooseInstallServer() {
-        QuickOpen<String> picker = new QuickOpen<>(
-                tr("command.install.languageServer"),
-                tr("palette.install.prompt"),
-                () -> new java.util.ArrayList<>(com.editora.install.InstallCatalog.installableServerIds()),
-                installCoordinator::serverName,
-                id -> "",
-                id -> {
-                    if (id != null) {
-                        installCoordinator.installServer(id);
-                    }
-                });
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** Persists the chosen keymap, reloads it live across all windows, and reports it. */
-    private void applyKeymap(String id) {
-        if (id == null) {
-            return;
-        }
-        config.getSettings().setKeymap(id);
-        config.save();
-        reloadKeymap();
-        settingsWindow.syncKeymapCombo(); // keep the Settings window combo in step if it's open
-        setStatus(tr("status.keymap.changed", com.editora.command.KeymapManager.displayName(id)));
-    }
-
-    /** Rebuilds the shared keymap (base + user + plugin overrides) and re-applies it to every window. */
-    private void reloadKeymap() {
-        if (windowManager != null) {
-            windowManager.reloadSharedKeymap();
-        } else {
-            keymap.loadNamed(config.getSettings().getKeymap());
-            keymap.applyOverrides(config.getSettings().keybindingsFor(com.editora.command.KeymapManager.isMac()));
-        }
-    }
-
     // --- Keybinding editor backend (Settings → Keymaps); pure logic in command/KeybindingEdits ---
-
-    /** The active keymap's bindings <em>without</em> user overrides — the defaults to rebind/reset against. */
-    private java.util.Map<String, String> baseBindings() {
-        com.editora.command.KeymapManager base = new com.editora.command.KeymapManager();
-        base.loadNamed(config.getSettings().getKeymap());
-        return base.bindings();
-    }
-
-    /** All commands with their localized title + current effective chord, for the keybinding editor list. */
-    private java.util.List<SettingsWindow.Shortcut> shortcutRows() {
-        java.util.Map<String, String> byCommand = invertBindings();
-        java.util.List<SettingsWindow.Shortcut> rows = new java.util.ArrayList<>();
-        for (Command c : registry.all()) {
-            rows.add(new SettingsWindow.Shortcut(c.id(), c.title(), byCommand.get(c.id())));
-        }
-        rows.sort(java.util.Comparator.comparing(SettingsWindow.Shortcut::title, String.CASE_INSENSITIVE_ORDER));
-        return rows;
-    }
-
-    /** Persists a new user-overrides map (for the running platform), then reloads the shared keymap live. */
-    private void applyKeybindingOverrides(java.util.Map<String, String> overrides) {
-        config.getSettings().setKeybindingsFor(com.editora.command.KeymapManager.isMac(), overrides);
-        config.save();
-        reloadKeymap();
-    }
-
-    /** This platform's current user overrides (Cmd map on macOS, Ctrl map elsewhere) — see {@link Settings}. */
-    private java.util.Map<String, String> currentKeybindings() {
-        return config.getSettings().keybindingsFor(com.editora.command.KeymapManager.isMac());
-    }
-
-    private void rebindShortcut(String commandId, String chordSeq) {
-        applyKeybindingOverrides(
-                com.editora.command.KeybindingEdits.rebind(baseBindings(), currentKeybindings(), commandId, chordSeq));
-        setStatus(tr("status.shortcut.bound", chordSeq, commandTitle(commandId)));
-    }
-
-    private void resetShortcut(String commandId) {
-        applyKeybindingOverrides(
-                com.editora.command.KeybindingEdits.reset(baseBindings(), currentKeybindings(), commandId));
-        setStatus(tr("status.shortcut.reset", commandTitle(commandId)));
-    }
-
-    private void resetAllShortcuts() {
-        applyKeybindingOverrides(new java.util.LinkedHashMap<>());
-        setStatus(tr("status.shortcut.resetAll"));
-    }
-
-    /** Localized title for a command id (for status messages / conflict dialogs); the id if unknown. */
-    private String commandTitle(String commandId) {
-        for (Command c : registry.all()) {
-            if (c.id().equals(commandId)) {
-                return c.title();
-            }
-        }
-        return commandId;
-    }
-
-    /** Picker for the app (chrome) theme — also switches the editor theme to match. */
-    private void chooseAppTheme() {
-        QuickOpen<String> picker = new QuickOpen<>(
-                "Set App Theme",
-                "Type to filter themes…",
-                () -> Themes.names(),
-                name -> name,
-                name -> "",
-                this::applyAppTheme);
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** Picker for the editor color theme only (leaves the chrome theme untouched). */
-    private void chooseEditorTheme() {
-        QuickOpen<String> picker = new QuickOpen<>(
-                "Set Editor Theme",
-                "Type to filter themes…",
-                () -> EditorThemes.names(),
-                name -> name,
-                name -> "",
-                this::applyEditorThemeChoice);
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** Re-scans the user-theme folders (config dir) so newly-added themes appear without a restart. */
-    private void reloadUserThemes() {
-        UserThemes.load(config.getConfigDir());
-        if (settingsWindow != null) {
-            settingsWindow.syncThemes(); // rebuild the theme/editor-theme combos from the fresh list
-        }
-        setStatus(tr("status.userThemesReloaded"));
-    }
-
-    /** Applies a chrome theme and follows it with the matching editor theme (clears the user-set flag). */
-    private void applyAppTheme(String name) {
-        Settings s = config.getSettings();
-        s.setTheme(name);
-        javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(name));
-        s.setEditorTheme(EditorThemes.defaultFor(name)); // chrome theme drives the editor theme
-        s.setEditorThemeUserSet(false);
-        requestSave();
-        applyViewSettingsToAllBuffers(s); // swaps the editor-theme stylesheet + per-buffer colors
-        if (settingsWindow != null) {
-            settingsWindow.syncThemes();
-        }
-        setStatus(tr("status.appTheme", name));
-    }
-
-    /** Applies only the editor color theme (marks it user-set so it won't follow the chrome theme). */
-    private void applyEditorThemeChoice(String name) {
-        Settings s = config.getSettings();
-        s.setEditorTheme(name);
-        s.setEditorThemeUserSet(true);
-        requestSave();
-        applyViewSettingsToAllBuffers(s);
-        if (settingsWindow != null) {
-            settingsWindow.syncThemes();
-        }
-        setStatus(tr("status.editorTheme", name));
-    }
-
-    private void toggleZen() {
-        setZenMode(!zenActive());
-    }
 
     /**
      * Enters/leaves distraction-free Zen mode for <b>this window only</b>. Zen is a per-window
@@ -11676,31 +9407,27 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     void setZenMode(boolean on) {
         WorkspaceState ws = config.getWorkspaceState();
-        if (zenActive() == on) {
+        if (chrome.zenActive() == on) {
             return;
         }
-        if (on && expertActive()) {
+        if (on && chrome.expertActive()) {
             setExpertMode(false); // the two focus modes are mutually exclusive
         }
         if (on) {
             ws.setPreZenToolWindows(toolWindows.closeAllOpen());
         }
-        clearCliFocusOverride(); // an explicit toggle takes over from the --zen/--expert session flag
+        chrome.clearCliFocusOverride(); // an explicit toggle takes over from the --zen/--expert session flag
         ws.setZenMode(on);
-        toolWindows.setZenStripesHidden(on || expertActive());
+        toolWindows.setZenStripesHidden(on || chrome.expertActive());
         if (!on) {
             toolWindows.openByIds(ws.getPreZenToolWindows());
             ws.getPreZenToolWindows().clear();
         }
-        applyChromeVisibility();
-        applyViewSettingsToAllBuffers(config.getSettings());
+        chrome.applyChromeVisibility();
+        editorSettings.applyViewSettingsToAllBuffers(config.getSettings());
         requestSave();
         // When entering Zen the status bar is hidden, so this is mostly seen on exit.
         setStatus(tr("status.toggle.zen", tr(on ? "common.on" : "common.off")));
-    }
-
-    private void toggleExpert() {
-        setExpertMode(!expertActive());
     }
 
     /**
@@ -11711,442 +9438,26 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     void setExpertMode(boolean on) {
         WorkspaceState ws = config.getWorkspaceState();
-        if (expertActive() == on) {
+        if (chrome.expertActive() == on) {
             return;
         }
-        if (on && zenActive()) {
+        if (on && chrome.zenActive()) {
             setZenMode(false); // the two focus modes are mutually exclusive
         }
         if (on) {
             ws.setPreExpertToolWindows(toolWindows.closeAllOpen());
         }
-        clearCliFocusOverride(); // an explicit toggle takes over from the --zen/--expert session flag
+        chrome.clearCliFocusOverride(); // an explicit toggle takes over from the --zen/--expert session flag
         ws.setExpertMode(on);
-        toolWindows.setZenStripesHidden(on || zenActive());
+        toolWindows.setZenStripesHidden(on || chrome.zenActive());
         if (!on) {
             toolWindows.openByIds(ws.getPreExpertToolWindows());
             ws.getPreExpertToolWindows().clear();
         }
-        applyChromeVisibility();
-        applyViewSettingsToAllBuffers(config.getSettings());
+        chrome.applyChromeVisibility();
+        editorSettings.applyViewSettingsToAllBuffers(config.getSettings());
         requestSave();
         setStatus(tr("status.toggle.expert", tr(on ? "common.on" : "common.off")));
-    }
-
-    /**
-     * Applies a {@code --zen} / {@code --expert} <b>session-only</b> focus mode: the same effect as the real
-     * mode, but nothing is written to the saved session — quit and relaunch without the flag and the window
-     * comes back normal. This mirrors {@code --simple} ({@link #cliSimpleOverride}).
-     *
-     * <p>Entering a focus mode closes the docked tool windows, and {@link ToolWindowManager#close} <em>persists</em>
-     * "nothing open" — so the ids are stashed in {@link #cliFocusToolWindows} and written back at quit
-     * ({@link #persistSession}); otherwise a session-only mode would still lose them for good.
-     *
-     * <p>No-op when this window's <em>saved</em> session already has a focus mode on (nothing to override).
-     */
-    private void applyCliFocusMode(boolean expert) {
-        if (zenActive() || expertActive()) {
-            return;
-        }
-        WorkspaceState ws = config.getWorkspaceState();
-        cliFocusToolWindows =
-                new String[] {ws.getOpenLeftToolWindow(), ws.getOpenRightToolWindow(), ws.getOpenBottomToolWindow()};
-        if (expert) {
-            cliExpertOverride = true;
-            ws.setPreExpertToolWindows(toolWindows.closeAllOpen()); // the in-app "E" exit reopens from here
-        } else {
-            cliZenOverride = true;
-            ws.setPreZenToolWindows(toolWindows.closeAllOpen()); // ditto for the "Z"
-        }
-        toolWindows.setZenStripesHidden(true);
-        applyChromeVisibility();
-        applyViewSettingsToAllBuffers(config.getSettings());
-        // Deliberately no requestSave(): the flag must leave the saved session untouched.
-    }
-
-    /** Applies the chrome-only, session-free workspace used by {@code --diff-ui}. */
-    private void applyCliDiffUiMode() {
-        if (cliDiffUiOverride) {
-            return;
-        }
-        cliDiffUiToolWindows = toolWindows.closeAllOpen();
-        cliDiffUiOverride = true;
-        toolWindows.setZenStripesHidden(true);
-        applyChromeVisibility();
-        applyViewSettingsToAllBuffers(config.getSettings());
-    }
-
-    /** Leaves the standalone presentation while retaining the live diff tab and its loaded content. */
-    private void exitDiffUiMode() {
-        if (!cliDiffUiOverride) {
-            return;
-        }
-        cliDiffUiOverride = false;
-        toolWindows.setZenStripesHidden(zenActive() || expertActive());
-        toolWindows.openByIds(cliDiffUiToolWindows);
-        cliDiffUiToolWindows = List.of();
-        for (DiffViewerPane pane : diffCoordinatorPanes()) {
-            pane.setExitDiffUiAction(null);
-        }
-        applyChromeVisibility();
-        applyViewSettingsToAllBuffers(config.getSettings());
-        setStatus(tr("status.diff.fullUi"));
-    }
-
-    private List<DiffViewerPane> diffCoordinatorPanes() {
-        List<DiffViewerPane> panes = new ArrayList<>();
-        for (Tab tab : editorArea.tabs()) {
-            if (tab.getUserData() instanceof DiffViewerPane pane) {
-                panes.add(pane);
-            }
-        }
-        return panes;
-    }
-
-    /** Drops a {@code --zen}/{@code --expert} session override — an in-app toggle now owns the state, so the
-     *  quit-time tool-window restore must not fire. */
-    private void clearCliFocusOverride() {
-        cliZenOverride = false;
-        cliExpertOverride = false;
-        cliFocusToolWindows = null;
-    }
-
-    private void toggleToolbar() {
-        Settings s = config.getSettings();
-        s.setShowToolbar(!s.isShowToolbar());
-        requestSave();
-        applyChromeVisibility();
-        settingsWindow.syncToolbarCheck();
-        setStatus(tr("status.toggle.toolbar", tr(s.isShowToolbar() ? "common.on" : "common.off")));
-    }
-
-    private void toggleBreadcrumb() {
-        Settings s = config.getSettings();
-        s.setShowBreadcrumb(!s.isShowBreadcrumb());
-        requestSave();
-        applyChromeVisibility();
-        setStatus(tr("status.toggle.breadcrumb", tr(s.isShowBreadcrumb() ? "common.on" : "common.off")));
-    }
-
-    private void toggleStatusBar() {
-        Settings s = config.getSettings();
-        s.setShowStatusBar(!s.isShowStatusBar());
-        requestSave();
-        applyChromeVisibility();
-        // The status bar may now be hidden, so this message just confirms the toggle while visible.
-        setStatus(tr("status.toggle.statusBar", tr(s.isShowStatusBar() ? "common.on" : "common.off")));
-    }
-
-    private void toggleTabBar() {
-        Settings s = config.getSettings();
-        s.setShowTabBar(!s.isShowTabBar());
-        requestSave();
-        applyChromeVisibility();
-        setStatus(tr("status.toggle.tabBar", tr(s.isShowTabBar() ? "common.on" : "common.off")));
-    }
-
-    /**
-     * Emacs {@code C-x o}: cycles keyboard focus between the editor and any open tool windows.
-     * Order: editor, then each open tool window (by side); wraps back to the editor.
-     */
-    private void otherWindow() {
-        List<Node> targets = new ArrayList<>();
-        CodeArea area = activeArea();
-        if (area != null) {
-            targets.add(area);
-        }
-        for (ToolWindow tw : toolWindows.getOpenToolWindows()) {
-            targets.add(tw.getContent());
-        }
-        if (targets.size() < 2) {
-            return; // nothing to switch to
-        }
-        Node focusOwner = root.getScene() == null ? null : root.getScene().getFocusOwner();
-        int current = indexOfContaining(targets, focusOwner);
-        int next = current < 0 ? 0 : (current + 1) % targets.size();
-        focusWindow(targets.get(next));
-    }
-
-    /** Index of the target that contains (or is) the focus owner, or -1 if none. */
-    private static int indexOfContaining(List<Node> targets, Node focusOwner) {
-        for (int i = 0; i < targets.size(); i++) {
-            for (Node n = focusOwner; n != null; n = n.getParent()) {
-                if (n == targets.get(i)) {
-                    return i;
-                }
-            }
-        }
-        return -1;
-    }
-
-    private static void focusWindow(Node target) {
-        if (target instanceof StructurePanel structure) {
-            structure.focusContent();
-        } else if (target instanceof ToolWindowContent content) {
-            // Focus a real focusable child (e.g. the Debug stack list) rather than the panel container —
-            // a bare VBox isn't focus-traversable, so requestFocus() on it wouldn't move focus in, leaving
-            // the panel's local key shortcuts (e.g. the Debug toolbar keys) inert after C-x o.
-            content.focusFirstItem();
-        } else {
-            target.requestFocus();
-        }
-    }
-
-    private void foldAll() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            buffer.foldAll();
-            setStatus(tr("status.foldedAll"));
-        }
-    }
-
-    private void unfoldAll() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            buffer.unfoldAll();
-            setStatus(tr("status.unfoldedAll"));
-        }
-    }
-
-    private void foldAtCaret() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            buffer.getFoldManager().foldAtCaret();
-        }
-    }
-
-    private void unfoldAtCaret() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            buffer.getFoldManager().unfoldAtCaret();
-        }
-    }
-
-    private void toggleFoldAtCaret() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            buffer.getFoldManager().toggleFoldAtCaret();
-        }
-    }
-
-    /** Folds every region at the given fold level (1-based); see {@code FoldManager.foldLevel}. */
-    private void foldLevel(int level) {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            buffer.getFoldManager().foldLevel(level);
-            setStatus(tr("status.foldLevel", level));
-        }
-    }
-
-    /** Creates a manual fold range from the selection and collapses it (VS Code parity). */
-    private void createFoldFromSelection() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        if (buffer.createManualFoldFromSelection()) {
-            persistFolds(buffer);
-            setStatus(tr("status.fold.manualCreated"));
-        } else {
-            setStatus(tr("status.fold.manualNeedsSelection"));
-        }
-    }
-
-    /** Removes every manual fold range in the active buffer. */
-    private void removeManualFolds() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        int n = buffer.removeManualFolds();
-        persistFolds(buffer);
-        setStatus(tr("status.fold.manualRemoved", n));
-    }
-
-    private void foldAllExcept() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            buffer.getFoldManager().foldAllExceptCaret();
-        }
-    }
-
-    private void unfoldAllExcept() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            buffer.getFoldManager().unfoldAllExceptCaret();
-        }
-    }
-
-    private void foldAllBlockComments() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            setStatus(tr("status.fold.comments", buffer.getFoldManager().foldAllBlockComments()));
-        }
-    }
-
-    private void foldAllMarkerRegions() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            setStatus(tr("status.fold.markers", buffer.getFoldManager().foldAllMarkerRegions()));
-        }
-    }
-
-    private void unfoldAllMarkerRegions() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            setStatus(tr("status.fold.markersUnfolded", buffer.getFoldManager().unfoldAllMarkerRegions()));
-        }
-    }
-
-    private void foldRecursively() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            buffer.getFoldManager().foldRecursivelyAtCaret();
-        }
-    }
-
-    private void unfoldRecursively() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            buffer.getFoldManager().unfoldRecursivelyAtCaret();
-        }
-    }
-
-    /** Moves the caret to {@code target}'s header line, revealing it if it's hidden inside a fold. */
-    private void gotoFold(com.editora.editor.FoldRegions.Region target) {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        if (target == null) {
-            setStatus(tr("status.fold.noTarget"));
-            return;
-        }
-        int line = target.startLine();
-        buffer.getFoldManager().unfoldContaining(line);
-        moveAndFollow(a -> a.moveTo(line, 0));
-    }
-
-    private void gotoParentFold() {
-        EditorBuffer buffer = activeBuffer();
-        CodeArea area = activeArea();
-        if (buffer != null && area != null) {
-            gotoFold(com.editora.editor.FoldTree.parentFold(
-                    buffer.getFoldManager().regions(), area.getCurrentParagraph()));
-        }
-    }
-
-    private void gotoNextFold() {
-        EditorBuffer buffer = activeBuffer();
-        CodeArea area = activeArea();
-        if (buffer != null && area != null) {
-            gotoFold(com.editora.editor.FoldTree.nextFold(
-                    buffer.getFoldManager().regions(), area.getCurrentParagraph()));
-        }
-    }
-
-    private void gotoPreviousFold() {
-        EditorBuffer buffer = activeBuffer();
-        CodeArea area = activeArea();
-        if (buffer != null && area != null) {
-            gotoFold(com.editora.editor.FoldTree.previousFold(
-                    buffer.getFoldManager().regions(), area.getCurrentParagraph()));
-        }
-    }
-
-    /** Prompts for a 1-based line number and moves the caret there (clamped to the document). */
-    private void goToLine() {
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        int total = area.getParagraphs().size();
-        // Sits near the top like the palette and every other overlay card (it used to be centered in the
-        // middle of the window, which made it jump relative to the rest), with a muted note re-reminding
-        // the user of the line:column notation.
-        Label promptLabel = new Label(tr("dialog.goToLine.content", total));
-        TextField field = new TextField(String.valueOf(area.getCurrentParagraph() + 1));
-        field.setPrefColumnCount(32);
-        com.editora.command.TextInputKeymap.install(field, keymap);
-        Label note = new Label(tr("dialog.goToLine.header"));
-        note.getStyleClass().add("overlay-note");
-        note.setWrapText(true);
-        VBox body = new VBox(6, promptLabel, field, note);
-        OverlayInput.show(
-                overlayHost,
-                tr("dialog.goToLine.title"),
-                body,
-                field,
-                tr("dialog.goToLine.button"),
-                null,
-                () -> handleGoToLine(field.getText(), area, total),
-                null,
-                false,
-                false);
-    }
-
-    /** Parses {@code input} as {@code line} or {@code line:column} and moves the caret there. */
-    private void handleGoToLine(String input, CodeArea area, int total) {
-        {
-            String text = input.trim();
-            String[] parts = text.split(":", 2);
-            try {
-                int line = Math.max(1, Math.min(total, Integer.parseInt(parts[0].trim()))) - 1;
-                int column = 0; // 0-based; default to the start of the line
-                if (parts.length > 1 && !parts[1].trim().isEmpty()) {
-                    int lineLen = area.getParagraphLength(line);
-                    column = Math.max(1, Math.min(lineLen + 1, Integer.parseInt(parts[1].trim()))) - 1;
-                }
-                int targetLine = line;
-                int targetColumn = column;
-                EditorBuffer buffer = activeBuffer();
-                if (buffer != null) {
-                    buffer.getFoldManager().unfoldContaining(targetLine);
-                }
-                moveAndFollow(a -> a.moveTo(targetLine, targetColumn));
-                setStatus(tr("status.gotoResult", targetLine + 1, targetColumn + 1));
-            } catch (NumberFormatException e) {
-                setStatus(tr("status.gotoInvalid", input));
-            }
-        }
-    }
-
-    /** Lets the user override the syntax language/grammar for the active buffer. */
-    private void chooseLanguage() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        List<String> names = new ArrayList<>();
-        names.add(LanguageRegistry.plaintext());
-        names.addAll(GrammarRegistry.shared().availableLanguageNames());
-        // An in-scene picker, like every other status-bar selector — filterable, keyboard-first, and it
-        // does not open a second window over the editor. (The list is ~100 grammars; a ChoiceDialog's
-        // combo made that unsearchable.)
-        String current = names.contains(buffer.getLanguage()) ? buffer.getLanguage() : names.get(0);
-        chooseSetting("buffer.setLanguage", () -> names, name -> name, () -> current, name -> {
-            buffer.setLanguageOverride(name);
-            statusBar.refresh();
-            setStatus(tr("status.language", name));
-        });
-    }
-
-    /** Changes the (persisted) tab width and applies it to every buffer. */
-    private void chooseTabSize() {
-        Settings s = config.getSettings();
-        chooseSetting(
-                "buffer.setTabSize",
-                () -> List.of("2", "4", "8"),
-                size -> size,
-                () -> String.valueOf(s.getTabSize()),
-                choice -> {
-                    int size = Integer.parseInt(choice);
-                    s.setTabSize(size);
-                    requestSave();
-                    applyViewSettingsToAllBuffers(s);
-                    statusBar.refresh();
-                    setStatus(tr("status.tabSize", size));
-                });
     }
 
     // --- Settings palette commands ----------------------------------------------------------------
@@ -12154,268 +9465,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     // helpers below flip/prompt the same Settings field a control writes, then persist, re-apply the
     // feature, keep an open Settings window in step (syncAll), and echo a status. Two generic status
     // keys (status.settingToggled / status.settingChanged) reuse each command's own localized title.
-
-    /** Flips a boolean setting, persists, re-applies, syncs Settings, and echoes "<title> — on/off". */
-    private void toggleSetting(
-            String commandId,
-            java.util.function.BooleanSupplier get,
-            java.util.function.Consumer<Boolean> set,
-            Runnable apply) {
-        boolean next = !get.getAsBoolean();
-        set.accept(next);
-        requestSave();
-        if (apply != null) {
-            apply.run();
-        }
-        if (settingsWindow != null) {
-            settingsWindow.syncAll();
-        }
-        setStatus(tr("status.settingToggled", commandTitle(commandId), tr(next ? "common.on" : "common.off")));
-    }
-
-    /** Prompts for a string setting (current value pre-filled), persists, re-applies, and echoes it. */
-    private void promptStringSetting(
-            String commandId,
-            java.util.function.Supplier<String> get,
-            java.util.function.Consumer<String> set,
-            Runnable apply) {
-        promptText(commandTitle(commandId), tr("palette.setting.value"), get.get(), v -> {
-            String value = v.trim();
-            set.accept(value);
-            requestSave();
-            if (apply != null) {
-                apply.run();
-            }
-            if (settingsWindow != null) {
-                settingsWindow.syncAll();
-            }
-            setStatus(tr("status.settingChanged", commandTitle(commandId), value));
-        });
-    }
-
-    /** Toggles the intermediate large-file tier (minimap + LSP off, highlighting on) for the active buffer,
-     *  then re-syncs LSP so the session starts/stops to match. */
-    private void toggleLargeFileMode() {
-        EditorBuffer b = activeBuffer();
-        if (b == null) {
-            return;
-        }
-        boolean now = !b.isHeavyFile();
-        b.setHeavyFile(now);
-        lspCoordinator.syncBuffer(b); // start (off) / stop (on) the LSP session to match the new state
-        setStatus(tr(now ? "status.largeFileMode.on" : "status.largeFileMode.off"));
-    }
-
-    /** Prompts for an integer setting (clamped to [min,max]); reports a parse error without changing it. */
-    private void promptIntSetting(
-            String commandId,
-            java.util.function.IntSupplier get,
-            int min,
-            int max,
-            java.util.function.IntConsumer set,
-            Runnable apply) {
-        promptText(commandTitle(commandId), tr("palette.setting.value"), Integer.toString(get.getAsInt()), v -> {
-            int parsed;
-            try {
-                parsed = Integer.parseInt(v.trim());
-            } catch (NumberFormatException ex) {
-                setStatus(tr("status.setting.invalidNumber", v.trim()));
-                return;
-            }
-            int clamped = Math.max(min, Math.min(max, parsed));
-            set.accept(clamped);
-            requestSave();
-            if (apply != null) {
-                apply.run();
-            }
-            if (settingsWindow != null) {
-                settingsWindow.syncAll();
-            }
-            setStatus(tr("status.settingChanged", commandTitle(commandId), Integer.toString(clamped)));
-        });
-    }
-
-    /** Generic single-choice picker that sets a setting to the chosen value (label fn for display). */
-    private void chooseSetting(
-            String commandId,
-            java.util.function.Supplier<List<String>> options,
-            java.util.function.Function<String, String> label,
-            java.util.function.Consumer<String> onChoose) {
-        chooseSetting(commandId, options, label, null, onChoose);
-    }
-
-    /** As above, but opens on {@code current} — the value in force — instead of the first row. */
-    private void chooseSetting(
-            String commandId,
-            java.util.function.Supplier<List<String>> options,
-            java.util.function.Function<String, String> label,
-            java.util.function.Supplier<String> current,
-            java.util.function.Consumer<String> onChoose) {
-        QuickOpen<String> picker = new QuickOpen<>(
-                commandTitle(commandId), tr("palette.setting.pick"), options::get, label::apply, id -> "", id -> {
-                    if (id != null) {
-                        onChoose.accept(id);
-                    }
-                });
-        if (current != null) {
-            picker.setCurrentItem(current);
-        }
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** Palette entry for the TODO per-part colors: pick a part (tag / priority level), then enter a web-hex
-     *  color; applies live to every buffer and syncs an open Settings window. */
-    private void chooseTodoPartColor() {
-        chooseSetting(
-                "todo.setPartColor",
-                () -> List.of("tag", "critical", "high", "medium", "low"),
-                id -> tr("settings.todo.part." + id),
-                part -> {
-                    Settings s = config.getSettings();
-                    String current =
-                            switch (part) {
-                                case "tag" -> s.getTodoTagColor();
-                                case "critical" -> s.getTodoPriorityCriticalColor();
-                                case "high" -> s.getTodoPriorityHighColor();
-                                case "medium" -> s.getTodoPriorityMediumColor();
-                                case "low" -> s.getTodoPriorityLowColor();
-                                default -> "";
-                            };
-                    promptText(
-                            commandTitle("todo.setPartColor"),
-                            tr("settings.todo.part." + part),
-                            current,
-                            hex -> applyTodoPartColor(part, hex));
-                });
-    }
-
-    /** Validates a web-hex color and stores it in the given TODO part's setting, then re-highlights. */
-    private void applyTodoPartColor(String part, String hex) {
-        if (hex == null || !hex.strip().matches("#[0-9a-fA-F]{6}")) {
-            setStatus(tr("status.todo.badColor"));
-            return;
-        }
-        String c = hex.strip();
-        Settings s = config.getSettings();
-        switch (part) {
-            case "tag" -> s.setTodoTagColor(c);
-            case "critical" -> s.setTodoPriorityCriticalColor(c);
-            case "high" -> s.setTodoPriorityHighColor(c);
-            case "medium" -> s.setTodoPriorityMediumColor(c);
-            case "low" -> s.setTodoPriorityLowColor(c);
-            default -> {
-                return;
-            }
-        }
-        requestSave();
-        todoCoordinator.applyHighlight();
-        if (settingsWindow != null) {
-            settingsWindow.syncTodoPartColors();
-        }
-        setStatus(tr("status.settingChanged", tr("settings.todo.part." + part), c));
-    }
-
-    /** Picker for the global indent style (Detect / Spaces / Tabs); applies live to every buffer. */
-    private void chooseIndentStyle() {
-        chooseSetting(
-                "editor.setIndentStyle",
-                () -> List.of("detect", "space", "tab"),
-                SettingsWindow::indentStyleName,
-                id -> {
-                    Settings s = config.getSettings();
-                    s.setIndentStyle(id);
-                    requestSave();
-                    applyViewSettingsToAllBuffers(s);
-                    if (settingsWindow != null) {
-                        settingsWindow.syncAll();
-                    }
-                    setStatus(tr(
-                            "status.settingChanged",
-                            commandTitle("editor.setIndentStyle"),
-                            SettingsWindow.indentStyleName(id)));
-                });
-    }
-
-    /** Picker for how aggressively inlay parameter-name hints are suppressed (Literals only / All). */
-    private void chooseInlayHintMode() {
-        chooseSetting(
-                "lsp.setInlayHintMode", () -> List.of("literals", "all"), SettingsWindow::inlayHintModeName, id -> {
-                    Settings s = config.getSettings();
-                    s.setInlayHintMode(id);
-                    requestSave();
-                    lspCoordinator.applyInlayHints();
-                    if (settingsWindow != null) {
-                        settingsWindow.syncAll();
-                    }
-                    setStatus(tr(
-                            "status.settingChanged",
-                            commandTitle("lsp.setInlayHintMode"),
-                            SettingsWindow.inlayHintModeName(id)));
-                });
-    }
-
-    /** Picker for the editor font family (same choices as Settings → Appearance). */
-    private void chooseFont() {
-        chooseSetting("appearance.setFont", SettingsWindow::fontFamilyChoices, name -> name, name -> {
-            Settings s = config.getSettings();
-            s.setFontFamily(name);
-            requestSave();
-            applyViewSettingsToAllBuffers(s);
-            if (settingsWindow != null) {
-                settingsWindow.syncAll();
-            }
-            setStatus(tr("status.settingChanged", commandTitle("appearance.setFont"), name));
-        });
-    }
-
-    /** Picker for the UI language (Automatic + bundled locales); applies after a restart. */
-    private void chooseUiLanguage() {
-        List<String> ids = new java.util.ArrayList<>();
-        ids.add(""); // "" = Automatic (follow the system language)
-        ids.addAll(com.editora.i18n.Messages.available().keySet());
-        chooseSetting(
-                "appearance.setUiLanguage",
-                () -> ids,
-                id -> id.isEmpty() ? tr("settings.language.auto") : com.editora.i18n.Messages.languageName(id),
-                id -> {
-                    config.getSettings().setUiLanguage(id);
-                    requestSave();
-                    if (settingsWindow != null) {
-                        settingsWindow.syncAll();
-                    }
-                    setStatus(tr("dialog.language.restart"));
-                });
-    }
-
-    /** Picker for the PDF export page size. */
-    private void choosePdfPageSize() {
-        chooseSetting("editor.setPdfPageSize", () -> List.of("letter", "a4"), v -> v, v -> {
-            config.getSettings().setPdfPageSize(v);
-            requestSave();
-            if (settingsWindow != null) {
-                settingsWindow.syncAll();
-            }
-            setStatus(tr("status.settingChanged", commandTitle("editor.setPdfPageSize"), v));
-        });
-    }
-
-    /** Converts the active buffer's line endings between LF and CRLF. */
-    private void chooseLineEndings() {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        chooseSetting(
-                "buffer.convertLineEndings", () -> List.of("LF", "CRLF"), c -> c, buffer::getLineEnding, choice -> {
-                    buffer.convertLineEndings("CRLF".equals(choice));
-                    statusBar.refresh();
-                    setStatus(tr("status.lineEndingsSet", choice));
-                });
-    }
 
     /** Persists the buffer's collapsed fold regions + manual fold ranges, keyed by its file path. */
     private void persistFolds(EditorBuffer buffer) {
@@ -12547,216 +9596,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         return persisted || !writable;
     }
 
-    /** Persists the buffer's Markdown view mode, keyed by file path (EDITOR is the unset default). */
-    private void persistMarkdownMode(EditorBuffer buffer) {
-        Path file = buffer.getPath();
-        if (file == null) {
-            return;
-        }
-        var map = config.getWorkspaceState().getMarkdownViewModes();
-        EditorBuffer.MarkdownViewMode mode = buffer.getMarkdownViewMode();
-        if (mode == EditorBuffer.MarkdownViewMode.EDITOR) {
-            map.remove(file.toString());
-        } else {
-            map.put(file.toString(), mode.name());
-        }
-        requestSave();
-    }
-
-    /**
-     * Attaches or removes the floating Editor/Split/Preview control to match {@link EditorBuffer#hasPreview()}.
-     * Re-evaluated whenever a buffer's language can change its previewability — at open, after Save As
-     * (a new untitled buffer becomes a `.md`/`.mmd`), and when the Mermaid feature toggles. The light/dark
-     * sun/moon control is Markdown-only (it themes the Markdown CSS; diagrams follow the app theme).
-     */
-    private void ensurePreviewControls(EditorBuffer buffer) {
-        // A CSV / .http buffer becomes previewable (hasPreview()) only once its grid / response panel is
-        // injected, so do that first — the same Editor/Split/Preview toggle then attaches below, exactly
-        // like Markdown/Mermaid.
-        csvCoordinator.ensureCsvPreview(buffer);
-        httpClient.ensureHttpPreview(buffer);
-        boolean want = buffer.hasPreview();
-        boolean has = buffer.hasViewModeControl();
-        if (want && !has) {
-            MarkdownViewToggle toggle = new MarkdownViewToggle(buffer);
-            buffer.setOnViewModeChanged(() -> {
-                persistMarkdownMode(buffer);
-                toggle.sync();
-            });
-            buffer.setViewModeControl(toggle);
-            if (buffer.isMarkdown()) {
-                buffer.setPreviewThemeToggle(this::toggleMarkdownPreviewTheme);
-                buffer.applyPreviewTheme(config.getSettings().getMarkdownPreviewTheme(), appThemeDark());
-            }
-        } else if (!want && has) {
-            buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.EDITOR);
-            buffer.setViewModeControl(null);
-        }
-        // Keep live linting in step when a Save As / rename flips the buffer to/from .mmd.
-        mermaid.refreshLint(buffer);
-    }
-
-    /** Restores a Markdown/CSV/.http file's saved view mode after it is opened (and its toggle is wired). */
-    private void restoreMarkdownMode(EditorBuffer buffer) {
-        // Inject the node-gated previews first so those buffers report hasPreview().
-        csvCoordinator.ensureCsvPreview(buffer);
-        httpClient.ensureHttpPreview(buffer);
-        Path file = buffer.getPath();
-        if (file == null || !buffer.hasPreview()) {
-            return;
-        }
-        if (buffer.isMarkwhen()) {
-            // Restore the timeline/calendar renderer BEFORE the view mode below (so the first render uses it).
-            String view = config.getWorkspaceState().getMarkwhenViews().get(file.toString());
-            if (view != null) {
-                try {
-                    buffer.setMarkwhenView(EditorBuffer.MarkwhenView.valueOf(view));
-                } catch (IllegalArgumentException ignored) {
-                    // unknown persisted value — keep the timeline default
-                }
-            }
-        }
-        String saved = config.getWorkspaceState().getMarkdownViewModes().get(file.toString());
-        if (saved == null) {
-            return;
-        }
-        try {
-            buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.valueOf(saved));
-        } catch (IllegalArgumentException ignored) {
-            // unknown persisted value — leave in EDITOR mode
-        }
-    }
-
-    /** Sets the active previewable buffer's view mode (Markdown or Mermaid; no-op otherwise). */
-    private void setActiveMarkdownMode(EditorBuffer.MarkdownViewMode mode) {
-        EditorBuffer b = activeBuffer();
-        if (b != null && b.hasPreview()) {
-            b.setMarkdownViewMode(mode);
-        } else {
-            setStatus(tr("status.notMarkdown"));
-        }
-    }
-
-    /**
-     * Toggles the active buffer between Editor and the given preview mode — backs the file-type-agnostic
-     * "Toggle Preview" ({@link EditorBuffer.MarkdownViewMode#PREVIEW}) and "Toggle Split Preview"
-     * ({@link EditorBuffer.MarkdownViewMode#SPLIT}) commands. Works for any previewable file
-     * ({@link EditorBuffer#hasPreview()}): Markdown, CSV, Mermaid, diagrams, Typst, SVG, structured data,
-     * crontab/fstab/systemd/etc. Pressing it while already in {@code target} collapses back to Editor;
-     * otherwise it switches to {@code target} (so the two commands also flip Split ⇄ Preview between them).
-     */
-    private void togglePreviewMode(EditorBuffer.MarkdownViewMode target) {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.hasPreview()) {
-            setStatus(tr("status.noPreview"));
-            return;
-        }
-        EditorBuffer.MarkdownViewMode next =
-                b.getMarkdownViewMode() == target ? EditorBuffer.MarkdownViewMode.EDITOR : target;
-        b.setMarkdownViewMode(next);
-    }
-
-    /** Runs a Markdown format action on the active buffer; reports when it isn't an editable Markdown file. */
-    private void withMarkdown(java.util.function.Consumer<EditorBuffer> action) {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            setStatus(tr("status.notMarkdown"));
-            return;
-        }
-        action.accept(b);
-    }
-
-    /** Opens the table-size grid picker; on pick, inserts a fresh GFM table into the active Markdown buffer. */
-    private void markdownInsertTable() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            setStatus(tr("status.notMarkdown"));
-            return;
-        }
-        showTableSizePicker((rows, cols) -> b.insertTable(rows, cols));
-    }
-
-    /**
-     * The command-palette path: a keyboard-only {@code RxC} size prompt (e.g. {@code "4x4"}) instead of the
-     * mouse grid picker. The grid picker stays the format-bar button / right-click "Insert Table" UI.
-     */
-    private void markdownInsertTableViaText() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            setStatus(tr("status.notMarkdown"));
-            return;
-        }
-        promptText(tr("table.size.title"), tr("table.size.label"), "3x3", input -> {
-            int[] rc = MarkdownTable.parseSize(input);
-            if (rc == null) {
-                setStatus(tr("table.size.invalid"));
-                return;
-            }
-            b.insertTable(rc[0], rc[1]);
-        });
-    }
-
-    /**
-     * A Typora/Word-style table-size grid picker shown as an in-scene overlay: hover to highlight an
-     * {@code R × C} block (rows include the header), click to commit. Max {@value #TABLE_PICKER_MAX_ROWS} ×
-     * {@value #TABLE_PICKER_MAX_COLS}.
-     */
-    private void showTableSizePicker(java.util.function.BiConsumer<Integer, Integer> onPick) {
-        final int maxR = TABLE_PICKER_MAX_ROWS;
-        final int maxC = TABLE_PICKER_MAX_COLS;
-        javafx.scene.layout.VBox card = new javafx.scene.layout.VBox(8);
-        card.getStyleClass().add("table-size-picker");
-        card.setPadding(new javafx.geometry.Insets(12));
-        // Hug the grid + padding — without a max-size cap the StackPane overlay stretches the card to fill
-        // the whole editor area (like QuickOpen's card, which caps to its preferred size).
-        card.setMaxSize(javafx.scene.layout.Region.USE_PREF_SIZE, javafx.scene.layout.Region.USE_PREF_SIZE);
-        Label heading = new Label(tr("table.picker.prompt"));
-        heading.getStyleClass().add("table-size-label");
-        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
-        grid.setHgap(3);
-        grid.setVgap(3);
-        javafx.scene.shape.Rectangle[][] cells = new javafx.scene.shape.Rectangle[maxR][maxC];
-        int[] sel = {0, 0}; // selected rows, cols (1-based; 0 = nothing yet)
-        Runnable[] repaint = new Runnable[1];
-        repaint[0] = () -> {
-            for (int r = 0; r < maxR; r++) {
-                for (int c = 0; c < maxC; c++) {
-                    boolean on = r < sel[0] && c < sel[1];
-                    cells[r][c]
-                            .getStyleClass()
-                            .setAll("table-size-cell", on ? "table-size-cell-on" : "table-size-cell-off");
-                }
-            }
-            heading.setText(sel[0] == 0 ? tr("table.picker.prompt") : tr("table.picker.size", sel[0], sel[1]));
-        };
-        for (int r = 0; r < maxR; r++) {
-            for (int c = 0; c < maxC; c++) {
-                javafx.scene.shape.Rectangle cell = new javafx.scene.shape.Rectangle(16, 16);
-                cell.getStyleClass().setAll("table-size-cell", "table-size-cell-off");
-                final int rr = r + 1;
-                final int cc = c + 1;
-                cell.setOnMouseEntered(e -> {
-                    sel[0] = rr;
-                    sel[1] = cc;
-                    repaint[0].run();
-                });
-                cell.setOnMouseClicked(e -> {
-                    overlayHost.hide();
-                    onPick.accept(rr, cc);
-                });
-                cells[r][c] = cell;
-                grid.add(cell, c, r);
-            }
-        }
-        card.getChildren().addAll(heading, grid);
-        card.getProperties().put("editora.ownsKeys", true);
-        overlayHost.show(card, true, () -> {}, () -> {}); // centered — it's a small grid, not a top palette
-    }
-
-    private void markdownInline(String marker) {
-        withMarkdown(b -> b.formatInline(marker));
-    }
-
     /**
      * The directory passed to {@code typst compile --root} for a local {@code .typ} file: the nearest
      * {@code typst.toml} ancestor (typst's own project marker), else the active Editora project root when the
@@ -12778,321 +9617,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         return com.editora.lsp.RootResolver.resolve(projectRoot, file, java.util.List.of());
     }
 
-    /** Runs a Typst markup-format action on the active buffer, or reports it isn't a Typst buffer. */
-    private void withTypst(java.util.function.Consumer<EditorBuffer> action) {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isTypst() || !b.canFormatMarkup()) {
-            setStatus(tr("status.typst.notTypst"));
-            return;
-        }
-        action.accept(b);
-    }
-
-    /** {@code markdown.openLink}: open the link under the caret externally. */
-    private void markdownOpenLink() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isMarkdown()) {
-            setStatus(tr("status.notMarkdown"));
-        } else if (!b.openLinkUnderCaret()) {
-            setStatus(tr("status.markdown.noLink"));
-        }
-    }
-
-    /** {@code markdown.reflowTable}: normalize/align the GFM table around the caret. */
-    private void markdownReflowTable() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            setStatus(tr("status.notMarkdown"));
-        } else if (!b.reflowTable()) {
-            setStatus(tr("status.markdown.notTable"));
-        }
-    }
-
-    /** {@code markdown.toc}: insert a table of contents at the caret, or regenerate the existing TOC block. */
-    private void markdownToc() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            setStatus(tr("status.notMarkdown"));
-        } else if (!b.insertOrUpdateToc()) {
-            setStatus(tr("status.markdown.tocNoHeadings"));
-        } else {
-            setStatus(tr("status.markdown.tocDone"));
-        }
-    }
-
-    /** {@code markdown.tableFromCsv}: convert the selected CSV (else clipboard CSV) into a GFM table. */
-    private void markdownTableFromCsv() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            setStatus(tr("status.notMarkdown"));
-        } else if (!b.tableFromCsv()) {
-            setStatus(tr("status.markdown.csvEmpty"));
-        }
-    }
-
-    /** {@code markdown.tableToCsv}: copy the caret's GFM table to the clipboard as CSV. */
-    private void markdownTableToCsv() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            setStatus(tr("status.notMarkdown"));
-        } else if (!b.tableToCsv()) {
-            setStatus(tr("status.markdown.notTable"));
-        } else {
-            setStatus(tr("status.markdown.csvCopied"));
-        }
-    }
-
-    /** {@code markdown.tableExport*}: file-export the caret's GFM table ({@code format} = csv|xlsx|ods). */
-    private void markdownTableExport(String format) {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            setStatus(tr("status.notMarkdown"));
-        } else if (!b.exportTableFile(format)) {
-            setStatus(tr("status.markdown.notTable"));
-        }
-    }
-
-    /**
-     * File-exports a Markdown table the buffer already rendered to {@code csv}. {@code format} = {@code csv}
-     * writes the CSV text; {@code xlsx}/{@code ods} parse it and reuse the spreadsheet writers. Wired into each
-     * buffer via {@code setTableFileExporter}.
-     */
-    private void exportMarkdownTableFile(String csv, String format) {
-        if (csv == null || csv.isBlank()) {
-            setStatus(tr("status.markdown.notTable"));
-            return;
-        }
-        EditorBuffer b = activeBuffer();
-        String base = b == null ? "table" : bufferBaseName(b);
-        switch (format) {
-            case "csv" -> exportCsvTextToFile(csv, base);
-            // A Markdown table always leads with a header row (toCsv drops the ---|--- divider).
-            case "xlsx" -> csvExportSpreadsheet(com.editora.csv.CsvParser.parse(csv, ','), true, base, true);
-            case "ods" -> csvExportSpreadsheet(com.editora.csv.CsvParser.parse(csv, ','), true, base, false);
-            default -> {}
-        }
-    }
-
-    /** Writes {@code csv} text to a user-chosen {@code .csv} file (the Markdown-table → CSV file export). */
-    private void exportCsvTextToFile(String csv, String base) {
-        java.io.File f = chooseOfficeDestination(base, "csv", "CSV");
-        if (f == null) {
-            return;
-        }
-        try {
-            java.nio.file.Files.writeString(f.toPath(), csv);
-            setStatus(tr("status.csv.exported", f.getName()));
-        } catch (java.io.IOException ex) {
-            setStatus(tr("status.csv.exportFailed", String.valueOf(ex.getMessage())));
-        }
-    }
-
-    /** {@code csv.copyAsMarkdownTable}: copy the active CSV/TSV buffer to the clipboard as a GFM table. */
-    private void csvCopyAsMarkdownTable() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isCsv()) {
-            setStatus(tr("status.csv.notCsv"));
-            return;
-        }
-        String md = MarkdownTable.fromCsv(b.getContent());
-        if (md == null) {
-            setStatus(tr("status.csv.empty"));
-            return;
-        }
-        ClipboardContent cc = new ClipboardContent();
-        cc.putString(md);
-        Clipboard.getSystemClipboard().setContent(cc);
-        setStatus(tr("status.csv.copied"));
-    }
-
-    /** {@code csv.align}: pad the active CSV/TSV so its column delimiters line up (Rainbow-CSV Align). */
-    private void csvAlign() {
-        csvReformat(true);
-    }
-
-    /** {@code csv.shrink}: strip column-alignment padding from the active CSV/TSV (reverses {@link #csvAlign}). */
-    private void csvShrink() {
-        csvReformat(false);
-    }
-
-    /** Aligns ({@code align=true}) or shrinks the active CSV buffer's text via {@code CsvAlign}, undoable. */
-    private void csvReformat(boolean align) {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isCsv()) {
-            setStatus(tr("status.csv.notCsv"));
-            return;
-        }
-        if (!activeEditable()) {
-            return;
-        }
-        String text = b.getContent();
-        if (text.isEmpty()) {
-            setStatus(tr("status.csv.empty"));
-            return;
-        }
-        char delim = com.editora.csv.CsvParser.detectDelimiter(text);
-        // A quoted multi-line field means a record no longer maps to one physical line — line-based
-        // align/shrink would corrupt it, so refuse (mirrors the grid's edit guard).
-        if (com.editora.csv.CsvParser.hasMultilineField(com.editora.csv.CsvParser.parse(text, delim))) {
-            setStatus(tr("status.csv.multiline"));
-            return;
-        }
-        String out = align ? com.editora.csv.CsvAlign.align(text, delim) : com.editora.csv.CsvAlign.shrink(text, delim);
-        if (out.equals(text)) {
-            setStatus(tr(align ? "status.csv.alignNoChange" : "status.csv.shrinkNoChange"));
-            return;
-        }
-        b.getArea().replaceText(out); // whole-document replace (undoable)
-        setStatus(tr(align ? "status.csv.aligned" : "status.csv.shrunk"));
-    }
-
-    /** Exports a CSV as a PDF by reusing the Markdown-table → PDF pipeline (the grid's right-click menu). */
-    private void csvExportPdf(String csvText, String baseName) {
-        String md = MarkdownTable.fromCsv(csvText);
-        if (md == null) {
-            setStatus(tr("status.csv.empty"));
-            return;
-        }
-        java.io.File f = choosePdfDestination(baseName);
-        if (f == null) {
-            return;
-        }
-        setStatus(tr("status.pdf.exporting"));
-        pdfService.exportMarkdown(
-                md, null, config.getSettings().getPdfPageSize(), null, f.toPath(), r -> reportPdf(r, f));
-    }
-
-    /** Opens the print preview for a CSV by reusing the Markdown-table → print pipeline. */
-    private void csvPrint(String csvText) {
-        String md = MarkdownTable.fromCsv(csvText);
-        if (md == null) {
-            setStatus(tr("status.csv.empty"));
-            return;
-        }
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
-        if (job == null) {
-            setStatus(tr("status.print.noPrinter"));
-            return;
-        }
-        setStatus(tr("status.print.preparing"));
-        printService.prepareMarkdown(md, null, prepared -> openPrintPreview(job, prepared));
-    }
-
-    /** Exports the complete Project Map layout—not merely the visible viewport—to a paginated PDF. */
-    private void exportProjectMapPdf(javafx.scene.image.Image image) {
-        java.io.File file = choosePdfDestination(projectMapBaseName());
-        if (file == null) {
-            return;
-        }
-        setStatus(tr("status.pdf.exporting"));
-        pdfService.exportFxImages(
-                java.util.List.of(image),
-                config.getSettings().getPdfPageSize(),
-                file.toPath(),
-                result -> reportPdf(result, file));
-    }
-
-    /** Opens the normal Print Preview flow for the complete Project Map layout. */
-    private void printProjectMap(javafx.scene.image.Image image) {
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
-        if (job == null) {
-            setStatus(tr("status.print.noPrinter"));
-            return;
-        }
-        setStatus(tr("status.print.preparing"));
-        printService.prepareFxImages(java.util.List.of(image), prepared -> openPrintPreview(job, prepared));
-    }
-
     private String projectMapBaseName() {
         Path projectRoot = projectPanel == null ? null : projectPanel.getRoot();
         Path name = projectRoot == null ? null : projectRoot.getFileName();
         return (name == null ? "project" : name.toString()) + "-map";
     }
 
-    /** Exports parsed CSV rows to a spreadsheet — {@code xlsx} true → Excel {@code .xlsx}, else ODF {@code .ods}. */
-    private void csvExportSpreadsheet(
-            java.util.List<java.util.List<String>> rows, boolean hasHeader, String baseName, boolean xlsx) {
-        if (rows == null || rows.isEmpty()) {
-            setStatus(tr("status.csv.empty"));
-            return;
-        }
-        String ext = xlsx ? "xlsx" : "ods";
-        String filter = xlsx ? "Excel" : "OpenDocument Spreadsheet";
-        java.io.File f = chooseOfficeDestination(baseName, ext, filter);
-        if (f == null) {
-            return;
-        }
-        setStatus(tr("status.office.exporting"));
-        java.util.function.Consumer<com.editora.office.OfficeExportService.Result> cb = r -> reportOffice(r, f);
-        if (xlsx) {
-            officeService.exportXlsx(rows, hasHeader, f.toPath(), cb);
-        } else {
-            officeService.exportOds(rows, hasHeader, f.toPath(), cb);
-        }
-    }
-
-    /** {@code markdown.toggleFormatBar}: flip the selection format-bar setting + re-sync every buffer. */
-    private void toggleMarkdownFormatBar() {
-        Settings s = config.getSettings();
-        boolean now = !s.isMarkdownFormatBar();
-        s.setMarkdownFormatBar(now);
-        requestSave();
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null) {
-                b.setFormatBarEnabled(now);
-            }
-        }
-        settingsWindow.syncMarkdownFormatBarCheck();
-        setStatus(tr(now ? "status.markdown.formatBar.on" : "status.markdown.formatBar.off"));
-    }
-
     /** Whether the app (AtlantaFX) theme is dark — seeds/decides the "follow app" preview theme + glyph. */
     private boolean appThemeDark() {
         return Themes.backgroundFor(config.getSettings().getTheme()).getBrightness() < 0.5;
-    }
-
-    /** Pushes the (global) Markdown preview theme to every open buffer's preview + its toggle glyph. */
-    private void applyMarkdownPreviewTheme() {
-        String mode = config.getSettings().getMarkdownPreviewTheme();
-        boolean appDark = appThemeDark();
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null && b.isMarkdown()) {
-                b.applyPreviewTheme(mode, appDark);
-            }
-        }
-    }
-
-    /**
-     * Toggles the Markdown preview between light and dark, independent of the app theme. Flips the current
-     * effective theme (seeded from the app theme the first time), persists it, and re-applies to all
-     * previews. Run by the floating sun/moon control and the {@code view.toggleMarkdownPreviewTheme} command.
-     */
-    private void toggleMarkdownPreviewTheme() {
-        String mode = config.getSettings().getMarkdownPreviewTheme();
-        boolean currentlyDark = "dark".equals(mode) || (mode.isEmpty() && appThemeDark());
-        String next = currentlyDark ? "light" : "dark";
-        config.getSettings().setMarkdownPreviewTheme(next);
-        requestSave();
-        applyMarkdownPreviewTheme();
-        setStatus(tr("status.markdownPreviewTheme", tr("markdown.previewTheme." + next)));
-    }
-
-    /** Zooms the active Markdown buffer's preview text: {@code >0} in, {@code <0} out, {@code 0} reset. */
-    private void markdownZoom(int direction) {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isMarkdown()) {
-            setStatus(tr("status.notMarkdown"));
-            return;
-        }
-        if (direction > 0) {
-            b.zoomPreviewIn();
-        } else if (direction < 0) {
-            b.zoomPreviewOut();
-        } else {
-            b.resetPreviewZoom();
-        }
     }
 
     /**
@@ -13105,7 +9638,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         int direction = e.getDeltaY() > 0 ? 1 : -1;
         EditorBuffer b = activeBuffer();
         if (b != null && b.getMarkdownViewMode() == EditorBuffer.MarkdownViewMode.PREVIEW) {
-            markdownZoom(direction);
+            previews.markdownZoom(direction);
         } else {
             textZoom(direction);
         }
@@ -13134,7 +9667,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         requestSave();
         // A font zoom changes no feature gate or theme — apply only the fonts/per-buffer view, not the full
         // settings cascade (editor-theme stylesheet swap + ~20 applySupport() calls). #545
-        applyFontsAndPerBufferView(s);
+        editorSettings.applyFontsAndPerBufferView(s);
         statusBar.refresh();
         setStatus(tr("status.textZoom", Math.round(z * 100)));
     }
@@ -13149,7 +9682,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.noSnippets"));
             return;
         }
-        snippetPalette.show(stage);
+        navigation.snippetPalette.show(stage);
     }
 
     /** Opens (creating from a template if needed) the user snippet file for the active language. */
@@ -13162,7 +9695,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Files.createDirectories(file.getParent());
                 Files.writeString(file, USER_SNIPPET_TEMPLATE);
             }
-            openPath(file);
+            fileWorkflows.openPath(file);
             setStatus(tr("status.editingSnippets", lang));
         } catch (IOException e) {
             setStatus(tr("status.snippetOpenFailed", e.getMessage()));
@@ -13181,139 +9714,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- New file of a known type ("New ▸ …") -----------------------------------------------------
 
-    /**
-     * The Project tree's "New ▸ &lt;type&gt;" flow: prompt for a name (prefilled with the type's
-     * suggestion), write the file into {@code dir}, and open it at the type's caret position.
-     *
-     * <p>Deliberately separate from the template wizard: this is the IDE-standard "give me a Python
-     * file" gesture, where a picker plus a variable form would be four interactions for one file. All
-     * of the deciding — what the typed name means, where it lands, what goes in it — is the pure
-     * {@link com.editora.template.NewFileContent}, so this method only prompts, writes and reports.
-     */
-    private void newFileOfType(java.nio.file.Path dir, com.editora.template.NewFileType type) {
-        if (dir == null || type == null) {
-            return;
-        }
-        // The folder is in the prompt, not just the title: from the palette it comes from the active
-        // file rather than from something the user just clicked, so "which folder?" is a real question.
-        promptText(
-                tr("newfile.prompt.title", ProjectPanel.labelFor(type)),
-                tr("newfile.prompt.label", homeCollapsed(dir.toString())),
-                type.suggestedFileName(),
-                input -> createFileOfType(dir, type, input));
-    }
-
-    /** Writes the planned file and opens it; reports (without creating anything) on any refusal. */
-    private void createFileOfType(java.nio.file.Path dir, com.editora.template.NewFileType type, String input) {
-        // A Java file's package comes from where it is being created, so "New ▸ Class" in
-        // src/main/java/demo writes `package demo;` the way an IDE does — the folder already knows.
-        String basePackage = type.isJava() ? com.editora.template.NewFileContent.packageFor(dir) : "";
-        com.editora.template.NewFileContent.Plan plan =
-                com.editora.template.NewFileContent.plan(type, input, basePackage);
-        if (plan == null) {
-            setError(tr("status.newfile.invalidName"));
-            return;
-        }
-        // Re-check containment against the resolved path even though plan() already refuses `..` and
-        // absolute names — the same belt-and-braces the template writer applies, since this is the one
-        // place a typed string becomes a file.
-        java.nio.file.Path target = dir.resolve(plan.relativePath()).normalize();
-        if (!target.startsWith(dir.normalize())) {
-            setError(tr("status.newfile.invalidName"));
-            return;
-        }
-        if (java.nio.file.Files.exists(target)) {
-            setError(tr("status.newfile.exists", plan.fileName()));
-            return;
-        }
-        com.editora.template.NewFileContent.Rendered rendered =
-                com.editora.template.NewFileContent.render(type, plan.baseName(), plan.packageName());
-        try {
-            if (target.getParent() != null) {
-                java.nio.file.Files.createDirectories(target.getParent());
-            }
-            java.nio.file.Files.writeString(target, rendered.text());
-        } catch (java.io.IOException e) {
-            setError(tr("status.newfile.failed", e.getMessage()));
-            return;
-        }
-        openAndPlaceCaret(target, rendered.caret());
-        if (projectPanel != null) {
-            projectPanel.refreshTree();
-        }
-        setStatus(tr("status.newfile.created", plan.fileName()));
-    }
-
-    /**
-     * {@code file.newFileOfType}: the keyboard route to the same catalog — pick a type, then name it.
-     * Creates in {@link #defaultNewDir()} (the active file's folder, else the project root), since the
-     * palette has no folder context.
-     */
-    private void newFileOfTypePicker() {
-        QuickOpen<com.editora.template.NewFileType> picker = new QuickOpen<>(
-                tr("newfile.picker.title"),
-                tr("newfile.picker.prompt"),
-                () -> new ArrayList<>(com.editora.template.NewFileCatalog.all()),
-                ProjectPanel::labelFor,
-                t -> newFileTypeDetail(t),
-                t -> newFileOfType(defaultNewDir(), t));
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** A picker row's detail line: the category it lives under, and the file name it suggests. */
-    private static String newFileTypeDetail(com.editora.template.NewFileType type) {
-        String category = com.editora.template.NewFileCatalog.categoryOf(type);
-        String suggested = type.suggestedFileName();
-        if (category == null) {
-            return suggested;
-        }
-        String categoryLabel = tr("newfile.category." + category);
-        return suggested.isEmpty() ? categoryLabel : categoryLabel + " · " + suggested;
-    }
-
     // --- File templates --------------------------------------------------------------------------
-
-    /**
-     * Picks a template, runs the variable-entry wizard (if it has any unknown variables), then creates
-     * the file(s). {@code targetDir} {@code null} = a new untitled in-editor buffer (single-file only);
-     * non-null = write the file(s) into that folder and open the primary one.
-     */
-    private void newFromTemplate(java.nio.file.Path targetDir) {
-        newFromTemplate(targetDir, t -> true, null);
-    }
-
-    /**
-     * As above, but restricted to templates matching {@code filter} and calling {@code onCreated} with the
-     * folder that received the files.
-     *
-     * <p>The hook is what "New Project" needs: the generation, the variable wizard and the target-folder
-     * field are all already right for scaffolding a tree — the only thing missing was registering the result
-     * as a project afterwards, so that is threaded through rather than duplicating the flow.
-     */
-    private void newFromTemplate(
-            java.nio.file.Path targetDir,
-            java.util.function.Predicate<com.editora.template.Template> filter,
-            java.util.function.Consumer<java.nio.file.Path> onCreated) {
-        List<com.editora.template.Template> all =
-                templates.all().stream().filter(filter).toList();
-        if (all.isEmpty()) {
-            setStatus(tr("status.noTemplates"));
-            return;
-        }
-        QuickOpen<com.editora.template.Template> picker = new QuickOpen<>(
-                tr("template.picker.title"),
-                tr("template.picker.prompt"),
-                () -> new ArrayList<>(all),
-                com.editora.template.Template::name,
-                com.editora.template.Template::description,
-                t -> beginTemplate(t, targetDir, onCreated));
-        // Wider than the default picker + a taller minimum: template descriptions are long, so the
-        // default 620px clipped them (and showed a horizontal scrollbar).
-        picker.setPreferredSize(820, 8);
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
 
     /**
      * {@code project.editSettings}: opens this project's committed {@code .editora/settings.json}, seeding an
@@ -13334,329 +9735,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 java.nio.file.Files.createDirectories(file.getParent());
                 java.nio.file.Files.writeString(file, tr("project.settings.template"));
             }
-            openPath(file);
+            fileWorkflows.openPath(file);
             lspCoordinator.reloadProjectSettings(); // an edit here should take effect without a restart
         } catch (java.io.IOException e) {
             setError(tr("status.project.settingsFailed", e.getMessage()));
         }
     }
-
-    /**
-     * {@code project.newFromTemplate}: scaffolds a new project from a multi-file template and opens it.
-     *
-     * <p>Reuses the ordinary template flow — the picker, the variable wizard and its target-folder field
-     * already do the generation correctly — and only adds what was actually missing: registering the folder
-     * as a project and opening its window. Restricted to multi-file templates because a project is a tree; a
-     * single-file template produces a lone file, which is what {@code template.new} is already for.
-     */
-    private void newProjectFromTemplate() {
-        if (!projectsEnabled()) {
-            return; // the palette already hides project.* when the feature is off
-        }
-        newFromTemplate(defaultNewDir(), com.editora.template.Template::isMultiFile, dir -> {
-            Project project = projects.createOrGet(dir.getFileName().toString(), dir);
-            projects.save();
-            setStatus(tr("status.project.createdFromTemplate", project.name()));
-            if (windowManager != null) {
-                windowManager.openOrFocus(project);
-            }
-        });
-    }
-
-    /** Discovers the template's unknown variables; prompts for them via a wizard, else applies directly. */
-    private void beginTemplate(
-            com.editora.template.Template t,
-            java.nio.file.Path targetDir,
-            java.util.function.Consumer<java.nio.file.Path> onCreated) {
-        List<com.editora.template.TemplateEngine.TemplateVar> vars;
-        if (t.isMultiFile()) {
-            List<String> texts = new ArrayList<>();
-            for (com.editora.template.TemplateFile f : t.files()) {
-                texts.add(f.path());
-                texts.add(f.body());
-            }
-            vars = com.editora.template.TemplateEngine.discoverVariables(texts.toArray(new String[0]));
-        } else {
-            // The file-name pattern's own ${baseName}/${fileName}/${extension} can't be derived for a new
-            // file, so prompt for them (the body's stay auto-derived) — otherwise ${baseName:Main}.java
-            // silently used its default and the user was never asked for the name.
-            vars = com.editora.template.TemplateEngine.discoverVariablesForNewFile(t.fileName(), t.body());
-        }
-        // Fast path: a variable-less, single-file template invoked with no folder context (palette / toolbar)
-        // creates an untitled scratch buffer immediately — no wizard. A multi-file template always writes to
-        // disk, so it goes through the wizard (to offer the target folder) even with no variables.
-        if (vars.isEmpty() && targetDir == null && !t.isMultiFile()) {
-            applyTemplate(t, null, java.util.Map.of(), onCreated);
-            return;
-        }
-
-        VBox body = new VBox(8);
-        // Optional target-folder field (prefilled from the folder context — e.g. the right-clicked project
-        // folder). Left blank, a single-file template opens as an untitled buffer (Save prompts for a
-        // location); filled (typed or Browse), the file(s) are written into that folder, creating it if needed.
-        TextField folderField = new TextField(targetDir == null ? "" : targetDir.toString());
-        folderField.setPromptText(tr("template.wizard.folderPrompt"));
-        folderField.setPrefColumnCount(28);
-        com.editora.command.TextInputKeymap.install(folderField, keymap);
-        Button browse = new Button(tr("dialog.clone.browse"));
-        browse.setFocusTraversable(false);
-        browse.setOnAction(e -> {
-            DirectoryChooser chooser = new DirectoryChooser();
-            chooser.setTitle(tr("template.wizard.folderTitle"));
-            java.io.File init = templateFolderChooserDir(folderField.getText());
-            if (init != null) {
-                chooser.setInitialDirectory(init);
-            }
-            java.io.File dir = chooser.showDialog(stage);
-            if (dir != null) {
-                folderField.setText(dir.toString());
-            }
-        });
-        HBox folderRow = new HBox(6, folderField, browse);
-        HBox.setHgrow(folderField, Priority.ALWAYS);
-        body.getChildren().addAll(new Label(tr("template.wizard.folder")), folderRow);
-
-        java.util.LinkedHashMap<String, TextField> fields = new java.util.LinkedHashMap<>();
-        for (var v : vars) {
-            TextField field = new TextField(v.defaultValue());
-            field.setPrefColumnCount(28);
-            com.editora.command.TextInputKeymap.install(field, keymap);
-            fields.put(v.name(), field);
-            body.getChildren().addAll(new Label(v.name()), field);
-        }
-        // Focus the first variable (the thing most likely to be edited), else the folder field.
-        TextField initialFocus =
-                fields.isEmpty() ? folderField : fields.values().iterator().next();
-        OverlayInput.show(
-                overlayHost,
-                tr("template.wizard.title"),
-                body,
-                initialFocus,
-                tr("dialog.template.create"),
-                null,
-                () -> {
-                    java.util.LinkedHashMap<String, String> answers = new java.util.LinkedHashMap<>();
-                    fields.forEach((name, f) -> answers.put(name, f.getText()));
-                    // Blank → null (untitled buffer / defaultNewDir for multi-file); a relative path resolves
-                    // against the folder context, else the default new-file dir; ~ expands to home.
-                    java.nio.file.Path base = targetDir != null ? targetDir : defaultNewDir();
-                    java.nio.file.Path dir = com.editora.config.PathKeys.resolveUserInput(
-                            folderField.getText(), base, System.getProperty("user.home"));
-                    applyTemplate(t, dir, answers, onCreated);
-                },
-                null,
-                false);
-    }
-
-    /** The folder a template-wizard folder chooser should open at: the typed folder if it exists, walking up
-     *  to the nearest existing ancestor, else the default new-file directory. Null only if nothing exists. */
-    private java.io.File templateFolderChooserDir(String current) {
-        java.nio.file.Path p =
-                com.editora.config.PathKeys.resolveUserInput(current, defaultNewDir(), System.getProperty("user.home"));
-        if (p == null) {
-            p = defaultNewDir();
-        }
-        while (p != null && !java.nio.file.Files.isDirectory(p)) {
-            p = p.getParent();
-        }
-        return p == null ? null : p.toFile();
-    }
-
-    /** Renders {@code t} with {@code answers} and creates the file(s) (untitled buffer or written to disk). */
-    private void applyTemplate(
-            com.editora.template.Template t,
-            java.nio.file.Path targetDir,
-            java.util.Map<String, String> answers,
-            java.util.function.Consumer<java.nio.file.Path> onCreated) {
-        Settings s = config.getSettings();
-        String author = s.getAuthorName();
-        String projectName = activeProjectName();
-        String packageName = "";
-        java.time.LocalDateTime now = java.time.LocalDateTime.now();
-
-        if (t.isMultiFile()) {
-            applyMultiFileTemplate(
-                    t,
-                    targetDir != null ? targetDir : defaultNewDir(),
-                    answers,
-                    author,
-                    projectName,
-                    packageName,
-                    now,
-                    onCreated);
-            return;
-        }
-        // Resolve the file name first (so the body's ${fileName}/${baseName}/${extension} are correct).
-        com.editora.template.TemplateVariableResolver pre = new com.editora.template.TemplateVariableResolver(
-                answers, author, projectName, packageName, "", targetDir == null ? "" : targetDir.toString(), "", now);
-        String fileName = com.editora.template.TemplateEngine.expand(t.fileName(), pre);
-        if (fileName.isBlank()) {
-            fileName = "untitled";
-        }
-        java.nio.file.Path target = null;
-        if (targetDir != null) {
-            // Contain the file name to targetDir, exactly as the multi-file path does via resolveTargetPath:
-            // a `../…` or absolute fileName pattern (from a malicious/imported template) must not escape and
-            // create files anywhere writable (a shell rc, an autostart entry, a git hook).
-            java.nio.file.Path resolved = targetDir.resolve(fileName).normalize();
-            if (!resolved.startsWith(targetDir.normalize())) {
-                setStatus(tr("status.templatePathEscape"));
-                return;
-            }
-            target = resolved;
-        }
-        com.editora.template.TemplateVariableResolver vars = new com.editora.template.TemplateVariableResolver(
-                answers,
-                author,
-                projectName,
-                packageName,
-                fileName,
-                targetDir == null ? "" : targetDir.toString(),
-                target == null ? "" : target.toString(),
-                now);
-        com.editora.snippet.ParsedSnippet parsed = com.editora.template.TemplateEngine.substitute(t.body(), vars);
-
-        if (targetDir == null) {
-            EditorBuffer b = new EditorBuffer();
-            b.setDisplayName(fileName); // tab title + extension-based grammar; path stays null → Save-As
-            addBuffer(b, true);
-            b.applyTemplate(parsed);
-            setStatus(tr("status.templateCreated", fileName));
-        } else if (writeTemplateFile(target, parsed)) {
-            openAndPlaceCaret(target, finalCaret(parsed));
-            if (projectPanel != null) {
-                projectPanel.refreshTree();
-            }
-            setStatus(tr("status.templateCreated", fileName));
-        }
-    }
-
-    private void applyMultiFileTemplate(
-            com.editora.template.Template t,
-            java.nio.file.Path dir,
-            java.util.Map<String, String> answers,
-            String author,
-            String projectName,
-            String packageName,
-            java.time.LocalDateTime now,
-            java.util.function.Consumer<java.nio.file.Path> onCreated) {
-        com.editora.template.TemplateVariableResolver vars = new com.editora.template.TemplateVariableResolver(
-                answers, author, projectName, packageName, "", dir.toString(), "", now);
-        java.nio.file.Path primary = null;
-        int primaryCaret = 0;
-        for (com.editora.template.TemplateFile f : t.files()) {
-            java.nio.file.Path target = com.editora.template.TemplateEngine.resolveTargetPath(dir, f.path(), vars);
-            if (target == null) {
-                setStatus(tr("status.templatePathEscape"));
-                continue;
-            }
-            com.editora.snippet.ParsedSnippet parsed = com.editora.template.TemplateEngine.substitute(f.body(), vars);
-            if (writeTemplateFile(target, parsed) && primary == null) {
-                primary = target;
-                primaryCaret = finalCaret(parsed);
-            }
-        }
-        if (primary != null) {
-            openAndPlaceCaret(primary, primaryCaret);
-            if (projectPanel != null) {
-                projectPanel.refreshTree();
-            }
-            setStatus(tr("status.templateCreated", primary.getFileName().toString()));
-            if (onCreated != null) {
-                onCreated.accept(dir); // only after at least one file landed — an empty folder is not a project
-            }
-        }
-    }
-
-    /** Writes a rendered template file (UTF-8), refusing to overwrite an existing file. */
-    private boolean writeTemplateFile(java.nio.file.Path target, com.editora.snippet.ParsedSnippet parsed) {
-        if (java.nio.file.Files.exists(target)) {
-            setStatus(tr("status.templateExists", target.getFileName()));
-            return false;
-        }
-        try {
-            if (target.getParent() != null) {
-                java.nio.file.Files.createDirectories(target.getParent());
-            }
-            java.nio.file.Files.writeString(target, parsed.text());
-            return true;
-        } catch (java.io.IOException e) {
-            setStatus(tr("status.templateWriteFailed", e.getMessage()));
-            return false;
-        }
-    }
-
-    /** Opens {@code target} and places the caret at the template's {@code ${cursor}} offset. */
-    private void openAndPlaceCaret(java.nio.file.Path target, int caret) {
-        openPath(target);
-        EditorBuffer b = activeBuffer();
-        if (b != null) {
-            CodeArea a = b.getArea();
-            int c = Math.max(0, Math.min(caret, a.getLength()));
-            javafx.application.Platform.runLater(() -> {
-                a.moveTo(c);
-                a.requestFollowCaret();
-            });
-        }
-    }
-
-    /** The absolute offset of the template's {@code $0} ({@code ${cursor}}) stop, else end of text. */
-    private static int finalCaret(com.editora.snippet.ParsedSnippet parsed) {
-        for (com.editora.snippet.TabStop stop : parsed.stops()) {
-            if (stop.isFinal()) {
-                return stop.ranges().get(0)[0];
-            }
-        }
-        return parsed.text().length();
-    }
-
-    /** The active project's name for {@code ${projectName}}, or {@code ""} when there is none. */
-    private String activeProjectName() {
-        Project p = projects == null ? null : projects.active();
-        return p == null ? "" : p.name();
-    }
-
-    /** The folder a "new in folder" template defaults to: the active file's dir, else project root, else home. */
-    private java.nio.file.Path defaultNewDir() {
-        EditorBuffer b = activeBuffer();
-        if (b != null && b.getPath() != null && b.getPath().getParent() != null) {
-            return b.getPath().getParent();
-        }
-        Project p = projects == null ? null : projects.active();
-        if (p != null) {
-            return java.nio.file.Path.of(p.root());
-        }
-        return java.nio.file.Path.of(System.getProperty("user.home", "."));
-    }
-
-    /** Opens (creating from an example if needed) a user template file under {@code <configDir>/templates}. */
-    private void editUserTemplates() {
-        java.nio.file.Path file = templates.userDir().resolve("example.json");
-        try {
-            if (!java.nio.file.Files.exists(file)) {
-                java.nio.file.Files.createDirectories(file.getParent());
-                java.nio.file.Files.writeString(file, USER_TEMPLATE_EXAMPLE);
-            }
-            openPath(file);
-            setStatus(tr("status.editingTemplates"));
-        } catch (java.io.IOException e) {
-            setStatus(tr("status.templateOpenFailed", e.getMessage()));
-        }
-    }
-
-    private static final String USER_TEMPLATE_EXAMPLE = """
-            {
-              "name": "My Template",
-              "description": "A starter template — edit it, then run \\"Template: Reload Templates\\"",
-              "language": "java",
-              "fileName": "${className:Example}.java",
-              "body": [
-                "public class ${className:Example} {",
-                "    ${cursor}",
-                "}"
-              ]
-            }
-            """;
 
     // ---- Personal Notes ----
 
@@ -13700,11 +9784,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 false);
     }
 
-    /**
-     * Zips the active config directory into a timestamped {@code .zip} in the user's home directory
-     * (Settings → Advanced "Export configuration", and the {@code config.export} command). Shows the
-     * resulting path in a confirmation dialog since the trigger lives in the Settings window.
-     */
     /** Opens the Debug Log window (captured java.util.logging output + uncaught exceptions). Backs the
      *  {@code view.debugLog} command and the Settings → Advanced "Show Debug Log" button. */
     private void showDebugLog() {
@@ -13733,794 +9812,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /**
-     * Exports the active Mermaid diagram (.mmd file) to SVG/PNG/PDF via mmdc. Asks for a destination
-     * (format inferred from the chosen extension), renders off-thread, and reports the result.
-     */
-    /**
-     * Exports the active buffer's source text to a syntax-highlighted, light-themed PDF (any text file).
-     * Honors the Settings toggles (line numbers, syntax highlighting) + page size. Runs off the FX thread.
-     */
-    private void exportCodePdf() {
-        EditorBuffer b = activeBuffer();
-        if (b == null) {
-            setStatus(tr("status.noFileOpen"));
-            return;
-        }
-        String base = bufferBaseName(b);
-        java.io.File f = choosePdfDestination(base);
-        if (f == null) {
-            return;
-        }
-        Settings s = config.getSettings();
-        setStatus(tr("status.pdf.exporting"));
-        pdfService.exportCode(
-                b.getContent(),
-                grammarKey(b),
-                s.isPdfSyntaxHighlighting(),
-                s.isPdfLineNumbers(),
-                s.getTabSize(),
-                s.getPdfPageSize(),
-                f.toPath(),
-                r -> reportPdf(r, f));
-    }
-
-    /**
-     * Exports the active buffer's rendered preview to PDF: a Mermaid {@code .mmd} diagram via mmdc's
-     * native vector PDF, or a Markdown document via the native PDF writer. No-op for non-previewable buffers.
-     */
-    private void exportPreviewPdf() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.hasPreview()) {
-            setStatus(tr("status.pdf.noPreview"));
-            return;
-        }
-        java.io.File f = choosePdfDestination(bufferBaseName(b));
-        if (f == null) {
-            return;
-        }
-        setStatus(tr("status.pdf.exporting"));
-        String pageSize = config.getSettings().getPdfPageSize();
-        java.util.function.Consumer<com.editora.pdf.PdfExportService.Result> report = r -> reportPdf(r, f);
-        if (b.isMarkdown()) {
-            java.nio.file.Path baseDir =
-                    b.getPath() == null ? null : b.getPath().getParent();
-            pdfService.exportMarkdown(
-                    b.getContent(), baseDir, pageSize, mermaid.mmdcCommandOrNull(), f.toPath(), report);
-        } else if (b.isDiagram()) { // Mermaid (.mmd) — CLI render to PDF
-            mermaid.exportDiagram(
-                    b.getContent(),
-                    f.toPath(),
-                    r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
-        } else if (b.isRenderedDiagram()) { // Graphviz DOT / PlantUML — CLI render to PDF
-            diagram.exportToPath(
-                    b.diagramKind(),
-                    b.getContent(),
-                    f.toPath(),
-                    r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
-        } else if (b.isSvg()) { // rasterize the SVG source and embed it as a PDF page
-            byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(
-                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            if (png == null) {
-                report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
-                return;
-            }
-            pdfService.exportImages(java.util.List.of(png), pageSize, f.toPath(), report);
-        } else if (b.isTypst()) { // Typst — native CLI render straight to a (multi-page) PDF
-            typst.exportToPath(
-                    b.getContent(),
-                    b.getPath(),
-                    f.toPath(),
-                    r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
-        } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
-            java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
-            if (chunks == null || chunks.isEmpty()) {
-                report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
-                return;
-            }
-            pdfService.exportImages(chunks, pageSize, f.toPath(), report);
-        }
-    }
-
-    /**
-     * Copies the active buffer's rendered preview to the clipboard. Markdown lands as rich text (a
-     * {@code text/html} flavor beside the plain text), so it pastes formatted into Word / Teams / Gmail;
-     * a diagram copies its source. The palette twin of the preview's right-click Copy.
-     */
-    private void copyPreview() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.hasPreview()) {
-            setStatus(tr("status.preview.none"));
-            return;
-        }
-        b.copyPreviewToClipboard();
-        setStatus(tr(b.isMarkdown() ? "status.preview.copiedRich" : "status.preview.copied"));
-    }
-
-    /** Copies the active Markdown buffer's preview as HTML <em>markup</em> (for pasting into an HTML file). */
-    private void copyPreviewHtml() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.copyPreviewHtmlSource()) {
-            setStatus(tr("status.html.notMarkdown"));
-            return;
-        }
-        setStatus(tr("status.preview.copiedHtml"));
-    }
-
-    /** Exports the active Markdown buffer's rendered preview to a standalone HTML file. */
-    private void exportPreviewHtml() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isMarkdown()) {
-            setStatus(tr("status.html.notMarkdown"));
-            return;
-        }
-        java.io.File f = chooseHtmlDestination(bufferBaseName(b));
-        if (f == null) {
-            return;
-        }
-        try {
-            String base = bufferBaseName(b);
-            int dot = base.lastIndexOf('.');
-            String title = dot > 0 ? base.substring(0, dot) : base;
-            String html = com.editora.editor.MarkdownHtmlExport.toHtml(
-                    b.getContent(), title, config.getSettings().isMathSupport());
-            java.nio.file.Files.writeString(f.toPath(), html);
-            setStatus(tr("status.html.exported", f.toString()));
-            openPath(f.toPath()); // show the generated HTML in a tab
-        } catch (Exception ex) {
-            setStatus(tr("status.html.exportFailed", String.valueOf(ex.getMessage())));
-        }
-    }
-
-    /** A Save dialog defaulting to {@code <base-without-ext>.html}. */
-    private java.io.File chooseHtmlDestination(String base) {
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("dialog.htmlExport.title"));
-        int dot = base == null ? -1 : base.lastIndexOf('.');
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + ".html");
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("HTML", "*.html"));
-        return chooser.showSaveDialog(stage);
-    }
-
-    /**
-     * The buffer's file name — from its on-disk path when saved, else its suggested display name, else a
-     * default. Drives the syntax-highlighting grammar lookup and the default export file name (PDF, Mermaid).
-     * ({@code EditorBuffer.getDisplayName()} is null for a saved file, so the path must be consulted.)
-     */
-    private String bufferBaseName(EditorBuffer b) {
-        if (b.getPath() != null) {
-            return b.getPath().getFileName().toString();
-        }
-        String dn = b.getDisplayName();
-        return dn == null || dn.isBlank() ? "document" : dn;
-    }
-
-    /**
-     * The key used to resolve a buffer's grammar for export/print — its <em>full path</em> (so
-     * location-based types like {@code ~/.ssh/config} or {@code /etc/hosts} resolve, matching the live
-     * editor), or its display base name for an unsaved buffer.
-     */
-    private String grammarKey(EditorBuffer b) {
-        return b.getPath() != null ? b.getPath().toString() : bufferBaseName(b);
-    }
-
-    /** A Save dialog defaulting to {@code <base-without-ext>.pdf}. */
-    private java.io.File choosePdfDestination(String base) {
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("dialog.pdfExport.title"));
-        int dot = base == null ? -1 : base.lastIndexOf('.');
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + ".pdf");
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("PDF", "*.pdf"));
-        return chooser.showSaveDialog(stage);
-    }
-
-    /** Exports the active Markwhen buffer's parsed timeline to a JSON file (preview menu + palette). */
-    private void exportMarkwhenJson() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isMarkwhen()) {
-            setStatus(tr("status.markwhen.notMarkwhen"));
-            return;
-        }
-        String base = bufferBaseName(b);
-        int dot = base == null ? -1 : base.lastIndexOf('.');
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "timeline" : base)) + ".json");
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("JSON", "*.json"));
-        if (b.getPath() != null && b.getPath().getParent() != null && isLocalBuffer(b)) {
-            chooser.setInitialDirectory(b.getPath().getParent().toFile());
-        }
-        java.io.File f = chooser.showSaveDialog(stage);
-        if (f == null) {
-            return;
-        }
-        try {
-            String json =
-                    com.editora.markwhen.MarkwhenJson.toJson(com.editora.markwhen.MarkwhenParser.parse(b.getContent()));
-            java.nio.file.Files.writeString(f.toPath(), json);
-            setStatus(tr("status.markwhen.jsonExported", f.getName()));
-        } catch (java.io.IOException e) {
-            setStatus(tr("status.markwhen.exportFailed", e.getMessage() == null ? e.toString() : e.getMessage()));
-        }
-    }
-
-    /** Toggles the active Markwhen buffer's preview between the timeline and calendar renderers. */
-    private void toggleMarkwhenView() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isMarkwhen()) {
-            setStatus(tr("status.markwhen.notMarkwhen"));
-            return;
-        }
-        b.toggleMarkwhenView();
-        setStatus(tr(
-                b.getMarkwhenView() == EditorBuffer.MarkwhenView.CALENDAR
-                        ? "status.markwhen.viewCalendar"
-                        : "status.markwhen.viewTimeline"));
-    }
-
-    /** Flips a structured (JSON/YAML/TOML) preview between the tree and the OpenAPI-docs view. */
-    private void toggleStructuredView() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isStructured()) {
-            setStatus(tr("status.structured.notStructured"));
-            return;
-        }
-        b.toggleStructuredView();
-        setStatus(tr(b.isStructuredOpenApi() ? "status.structured.viewToggled" : "status.structured.notOpenApi"));
-    }
-
-    /** Flips a pom.xml preview between its Maven summary (the default) and the standard XML tree. */
-    private void togglePomView() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.isPom()) {
-            setStatus(tr("status.pom.notPom"));
-            return;
-        }
-        if (!b.togglePomView()) {
-            // The XML tree belongs to the structured-data preview; say which switch is missing rather than
-            // flipping into a view that isn't there.
-            setStatus(tr("status.pom.xmlPreviewOff"));
-            return;
-        }
-        setStatus(tr(b.isPomShowingXml() ? "status.pom.viewXml" : "status.pom.viewSummary"));
-    }
-
-    /** Persists the Markwhen buffer's preview renderer choice (TIMELINE default → removed). */
-    private void persistMarkwhenView(EditorBuffer buffer) {
-        Path file = buffer.getPath();
-        if (file == null) {
-            return;
-        }
-        java.util.Map<String, String> map = config.getWorkspaceState().getMarkwhenViews();
-        if (buffer.getMarkwhenView() == EditorBuffer.MarkwhenView.TIMELINE) {
-            map.remove(file.toString());
-        } else {
-            map.put(file.toString(), buffer.getMarkwhenView().name());
-        }
-        requestSave();
-    }
-
-    /** Reports a PDF export result: status + (on failure) an error dialog. */
-    private void reportPdf(com.editora.pdf.PdfExportService.Result r, java.io.File f) {
-        if (r.ok()) {
-            setStatus(tr("status.pdf.exported", f.toString()));
-        } else {
-            String msg = String.valueOf(r.message());
-            setStatus(tr("status.pdf.exportFailed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
-            err.initOwner(stage);
-            err.setTitle(tr("dialog.pdfExport.title"));
-            err.setHeaderText(tr("status.pdf.exportFailed", ""));
-            err.setContentText(msg);
-            err.showAndWait();
-        }
-    }
-
-    /** Exports the active Markdown preview to a MS Word {@code .docx} (Apache POI). */
-    private void exportPreviewDocx() {
-        exportPreviewOffice(true);
-    }
-
-    /** Exports the active Markdown preview to an OpenDocument Text {@code .odt} (hand-rolled). */
-    private void exportPreviewOdt() {
-        exportPreviewOffice(false);
-    }
-
-    private void exportPreviewOffice(boolean docx) {
-        EditorBuffer b = activeBuffer();
-        // Word/ODT render the Markdown document model — diagrams (.mmd) aren't supported, only Markdown.
-        if (b == null || !b.isMarkdown()) {
-            setStatus(tr("status.office.notMarkdown"));
-            return;
-        }
-        String ext = docx ? "docx" : "odt";
-        String filter = docx ? "Word" : "OpenDocument";
-        java.io.File f = chooseOfficeDestination(bufferBaseName(b), ext, filter);
-        if (f == null) {
-            return;
-        }
-        setStatus(tr("status.office.exporting"));
-        java.nio.file.Path baseDir = b.getPath() == null ? null : b.getPath().getParent();
-        java.util.List<String> mmdc = mermaid.mmdcCommandOrNull(); // ```mermaid blocks → diagram images
-        java.util.function.Consumer<com.editora.office.OfficeExportService.Result> cb = r -> reportOffice(r, f);
-        if (docx) {
-            officeService.exportDocx(b.getContent(), baseDir, mmdc, f.toPath(), cb);
-        } else {
-            officeService.exportOdt(b.getContent(), baseDir, mmdc, f.toPath(), cb);
-        }
-    }
-
-    /** A Save dialog defaulting to {@code <base-without-ext>.<ext>}. */
-    private java.io.File chooseOfficeDestination(String base, String ext, String filterName) {
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("dialog.officeExport.title"));
-        int dot = base == null ? -1 : base.lastIndexOf('.');
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + "." + ext);
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter(filterName, "*." + ext));
-        return chooser.showSaveDialog(stage);
-    }
-
-    /** Reports an office export result: status + (on failure) an error dialog. */
-    private void reportOffice(com.editora.office.OfficeExportService.Result r, java.io.File f) {
-        if (r.ok()) {
-            setStatus(tr("status.office.exported", f.toString()));
-        } else {
-            String msg = String.valueOf(r.message());
-            setStatus(tr("status.office.exportFailed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
-            err.initOwner(stage);
-            err.setTitle(tr("dialog.officeExport.title"));
-            err.setHeaderText(tr("status.office.exportFailed", ""));
-            err.setContentText(msg);
-            err.showAndWait();
-        }
-    }
-
-    /**
-     * Prints the active buffer's source code via the native print dialog. Honors the (shared with PDF)
-     * "include line numbers" + "syntax highlighting" settings; always light. Off the FX thread.
-     */
-    private void printCode() {
-        EditorBuffer b = activeBuffer();
-        if (b == null) {
-            setStatus(tr("status.noFileOpen"));
-            return;
-        }
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
-        if (job == null) {
-            setStatus(tr("status.print.noPrinter"));
-            return;
-        }
-        Settings s = config.getSettings();
-        setStatus(tr("status.print.preparing"));
-        printService.prepareCode(
-                b.getContent(),
-                grammarKey(b),
-                s.isPdfSyntaxHighlighting(),
-                s.isPdfLineNumbers(),
-                s.getTabSize(),
-                prepared -> openPrintPreview(job, prepared));
-    }
-
-    /**
-     * Prints the active buffer's rendered preview: a Mermaid {@code .mmd} diagram (via mmdc) or a
-     * Markdown document (native nodes, block-aware pagination). No-op for non-previewable buffers.
-     */
-    private void printPreview() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || !b.hasPreview()) {
-            setStatus(tr("status.print.noPreview"));
-            return;
-        }
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
-        if (job == null) {
-            setStatus(tr("status.print.noPrinter"));
-            return;
-        }
-        setStatus(tr("status.print.preparing"));
-        java.util.function.Consumer<com.editora.print.PrintService.Prepared> open =
-                prepared -> openPrintPreview(job, prepared);
-        if (b.isMarkdown()) {
-            java.nio.file.Path baseDir =
-                    b.getPath() == null ? null : b.getPath().getParent();
-            printService.prepareMarkdown(b.getContent(), baseDir, open);
-        } else if (b.isDiagram()) { // Mermaid — CLI render
-            printService.prepareMermaid(b.getContent(), mermaid.mmdcCommandOrNull(), appThemeDark(), open);
-        } else if (b.isRenderedDiagram()) { // Graphviz DOT / PlantUML — CLI render to a temp PNG, then paginate
-            printDiagramViaImage(b, job);
-        } else if (b.isSvg()) { // rasterize the SVG source, paginate as image pages
-            byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(
-                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            if (png == null) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
-                return;
-            }
-            printService.prepareImages(java.util.List.of(png), open);
-        } else if (b.isTypst()) { // Typst — CLI render to page PNGs, paginate as image pages
-            typst.renderPages(b.getContent(), b.getPath(), pages -> {
-                if (pages == null || pages.isEmpty()) {
-                    openPrintPreview(
-                            job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
-                    return;
-                }
-                printService.prepareImages(pages, open);
-            });
-        } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
-            java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
-            if (chunks == null || chunks.isEmpty()) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
-                return;
-            }
-            printService.prepareImages(chunks, open);
-        }
-    }
-
-    /** Prints a DOT/PlantUML diagram by rendering it to a temporary PNG via its CLI, then paginating the image
-     *  (there's no native-vector print path for the diagram tools, unlike Markdown). */
-    private void printDiagramViaImage(EditorBuffer b, javafx.print.PrinterJob job) {
-        java.nio.file.Path tmp;
-        try {
-            tmp = java.nio.file.Files.createTempFile("editora-diagram", ".png");
-        } catch (java.io.IOException e) {
-            openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
-            return;
-        }
-        diagram.exportToPath(b.diagramKind(), b.getContent(), tmp, r -> {
-            if (!r.ok()) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, r.message()));
-                return;
-            }
-            try {
-                byte[] png = java.nio.file.Files.readAllBytes(tmp);
-                java.nio.file.Files.deleteIfExists(tmp);
-                printService.prepareImages(java.util.List.of(png), prepared -> openPrintPreview(job, prepared));
-            } catch (java.io.IOException e) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
-            }
-        });
-    }
-
-    /** Opens the Print Preview window for a prepared document, or reports a preparation failure. */
-    private void openPrintPreview(javafx.print.PrinterJob job, com.editora.print.PrintService.Prepared prepared) {
-        if (!prepared.ok()) {
-            reportPrint(new com.editora.print.PrintService.Result(false, prepared.error()));
-            return;
-        }
-        new PrintPreview(
-                        stage,
-                        job,
-                        prepared.paginator(),
-                        this::reportPrint,
-                        () -> setStatus(tr("status.print.printing")),
-                        () -> setStatus(tr("status.print.cancelled")))
-                .show();
-    }
-
-    /** Reports a print result: status + (on failure) an error dialog. */
-    private void reportPrint(com.editora.print.PrintService.Result r) {
-        if (r.ok()) {
-            setStatus(tr("status.print.done"));
-        } else {
-            String msg = String.valueOf(r.message());
-            setStatus(tr("status.print.failed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
-            err.initOwner(stage);
-            err.setTitle(tr("command.editor.print"));
-            err.setHeaderText(tr("status.print.failed", ""));
-            err.setContentText(msg);
-            err.showAndWait();
-        }
-    }
-
-    /** Persists a word to the shared personal dictionary, then drops every open buffer's memoized spell
-     *  verdicts — the word set is shared, but each buffer's overlay caches its own results, so "Add to
-     *  Dictionary" in one tab used to leave the word squiggled in the others for the rest of the session. */
-    private void addUserWordAndRefreshAll(String word) {
-        config.addUserWord(word);
-        // The user dictionary is shared app-wide (SharedConfig), so re-run the spell pass in EVERY window's
-        // tabs — otherwise another window's buffers keep the stale squiggle on the just-added word until it
-        // happens to apply a setting (#443). Mirrors broadcastSettingsApplied/broadcastMacrosChanged.
-        if (windowManager != null) {
-            windowManager.broadcastUserDictionaryChanged();
-        } else {
-            refreshSpellAllTabs();
-        }
-    }
-
     /** Re-runs the spell pass over every open buffer in this window (after the user dictionary changed). */
     void refreshSpellAllTabs() {
         for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null) {
                 b.refreshSpell();
-            }
-        }
-    }
-
-    private void applyViewSettings(EditorBuffer buffer) {
-        applyViewSettings(buffer, true);
-    }
-
-    private void applyViewSettings(EditorBuffer buffer, boolean resolvePathSettings) {
-        Settings s = config.getSettings();
-        int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
-        buffer.setFont(s.getFontFamily(), effectiveFont);
-        // Zen/Expert (per window, "focus modes") hide distraction-free chrome without clobbering the saved
-        // prefs; Simple UI mode additionally removes the whole gutter + minimap. All effective overlays.
-        // Expert keeps the full editor view — line numbers, ruler, current-line highlight, minimap — so those
-        // key on the real zen flag; only the whitespace guides follow the combined focus flag like Zen.
-        boolean zen = zenActive() || diffUiActive();
-        boolean focus = zen || expertActive();
-        boolean simple = simpleModeActive();
-        buffer.setColumnRulerVisible(Chrome.columnRuler(s.isShowColumnRuler(), zen));
-        buffer.setNoteIndicatorsVisible(s.isNotesSupport() && s.isShowNoteIndicators());
-        buffer.setLineHighlightOn(Chrome.lineHighlight(s.isHighlightCurrentLine(), zen));
-        buffer.setLineNumbersVisible(Chrome.lineNumbers(s.isShowLineNumbers(), zen, simple));
-        buffer.setMinimapVisible(Chrome.minimap(s.isShowMinimap(), zen, simple));
-        buffer.setWordWrap(s.isWordWrap());
-        buffer.setGutterVisible(Chrome.gutter(simple)); // Simple mode removes the entire gutter strip
-        if (simple) {
-            buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
-        }
-        buffer.setWhitespaceVisible(Chrome.whitespace(s.isShowWhitespace(), focus));
-        buffer.setTabSize(s.getTabSize());
-        buffer.setLineHighlightColor(EditorThemes.lineHighlightFor(s.getEditorTheme()));
-        buffer.setMinimapColors(
-                EditorThemes.minimapTextFor(s.getEditorTheme()), EditorThemes.minimapViewportFor(s.getEditorTheme()));
-        buffer.setFoldPreviewColors(
-                EditorThemes.editorBackgroundFor(s.getEditorTheme()),
-                EditorThemes.editorForegroundFor(s.getEditorTheme()));
-        buffer.setSpellLanguage(spellLanguageFor(buffer)); // per-file override, else the global default
-        buffer.setSpellCheckEnabled(s.isSpellCheck());
-        buffer.setUserDictionaryEnabled(s.isPersonalDictionary());
-        buffer.setTechnicalDictionaryEnabled(s.isTechnicalDictionary());
-        buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
-        buffer.setAiActionsEnabled(aiCoordinator.isActionsAvailable()); // floating selection Explain/Rewrite bar
-        buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
-        buffer.setBracketColorsEnabled(s.isBracketColors()); // bracket-pair colorization (rides the highlight)
-        buffer.setStructuredPreviewEnabled(s.isStructuredPreview()); // JSON/YAML/TOML tree + OpenAPI docs preview
-        buffer.setSvgPreviewEnabled(s.isSvgPreview()); // rendered image preview for .svg files
-        buffer.setTypstPreviewEnabled(s.isTypstSupport()); // multi-page rendered preview for .typ documents
-        buffer.setCrontabPreviewEnabled(s.isCrontabPreview()); // schedule decode + next runs for crontab files
-        buffer.setFstabPreviewEnabled(s.isFstabPreview()); // per-line mount decode for /etc/fstab files
-        buffer.setSystemdPreviewEnabled(s.isSystemdPreview()); // directive glosses + OnCalendar decode
-        buffer.setSshConfigPreviewEnabled(s.isSshConfigPreview()); // per-Host connection summary
-        buffer.setDockerfilePreviewEnabled(s.isDockerfilePreview()); // per-stage build digest
-        buffer.setGithubActionsPreviewEnabled(s.isGithubActionsPreview()); // workflow triggers + jobs digest
-        buffer.setPomPreviewEnabled(s.isPomPreview()); // Maven pom.xml summary (wins over the XML tree)
-        buffer.setStickyScrollEnabled(s.isStickyScroll()); // pinned enclosing-scope headers
-        if (buffer.isStructured() || buffer.isXml() || buffer.isSvg()) {
-            ensurePreviewControls(buffer); // attach/detach the 3-mode toggle as the structured/XML/SVG gate flips
-        }
-        buffer.setAutoRenameTag(s.isAutoRenameTag()); // paired-tag rename mirroring (html/xml buffers only)
-        buffer.setOnTypeFormattingEnabled(s.isLspOnTypeFormatting()); // #740 (inert without an LSP trigger set)
-        buffer.setLspPasteImportsEnabled(s.isLspPasteImports()); // #742 (inert without a jdtls session)
-        buffer.setSmartSemicolonEnabled(s.isLspSmartSemicolon()); // #746 (inert without a jdtls session)
-        buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
-        buffer.setFillColumn(s.getFillColumn());
-        buffer.setAutoFillEnabled(s.isAutoFill()); // break prose lines at the fill column as you type (prose only)
-        buffer.setAbbrevs(config.abbreviationMap(), s.isAbbrevMode()); // dictionary from abbreviations.json + mode
-        if (resolvePathSettings) {
-            applyEditorConfig(buffer); // .editorconfig overrides the global indent/EOL/ruler/charset (when on)
-        } else {
-            // A loading shell must not walk the filesystem on FX. prepareLoad supplies the resolved values.
-            applyResolvedEditorConfig(buffer, com.editora.editorconfig.EditorConfigProperties.EMPTY);
-        }
-    }
-
-    /** Whether {@code .editorconfig} support is enabled. */
-    private boolean editorConfigEnabled() {
-        return config.getSettings().isEditorConfigSupport();
-    }
-
-    /**
-     * Pushes the file's resolved {@code .editorconfig} properties onto {@code buffer} (indent style/size,
-     * EOL, ruler column from {@code max_line_length}, and write charset), or clears the overrides when the
-     * feature is off / the file is non-local / has no path. The save-time props are stored on the buffer
-     * for {@code writeBuffer}. Reuses {@link com.editora.editorconfig.EditorConfig#resolveFor}.
-     */
-    private void applyEditorConfig(EditorBuffer buffer) {
-        Path path = buffer.getPath();
-        if (!editorConfigEnabled() || path == null || !com.editora.vfs.Vfs.isLocal(path)) {
-            applyResolvedEditorConfig(buffer, com.editora.editorconfig.EditorConfigProperties.EMPTY);
-            return; // EOL override is left to a manual choice; tab size already comes from global settings
-        }
-        com.editora.editorconfig.EditorConfigProperties p = com.editora.editorconfig.EditorConfig.resolveFor(path);
-        applyResolvedEditorConfig(buffer, p);
-    }
-
-    /** Applies an already-resolved EditorConfig result without touching the filesystem. */
-    private void applyResolvedEditorConfig(
-            EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties properties) {
-        com.editora.editorconfig.EditorConfigProperties p =
-                properties == null ? com.editora.editorconfig.EditorConfigProperties.EMPTY : properties;
-        buffer.setEditorConfigProps(p);
-        applyEffectiveIndent(buffer, p);
-        if (p.insertSpaces() != null || p.tabWidth() != null || p.indentSize() != null) {
-            buffer.setTabSize(p.effectiveTabWidth(config.getSettings().getTabSize()));
-        }
-        if (p.endOfLine() != null) {
-            buffer.setEolOverride("crlf".equals(p.endOfLine()) ? "CRLF" : "lf".equals(p.endOfLine()) ? "LF" : null);
-        }
-        buffer.setRulerColumn(p.maxLineLength()); // null = default 80, OFF = hide
-        buffer.setCharsetOverride(p.charset());
-    }
-
-    /**
-     * Resolves the effective indent override for a buffer and pushes it via {@link EditorBuffer#setIndentOverride}.
-     * Precedence: a file's {@code .editorconfig} {@code indent_style} (when present) wins; else the global
-     * {@link Settings#getIndentStyle()} preference ({@code space}/{@code tab}); else {@code null} → per-file
-     * auto-detection ({@code Indenter.detectUnit}). For {@code space}, the size falls back to the global tab size
-     * when {@code .editorconfig} didn't specify {@code indent_size}.
-     */
-    private void applyEffectiveIndent(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties p) {
-        Boolean insertSpaces = p.insertSpaces();
-        Integer size = p.indentSize();
-        if (insertSpaces == null) {
-            String style = config.getSettings().getIndentStyle();
-            if ("space".equals(style)) {
-                insertSpaces = Boolean.TRUE;
-                if (size == null) {
-                    size = config.getSettings().getTabSize();
-                }
-            } else if ("tab".equals(style)) {
-                insertSpaces = Boolean.FALSE;
-            }
-            // "detect" leaves insertSpaces null → Indenter falls back to detectUnit
-        }
-        buffer.setIndentOverride(insertSpaces, size);
-    }
-
-    /**
-     * Opens the {@code .editorconfig} file governing the active buffer (the status-bar indicator's click action,
-     * also a palette command). Reports a status message when there's no file / no governing {@code .editorconfig}.
-     */
-    private void openActiveEditorConfig() {
-        EditorBuffer buffer = activeBuffer();
-        Path path = buffer == null ? null : buffer.getPath();
-        if (path == null || !com.editora.vfs.Vfs.isLocal(path)) {
-            setStatus(tr("status.editorConfig.none"));
-            return;
-        }
-        Path ec = com.editora.editorconfig.EditorConfig.nearestFile(path);
-        if (ec == null) {
-            setStatus(tr("status.editorConfig.none"));
-            return;
-        }
-        openPath(ec);
-    }
-
-    /** Re-applies (or clears) {@code .editorconfig} for every open buffer — init + on settings apply. */
-    private void applyEditorConfigSupport() {
-        if (!editorConfigEnabled()) {
-            com.editora.editorconfig.EditorConfig.clearCache();
-        }
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer buffer = bufferOf(tab);
-            if (buffer != null) {
-                applyEditorConfig(buffer);
-            }
-        }
-        if (statusBar != null) {
-            statusBar.refresh();
-        }
-    }
-
-    /** The spell-check language for a buffer: its per-file override (if any/valid), else the global default. */
-    private String spellLanguageFor(EditorBuffer buffer) {
-        String def = config.getSettings().getSpellLanguage();
-        Path p = buffer.getPath();
-        if (p == null) {
-            return def;
-        }
-        String override = config.getWorkspaceState().getSpellLanguages().get(p.toString());
-        return override != null && SpellDictionaries.isAvailable(override) ? override : def;
-    }
-
-    private void applyViewSettingsToAllBuffers(Settings settings) {
-        applyEditorTheme(settings.getEditorTheme());
-        applyChromeVisibility();
-        applyProjectSupport();
-        git.applySupport();
-        github.applySupport(); // re-detect gh + re-gate the GitHub surfaces
-        historyCoordinator.applySupport(); // re-gate the Local File History tool window + refresh its list
-        git.applyBlame(); // (re)apply inline blame to the active buffer (effective gate: git + setting + !simple)
-        notesCoordinator.applySupport();
-        mermaid.applySupport();
-        diagram.applySupport();
-        typst.applySupport();
-        searchCoordinator.applyRipgrepSupport();
-        applyMathSupport();
-        httpClient.applySupport();
-        htmlPreview.applySupport();
-        logViewer.applySupport();
-        applyMcpSupport();
-        applyAgentSupport();
-        aiCoordinator.applySupport(); // re-probe connectivity + re-gate the floating selection Explain/Rewrite bar
-        todoCoordinator.applyHighlight(); // (re)compile TODO patterns + push the matcher to every buffer
-        indexCoordinator.applySupport(); // a disabled index must not retain a project's symbols
-        csvCoordinator.applySupport(); // re-gate the in-editor CSV grid preview on every open buffer
-        applyTestRunner(); // re-gate the Test Results window (off / Simple UI mode hides it)
-        applyMarkdownLint(); // push Markdown-lint enabled state to every buffer
-        applyAutoSave();
-        applyAutocomplete();
-        applyMultiCaret();
-        lspCoordinator.applySupport(); // (re)configure LSP: command/enabled change re-detects + re-gates buffers
-        debugCoordinator.applySupport(); // (re)configure DAP after LSP (it layers on jdtls)
-        coordinatorHost.forEachBuffer(this::applyMainGutter); // re-gate the project main-method ▶ (needs jdtls+debug)
-        applyMarkdownPreviewTheme(); // re-resolve "follow app" previews + the toggle glyph after a theme change
-        // Match the console fonts + per-buffer view to the editor font/zoom (shared with the text-zoom path).
-        applyFontsAndPerBufferView(settings);
-        // If the Welcome tab is open, rebuild it so its Open Folder / Clone actions track the
-        // Projects/Git toggles that may have just changed (a font-only zoom skips this rebuild).
-        if (welcomeTab != null) {
-            welcomePane.refresh();
-        }
-    }
-
-    /**
-     * Re-applies fonts (editor buffers, Diff panes, and the console tool windows) and per-buffer view settings to
-     * every open tab, plus the Welcome tab's font scale. Shared by the full {@link #applyViewSettingsToAllBuffers}
-     * and the lighter {@link #textZoom} path — a font zoom changes none of the feature gates or the editor theme,
-     * so {@code textZoom} calls only this and skips the editor-theme stylesheet swap + the ~20 {@code applySupport()}
-     * service calls the full apply runs (a Ctrl+wheel gesture fires many notches, each of which used to re-swap the
-     * scene stylesheet and re-run the whole cascade — #545).
-     */
-    private void applyFontsAndPerBufferView(Settings settings) {
-        int consoleFont = Math.max(1, (int) Math.round(settings.getFontSize() * settings.getFontZoom()));
-        externalToolCoordinator.panel().setOutputFont(settings.getFontFamily(), consoleFont);
-        runCoordinator.panel().setOutputFont(settings.getFontFamily(), consoleFont);
-        debugCoordinator.panel().setConsoleFont(settings.getFontFamily(), consoleFont);
-        buildOutputPanel.setOutputFont(settings.getFontFamily(), consoleFont);
-        testRunCoordinator.setOutputFont(settings.getFontFamily(), consoleFont);
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer buffer = bufferOf(tab);
-            if (buffer != null) {
-                applyViewSettings(buffer);
-            } else if (tab.getUserData() instanceof DiffViewerPane diff) {
-                diff.setFont(settings.getFontFamily(), consoleFont); // text zoom applies inside a Diff tab too (#533)
-            }
-        }
-        if (welcomeTab != null) {
-            welcomePane.setFontScale(settings.getFontZoom()); // scale Welcome text to the current zoom (#540)
-        }
-        if (doctorTab != null) {
-            doctorCoordinator.pane().setFontScale(settings.getFontZoom()); // scale the Doctor tab like Welcome
-        }
-        for (Tab t : editorArea.tabs()) {
-            if (t.getUserData() instanceof PrReviewPane pr) {
-                pr.setFontScale(settings.getFontZoom()); // scale the PR review tab like Welcome
-            }
-        }
-    }
-
-    /** Whether multiple cursors / column selection is active. Off in Simple UI mode; saved setting unchanged. */
-    private boolean multiCaretEnabled() {
-        return config.getSettings().isMultiCaret() && !simpleModeActive();
-    }
-
-    /** Pushes the multiple-cursors / column-selection setting to every open buffer. */
-    private void applyMultiCaret() {
-        boolean on = multiCaretEnabled(); // effective: off in Simple UI mode
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer buffer = bufferOf(tab);
-            if (buffer != null) {
-                buffer.setMultiCaretEnabled(on);
-            }
-        }
-    }
-
-    /** Pushes the autocomplete settings (master + per-source) to every open buffer. */
-    private void applyAutocomplete() {
-        Settings s = config.getSettings();
-        boolean mermaidAc = mermaid.effectiveAutocomplete();
-        boolean aiInline = aiCoordinator.isInlineCompletionEnabled();
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer buffer = bufferOf(tab);
-            if (buffer != null) {
-                buffer.setAutocomplete(
-                        s.isAutocomplete(), s.isAutocompleteProse(), s.isAutocompleteSnippets(), mermaidAc);
-                buffer.setCompletionDocEnabled(s.isCompletionDoc());
-                buffer.setAiCompletionEnabled(aiInline);
             }
         }
     }
@@ -14574,7 +9871,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         } else if (findBar.isShown()) {
             findBar.hideBar();
         } else {
-            markActive = false;
+            editing.markActive = false;
             CodeArea area = activeArea();
             if (area != null) {
                 area.deselect();
@@ -14585,1490 +9882,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The selection policy for caret-movement commands: extend from the mark when it's active. */
     private SelectionPolicy selPolicy() {
-        return markActive ? SelectionPolicy.ADJUST : SelectionPolicy.CLEAR;
-    }
-
-    /** Emacs {@code C-SPC}: drop the mark at the caret so subsequent movement selects from here. */
-    /** The prefix argument ({@code C-u}) available while a count-aware command runs, else null. */
-    private Integer currentPrefixArg;
-
-    /** Inserts {@code ch} {@code count} times at the caret as one undoable edit ({@code C-u 40 -}). */
-    private void selfInsertRepeat(char ch, int count) {
-        if (count <= 0 || !activeEditable()) {
-            return;
-        }
-        CodeArea area = activeArea();
-        if (area != null) {
-            area.insertText(area.getCaretPosition(), String.valueOf(ch).repeat(count));
-        }
-    }
-
-    private void setMark() {
-        EditorBuffer buffer = activeBuffer();
-        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
-        if (area == null) {
-            return;
-        }
-        if (currentPrefixArg != null) {
-            popMark(); // Emacs C-u C-SPC = pop-to-mark instead of setting a new one
-            return;
-        }
-        int caret = area.getCaretPosition();
-        area.selectRange(caret, caret); // anchor = caret; ADJUST moves then extend from here
-        markActive = true;
-        buffer.pushMark(caret); // record on the mark ring so pop-mark can return here later
-        setStatus(tr("status.markSet"));
-    }
-
-    /**
-     * Emacs {@code pop-to-mark} ({@code C-x C-SPC}): move point to the most recent mark on this buffer's
-     * ring, cycling on repeat. The current point rotates to the back of the ring, so repeated pops walk
-     * back through every mark and return to where you started.
-     */
-    private void popMark() {
-        EditorBuffer buffer = activeBuffer();
-        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
-        if (area == null) {
-            return;
-        }
-        java.util.OptionalInt target = buffer.popMark(area.getCaretPosition());
-        if (target.isEmpty()) {
-            setStatus(tr("status.markRing.empty"));
-            return;
-        }
-        deactivateMark();
-        area.moveTo(Math.min(target.getAsInt(), area.getLength()));
-        area.requestFollowCaret();
-        setStatus(tr("status.markRing.popped", buffer.markRingSize()));
-    }
-
-    /** Emacs {@code C-x C-x}: move the caret to the mark (and the mark to the caret). */
-    private void exchangePointAndMark() {
-        CodeArea area = activeArea();
-        if (area == null || area.getSelection().getLength() == 0) {
-            return;
-        }
-        area.selectRange(area.getCaretPosition(), area.getAnchor());
-        markActive = true;
-        area.requestFollowCaret();
-    }
-
-    /** Clears the Emacs mark (e.g. after a clipboard action or a mouse click). */
-    private void deactivateMark() {
-        markActive = false;
-    }
-
-    private void withArea(java.util.function.Consumer<CodeArea> action) {
-        if (!activeEditable()) {
-            return;
-        }
-        CodeArea area = activeArea();
-        if (area != null) {
-            action.accept(area);
-        }
-    }
-
-    /**
-     * Guards mutating commands: returns {@code false} (and echoes a hint) when the active buffer is
-     * read-only (huge-file or user View mode), so edits are refused instead of bypassing
-     * {@code setEditable(false)} via the app's own commands. Returns {@code true} when there is no
-     * buffer or it is editable.
-     */
-    private boolean activeEditable() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null && !buffer.isEditable()) {
-            setStatus(tr("status.bufferReadOnly"));
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * Toggles comments on the selection/current line: a line comment for a single line, a block/region
-     * comment for a multi-line selection, depending on the language (see {@link com.editora.editops.Commenter}).
-     */
-    /** Manually opens the autocomplete popup for the active buffer (the {@code edit.completion} command). */
-    private void triggerCompletion() {
-        EditorBuffer b = activeBuffer();
-        if (b != null) {
-            b.triggerCompletion();
-        }
-    }
-
-    /** Toggles the completion documentation popup for the open completion list (the {@code edit.completionDoc}
-     *  command, Ctrl+Q — IntelliJ "quick documentation"). */
-    private void toggleCompletionDoc() {
-        EditorBuffer b = activeBuffer();
-        if (b != null) {
-            b.toggleCompletionDoc();
-        }
-    }
-
-    private void toggleComment() {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        // The comment logic lives on the buffer (so the editor right-click menu can invoke it too).
-        if (!buffer.toggleComment()) {
-            setStatus(tr("status.noCommentSyntax"));
-        }
-    }
-
-    /** Applies an Emacs transpose (chars/words/lines) to the active editable buffer at the caret. */
-    private void transpose(java.util.function.BiFunction<String, Integer, com.editora.editops.Transposer.Edit> op) {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        com.editora.editops.Transposer.Edit edit = op.apply(area.getText(), area.getCaretPosition());
-        if (edit == null) {
-            return;
-        }
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.moveTo(edit.caret());
-        area.requestFocus();
-    }
-
-    /** Applies a pure {@link com.editora.editops.LineOps} edit to the active area (duplicate / move line). */
-    private void lineOp(java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op) {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        com.editora.editops.LineOps.Edit edit = op.apply(area.getText(), area.getCaretPosition());
-        if (edit == null) {
-            return;
-        }
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.moveTo(edit.caret());
-        area.requestFocus();
-    }
-
-    /**
-     * Applies a pure {@link com.editora.editops.EmacsEdits} caret-based edit (backward-kill-word, the
-     * case-word commands, join-line, the whitespace commands, open-line, kill-whole-line, …) to the
-     * active editable buffer. Mirrors {@link #transpose} / {@link #lineOp}.
-     */
-    private void emacsEdit(java.util.function.BiFunction<String, Integer, com.editora.editops.EmacsEdits.Edit> op) {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        com.editora.editops.EmacsEdits.Edit edit = op.apply(area.getText(), area.getCaretPosition());
-        if (edit == null) {
-            return;
-        }
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.moveTo(edit.caret());
-        deactivateMark();
-        area.requestFocus();
-    }
-
-    // --- Kill ring -------------------------------------------------------------------------------
-
-    /**
-     * Whether a kill starting here continues the previous one (Emacs: {@code last-command} was a kill),
-     * in which case the text accumulates into the newest ring entry instead of pushing a new one.
-     */
-    private boolean continuesPreviousKill(EditorBuffer buffer, int caret) {
-        return buffer == lastKillBuffer && buffer.docVersion() == lastKillDocVersion && caret == lastKillCaret;
-    }
-
-    /**
-     * Records {@code text} as killed and mirrors the resulting ring entry to the system clipboard (Emacs'
-     * {@code select-enable-clipboard}), then remembers this position so an immediately following kill
-     * accumulates. Call <em>after</em> the deletion has been applied — the caret and document version are
-     * read as they now stand — and pass the {@code merge} verdict taken <em>before</em> it, since applying
-     * the edit has already bumped {@link EditorBuffer#docVersion()} past the recorded one.
-     */
-    private void pushKill(EditorBuffer buffer, CodeArea area, String text, KillRing.Direction dir, boolean merge) {
-        if (text == null || text.isEmpty()) {
-            return;
-        }
-        killRing.kill(text, dir, merge);
-        setClipboardString(killRing.current()); // the whole accumulated entry, as Emacs does
-        lastKillBuffer = buffer;
-        lastKillDocVersion = buffer.docVersion();
-        lastKillCaret = area.getCaretPosition();
-        invalidateYank();
-        refreshPasteState();
-    }
-
-    /** Mirrors whatever a cut/copy just placed on the clipboard into the ring as a fresh entry. */
-    private void adoptClipboardAsKill() {
-        Clipboard cb = Clipboard.getSystemClipboard();
-        if (cb.hasString()) {
-            pushSave(cb.getString());
-        }
-    }
-
-    /** Records copied (not killed) text: a fresh ring entry, never an accumulation. */
-    private void pushSave(String text) {
-        killRing.save(text);
-        invalidateYank();
-        resetKillAccumulation();
-    }
-
-    /** Breaks any consecutive-kill run, so the next kill starts a new ring entry. */
-    private void resetKillAccumulation() {
-        lastKillBuffer = null;
-        lastKillDocVersion = -1;
-        lastKillCaret = -1;
-    }
-
-    private void invalidateYank() {
-        lastYankBuffer = null;
-        lastYankDocVersion = -1;
-        lastYankStart = -1;
-        lastYankEnd = -1;
-    }
-
-    private void recordYank(EditorBuffer buffer, int start, int end) {
-        lastYankBuffer = buffer;
-        lastYankDocVersion = buffer.docVersion();
-        lastYankStart = start;
-        lastYankEnd = end;
-    }
-
-    private void setClipboardString(String text) {
-        if (text == null || text.isEmpty()) {
-            return;
-        }
-        ClipboardContent content = new ClipboardContent();
-        content.putString(text);
-        Clipboard.getSystemClipboard().setContent(content);
-    }
-
-    /**
-     * The variant of {@link #emacsEdit} for the commands that <em>kill</em> (the removed text joins the
-     * kill ring) rather than merely delete: {@code C-k}, {@code M-d}, {@code M-DEL}, {@code C-M-k},
-     * {@code C-S-DEL}. The plain {@code emacsEdit} still backs {@code delete-horizontal-space} and
-     * friends, which Emacs likewise keeps off the ring.
-     */
-    private void emacsKill(
-            java.util.function.BiFunction<String, Integer, com.editora.editops.EmacsEdits.Edit> op,
-            KillRing.Direction dir) {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        com.editora.editops.EmacsEdits.Edit edit = op.apply(area.getText(), area.getCaretPosition());
-        if (edit == null) {
-            return;
-        }
-        boolean merge = continuesPreviousKill(buffer, area.getCaretPosition()); // decide before the edit
-        String killed = area.getText(edit.from(), edit.to());
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.moveTo(edit.caret());
-        pushKill(buffer, area, killed, dir, merge);
-        deactivateMark();
-        area.requestFocus();
-    }
-
-    /**
-     * Emacs {@code yank} ({@code C-y}) for the plain paste path: inserts the current ring entry. The
-     * system clipboard wins when it holds something the ring doesn't (i.e. the user copied in another
-     * application) — Emacs' {@code interprogram-paste-function}. Returns false when there is nothing to
-     * yank, so the caller can fall back to the platform paste.
-     */
-    private boolean yankFromRing(EditorBuffer buffer, CodeArea area) {
-        Clipboard cb = Clipboard.getSystemClipboard();
-        if (cb.hasString()) {
-            killRing.adoptExternal(cb.getString());
-        }
-        String text = killRing.current();
-        if (text == null || text.isEmpty()) {
-            return false;
-        }
-        var sel = area.getSelection();
-        int start = sel.getStart();
-        area.replaceText(start, sel.getEnd(), text);
-        area.moveTo(start + text.length());
-        recordYank(buffer, start, start + text.length());
-        resetKillAccumulation();
-        return true;
-    }
-
-    /**
-     * Emacs {@code yank-pop} ({@code M-y}): replaces the text the immediately preceding yank inserted
-     * with the next-older ring entry. Only legal directly after a yank — if the document has moved since,
-     * there is no known range to replace and we say so rather than guessing.
-     */
-    private void yankPop() {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        if (buffer != lastYankBuffer || buffer.docVersion() != lastYankDocVersion || lastYankStart < 0) {
-            setStatus(tr("status.yankPop.notAfterYank"));
-            return;
-        }
-        if (killRing.size() < 2) {
-            setStatus(tr("status.yankPop.ringEmpty"));
-            return;
-        }
-        String text = killRing.rotate();
-        if (text == null) {
-            return;
-        }
-        area.replaceText(lastYankStart, lastYankEnd, text);
-        area.moveTo(lastYankStart + text.length());
-        recordYank(buffer, lastYankStart, lastYankStart + text.length());
-        setClipboardString(text);
-        refreshPasteState();
-        setStatus(tr("status.yankPop", killRing.yankIndex() + 1, killRing.size()));
-        area.requestFocus();
-    }
-
-    /**
-     * Palette-only {@code edit.yankFromRing}: pick any past kill from the ring instead of stepping back
-     * through it with {@code M-y}.
-     */
-    private void showKillRingPicker() {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        if (killRing.isEmpty()) {
-            setStatus(tr("status.yankPop.ringEmpty"));
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        QuickOpen<String> picker = new QuickOpen<>(
-                tr("dialog.killRing.title"),
-                tr("dialog.killRing.prompt"),
-                killRing::entries,
-                MainController::killRingLabel,
-                entry -> tr("dialog.killRing.detail", entry.length()),
-                entry -> {
-                    var sel = area.getSelection();
-                    int start = sel.getStart();
-                    area.replaceText(start, sel.getEnd(), entry);
-                    area.moveTo(start + entry.length());
-                    recordYank(buffer, start, start + entry.length());
-                    resetKillAccumulation();
-                    area.requestFocus();
-                });
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** One-line preview of a ring entry for the picker: whitespace flattened, elided when long. */
-    static String killRingLabel(String entry) {
-        String flat = entry.replace('\n', '⏎').replace('\t', ' ').strip();
-        return flat.length() <= KILL_RING_LABEL_MAX ? flat : flat.substring(0, KILL_RING_LABEL_MAX) + "…";
-    }
-
-    private static final int KILL_RING_LABEL_MAX = 80;
-
-    // --- Query replace ---------------------------------------------------------------------------
-
-    /** The interactive query-replace in progress, or null. At most one runs at a time per window. */
-    private QueryReplaceSession queryReplaceSession;
-
-    /** Emacs {@code query-replace} (`M-%`): prompt for search + replacement, then confirm each match. */
-    private void queryReplace() {
-        startQueryReplace(false);
-    }
-
-    /** Emacs {@code query-replace-regexp} (`C-M-%`): as above, the search string is a regular expression. */
-    private void queryReplaceRegexp() {
-        startQueryReplace(true);
-    }
-
-    private void startQueryReplace(boolean regex) {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        if (queryReplaceSession != null) {
-            queryReplaceSession.finish(); // a fresh invocation supersedes a dangling one
-        }
-        String seed = singleLineSelection(buffer.getFocusedArea());
-        String title = tr(regex ? "dialog.queryReplaceRegexp.title" : "dialog.queryReplace.title");
-        promptText(title, tr("dialog.queryReplace.searchLabel"), seed, query -> {
-            if (query.isEmpty()) {
-                return;
-            }
-            if (regex) {
-                String err = com.editora.editor.SearchMatcher.regexError(query);
-                if (err != null) {
-                    setStatus(tr("find.badRegex", err));
-                    return;
-                }
-            }
-            promptText(title, tr("dialog.queryReplace.replaceLabel", query), "", replacement -> {
-                var spec = new com.editora.editor.QueryReplace.Spec(query, replacement, false, regex, false, false);
-                beginQueryReplace(buffer, spec);
-            });
-        });
-    }
-
-    /** Starts an interactive query-replace over {@code buffer} with a resolved spec (past the prompts). */
-    void beginQueryReplace(EditorBuffer buffer, com.editora.editor.QueryReplace.Spec spec) {
-        if (queryReplaceSession != null) {
-            queryReplaceSession.finish();
-        }
-        new QueryReplaceSession(buffer, spec).start();
-    }
-
-    /** The buffer's selection when it lies on a single line (a sensible search seed), else empty. */
-    private String singleLineSelection(CodeArea area) {
-        var sel = area.getSelection();
-        if (sel.getLength() == 0) {
-            return "";
-        }
-        String text = area.getSelectedText();
-        return text.indexOf('\n') < 0 ? text : "";
-    }
-
-    /**
-     * An in-progress interactive query-replace: highlights each match in turn and takes one keystroke per
-     * match. Modal — while active it owns the editor's keys (so a plain {@code y}/{@code n} is a command,
-     * not typed text) and tears itself down on quit or when the area loses focus (a tab switch, the
-     * palette, another window). The replacement of each match is the pure {@link
-     * com.editora.editor.QueryReplace}; this class only sequences the keystrokes and applies the edits.
-     */
-    private final class QueryReplaceSession {
-        private final EditorBuffer buffer;
-        private final CodeArea area;
-        private final com.editora.editor.QueryReplace.Spec spec;
-        private final javafx.event.EventHandler<javafx.scene.input.KeyEvent> pressed = this::onPressed;
-        private final javafx.event.EventHandler<javafx.scene.input.KeyEvent> typed = this::onTyped;
-        private final javafx.beans.value.ChangeListener<Boolean> focusLost = (obs, was, isFocused) -> {
-            if (!isFocused) {
-                finish();
-            }
-        };
-        private int from;
-        private com.editora.editor.QueryReplace.Match current;
-        private int replaced;
-        private boolean active;
-
-        QueryReplaceSession(EditorBuffer buffer, com.editora.editor.QueryReplace.Spec spec) {
-            this.buffer = buffer;
-            this.area = buffer.getFocusedArea();
-            this.spec = spec;
-            this.from = area.getCaretPosition();
-        }
-
-        void start() {
-            if (!showNext()) {
-                setStatus(tr("status.queryReplace.none"));
-                return;
-            }
-            active = true;
-            queryReplaceSession = this;
-            area.getProperties().put("editora.ownsKeys", Boolean.TRUE);
-            area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, pressed);
-            area.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, typed);
-            area.focusedProperty().addListener(focusLost);
-        }
-
-        /** Finds the next match from {@link #from}, highlights it and prompts. False when none remain. */
-        private boolean showNext() {
-            var m = com.editora.editor.QueryReplace.next(area.getText(), from, spec);
-            if (m.isEmpty()) {
-                current = null;
-                return false;
-            }
-            current = m.get();
-            buffer.setSearchMatches(List.of(new int[] {current.start(), current.end()}), 0);
-            area.moveTo(current.start());
-            area.requestFollowCaret();
-            setStatus(tr("status.queryReplace.prompt", replaced));
-            return true;
-        }
-
-        /** Applies the current match's replacement and moves the search anchor past it. */
-        private void replaceCurrentOnly() {
-            area.replaceText(current.start(), current.end(), current.replacement());
-            replaced++;
-            from = com.editora.editor.QueryReplace.advance(
-                    current, current.replacement().length());
-        }
-
-        private void replaceCurrentAndAdvance() {
-            replaceCurrentOnly();
-            if (!showNext()) {
-                finish();
-            }
-        }
-
-        private void skip() {
-            from = com.editora.editor.QueryReplace.advance(current, current.end() - current.start());
-            if (!showNext()) {
-                finish();
-            }
-        }
-
-        /** {@code !}: replace this and every remaining match in one edit, then stop. */
-        private void replaceRest() {
-            var plan = com.editora.editor.QueryReplace.planRemaining(area.getText(), from, spec);
-            if (!plan.isEmpty()) {
-                int start = plan.get(0).start();
-                int end = plan.get(plan.size() - 1).end();
-                String text = area.getText();
-                StringBuilder sb = new StringBuilder();
-                int i = start;
-                for (var m : plan) {
-                    sb.append(text, i, m.start()).append(m.replacement());
-                    i = m.end();
-                }
-                area.replaceText(start, end, sb.toString());
-                replaced += plan.size();
-            }
-            finish();
-        }
-
-        private void onPressed(javafx.scene.input.KeyEvent e) {
-            if (!active) {
-                return;
-            }
-            e.consume();
-            javafx.scene.input.KeyCode c = e.getCode();
-            if (c == javafx.scene.input.KeyCode.BACK_SPACE || c == javafx.scene.input.KeyCode.DELETE) {
-                skip();
-            } else if (c == javafx.scene.input.KeyCode.ENTER
-                    || c == javafx.scene.input.KeyCode.ESCAPE
-                    || c == javafx.scene.input.KeyCode.Q
-                    || (c == javafx.scene.input.KeyCode.G && e.isControlDown())) {
-                finish();
-            }
-            // Every other pressed key is swallowed; the character commands arrive as KEY_TYPED.
-        }
-
-        private void onTyped(javafx.scene.input.KeyEvent e) {
-            if (!active) {
-                return;
-            }
-            e.consume();
-            String ch = e.getCharacter();
-            if (ch == null || ch.isEmpty()) {
-                return;
-            }
-            switch (ch.charAt(0)) {
-                case ' ', 'y', 'Y' -> replaceCurrentAndAdvance();
-                case 'n', 'N' -> skip();
-                case '!' -> replaceRest();
-                case '.' -> { // replace this match and stop, leaving the caret on the replacement
-                    replaceCurrentOnly();
-                    finish();
-                }
-                case 'q', 'Q' -> finish();
-                default -> {
-                    /* unknown key: wait, like Emacs */
-                }
-            }
-        }
-
-        /** Ends the session (idempotent): removes the highlight, the key filters and the key ownership. */
-        private void finish() {
-            if (!active) {
-                return;
-            }
-            active = false;
-            area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, pressed);
-            area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, typed);
-            area.focusedProperty().removeListener(focusLost);
-            area.getProperties().remove("editora.ownsKeys");
-            buffer.clearSearchMatches();
-            if (queryReplaceSession == this) {
-                queryReplaceSession = null;
-            }
-            setStatus(tr("status.queryReplace.done", replaced));
-        }
-    }
-
-    // --- Narrowing -------------------------------------------------------------------------------
-
-    /** Emacs {@code narrow-to-region} (`C-x n n`): restrict the buffer to the selection. */
-    private void narrowToRegion() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        var sel = buffer.getFocusedArea().getSelection();
-        if (sel.getLength() == 0) {
-            setStatus(tr("status.narrow.noRegion"));
-            return;
-        }
-        applyNarrow(buffer, sel.getStart(), sel.getEnd());
-    }
-
-    /** Emacs {@code narrow-to-defun} (`C-x n d`): restrict the buffer to the enclosing function. */
-    private void narrowToDefun() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        String text = area.getText();
-        int caret = area.getCaretPosition();
-        int start = com.editora.editops.SexpNav.beginningOfDefun(text, caret);
-        int end = com.editora.editops.SexpNav.endOfDefun(text, caret);
-        if (start >= end) {
-            setStatus(tr("status.narrow.noDefun"));
-            return;
-        }
-        applyNarrow(buffer, start, end);
-    }
-
-    /** Narrow to the innermost foldable region around the caret — the fold machinery already knows it. */
-    private void narrowToFoldRegion() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        int line = area.getCurrentParagraph();
-        com.editora.editor.FoldRegions.Region best = null;
-        for (var r : buffer.getFoldManager().regions()) {
-            if (r.startLine() <= line && line <= r.endLine() && (best == null || r.startLine() > best.startLine())) {
-                best = r; // innermost containing region
-            }
-        }
-        if (best == null) {
-            setStatus(tr("status.narrow.noFoldRegion"));
-            return;
-        }
-        int start = area.getAbsolutePosition(best.startLine(), 0);
-        int end = area.getAbsolutePosition(best.endLine(), area.getParagraphLength(best.endLine()));
-        applyNarrow(buffer, start, end);
-    }
-
-    /** Emacs {@code widen} (`C-x n w`): restore access to the whole document. */
-    private void widenBuffer() {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        if (!buffer.isNarrowed()) {
-            setStatus(tr("status.narrow.notNarrowed"));
-            return;
-        }
-        buffer.widen(); // the narrow-changed hook reconciles the UI
-        setStatus(tr("status.narrow.widened"));
-    }
-
-    private void applyNarrow(EditorBuffer buffer, int start, int end) {
-        if (!activeEditable() && !buffer.isViewMode()) {
-            return; // a huge read-only buffer cannot be narrowed (the text swap is the mechanism)
-        }
-        if (!buffer.narrowTo(start, end)) {
-            setStatus(tr("status.narrow.cannot"));
-            return;
-        }
-        setStatus(tr("status.narrow.narrowed"));
-    }
-
-    /**
-     * Re-derives everything whose coordinates are document-relative after the accessible region changed.
-     * The LSP document is suspended/resumed by {@code syncBuffer} (which now refuses a narrowed buffer),
-     * and the git change bars are cleared because their line numbers refer to the whole file.
-     */
-    private void afterNarrowChanged(EditorBuffer buffer) {
-        buffer.setChangeBars(null, null);
-        lspCoordinator.syncBuffer(buffer);
-        statusBar.setNarrowed(buffer.isNarrowed());
-        updateWindowTitle();
-        git.refresh();
-    }
-
-    // --- Rectangles ------------------------------------------------------------------------------
-
-    /**
-     * Emacs' {@code killed-rectangle}: the last killed/copied rectangle, one string per line. Deliberately
-     * separate from the kill ring — in Emacs {@code C-x r y} yanks this and {@code C-y} the ring, and
-     * mixing them would make each corrupt the other's shape.
-     */
-    private java.util.List<String> killedRectangle = java.util.List.of();
-
-    /**
-     * Resolves the current selection to a rectangle and hands it to {@code op}, applying the resulting
-     * block replacement as one undoable edit. Rectangle commands read the ordinary mark-based selection;
-     * the multi-caret box selection is a different mechanism whose carets we cannot enumerate, so rather
-     * than silently acting on the primary caret's line alone we say so.
-     */
-    private void rectangleEdit(java.util.function.BiFunction<String, Rectangle.Bounds, Rectangle.Edit> op) {
-        withRectangle((buffer, area, bounds) -> {
-            Rectangle.Edit edit = op.apply(area.getText(), bounds);
-            if (edit == null) {
-                setStatus(tr("status.rectangle.noChange"));
-                return;
-            }
-            applyRectangleEdit(area, edit);
-        });
-    }
-
-    /** Shared preamble for every rectangle command that needs a region: guards, then resolves bounds. */
-    private void withRectangle(TriConsumer<EditorBuffer, CodeArea, Rectangle.Bounds> body) {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        if (buffer.hasMultipleCarets()) {
-            setStatus(tr("status.rectangle.multiCaret"));
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        var sel = area.getSelection();
-        if (sel.getLength() == 0) {
-            setStatus(tr("status.rectangle.noRegion"));
-            return;
-        }
-        body.accept(buffer, area, Rectangle.bounds(area.getText(), sel.getStart(), sel.getEnd()));
-    }
-
-    private void applyRectangleEdit(CodeArea area, Rectangle.Edit edit) {
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.moveTo(Math.min(edit.caret(), area.getLength()));
-        deactivateMark();
-        area.requestFocus();
-    }
-
-    /** Emacs {@code kill-rectangle} (`C-x r k`): remove the rectangle and remember it for a later yank. */
-    private void killRectangle() {
-        withRectangle((buffer, area, bounds) -> {
-            killedRectangle = Rectangle.extract(area.getText(), bounds);
-            Rectangle.Edit edit = Rectangle.delete(area.getText(), bounds);
-            if (edit != null) {
-                applyRectangleEdit(area, edit);
-            }
-            setStatus(tr("status.rectangle.killed", killedRectangle.size()));
-        });
-    }
-
-    /** Emacs {@code copy-rectangle-as-kill} (`C-x r M-w`): remember the rectangle without removing it. */
-    private void copyRectangle() {
-        withRectangle((buffer, area, bounds) -> {
-            killedRectangle = Rectangle.extract(area.getText(), bounds);
-            deactivateMark();
-            setStatus(tr("status.rectangle.copied", killedRectangle.size()));
-        });
-    }
-
-    /** Emacs {@code yank-rectangle} (`C-x r y`): insert the last killed rectangle at the caret. */
-    private void yankRectangle() {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        if (killedRectangle.isEmpty()) {
-            setStatus(tr("status.rectangle.empty"));
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        Rectangle.Edit edit = Rectangle.yank(area.getText(), area.getCaretPosition(), killedRectangle);
-        if (edit != null) {
-            applyRectangleEdit(area, edit);
-        }
-    }
-
-    /** Emacs {@code string-rectangle} (`C-x r t`): replace each line's segment with a typed string. */
-    private void stringRectangle() {
-        withRectangle((buffer, area, bounds) ->
-                promptText(tr("dialog.stringRectangle.title"), tr("dialog.stringRectangle.label"), "", value -> {
-                    if (value == null) {
-                        return;
-                    }
-                    // The prompt is an overlay, so re-resolve the text; the document cannot have moved
-                    // (the overlay owns the keys) but the area reference must be read fresh either way.
-                    Rectangle.Edit edit = Rectangle.replace(area.getText(), bounds, value);
-                    if (edit == null) {
-                        setStatus(tr("status.rectangle.noChange"));
-                        return;
-                    }
-                    applyRectangleEdit(area, edit);
-                }));
-    }
-
-    /** Emacs {@code rectangle-number-lines} (`C-x r N`): number the lines down the rectangle's left edge. */
-    private void numberRectangle() {
-        withRectangle((buffer, area, bounds) ->
-                promptText(tr("dialog.numberRectangle.title"), tr("dialog.numberRectangle.label"), "1", value -> {
-                    int first;
-                    try {
-                        first = Integer.parseInt(value == null ? "1" : value.trim());
-                    } catch (NumberFormatException e) {
-                        setStatus(tr("status.rectangle.badNumber"));
-                        return;
-                    }
-                    Rectangle.Edit edit = Rectangle.numberLines(area.getText(), bounds, first);
-                    if (edit == null) {
-                        setStatus(tr("status.rectangle.noChange"));
-                        return;
-                    }
-                    applyRectangleEdit(area, edit);
-                }));
-    }
-
-    /** A three-argument {@link java.util.function.BiConsumer}. */
-    @FunctionalInterface
-    private interface TriConsumer<A, B, C> {
-        void accept(A a, B b, C c);
-    }
-
-    /** Emacs {@code upcase-region} (`C-x C-u`) / {@code downcase-region} (`C-x C-l`): case the selection. */
-    private void emacsCaseRegion(boolean upper) {
-        if (!activeEditable()) {
-            return;
-        }
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        var sel = area.getSelection();
-        com.editora.editops.EmacsEdits.Edit edit = upper
-                ? com.editora.editops.EmacsEdits.upcaseRegion(area.getText(), sel.getStart(), sel.getEnd())
-                : com.editora.editops.EmacsEdits.downcaseRegion(area.getText(), sel.getStart(), sel.getEnd());
-        if (edit == null) {
-            return; // no selection / already the target case
-        }
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.moveTo(edit.caret());
-        deactivateMark();
-        area.requestFocus();
-    }
-
-    /** Emacs structural caret motion (forward/backward-sexp, beginning/end-of-defun); honors the mark. */
-    private void sexpMove(java.util.function.BiFunction<String, Integer, Integer> nav) {
-        moveAndFollow(a -> a.moveTo(nav.apply(a.getText(), a.getCaretPosition()), selPolicy()));
-    }
-
-    /**
-     * Go to the bracket matching the one adjacent to the caret (VS Code {@code jumpToBracket},
-     * {@code Ctrl+Shift+\}). Repeated presses toggle between the pair; a no-op when no bracket is adjacent.
-     * Uses {@code BraceMatcher}, so — like the match highlight — it doesn't exclude a bracket inside a
-     * string or comment (that needs the grammar).
-     */
-    private void jumpToMatchingBracket() {
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        int target = com.editora.editops.BraceMatcher.jumpTarget(
-                area.getText(), area.getCaretPosition(), com.editora.editops.BraceMatcher.DEFAULT_MAX_SCAN);
-        if (target < 0) {
-            return;
-        }
-        moveAndFollow(a -> a.moveTo(target, selPolicy()));
-    }
-
-    /** Select from the caret's adjacent bracket to its mate, both brackets included (VS Code
-     *  {@code selectToBracket}); a no-op when no bracket is adjacent. */
-    private void selectToBracket() {
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        int[] span = com.editora.editops.BraceMatcher.selectSpan(
-                area.getText(), area.getCaretPosition(), com.editora.editops.BraceMatcher.DEFAULT_MAX_SCAN);
-        if (span == null) {
-            return;
-        }
-        area.selectRange(span[0], span[1]);
-        markActive = true;
-        area.requestFollowCaret();
-    }
-
-    /** Emacs {@code mark-sexp} (`C-M-SPC`): select the balanced expression after the caret. */
-    private void markSexp() {
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        int caret = area.getCaretPosition();
-        int end = com.editora.editops.SexpNav.forward(area.getText(), caret);
-        if (end <= caret) {
-            return;
-        }
-        area.selectRange(caret, end);
-        markActive = true;
-        area.requestFollowCaret();
-    }
-
-    /** Emacs {@code mark-paragraph} (`M-h`): select the paragraph (blank-line delimited) around the caret. */
-    private void markParagraph() {
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        int[] bounds = com.editora.editops.SexpNav.paragraphBounds(area.getText(), area.getCaretPosition());
-        if (bounds[0] >= bounds[1]) {
-            return;
-        }
-        area.selectRange(bounds[0], bounds[1]);
-        markActive = true;
-        area.requestFollowCaret();
-    }
-
-    /**
-     * Semantic expand-selection (VS Code {@code Shift+Alt+Right}, IntelliJ {@code Ctrl+W}): grow the
-     * selection to the next larger syntactic range — word → bracket/quote → line → defun → paragraph →
-     * document — pushing each onto {@link #smartSelectStack} so {@link #shrinkSelection} can retrace it.
-     */
-    private void expandSelection() {
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        int start = area.getSelection().getStart();
-        int end = area.getSelection().getEnd();
-        // Starting a new ladder: re-anchor the server's selection-range chain at this caret (#739). The
-        // request is asynchronous by design — this press uses the local ladder, and every press after it
-        // uses the grammar-accurate chain, so expand never waits on a round-trip.
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null && !smartSelect.continues(start, end)) {
-            lspCoordinator.requestSelectionChain(buffer, area.getCurrentParagraph(), area.getCaretColumn());
-        }
-        int[] next = smartSelect.expand(
-                area.getText(), start, end, buffer == null ? null : lspCoordinator.selectionChain(buffer));
-        if (next == null) {
-            return; // already the whole document
-        }
-        area.selectRange(next[0], next[1]);
-        area.requestFollowCaret();
-        markActive = true;
-    }
-
-    /** Semantic shrink-selection (VS Code {@code Shift+Alt+Left}): pop back to the previous expand range. */
-    private void shrinkSelection() {
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        int[] prev = smartSelect.shrink(
-                area.getSelection().getStart(), area.getSelection().getEnd());
-        if (prev == null) {
-            return; // nothing to shrink back to
-        }
-        area.selectRange(prev[0], prev[1]);
-        area.requestFollowCaret();
-        markActive = prev[0] != prev[1];
-    }
-
-    /** Emacs {@code kill-sexp} (`C-M-k`): delete the balanced expression after the caret. */
-    private void killSexp() {
-        emacsKill(
-                (text, caret) -> {
-                    int end = com.editora.editops.SexpNav.forward(text, caret);
-                    return end > caret ? new com.editora.editops.EmacsEdits.Edit(caret, end, "", caret) : null;
-                },
-                KillRing.Direction.FORWARD);
-    }
-
-    /**
-     * Emacs {@code zap-to-char} (`M-z`): read one more character, then delete from the caret up to and
-     * including its next occurrence. The character is captured via a one-shot {@code KEY_TYPED} filter
-     * on the focused area (interactive, like AceJump — the span computation is the pure, tested
-     * {@link com.editora.editops.EmacsEdits#zapToChar}).
-     */
-    private void zapToChar() {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        setStatus(tr("status.zapToChar"));
-        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, new javafx.event.EventHandler<>() {
-            @Override
-            public void handle(javafx.scene.input.KeyEvent e) {
-                area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, this);
-                e.consume();
-                String ch = e.getCharacter();
-                if (ch == null || ch.isEmpty() || ch.charAt(0) < ' ') {
-                    setStatus(""); // Escape / no printable character: cancel
-                    return;
-                }
-                com.editora.editops.EmacsEdits.Edit edit =
-                        com.editora.editops.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch.charAt(0));
-                if (edit == null) {
-                    setStatus(tr("status.zapNotFound", ch));
-                    return;
-                }
-                boolean merge = continuesPreviousKill(buffer, area.getCaretPosition());
-                String killed = area.getText(edit.from(), edit.to());
-                area.replaceText(edit.from(), edit.to(), edit.replacement());
-                area.moveTo(edit.caret());
-                pushKill(buffer, area, killed, KillRing.Direction.FORWARD, merge);
-                deactivateMark();
-                setStatus("");
-            }
-        });
-    }
-
-    /**
-     * Emacs {@code move-to-window-line-top-bottom} (`M-r`): cycle the caret through the center, top,
-     * and bottom visible lines of the editor window on successive presses.
-     */
-    private void moveToWindowLine() {
-        CodeArea a = activeArea();
-        if (a == null) {
-            return;
-        }
-        try {
-            int first = a.firstVisibleParToAllParIndex();
-            int last = a.lastVisibleParToAllParIndex();
-            windowLineCycle = (windowLineCycle + 1) % 3;
-            int target =
-                    switch (windowLineCycle) {
-                        case 0 -> (first + last) / 2; // center
-                        case 1 -> first; // top
-                        default -> last; // bottom
-                    };
-            a.moveTo(a.getAbsolutePosition(target, 0), selPolicy());
-            a.requestFollowCaret();
-        } catch (RuntimeException ignored) {
-            // Viewport not laid out yet — nothing to move to.
-        }
-    }
-
-    /** Emacs {@code fill-paragraph} (`M-q`): re-wrap the paragraph at the caret to the fill column. */
-    private void fillParagraph() {
-        applyFill((text, b) -> com.editora.editops.Filler.fillParagraph(
-                text, b.getFocusedArea().getCaretPosition(), fillColumn(), lineCommentFor(b)));
-    }
-
-    /** Emacs {@code fill-region}: re-wrap every paragraph in the selection (caret line if no selection). */
-    private void fillRegion() {
-        applyFill((text, b) -> {
-            CodeArea a = b.getFocusedArea();
-            int start = a.getSelection().getLength() > 0 ? a.getSelection().getStart() : a.getCaretPosition();
-            int end = a.getSelection().getLength() > 0 ? a.getSelection().getEnd() : a.getCaretPosition();
-            return com.editora.editops.Filler.fillRegion(text, start, end, fillColumn(), lineCommentFor(b));
-        });
-    }
-
-    /** Shared applier for the fill commands (guarded by {@link #activeEditable()}). */
-    private void applyFill(java.util.function.BiFunction<String, EditorBuffer, com.editora.editops.Filler.Edit> op) {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        com.editora.editops.Filler.Edit edit = op.apply(area.getText(), buffer);
-        if (edit == null) {
-            return; // nothing to fill / already filled
-        }
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.moveTo(edit.caret());
-        area.requestFocus();
-    }
-
-    /** The active fill column (Settings), clamped to a sane minimum by {@code Settings.getFillColumn}. */
-    private int fillColumn() {
-        return config.getSettings().getFillColumn();
-    }
-
-    /** The buffer language's line-comment token (e.g. {@code "//"}), or {@code null} — for the fill prefix. */
-    private static String lineCommentFor(EditorBuffer buffer) {
-        String line =
-                com.editora.editops.Commenter.styleFor(buffer.getLanguage()).line();
-        return line == null || line.isBlank() ? null : line;
-    }
-
-    /** The string-manipulation command ids, in the order the {@code edit.stringOps} picker lists them. */
-    private static final java.util.List<String> STRING_OP_IDS = java.util.List.of(
-            "edit.case.cycle",
-            "edit.case.camel",
-            "edit.case.pascal",
-            "edit.case.snake",
-            "edit.case.screamingSnake",
-            "edit.case.kebab",
-            "edit.case.dot",
-            "edit.case.swap",
-            "edit.sortLinesAsc",
-            "edit.sortLinesDesc",
-            "edit.sortLinesByLength",
-            "edit.reverseLines",
-            "edit.shuffleLines",
-            "edit.removeDuplicateLines",
-            "edit.removeEmptyLines",
-            "edit.trimTrailingWhitespace");
-
-    /**
-     * Applies a pure token transform ({@link com.editora.editops.StringCase} — the case-style
-     * commands) to the selection, or to the identifier at the caret when nothing is selected; the
-     * result is re-selected so repeated invocations (the {@code edit.case.cycle} gesture) keep
-     * acting on the same token. One undoable {@code replaceText}, guarded by {@link #activeEditable()}.
-     */
-    private void caseOp(java.util.function.UnaryOperator<String> op) {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        var sel = area.getSelection();
-        int from;
-        int to;
-        if (sel.getLength() > 0) {
-            from = sel.getStart();
-            to = sel.getEnd();
-        } else {
-            int[] token = com.editora.editops.StringCase.tokenAt(area.getText(), area.getCaretPosition());
-            if (token == null) {
-                setStatus(tr("status.stringops.noTarget"));
-                return;
-            }
-            from = token[0];
-            to = token[1];
-        }
-        String before = area.getText().substring(from, to);
-        String after = op.apply(before);
-        if (after.equals(before)) {
-            setStatus(tr("status.stringops.noChange"));
-            return;
-        }
-        area.replaceText(from, to, after);
-        area.selectRange(from, from + after.length());
-        area.requestFocus();
-    }
-
-    /**
-     * Applies a pure whole-line transform ({@link com.editora.editops.LineTransforms} — sort /
-     * reverse / shuffle / dedupe / filter / trim) to the selection extended to full-line bounds, or
-     * to the whole buffer when nothing is selected. One undoable {@code replaceText}; the
-     * transformed lines are re-selected. Guarded by {@link #activeEditable()}.
-     */
-    /**
-     * Emacs {@code occur} ({@code M-s o}): prompt for a regexp, then list every line of the active buffer
-     * that matches in a keyboard picker; choosing one jumps the caret to that line. A buffer-scoped
-     * counterpart to Find in Files (which is project-scoped). Matching reuses the pure
-     * {@link com.editora.search.MultiFileSearch#matchesInText}; the picker keeps its own substring filter,
-     * so you can narrow the occur list further as you would any picker.
-     */
-    private void occur() {
-        EditorBuffer buffer = activeBuffer();
-        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
-        if (area == null) {
-            return;
-        }
-        String seed = singleLineSelection(area);
-        promptText(tr("dialog.occur.title"), tr("dialog.occur.label"), seed, pattern -> {
-            if (pattern.isEmpty()) {
-                return;
-            }
-            String err = com.editora.editor.SearchMatcher.regexError(pattern);
-            if (err != null) {
-                setStatus(tr("find.badRegex", err));
-                return;
-            }
-            java.util.List<com.editora.search.LineMatch> matches = occurMatches(area.getText(), pattern);
-            if (matches.isEmpty()) {
-                setStatus(tr("status.occur.none"));
-                return;
-            }
-            QuickOpen<com.editora.search.LineMatch> picker = new QuickOpen<>(
-                    tr("dialog.occur.pickerTitle", matches.size()),
-                    tr("dialog.occur.pickerPrompt"),
-                    () -> matches,
-                    m -> m.line() + ": " + m.lineText().strip(),
-                    m -> "",
-                    m -> m.lineText().strip(), // search the line text, not the "N: " prefix
-                    m -> navigateToLine(m.line() - 1));
-            picker.setOverlayHost(overlayHost);
-            picker.show(stage);
-        });
-    }
-
-    /** The lines of {@code text} matching {@code pattern} (regex, case-insensitive) — the occur match list. */
-    java.util.List<com.editora.search.LineMatch> occurMatches(String text, String pattern) {
-        return com.editora.search.MultiFileSearch.matchesInText(
-                text, new com.editora.search.SearchQuery(pattern, false, true, false));
-    }
-
-    /** Emacs {@code untabify}: expand tabs to spaces over the selection (else the whole buffer). */
-    private void untabifyRegion() {
-        int tw = tabWidthForActive();
-        lineTransform(before -> com.editora.editops.TabConvert.untabify(before, tw));
-    }
-
-    /** Emacs {@code tabify}: convert runs of spaces back to tabs over the selection (else the buffer). */
-    private void tabifyRegion() {
-        int tw = tabWidthForActive();
-        lineTransform(before -> com.editora.editops.TabConvert.tabify(before, tw));
-    }
-
-    /** The active buffer's effective tab width, else the global setting. */
-    private int tabWidthForActive() {
-        EditorBuffer b = activeBuffer();
-        int tw = b == null ? 0 : b.getTabSize();
-        return tw > 0 ? tw : config.getSettings().getTabSize();
-    }
-
-    /** Emacs {@code align-regexp}: prompt for a regexp and pad the selection's lines to align it. */
-    private void alignRegexpRegion() {
-        if (!activeEditable()) {
-            return;
-        }
-        promptText(
-                tr("dialog.alignRegexp.title"), tr("dialog.alignRegexp.label"), "", regex -> applyAlignRegexp(regex));
-    }
-
-    /** The align-regexp apply past the prompt (the FX-test seam): validate the regexp, then pad the lines. */
-    void applyAlignRegexp(String regex) {
-        if (regex == null || regex.isEmpty()) {
-            return;
-        }
-        String err = com.editora.editor.SearchMatcher.regexError(regex);
-        if (err != null) {
-            setStatus(tr("find.badRegex", err));
-            return;
-        }
-        lineTransform(before -> com.editora.editops.AlignRegexp.align(before, regex));
-    }
-
-    /**
-     * VS Code {@code indentationToSpaces}/{@code indentationToTabs}: rewrite the whole file's leading
-     * indentation between tabs and spaces (one undoable edit). Only leading whitespace is touched.
-     */
-    private void convertIndentation(boolean toSpaces) {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        String text = area.getText();
-        String after = com.editora.editops.Indenter.convertIndentation(text, toSpaces, buffer.getTabSize());
-        if (after.equals(text)) {
-            setStatus(tr("status.indent.noChange"));
-            return;
-        }
-        int caret = area.getCaretPosition();
-        area.replaceText(after);
-        area.moveTo(Math.min(caret, area.getLength()));
-        area.requestFollowCaret();
-        setStatus(tr(toSpaces ? "status.indent.toSpaces" : "status.indent.toTabs"));
-    }
-
-    private void lineTransform(java.util.function.UnaryOperator<String> op) {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        CodeArea area = buffer.getFocusedArea();
-        String text = area.getText();
-        var sel = area.getSelection();
-        int from;
-        int to;
-        if (sel.getLength() > 0) {
-            int[] bounds = com.editora.editops.LineTransforms.lineBounds(text, sel.getStart(), sel.getEnd());
-            from = bounds[0];
-            to = bounds[1];
-        } else {
-            from = 0;
-            to = text.length();
-        }
-        String before = text.substring(from, to);
-        String after = op.apply(before);
-        if (after.equals(before)) {
-            setStatus(tr("status.stringops.noChange"));
-            return;
-        }
-        area.replaceText(from, to, after);
-        area.selectRange(from, from + after.length());
-        area.requestFocus();
-    }
-
-    /** {@code edit.stringOps} (`C-c x`): one picker over all string-manipulation commands (the Alt+M popup). */
-    private void stringOpsPicker() {
-        QuickOpen<String> picker = new QuickOpen<>(
-                tr("command.edit.stringOps"),
-                tr("palette.stringops.prompt"),
-                () -> new java.util.ArrayList<>(STRING_OP_IDS),
-                id -> tr("command." + id),
-                id -> tr("command." + id + ".desc"),
-                id -> registry.run(id));
-        picker.setOverlayHost(overlayHost);
-        picker.show(stage);
-    }
-
-    /** Emacs {@code set-fill-column} (`C-x f`): prompt for the fill column, persist it. */
-    /** Emacs {@code expand-abbrev} ({@code C-x a e}): expand the abbreviation before the caret now. */
-    private void expandAbbrev() {
-        if (!activeEditable()) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null) {
-            return;
-        }
-        setStatus(buffer.expandAbbrevAtCaret() ? tr("status.abbrev.expanded") : tr("status.abbrev.noExpansion"));
-    }
-
-    /**
-     * Emacs {@code add-global-abbrev} ({@code C-x a g}): define a new abbreviation. The word before the caret
-     * pre-fills the abbreviation field; prompt for the abbreviation, then its expansion, and add it.
-     */
-    private void defineAbbrev() {
-        EditorBuffer buffer = activeBuffer();
-        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
-        String seed = "";
-        if (area != null) {
-            int caret = area.getCaretPosition();
-            seed = area.getText(com.editora.editops.Abbrev.wordStart(area.getText(), caret), caret);
-        }
-        promptText(tr("dialog.defineAbbrev.title"), tr("dialog.defineAbbrev.abbrevLabel"), seed, abbrev -> {
-            if (abbrev.isBlank()) {
-                return;
-            }
-            promptText(
-                    tr("dialog.defineAbbrev.title"),
-                    tr("dialog.defineAbbrev.expansionLabel", abbrev),
-                    "",
-                    expansion -> addAbbreviation(abbrev.strip(), expansion));
-        });
-    }
-
-    /** Adds or replaces an abbreviation (case-insensitive on the key), persists, and re-applies to buffers. */
-    private void addAbbreviation(String abbrev, String expansion) {
-        java.util.List<com.editora.config.Abbreviation> list = new java.util.ArrayList<>(config.getAbbreviations());
-        list.removeIf(a -> a.getAbbreviation().equalsIgnoreCase(abbrev));
-        list.add(new com.editora.config.Abbreviation(abbrev, expansion));
-        config.setAbbreviations(list);
-        config.saveAbbreviations();
-        applyViewSettingsToAllBuffers(config.getSettings());
-        if (settingsWindow != null) {
-            settingsWindow.syncAll();
-        }
-        setStatus(tr("status.abbrev.defined", abbrev));
-    }
-
-    private void setFillColumn() {
-        promptText(
-                tr("dialog.fillColumn.title"), tr("dialog.fillColumn.label"), Integer.toString(fillColumn()), value -> {
-                    try {
-                        int col = Integer.parseInt(value.strip());
-                        if (col < 1) {
-                            setStatus(tr("status.fillColumn.invalid"));
-                            return;
-                        }
-                        config.getSettings().setFillColumn(col);
-                        config.save();
-                        setStatus(tr("status.fillColumn.set", col));
-                    } catch (NumberFormatException e) {
-                        setStatus(tr("status.fillColumn.invalid"));
-                    }
-                });
-    }
-
-    /** Selects the whole document in the active area (no edit, so it works in read-only/view mode too). */
-    private void selectAll() {
-        CodeArea area = activeArea();
-        if (area != null) {
-            area.selectAll();
-            area.requestFocus();
-        }
-    }
-
-    /** Emacs-style vertical caret move (C-n/C-p) preserving the goal column; see {@link EditorBuffer#moveLine}. */
-    private void moveLine(int delta) {
-        if (multiCaretMove(b -> b.multiMoveVertical(delta > 0, markActive))) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
-            buffer.moveLine(delta, selPolicy());
-        }
-    }
-
-    /**
-     * When the active buffer has multiple carets, runs {@code op} (a fork multi-caret movement that fans
-     * out to every caret) and follows the primary caret; returns whether it handled the move. The Emacs
-     * movement chords are resolved by the scene-level {@code KeyDispatcher} on the primary caret only, so
-     * the nav.* commands branch here to reach the fork's fan-out (#635). Each {@code op} returns false when
-     * no extra carets exist, so the caller falls through to its normal single-caret motion.
-     */
-    private boolean multiCaretMove(java.util.function.Predicate<EditorBuffer> op) {
-        EditorBuffer buffer = activeBuffer();
-        if (buffer == null || !op.test(buffer)) {
-            return false;
-        }
-        CodeArea area = activeArea();
-        if (area != null) {
-            area.requestFollowCaret(); // fork moves all carets; keep the primary in view (best-effort)
-        }
-        return true;
-    }
-
-    /** Run a navigation action and scroll the viewport to follow the caret. */
-    private void moveAndFollow(java.util.function.Consumer<CodeArea> motion) {
-        CodeArea area = activeArea();
-        if (area == null) {
-            return;
-        }
-        motion.accept(area);
-        area.requestFollowCaret();
-    }
-
-    /** Absolute offset of the first non-whitespace char on the caret's line (Emacs M-m). */
-    /** Scrolls so the caret's line is vertically centered in the viewport (Emacs C-l, center). */
-    private void recenterCaret() {
-        CodeArea a = activeArea();
-        if (a == null) {
-            return;
-        }
-        try {
-            int cur = a.getCurrentParagraph();
-            int first = a.firstVisibleParToAllParIndex();
-            int last = a.lastVisibleParToAllParIndex();
-            int visible = Math.max(1, last - first + 1);
-            a.showParagraphAtTop(Math.max(0, cur - visible / 2));
-        } catch (RuntimeException ignored) {
-            // Viewport not laid out yet — nothing to recenter.
-        }
+        return editing.markActive ? SelectionPolicy.ADJUST : SelectionPolicy.CLEAR;
     }
 
     private static Path pathOf(java.io.File file) {
@@ -16098,1480 +9912,12 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** True when External Tools are available (always, except in Simple UI mode — the list is empty by default). */
     private boolean externalToolsEnabled() {
-        return !simpleModeActive();
+        return !chrome.simpleModeActive();
     }
 
     /** Drops stale {@code externalTool.run.*} commands and re-registers the current set; called per window by
      *  {@link WindowManager}'s external-tools broadcast after a Settings edit. Delegates to the coordinator. */
     void refreshExternalToolCommands() {
         externalToolCoordinator.refreshCommands();
-    }
-
-    private void registerCommands() {
-        registry.register(Command.of("file.new", this::onNew));
-        registry.register(Command.of("window.new", () -> {
-            if (windowManager != null) {
-                windowManager.newWindow();
-            }
-        }));
-        registry.register(Command.of("file.open", this::onOpen));
-        registry.register(Command.of("file.find", () -> fileFinder.show(stage)));
-        // --- Keyboard macros ---
-        macroCoordinator.registerCommands(); // macro.* + one macro.run.<slug> per persisted macro
-        // --- External Tools ---
-        mavenProjectCoordinator.registerCommands(registry);
-        registry.register(Command.of(
-                "maven.setArchetypeCatalogUrl",
-                () -> promptStringSetting(
-                        "maven.setArchetypeCatalogUrl",
-                        () -> config.getSettings().getMavenArchetypeCatalogUrl(),
-                        v -> config.getSettings().setMavenArchetypeCatalogUrl(v),
-                        () -> {})));
-        externalToolCoordinator.registerCommands(
-                registry); // externalTool.run/clearOutput/rerunLast + per-tool run.<slug>
-        // Project commands no-op when project support is disabled (fully gated).
-        registry.register(Command.of("project.open", () -> {
-            if (projectsEnabled()) {
-                folderFinder.show(stage);
-            }
-        }));
-        registry.register(Command.of("project.switch", () -> {
-            if (projectsEnabled()) {
-                projectPicker.show(stage);
-            }
-        }));
-        registry.register(Command.of("project.close", () -> {
-            if (projectsEnabled()) {
-                closeProject();
-            }
-        }));
-        registry.register(Command.of("project.delete", () -> {
-            if (projectsEnabled()) {
-                deleteProject();
-            }
-        }));
-        registry.register(Command.of("file.save", this::onSave));
-        // Palette / keybinding Save As is keyboard-first: prompt for the path in-scene (the toolbar button's
-        // FXML onAction still opens the native file chooser).
-        registry.register(Command.of("file.saveAs", () -> saveAsPrompt(activeBuffer())));
-        registry.register(Command.of("file.saveAsAdmin", this::onSaveAsAdmin));
-        registry.register(Command.of("buffer.close", this::onCloseTab));
-        registry.register(Command.of("buffer.closeOthers", () -> closeOtherTabs(activeTab())));
-        registry.register(Command.of("buffer.closeAll", this::closeAllTabs));
-        registry.register(Command.of("buffer.closeUnmodified", this::closeUnmodifiedTabs));
-        registry.register(Command.of("buffer.closeLeft", () -> closeTabsToLeft(activeTab())));
-        registry.register(Command.of("buffer.closeRight", () -> closeTabsToRight(activeTab())));
-        registry.register(Command.of("buffer.copyPath", () -> copyPath(activeBuffer())));
-        registry.register(Command.of("buffer.togglePin", () -> togglePin(activeTab())));
-        registry.register(Command.of("buffer.rename", () -> renameFile(activeBuffer(), activeTab())));
-        registry.register(Command.of("file.revealInFileManager", this::revealActiveBuffer));
-        registry.register(Command.of("file.openTerminal", this::openTerminalForActiveBuffer));
-        registry.register(Command.of("buffer.next", this::nextBuffer));
-        registry.register(Command.of("app.quit", this::onQuit));
-        registry.register(Command.of("palette.show", this::onPalette));
-        registry.register(Command.of("view.settings", this::onSettings));
-        registry.register(Command.of("keymap.select", this::chooseKeymap));
-        registry.register(Command.of("theme.setAppTheme", this::chooseAppTheme));
-        registry.register(Command.of("theme.setEditorTheme", this::chooseEditorTheme));
-        registry.register(Command.of("theme.reloadUserThemes", this::reloadUserThemes));
-        // Settings palette commands — a command-palette equivalent for every Settings-window control.
-        registry.register(Command.of("appearance.setFont", this::chooseFont));
-        registry.register(Command.of(
-                "appearance.setFontSize",
-                () -> promptIntSetting(
-                        "appearance.setFontSize",
-                        () -> config.getSettings().getFontSize(),
-                        6,
-                        72,
-                        v -> config.getSettings().setFontSize(v),
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of("appearance.setUiLanguage", this::chooseUiLanguage));
-        registry.register(Command.of("editor.setPdfPageSize", this::choosePdfPageSize));
-        registry.register(Command.of(
-                "view.togglePdfLineNumbers",
-                () -> toggleSetting(
-                        "view.togglePdfLineNumbers",
-                        () -> config.getSettings().isPdfLineNumbers(),
-                        v -> config.getSettings().setPdfLineNumbers(v),
-                        null)));
-        registry.register(Command.of(
-                "view.togglePdfSyntaxHighlighting",
-                () -> toggleSetting(
-                        "view.togglePdfSyntaxHighlighting",
-                        () -> config.getSettings().isPdfSyntaxHighlighting(),
-                        v -> config.getSettings().setPdfSyntaxHighlighting(v),
-                        null)));
-        registry.register(Command.of(
-                "view.toggleEditorConfig",
-                () -> toggleSetting(
-                        "view.toggleEditorConfig",
-                        () -> config.getSettings().isEditorConfigSupport(),
-                        v -> config.getSettings().setEditorConfigSupport(v),
-                        this::applyEditorConfigSupport)));
-        registry.register(Command.of("editorConfig.openActive", this::openActiveEditorConfig));
-        registry.register(Command.of(
-                "view.toggleProjectHidden",
-                () -> toggleSetting(
-                        "view.toggleProjectHidden",
-                        () -> config.getSettings().isProjectShowHidden(),
-                        v -> config.getSettings().setProjectShowHidden(v),
-                        () -> projectPanel.setShowHidden(config.getSettings().isProjectShowHidden()))));
-        registry.register(Command.of(
-                "view.toggleNoteIndicators",
-                () -> toggleSetting(
-                        "view.toggleNoteIndicators",
-                        () -> config.getSettings().isShowNoteIndicators(),
-                        v -> config.getSettings().setShowNoteIndicators(v),
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleCompletionDoc",
-                () -> toggleSetting(
-                        "view.toggleCompletionDoc",
-                        () -> config.getSettings().isCompletionDoc(),
-                        v -> config.getSettings().setCompletionDoc(v),
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleProjects",
-                () -> toggleSetting(
-                        "view.toggleProjects",
-                        () -> config.getSettings().isProjectSupport(),
-                        v -> config.getSettings().setProjectSupport(v),
-                        this::applyProjectSupport)));
-        registry.register(Command.of(
-                "view.toggleNotes",
-                () -> toggleSetting(
-                        "view.toggleNotes",
-                        () -> config.getSettings().isNotesSupport(),
-                        v -> config.getSettings().setNotesSupport(v),
-                        notesCoordinator::applySupport)));
-        registry.register(Command.of(
-                "view.toggleLocalHistory",
-                () -> toggleSetting(
-                        "view.toggleLocalHistory",
-                        () -> config.getSettings().isLocalHistory(),
-                        v -> config.getSettings().setLocalHistory(v),
-                        historyCoordinator::applySupport)));
-        registry.register(Command.of(
-                "view.toggleGit",
-                () -> toggleSetting(
-                        "view.toggleGit",
-                        () -> config.getSettings().isGitSupport(),
-                        v -> config.getSettings().setGitSupport(v),
-                        git::applySupport)));
-        registry.register(Command.of(
-                "git.setCommand",
-                () -> promptStringSetting(
-                        "git.setCommand",
-                        () -> config.getSettings().getGitPath(),
-                        v -> config.getSettings().setGitPath(v),
-                        () -> {
-                            git.applySupport(); // pushes the command + re-probes availability
-                            git.refresh();
-                        })));
-        registry.register(Command.of(
-                "view.toggleMermaid",
-                () -> toggleSetting(
-                        "view.toggleMermaid",
-                        () -> config.getSettings().isMermaidSupport(),
-                        v -> config.getSettings().setMermaidSupport(v),
-                        mermaid::applySupport)));
-        registry.register(Command.of(
-                "view.toggleHttpClient",
-                () -> toggleSetting(
-                        "view.toggleHttpClient",
-                        () -> config.getSettings().isHttpClientSupport(),
-                        v -> config.getSettings().setHttpClientSupport(v),
-                        httpClient::applySupport)));
-        registry.register(Command.of(
-                "view.toggleDebug",
-                () -> toggleSetting(
-                        "view.toggleDebug",
-                        () -> config.getSettings().isDebugSupport(),
-                        v -> config.getSettings().setDebugSupport(v),
-                        debugCoordinator::applySupport)));
-        registry.register(Command.of(
-                "file.setAutoSaveDelay",
-                () -> promptIntSetting(
-                        "file.setAutoSaveDelay",
-                        () -> Math.max(1, (int) Math.round(config.getSettings().getAutoSaveDelayMillis() / 1000.0)),
-                        1,
-                        3600,
-                        v -> config.getSettings().setAutoSaveDelayMillis(v * 1000),
-                        this::applyAutoSave)));
-        registry.register(Command.of(
-                "app.setAuthorName",
-                () -> promptStringSetting(
-                        "app.setAuthorName",
-                        () -> config.getSettings().getAuthorNameRaw(),
-                        v -> config.getSettings().setAuthorName(v),
-                        null)));
-        registry.register(Command.of(
-                "history.setMaxPerFile",
-                () -> promptIntSetting(
-                        "history.setMaxPerFile",
-                        () -> config.getSettings().getHistoryMaxPerFile(),
-                        1,
-                        1000,
-                        v -> config.getSettings().setHistoryMaxPerFile(v),
-                        historyCoordinator::applySupport)));
-        registry.register(Command.of(
-                "history.setMaxAgeDays",
-                () -> promptIntSetting(
-                        "history.setMaxAgeDays",
-                        () -> config.getSettings().getHistoryMaxAgeDays(),
-                        1,
-                        3650,
-                        v -> config.getSettings().setHistoryMaxAgeDays(v),
-                        historyCoordinator::applySupport)));
-        registry.register(Command.of(
-                "history.setMaxTotalMb",
-                () -> promptIntSetting(
-                        "history.setMaxTotalMb",
-                        () -> config.getSettings().getHistoryMaxTotalMb(),
-                        1,
-                        10000,
-                        v -> config.getSettings().setHistoryMaxTotalMb(v),
-                        historyCoordinator::applySupport)));
-        registry.register(Command.of(
-                "editor.setLargeFileThreshold",
-                () -> promptIntSetting(
-                        "editor.setLargeFileThreshold",
-                        () -> config.getSettings().getLargeFileThreshold(),
-                        0,
-                        10_000_000,
-                        v -> config.getSettings().setLargeFileThreshold(v),
-                        null))); // applies to newly opened files
-        registry.register(Command.of("view.toggleLargeFileMode", this::toggleLargeFileMode));
-        registry.register(Command.of(
-                "view.toggleRipgrep",
-                () -> toggleSetting(
-                        "view.toggleRipgrep",
-                        () -> config.getSettings().isRipgrepSearch(),
-                        v -> config.getSettings().setRipgrepSearch(v),
-                        searchCoordinator::applyRipgrepSupport)));
-        registry.register(Command.of(
-                "search.setRipgrepCommand",
-                () -> promptStringSetting(
-                        "search.setRipgrepCommand",
-                        () -> config.getSettings().getRipgrepCommand(),
-                        v -> config.getSettings().setRipgrepCommand(v),
-                        searchCoordinator::applyRipgrepSupport)));
-        registry.register(Command.of(
-                "view.toggleSearchGitignore",
-                () -> toggleSetting(
-                        "view.toggleSearchGitignore",
-                        () -> config.getSettings().isSearchRespectGitignore(),
-                        v -> config.getSettings().setSearchRespectGitignore(v),
-                        searchCoordinator::applyRipgrepSupport)));
-        registry.register(Command.of(
-                "mermaid.setMmdcCommand",
-                () -> promptStringSetting(
-                        "mermaid.setMmdcCommand",
-                        () -> config.getSettings().getMmdcPath(),
-                        v -> config.getSettings().setMmdcPath(v),
-                        mermaid::applySupport)));
-        registry.register(Command.of(
-                "mermaid.setMaidCommand",
-                () -> promptStringSetting(
-                        "mermaid.setMaidCommand",
-                        () -> config.getSettings().getMaidPath(),
-                        v -> config.getSettings().setMaidPath(v),
-                        mermaid::applySupport)));
-        registry.register(Command.of(
-                "plugins.toggleRequireSignature",
-                () -> toggleSetting(
-                        "plugins.toggleRequireSignature",
-                        () -> config.getSettings().isPluginRequireSignature(),
-                        v -> config.getSettings().setPluginRequireSignature(v),
-                        null)));
-        registry.register(Command.of(
-                "plugins.setRegistryUrl",
-                () -> promptStringSetting(
-                        "plugins.setRegistryUrl",
-                        () -> config.getSettings().getPluginRegistryUrl(),
-                        v -> config.getSettings().setPluginRegistryUrl(v),
-                        null)));
-        registry.register(Command.of("lsp.toggleServer", lspCoordinator::chooseServerToggle));
-        registry.register(Command.of("lsp.setServerCommand", lspCoordinator::chooseServerCommand));
-        registry.register(Command.of("debug.toggleAdapter", debugCoordinator::chooseAdapterToggle));
-        registry.register(Command.of("debug.setAdapterPath", debugCoordinator::chooseAdapterPath));
-        registry.register(Command.of(
-                "install.javaSupport",
-                () -> installCoordinator.installSupport(com.editora.install.InstallCatalog.Lang.JAVA)));
-        registry.register(Command.of(
-                "install.pythonSupport",
-                () -> installCoordinator.installSupport(com.editora.install.InstallCatalog.Lang.PYTHON)));
-        registry.register(Command.of(
-                "install.jsSupport",
-                () -> installCoordinator.installSupport(com.editora.install.InstallCatalog.Lang.JAVASCRIPT)));
-        registry.register(Command.of(
-                "install.mermaidSupport",
-                () -> installCoordinator.installSupport(com.editora.install.InstallCatalog.Lang.MERMAID)));
-        registry.register(Command.of("install.typstCli", () -> installCoordinator.installTypstCli()));
-        registry.register(Command.of("install.languageServer", this::chooseInstallServer));
-        registry.register(Command.of("view.toggleColumnRuler", this::toggleColumnRuler));
-        registry.register(Command.of("view.toggleToolStripe", this::toggleToolStripe));
-        registry.register(Command.of("view.maximizeToolWindow", this::toggleMaximizedToolWindow));
-        registry.register(Command.of("view.splitToolWindow", this::showSplitToolWindowPalette));
-        registry.register(Command.of("view.floatToolWindow", this::toggleFloatingToolWindow));
-        registry.register(Command.of("view.toggleSimpleMode", this::toggleSimpleMode));
-        registry.register(Command.of("view.customizeToolbar", () -> settingsWindow.showToolbar(stage)));
-        registry.register(Command.of("toolbar.restoreDefault", () -> toolbarCoordinator.restoreDefault()));
-        registry.register(Command.of(
-                "view.toggleInstallPrompts",
-                () -> toggleSetting(
-                        "view.toggleInstallPrompts",
-                        () -> config.getSettings().isLspInstallPrompts(),
-                        v -> config.getSettings().setLspInstallPrompts(v),
-                        () -> maybeOfferInstall(activeBuffer()))));
-        registry.register(Command.of("view.togglePlugins", pluginCoordinator::toggleSupport));
-        registry.register(Command.of("plugins.browse", pluginCoordinator::browse));
-        registry.register(Command.of("plugins.installFromDisk", pluginCoordinator::installFromDisk));
-        registry.register(Command.of("workspace.manageTrust", this::showTrustedFolders));
-        registry.register(Command.of("workspace.revokeTrust", this::revokeTrustForActiveRoot));
-        registry.register(Command.of("config.export", this::exportConfig));
-        registry.register(Command.of("editor.setIndentStyle", this::chooseIndentStyle));
-        registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
-        registry.register(Command.of("preview.exportPdf", this::exportPreviewPdf));
-        registry.register(Command.of("preview.exportHtml", this::exportPreviewHtml));
-        registry.register(Command.of("preview.copy", this::copyPreview));
-        registry.register(Command.of("preview.copyHtml", this::copyPreviewHtml));
-        registry.register(Command.of("preview.exportDocx", this::exportPreviewDocx));
-        registry.register(Command.of("preview.exportOdt", this::exportPreviewOdt));
-        registry.register(Command.of("editor.print", this::printCode));
-        registry.register(Command.of("preview.print", this::printPreview));
-        registry.register(Command.of("markwhen.exportJson", this::exportMarkwhenJson));
-        registry.register(Command.of("markwhen.toggleView", this::toggleMarkwhenView));
-        registry.register(Command.of("structured.toggleView", this::toggleStructuredView));
-        // Two file-type-agnostic view-mode toggles replace the former per-type view.toggle*Preview palette
-        // commands (Structured/SVG/Crontab/Fstab/Systemd/SshConfig/Dockerfile/GitHubActions): one flips
-        // Editor ⇄ full Preview, the other Editor ⇄ Split (editor+preview). Those preview types can still be
-        // enabled/disabled per-type via Settings → Editor.
-        registry.register(
-                Command.of("view.togglePreview", () -> togglePreviewMode(EditorBuffer.MarkdownViewMode.PREVIEW)));
-        registry.register(
-                Command.of("view.toggleSplitPreview", () -> togglePreviewMode(EditorBuffer.MarkdownViewMode.SPLIT)));
-        registry.register(Command.of("mermaid.export", mermaid::export));
-        registry.register(Command.of("diagram.export", diagram::export));
-        registry.register(Command.of(
-                "view.toggleDiagramSupport",
-                () -> toggleSetting(
-                        "view.toggleDiagramSupport",
-                        () -> config.getSettings().isDiagramSupport(),
-                        v -> config.getSettings().setDiagramSupport(v),
-                        diagram::applySupport)));
-        registry.register(Command.of(
-                "diagram.setDotCommand",
-                () -> promptStringSetting(
-                        "diagram.setDotCommand",
-                        () -> config.getSettings().getDotPath(),
-                        v -> config.getSettings().setDotPath(v),
-                        diagram::applySupport)));
-        registry.register(Command.of(
-                "diagram.setPlantumlCommand",
-                () -> promptStringSetting(
-                        "diagram.setPlantumlCommand",
-                        () -> config.getSettings().getPlantumlPath(),
-                        v -> config.getSettings().setPlantumlPath(v),
-                        diagram::applySupport)));
-        registry.register(Command.of("typst.export", typst::export));
-        registry.register(Command.of(
-                "view.toggleTypstSupport",
-                () -> toggleSetting(
-                        "view.toggleTypstSupport",
-                        () -> config.getSettings().isTypstSupport(),
-                        v -> config.getSettings().setTypstSupport(v),
-                        () -> {
-                            typst.applySupport();
-                            applyViewSettingsToAllBuffers(config.getSettings());
-                        })));
-        registry.register(Command.of(
-                "typst.setCommand",
-                () -> promptStringSetting(
-                        "typst.setCommand",
-                        () -> config.getSettings().getTypstPath(),
-                        v -> config.getSettings().setTypstPath(v),
-                        typst::applySupport)));
-        registry.register(Command.of("htmlPreview.open", htmlPreview::open));
-        registry.register(Command.of("htmlPreview.openIn", htmlPreview::openIn));
-        registry.register(Command.of("view.toggleHtmlPreview", htmlPreview::toggle));
-        registry.register(Command.of("log.toggleFollow", logViewer::toggleFollowCommand));
-        registry.register(Command.of("log.viewAsLog", logViewer::viewAsLog));
-        registry.register(Command.of("log.setLevelFilter", logViewer::setLevelFilter));
-        registry.register(Command.of("log.setRegexFilter", logViewer::setRegexFilter));
-        registry.register(Command.of("log.clearFilter", logViewer::clearFilter));
-        registry.register(Command.of("log.nextError", logViewer::jumpToNextError));
-        registry.register(Command.of("log.previousError", logViewer::jumpToPreviousError));
-        registry.register(Command.of("view.toggleLogViewer", logViewer::toggleViewer));
-        registry.register(Command.of(
-                "view.toggleCsvGrid",
-                () -> toggleSetting(
-                        "view.toggleCsvGrid",
-                        () -> config.getSettings().isCsvPreview(),
-                        config.getSettings()::setCsvPreview,
-                        () -> {
-                            csvCoordinator.applySupport(); // (de)attach the in-editor grid on every CSV buffer
-                            updateBufferToolWindows();
-                        })));
-        // The structured-data preview had a Settings checkbox but no palette command, against the
-        // every-setting-is-a-command convention — and once structured.* is gated on it, the palette would
-        // otherwise have no way to switch it back on.
-        registry.register(Command.of(
-                "view.toggleStructuredPreview",
-                () -> toggleSetting(
-                        "view.toggleStructuredPreview",
-                        () -> config.getSettings().isStructuredPreview(),
-                        config.getSettings()::setStructuredPreview,
-                        () -> {
-                            applyViewSettingsToAllBuffers(config.getSettings());
-                            settingsWindow.syncAll();
-                        })));
-        registry.register(Command.of(
-                "view.toggleStickyScroll",
-                () -> toggleSetting(
-                        "view.toggleStickyScroll",
-                        () -> config.getSettings().isStickyScroll(),
-                        config.getSettings()::setStickyScroll,
-                        () -> {
-                            applyViewSettingsToAllBuffers(config.getSettings());
-                            settingsWindow.syncAll();
-                        })));
-        registry.register(Command.of(
-                "view.toggleExtendedWindow",
-                () -> toggleSetting(
-                        "view.toggleExtendedWindow",
-                        () -> config.getSettings().isExtendedWindow(),
-                        config.getSettings()::setExtendedWindow,
-                        () -> {
-                            settingsWindow.syncAll();
-                            // Nothing to re-apply live: a stage's style is fixed once it has been shown.
-                            setStatus(tr("status.extendedWindow.restart"));
-                        })));
-        registry.register(Command.of("pom.toggleView", this::togglePomView));
-        registry.register(Command.of(
-                "view.togglePomPreview",
-                () -> toggleSetting(
-                        "view.togglePomPreview",
-                        () -> config.getSettings().isPomPreview(),
-                        config.getSettings()::setPomPreview,
-                        () -> {
-                            applyViewSettingsToAllBuffers(config.getSettings());
-                            settingsWindow.syncAll();
-                        })));
-        registry.register(Command.of(
-                "view.toggleBracketColors",
-                () -> toggleSetting(
-                        "view.toggleBracketColors",
-                        () -> config.getSettings().isBracketColors(),
-                        config.getSettings()::setBracketColors,
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleCsvRainbow",
-                () -> toggleSetting(
-                        "view.toggleCsvRainbow",
-                        () -> config.getSettings().isCsvRainbow(),
-                        config.getSettings()::setCsvRainbow,
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleAutoRenameTag",
-                () -> toggleSetting(
-                        "view.toggleAutoRenameTag",
-                        () -> config.getSettings().isAutoRenameTag(),
-                        config.getSettings()::setAutoRenameTag,
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleAutoFill",
-                () -> toggleSetting(
-                        "view.toggleAutoFill",
-                        () -> config.getSettings().isAutoFill(),
-                        config.getSettings()::setAutoFill,
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleAbbrevMode",
-                () -> toggleSetting(
-                        "view.toggleAbbrevMode",
-                        () -> config.getSettings().isAbbrevMode(),
-                        config.getSettings()::setAbbrevMode,
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of("edit.expandAbbrev", this::expandAbbrev));
-        registry.register(Command.of("edit.defineAbbrev", this::defineAbbrev));
-        registry.register(Command.of("abbrev.manage", () -> settingsWindow.showAbbreviations(stage)));
-        registry.register(Command.of(
-                "view.toggleAutoCloseTags",
-                () -> toggleSetting(
-                        "view.toggleAutoCloseTags",
-                        () -> config.getSettings().isAutoCloseTags(),
-                        config.getSettings()::setAutoCloseTags,
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of("mcp.copyEndpoint", () -> ifMcp(this::copyMcpEndpoint)));
-        registry.register(Command.of("view.toggleMcp", this::toggleMcpSupport));
-        registry.register(Command.of(
-                "view.toggleAiEnabled",
-                () -> toggleSetting(
-                        "view.toggleAiEnabled",
-                        () -> config.getSettings().isAiEnabled(),
-                        v -> config.getSettings().setAiEnabled(v),
-                        () -> {
-                            applyAgentSupport();
-                            aiCoordinator.applySupport();
-                        })));
-        registry.register(Command.of("tool.agent", agentCoordinator::toggleToolWindow));
-        registry.register(Command.of("agent.newSession", agentCoordinator::newSession));
-        registry.register(Command.of("agent.stop", agentCoordinator::stopTurn));
-        registry.register(Command.of("agent.selectModel", agentCoordinator::pickModel));
-        registry.register(Command.of("agent.selectMode", agentCoordinator::pickMode));
-        registry.register(Command.of("agent.selectClient", agentCoordinator::pickAgentClient));
-        registry.register(Command.of("agent.resumeSession", agentCoordinator::resumeSessionPicker));
-        registry.register(Command.of(
-                "view.toggleAgent",
-                () -> toggleSetting(
-                        "view.toggleAgent",
-                        () -> config.getSettings().isAgentSupport(),
-                        v -> config.getSettings().setAgentSupport(v),
-                        this::applyAgentSupport)));
-        registry.register(Command.of(
-                "agent.setCommand",
-                () -> promptStringSetting(
-                        "agent.setCommand",
-                        () -> config.getSettings().getAgentCommand(),
-                        v -> config.getSettings().setAgentCommand(v),
-                        this::applyAgentSupport)));
-        registry.register(Command.of(
-                "view.toggleAgentContext",
-                () -> toggleSetting(
-                        "view.toggleAgentContext",
-                        () -> config.getSettings().isAgentIncludeContext(),
-                        v -> config.getSettings().setAgentIncludeContext(v),
-                        null))); // read fresh on the next sendPrompt call — nothing cached to re-push
-        registry.register(Command.of("ai.generateCommitMessage", aiCoordinator::generateCommitMessage));
-        registry.register(Command.of("ai.explainSelection", aiCoordinator::explainSelection));
-        registry.register(Command.of("ai.rewriteSelection", aiCoordinator::rewriteSelection));
-        registry.register(Command.of("ai.cancel", aiCoordinator::cancel));
-        registry.register(Command.of(
-                "view.toggleAi",
-                () -> toggleSetting(
-                        "view.toggleAi",
-                        () -> config.getSettings().isAiSupport(),
-                        v -> config.getSettings().setAiSupport(v),
-                        null)));
-        registry.register(Command.of(
-                "ai.setModel",
-                () -> promptStringSetting(
-                        "ai.setModel",
-                        () -> config.getSettings().getAiModel(),
-                        v -> config.getSettings().setAiModel(v),
-                        null)));
-        registry.register(Command.of(
-                "view.toggleAiCompletion",
-                () -> toggleSetting(
-                        "view.toggleAiCompletion",
-                        () -> config.getSettings().isAiInlineCompletion(),
-                        v -> config.getSettings().setAiInlineCompletion(v),
-                        this::applyAutocomplete)));
-        registry.register(Command.of(
-                "ai.setCompletionModel",
-                () -> promptStringSetting(
-                        "ai.setCompletionModel",
-                        () -> config.getSettings().getAiCompletionModel(),
-                        v -> config.getSettings().setAiCompletionModel(v),
-                        null)));
-        registry.register(Command.of(
-                "ai.setProvider",
-                () -> chooseSetting(
-                        "ai.setProvider",
-                        () -> List.of("anthropic", "openai"),
-                        id -> tr("settings.ai.provider." + id),
-                        id -> {
-                            config.getSettings().setAiProvider(id);
-                            requestSave();
-                            applyAutocomplete(); // re-gate inline completion (key requirement changed)
-                            if (settingsWindow != null) {
-                                settingsWindow.syncAll();
-                            }
-                            setStatus(tr(
-                                    "status.settingChanged",
-                                    commandTitle("ai.setProvider"),
-                                    tr("settings.ai.provider." + id)));
-                        })));
-        registry.register(Command.of(
-                "ai.setEndpoint",
-                () -> promptStringSetting(
-                        "ai.setEndpoint",
-                        () -> config.getSettings().getAiEndpoint(),
-                        v -> config.getSettings().setAiEndpoint(v),
-                        null)));
-        registry.register(Command.of("ai.testConnection", aiCoordinator::testConnection));
-        registry.register(Command.of("view.toggleLineHighlight", this::toggleLineHighlight));
-        registry.register(Command.of("view.toggleLineNumbers", this::toggleLineNumbers));
-        registry.register(Command.of("view.toggleMinimap", this::toggleMinimap));
-        registry.register(Command.of("view.toggleWordWrap", this::toggleWordWrap));
-        registry.register(Command.of(
-                "view.toggleAdminSave",
-                () -> toggleSetting(
-                        "view.toggleAdminSave",
-                        () -> config.getSettings().isAdminSave(),
-                        v -> config.getSettings().setAdminSave(v),
-                        this::applyAdminSaveSupport)));
-        registry.register(Command.of("view.toggleWhitespace", this::toggleWhitespace));
-        registry.register(Command.of("view.toggleSpellCheck", this::toggleSpellCheck));
-        registry.register(Command.of("view.toggleAutocomplete", this::toggleAutocomplete));
-        registry.register(Command.of("view.toggleAutocompleteProse", this::toggleAutocompleteProse));
-        registry.register(Command.of("view.toggleAutocompleteSnippets", this::toggleAutocompleteSnippets));
-        registry.register(Command.of("view.toggleAutocompleteMermaid", this::toggleAutocompleteMermaid));
-        registry.register(Command.of("view.toggleMultiCaret", this::toggleMultiCaret));
-        registry.register(Command.of(
-                "view.toggleCopyLineWhenNoSelection",
-                () -> toggleSetting(
-                        "view.toggleCopyLineWhenNoSelection",
-                        () -> config.getSettings().isCopyLineWhenNoSelection(),
-                        config.getSettings()::setCopyLineWhenNoSelection,
-                        null)));
-        registry.register(Command.of("edit.copyWithHighlighting", this::copyWithHighlighting));
-        registry.register(Command.of(
-                "view.toggleCopyWithHighlighting",
-                () -> toggleSetting(
-                        "view.toggleCopyWithHighlighting",
-                        () -> config.getSettings().isCopyWithSyntaxHighlighting(),
-                        config.getSettings()::setCopyWithSyntaxHighlighting,
-                        null)));
-        registry.register(
-                Command.of("edit.addCaretNextOccurrence", () -> withMultiCaret(EditorBuffer::addCaretNextOccurrence)));
-        registry.register(Command.of("edit.addCaretAbove", () -> withMultiCaret(EditorBuffer::addCaretAbove)));
-        registry.register(Command.of("edit.addCaretBelow", () -> withMultiCaret(EditorBuffer::addCaretBelow)));
-        registry.register(Command.of("edit.collapseCarets", () -> withMultiCaret(EditorBuffer::collapseCarets)));
-        registry.register(Command.of("file.newFileOfType", this::newFileOfTypePicker));
-        registry.register(Command.of("template.new", () -> newFromTemplate(null)));
-        registry.register(Command.of("template.newInFolder", () -> newFromTemplate(defaultNewDir())));
-        registry.register(Command.of("project.newFromTemplate", this::newProjectFromTemplate));
-        registry.register(Command.of("project.editSettings", this::editProjectSettings));
-        registry.register(Command.of("template.reload", () -> {
-            templates.reload();
-            setStatus(tr("status.templatesReloaded"));
-        }));
-        registry.register(Command.of("template.editUser", this::editUserTemplates));
-        registry.register(Command.of("template.manage", () -> settingsWindow.showTemplates(stage)));
-        registry.register(Command.of("spell.setLanguage", this::chooseSpellLanguage));
-        registry.register(Command.of("spell.manageDictionary", () -> settingsWindow.showSpellCheck(stage)));
-        registry.register(Command.of("view.togglePersonalDictionary", this::togglePersonalDictionary));
-        registry.register(Command.of("view.toggleTechnicalDictionary", this::toggleTechnicalDictionary));
-        registry.register(Command.of("view.toggleToolbar", this::toggleToolbar));
-        registry.register(Command.of("view.toggleStatusBar", this::toggleStatusBar));
-        registry.register(Command.of("view.toggleTabBar", this::toggleTabBar));
-        registry.register(Command.of("view.toggleBreadcrumb", this::toggleBreadcrumb));
-        registry.register(Command.of("view.toggleZen", this::toggleZen));
-        registry.register(Command.of("view.toggleExpert", this::toggleExpert));
-        registry.register(Command.of("view.toggleReadOnly", this::toggleReadOnly));
-        registry.register(Command.of("file.toggleAutoSave", this::toggleAutoSave));
-        registry.register(Command.of("recent.jump", () -> recentPalette.show(stage)));
-        registry.register(Command.of("structure.jump", () -> structurePalette.show(stage)));
-        registry.register(Command.of("buffer.jump", () -> openFilesPalette.show(stage)));
-        registry.register(Command.of("tool.jump", () -> toolWindowPalette.show(stage)));
-        registry.register(Command.of("undoHistory.jump", () -> undoHistoryPalette.show(stage)));
-        registry.register(Command.of("bookmarks.toggle", bookmarkCoordinator::toggleAtCaret));
-        registry.register(Command.of("bookmarks.editNote", bookmarkCoordinator::editNoteAtCaret));
-        registry.register(Command.of("bookmarks.next", () -> bookmarkCoordinator.jump(true)));
-        registry.register(Command.of("bookmarks.previous", () -> bookmarkCoordinator.jump(false)));
-        registry.register(Command.of("bookmarks.jump", bookmarkCoordinator::openJumpPalette));
-        registry.register(Command.of("bookmarks.clearFile", bookmarkCoordinator::clearInFile));
-        registry.register(Command.of("bookmarks.setMnemonic", bookmarkCoordinator::setMnemonicAtCaret));
-        // One command per digit, so each is a single chord rather than a chord plus a prompt — which is
-        // the entire point of a mnemonic. Explicit titles from one parameterized string, the way the macro
-        // and external-tool commands avoid ten near-identical keys. The key deliberately sits OUTSIDE the
-        // command.* namespace: it is a template, not the title of a command called
-        // "bookmarks.gotoMnemonic", and every real command.* key is required to carry a .desc.
-        for (char digit : com.editora.config.BookmarkMnemonics.DIGITS.toCharArray()) {
-            String key = String.valueOf(digit);
-            registry.register(Command.of(
-                    "bookmarks.gotoMnemonic" + key,
-                    tr("bookmarks.mnemonic.gotoTitle", key),
-                    () -> bookmarkCoordinator.gotoMnemonic(key)));
-        }
-        registry.register(Command.of("notes.add", () -> notesCoordinator.ifEnabled(notesCoordinator::addNoteAtCaret)));
-        registry.register(
-                Command.of("notes.editNote", () -> notesCoordinator.ifEnabled(notesCoordinator::editNoteAtCaret)));
-        registry.register(Command.of(
-                "notes.toggleResolved", () -> notesCoordinator.ifEnabled(notesCoordinator::toggleResolvedAtCaret)));
-        registry.register(
-                Command.of("notes.next", () -> notesCoordinator.ifEnabled(() -> notesCoordinator.jumpNote(true))));
-        registry.register(
-                Command.of("notes.previous", () -> notesCoordinator.ifEnabled(() -> notesCoordinator.jumpNote(false))));
-        registry.register(
-                Command.of("notes.jump", () -> notesCoordinator.ifEnabled(notesCoordinator::openJumpPalette)));
-        registry.register(Command.of("notes.search", () -> notesCoordinator.ifEnabled(notesCoordinator::searchNotes)));
-        registry.register(
-                Command.of("notes.delete", () -> notesCoordinator.ifEnabled(notesCoordinator::deleteNoteAtCaret)));
-        registry.register(Command.of("notes.export", () -> notesCoordinator.ifEnabled(notesCoordinator::exportNotes)));
-        registry.register(Command.of("snippets.insert", this::insertSnippetPicker));
-        registry.register(Command.of("snippets.reload", () -> {
-            snippets.reload();
-            setStatus(tr("status.snippetsReloaded"));
-        }));
-        registry.register(Command.of("snippets.editUser", this::editUserSnippets));
-        registry.register(Command.of("snippets.manage", () -> settingsWindow.showSnippets(stage)));
-        registry.register(Command.of(
-                "view.toggleMenuBar",
-                () -> toggleSetting(
-                        "view.toggleMenuBar",
-                        () -> config.getSettings().isShowMenuBar(),
-                        config.getSettings()::setShowMenuBar,
-                        this::applyChromeVisibility)));
-        registry.register(Command.of("view.splitVertical", this::onSplitVertical));
-        registry.register(Command.of("view.splitHorizontal", this::onSplitHorizontal));
-        registry.register(Command.of("view.unsplit", this::unsplit));
-        // Editor *groups* — a different axis from the two commands above, which split the active buffer into
-        // two views of the same document. These move a tab into its own group so two different files show
-        // side by side.
-        registry.register(Command.of("view.splitEditorRight", () -> splitEditorGroup(Orientation.HORIZONTAL)));
-        registry.register(Command.of("view.splitEditorDown", () -> splitEditorGroup(Orientation.VERTICAL)));
-        registry.register(Command.of("view.moveToNextGroup", this::moveTabToNextGroup));
-        registry.register(Command.of("view.focusNextGroup", this::focusNextEditorGroup));
-        registry.register(Command.of("view.unsplitEditorGroups", this::unsplitEditorGroups));
-        registry.register(
-                Command.of("view.markdownEditor", () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.EDITOR)));
-        registry.register(
-                Command.of("view.markdownSplit", () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.SPLIT)));
-        registry.register(
-                Command.of("view.markdownPreview", () -> setActiveMarkdownMode(EditorBuffer.MarkdownViewMode.PREVIEW)));
-        registry.register(Command.of("view.markdownZoomIn", () -> markdownZoom(1)));
-        registry.register(Command.of("view.markdownZoomOut", () -> markdownZoom(-1)));
-        registry.register(Command.of("view.markdownZoomReset", () -> markdownZoom(0)));
-        registry.register(Command.of("view.toggleMarkdownPreviewTheme", this::toggleMarkdownPreviewTheme));
-        // Markdown editing (markdown buffers only; no-op with a status elsewhere).
-        registry.register(Command.of("markdown.bold", () -> markdownInline("**")));
-        registry.register(Command.of("markdown.italic", () -> markdownInline("*")));
-        registry.register(Command.of("markdown.strikethrough", () -> markdownInline("~~")));
-        registry.register(Command.of("markdown.code", () -> markdownInline("`")));
-        registry.register(Command.of("markdown.link", () -> withMarkdown(EditorBuffer::formatLinkFromClipboard)));
-        registry.register(Command.of("markdown.bulletList", () -> withMarkdown(EditorBuffer::formatBulletList)));
-        registry.register(Command.of("markdown.taskList", () -> withMarkdown(EditorBuffer::formatTaskList)));
-        registry.register(Command.of("markdown.insertTable", this::markdownInsertTableViaText));
-        registry.register(Command.of("markdown.tableAddRow", () -> withMarkdown(b -> b.tableAddRow())));
-        registry.register(Command.of("markdown.tableDeleteRow", () -> withMarkdown(b -> b.tableDeleteRow())));
-        registry.register(Command.of("markdown.tableAddColumn", () -> withMarkdown(b -> b.tableAddColumn())));
-        registry.register(Command.of("markdown.tableDeleteColumn", () -> withMarkdown(b -> b.tableDeleteColumn())));
-        registry.register(Command.of(
-                "markdown.tableAlignLeft", () -> withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.LEFT))));
-        registry.register(Command.of(
-                "markdown.tableAlignCenter", () -> withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.CENTER))));
-        registry.register(Command.of(
-                "markdown.tableAlignRight", () -> withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.RIGHT))));
-        registry.register(Command.of("markdown.headingPromote", () -> withMarkdown(b -> b.formatHeading(-1))));
-        registry.register(Command.of("markdown.headingDemote", () -> withMarkdown(b -> b.formatHeading(1))));
-        registry.register(Command.of("markdown.openLink", this::markdownOpenLink));
-        // Typst markup formatting (mirrors the markdown.* set; Typst uses *bold*, _emph_, `raw`, = headings).
-        registry.register(Command.of("typst.bold", () -> withTypst(b -> b.formatInline("*"))));
-        registry.register(Command.of("typst.emph", () -> withTypst(b -> b.formatInline("_"))));
-        registry.register(Command.of("typst.raw", () -> withTypst(b -> b.formatInline("`"))));
-        registry.register(Command.of("typst.link", () -> withTypst(EditorBuffer::formatLinkFromClipboard)));
-        registry.register(Command.of("typst.bulletList", () -> withTypst(EditorBuffer::formatBulletList)));
-        registry.register(Command.of("typst.headingPromote", () -> withTypst(b -> b.formatHeading(-1))));
-        registry.register(Command.of("typst.headingDemote", () -> withTypst(b -> b.formatHeading(1))));
-        registry.register(Command.of("typst.insertTable", () -> withTypst(EditorBuffer::insertTypstTableInteractive)));
-        registry.register(Command.of("typst.outline", () -> withTypst(EditorBuffer::insertTypstOutline)));
-        registry.register(Command.of("typst.insertImage", () -> withTypst(this::insertTypstImageFromChooser)));
-        registry.register(Command.of("typst.exportPng", typst::exportPng));
-        registry.register(Command.of("typst.exportSvg", typst::exportSvg));
-        registry.register(Command.of("markdown.reflowTable", this::markdownReflowTable));
-        registry.register(Command.of("markdown.toc", this::markdownToc));
-        registry.register(Command.of("markdown.tableFromCsv", this::markdownTableFromCsv));
-        registry.register(Command.of("markdown.tableToCsv", this::markdownTableToCsv));
-        registry.register(Command.of("markdown.tableExportCsv", () -> markdownTableExport("csv")));
-        registry.register(Command.of("markdown.tableExportExcel", () -> markdownTableExport("xlsx")));
-        registry.register(Command.of("markdown.tableExportOds", () -> markdownTableExport("ods")));
-        registry.register(Command.of("csv.copyAsMarkdownTable", this::csvCopyAsMarkdownTable));
-        registry.register(Command.of("csv.align", this::csvAlign));
-        registry.register(Command.of("csv.shrink", this::csvShrink));
-        registry.register(Command.of("markdown.toggleFormatBar", this::toggleMarkdownFormatBar));
-        registry.register(Command.of("view.textZoomIn", () -> textZoom(1)));
-        registry.register(Command.of("view.textZoomOut", () -> textZoom(-1)));
-        registry.register(Command.of("view.textZoomReset", () -> textZoom(0)));
-        registry.register(Command.of("view.foldAll", this::foldAll));
-        registry.register(Command.of("view.unfoldAll", this::unfoldAll));
-        registry.register(Command.of("view.fold", this::foldAtCaret));
-        registry.register(Command.of("view.unfold", this::unfoldAtCaret));
-        registry.register(Command.of("view.toggleFold", this::toggleFoldAtCaret));
-        registry.register(Command.of("view.foldRecursively", this::foldRecursively));
-        registry.register(Command.of("view.unfoldRecursively", this::unfoldRecursively));
-        registry.register(Command.of("view.gotoParentFold", this::gotoParentFold));
-        registry.register(Command.of("view.gotoNextFold", this::gotoNextFold));
-        registry.register(Command.of("view.gotoPreviousFold", this::gotoPreviousFold));
-        for (int level = 1; level <= 7; level++) {
-            int lvl = level;
-            registry.register(Command.of("view.foldLevel" + lvl, () -> foldLevel(lvl)));
-        }
-        registry.register(Command.of("view.createFoldFromSelection", this::createFoldFromSelection));
-        registry.register(Command.of("view.removeManualFolds", this::removeManualFolds));
-        registry.register(Command.of("view.foldAllExcept", this::foldAllExcept));
-        registry.register(Command.of("view.unfoldAllExcept", this::unfoldAllExcept));
-        registry.register(Command.of("view.foldAllBlockComments", this::foldAllBlockComments));
-        registry.register(Command.of("view.foldAllMarkerRegions", this::foldAllMarkerRegions));
-        registry.register(Command.of("view.unfoldAllMarkerRegions", this::unfoldAllMarkerRegions));
-        registry.register(Command.of("nav.goToLine", this::goToLine));
-        registry.register(Command.of("buffer.setLanguage", this::chooseLanguage));
-        registry.register(Command.of("buffer.setTabSize", this::chooseTabSize));
-        registry.register(Command.of("buffer.convertLineEndings", this::chooseLineEndings));
-        registry.register(Command.of("window.other", this::otherWindow));
-        // Cross-platform via JavaFX Stage (handles the per-OS window manager specifics on macOS/Linux/Windows).
-        registry.register(Command.of("window.maximize", () -> stage.setMaximized(!stage.isMaximized())));
-        registry.register(Command.of("window.fullScreen", () -> stage.setFullScreen(!stage.isFullScreen())));
-        registry.register(Command.of("file.clearRecent", this::onClearRecent));
-        registry.register(Command.of("help.about", this::onAbout));
-        registry.register(Command.of("help.documentation", this::openDocumentation));
-        registry.register(Command.of("help.checkForUpdates", this::checkForUpdatesNow));
-        registry.register(Command.of("update.openDownloadPage", this::openUpdateDownloadPage));
-        registry.register(Command.of(
-                "view.toggleUpdateCheck",
-                () -> toggleSetting(
-                        "view.toggleUpdateCheck",
-                        () -> config.getSettings().isUpdateCheck(),
-                        config.getSettings()::setUpdateCheck,
-                        null)));
-        registry.register(Command.of("view.welcome", this::showWelcome));
-        registry.register(Command.of("view.doctor", this::showDoctor));
-        registry.register(Command.of("view.messageLog", statusBar::showMessageLog));
-        registry.register(Command.of("view.debugLog", this::showDebugLog));
-        registry.register(Command.of("view.openAsHex", this::openActiveAsHex));
-        registry.register(Command.of("view.openAsText", this::openActiveAsText));
-        registry.register(Command.of("tool.project", () -> {
-            if (projectsEnabled()) {
-                toolWindows.toggle(projectToolWindow);
-            }
-        }));
-        registry.register(Command.of("tool.structure", () -> toolWindows.toggle(structureToolWindow)));
-        registry.register(Command.of("tool.bookmarks", () -> toolWindows.toggle(bookmarksToolWindow)));
-        registry.register(Command.of("tool.undoHistory", () -> toolWindows.toggle(undoHistoryToolWindow)));
-        registry.register(
-                Command.of("tool.notes", () -> notesCoordinator.ifEnabled(() -> toolWindows.toggle(notesToolWindow))));
-        registry.register(Command.of("tool.fileInformation", () -> toolWindows.toggle(fileInfoToolWindow)));
-        registry.register(Command.of("tool.remote", () -> {
-            remoteCoordinator.refreshPanel();
-            toolWindows.toggle(remoteToolWindow);
-        }));
-        registry.register(Command.of("tool.search", () -> toolWindows.toggle(searchToolWindow)));
-        registry.register(Command.of("search.inFiles", searchCoordinator::openToggle));
-        registry.register(Command.of("search.inFilesPopup", searchCoordinator::showFindInFilesPopup));
-        todoCoordinator.registerCommands(registry); // tool.todo + todo.refresh + todo.addPattern
-        csvCoordinator.registerCommands(registry); // csv.exportPdf/print/exportExcel/exportOds
-        for (BuildCoordinator c : buildCoordinators) {
-            c.registerCommands(registry); // tool.<id> + <id>.showActions/runCustom/stop/rerunLast/refresh
-            BuildTool tool = c.tool();
-            registry.register(Command.of(
-                    tool.toggleCommandId(), // e.g. view.toggleMavenSupport / view.toggleNpmSupport
-                    () -> toggleSetting(
-                            tool.toggleCommandId(),
-                            () -> tool.enabledIn(config.getSettings()),
-                            v -> tool.setEnabledIn(config.getSettings(), v),
-                            () -> {
-                                refreshBuildTools();
-                                if (settingsWindow != null) {
-                                    settingsWindow.refreshDetectionStatus();
-                                }
-                            })));
-        }
-        registry.register(Command.of("tool.buildOutput", () -> toolWindows.toggle(buildOutputToolWindow)));
-        registry.register(Command.of(
-                "view.toggleTodoHighlight",
-                () -> toggleSetting(
-                        "view.toggleTodoHighlight",
-                        () -> config.getSettings().isTodoHighlight(),
-                        v -> config.getSettings().setTodoHighlight(v),
-                        todoCoordinator::applyHighlight)));
-        registry.register(Command.of("todo.setPartColor", this::chooseTodoPartColor));
-        registry.register(Command.of("tool.markdownLint", this::toggleMarkdownLintWindow));
-        registry.register(Command.of("markdownLint.refresh", () -> {
-            if (!toolWindows.isOpen(markdownLintToolWindow)) {
-                toolWindows.toggle(markdownLintToolWindow);
-            }
-            runMarkdownLintScan();
-        }));
-        registry.register(Command.of(
-                "view.toggleMarkdownLint",
-                () -> toggleSetting(
-                        "view.toggleMarkdownLint",
-                        () -> config.getSettings().isMarkdownLint(),
-                        v -> config.getSettings().setMarkdownLint(v),
-                        this::applyMarkdownLint)));
-        registry.register(Command.of("markdownLint.fix", this::fixMarkdownLint));
-        registry.register(Command.of("markdownLint.toggleRule", this::chooseMarkdownLintRule));
-        registry.register(Command.of(
-                "view.toggleMath",
-                () -> toggleSetting(
-                        "view.toggleMath",
-                        () -> config.getSettings().isMathSupport(),
-                        v -> config.getSettings().setMathSupport(v),
-                        this::applyMathSupport)));
-        registry.register(Command.of("nav.aceJump", this::startAceJump));
-        registry.register(Command.of("nav.aceJumpLine", this::startAceJumpLine));
-        // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).
-        registry.register(Command.of("file.run", runCoordinator::runActiveFile));
-        registry.register(Command.of("file.runWithArgs", runCoordinator::runActiveFileWithArgs));
-        registry.register(Command.of("run.mainClass", runCoordinator::runMainClass));
-        registry.register(Command.of("run.config", this::runSavedConfig));
-        // Under `debug.` so Chrome's feature rule gates it with the rest of debugging, exactly like the
-        // per-configuration debug.config.<slug> commands below.
-        registry.register(Command.of("debug.config", this::debugSavedConfig));
-        registry.register(Command.of("run.saveConfig", this::saveRunConfig));
-        registry.register(Command.of("run.deleteConfig", this::deleteRunConfig));
-        registry.register(Command.of("run.editConfigs", this::editRunConfigs));
-        registry.register(Command.of("run.exportConfigs", this::exportRunConfigs));
-        registry.register(Command.of("run.importConfigs", this::importRunConfigs));
-        registry.register(Command.of("run.rerun", runCoordinator::rerunLast));
-        registry.register(Command.of("run.stop", runCoordinator::stopRun));
-        registry.register(Command.of("run.clear", runCoordinator::clearConsole));
-        registry.register(Command.of("tool.run", () -> toolWindows.toggle(runToolWindow)));
-        // Test Results (IntelliJ-style test runner): intercepts a build tool's `test` run. Gated by the
-        // "Enable Test Results" setting (default on) + suppressed in Simple UI mode.
-        registry.register(Command.of("test.run", this::runTestsForContext));
-        registry.register(Command.of("test.runAtCaret", () -> runTestAtCaret(false)));
-        registry.register(Command.of("test.runClassAtCaret", () -> runTestAtCaret(true)));
-        registry.register(Command.of("test.rerun", testRunCoordinator::rerun));
-        registry.register(Command.of("test.rerunFailed", testRunCoordinator::rerunFailed));
-        registry.register(Command.of("test.stop", testRunCoordinator::stop));
-        registry.register(Command.of("test.showOnlyFailed", testRunCoordinator::showOnlyFailed));
-        registry.register(Command.of("test.showAllTests", testRunCoordinator::showAllTests));
-        registry.register(Command.of("test.filterTests", testRunCoordinator::focusFilter));
-        registry.register(Command.of("tool.testResults", () -> toolWindows.toggle(testResultsToolWindow)));
-        registry.register(Command.of(
-                "view.toggleTestRunner",
-                () -> toggleSetting(
-                        "view.toggleTestRunner",
-                        config.getSettings()::isTestRunner,
-                        config.getSettings()::setTestRunner,
-                        this::applyTestRunner)));
-        registry.register(Command.of("tool.externalTools", () -> toolWindows.toggle(externalToolToolWindow)));
-        // HTTP Client (.http via ijhttp). Gated by the "Enable HTTP Client" setting (default off).
-        registry.register(Command.of("http.runRequest", httpClient::runRequestAtCaret));
-        registry.register(Command.of("http.runFile", httpClient::runFile));
-        registry.register(Command.of("http.selectEnvironment", httpClient::selectEnvironment));
-        registry.register(Command.of("http.importCurl", httpClient::importCurl));
-        registry.register(Command.of("http.copyAsCurl", httpClient::copyActiveAsCurl));
-        registry.register(Command.of("http.openResponseInTab", httpClient::openActiveResponseInTab));
-        // Debugging (DAP). Gated by the "Enable Java debugging" setting (default off).
-        registry.register(Command.of("debug.start", () -> debugCoordinator.ifDebug(debugCoordinator::debugStart)));
-        registry.register(
-                Command.of("debug.mainClass", () -> debugCoordinator.ifDebug(debugCoordinator::debugMainClass)));
-        registry.register(Command.of("debug.viaBuild", () -> debugCoordinator.ifDebug(this::debugViaBuild)));
-        registry.register(Command.of("debug.stop", () -> debugCoordinator.ifDebug(dapManager::stop)));
-        registry.register(Command.of("debug.restart", () -> debugCoordinator.ifDebug(dapManager::restart)));
-        registry.register(Command.of("debug.attach", () -> debugCoordinator.ifDebug(debugCoordinator::debugAttach)));
-        registry.register(Command.of("debug.continue", () -> debugCoordinator.ifDebug(dapManager::resume)));
-        registry.register(Command.of("debug.pause", () -> debugCoordinator.ifDebug(dapManager::pause)));
-        registry.register(
-                Command.of("debug.runToCursor", () -> debugCoordinator.ifDebug(debugCoordinator::debugRunToCursor)));
-        registry.register(
-                Command.of("debug.jumpToLine", () -> debugCoordinator.ifDebug(debugCoordinator::debugJumpToLine)));
-        // Debugger data inspection (parity with the Debug panel's own controls).
-        registry.register(
-                Command.of("debug.evaluate", () -> debugCoordinator.ifDebug(debugCoordinator::focusEvaluate)));
-        registry.register(Command.of("debug.addWatch", () -> debugCoordinator.ifDebug(debugCoordinator::addWatch)));
-        registry.register(
-                Command.of("debug.setValue", () -> debugCoordinator.ifDebug(debugCoordinator::setSelectedValue)));
-        registry.register(Command.of("debug.stepOver", () -> debugCoordinator.ifDebug(dapManager::stepOver)));
-        registry.register(Command.of("debug.stepInto", () -> debugCoordinator.ifDebug(dapManager::stepInto)));
-        registry.register(Command.of("debug.stepOut", () -> debugCoordinator.ifDebug(dapManager::stepOut)));
-        registry.register(Command.of(
-                "debug.toggleBreakpoint", () -> debugCoordinator.ifDebug(debugCoordinator::toggleBreakpointAtCaret)));
-        registry.register(Command.of(
-                "debug.editBreakpoint", () -> debugCoordinator.ifDebug(debugCoordinator::editBreakpointAtCaret)));
-        registry.register(Command.of(
-                "debug.toggleExceptionBreakpoints",
-                () -> debugCoordinator.ifDebug(debugCoordinator::toggleExceptionBreakpoints)));
-        registry.register(
-                Command.of("tool.debug", () -> debugCoordinator.ifDebug(() -> toolWindows.toggle(debugToolWindow))));
-        // LSP. Gated by the "Enable LSP" setting (default off); commands no-op with a status when off.
-        registry.register(Command.of("tool.problems", () -> ifLsp(() -> toolWindows.toggle(problemsToolWindow))));
-        registry.register(Command.of("tool.references", () -> ifLsp(() -> toolWindows.toggle(referencesToolWindow))));
-        registry.register(Command.of("tool.hierarchy", () -> ifLsp(() -> toolWindows.toggle(hierarchyToolWindow))));
-        registry.register(Command.of("search.everywhere", this::showSearchEverywhere));
-        registry.register(Command.of(
-                "view.togglePaletteSearchEverywhere",
-                () -> toggleSetting(
-                        "view.togglePaletteSearchEverywhere",
-                        () -> config.getSettings().isPaletteUsesSearchEverywhere(),
-                        config.getSettings()::setPaletteUsesSearchEverywhere,
-                        null))); // nothing to re-apply: onPalette() reads the setting when it runs
-        registry.register(Command.of("index.gotoSymbol", indexCoordinator::gotoSymbol));
-        registry.register(Command.of("index.rebuild", indexCoordinator::rebuild));
-        registry.register(Command.of(
-                "view.toggleSymbolIndex",
-                () -> toggleSetting(
-                        "view.toggleSymbolIndex",
-                        () -> config.getSettings().isSymbolIndex(),
-                        config.getSettings()::setSymbolIndex,
-                        () -> {
-                            indexCoordinator.applySupport();
-                            settingsWindow.syncAll();
-                        })));
-        registry.register(Command.of("lsp.gotoDefinition", () -> ifLsp(lspCoordinator::gotoDefinition)));
-        registry.register(Command.of("lsp.peekDefinition", () -> ifLsp(lspCoordinator::peekDefinition)));
-        registry.register(Command.of("lsp.gotoDefinitionInSplit", () -> ifLsp(this::gotoDefinitionInSplit)));
-        registry.register(Command.of("lsp.findReferences", () -> ifLsp(lspCoordinator::findReferences)));
-        registry.register(Command.of("lsp.gotoImplementation", () -> ifLsp(lspCoordinator::gotoImplementation)));
-        registry.register(Command.of("lsp.gotoTypeDefinition", () -> ifLsp(lspCoordinator::gotoTypeDefinition)));
-        registry.register(Command.of("lsp.gotoDeclaration", () -> ifLsp(lspCoordinator::gotoDeclaration)));
-        registry.register(Command.of("lsp.gotoSymbol", () -> ifLsp(lspCoordinator::gotoSymbolInWorkspace)));
-        registry.register(Command.of("lsp.hover", () -> ifLsp(lspCoordinator::showHover)));
-        registry.register(Command.of("lsp.restartServers", () -> ifLsp(lspCoordinator::restartServers)));
-        registry.register(Command.of("lsp.buildWorkspace", () -> ifLsp(lspCoordinator::buildWorkspace)));
-        registry.register(Command.of("lsp.organizeImports", () -> ifLsp(lspCoordinator::organizeImports)));
-        registry.register(Command.of("lsp.copyQualifiedName", () -> ifLsp(lspCoordinator::copyQualifiedName)));
-        registry.register(Command.of("lsp.reloadProject", () -> ifLsp(lspCoordinator::reloadProject)));
-        registry.register(Command.of(
-                "lsp.toggleProjectProblems",
-                () -> ifLsp(() -> lspCoordinator.setProjectWideProblems(!lspCoordinator.isProjectWideProblems()))));
-        registry.register(Command.of("lsp.formatDocument", () -> ifLsp(lspCoordinator::formatDocument)));
-        registry.register(Command.of("lsp.codeActions", () -> ifLsp(lspCoordinator::codeActions)));
-        registry.register(Command.of("lsp.signatureHelp", () -> ifLsp(() -> lspCoordinator.signatureHelp(true))));
-        registry.register(Command.of("lsp.rename", () -> ifLsp(lspCoordinator::rename)));
-        registry.register(Command.of("lsp.callHierarchy", () -> ifLsp(lspCoordinator::callHierarchy)));
-        registry.register(Command.of("lsp.typeHierarchy", () -> ifLsp(lspCoordinator::typeHierarchy)));
-        registry.register(Command.of("view.toggleLsp", this::toggleLsp));
-        registry.register(Command.of(
-                "view.toggleSemanticHighlight",
-                () -> toggleSetting(
-                        "view.toggleSemanticHighlight",
-                        () -> config.getSettings().isSemanticHighlight(),
-                        config.getSettings()::setSemanticHighlight,
-                        lspCoordinator::applySemanticHighlight)));
-        registry.register(Command.of(
-                "view.toggleOnTypeFormatting",
-                () -> toggleSetting(
-                        "view.toggleOnTypeFormatting",
-                        () -> config.getSettings().isLspOnTypeFormatting(),
-                        config.getSettings()::setLspOnTypeFormatting,
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.togglePasteImports",
-                () -> toggleSetting(
-                        "view.togglePasteImports",
-                        () -> config.getSettings().isLspPasteImports(),
-                        config.getSettings()::setLspPasteImports,
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleSmartSemicolon",
-                () -> toggleSetting(
-                        "view.toggleSmartSemicolon",
-                        () -> config.getSettings().isLspSmartSemicolon(),
-                        config.getSettings()::setLspSmartSemicolon,
-                        () -> applyViewSettingsToAllBuffers(config.getSettings()))));
-        registry.register(Command.of(
-                "view.toggleInlayHints",
-                () -> toggleSetting(
-                        "view.toggleInlayHints",
-                        () -> config.getSettings().isInlayHints(),
-                        config.getSettings()::setInlayHints,
-                        lspCoordinator::applyInlayHints)));
-        registry.register(Command.of("lsp.setInlayHintMode", this::chooseInlayHintMode));
-        registry.register(Command.of("tool.commit", () -> git.ifEnabled(() -> toolWindows.toggle(commitToolWindow))));
-        // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is
-        // absent / not in a repo. The ifGit wrapper disables the commands + keybindings when Git is off.
-        registry.register(Command.of("remote.connect", remoteCoordinator::connect));
-        registry.register(Command.of("remote.openFile", remoteCoordinator::openFile));
-        registry.register(Command.of("remote.manageConnections", remoteCoordinator::manageConnections));
-        registry.register(Command.of("remote.settings", () -> settingsWindow.showRemote(stage)));
-        registry.register(Command.of("remote.disconnect", remoteCoordinator::disconnect));
-        registry.register(Command.of("git.clone", () -> git.ifEnabled(git::cloneRepo)));
-        registry.register(Command.of("git.init", () -> git.ifEnabled(git::initRepo)));
-        registry.register(Command.of("git.commit", () -> git.ifEnabled(git::gitCommitFocus)));
-        registry.register(Command.of("git.stageFile", () -> git.ifEnabled(git::gitStageActiveFile)));
-        registry.register(Command.of("git.unstageFile", () -> git.ifEnabled(git::gitUnstageActiveFile)));
-        registry.register(Command.of("git.discardFile", () -> git.ifEnabled(git::gitDiscardActiveFile)));
-        registry.register(
-                Command.of("git.stageSelected", () -> git.ifEnabled(() -> stageSelectedInCommitWindow(true))));
-        registry.register(
-                Command.of("git.unstageSelected", () -> git.ifEnabled(() -> stageSelectedInCommitWindow(false))));
-        registry.register(Command.of("git.switchBranch", () -> git.ifEnabled(this::chooseBranch)));
-        registry.register(Command.of("git.newBranch", () -> git.ifEnabled(git::newBranch)));
-        registry.register(Command.of("git.fetch", () -> git.ifEnabled(() -> git.gitSync("Fetch", "fetch", "--all"))));
-        registry.register(Command.of("git.pull", () -> git.ifEnabled(() -> git.gitSync("Pull", "pull", "--ff-only"))));
-        registry.register(Command.of("git.push", () -> git.ifEnabled(git::gitPush)));
-        // Git Log: act on the commit selected in the Git Log tool window (parity with its right-click menu).
-        registry.register(Command.of("git.log.checkout", () -> withSelectedCommit(gitLogOps::checkout)));
-        registry.register(Command.of("git.log.newBranch", () -> withSelectedCommit(gitLogOps::newBranch)));
-        registry.register(Command.of("git.log.revert", () -> withSelectedCommit(gitLogOps::revert)));
-        registry.register(Command.of("git.log.cherryPick", () -> withSelectedCommit(gitLogOps::cherryPick)));
-        registry.register(Command.of("git.log.reset", () -> withSelectedCommit(this::promptGitReset)));
-        registry.register(Command.of("git.log.copyHash", () -> withSelectedCommit(gitLogOps::copyHash)));
-        registry.register(Command.of(
-                "git.refresh",
-                () -> git.ifEnabled(() -> {
-                    git.invalidateCaches();
-                    git.afterMutation();
-                })));
-        // GitHub (native `gh` CLI). Gated by the "Enable GitHub" setting (on by default, inert until gh is
-        // found + authenticated). Each flow reports the precise reason when gh isn't usable / not a GitHub repo.
-        registry.register(Command.of("github.checkoutPr", github::checkoutPr));
-        registry.register(Command.of("github.viewPrDiff", github::viewPrDiff));
-        registry.register(Command.of("github.createPr", github::createPr));
-        registry.register(Command.of("github.submitReview", github::submitReviewPicked));
-        registry.register(Command.of("github.openOnGitHub", github::openOnGitHub));
-        registry.register(Command.of(
-                "github.showRuns",
-                () -> github.ifEnabled(() -> {
-                    toolWindows.open(githubToolWindow);
-                    githubPanel.selectRuns();
-                    github.fetchRuns(githubPanel::setRuns);
-                })));
-        registry.register(Command.of("github.viewRunLog", github::viewRunLogPicked));
-        registry.register(Command.of("github.refresh", github::refresh));
-        registry.register(Command.of("view.toggleGithub", github::toggleSupport));
-        registry.register(
-                Command.of("tool.github", () -> github.ifEnabled(() -> toolWindows.toggle(githubToolWindow))));
-        // History / Log, blame, and stash (Core-trio parity with IntelliJ/VSCode).
-        registry.register(Command.of("tool.gitLog", () -> git.ifEnabled(this::showGitLog)));
-        registry.register(Command.of("tool.fileHistory", historyCoordinator::showActive));
-        registry.register(Command.of("history.putLabel", historyCoordinator::putLabel));
-        registry.register(Command.of("history.recentChanges", historyCoordinator::showRecentChanges));
-        registry.register(Command.of("git.fileHistory", () -> git.ifEnabled(this::showFileHistory)));
-        registry.register(Command.of("git.toggleBlame", git::toggleBlame));
-        registry.register(Command.of("git.blameShowCommit", () -> git.ifEnabled(git::blameShowCommit)));
-        registry.register(Command.of("git.stash", () -> git.ifEnabled(git::gitStash)));
-        registry.register(Command.of("git.stashPop", () -> git.ifEnabled(git::gitStashPop)));
-        registry.register(Command.of("git.unstash", () -> git.ifEnabled(git::gitUnstash)));
-        registry.register(Command.of("git.stashDrop", () -> git.ifEnabled(git::gitStashDrop)));
-        // Diff viewer + merge. The git-backed diffs are ifGit-gated; "Compare With…" and "Resolve
-        // Conflicts" work on any file (no repo needed), so they are not gated.
-        registry.register(Command.of("diff.vsHead", () -> git.ifEnabled(diffCoordinator::diffActiveVsHead)));
-        registry.register(
-                Command.of("diff.reviewUnstaged", () -> git.ifEnabled(() -> diffCoordinator.reviewGitChanges(false))));
-        registry.register(
-                Command.of("diff.reviewStaged", () -> git.ifEnabled(() -> diffCoordinator.reviewGitChanges(true))));
-        // Diff viewer toolbar actions (act on the active diff tab).
-        registry.register(
-                Command.of("diff.toggleView", () -> diffCoordinator.withActiveDiff(DiffViewerPane::toggleViewMode)));
-        registry.register(
-                Command.of("diff.applyAll", () -> diffCoordinator.withActiveDiff(DiffViewerPane::applyAllChanges)));
-        registry.register(Command.of(
-                "diff.editResult", () -> diffCoordinator.withActiveDiff(DiffViewerPane::toggleResultEditing)));
-        registry.register(Command.of(
-                "diff.swapSides", () -> diffCoordinator.withActiveDiff(DiffViewerPane::swapComparisonSides)));
-        registry.register(Command.of(
-                "diff.toggleIgnoreCase", () -> diffCoordinator.withActiveDiff(DiffViewerPane::toggleIgnoreCase)));
-        registry.register(Command.of(
-                "diff.toggleSmartAlignment",
-                () -> diffCoordinator.withActiveDiff(DiffViewerPane::toggleSmartAlignment)));
-        registry.register(
-                Command.of("diff.nextChange", () -> diffCoordinator.withActiveDiff(DiffViewerPane::goNextChange)));
-        registry.register(Command.of(
-                "diff.previousChange", () -> diffCoordinator.withActiveDiff(DiffViewerPane::goPreviousChange)));
-        registry.register(
-                Command.of("diff.stageHunk", () -> diffCoordinator.withActiveDiff(DiffViewerPane::stageCurrentHunk)));
-        registry.register(Command.of(
-                "diff.unstageHunk", () -> diffCoordinator.withActiveDiff(DiffViewerPane::unstageCurrentHunk)));
-        registry.register(
-                Command.of("diff.revertHunk", () -> diffCoordinator.withActiveDiff(DiffViewerPane::revertCurrentHunk)));
-        registry.register(
-                Command.of("diff.copyHunk", () -> diffCoordinator.withActiveDiff(DiffViewerPane::copyCurrentHunk)));
-        registry.register(
-                Command.of("diff.openChange", () -> diffCoordinator.withActiveDiff(DiffViewerPane::openCurrentChange)));
-        registry.register(Command.of("diff.compareWith", diffCoordinator::compareActiveWithFile));
-        registry.register(Command.of("diff.compareClipboard", diffCoordinator::compareActiveWithClipboard));
-        registry.register(Command.of("diff.compareBlank", diffCoordinator::compareActiveWithBlank));
-        registry.register(Command.of("diff.compareDirectories", diffCoordinator::compareDirectories));
-        registry.register(Command.of("diff.openPatchFile", () -> diffCoordinator.openPatchFile(activeBuffer())));
-        registry.register(Command.of("diff.vsCommit", () -> git.ifEnabled(diffCoordinator::diffActiveVsCommit)));
-        registry.register(Command.of("merge.resolve", diffCoordinator::resolveConflicts));
-        registry.register(Command.of("switcher.show", () -> switcher.show(stage, false)));
-        registry.register(Command.of("switcher.showReverse", () -> switcher.show(stage, true)));
-        registry.register(Command.of("find.show", this::findShowOrNext));
-        registry.register(Command.of("find.showBackward", this::findShowOrPrevious));
-        registry.register(Command.of("find.replace", this::showReplace));
-        registry.register(Command.of("find.next", this::findNextMatch));
-        registry.register(Command.of("find.previous", this::findPreviousMatch));
-        registry.register(Command.of("find.replaceCurrent", this::findReplaceCurrentMatch));
-        registry.register(Command.of("find.replaceAll", this::findReplaceAllMatches));
-        registry.register(Command.of("find.selectAllMatches", this::selectAllFindMatches));
-        registry.register(Command.of("edit.selectAllOccurrences", this::selectAllOccurrences));
-        registry.register(Command.of("edit.cut", this::onCut));
-        registry.register(Command.of("edit.copy", this::onCopy));
-        registry.register(Command.of("edit.paste", this::onPaste));
-        registry.register(Command.of("edit.yankPop", this::yankPop));
-        registry.register(Command.of("edit.yankFromRing", this::showKillRingPicker));
-        registry.register(Command.of("edit.killRectangle", this::killRectangle));
-        registry.register(Command.of("edit.copyRectangle", this::copyRectangle));
-        registry.register(Command.of("edit.yankRectangle", this::yankRectangle));
-        registry.register(Command.of("edit.deleteRectangle", () -> rectangleEdit(Rectangle::delete)));
-        registry.register(Command.of("edit.clearRectangle", () -> rectangleEdit(Rectangle::clear)));
-        registry.register(Command.of("edit.openRectangle", () -> rectangleEdit(Rectangle::open)));
-        registry.register(Command.of("edit.stringRectangle", this::stringRectangle));
-        registry.register(Command.of("edit.numberRectangle", this::numberRectangle));
-        registry.register(Command.of("edit.narrowToRegion", this::narrowToRegion));
-        registry.register(Command.of("edit.narrowToDefun", this::narrowToDefun));
-        registry.register(Command.of("edit.narrowToFoldRegion", this::narrowToFoldRegion));
-        registry.register(Command.of("edit.widen", this::widenBuffer));
-        registry.register(Command.of("edit.queryReplace", this::queryReplace));
-        registry.register(Command.of("edit.queryReplaceRegexp", this::queryReplaceRegexp));
-        registry.register(Command.of("edit.undo", this::onUndo));
-        registry.register(Command.of("edit.redo", this::onRedo));
-        registry.register(Command.of("edit.cancel", this::cancel));
-        registry.register(Command.of("edit.completion", this::triggerCompletion));
-        registry.register(Command.of("edit.completionDoc", this::toggleCompletionDoc));
-        registry.register(Command.of("edit.toggleComment", this::toggleComment));
-        registry.register(
-                Command.of("edit.transposeChars", () -> transpose(com.editora.editops.Transposer::transposeChars)));
-        registry.register(
-                Command.of("edit.transposeWords", () -> transpose(com.editora.editops.Transposer::transposeWords)));
-        registry.register(
-                Command.of("edit.transposeLines", () -> transpose(com.editora.editops.Transposer::transposeLines)));
-        registry.register(Command.of("edit.selectAll", this::selectAll));
-        registry.register(Command.of("edit.duplicateLine", () -> lineOp(com.editora.editops.LineOps::duplicateLine)));
-        registry.register(Command.of("edit.moveLineUp", () -> lineOp(com.editora.editops.LineOps::moveLineUp)));
-        registry.register(Command.of("edit.moveLineDown", () -> lineOp(com.editora.editops.LineOps::moveLineDown)));
-        // Emacs fill commands: re-wrap paragraphs to the fill column (M-q / fill-region / set-fill-column).
-        registry.register(Command.of("edit.fillParagraph", this::fillParagraph));
-        registry.register(Command.of("edit.fillRegion", this::fillRegion));
-        registry.register(Command.of("edit.setFillColumn", this::setFillColumn));
-        // String manipulation (the String-Manipulation-plugin family): case-style conversions on the
-        // selection/token at the caret + whole-line sorts/filters, all also reachable via one picker.
-        registry.register(Command.of("edit.stringOps", this::stringOpsPicker));
-        registry.register(Command.of("edit.case.cycle", () -> caseOp(com.editora.editops.StringCase::cycle)));
-        registry.register(Command.of(
-                "edit.case.camel",
-                () -> caseOp(s -> com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.CAMEL, s))));
-        registry.register(Command.of(
-                "edit.case.pascal",
-                () -> caseOp(s -> com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.PASCAL, s))));
-        registry.register(Command.of(
-                "edit.case.snake",
-                () -> caseOp(s -> com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.SNAKE, s))));
-        registry.register(Command.of(
-                "edit.case.screamingSnake",
-                () -> caseOp(s ->
-                        com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.SCREAMING_SNAKE, s))));
-        registry.register(Command.of(
-                "edit.case.kebab",
-                () -> caseOp(s -> com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.KEBAB, s))));
-        registry.register(Command.of(
-                "edit.case.dot",
-                () -> caseOp(s -> com.editora.editops.StringCase.to(com.editora.editops.StringCase.Style.DOT, s))));
-        registry.register(Command.of("edit.case.swap", () -> caseOp(com.editora.editops.StringCase::swapCase)));
-        registry.register(Command.of(
-                "edit.sortLinesAsc", () -> lineTransform(com.editora.editops.LineTransforms::sortAscending)));
-        registry.register(Command.of(
-                "edit.sortLinesDesc", () -> lineTransform(com.editora.editops.LineTransforms::sortDescending)));
-        registry.register(Command.of(
-                "edit.sortLinesByLength", () -> lineTransform(com.editora.editops.LineTransforms::sortByLength)));
-        registry.register(
-                Command.of("edit.reverseLines", () -> lineTransform(com.editora.editops.LineTransforms::reverse)));
-        registry.register(Command.of(
-                "edit.shuffleLines",
-                () -> lineTransform(t -> com.editora.editops.LineTransforms.shuffle(t, new java.util.Random()))));
-        registry.register(Command.of(
-                "edit.removeDuplicateLines",
-                () -> lineTransform(com.editora.editops.LineTransforms::removeDuplicates)));
-        registry.register(Command.of(
-                "edit.removeEmptyLines", () -> lineTransform(com.editora.editops.LineTransforms::removeEmpty)));
-        registry.register(Command.of(
-                "edit.trimTrailingWhitespace", () -> lineTransform(com.editora.editops.LineTransforms::trimTrailing)));
-        registry.register(Command.of("edit.tabify", this::tabifyRegion));
-        registry.register(Command.of("edit.untabify", this::untabifyRegion));
-        registry.register(Command.of("edit.indentationToSpaces", () -> convertIndentation(true)));
-        registry.register(Command.of("edit.indentationToTabs", () -> convertIndentation(false)));
-        registry.register(Command.of("edit.alignRegexp", this::alignRegexpRegion));
-        registry.register(Command.of("edit.occur", this::occur));
-        // C-a: smart line start — first press to the beginning of the line's text (first non-whitespace),
-        // a second press toggles to the true line start (column 0).
-        registry.register(Command.of("nav.lineStart", () -> {
-            if (multiCaretMove(b -> b.multiMoveLineBoundary(false, markActive))) {
-                return;
-            }
-            moveAndFollow(a -> a.moveTo(TextNav.smartLineStart(a.getText(), a.getCaretPosition()), selPolicy()));
-        }));
-        registry.register(Command.of("nav.lineEnd", () -> {
-            if (multiCaretMove(b -> b.multiMoveLineBoundary(true, markActive))) {
-                return;
-            }
-            moveAndFollow(a -> a.lineEnd(selPolicy()));
-        }));
-        registry.register(Command.of("nav.docStart", () -> moveAndFollow(a -> a.start(selPolicy()))));
-        registry.register(Command.of("nav.docEnd", () -> moveAndFollow(a -> a.end(selPolicy()))));
-        registry.register(Command.of("nav.charForward", () -> {
-            if (multiCaretMove(b -> b.multiMoveHorizontal(1, false, markActive))) {
-                return;
-            }
-            moveAndFollow(a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1), selPolicy()));
-        }));
-        registry.register(Command.of("nav.charBackward", () -> {
-            if (multiCaretMove(b -> b.multiMoveHorizontal(-1, false, markActive))) {
-                return;
-            }
-            moveAndFollow(a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1), selPolicy()));
-        }));
-        registry.register(Command.of("nav.lineDown", () -> moveLine(1)));
-        registry.register(Command.of("nav.lineUp", () -> moveLine(-1)));
-        registry.register(Command.of("nav.wordForward", () -> {
-            if (multiCaretMove(b -> b.multiMoveHorizontal(1, true, markActive))) {
-                return;
-            }
-            moveAndFollow(a -> a.moveTo(nextWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()));
-        }));
-        registry.register(Command.of("nav.wordBackward", () -> {
-            if (multiCaretMove(b -> b.multiMoveHorizontal(-1, true, markActive))) {
-                return;
-            }
-            moveAndFollow(a -> a.moveTo(prevWordBoundary(a.getText(), a.getCaretPosition()), selPolicy()));
-        }));
-        registry.register(Command.of(
-                "nav.subwordForward",
-                () -> moveAndFollow(
-                        a -> a.moveTo(TextNav.nextSubwordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of(
-                "nav.subwordBackward",
-                () -> moveAndFollow(
-                        a -> a.moveTo(TextNav.prevSubwordBoundary(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of("edit.deleteSubwordForward", () -> deleteSubword(true)));
-        registry.register(Command.of("edit.deleteSubwordBackward", () -> deleteSubword(false)));
-        registry.register(Command.of("nav.pageDown", () -> {
-            if (!pageActivePreview(true)) {
-                moveAndFollow(a -> a.nextPage(selPolicy()));
-            }
-        }));
-        registry.register(Command.of("nav.pageUp", () -> {
-            if (!pageActivePreview(false)) {
-                moveAndFollow(a -> a.prevPage(selPolicy()));
-            }
-        }));
-        registry.register(Command.of(
-                "nav.backToIndentation",
-                () -> moveAndFollow(
-                        a -> a.moveTo(TextNav.backToIndentation(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of(
-                "nav.paragraphForward",
-                () -> moveAndFollow(
-                        a -> a.moveTo(TextNav.forwardParagraph(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of(
-                "nav.paragraphBackward",
-                () -> moveAndFollow(
-                        a -> a.moveTo(TextNav.backwardParagraph(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of(
-                "nav.sentenceForward",
-                () -> moveAndFollow(
-                        a -> a.moveTo(TextNav.forwardSentence(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of(
-                "nav.sentenceBackward",
-                () -> moveAndFollow(
-                        a -> a.moveTo(TextNav.backwardSentence(a.getText(), a.getCaretPosition()), selPolicy()))));
-        registry.register(Command.of("nav.recenter", this::recenterCaret));
-        registry.register(Command.of("edit.setMark", this::setMark));
-        registry.register(Command.of("edit.exchangePointAndMark", this::exchangePointAndMark));
-        registry.register(Command.of("edit.popMark", this::popMark));
-        registry.register(Command.of(com.editora.command.KeyDispatcher.UNIVERSAL_ARGUMENT, () -> {}));
-        registry.register(Command.of("edit.deleteChar", () -> withArea(CodeArea::deleteNextChar)));
-        registry.register(Command.of(
-                "edit.killWord",
-                () -> emacsKill(
-                        (text, caret) -> {
-                            int end = nextWordBoundary(text, caret);
-                            return end > caret ? new com.editora.editops.EmacsEdits.Edit(caret, end, "", caret) : null;
-                        },
-                        KillRing.Direction.FORWARD)));
-        registry.register(
-                Command.of("edit.killLine", () -> emacsKill(MainController::killLineEdit, KillRing.Direction.FORWARD)));
-        registry.register(Command.of(
-                "edit.backwardKillWord",
-                () -> emacsKill(com.editora.editops.EmacsEdits::backwardKillWord, KillRing.Direction.BACKWARD)));
-        registry.register(Command.of("edit.upcaseWord", () -> emacsEdit(com.editora.editops.EmacsEdits::upcaseWord)));
-        registry.register(
-                Command.of("edit.downcaseWord", () -> emacsEdit(com.editora.editops.EmacsEdits::downcaseWord)));
-        registry.register(
-                Command.of("edit.capitalizeWord", () -> emacsEdit(com.editora.editops.EmacsEdits::capitalizeWord)));
-        registry.register(Command.of("edit.upcaseRegion", () -> emacsCaseRegion(true)));
-        registry.register(Command.of("edit.downcaseRegion", () -> emacsCaseRegion(false)));
-        registry.register(Command.of(
-                "edit.deleteIndentation", () -> emacsEdit(com.editora.editops.EmacsEdits::deleteIndentation)));
-        registry.register(Command.of(
-                "edit.deleteHorizontalSpace", () -> emacsEdit(com.editora.editops.EmacsEdits::deleteHorizontalSpace)));
-        registry.register(
-                Command.of("edit.justOneSpace", () -> emacsEdit(com.editora.editops.EmacsEdits::justOneSpace)));
-        registry.register(
-                Command.of("edit.deleteBlankLines", () -> emacsEdit(com.editora.editops.EmacsEdits::deleteBlankLines)));
-        registry.register(Command.of("edit.openLine", () -> emacsEdit(com.editora.editops.EmacsEdits::openLine)));
-        registry.register(Command.of(
-                "edit.killWholeLine",
-                () -> emacsKill(com.editora.editops.EmacsEdits::killWholeLine, KillRing.Direction.FORWARD)));
-        registry.register(Command.of("edit.zapToChar", this::zapToChar));
-        registry.register(Command.of("edit.killSexp", this::killSexp));
-        registry.register(Command.of("edit.markSexp", this::markSexp));
-        registry.register(Command.of("edit.markParagraph", this::markParagraph));
-        registry.register(Command.of("edit.expandSelection", this::expandSelection));
-        registry.register(Command.of("edit.shrinkSelection", this::shrinkSelection));
-        registry.register(Command.of("nav.forwardSexp", () -> sexpMove(com.editora.editops.SexpNav::forward)));
-        registry.register(Command.of("nav.backwardSexp", () -> sexpMove(com.editora.editops.SexpNav::backward)));
-        registry.register(Command.of("nav.matchingBracket", this::jumpToMatchingBracket));
-        registry.register(Command.of("edit.selectToBracket", this::selectToBracket));
-        registry.register(Command.of("nav.back", this::navBack));
-        registry.register(Command.of("nav.forward", this::navForward));
-        registry.register(Command.of("nav.recentLocations", this::showRecentLocations));
-        registry.register(Command.of("nav.relatedFile", this::gotoRelatedFile));
-        registry.register(
-                Command.of("nav.beginningOfDefun", () -> sexpMove(com.editora.editops.SexpNav::beginningOfDefun)));
-        registry.register(Command.of("nav.endOfDefun", () -> sexpMove(com.editora.editops.SexpNav::endOfDefun)));
-        registry.register(Command.of("nav.moveToWindowLine", this::moveToWindowLine));
-    }
-
-    /**
-     * Emacs {@code kill-line} (`C-k`) as a pure span: from the caret to the end of the line, or — when the
-     * caret is already there — the line break itself, so repeated presses eat successive lines.
-     */
-    static com.editora.editops.EmacsEdits.Edit killLineEdit(String text, int caret) {
-        int eol = caret;
-        while (eol < text.length() && text.charAt(eol) != '\n') {
-            eol++;
-        }
-        if (caret < eol) {
-            return new com.editora.editops.EmacsEdits.Edit(caret, eol, "", caret);
-        }
-        return eol < text.length() ? new com.editora.editops.EmacsEdits.Edit(caret, caret + 1, "", caret) : null;
-    }
-
-    /**
-     * VS Code {@code deleteWordPartLeft}/{@code Right}: delete from the caret to the next/previous subword
-     * boundary as one undoable edit. Plain delete (not the kill ring), matching VS Code. Acts on the primary
-     * caret only — like the Emacs word/sexp commands, it does not fan out to multiple carets.
-     */
-    private void deleteSubword(boolean forward) {
-        if (!activeEditable()) {
-            return;
-        }
-        CodeArea area = activeArea();
-        if (area == null || area.getSelection().getLength() > 0) {
-            if (area != null && area.getSelection().getLength() > 0) {
-                area.replaceSelection(""); // a selection deletes normally
-            }
-            return;
-        }
-        int caret = area.getCaretPosition();
-        String text = area.getText();
-        int target = forward ? TextNav.nextSubwordBoundary(text, caret) : TextNav.prevSubwordBoundary(text, caret);
-        if (target == caret) {
-            return;
-        }
-        int from = Math.min(caret, target);
-        int to = Math.max(caret, target);
-        area.deleteText(from, to);
-    }
-
-    /** Position of the next word boundary at or after {@code from}: skip non-word chars, then word chars. */
-    static int nextWordBoundary(String text, int from) {
-        int i = from;
-        while (i < text.length() && !Character.isLetterOrDigit(text.charAt(i))) {
-            i++;
-        }
-        while (i < text.length() && Character.isLetterOrDigit(text.charAt(i))) {
-            i++;
-        }
-        return i;
-    }
-
-    /** Position of the previous word boundary at or before {@code from}. */
-    static int prevWordBoundary(String text, int from) {
-        int i = from;
-        while (i > 0 && !Character.isLetterOrDigit(text.charAt(i - 1))) {
-            i--;
-        }
-        while (i > 0 && Character.isLetterOrDigit(text.charAt(i - 1))) {
-            i--;
-        }
-        return i;
     }
 }

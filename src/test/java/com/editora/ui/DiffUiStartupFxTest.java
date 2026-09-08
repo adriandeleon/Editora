@@ -48,7 +48,8 @@ class DiffUiStartupFxTest {
             firstFrame.add(!menuBar.node().isVisible());
             firstFrame.add(!statusBar.isVisible());
             firstFrame.add(tabPane.getStyleClass().contains("no-tab-header"));
-            firstFrame.add((Boolean) FxTestSupport.call(controller, "diffUiActive", new Class<?>[] {}));
+            firstFrame.add((Boolean)
+                    FxTestSupport.call(FxTestSupport.field(controller, "chrome"), "diffUiActive", new Class<?>[] {}));
         });
 
         try {

@@ -102,7 +102,8 @@ class CliChromeFirstFrameFxTest {
     void simpleModeIsLiveOnTheFirstFrame() throws Exception {
         List<Boolean> active = new ArrayList<>();
         FxWindowFixture fx = FxWindowFixture.create(false, false, true, controller -> {
-            active.add((Boolean) FxTestSupport.call(controller, "simpleModeActive", new Class<?>[] {}));
+            active.add((Boolean) FxTestSupport.call(
+                    FxTestSupport.field(controller, "chrome"), "simpleModeActive", new Class<?>[] {}));
         });
         try {
             assertTrue(active.get(0), "--simple must be in effect before show(), not applied after restore");

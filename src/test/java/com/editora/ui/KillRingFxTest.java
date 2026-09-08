@@ -38,7 +38,7 @@ class KillRingFxTest {
         FxTestSupport.bootToolkit();
         fx = FxWindowFixture.create();
         registry = FxTestSupport.field(fx.controller, "registry");
-        ring = FxTestSupport.field(fx.controller, "killRing");
+        ring = FxTestSupport.field(FxTestSupport.field(fx.controller, "editing"), "killRing");
     }
 
     @AfterAll

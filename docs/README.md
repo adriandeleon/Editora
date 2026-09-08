@@ -36,6 +36,9 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 
 ## Subsystem deep-dives
 
+- [subsystems/window-coordinators.md](subsystems/window-coordinators.md) — window workflow owners,
+  buffer completion, lifecycle boundaries and the production source-size ceiling.
+
 - [subsystems/command-system.md](subsystems/command-system.md) — `Command`/`CommandRegistry`,
   the five keymaps + per-OS variants, `KeyDispatcher`, the keybinding editor.
 - [subsystems/config-and-migrations.md](subsystems/config-and-migrations.md) — the config dir,

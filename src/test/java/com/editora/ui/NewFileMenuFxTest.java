@@ -132,7 +132,7 @@ class NewFileMenuFxTest {
 
     private static void create(MainController controller, Path dir, String typeId, String typed) throws Exception {
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
-                controller,
+                FxTestSupport.field(controller, "templateActions"),
                 "createFileOfType",
                 new Class<?>[] {Path.class, NewFileType.class, String.class},
                 dir,

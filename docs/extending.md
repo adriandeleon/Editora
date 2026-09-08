@@ -20,7 +20,7 @@ against the current code.
 
 ## Add a command
 
-1. **Register** in `MainController.registerCommands()`:
+1. **Register** in `WindowCommandRegistrar.registerCommands()`:
    ```java
    registry.register(Command.of("edit.myThing", this::myThing));
    ```
@@ -147,10 +147,19 @@ When a feature's logic bloats `MainController`, pull it into a coordinator behin
 - a `final class MyCoordinator` in `ui` that owns the feature's service(s) + state and reaches
   the window only through the shared `CoordinatorHost` interface (settings, active/all buffers,
   status, prompts, the overlay host, …);
-- `MainController` constructs it with an anonymous `Host` adapter and keeps **one-line
+- `MainController` constructs it with the shared `Services` adapter and keeps **one-line
   delegations** at each call site;
 - a fake `Host` in a test makes the coordinator unit-testable without a real window (see the
   `*CoordinatorFxTest`s).
 
 Add to `CoordinatorHost` only the narrow capabilities your coordinator needs; don't hand it the
 whole `MainController`.
+
+Keep command IDs and registration order stable during extraction. Move service shutdown alongside
+service ownership and retain the controller's lifecycle call. Pass explicit callbacks or existing
+renderer coordinators for dependencies outside `CoordinatorHost`; do not expose controller fields.
+`ExportCoordinatorFxTest` shows how to replace a native save dialog while testing real exported HTML,
+active-buffer switching, filename defaults, and cancellation through the command registry.
+
+For window-specific workflows, use a focused package-private `Host` interface as described in
+[window coordinators](subsystems/window-coordinators.md); preserve the public/FXML facade.

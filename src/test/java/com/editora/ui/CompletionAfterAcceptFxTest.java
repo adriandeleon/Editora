@@ -50,7 +50,7 @@ class CompletionAfterAcceptFxTest {
     /** Fires the debounced auto-trigger the way the 280 ms subscription does. */
     private static void autoTrigger(EditorBuffer b) {
         FxTestSupport.call(
-                b,
+                FxTestSupport.field(b, "completionActions"),
                 "updateCompletion",
                 new Class<?>[] {org.fxmisc.richtext.CodeArea.class, boolean.class},
                 b.getArea(),
@@ -60,7 +60,7 @@ class CompletionAfterAcceptFxTest {
     /** The popup's accept path (replaces the typed prefix with the item). */
     private static void accept(EditorBuffer b, String insert) {
         FxTestSupport.call(
-                b,
+                FxTestSupport.field(b, "completionActions"),
                 "acceptCompletion",
                 new Class<?>[] {org.fxmisc.richtext.CodeArea.class, Completion.class},
                 b.getArea(),
@@ -98,7 +98,7 @@ class CompletionAfterAcceptFxTest {
         EditorBuffer b = FxTestSupport.callOnFx(this::buffer);
         FxTestSupport.runOnFx(() -> accept(b, "apple"));
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
-                b,
+                FxTestSupport.field(b, "completionActions"),
                 "updateCompletion",
                 new Class<?>[] {org.fxmisc.richtext.CodeArea.class, boolean.class},
                 b.getArea(),

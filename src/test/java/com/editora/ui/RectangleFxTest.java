@@ -48,9 +48,9 @@ class RectangleFxTest {
     private void setKilled(List<String> lines) throws Exception {
         FxTestSupport.runOnFx(() -> {
             try {
-                var f = MainController.class.getDeclaredField("killedRectangle");
+                var f = EditingCoordinator.class.getDeclaredField("killedRectangle");
                 f.setAccessible(true);
-                f.set(fx.controller, lines);
+                f.set(FxTestSupport.field(fx.controller, "editing"), lines);
             } catch (ReflectiveOperationException e) {
                 throw new IllegalStateException(e);
             }
@@ -91,7 +91,8 @@ class RectangleFxTest {
 
     @SuppressWarnings("unchecked")
     private List<String> killed() throws Exception {
-        return FxTestSupport.callOnFx(() -> FxTestSupport.field(fx.controller, "killedRectangle"));
+        return FxTestSupport.callOnFx(
+                () -> FxTestSupport.field(FxTestSupport.field(fx.controller, "editing"), "killedRectangle"));
     }
 
     // --- the core cycle --------------------------------------------------------------------------

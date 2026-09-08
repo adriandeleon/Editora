@@ -1610,7 +1610,10 @@ public class SettingsWindow {
         autoSaveCombo = new ComboBox<>();
         autoSaveCombo
                 .getItems()
-                .setAll(MainController.AUTOSAVE_OFF, MainController.AUTOSAVE_DELAY, MainController.AUTOSAVE_FOCUS);
+                .setAll(
+                        FileWorkflowCoordinator.AUTOSAVE_OFF,
+                        FileWorkflowCoordinator.AUTOSAVE_DELAY,
+                        FileWorkflowCoordinator.AUTOSAVE_FOCUS);
         autoSaveCombo.setConverter(new StringConverter<>() {
             @Override
             public String toString(String key) {
@@ -1628,7 +1631,7 @@ public class SettingsWindow {
                 return;
             }
             config.getSettings().setAutoSave(now);
-            autoSaveDelaySpinner.setDisable(!MainController.AUTOSAVE_DELAY.equals(now));
+            autoSaveDelaySpinner.setDisable(!FileWorkflowCoordinator.AUTOSAVE_DELAY.equals(now));
             apply();
         });
 
@@ -7028,7 +7031,7 @@ public class SettingsWindow {
             autoSaveCombo.setValue(mode);
             autoSaveDelaySpinner.getValueFactory().setValue(Math.max(1, (int)
                     Math.round(settings.getAutoSaveDelayMillis() / 1000.0)));
-            autoSaveDelaySpinner.setDisable(!MainController.AUTOSAVE_DELAY.equals(mode));
+            autoSaveDelaySpinner.setDisable(!FileWorkflowCoordinator.AUTOSAVE_DELAY.equals(mode));
         } finally {
             loading = false;
         }

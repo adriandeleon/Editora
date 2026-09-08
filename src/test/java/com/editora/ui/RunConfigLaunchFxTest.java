@@ -152,7 +152,8 @@ class RunConfigLaunchFxTest {
 
     /** Runs {@code cfg} through a coordinator wired to {@code ops}, with App.java open so routing resolves. */
     private void launch(RecordingOps ops, RunConfiguration cfg) throws Exception {
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class[] {Path.class}, appFile));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, appFile));
         RunCoordinator coordinator = new RunCoordinator(FxTestSupport.field(fx.controller, "coordinatorHost"), ops);
         FxTestSupport.runOnFx(
                 () -> FxTestSupport.call(coordinator, "runJavaConfig", new Class[] {RunConfiguration.class}, cfg));

@@ -47,7 +47,8 @@ class ColumnRulerFxTest {
 
         Path file = Files.createTempFile("editora-ruler-", ".java");
         Files.writeString(file, "class A {\n" + ("    // " + "x".repeat(160) + "\n").repeat(60) + "}\n");
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "openPath", new Class<?>[] {Path.class}, file));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class<?>[] {Path.class}, file));
         settle(40);
         buffer = FxTestSupport.callOnFx(
                 () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {}));
@@ -87,7 +88,11 @@ class ColumnRulerFxTest {
     private void setLineNumbers(boolean on) {
         FxTestSupport.runOnFxUnchecked(() -> {
             settings.setShowLineNumbers(on);
-            FxTestSupport.invokeWith(fx.controller, "applyViewSettingsToAllBuffers", Settings.class, settings);
+            FxTestSupport.invokeWith(
+                    FxTestSupport.field(fx.controller, "editorSettings"),
+                    "applyViewSettingsToAllBuffers",
+                    Settings.class,
+                    settings);
         });
     }
 
@@ -113,7 +118,8 @@ class ColumnRulerFxTest {
 
     /** The toolbar/palette gesture itself, not a hand-assembled approximation of it. */
     private void toggleSimpleModeCommand() {
-        FxTestSupport.runOnFxUnchecked(() -> FxTestSupport.invoke(fx.controller, "toggleSimpleMode"));
+        FxTestSupport.runOnFxUnchecked(
+                () -> FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "toggleSimpleMode"));
     }
 
     /**
@@ -159,8 +165,12 @@ class ColumnRulerFxTest {
     private void setSimple(boolean on) {
         FxTestSupport.runOnFxUnchecked(() -> {
             settings.setSimpleMode(on);
-            FxTestSupport.invoke(fx.controller, "applyChromeVisibility");
-            FxTestSupport.invokeWith(fx.controller, "applyViewSettingsToAllBuffers", Settings.class, settings);
+            FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
+            FxTestSupport.invokeWith(
+                    FxTestSupport.field(fx.controller, "editorSettings"),
+                    "applyViewSettingsToAllBuffers",
+                    Settings.class,
+                    settings);
         });
     }
 
