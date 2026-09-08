@@ -83,6 +83,10 @@ class GitMultiFileReviewFxTest {
                     entries(workingReview).stream()
                             .map(PatchReviewPane.Entry::status)
                             .toList());
+            javafx.scene.control.SplitPane split = FxTestSupport.field(workingReview, "reviewSplit");
+            assertEquals(javafx.geometry.Orientation.HORIZONTAL, split.getOrientation());
+            FxTestSupport.runOnFx(() -> split.setDividerPosition(0, 0.4));
+            assertEquals(0.4, FxTestSupport.callOnFx(() -> split.getDividerPositions()[0]), 0.02);
 
             // A non-project fixture has no repository context while its review tab is selected; restore the
             // same snapshot before exercising the other entry point (a normal project window retains it).

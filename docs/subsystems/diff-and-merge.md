@@ -56,7 +56,8 @@ overview track marks every change across the document. Both layers are decorativ
 complements to the existing signs, labels, and keyboard navigation.
 
 `PatchReviewPane` is the shared multi-file review surface. It owns the file list, per-file status and stats,
-file navigation, and one displayed-at-a-time `DiffViewerPane` per entry. It accepts parsed sections from
+file navigation, a horizontally resizable sidebar divider, and one displayed-at-a-time `DiffViewerPane` per
+entry. It accepts parsed sections from
 multi-file `.patch`/`.diff` buffers and repository snapshots from the Git coordinator. The Commit window and
 the `diff.reviewStaged` / `diff.reviewUnstaged` commands open index-vs-HEAD or working-vs-index review sets;
 untracked files compare against an empty index side, and rename/copy entries fetch their original path on the

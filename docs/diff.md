@@ -21,7 +21,8 @@ developer and manual-test reference.
 
 The default layout is side-by-side. The layout button switches to unified view; next/previous change controls
 move through changed blocks. Long equal regions can collapse to context rows, wrapping can be toggled, and
-the side-by-side layout draws change ribbons plus an overview track.
+the side-by-side layout draws change ribbons plus an overview track. In multi-file and folder reviews, drag
+the divider beside the file list to resize it horizontally.
 
 The comparison controls deliberately affect matching, not source content:
 
