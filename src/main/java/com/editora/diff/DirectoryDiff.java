@@ -7,10 +7,10 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.TreeSet;
+import java.util.TreeMap;
+
+import com.editora.search.GitignoreFilter;
 
 /** Toolkit-free recursive directory comparison used by the multi-file diff review. */
 public final class DirectoryDiff {
@@ -47,31 +47,32 @@ public final class DirectoryDiff {
             throw new IOException("Both comparison roots must be directories");
         }
         int limit = Math.max(1, maxFiles);
-        Scan left = scan(leftRoot, limit);
-        Scan right = scan(rightRoot, limit);
-        TreeSet<String> paths = new TreeSet<>();
-        paths.addAll(left.files().keySet());
-        paths.addAll(right.files().keySet());
-        boolean truncated = left.truncated() || right.truncated() || paths.size() > limit;
+        GitignoreFilter leftIgnore = GitignoreFilter.load(leftRoot);
+        GitignoreFilter rightIgnore = GitignoreFilter.load(rightRoot);
+        TreeMap<String, FilePair> files = new TreeMap<>();
+        Scan left = scan(leftRoot, limit, leftIgnore, rightIgnore, true, files);
+        Scan right = scan(rightRoot, limit, leftIgnore, rightIgnore, false, files);
+        boolean truncated = left.truncated() || right.truncated() || files.size() > limit;
 
         List<Entry> differences = new ArrayList<>();
         int identical = 0;
         int visited = 0;
-        for (String relative : paths) {
+        for (var item : files.entrySet()) {
             if (visited++ >= limit) {
                 break;
             }
-            Path leftFile = left.files().get(relative);
-            Path rightFile = right.files().get(relative);
+            String relative = item.getKey();
+            FileInfo leftFile = item.getValue().left;
+            FileInfo rightFile = item.getValue().right;
             if (leftFile == null) {
-                differences.add(new Entry(relative, Kind.RIGHT_ONLY, -1, size(rightFile)));
+                differences.add(new Entry(relative, Kind.RIGHT_ONLY, -1, rightFile.size()));
             } else if (rightFile == null) {
-                differences.add(new Entry(relative, Kind.LEFT_ONLY, size(leftFile), -1));
+                differences.add(new Entry(relative, Kind.LEFT_ONLY, leftFile.size(), -1));
             } else {
-                long leftSize = size(leftFile);
-                long rightSize = size(rightFile);
+                long leftSize = leftFile.size();
+                long rightSize = rightFile.size();
                 try {
-                    if (leftSize == rightSize && Files.mismatch(leftFile, rightFile) == -1) {
+                    if (leftSize == rightSize && Files.mismatch(leftFile.path(), rightFile.path()) == -1) {
                         identical++;
                     } else {
                         differences.add(new Entry(relative, Kind.MODIFIED, leftSize, rightSize));
@@ -84,22 +85,51 @@ public final class DirectoryDiff {
         return new Result(differences, identical, truncated, left.incomplete() || right.incomplete());
     }
 
-    private static Scan scan(Path root, int limit) throws IOException {
-        Map<String, Path> files = new HashMap<>();
+    private static Scan scan(
+            Path root,
+            int limit,
+            GitignoreFilter leftIgnore,
+            GitignoreFilter rightIgnore,
+            boolean left,
+            TreeMap<String, FilePair> files)
+            throws IOException {
+        int[] found = {0};
         boolean[] truncated = {false};
         boolean[] incomplete = {false};
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attrs) {
+                if (!directory.equals(root)
+                        && ".git".equals(directory.getFileName().toString())) {
+                    return FileVisitResult.SKIP_SUBTREE;
+                }
+                String relative = normalizedRelative(root, directory);
+                return ignored(leftIgnore, rightIgnore, relative, true)
+                        ? FileVisitResult.SKIP_SUBTREE
+                        : FileVisitResult.CONTINUE;
+            }
+
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                 // walkFileTree does not follow symbolic links by default; keep that boundary explicit.
                 if (!attrs.isRegularFile() || Files.isSymbolicLink(file)) {
                     return FileVisitResult.CONTINUE;
                 }
-                if (files.size() >= limit) {
+                String relative = normalizedRelative(root, file);
+                if (ignored(leftIgnore, rightIgnore, relative, false)) {
+                    return FileVisitResult.CONTINUE;
+                }
+                if (found[0]++ >= limit) {
                     truncated[0] = true;
                     return FileVisitResult.TERMINATE;
                 }
-                files.put(normalizedRelative(root, file), file);
+                FilePair pair = files.computeIfAbsent(relative, relativePath -> new FilePair());
+                FileInfo info = new FileInfo(file, attrs.size());
+                if (left) {
+                    pair.left = info;
+                } else {
+                    pair.right = info;
+                }
                 return FileVisitResult.CONTINUE;
             }
 
@@ -109,23 +139,24 @@ public final class DirectoryDiff {
                 return FileVisitResult.CONTINUE;
             }
         });
-        return new Scan(files, truncated[0], incomplete[0]);
+        return new Scan(truncated[0], incomplete[0]);
+    }
+
+    private static boolean ignored(
+            GitignoreFilter leftIgnore, GitignoreFilter rightIgnore, String relative, boolean directory) {
+        return leftIgnore.ignored(relative, directory) || rightIgnore.ignored(relative, directory);
     }
 
     private static String normalizedRelative(Path root, Path file) {
         return root.relativize(file).toString().replace(file.getFileSystem().getSeparator(), "/");
     }
 
-    private static long size(Path file) {
-        if (file == null) {
-            return -1;
-        }
-        try {
-            return Files.size(file);
-        } catch (IOException e) {
-            return -1;
-        }
+    private record FileInfo(Path path, long size) {}
+
+    private static final class FilePair {
+        private FileInfo left;
+        private FileInfo right;
     }
 
-    private record Scan(Map<String, Path> files, boolean truncated, boolean incomplete) {}
+    private record Scan(boolean truncated, boolean incomplete) {}
 }

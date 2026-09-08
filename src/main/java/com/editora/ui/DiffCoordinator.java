@@ -704,7 +704,11 @@ final class DiffCoordinator {
         fileReadExecutor.submit(() -> {
             try {
                 DirectoryDiff.Result result = DirectoryDiff.compare(leftRoot, rightRoot);
-                javafx.application.Platform.runLater(() -> openDirectoryReview(leftRoot, rightRoot, result));
+                List<DirectoryReviewPane.Entry> entries = result.entries().stream()
+                        .map(entry -> new DirectoryReviewPane.Entry(
+                                entry.relativePath(), entry.kind(), entry.leftSize(), entry.rightSize()))
+                        .toList();
+                javafx.application.Platform.runLater(() -> openDirectoryReview(leftRoot, rightRoot, result, entries));
             } catch (IOException e) {
                 javafx.application.Platform.runLater(
                         () -> host.setStatus(tr("status.diff.directoryFailed", e.getMessage())));
@@ -712,11 +716,8 @@ final class DiffCoordinator {
         });
     }
 
-    private void openDirectoryReview(Path leftRoot, Path rightRoot, DirectoryDiff.Result result) {
-        List<DirectoryReviewPane.Entry> entries = result.entries().stream()
-                .map(entry -> new DirectoryReviewPane.Entry(
-                        entry.relativePath(), entry.kind(), entry.leftSize(), entry.rightSize()))
-                .toList();
+    private void openDirectoryReview(
+            Path leftRoot, Path rightRoot, DirectoryDiff.Result result, List<DirectoryReviewPane.Entry> entries) {
         String summary = tr("diff.directory.summary", entries.size(), result.identicalFiles())
                 + (result.truncated() ? " · " + tr("diff.directory.truncated") : "")
                 + (result.incomplete() ? " · " + tr("diff.directory.incomplete") : "");

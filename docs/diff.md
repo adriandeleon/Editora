@@ -11,6 +11,8 @@ developer and manual-test reference.
   for any saved local file.
 - Git changes, staged and unstaged review, file history, `.patch`/`.diff` files, and directory comparisons
   reuse the same viewer.
+- Arbitrary directory comparisons skip `.git` trees and paths matched by either selected root's
+  `.gitignore` before comparing file content.
 - A Project-tree folder's Git menu can compare that subtree with HEAD, a branch, a tag, or a selected
   revision. The review includes staged, unstaged, deleted, and untracked files, excludes ignored files, and
   loads each changed file only when selected.

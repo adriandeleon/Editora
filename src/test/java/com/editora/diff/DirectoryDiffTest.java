@@ -64,4 +64,34 @@ class DirectoryDiffTest {
         assertEquals(List.of(), result.entries());
         assertEquals(0, result.identicalFiles());
     }
+
+    @Test
+    void skipsGitMetadataAndPathsIgnoredByEitherRoot() throws Exception {
+        Path left = Files.createDirectories(temp.resolve("ignored-left"));
+        Path right = Files.createDirectories(temp.resolve("ignored-right"));
+        Files.writeString(left.resolve(".gitignore"), "build/\n*.log\n");
+        Files.writeString(right.resolve(".gitignore"), "generated/\n");
+        Files.createDirectories(left.resolve(".git/objects"));
+        Files.createDirectories(right.resolve(".git/objects"));
+        Files.createDirectories(left.resolve("build"));
+        Files.createDirectories(right.resolve("build"));
+        Files.createDirectories(left.resolve("generated"));
+        Files.createDirectories(right.resolve("generated"));
+        Files.writeString(left.resolve(".git/objects/left"), "left");
+        Files.writeString(right.resolve(".git/objects/right"), "right");
+        Files.writeString(left.resolve("build/left.txt"), "left");
+        Files.writeString(right.resolve("build/right.txt"), "right");
+        Files.writeString(left.resolve("generated/left.txt"), "left");
+        Files.writeString(right.resolve("generated/right.txt"), "right");
+        Files.writeString(left.resolve("debug.log"), "left");
+        Files.writeString(right.resolve("debug.log"), "right");
+        Files.writeString(left.resolve("kept.txt"), "before");
+        Files.writeString(right.resolve("kept.txt"), "after");
+
+        DirectoryDiff.Result result = DirectoryDiff.compare(left, right);
+
+        assertEquals(
+                List.of(".gitignore", "kept.txt"),
+                result.entries().stream().map(DirectoryDiff.Entry::relativePath).toList());
+    }
 }
