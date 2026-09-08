@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -92,7 +93,7 @@ final class DirectoryReviewPane implements TabContent {
         this.entries = List.copyOf(entries);
         this.loader = loader;
         root.getStyleClass().add("patch-review");
-        files.getItems().setAll(entries);
+        files.setItems(FXCollections.observableList(this.entries));
         files.getStyleClass().add("patch-file-list");
         files.setCellFactory(v -> new FileCell());
         files.setPrefWidth(275);

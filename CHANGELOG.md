@@ -46,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Recursive folder comparison now prunes `.git` metadata and paths matched by either root's `.gitignore`.
+  Its scan reuses file attributes instead of restating every file, builds the review rows off the JavaFX
+  thread, and avoids redundant list copies when the result is displayed.
 - Multi-file diff and folder-review file lists can now be resized horizontally with a draggable divider.
 - File Information now opens and closes from the file-size segment in the status bar; its redundant
   tool-window stripe icon has been removed.

@@ -64,10 +64,12 @@ untracked files compare against an empty index side, and rename/copy entries fet
 left. Active-diff commands route through the currently selected file.
 
 `DirectoryReviewPane` is the recursive folder-comparison surface. `DirectoryDiff` walks without following
-symbolic links, bounds each scan to 20,000 files, compares candidates with `Files.mismatch`, counts identical
-files, and returns only modified and one-sided paths. The scan runs on the file-read executor. Selecting an
-entry loads its two sides and builds a normal `DiffViewerPane` on demand; an access-ordered cache retains at
-most 32 visited panes. `diff.compareDirectories` opens the two-folder picker. Project-tree Git comparisons
+symbolic links, prunes `.git` trees and paths matched by either root's `.gitignore`, bounds each scan to
+20,000 files, compares candidates with `Files.mismatch`, counts identical files, and returns only modified
+and one-sided paths. The scan and review-entry conversion run on the file-read executor; the scanner reuses
+the walk's file attributes and one sorted path index to avoid duplicate filesystem reads and collections.
+Selecting an entry loads its two sides and builds a normal `DiffViewerPane` on demand; an access-ordered cache
+retains at most 32 visited panes. `diff.compareDirectories` opens the two-folder picker. Project-tree Git comparisons
 reuse this surface for a selected subtree against HEAD, a branch, tag, or revision. `GitService` obtains a
 NUL-safe, rename-disabled changed-path list plus non-ignored untracked files; each selected entry lazily reads
 the ref blob and current working file instead of materializing a temporary snapshot tree.
