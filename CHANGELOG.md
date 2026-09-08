@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Context menus now use one consistent Inter font, size, weight, and style throughout the application
+  instead of inheriting typography from the file, editor, toolbar, or other control that opened them.
 - Recursive folder comparison now prunes `.git` metadata and paths matched by either root's `.gitignore`.
   Its scan reuses file attributes instead of restating every file, builds the review rows off the JavaFX
   thread, and avoids redundant list copies when the result is displayed.

@@ -1744,24 +1744,16 @@
     -fx-font-size: 11px;
 }
 
-/* Editor right-click menu: use the UI font, not the editor's monospace inline style. */
-.editor-context-menu,
-.editor-context-menu .menu-item,
-.editor-context-menu .menu-item .label {
-    -fx-font-family: "sans-serif";
-    -fx-font-size: 13px;
-}
-
-/* Toolbar right-click menu: same shape of fix, different leak. A ContextMenu's CSS parent is the node
-   it was shown from, so it inherits that node's font — and `.tool-bar` above deliberately runs at 18px
-   so the bar's own labels read beside the glyphs. That size followed the popup out: measured 18px for
-   the toolbar's menu against 14px for every other menu in the app (`.root`'s size), i.e. a third larger.
-   Pinned back to the root size; `1em` would not work, since it resolves against the inherited 18px.
-   ToolbarMenuFontFxTest pins it against a menu shown from a node outside the bar. */
-.toolbar-context-menu,
-.toolbar-context-menu .menu-item,
-.toolbar-context-menu .menu-item .label {
+/* A ContextMenu's CSS parent is the node it was shown from. Pin every font property that file rows,
+   editors, toolbars, and other owners customize so right-click menus remain consistent everywhere.
+   Absolute pixels are intentional: em would resolve against the leaking owner size. */
+.context-menu,
+.context-menu .menu-item,
+.context-menu .menu-item .label {
+    -fx-font-family: "Inter", "System", "sans-serif";
     -fx-font-size: 14px;
+    -fx-font-style: normal;
+    -fx-font-weight: normal;
 }
 
 /* The tab title lives in a graphic Label (.tab-title) so it can act as a drag handle for

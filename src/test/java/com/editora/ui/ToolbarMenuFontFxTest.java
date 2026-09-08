@@ -21,14 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The toolbar's right-click menu must render at the same size as every other menu in the app.
  *
- * <p>A {@code ContextMenu} is a popup whose CSS parent is the node it was shown from, so it inherits that
- * node's font — and {@code .tool-bar} deliberately runs at 18px so the bar's own labels read beside the
- * glyphs. That size followed the popup out: the toolbar's menu rendered at 18px against 14px for every
- * other menu, a third larger. The fix is the {@code .toolbar-context-menu} class pinned back to the root
- * size in app.css.
- *
- * <p>The leak is measured here as well as the fix, so the test still fails if the class or the rule is
- * dropped: without the precondition, a build where nothing inherits any more would pass vacuously.
+ * <p>A {@code ContextMenu} is a popup whose CSS parent is the node it was shown from, so the global
+ * context-menu rule must prevent the toolbar's deliberately larger font from following the popup out.
  */
 @Tag("fx")
 class ToolbarMenuFontFxTest {
@@ -94,13 +88,13 @@ class ToolbarMenuFontFxTest {
                 FxTestSupport.<Stage>field(fx.controller, "stage").getScene().getRoot());
 
         double elsewhere = sizeOfMenuShownFrom(outsideTheBar);
-        double leaked = sizeOfMenuShownFrom(bar);
+        double genericToolbarMenu = sizeOfMenuShownFrom(bar);
         assertTrue(elsewhere > 0, "precondition: a menu shown outside the toolbar renders a labelled item");
-        assertTrue(
-                leaked > elsewhere,
-                "precondition: an unstyled menu shown from the toolbar should inherit the bar's larger font"
-                        + " (got " + leaked + " vs " + elsewhere + " elsewhere) — if this stops holding, the"
-                        + " .toolbar-context-menu rule may no longer be needed");
+        assertEquals(
+                elsewhere,
+                genericToolbarMenu,
+                0.01,
+                "every context menu should ignore the toolbar's larger owner font");
 
         // The real menu, built by the coordinator the toolbar's right-click actually goes through.
         Object coordinator = FxTestSupport.field(fx.controller, "toolbarCoordinator");
@@ -125,7 +119,7 @@ class ToolbarMenuFontFxTest {
                     0.01,
                     "the toolbar's right-click menu renders at " + actual + "px while every other menu in the"
                             + " app renders at " + elsewhere + "px — it is inheriting the toolbar's own font"
-                            + " size (see .toolbar-context-menu in app.css)");
+                            + " size (see the global .context-menu rule in app.css)");
         } finally {
             FxTestSupport.runOnFx(() -> {
                 for (Window w : Window.getWindows().stream().toList()) {
