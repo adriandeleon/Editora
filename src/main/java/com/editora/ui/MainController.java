@@ -1703,8 +1703,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void openInProjectWindow(String projectKey, Path file, int line) {
         String key = projectKey == null ? "" : projectKey;
         if (windowManager == null || !projectsEnabled() || key.equals(config.currentProjectKey())) {
-            fileWorkflows.openPath(file);
-            Platform.runLater(() -> navigateToLine(line));
+            openAndNavigate(file, line);
             return;
         }
         windowManager.openInWindow(key, file, line);
@@ -1716,6 +1715,13 @@ public class MainController implements com.editora.mcp.McpBridge {
      * {@link WindowManager#openInWindow} on the target window's controller once it exists and is restored.
      */
     public void openAndNavigate(Path file, int line) {
+        if (line < 0) {
+            if (projectToolWindow != null) {
+                toolWindows.open(projectToolWindow, false);
+            }
+            projectPanel.revealPathInTree(file);
+            return;
+        }
         fileWorkflows.openPath(file);
         if (line >= 0) {
             Platform.runLater(() -> navigateToLine(line));
@@ -2109,6 +2115,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public boolean hasPersonalNotes(Path file) {
                 return notesCoordinator.hasPersonalNotes(file);
+            }
+
+            @Override
+            public String personalNotesTooltip(Path path) {
+                return notesCoordinator.personalNotesTooltip(path);
             }
 
             @Override

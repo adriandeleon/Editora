@@ -168,6 +168,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         boolean hasPersonalNotes(Path file);
 
+        /** Tooltip text for notes attached directly to {@code path}, or blank when it has none. */
+        default String personalNotesTooltip(Path path) {
+            return "";
+        }
+
         void addBookmark(Path file);
 
         void addPersonalNote(Path file);
@@ -185,6 +190,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private OverlayInput.Prompt prompt;
 
     private final TextField filterField = new TextField();
+    private final ToggleButton treeMode = new ToggleButton(tr("project.view.tree"));
+    private final ToggleButton mapModeButton = new ToggleButton(tr("project.view.map"));
     /** Filter row: the text field plus a trailing clear ("✕") button shown only while there's text. */
     private final HBox filterBar = new HBox();
 
@@ -367,8 +374,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         clear.visibleProperty().bind(filterField.textProperty().isEmpty().not());
         clear.managedProperty().bind(clear.visibleProperty()); // reclaim its width when hidden
 
-        ToggleButton treeMode = new ToggleButton(tr("project.view.tree"));
-        ToggleButton mapModeButton = new ToggleButton(tr("project.view.map"));
         treeMode.getStyleClass().add("project-view-toggle");
         mapModeButton.getStyleClass().add("project-view-toggle");
         treeMode.setTooltip(new Tooltip(tr("project.view.tree.tooltip")));
@@ -424,6 +429,54 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         activeFile = next;
         tree.refresh();
         mapView.refreshStates();
+    }
+
+    /** Reveals and selects a file or folder in the active Project view. */
+    public void revealPath(Path path) {
+        if (path == null || root == null) {
+            return;
+        }
+        Path target = path.toAbsolutePath().normalize();
+        if (mapMode) {
+            mapView.revealPath(target);
+            return;
+        }
+        if (!(tree.getRoot() instanceof PathItem item)
+                || !target.startsWith(root.toAbsolutePath().normalize())) {
+            return;
+        }
+        TreeItem<Path> current = item;
+        current.setExpanded(true);
+        Path relative = root.toAbsolutePath().normalize().relativize(target);
+        for (Path segment : relative) {
+            TreeItem<Path> next = current.getChildren().stream()
+                    .filter(child -> child.getValue().getFileName().equals(segment))
+                    .findFirst()
+                    .orElse(null);
+            if (next == null) {
+                return;
+            }
+            current = next;
+            if (!current.isLeaf()) {
+                current.setExpanded(true);
+            }
+        }
+        tree.getSelectionModel().select(current);
+        tree.scrollTo(tree.getRow(current));
+        tree.requestFocus();
+    }
+
+    /** Switches to the classic explorer tree, clears filtering, and reveals {@code path}. */
+    public void revealPathInTree(Path path) {
+        loading = true;
+        filterField.clear();
+        loading = false;
+        if (!treeMode.isSelected()) {
+            treeMode.setSelected(true); // the mode listener rebuilds the body synchronously
+        } else {
+            rebuildBody();
+        }
+        revealPath(path);
     }
 
     /**
@@ -1617,6 +1670,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 setText(null);
                 setGraphic(null);
                 setContextMenu(null);
+                setTooltip(null);
                 getStyleClass().removeAll(CELL_CLASSES);
                 return;
             }
@@ -1675,12 +1729,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
             setText(label);
             setContextMenu(null); // built lazily in setOnContextMenuRequested (see the PathCell constructor)
+            setTooltip(null);
             Path fileName = item.getFileName();
             // Box the folder glyph in the same fixed icon column as the (already-boxed) file glyphs, so
             // folder and file rows share one icon width and every label starts at the same x.
             Node glyph = FileIcons.forProjectItem(fileName == null ? label : fileName.toString(), isDir);
             Node base = FileIcons.withStatusLetter(glyph, fileStatus == null ? null : fileStatus.letter());
-            if (!isDir && markerActions != null) {
+            if (markerActions != null) {
                 HBox graphic = new HBox(3, base);
                 graphic.setAlignment(Pos.CENTER_LEFT);
                 if (markerActions.hasBookmarks(item)) {
@@ -1688,6 +1743,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 }
                 if (markerActions.personalNotesEnabled() && markerActions.hasPersonalNotes(item)) {
                     graphic.getChildren().add(smallMarker(Icons.notes(), "project-note-indicator"));
+                    if (isDir) {
+                        String text = markerActions.personalNotesTooltip(item);
+                        if (text != null && !text.isBlank()) {
+                            Tooltip notes = new Tooltip(text);
+                            notes.setWrapText(true);
+                            notes.setMaxWidth(420);
+                            setTooltip(notes);
+                        }
+                    }
                 }
                 setGraphic(graphic);
             } else {
@@ -1741,21 +1805,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // (the confirm dialog shows the count).
             delete.setOnAction(e -> deleteSelected(treeItem));
             menu.getItems().add(delete);
-            if (markerActions != null) {
-                Path file = treeItem.getValue();
-                menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+        }
+        if (markerActions != null) {
+            Path target = treeItem.getValue();
+            menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
 
-                MenuItem bookmark = new MenuItem(tr("project.menu.addBookmark"));
-                bookmark.setGraphic(Icons.bookmark());
-                bookmark.setOnAction(e -> markerActions.addBookmark(file));
-                menu.getItems().add(bookmark);
+            MenuItem bookmark = new MenuItem(tr(isDir ? "project.menu.addFolderBookmark" : "project.menu.addBookmark"));
+            bookmark.setGraphic(Icons.bookmark());
+            bookmark.setOnAction(e -> markerActions.addBookmark(target));
+            menu.getItems().add(bookmark);
 
-                MenuItem note = new MenuItem(tr("project.menu.addPersonalNote"));
-                note.setGraphic(Icons.notes());
-                note.setDisable(!markerActions.personalNotesEnabled());
-                note.setOnAction(e -> markerActions.addPersonalNote(file));
-                menu.getItems().add(note);
-            }
+            MenuItem note =
+                    new MenuItem(tr(isDir ? "project.menu.addFolderPersonalNote" : "project.menu.addPersonalNote"));
+            note.setGraphic(Icons.notes());
+            note.setDisable(!markerActions.personalNotesEnabled());
+            note.setOnAction(e -> markerActions.addPersonalNote(target));
+            menu.getItems().add(note);
         }
         if (onReveal != null || onOpenTerminal != null) {
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());

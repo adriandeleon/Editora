@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -183,5 +184,40 @@ class BookmarksPanelFxTest {
                 List.of("first", "line 2"), rendered.stream().map(Text::getText).toList());
         assertTrue(rendered.get(0).getStyleClass().contains("bookmark-label"));
         assertTrue(rendered.get(1).getStyleClass().contains("bookmark-line-number"));
+    }
+
+    @Test
+    void folderBookmarkRendersWithoutALineNumber() throws Exception {
+        source.clear();
+        source.put("/proj/docs", List.of(Bookmark.folder()));
+        BookmarksPanel p = panel();
+        FxTestSupport.runOnFx(p::refresh);
+
+        List<Text> rendered = FxTestSupport.callOnFx(() -> {
+            TreeView<Object> tree = tree(p);
+            Object value = tree.getRoot()
+                    .getChildren()
+                    .getFirst()
+                    .getChildren()
+                    .getFirst()
+                    .getChildren()
+                    .getFirst()
+                    .getValue();
+            @SuppressWarnings("unchecked")
+            TreeCell<Object> cell = (TreeCell<Object>) tree.getCellFactory().call(tree);
+            FxTestSupport.call(
+                    cell,
+                    "updateItem",
+                    new Class<?>[] {value.getClass().getInterfaces()[0], boolean.class},
+                    value,
+                    false);
+            return ((HBox) cell.getGraphic())
+                    .getChildren().stream()
+                            .filter(Text.class::isInstance)
+                            .map(Text.class::cast)
+                            .toList();
+        });
+        assertEquals(1, rendered.size());
+        assertEquals(tr("bookmarks.folder"), rendered.getFirst().getText());
     }
 }

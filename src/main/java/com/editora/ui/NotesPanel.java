@@ -25,6 +25,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.config.NoteScope;
 import com.editora.config.NoteStatus;
 import com.editora.config.PersonalNote;
 
@@ -68,7 +69,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
 
     private record ProjectRow(String key, String name, boolean current) implements Row {}
 
-    private record FileRow(String projectKey, String fileKey) implements Row {}
+    private record FileRow(String projectKey, String fileKey, boolean folder) implements Row {}
 
     private record NoteRow(String projectKey, String fileKey, PersonalNote note) implements Row {}
 
@@ -205,7 +206,8 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                     }
                 }
                 if (!kids.isEmpty()) {
-                    TreeItem<Row> fileItem = new TreeItem<>(new FileRow(key, fileKey));
+                    boolean folder = notes.stream().anyMatch(note -> note.scope() == NoteScope.FOLDER);
+                    TreeItem<Row> fileItem = new TreeItem<>(new FileRow(key, fileKey, folder));
                     fileItem.setExpanded(true);
                     fileItem.getChildren().setAll(kids);
                     projectNode.getChildren().add(fileItem);
@@ -261,7 +263,9 @@ public class NotesPanel extends VBox implements ToolWindowContent {
     private static String noteLabel(PersonalNote note) {
         String body = note.body().strip();
         String firstLine = body.isEmpty() ? "" : body.lines().findFirst().orElse("");
-        String prefix = tr("notes.line", note.anchor().line() + 1) + ": ";
+        String prefix = note.scope() == NoteScope.FOLDER
+                ? ""
+                : tr("notes.line", note.anchor().line() + 1) + ": ";
         String text = firstLine.isEmpty() ? tr("notes.empty") : firstLine;
         if (note.status() == NoteStatus.RESOLVED) {
             text = "✓ " + text;
@@ -299,7 +303,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
             } else if (item instanceof FileRow f) {
                 setText(fileName(f.fileKey()));
                 getStyleClass().add("notes-file-row");
-                setGraphic(FileIcons.forFileName(fileName(f.fileKey())));
+                setGraphic(FileIcons.forProjectItem(fileName(f.fileKey()), f.folder()));
                 setTooltip(new Tooltip(f.fileKey()));
                 MenuItem deleteAll = new MenuItem(tr("notes.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());

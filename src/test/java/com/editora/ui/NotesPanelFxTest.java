@@ -62,6 +62,11 @@ class NotesPanelFxTest {
         return PersonalNote.create(fid, NoteScope.LINE, anc, body, List.of());
     }
 
+    private static PersonalNote folderNote(String body) {
+        FileIdentity fid = new FileIdentity("/proj/docs", "/proj/docs", 1, 1, "");
+        return PersonalNote.create(fid, NoteScope.FOLDER, new TextAnchor(0, 0, 0, 0, "", "", ""), body, List.of());
+    }
+
     private NotesPanel panel() throws Exception {
         // The in-memory bucket is the General (no-project) scope; currentKey "" makes it the current group.
         return FxTestSupport.callOnFx(() ->
@@ -150,5 +155,18 @@ class NotesPanelFxTest {
         TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
         assertEquals(1, root.getChildren().size(), "one project group");
         assertEquals(1, root.getChildren().get(0).getChildren().size(), "only the note whose body matches survives");
+    }
+
+    @Test
+    void folderNoteIsGroupedAsAFolderTarget() throws Exception {
+        source.clear();
+        source.put("/proj/docs", List.of(folderNote("Remember this folder")));
+        NotesPanel p = panel();
+        FxTestSupport.runOnFx(p::refresh);
+
+        TreeItem<Object> target = FxTestSupport.callOnFx(
+                () -> tree(p).getRoot().getChildren().getFirst().getChildren().getFirst());
+        assertEquals(1, target.getChildren().size());
+        assertTrue(target.getValue().toString().contains("folder=true"));
     }
 }
