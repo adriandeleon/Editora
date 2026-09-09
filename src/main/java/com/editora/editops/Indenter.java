@@ -181,7 +181,7 @@ public final class Indenter {
                     "typescript",
                     "javascriptreact",
                     "typescriptreact" -> Style.BRACES;
-            case "xml", "html" -> Style.XML;
+            case "xml", "html", "astro" -> Style.XML;
             case "python", "yaml" -> Style.PY;
             case "shell" -> Style.SHELL;
             case "ruby" -> Style.RUBY;

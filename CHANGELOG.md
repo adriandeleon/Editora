@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `.astro` files are now recognized as Astro, use the official Astro TextMate grammar for mixed
+  frontmatter/HTML/CSS syntax highlighting and Structure symbols, and support the configurable
+  `astro-ls` language server with automatic detection and one-click npm installation.
+
 - Bookmarks and Personal Notes can now be attached to folders from the Project tree; folder entries carry
   folder icons in their tool windows, open the Project explorer tree with the owning folder selected when
   activated, and expose Personal Notes as folder-row tooltips.
@@ -17,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Editor overlays now cap their backing textures using the window's HiDPI output scale, preventing
+  JavaFX Metal renderer crashes when an unwrapped long line makes an overlay wider than the GPU limit.
+- Astro language-server startup now discovers and supplies its required TypeScript SDK, including a
+  workspace-hoisted or Editora-installed SDK, instead of entering the crash-restart guard at initialization.
 - The HTML **Open in Browser** control now stays inside the code editor when the minimap is shown instead
   of floating over the minimap.
 

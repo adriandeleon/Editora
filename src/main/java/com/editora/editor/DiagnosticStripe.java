@@ -114,8 +114,8 @@ final class DiagnosticStripe extends Region {
             releaseTexture(); // no marks → hold no full-height texture (GPU pool hygiene)
             return;
         }
-        double w = CanvasGuards.clampDim(getWidth());
-        double h = CanvasGuards.clampDim(getHeight());
+        double w = CanvasGuards.clampWidth(this, getWidth());
+        double h = CanvasGuards.clampHeight(this, getHeight());
         if (canvas.getWidth() != w || canvas.getHeight() != h) {
             canvas.setWidth(w);
             canvas.setHeight(h);

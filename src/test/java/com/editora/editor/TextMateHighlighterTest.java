@@ -116,6 +116,20 @@ class TextMateHighlighterTest {
     }
 
     @Test
+    void astroGrammarHighlightsEmbeddedLanguagesAndFindsStructure() {
+        IGrammar astro = GrammarRegistry.shared().forFileName("Card.astro");
+        assertNotNull(astro, "Astro grammar should load");
+        String text = "---\nconst title = 'Hello';\n---\n<section class=\"card\">\n  <h2>{title}</h2>\n</section>\n";
+        TextMateHighlighter.Analysis analysis = TextMateHighlighter.analyze(text, astro);
+        assertNotNull(analysis);
+        assertEquals(text.length(), analysis.spans().length());
+        assertTrue(hasStyle(analysis.spans(), "string"), "expected frontmatter/attribute string highlighting");
+        assertTrue(
+                analysis.symbols().stream().anyMatch(s -> "tag".equals(s.kind()) && "section".equals(s.name())),
+                "expected Astro markup tags in the Structure model");
+    }
+
+    @Test
     void plainTextFormatGrammarsTokenize() {
         // The 2026-07 plain-text-format batch: vendored diff/makefile/just/proto/graphql grammars plus
         // the in-house properties/gitattributes ones — each loads and produces the expected span kind.

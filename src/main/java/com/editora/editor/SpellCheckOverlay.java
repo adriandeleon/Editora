@@ -170,8 +170,8 @@ final class SpellCheckOverlay extends Region {
         // Only track the viewport size while there's something to paint; an idle overlay stays 1x1 (see
         // hasContent). redraw() grows the canvas on demand when it finds visible misspellings.
         if (hasContent) {
-            double w = CanvasGuards.clampDim(getWidth());
-            double h = CanvasGuards.clampDim(getHeight());
+            double w = CanvasGuards.clampWidth(this, getWidth());
+            double h = CanvasGuards.clampHeight(this, getHeight());
             if (canvas.getWidth() != w || canvas.getHeight() != h) {
                 canvas.setWidth(w);
                 canvas.setHeight(h);
@@ -206,8 +206,8 @@ final class SpellCheckOverlay extends Region {
 
     /** Grows the canvas to the viewport (only when there's content to paint) and clears it. */
     private void ensureCanvasSized() {
-        double w = CanvasGuards.clampDim(getWidth());
-        double h = CanvasGuards.clampDim(getHeight());
+        double w = CanvasGuards.clampWidth(this, getWidth());
+        double h = CanvasGuards.clampHeight(this, getHeight());
         if (canvas.getWidth() != w || canvas.getHeight() != h) {
             canvas.setWidth(w); // resizing a Canvas also clears it
             canvas.setHeight(h);

@@ -5552,6 +5552,17 @@ public class SettingsWindow {
                         v -> config.getSettings().setTypstLspCommand(v),
                         () -> config.getSettings().getTypstLspCommand()),
                 new LspServerUi(
+                        "astro",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_ASTRO_COMMAND,
+                        "settings.lsp.enableAstro",
+                        "settings.lsp.astroCommand",
+                        "settings.lsp.astroStatus",
+                        "lsp astro astro-ls web components language server found installed command path",
+                        v -> config.getSettings().setAstroLspEnabled(v),
+                        () -> config.getSettings().isAstroLspEnabled(),
+                        v -> config.getSettings().setAstroLspCommand(v),
+                        () -> config.getSettings().getAstroLspCommand()),
+                new LspServerUi(
                         com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID,
                         com.editora.lsp.LspServerRegistry.DEFAULT_MAVEN_POM_COMMAND,
                         "settings.lsp.enableMavenPom",

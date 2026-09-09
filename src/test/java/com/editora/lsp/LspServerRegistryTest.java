@@ -179,6 +179,17 @@ class LspServerRegistryTest {
     }
 
     @Test
+    void astroServerDefaultsAndMarkers() {
+        assertTrue(LspServerRegistry.isSupported("astro"));
+        assertEquals("astro", LspServerRegistry.serverIdFor("astro"));
+        assertEquals(
+                List.of("astro-ls", "--stdio"),
+                LspServerRegistry.specFor("astro", Map.of()).command());
+        assertTrue(LspServerRegistry.specFor("astro", Map.of()).rootMarkers().contains("astro.config.mjs"));
+        assertTrue(LspServerRegistry.specFor("astro", Map.of()).rootMarkers().contains("package.json"));
+    }
+
+    @Test
     void configuredCommandIsTokenizedPerServer() {
         var java = LspServerRegistry.specFor("java", Map.of("java", "java -jar /opt/jdtls/launcher.jar -data ws"));
         assertEquals(List.of("java", "-jar", "/opt/jdtls/launcher.jar", "-data", "ws"), java.command());

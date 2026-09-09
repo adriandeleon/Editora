@@ -53,7 +53,7 @@ public final class FoldRegions {
         return switch (language == null ? "" : language) {
             case "markdown" -> markdown(text);
             case "markwhen" -> markwhen(text);
-            case "xml", "html" -> xml(text);
+            case "xml", "html", "astro" -> xml(text);
             // Brace-delimited languages fold on matched {} / [].
             case "java",
                     "json",
@@ -116,7 +116,7 @@ public final class FoldRegions {
         if (text == null || text.isEmpty() || language == null) {
             return List.of();
         }
-        if ("xml".equals(language) || "html".equals(language)) {
+        if ("xml".equals(language) || "html".equals(language) || "astro".equals(language)) {
             return xmlComments(text);
         }
         if (!SLASH_STAR_LANGUAGES.contains(language)) {

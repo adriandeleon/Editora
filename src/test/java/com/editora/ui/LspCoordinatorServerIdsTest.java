@@ -112,6 +112,7 @@ class LspCoordinatorServerIdsTest {
             case "toml" -> s.setTomlLspCommand(v);
             case "csharp" -> s.setCsharpLspCommand(v);
             case "typst" -> s.setTypstLspCommand(v);
+            case "astro" -> s.setAstroLspCommand(v);
             case "maven-pom" -> s.setMavenPomLspCommand(v);
             case "java" -> s.setJavaLspCommand(v);
             default ->

@@ -184,6 +184,7 @@ final class LspCoordinator {
         "toml",
         "csharp",
         "typst",
+        "astro",
         com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID
     };
 
@@ -778,6 +779,7 @@ final class LspCoordinator {
             case "toml" -> s.isTomlLspEnabled();
             case "csharp" -> s.isCsharpLspEnabled();
             case "typst" -> s.isTypstLspEnabled();
+            case "astro" -> s.isAstroLspEnabled();
             case "maven-pom" -> s.isMavenPomLspEnabled();
             default -> s.isJavaLspEnabled();
         };
@@ -845,6 +847,7 @@ final class LspCoordinator {
             case "toml" -> s.getTomlLspCommand();
             case "csharp" -> s.getCsharpLspCommand();
             case "typst" -> s.getTypstLspCommand();
+            case "astro" -> s.getAstroLspCommand();
             case "maven-pom" -> s.getMavenPomLspCommand();
             default -> s.getJavaLspCommand();
         };
@@ -890,6 +893,7 @@ final class LspCoordinator {
             case "toml" -> s.setTomlLspEnabled(on);
             case "csharp" -> s.setCsharpLspEnabled(on);
             case "typst" -> s.setTypstLspEnabled(on);
+            case "astro" -> s.setAstroLspEnabled(on);
             case "maven-pom" -> s.setMavenPomLspEnabled(on);
             default -> s.setJavaLspEnabled(on);
         }
@@ -920,6 +924,7 @@ final class LspCoordinator {
             case "toml" -> s.setTomlLspCommand(command);
             case "csharp" -> s.setCsharpLspCommand(command);
             case "typst" -> s.setTypstLspCommand(command);
+            case "astro" -> s.setAstroLspCommand(command);
             case "maven-pom" -> s.setMavenPomLspCommand(command);
             default -> s.setJavaLspCommand(command);
         }

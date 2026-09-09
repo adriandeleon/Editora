@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 101;
+    public static final int SCHEMA_VERSION = 102;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -472,6 +472,7 @@ public class Settings {
     private String tomlLspCommand = "";
     private String csharpLspCommand = "";
     private String typstLspCommand = "";
+    private String astroLspCommand = "";
     /** The Maven-aware pom.xml server (JVM lemminx + lemminx-maven). Blank until the install recipe writes the
      *  {@code java -cp "<dir>/*" org.eclipse.lemminx.XMLServerLauncher} command; blank ⇒ not installed. */
     private String mavenPomLspCommand = "";
@@ -498,6 +499,7 @@ public class Settings {
     private boolean tomlLspEnabled = true;
     private boolean csharpLspEnabled = true;
     private boolean typstLspEnabled = true;
+    private boolean astroLspEnabled = true;
     /** Whether the Maven-aware pom.xml server is enabled (only effective once installed — see
      *  {@link #mavenPomLspCommand} — and under the global LSP enable). */
     private boolean mavenPomLspEnabled = true;
@@ -2164,6 +2166,22 @@ public class Settings {
 
     public void setTypstLspEnabled(boolean typstLspEnabled) {
         this.typstLspEnabled = typstLspEnabled;
+    }
+
+    public String getAstroLspCommand() {
+        return astroLspCommand == null ? "" : astroLspCommand;
+    }
+
+    public void setAstroLspCommand(String astroLspCommand) {
+        this.astroLspCommand = astroLspCommand == null ? "" : astroLspCommand;
+    }
+
+    public boolean isAstroLspEnabled() {
+        return astroLspEnabled;
+    }
+
+    public void setAstroLspEnabled(boolean astroLspEnabled) {
+        this.astroLspEnabled = astroLspEnabled;
     }
 
     public String getMavenPomLspCommand() {

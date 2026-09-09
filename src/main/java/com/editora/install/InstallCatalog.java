@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
  * orchestrates. Kept dependency-light (java.base only) so the recipe is unit-tested without a network or FX.
  *
  * <p>Most tools have a clean cross-platform installer: npm globals (Pyright, typescript-language-server,
- * mermaid-cli), a pip {@code --target} (debugpy), and an Open VSX {@code .vsix} — a ZIP, extracted by the
+ * astro-ls, mermaid-cli), a pip {@code --target} (debugpy), and an Open VSX {@code .vsix} — a ZIP, extracted by the
  * existing {@code plugin/Unzip} — for java-debug. Eclipse JDT-LS and vscode-js-debug ship only a
  * {@code .tar.gz}, extracted via the system {@code tar} (present on macOS/Linux + Windows 10+).
  */
@@ -239,6 +239,7 @@ public final class InstallCatalog {
                 "yaml",
                 "dockerfile",
                 "toml",
+                "astro",
                 // installed via the language's own toolchain (go/gem/dotnet/rustup/composer must be present).
                 "go",
                 "sql",
@@ -270,6 +271,7 @@ public final class InstallCatalog {
             case "yaml" -> java.util.Optional.of(List.of(npmStep("yaml-language-server")));
             case "dockerfile" -> java.util.Optional.of(List.of(npmStep("dockerfile-language-server-nodejs")));
             case "toml" -> java.util.Optional.of(List.of(npmStep("@taplo/cli")));
+            case "astro" -> java.util.Optional.of(List.of(npmStep("@astrojs/language-server", "typescript")));
             // --- language toolchains (install only if the toolchain is already on PATH) ---
             case "go" ->
                 java.util.Optional.of(List.of(
@@ -438,10 +440,20 @@ public final class InstallCatalog {
         return platformKey(System.getProperty("os.name"), System.getProperty("os.arch"));
     }
 
-    /** A single {@code npm install -g <pkg>} step (the step id = the package). Pure. */
-    private static Step npmStep(String pkg) {
+    /** A single {@code npm install -g <pkgs>} step (the step id = the primary package). Pure. */
+    private static Step npmStep(String... packages) {
         return new Step(
-                pkg, Kind.NPM_GLOBAL, Set.of(Prereq.NPM), List.of(pkg), null, null, null, null, false, "", null);
+                packages[0],
+                Kind.NPM_GLOBAL,
+                Set.of(Prereq.NPM),
+                List.of(packages),
+                null,
+                null,
+                null,
+                null,
+                false,
+                "",
+                null);
     }
 
     /** A step that runs {@code argv} via a language toolchain (argv carried in {@code npmPackages}). Pure. */
