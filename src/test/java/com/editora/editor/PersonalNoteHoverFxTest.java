@@ -92,6 +92,9 @@ class PersonalNoteHoverFxTest {
             Tooltip tooltip = field(bufferRef.get(), "noteTip");
             assertTrue(tooltip.isShowing(), "hovering the annotated text must show its tooltip");
             assertNotNull(tooltip.getGraphic(), "the note body is rendered into the tooltip");
+            assertTrue(tooltip.getStyleClass().contains("personal-note-tooltip"));
+            assertTrue(tooltip.getGraphic().getStyleClass().contains("personal-note-tooltip-content"));
+            assertTrue(tooltip.getStyle().contains("#fff9c4"), "the popup shell must retain its pale-yellow color");
             tooltip.hide();
             bufferRef.get().dispose();
             ((Stage) bufferRef.get().getNode().getScene().getWindow()).close();

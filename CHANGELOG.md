@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Personal Notes hover previews now use a soft, light-yellow paper color reminiscent of a Post-it note.
 - Editor overlays now cap their backing textures using the window's HiDPI output scale, preventing
   JavaFX Metal renderer crashes when an unwrapped long line makes an overlay wider than the GPU limit.
 - Astro language-server startup now discovers and supplies its required TypeScript SDK, including a
