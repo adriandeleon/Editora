@@ -93,6 +93,8 @@ final class ProjectMapView extends VBox {
     private final ToggleButton openFilter = filterButton("project.map.filter.open");
     private final ToggleButton modifiedFilter = filterButton("project.map.filter.modified");
     private final ToggleButton gitFilter = filterButton("project.map.filter.gitChanged");
+    private final ToggleButton bookmarksFilter = filterButton("project.map.filter.bookmarks");
+    private final ToggleButton personalNotesFilter = filterButton("project.map.filter.personalNotes");
     private final ComboBox<ProjectMapModel.TypeFilter> typeFilter = new ComboBox<>();
     private final ComboBox<FlowDirection> flowFilter = new ComboBox<>();
     private final Button backButton = new Button("‹");
@@ -214,12 +216,15 @@ final class ProjectMapView extends VBox {
             openFilter.setSelected(false);
             modifiedFilter.setSelected(false);
             gitFilter.setSelected(false);
+            bookmarksFilter.setSelected(false);
+            personalNotesFilter.setSelected(false);
             typeFilter.setValue(ProjectMapModel.TypeFilter.ALL);
             surface.clearColumnFilters();
             updateFilters();
         });
 
-        for (ToggleButton button : List.of(openFilter, modifiedFilter, gitFilter)) {
+        for (ToggleButton button :
+                List.of(openFilter, modifiedFilter, gitFilter, bookmarksFilter, personalNotesFilter)) {
             button.setOnAction(event -> updateFilters());
         }
         typeFilter.setOnAction(event -> updateFilters());
@@ -229,8 +234,18 @@ final class ProjectMapView extends VBox {
             onFlowChanged.accept(flow);
         });
 
-        FlowPane filters =
-                new FlowPane(6, 4, heading, openFilter, modifiedFilter, gitFilter, typeFilter, flowFilter, clear);
+        FlowPane filters = new FlowPane(
+                6,
+                4,
+                heading,
+                openFilter,
+                modifiedFilter,
+                gitFilter,
+                bookmarksFilter,
+                personalNotesFilter,
+                typeFilter,
+                flowFilter,
+                clear);
         filters.getStyleClass().add("project-map-filters");
         filters.setAlignment(Pos.CENTER_LEFT);
         return filters;
@@ -491,6 +506,8 @@ final class ProjectMapView extends VBox {
                 openFilter.isSelected(),
                 modifiedFilter.isSelected(),
                 gitFilter.isSelected(),
+                bookmarksFilter.isSelected(),
+                personalNotesFilter.isSelected(),
                 type == null ? ProjectMapModel.TypeFilter.ALL : type));
     }
 
@@ -876,7 +893,7 @@ final class ProjectMapView extends VBox {
         private List<ProjectMapModel.Entry> entries = List.of();
         private Set<Path> expandedSnapshot = Set.of();
         private ProjectMapModel.Filters filters =
-                new ProjectMapModel.Filters("", false, false, false, ProjectMapModel.TypeFilter.ALL);
+                new ProjectMapModel.Filters("", false, false, false, false, false, ProjectMapModel.TypeFilter.ALL);
         private Predicate<Path> openState = path -> false;
         private Predicate<Path> modifiedState = path -> false;
         private Predicate<Path> bookmarkState = path -> false;
@@ -1422,7 +1439,9 @@ final class ProjectMapView extends VBox {
                         filters,
                         openPaths.contains(path),
                         modifiedPaths.contains(path),
-                        gitState.containsKey(path) || gitDirectories.contains(path))) {
+                        gitState.containsKey(path) || gitDirectories.contains(path),
+                        bookmarkedPaths.contains(path),
+                        notedPaths.contains(path))) {
                     direct.add(path);
                 }
             }
