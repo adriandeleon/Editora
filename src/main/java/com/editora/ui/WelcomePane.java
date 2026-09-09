@@ -9,6 +9,7 @@ import java.util.function.Supplier;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.control.Button;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -40,6 +41,9 @@ import static com.editora.i18n.Messages.tr;
  * toggles.
  */
 public final class WelcomePane extends Region implements TabContent {
+
+    /** Keep the Welcome page compact while leaving the full recent history one disclosure away. */
+    static final int COLLAPSED_RECENT_LIMIT = 5;
 
     /** Width of the Start-actions column, so keybinding labels right-align in a tidy column. */
     private static final double ACTIONS_WIDTH = 380;
@@ -275,25 +279,60 @@ public final class WelcomePane extends Region implements TabContent {
             box.getChildren().add(caption(tr("welcome.noRecent")));
             return box;
         }
-        for (Path p : shown) {
-            Hyperlink link = new Hyperlink(p.getFileName().toString());
-            link.getStyleClass().add("welcome-link");
-            Label dir = new Label(parentText(p));
-            dir.getStyleClass().add("welcome-recent-dir");
-            HBox row = new HBox(8, link);
-            RecentProject.containing(p, projects == null ? List.of() : projects.get())
-                    .ifPresent(project -> {
-                        Label projectName = new Label(project.name());
-                        projectName.getStyleClass().add("recent-project-name");
-                        row.getChildren().add(projectName);
-                    });
-            row.getChildren().add(dir);
-            row.setAlignment(Pos.BASELINE_LEFT);
-            Tooltip.install(row, new Tooltip(p.toString()));
-            link.setOnAction(e -> onOpenRecent.accept(p));
-            box.getChildren().add(row);
+        List<Project> availableProjects = projects == null ? List.of() : projects.get();
+        shown.stream()
+                .limit(COLLAPSED_RECENT_LIMIT)
+                .map(path -> recentRow(path, availableProjects))
+                .forEach(box.getChildren()::add);
+        if (shown.size() > COLLAPSED_RECENT_LIMIT) {
+            addRecentDisclosure(box, shown, availableProjects);
         }
         return box;
+    }
+
+    private HBox recentRow(Path path, List<Project> availableProjects) {
+        Hyperlink link = new Hyperlink(path.getFileName().toString());
+        link.getStyleClass().add("welcome-link");
+        Label dir = new Label(parentText(path));
+        dir.getStyleClass().add("welcome-recent-dir");
+        HBox row = new HBox(8, link);
+        row.getStyleClass().add("welcome-recent-row");
+        RecentProject.containing(path, availableProjects).ifPresent(project -> {
+            Label projectName = new Label(project.name());
+            projectName.getStyleClass().add("recent-project-name");
+            row.getChildren().add(projectName);
+        });
+        row.getChildren().add(dir);
+        row.setAlignment(Pos.BASELINE_LEFT);
+        Tooltip.install(row, new Tooltip(path.toString()));
+        link.setOnAction(e -> onOpenRecent.accept(path));
+        return row;
+    }
+
+    private void addRecentDisclosure(VBox box, List<Path> shown, List<Project> availableProjects) {
+        List<Node> overflow = shown.subList(COLLAPSED_RECENT_LIMIT, shown.size()).stream()
+                .map(path -> (Node) recentRow(path, availableProjects))
+                .toList();
+        Button disclosure = new Button();
+        disclosure.getStyleClass().addAll("button-icon", "flat", "welcome-recent-disclosure");
+        setRecentDisclosureState(disclosure, overflow.size(), false);
+        disclosure.setOnAction(event -> {
+            boolean expanding = !box.getChildren().contains(overflow.getFirst());
+            if (expanding) {
+                box.getChildren().addAll(box.getChildren().indexOf(disclosure), overflow);
+            } else {
+                box.getChildren().removeAll(overflow);
+            }
+            setRecentDisclosureState(disclosure, overflow.size(), expanding);
+        });
+        box.getChildren().add(disclosure);
+    }
+
+    private static void setRecentDisclosureState(Button disclosure, int hiddenCount, boolean expanded) {
+        String description = tr(expanded ? "welcome.recent.showFewer" : "welcome.recent.showMore", hiddenCount);
+        disclosure.setGraphic(expanded ? Icons.findPrevious() : Icons.findNext());
+        disclosure.setAccessibleText(description);
+        disclosure.setTooltip(new Tooltip(description));
     }
 
     private Node action(Node icon, String text, String commandId) {
