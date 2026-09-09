@@ -105,6 +105,36 @@ class LspManagerRequestsFxTest {
         return new Location(uri, new Range(new Position(line, ch), new Position(line, ch + 1)));
     }
 
+    @Test
+    void staleVersionedPushDiagnosticsAreDropped() throws Exception {
+        var delivered = new CopyOnWriteArrayList<List<com.editora.editor.LspDiagnostic>>();
+        var sessionRef = new AtomicReference<LanguageServerSession>();
+        LspManager local = new LspManager((path, diagnostics) -> delivered.add(diagnostics), (t, m) -> {});
+        local.setSessionStarterForTest(session -> {
+            sessionRef.set(session);
+            session.attachForTest(new FakeLanguageServer(), new ServerCapabilities());
+        });
+        local.configure(true, Map.of("java", "jdtls"));
+        local.openDocument(file, root, "java", "class A {}");
+        local.changeDocument(file, "class A { int n; }");
+
+        var stale = new org.eclipse.lsp4j.PublishDiagnosticsParams(
+                file.toUri().toString(),
+                List.of(new org.eclipse.lsp4j.Diagnostic(new Range(new Position(0, 0), new Position(0, 1)), "stale")));
+        stale.setVersion(1);
+        sessionRef.get().publishDiagnostics(stale);
+        var current =
+                new org.eclipse.lsp4j.PublishDiagnosticsParams(file.toUri().toString(), List.of());
+        current.setVersion(2);
+        sessionRef.get().publishDiagnostics(current);
+
+        for (int i = 0; i < 50 && delivered.isEmpty(); i++) {
+            Thread.sleep(20);
+        }
+        assertEquals(1, delivered.size(), "only diagnostics for the current document version should arrive");
+        local.shutdownAll();
+    }
+
     // --- definition, incl. the jdt:// library target (#665) ------------------------------------------
 
     @Test

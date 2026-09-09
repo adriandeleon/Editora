@@ -17,9 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * working, often only on one server. Three separate features have already died exactly that way:
  *
  * <ul>
- *   <li><b>#674</b> — {@code new SignatureHelpCapabilities(sigInfo, true)} looks like "context support" but
- *       the second argument is <b>dynamicRegistration</b>. Setting it made jdtls stop advertising
- *       {@code signatureHelpProvider} statically, and signature help died outright.</li>
+ *   <li><b>#674</b> — the constructor's second argument is dynamic registration, while context support has
+ *       its own setter. The client now handles both static and dynamic capability forms.</li>
  *   <li><b>#676</b> — jdtls's {@code isResourceOperationSupported()} is <b>all-or-nothing</b>: it emits a
  *       {@code RenameFile} only when the client declares Create AND Rename AND Delete. Declaring just Rename
  *       made a class rename silently leave {@code OldName.java} on disk.</li>
@@ -37,17 +36,14 @@ class ClientCapabilitiesTest {
     // --- #674: the two-arg ctor trap ---------------------------------------------------------------
 
     /**
-     * Context support must be on, and dynamic registration must NOT be — the two are adjacent in the API and
-     * setting the wrong one made jdtls stop advertising signature help entirely.
+     * Context support and dynamic registration are independent and both supported.
      */
     @Test
-    void signatureHelpDeclaresContextSupportAndNotDynamicRegistration() {
+    void signatureHelpDeclaresContextAndDynamicRegistration() {
         var sig = CAPS.getTextDocument().getSignatureHelp();
         assertNotNull(sig, "signature help capability missing");
         assertTrue(Boolean.TRUE.equals(sig.getContextSupport()), "contextSupport must be declared (#674)");
-        assertFalse(
-                Boolean.TRUE.equals(sig.getDynamicRegistration()),
-                "dynamicRegistration must stay off — jdtls then registers dynamically, which we don't handle (#674)");
+        assertTrue(Boolean.TRUE.equals(sig.getDynamicRegistration()), "dynamic registration must be handled");
         assertTrue(
                 Boolean.TRUE.equals(sig.getSignatureInformation().getActiveParameterSupport()),
                 "per-signature activeParameter is what keeps the highlighted parameter correct");

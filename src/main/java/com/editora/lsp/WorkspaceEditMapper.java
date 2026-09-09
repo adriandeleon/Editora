@@ -22,47 +22,63 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
  * {@code workspaceEdit.documentChanges}).
  *
  * <p><b>All-or-nothing:</b> returns {@code null} when the edit contains anything that can't be applied
- * faithfully — a create/delete resource operation, a non-{@code file:} URI, a {@link SnippetTextEdit}, or
+ * faithfully — a non-{@code file:} URI, a {@link SnippetTextEdit}, or
  * a text edit trailing a {@code RenameFile} — because applying <i>half</i> a refactoring corrupts the
  * workspace; the caller then answers {@code applied=false} so the server knows nothing happened.
- * {@code RenameFile} ops <em>are</em> supported (#676) when they follow the text edits. Pure of JavaFX;
- * unit-tested.
+ * Create, rename, and delete resource operations retain their overwrite/ignore/recursive options; rename and
+ * delete are terminal because a following text edit would address the post-operation filesystem. Pure of
+ * JavaFX; unit-tested.
  */
 public final class WorkspaceEditMapper {
 
     private WorkspaceEditMapper() {}
 
     /** One file's share of a workspace edit. */
-    public record FileEdit(Path file, List<LspTextEdit> edits) {}
+    public record FileEdit(Path file, List<LspTextEdit> edits, Integer version, String expectedText) {
+        public FileEdit(Path file, List<LspTextEdit> edits) {
+            this(file, edits, null, null);
+        }
+    }
 
     /** A {@code RenameFile} resource operation — jdtls emits one when a public class is renamed (the
      *  {@code .java} file must move too). {@code overwrite} mirrors the op's option (#676). */
     public record FileRename(Path from, Path to, boolean overwrite) {}
 
-    /** A whole workspace edit: per-file text batches plus the file renames to perform <b>after</b> them. */
-    public record Mapped(List<FileEdit> edits, List<FileRename> renames) {}
+    public record FileCreate(Path file, boolean overwrite, boolean ignoreIfExists) {}
+
+    public record FileDelete(Path file, boolean recursive, boolean ignoreIfNotExists) {}
+
+    /** A whole workspace edit: per-file text batches plus its filesystem operations. */
+    public record Mapped(
+            List<FileEdit> edits, List<FileRename> renames, List<FileCreate> creates, List<FileDelete> deletes) {
+        public Mapped(List<FileEdit> edits, List<FileRename> renames) {
+            this(edits, renames, List.of(), List.of());
+        }
+    }
 
     /**
-     * See the class doc: per-file batches (insertion-ordered, same-file entries merged) plus trailing file
-     * renames, or {@code null} when any part is unsupported — a create/delete resource operation, a
-     * non-{@code file:} URI, a snippet edit, or a text edit appearing <b>after</b> a rename (its URI would
-     * address the post-rename world; supporting that means path remapping mid-apply, refused instead —
-     * jdtls and friends emit renames last). An empty/absent edit maps to empty lists (a valid no-op).
+     * See the class doc: insertion-ordered per-file batches plus create/rename/delete operations, or
+     * {@code null} for a non-file URI, snippet edit, or text edit after a rename/delete. Create may precede
+     * edits to the newly created file, which is the standard LSP shape. An empty edit is a valid no-op.
      */
     public static Mapped map(WorkspaceEdit edit) {
         if (edit == null) {
-            return new Mapped(List.of(), List.of());
+            return new Mapped(List.of(), List.of(), List.of(), List.of());
         }
         Map<Path, List<LspTextEdit>> byFile = new LinkedHashMap<>();
+        Map<Path, Integer> versions = new LinkedHashMap<>();
         List<FileRename> renames = new ArrayList<>();
+        List<FileCreate> creates = new ArrayList<>();
+        List<FileDelete> deletes = new ArrayList<>();
+        boolean terminalResourceOperation = false;
         if (edit.getDocumentChanges() != null) {
             for (var change : edit.getDocumentChanges()) {
                 if (change == null) {
                     return null;
                 }
                 if (change.isLeft()) {
-                    if (!renames.isEmpty()) {
-                        return null; // a text edit AFTER a rename addresses the post-rename world — refused
+                    if (terminalResourceOperation) {
+                        return null; // an edit after rename/delete addresses a changed filesystem world
                     }
                     TextDocumentEdit tde = change.getLeft();
                     List<TextEdit> plain = plainEdits(tde.getEdits());
@@ -71,6 +87,12 @@ public final class WorkspaceEditMapper {
                             || !addEdits(byFile, tde.getTextDocument().getUri(), plain)) {
                         return null;
                     }
+                    Path file = filePath(tde.getTextDocument().getUri());
+                    Integer version = tde.getTextDocument().getVersion();
+                    if (versions.containsKey(file) && !java.util.Objects.equals(versions.get(file), version)) {
+                        return null; // contradictory versions for one document cannot be applied atomically
+                    }
+                    versions.put(file, version);
                 } else if (change.getRight() instanceof org.eclipse.lsp4j.RenameFile rf) {
                     Path from = filePath(rf.getOldUri());
                     Path to = filePath(rf.getNewUri());
@@ -80,8 +102,30 @@ public final class WorkspaceEditMapper {
                     boolean overwrite = rf.getOptions() != null
                             && Boolean.TRUE.equals(rf.getOptions().getOverwrite());
                     renames.add(new FileRename(from, to, overwrite));
+                    terminalResourceOperation = true;
+                } else if (change.getRight() instanceof org.eclipse.lsp4j.CreateFile cf) {
+                    Path file = filePath(cf.getUri());
+                    if (file == null) {
+                        return null;
+                    }
+                    boolean overwrite = cf.getOptions() != null
+                            && Boolean.TRUE.equals(cf.getOptions().getOverwrite());
+                    boolean ignore = cf.getOptions() != null
+                            && Boolean.TRUE.equals(cf.getOptions().getIgnoreIfExists());
+                    creates.add(new FileCreate(file, overwrite, ignore));
+                } else if (change.getRight() instanceof org.eclipse.lsp4j.DeleteFile df) {
+                    Path file = filePath(df.getUri());
+                    if (file == null) {
+                        return null;
+                    }
+                    boolean recursive = df.getOptions() != null
+                            && Boolean.TRUE.equals(df.getOptions().getRecursive());
+                    boolean ignore = df.getOptions() != null
+                            && Boolean.TRUE.equals(df.getOptions().getIgnoreIfNotExists());
+                    deletes.add(new FileDelete(file, recursive, ignore));
+                    terminalResourceOperation = true;
                 } else {
-                    return null; // CreateFile/DeleteFile — not supported; apply nothing
+                    return null;
                 }
             }
         } else if (edit.getChanges() != null) {
@@ -92,8 +136,25 @@ public final class WorkspaceEditMapper {
             }
         }
         List<FileEdit> out = new ArrayList<>(byFile.size());
-        byFile.forEach((file, edits) -> out.add(new FileEdit(file, List.copyOf(edits))));
-        return new Mapped(out, List.copyOf(renames));
+        byFile.forEach((file, edits) -> out.add(new FileEdit(file, List.copyOf(edits), versions.get(file), null)));
+        return new Mapped(out, List.copyOf(renames), List.copyOf(creates), List.copyOf(deletes));
+    }
+
+    /** Adds request-time document snapshots to unversioned edits so an async response can be rejected if
+     *  any target changes before application. Protocol versions remain authoritative when present. */
+    public static Mapped withExpectedText(Mapped mapped, Map<Path, String> expected) {
+        if (mapped == null || expected == null || expected.isEmpty()) {
+            return mapped;
+        }
+        List<FileEdit> edits = new ArrayList<>(mapped.edits().size());
+        for (FileEdit edit : mapped.edits()) {
+            edits.add(new FileEdit(
+                    edit.file(),
+                    edit.edits(),
+                    edit.version(),
+                    expected.getOrDefault(edit.file(), edit.expectedText())));
+        }
+        return new Mapped(List.copyOf(edits), mapped.renames(), mapped.creates(), mapped.deletes());
     }
 
     /**

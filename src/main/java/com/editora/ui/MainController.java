@@ -6684,8 +6684,28 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void openBackgroundBufferAsync(Path file, java.util.function.Consumer<EditorBuffer> done) {
+                    MainController.this.openBackgroundBufferAsync(file, done);
+                }
+
+                @Override
                 public void fileRenamed(Path from, Path to) {
                     onProjectFileRenamed(from, to); // remap buffer/tab + migrate per-file session state
+                    if (projectPanel != null) {
+                        projectPanel.refreshTree();
+                    }
+                }
+
+                @Override
+                public void fileCreated(Path file) {
+                    if (projectPanel != null) {
+                        projectPanel.refreshTree();
+                    }
+                }
+
+                @Override
+                public void fileDeleted(Path file) {
+                    onProjectFileDeleted(file);
                     if (projectPanel != null) {
                         projectPanel.refreshTree();
                     }
@@ -7305,6 +7325,33 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** Workspace edits may touch unopened files. Decode them on the normal file-load executor and only
+     *  create/attach the RichTextFX buffer on the FX thread. */
+    private void openBackgroundBufferAsync(Path target, java.util.function.Consumer<EditorBuffer> done) {
+        EditorBuffer existing = openBufferFor(target);
+        if (existing != null) {
+            done.accept(existing);
+            return;
+        }
+        fileWorkflows.fileLoadExecutor.execute(() -> {
+            try {
+                FileWorkflowCoordinator.PreparedLoad load = fileWorkflows.prepareLoad(target, false);
+                Platform.runLater(() -> {
+                    if (load.binary()) {
+                        done.accept(null);
+                        return;
+                    }
+                    EditorBuffer buffer = new EditorBuffer();
+                    buffer.setPath(target);
+                    fileWorkflows.applyPreparedLoad(buffer, load);
+                    addBuffer(buffer, false);
+                    done.accept(buffer);
+                });
+            } catch (IOException | RuntimeException e) {
+                Platform.runLater(() -> done.accept(null));
+            }
+        });
+    }
     // --- GitHub tool window ----------------------------------------------------------------------
 
     // --- Git Log / History tool window -----------------------------------------------------------

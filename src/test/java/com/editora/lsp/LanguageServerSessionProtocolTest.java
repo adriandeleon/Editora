@@ -1,6 +1,7 @@
 package com.editora.lsp;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.lsp4j.Position;
@@ -52,6 +53,71 @@ class LanguageServerSessionProtocolTest {
         sync.setChange(TextDocumentSyncKind.Incremental);
         c.setTextDocumentSync(sync);
         return c;
+    }
+
+    @Test
+    void jdtProgressReportsDriveAndFinishTheProgressStatus() {
+        List<String> statuses = new ArrayList<>();
+        var spec = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), List.of());
+        var s = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (type, message) -> {
+            statuses.add(type + ":" + message);
+        });
+        var report = new LanguageServerSession.LanguageProgressReport();
+        report.task = "Importing";
+        report.subTask = "Maven project";
+        report.totalWork = 4;
+        report.workDone = 1;
+        s.languageProgressReport(report);
+        report.complete = true;
+        report.status = "Ready";
+        s.languageProgressReport(report);
+
+        assertEquals(List.of("Progress:Importing — Maven project (25%)", "ProgressEnd:Ready"), statuses);
+    }
+
+    @Test
+    void dynamicRegistrationUpdatesAndRemovesEffectiveCapabilities() {
+        var s = session(caps());
+        List<String> refreshed = new ArrayList<>();
+        s.setOnRefresh(refreshed::add);
+        var options = new org.eclipse.lsp4j.SignatureHelpRegistrationOptions(List.of("("), List.of(","));
+        s.registerCapability(new org.eclipse.lsp4j.RegistrationParams(
+                List.of(new org.eclipse.lsp4j.Registration("sig", "textDocument/signatureHelp", options))));
+
+        assertNotNull(s.capabilities().getSignatureHelpProvider());
+        assertEquals(List.of("("), s.capabilities().getSignatureHelpProvider().getTriggerCharacters());
+
+        s.unregisterCapability(new org.eclipse.lsp4j.UnregistrationParams(
+                List.of(new org.eclipse.lsp4j.Unregistration("sig", "textDocument/signatureHelp"))));
+        assertNull(s.capabilities().getSignatureHelpProvider());
+        assertEquals(List.of("capabilities", "capabilities"), refreshed);
+    }
+
+    @Test
+    void disposingBeforeInitializeCompletesFailsQueuedRequestFutures() {
+        var spec = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), List.of());
+        var s = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {});
+
+        var command = s.executeCommand("java.test", List.of());
+        var raw = s.rawRequest("java/test", null);
+        s.dispose();
+
+        assertTrue(command.isCompletedExceptionally());
+        assertTrue(raw.isCompletedExceptionally());
+    }
+
+    @Test
+    void serverRefreshRequestsReachTheManagerHook() {
+        var s = session(caps());
+        List<String> refreshed = new ArrayList<>();
+        s.setOnRefresh(refreshed::add);
+
+        s.refreshDiagnostics();
+        s.refreshSemanticTokens();
+        s.refreshInlayHints();
+        s.refreshFoldingRanges();
+
+        assertEquals(List.of("diagnostics", "semanticTokens", "inlayHints", "foldingRanges"), refreshed);
     }
 
     // --- #725: signature help must report the trigger character ------------------------------------
@@ -148,6 +214,23 @@ class LanguageServerSessionProtocolTest {
 
         assertEquals(URI, FakeLanguageServer.last(fake.saved).getTextDocument().getUri());
         assertEquals(URI, FakeLanguageServer.last(fake.closed).getTextDocument().getUri());
+    }
+
+    @Test
+    void reopenDuringInitializationKeepsShadowAndWireOrderAligned() {
+        var spec = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), List.of());
+        var s = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {});
+        s.didOpen(URI, "java", "class A {}");
+        s.didChange(URI, "class B {}");
+        s.didClose(URI);
+        s.didOpen(URI, "java", "class A {}");
+        fake = new FakeLanguageServer();
+        s.attachForTest(fake, incrementalSyncCaps());
+
+        s.didChange(URI, "class B {}");
+
+        assertEquals(2, fake.changed.size(), "the reopened A-to-B edit must reach the server");
+        assertEquals("B", fake.changed.get(1).getContentChanges().get(0).getText());
     }
 
     /** Document versions must increase — a server that sees a stale/repeated version may ignore the change. */

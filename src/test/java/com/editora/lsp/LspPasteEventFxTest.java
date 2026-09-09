@@ -95,7 +95,7 @@ class LspPasteEventFxTest {
     void sendsTheStringifiedParamsTheLiveServerRequires() throws Exception {
         FakeLanguageServer fake = open();
         fake.executeCommandResponse = pasteAnswer(file.toUri().toString());
-        manager.setApplyEditHandler(edits -> true);
+        manager.setApplyEditHandler((edits, done) -> done.accept(true));
 
         assertTrue(paste(() -> true));
 
@@ -120,9 +120,9 @@ class LspPasteEventFxTest {
         FakeLanguageServer fake = open();
         fake.executeCommandResponse = pasteAnswer(file.toUri().toString());
         var applied = new AtomicReference<WorkspaceEditMapper.Mapped>();
-        manager.setApplyEditHandler(edits -> {
+        manager.setApplyEditHandler((edits, done) -> {
             applied.set(edits);
-            return true;
+            done.accept(true);
         });
 
         assertTrue(paste(() -> true));
@@ -134,9 +134,9 @@ class LspPasteEventFxTest {
         FakeLanguageServer fake = open();
         fake.executeCommandResponse = pasteAnswer(file.toUri().toString());
         var applied = new AtomicReference<WorkspaceEditMapper.Mapped>();
-        manager.setApplyEditHandler(edits -> {
+        manager.setApplyEditHandler((edits, done) -> {
             applied.set(edits);
-            return true;
+            done.accept(true);
         });
 
         assertFalse(paste(() -> false), "the user typed during the round trip — the answer must be dropped");
@@ -157,9 +157,9 @@ class LspPasteEventFxTest {
         FakeLanguageServer fake = open();
         fake.executeCommandResponse = JsonParser.parseString("{\"insertText\":\"x\"}"); // nothing to import
         var applied = new AtomicReference<WorkspaceEditMapper.Mapped>();
-        manager.setApplyEditHandler(edits -> {
+        manager.setApplyEditHandler((edits, done) -> {
             applied.set(edits);
-            return true;
+            done.accept(true);
         });
 
         assertFalse(paste(() -> true));

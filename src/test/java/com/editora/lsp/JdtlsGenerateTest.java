@@ -107,10 +107,11 @@ class JdtlsGenerateTest {
                 JdtlsGenerate.candidates(JdtlsGenerate.Kind.TO_STRING, json(TO_STRING_STATUS));
         JsonElement params = json("{\"textDocument\":{\"uri\":\"file:///A.java\"}}");
 
-        List<Object> args = JdtlsGenerate.generateParams(JdtlsGenerate.Kind.TO_STRING, params, found.subList(0, 1));
+        var args = JdtlsGenerate.generateParams(
+                JdtlsGenerate.Kind.TO_STRING, params, found.subList(0, 1), json(TO_STRING_STATUS));
 
-        assertSame(params, args.get(0), "the original action params lead");
-        var picked = (com.google.gson.JsonArray) args.get(1);
+        assertSame(params, args.get("context"), "the original action params are retained as context");
+        var picked = args.getAsJsonArray("fields");
         assertEquals(1, picked.size());
         assertEquals(
                 "Ldemo/Person;.name)Ljava/lang/String;",
@@ -118,23 +119,28 @@ class JdtlsGenerateTest {
                 "the opaque binding key survives the round trip");
     }
 
-    /** Two lists for constructors, and a trailing regenerate=false for hashCode/equals — server-defined order. */
+    /** Each request is one server-defined object, including constructor choices and regenerate=false. */
     @Test
     void theGenerateArgumentsMatchEachRequestsShape() {
         JsonElement params = json("{}");
         List<JdtlsGenerate.Candidate> none = List.of();
 
+        JsonElement constructorStatus = json("{\"constructors\":[{\"bindingKey\":\"ctor\"}],\"fields\":[]}");
+        var constructors =
+                JdtlsGenerate.generateParams(JdtlsGenerate.Kind.CONSTRUCTORS, params, none, constructorStatus);
         assertEquals(
-                3,
-                JdtlsGenerate.generateParams(JdtlsGenerate.Kind.CONSTRUCTORS, params, none)
-                        .size());
-        List<Object> hash = JdtlsGenerate.generateParams(JdtlsGenerate.Kind.HASH_CODE_EQUALS, params, none);
+                "ctor",
+                constructors
+                        .getAsJsonArray("constructors")
+                        .get(0)
+                        .getAsJsonObject()
+                        .get("bindingKey")
+                        .getAsString());
+        var hash = JdtlsGenerate.generateParams(JdtlsGenerate.Kind.HASH_CODE_EQUALS, params, none, null);
         assertEquals(3, hash.size());
-        assertEquals(Boolean.FALSE, hash.get(2), "never silently regenerate existing methods");
-        assertEquals(
-                2,
-                JdtlsGenerate.generateParams(JdtlsGenerate.Kind.TO_STRING, params, none)
-                        .size());
+        assertTrue(!hash.get("regenerate").getAsBoolean(), "never silently regenerate existing methods");
+        var overrides = JdtlsGenerate.generateParams(JdtlsGenerate.Kind.OVERRIDE_METHODS, params, none, null);
+        assertTrue(overrides.has("overridableMethods"));
     }
 
     /** A malformed or unexpected answer must degrade to an empty picker, never throw on the FX thread. */

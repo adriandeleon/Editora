@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 
 import org.junit.jupiter.api.Test;
@@ -47,5 +48,15 @@ class LspCrashRestartTest {
         assertTrue(LspCoordinator.recordCrashAndDecide(times, 0, WINDOW, MAX));
         assertTrue(LspCoordinator.recordCrashAndDecide(times, spacing, WINDOW, MAX));
         assertFalse(LspCoordinator.recordCrashAndDecide(times, 2 * spacing, WINDOW, MAX));
+    }
+
+    @Test
+    void aCrashOnlyAffectsBuffersInTheCrashedProjectRoot() {
+        Path projectA = Path.of("projects", "a");
+        Path projectB = Path.of("projects", "b");
+
+        assertTrue(LspCoordinator.sameLspRoot(projectA.resolve(".."), Path.of("projects")));
+        assertFalse(LspCoordinator.sameLspRoot(projectA, projectB));
+        assertFalse(LspCoordinator.sameLspRoot(null, projectA));
     }
 }

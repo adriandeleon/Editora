@@ -206,8 +206,8 @@ A backlog of planned features and improvements. Unordered within each section.
       returned boolean (a `false` alone cannot distinguish "refused" from "half-applied, then reported
       failure"); a rename that would **clobber an existing file** is refused *up front*, before the text
       edits land; overwrite-when-the-server-says-so; creating a missing destination directory; and the two
-      shapes `WorkspaceEditMapper` refuses outright (create/delete resource ops, a text edit *after* a
-      rename). **Coverage floor:** a **CLASS-level** jacoco rule on `com.editora.ui.LspCoordinator` (0.34
+      create/rename/delete resource operations, text-after-rename refusal, and asynchronous production
+      transaction path. **Coverage floor:** a **CLASS-level** jacoco rule on `com.editora.ui.LspCoordinator` (0.34
       against 42.0%). A *package* floor was the obvious move and would have been **useless** — `com.editora.ui`
       is ~33k lines, so the coordinator could fall from 42% to zero and move the package number by about one
       point. **The rule itself was verified to bite**: raising the minimum to 0.99 produces
@@ -272,8 +272,9 @@ A backlog of planned features and improvements. Unordered within each section.
       retrigger, inlay-hint range clamping, didOpen/didChange/didSave/didClose, monotonic versions,
       full-vs-incremental sync and the identical-resync skip, sync-kind None, the queue-until-ready collapse,
       disposed-session silence), `ClientCapabilitiesTest` (11 — what we *declare*, where three features have
-      already died silently: #674's `dynamicRegistration`-vs-`contextSupport` ctor trap, #676's
-      all-or-nothing resource operations, #410/#445's `additionalTextEdits` resolve support), and
+      already died silently: #674's `dynamicRegistration`-vs-`contextSupport` ctor trap (now handled in
+      both forms), #676's all-or-nothing resource operations, #410/#445's `additionalTextEdits` resolve
+      support), and
       `LspManagerLifecycleFxTest` (19 — open→managed→close routing, session sharing per root, per-server
       shutdown (the prefix-scan that once matched nothing), the command-change teardown, diagnostics dispatch
       incl. a dropped `jdt://` URI and a silenced disposed session, null-path safety, watched-file scoping).
@@ -331,8 +332,8 @@ A backlog of planned features and improvements. Unordered within each section.
       separate setter. **(c) Class rename didn't move the file:** jdtls's `isResourceOperationSupported()`
       is all-or-nothing — it emits a `RenameFile` only when the client declares Create AND Rename AND
       Delete. We declared only Rename, so jdtls silently stripped the move. Verified: the probe now shows
-      `RESOURCE-OP RenameFile OldName.java → NewName.java`. We still only *apply* renames (create/delete
-      refuse the whole edit safely). **Verified-clean by the same round:** #678 incremental sync — a shadow
+      `RESOURCE-OP RenameFile OldName.java → NewName.java`. Create/delete are now mapped and staged by the
+      same transactional resource-operation path. **Verified-clean by the same round:** #678 incremental sync — a shadow
       comparison reported byte-identical server/buffer documents, killing the theory that it was corrupting
       the file; it was one step from being needlessly reverted.
       *#715 root-caused and fixed in the audit round below: the request range ended one line past the end
@@ -417,7 +418,8 @@ A backlog of planned features and improvements. Unordered within each section.
       `("ProgressEnd", message)`. Per-step Report notifications are deliberately NOT echoed — jdtls emits
       hundreds and the echo is one line; the bar alone says "still working". `onServerStatus` maps
       Progress → bar on, ProgressEnd → bar off (a boolean bar, so overlap with the startup lifecycle is
-      benign). *Deferred: a determinate (percentage) loading bar — needs a StatusBar API change.*
+      benign). JDT's separately advertised `language/progressReport` channel is handled the same way and
+      coalesces intermediate updates. *Deferred: a determinate (percentage) loading bar — needs a StatusBar API change.*
 - [x] **LSP didChangeWatchedFiles** (#677) — external changes reach the servers instead of leaving their
       project models stale until restart. Client declares `workspace.didChangeWatchedFiles` (static push,
       no dynamic watcher registration). Sources: **(a)** the ProjectPanel filesystem watcher — the drain
@@ -429,24 +431,17 @@ A backlog of planned features and improvements. Unordered within each section.
       wins per path) → `LspManager.notifyWatchedFiles` routes one batch per live session filtered by the
       pure/unit-tested `eventsUnderRoot` (path-component containment, so `/proj2` never matches `/proj`).
       Editora's own saves also flow through the watcher — redundant beside didSave but harmless (VS Code
-      sends both). Ambient; no new command/setting. *Deferred: honoring servers' dynamic
-      `client/registerCapability` watcher globs (we send conservatively for all files under the root).*
-- [x] **LSP rename** (#676) — `prepareRename` + `textDocument/rename`, both stages. Client declares
-      `prepareSupport` + `workspaceEdit.resourceOperations: ["rename"]` (create/delete stay undeclared and
-      refused). Flow: prepare validates + supplies the placeholder (pure `LspManager.mapPrepare` handles
-      all three response shapes incl. the null = refused case; no-prepare servers fall back to the pure
-      `LspCoordinator.wordAt` identifier run), `promptText` pre-filled, then rename → the WorkspaceEdit
-      through the #670 pipeline. **`WorkspaceEditMapper.map` now returns `Mapped{edits, renames}`**:
-      `RenameFile` ops are supported when they trail the text edits (jdtls's class-rename shape); a text
-      edit *after* a rename addresses the post-rename world and refuses the whole edit; create/delete
-      still refuse; the op's `overwrite` option is honored (target-exists without it ⇒ refused up front,
-      before any edit applies). `applyWorkspaceEdits` then: text edits per buffer (one undo unit each) →
-      `Files.move` → `Ops.fileRenamed` (= `onProjectFileRenamed`: buffer/tab remap + per-file session-state
-      migration + project-tree refresh) → `closeDocument(old uri)` + `syncBufferWhenShown` so the LSP
-      document re-opens under the NEW uri — without that re-route, didChange addressed the old uri and was
-      silently dropped. `F2` in vscode/sublime/intellij (+mac) keymaps; right-click "LSP: Rename Symbol…"
-      gated on `renameProvider`. *Deferred: a rename preview (diff of affected files) before applying;
-      undo does not move the file back (text edits undo per file; the disk rename is not undoable).*
+      sends both). Dynamic registrations are tracked in the session's effective capabilities; watcher events
+      remain a conservative root-wide superset of registered globs. Ambient; no new command/setting.
+- [x] **LSP rename + resource operations** (#676) — `prepareRename` + `textDocument/rename`, with
+      request-time version/snapshot guards and a multi-file checkbox preview. `WorkspaceEditMapper` retains
+      versioned text edits and maps create, rename, and delete operations. The coordinator stages filesystem
+      changes transactionally, rolls them back on failure or a stale buffer, applies text only after staging
+      succeeds, and refreshes/ closes/remaps affected UI state. Production application loads unopened files
+      asynchronously and runs create/move/delete/cleanup I/O on virtual threads; direct synchronous application
+      remains only as a focused test seam. `F2` in vscode/sublime/intellij (+mac) keymaps; right-click
+      "LSP: Rename Symbol…" is gated on the effective rename capability. Disk resource operations are not part
+      of the editor's per-buffer undo history.
 - [x] **LSP document highlight** (#675) — `textDocument/documentHighlight`: occurrences of the symbol
       under the resting caret, Read vs Write shaded differently. Neutral `editor/OccurrenceSpan` record
       (editor stays lsp4j-free); `editor/OccurrenceHighlightOverlay` is a structural clone of
@@ -488,12 +483,11 @@ A backlog of planned features and improvements. Unordered within each section.
       implements the server→client `workspace/applyEdit` request (lsp4j's default *throws*, so any
       server-initiated edit used to error) and routes through the pure/unit-tested **`WorkspaceEditMapper`**
       (both wire shapes — legacy `changes` map + modern `TextDocumentEdit[]`, same-file batches merged into
-      one undo unit) into `LspCoordinator.applyWorkspaceEdits` (**all-or-nothing**: a resource
-      create/rename/delete or non-file URI refuses the whole edit — half a refactoring corrupts the
-      workspace; closed files open as background tabs so their changes are visible + undoable). Unit tests:
-      the mapper (both shapes, merge, refusals), `codeActionProvider` either-form, `diagnosticsOverlapping`.
-      *Deferred: resource operations (create/rename/delete file) in workspace edits, an inline lightbulb
-      gutter indicator, auto-"source.organizeImports" on save.*
+      one undo unit) into the guarded asynchronous workspace-edit transaction. Create/rename/delete operations
+      are supported; non-file URIs and snippet edits still refuse the complete edit. Closed files load into
+      background tabs without disk reads on the FX thread. Unit tests cover both shapes, resource rollback,
+      stale versions/snapshots, provider forms, and diagnostic overlap. *Deferred: an inline lightbulb gutter
+      indicator and auto-"source.organizeImports" on save.*
 - [x] **Java LSP review batch** (#665–#669, from a deep review of the jdtls path) — five fixes in one branch.
       **(a) `jdt://` definitions (#665):** `uriToPath` threw on jdtls's class-file URIs and the target was
       silently dropped, so `M-.` on `String`/`List`/any dependency symbol said "no definition" — the most

@@ -275,6 +275,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java LSP extension requests, refactor safety, and startup synchronization.** JDT LS responses for
+  library sources, source generation, organize imports, and project builds now retain their JSON payloads;
+  the four generation flows send the DTO objects JDT LS expects. Workspace edits preserve protocol
+  versions and request-time snapshots, reject stale buffers, and stage multi-file renames as a recoverable
+  transaction before changing editor text. Closing and reopening a document while the server initializes
+  keeps the incremental-sync shadow in wire order. JDT's progress, event, and actionable-message channels
+  are also registered; progress updates are coalesced instead of flooding the UI. Follow-up hardening moves
+  JDK/workspace preparation and workspace-edit filesystem work off the JavaFX thread, bounds and cancels
+  ordinary requests, completes abandoned startup requests, applies dynamic capability registrations and
+  server refresh requests, supports transactional create/delete operations, and rejects stale diagnostics,
+  structure outlines, semantic-cache sessions, and overlapping semantic-token replies.
+  A jdtls process that fails before initialization now discards its unlocked, rebuildable Eclipse workspace
+  cache (or bypasses it when another process owns the lock), and crash recovery only touches buffers from the
+  failed project root instead of cascading across every open Java project.
 - **Printing a long Markdown file produced a handful of pages, most nearly blank and a few shrunk to
   illegibility.** A block taller than a page was given a page of its own and scaled uniformly to fit —
   right for an oversized image, catastrophic for text, because a Markdown list is *one* top-level block
@@ -572,7 +586,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query, and that change starts a second pass which lands after the list has been laid out and quietly
   fixes the selection — so an open was correct only if you had typed something the time before. Both now
   open with the first row selected and the header still visible, so the picker no longer comes up without
-  the label saying what it is listing.
+  the label saying what it is listing. Its immediate open refresh also cancels the redundant query debounce,
+  so that delayed pass cannot reset the cursor after the user has already moved it.
 
 - **The Git Log tool window was missing from the VCS menu.** The menu offered Show File History but never
   the whole-repository log, though it exists and has a keybinding. It sits with the compare and history
