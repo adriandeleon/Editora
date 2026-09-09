@@ -1669,6 +1669,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
+                setAccessibleText(null);
                 setContextMenu(null);
                 setTooltip(null);
                 getStyleClass().removeAll(CELL_CLASSES);
@@ -1722,12 +1723,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // on its own (a Labeled cannot weight part of its string).
             if (dirty) {
                 label = "• " + label;
-            } else if (active) {
-                label = "◉ " + label;
-            } else if (open) {
-                label = "◌ " + label;
             }
-            setText(label);
+            setText(null);
+            setAccessibleText(label);
             setContextMenu(null); // built lazily in setOnContextMenuRequested (see the PathCell constructor)
             setTooltip(null);
             Path fileName = item.getFileName();
@@ -1735,9 +1733,18 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // folder and file rows share one icon width and every label starts at the same x.
             Node glyph = FileIcons.forProjectItem(fileName == null ? label : fileName.toString(), isDir);
             Node base = FileIcons.withStatusLetter(glyph, fileStatus == null ? null : fileStatus.letter());
+            HBox graphic = new HBox(3, base);
+            graphic.setAlignment(Pos.CENTER_LEFT);
+            Label name = new Label(label);
+            name.getStyleClass().add("project-file-name");
+            graphic.getChildren().add(name);
+            if (active || open) {
+                Label openMarker = new Label(active ? "◉" : "◌");
+                openMarker.getStyleClass().add("project-open-indicator");
+                openMarker.setMouseTransparent(true);
+                graphic.getChildren().add(openMarker);
+            }
             if (markerActions != null) {
-                HBox graphic = new HBox(3, base);
-                graphic.setAlignment(Pos.CENTER_LEFT);
                 if (markerActions.hasBookmarks(item)) {
                     graphic.getChildren().add(smallMarker(Icons.bookmark(), "project-bookmark-indicator"));
                 }
@@ -1753,10 +1760,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         }
                     }
                 }
-                setGraphic(graphic);
-            } else {
-                setGraphic(base);
             }
+            setGraphic(graphic);
         }
 
         private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir, boolean isRoot) {
