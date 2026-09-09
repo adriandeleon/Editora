@@ -203,6 +203,21 @@
     -fx-text-fill: -color-fg-default;
 }
 
+/* Personal Notes read like a soft paper annotation rather than editor chrome. Keep this intentionally
+   paler than a saturated Post-it while retaining dark text in every app theme. The popup shell is styled
+   inline because Tooltip replaces its private scene; this class overrides the Markdown renderer's
+   looked-up colors, whose normal background would otherwise cover that yellow shell. */
+.personal-note-tooltip-content {
+    -color-bg-default: #fff9c4;
+    -color-bg-subtle: #fff3ad;
+    -color-fg-default: #3d3520;
+    -color-fg-muted: #6b6040;
+    -color-border-muted: #eadf9b;
+    -color-accent-fg: #705a00;
+    -fx-background-color: #fff9c4;
+    -fx-text-fill: #3d3520;
+}
+
 /* Hover preview of a collapsed region's hidden content. The colors are set inline per editor theme
    (FoldManager.setPreviewColors); these defaults match the default (Primer Light) editor theme. */
 .fold-preview-tooltip {
