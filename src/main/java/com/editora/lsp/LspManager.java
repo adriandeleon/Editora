@@ -556,7 +556,8 @@ public final class LspManager {
                     releaseJdtlsWorkspaceName(workspaceName);
                 }
             }
-            session.configureStart(resolvedSpec.command(), () -> initOptionsFor(serverId, bundles));
+            List<String> startCommand = resolvedSpec.command();
+            session.configureStart(startCommand, () -> initOptionsFor(serverId, bundles, root, startCommand));
             if (!session.start()) {
                 dropSession(key, session);
             }
@@ -2535,6 +2536,8 @@ public final class LspManager {
      *       {@code provideFormatter} flag is passed; without it, Format Document was silently unavailable on a
      *       {@code .json}/{@code .css}/{@code .html} even though the server would format (#468; verified by
      *       driving the real servers: the flag flips the advertised capability from false to true).</li>
+     *   <li><b>astro</b> (astro-ls): {@code typescript.tsdk} points at the nearest project TypeScript SDK,
+     *       or the SDK installed beside the language server. Astro refuses initialization without it.</li>
      *   <li><b>maven-pom</b> (JVM lemminx + lemminx-maven): {@code settings.xml.maven.central.skip=true} —
      *       the lemminx-maven settings live under an {@code xml.maven} object (schema verified against the
      *       extension's {@code XMLMavenSettings}). {@code central.skip=true} disables the heavy Maven Central
@@ -2544,14 +2547,65 @@ public final class LspManager {
      * </ul>
      */
     static Object initOptionsFor(String serverId, List<String> debugBundles) {
+        return initOptionsFor(serverId, debugBundles, null, List.of());
+    }
+
+    static Object initOptionsFor(String serverId, List<String> debugBundles, Path root, List<String> command) {
         return switch (serverId == null ? "" : serverId) {
             case "java" -> javaInitOptions(debugBundles);
             case "go" -> Map.of("semanticTokens", true);
             case "json", "css", "html" -> Map.of("provideFormatter", true);
+            case "astro" ->
+                Map.of(
+                        "typescript",
+                        Map.of("tsdk", astroTypeScriptSdk(root, command).toString()));
             case LspServerRegistry.MAVEN_POM_SERVER_ID ->
                 Map.of("settings", Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", true)))));
             default -> null;
         };
+    }
+
+    /**
+     * Finds the TypeScript SDK required by astro-ls. Prefer the project's own TypeScript version, walking
+     * upward for npm/pnpm workspace hoisting; then look beside the resolved global astro-ls installation.
+     * The final project-local fallback produces Astro's own clear "can't find TypeScript" error if neither
+     * exists, while still always satisfying its required initialization-options shape.
+     */
+    static Path astroTypeScriptSdk(Path root, List<String> command) {
+        Path projectSdk = findTypeScriptSdk(root);
+        if (projectSdk != null) {
+            return projectSdk;
+        }
+        if (command != null && !command.isEmpty()) {
+            List<String> resolved = ProcessRunner.resolveExecutable(command);
+            if (!resolved.isEmpty()) {
+                try {
+                    Path executable = Path.of(resolved.get(0)).toAbsolutePath().normalize();
+                    if (Files.exists(executable)) {
+                        executable = executable.toRealPath();
+                    }
+                    Path installedSdk = findTypeScriptSdk(executable.getParent());
+                    if (installedSdk != null) {
+                        return installedSdk;
+                    }
+                } catch (java.io.IOException | java.nio.file.InvalidPathException ignored) {
+                    // Fall through to the deterministic project-local path below.
+                }
+            }
+        }
+        Path base = root == null ? Path.of("") : root;
+        return base.toAbsolutePath().normalize().resolve("node_modules/typescript/lib");
+    }
+
+    private static Path findTypeScriptSdk(Path start) {
+        for (Path dir = start == null ? null : start.toAbsolutePath().normalize(); dir != null; dir = dir.getParent()) {
+            Path candidate = dir.resolve("node_modules/typescript/lib");
+            if (Files.isRegularFile(candidate.resolve("typescript.js"))
+                    || Files.isRegularFile(candidate.resolve("tsserverlibrary.js"))) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     /**

@@ -9,6 +9,7 @@ import org.eclipse.lsp4j.SemanticTokensLegend;
 import org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -19,6 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** Unit tests for {@link LspManager}'s pure capability helpers (trigger chars, semantic-tokens gate,
  *  jdtls initializationOptions). */
 class LspManagerTest {
+
+    @TempDir
+    java.nio.file.Path tempDir;
 
     private static SemanticTokensWithRegistrationOptions stProvider(boolean withLegend, Boolean range, Boolean full) {
         var opts = new SemanticTokensWithRegistrationOptions(); // no-arg: legend stays null (ctor rejects null)
@@ -122,6 +126,43 @@ class LspManagerTest {
         assertNull(LspManager.initOptionsFor("python", List.of()));
         assertNull(LspManager.initOptionsFor("typescript", List.of()));
         assertNull(LspManager.initOptionsFor(null, List.of()));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void astroInitOptionsUseProjectTypeScriptSdk() throws Exception {
+        var sdk = tempDir.resolve("node_modules/typescript/lib");
+        java.nio.file.Files.createDirectories(sdk);
+        java.nio.file.Files.createFile(sdk.resolve("typescript.js"));
+
+        var options = (Map<String, Object>)
+                LspManager.initOptionsFor("astro", List.of(), tempDir, List.of("astro-ls", "--stdio"));
+        var typescript = (Map<String, Object>) options.get("typescript");
+
+        assertEquals(sdk.toString(), typescript.get("tsdk"));
+    }
+
+    @Test
+    void astroSdkDiscoveryWalksUpForHoistedTypeScript() throws Exception {
+        var sdk = tempDir.resolve("node_modules/typescript/lib");
+        java.nio.file.Files.createDirectories(sdk);
+        java.nio.file.Files.createFile(sdk.resolve("tsserverlibrary.js"));
+
+        assertEquals(sdk, LspManager.astroTypeScriptSdk(tempDir.resolve("packages/site"), List.of()));
+    }
+
+    @Test
+    void astroSdkDiscoveryFallsBackBesideGlobalServer() throws Exception {
+        var server = tempDir.resolve("lib/node_modules/@astrojs/language-server/bin/nodeServer.js");
+        java.nio.file.Files.createDirectories(server.getParent());
+        java.nio.file.Files.createFile(server);
+        var sdk = tempDir.resolve("lib/node_modules/typescript/lib");
+        java.nio.file.Files.createDirectories(sdk);
+        java.nio.file.Files.createFile(sdk.resolve("typescript.js"));
+
+        assertEquals(
+                sdk.toRealPath(),
+                LspManager.astroTypeScriptSdk(tempDir.resolve("project"), List.of(server.toString())));
     }
 
     @Test

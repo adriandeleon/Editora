@@ -167,7 +167,8 @@ public enum ConfigSchema {
                     Map.entry(99, (Migration) ConfigMigrations::identity),
                     // v100→101: Recent moved from the fixed tail into the customizable cluster — put it back
                     // into a layout the user had already rearranged, which is used verbatim.
-                    Map.entry(100, (Migration) ConfigMigrations::restoreRecentToToolbarLayout))),
+                    Map.entry(100, (Migration) ConfigMigrations::restoreRecentToToolbarLayout),
+                    Map.entry(101, (Migration) ConfigMigrations::identity))), // v101→102: + Astro LSP
     // v1 → v2 added the editor-group layout + OpenFile.group. Both default to the old single-group
     // behaviour, so the step is identity.
     // v1→v2 editor-group layout, v2→v3 RunConfiguration type/target, v3→v4 selectedRunConfig — all additive

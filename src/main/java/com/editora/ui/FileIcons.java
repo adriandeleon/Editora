@@ -441,7 +441,7 @@ public final class FileIcons {
             case "cpp" -> "cpp";
             case "csharp" -> "csharp";
             case "kotlin" -> "kotlin";
-            case "html" -> "html";
+            case "html", "astro" -> "html";
             case "css" -> "css";
             case "markdown" -> "markdown";
             case "yaml" -> "yaml";

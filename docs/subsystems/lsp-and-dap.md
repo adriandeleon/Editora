@@ -33,7 +33,7 @@ and project-root markers. The registry is server-centric, not language-centric: 
 several language ids, so the `typescript` server's `languageIds` is
 `{javascript, javascriptreact, typescript, typescriptreact}` and `clangd` serves `{c, cpp}`.
 
-It ships **twenty-two** servers (the `ServerDef` enum). A few examples:
+It ships **twenty-three** general-purpose servers (plus the Maven-aware `pom.xml` route). A few examples:
 
 | Server id | Default command | Root markers (nearest-first) |
 | --- | --- | --- |
@@ -43,9 +43,10 @@ It ships **twenty-two** servers (the `ServerDef` enum). A few examples:
 | `go` | `gopls` | `go.mod`, `go.work`, `.git` |
 | `rust` | `rust-analyzer` | `Cargo.toml`, `.git` |
 | `clangd` | `clangd` | `compile_commands.json`, `CMakeLists.txt`, …, `.git` |
+| `astro` | `astro-ls --stdio` | `astro.config.mjs`, `astro.config.ts`, `package.json`, `.git` |
 
 The rest cover XML (lemminx), JSON, Bash, YAML, PHP, Ruby, HTML, CSS, Kotlin, Lua, Dockerfile, SQL,
-Terraform, TOML, and C#. Commands are user-configurable (Settings) and **never bundled** — servers
+Terraform, TOML, C#, Typst, and Astro. Commands are user-configurable (Settings) and **never bundled** — servers
 are auto-detected on the augmented PATH or installed in-app.
 
 Useful pure methods: `serverIdFor(languageId)`, `isSupported(languageId)`, `rootMarkersFor(...)`,

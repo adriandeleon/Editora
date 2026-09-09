@@ -26,6 +26,20 @@ class CanvasGuardsTest {
     }
 
     @Test
+    void clampDimAccountsForRetinaBackingTexture() {
+        assertEquals(8191, CanvasGuards.clampDim(13_323.5, 2));
+        assertTrue(CanvasGuards.clampDim(13_323.5, 2) * 2 < CanvasGuards.MAX_TEXTURE_DIM);
+        assertEquals(859, CanvasGuards.clampDim(859, 2));
+    }
+
+    @Test
+    void clampDimToleratesInvalidAndDownscalingOutputScales() {
+        assertEquals(800, CanvasGuards.clampDim(800, Double.NaN));
+        assertEquals(800, CanvasGuards.clampDim(800, 0));
+        assertEquals(800, CanvasGuards.clampDim(800, 0.75));
+    }
+
+    @Test
     void paintableTrueOnlyForRealInRangeSizes() {
         assertTrue(CanvasGuards.paintable(640, 480));
         assertTrue(CanvasGuards.paintable(1, 1));

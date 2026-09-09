@@ -16,6 +16,7 @@ class GrammarRegistryTest {
         assertNotNull(GrammarRegistry.shared().forLanguageName("java"));
         assertNotNull(GrammarRegistry.shared().forLanguageName("python"));
         assertNotNull(GrammarRegistry.shared().forLanguageName("csharp"));
+        assertNotNull(GrammarRegistry.shared().forLanguageName("astro"));
     }
 
     @Test
@@ -174,6 +175,7 @@ class GrammarRegistryTest {
         assertTrue(names.contains("java"));
         assertTrue(names.contains("markdown"));
         assertTrue(names.contains("csharp"));
+        assertTrue(names.contains("astro"));
         assertFalse(names.contains("plaintext"));
     }
 }

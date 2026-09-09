@@ -13,7 +13,8 @@ import java.util.Set;
  * {@code javascript}/{@code javascriptreact}/{@code typescript}/{@code typescriptreact}), so the
  * {@link LspManager} keys a single session per {@code (serverId, root)} and all four share one process.
  *
- * <p>Ships twenty-two servers — <b>Java</b> (Eclipse JDT LS), <b>TypeScript</b> (typescript-language-server,
+ * <p>Ships twenty-three general-purpose servers — <b>Java</b> (Eclipse JDT LS), <b>TypeScript</b>
+ * (typescript-language-server,
  * which also covers JavaScript/JSX/TSX), <b>Python</b> (Pyright), <b>XML</b> (lemminx), <b>JSON</b>
  * (vscode-json-language-server), <b>Bash</b> (bash-language-server, for shell scripts), <b>YAML</b>
  * (yaml-language-server), <b>Go</b> (gopls), <b>Rust</b> (rust-analyzer), <b>PHP</b> (phpactor),
@@ -21,7 +22,8 @@ import java.util.Set;
  * <b>CSS</b> (vscode-html/css-language-server), <b>Kotlin</b> (kotlin-language-server), <b>Lua</b>
  * (lua-language-server), <b>Dockerfile</b> (docker-langserver), <b>SQL</b> (sqls),
  * <b>Terraform</b> (terraform-ls), <b>TOML</b> (taplo), <b>C#</b> (csharp-ls), <b>Typst</b>
- * (tinymist), and a Maven-aware <b>pom.xml</b> server (JVM lemminx + the lemminx-maven extension — routed by
+ * (tinymist), <b>Astro</b> (astro-ls), and a Maven-aware <b>pom.xml</b> server (JVM lemminx + the
+ * lemminx-maven extension — routed by
  * file name so a {@code pom.xml} gets dependency/plugin/GAV completion while other XML keeps the fast native
  * lemminx; see {@link #MAVEN_POM_SERVER_ID}). Commands are
  * user-configurable (Settings) and never bundled. All methods are static + pure (no process launch, no I/O) so they are
@@ -136,6 +138,10 @@ public final class LspServerRegistry {
     /** Markers for a Typst project root (a typst.toml package manifest, else the repo). */
     public static final List<String> TYPST_ROOT_MARKERS = List.of("typst.toml", ".git");
 
+    /** Markers for an Astro project (Astro config/package metadata, else the repository). */
+    public static final List<String> ASTRO_ROOT_MARKERS =
+            List.of("astro.config.mjs", "astro.config.ts", "astro.config.js", "package.json", ".git");
+
     /** Default server commands when the user leaves the Settings field blank. */
     public static final String DEFAULT_JAVA_COMMAND = "jdtls";
 
@@ -160,6 +166,7 @@ public final class LspServerRegistry {
     public static final String DEFAULT_TOML_COMMAND = "taplo lsp stdio";
     public static final String DEFAULT_CSHARP_COMMAND = "csharp-ls";
     public static final String DEFAULT_TYPST_COMMAND = "tinymist lsp";
+    public static final String DEFAULT_ASTRO_COMMAND = "astro-ls --stdio";
 
     /**
      * The Maven-aware {@code pom.xml} server (JVM lemminx + the lemminx-maven extension). It has <b>no</b>
@@ -210,6 +217,7 @@ public final class LspServerRegistry {
         TOML("toml", DEFAULT_TOML_COMMAND, SHELL_ROOT_MARKERS, Set.of("toml")),
         CSHARP("csharp", DEFAULT_CSHARP_COMMAND, CSHARP_ROOT_MARKERS, Set.of("csharp")),
         TYPST("typst", DEFAULT_TYPST_COMMAND, TYPST_ROOT_MARKERS, Set.of("typst")),
+        ASTRO("astro", DEFAULT_ASTRO_COMMAND, ASTRO_ROOT_MARKERS, Set.of("astro")),
         // Maven-aware pom.xml server: JVM lemminx + lemminx-maven. Served language id is the routing-only
         // pseudo id MAVEN_POM_LANGUAGE_ID; the didOpen id is translated back to "xml" (see protocolLanguageId).
         MAVEN_POM(

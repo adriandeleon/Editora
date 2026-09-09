@@ -28,6 +28,7 @@ public final class LanguageRegistry {
             Map.entry("html", "html"),
             Map.entry("htm", "html"),
             Map.entry("xhtml", "html"),
+            Map.entry("astro", "astro"),
             Map.entry("md", "markdown"),
             Map.entry("markdown", "markdown"),
             Map.entry("mdown", "markdown"),

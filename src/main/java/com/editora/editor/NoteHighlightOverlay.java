@@ -87,8 +87,8 @@ final class NoteHighlightOverlay extends Region {
         // Track the viewport size only while there's something to paint; an idle overlay stays 1x1 (see
         // hasContent). redraw() grows the canvas on demand when a note span becomes visible.
         if (hasContent) {
-            double w = CanvasGuards.clampDim(getWidth());
-            double h = CanvasGuards.clampDim(getHeight());
+            double w = CanvasGuards.clampWidth(this, getWidth());
+            double h = CanvasGuards.clampHeight(this, getHeight());
             if (canvas.getWidth() != w || canvas.getHeight() != h) {
                 canvas.setWidth(w);
                 canvas.setHeight(h);
@@ -123,8 +123,8 @@ final class NoteHighlightOverlay extends Region {
 
     /** Grows the canvas to the viewport (only when there's content to paint) and clears it. */
     private void ensureCanvasSized() {
-        double w = CanvasGuards.clampDim(getWidth());
-        double h = CanvasGuards.clampDim(getHeight());
+        double w = CanvasGuards.clampWidth(this, getWidth());
+        double h = CanvasGuards.clampHeight(this, getHeight());
         if (canvas.getWidth() != w || canvas.getHeight() != h) {
             canvas.setWidth(w); // resizing a Canvas also clears it
             canvas.setHeight(h);

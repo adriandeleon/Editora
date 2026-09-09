@@ -61,6 +61,14 @@ Code under the MIT License (converted there from KapitanOczywisty/language-php):
 
     License: MIT  (© Microsoft Corporation; © GitHub Inc. / language-php)
 
+The Astro grammar (astro.tmLanguage.json) was obtained from Astro's official
+language-tools package under the MIT License:
+
+    https://github.com/withastro/astro
+    (packages/language-tools/vscode/syntaxes/astro.tmLanguage.json)
+
+    License: MIT  (© Astro contributors)
+
 The Caddyfile grammar (caddyfile.tmLanguage.json) was obtained from the official
 Caddy VS Code extension under the MIT License:
 
@@ -99,7 +107,7 @@ Kotlin, Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, SQL,
 systemd, desktop entries, dotenv, SSH config, Git config, crontab, Caddyfile,
 fstab, hosts, .properties, deb822 (Debian control / APT sources), APT
 sources.list, network interfaces, Debian changelog, unified diff/patch,
-Makefile, justfile, Protocol Buffers, GraphQL, .gitattributes.
+Makefile, justfile, Protocol Buffers, GraphQL, Astro, .gitattributes.
 
 ================================================================================
 Bundled fonts

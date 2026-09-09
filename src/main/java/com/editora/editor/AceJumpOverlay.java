@@ -228,8 +228,8 @@ final class AceJumpOverlay extends Region {
 
     @Override
     protected void layoutChildren() {
-        double w = CanvasGuards.clampDim(getWidth());
-        double h = CanvasGuards.clampDim(getHeight());
+        double w = CanvasGuards.clampWidth(this, getWidth());
+        double h = CanvasGuards.clampHeight(this, getHeight());
         if (canvas.getWidth() != w || canvas.getHeight() != h) {
             canvas.setWidth(w);
             canvas.setHeight(h);

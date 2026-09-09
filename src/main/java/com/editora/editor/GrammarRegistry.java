@@ -164,6 +164,13 @@ public final class GrammarRegistry {
         scopeToResource.put("source.json", "json");
         scopeToResource.put("source.css", "css");
         scopeToResource.put("text.html.basic", "html");
+        scopeToResource.put("source.astro", "astro");
+        // Astro embeds JavaScript and stylesheet dialect scopes. Reuse the bundled TypeScript/CSS
+        // grammars for aliases we can faithfully tokenize; unsupported preprocessors degrade to plain text.
+        scopeToResource.put("source.js", "typescript");
+        scopeToResource.put("source.css.less", "css");
+        scopeToResource.put("source.css.postcss", "css");
+        scopeToResource.put("source.css.scss", "css");
         scopeToResource.put("source.yaml", "yaml");
         scopeToResource.put("source.ini", "ini");
         scopeToResource.put("source.sql", "sql");
@@ -223,6 +230,7 @@ public final class GrammarRegistry {
         mapExtensions("source.json", "json", "jsonc", "json5");
         mapExtensions("source.css", "css");
         mapExtensions("text.html.basic", "html", "htm", "xhtml");
+        mapExtensions("source.astro", "astro");
         mapExtensions("source.yaml", "yaml", "yml");
         mapExtensions("source.ini", "ini", "cfg", "conf");
         // Java .properties — its own grammar (Unicode escapes, ':' separator, continuation lines);

@@ -233,9 +233,10 @@ Editora is built with the help of AI coding tools.
   **technical-terms dictionary** (`config`, `async`, `middleware`, `kubernetes`, …) keeps code-adjacent
   prose from being flagged — toggle it in Settings → Spell Check (default on). Pure-Java (Apache Lucene
   Hunspell).
-- **Code intelligence (LSP)** _(Beta)_ — language smarts via the Language Server Protocol, with **22 servers**
+- **Code intelligence (LSP)** _(Beta)_ — language smarts via the Language Server Protocol, with **23 servers**
   auto-detected on `PATH` (Java/JDT LS, TypeScript/JavaScript, Python/Pyright, Go, Rust, C/C++/clangd,
-  C#, PHP, Ruby, Kotlin, Lua, Bash, XML, JSON, YAML, HTML, CSS, Dockerfile, SQL, Terraform, TOML, Typst/tinymist),
+  C#, PHP, Ruby, Kotlin, Lua, Bash, XML, JSON, YAML, HTML, CSS, Dockerfile, SQL, Terraform, TOML,
+  Typst/tinymist, Astro/astro-ls),
   plus a **Maven-aware `pom.xml` server** (JVM lemminx + lemminx-maven, routed by file name so a `pom.xml`
   gets dependency/plugin/GAV completion while other XML keeps the fast native lemminx).
   Inline diagnostics + a Problems tool window (`M-8`) + minimap/scrollbar stripes, go-to-definition

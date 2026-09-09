@@ -275,6 +275,9 @@ class InstallCatalogTest {
         assertTrue(InstallCatalog.serverInstall("java").isEmpty());
         assertTrue(InstallCatalog.serverInstall("typescript").isEmpty());
         assertTrue(InstallCatalog.serverInstall(null).isEmpty());
+        assertEquals(
+                List.of("@astrojs/language-server", "typescript"),
+                InstallCatalog.serverInstall("astro").orElseThrow().get(0).npmPackages());
     }
 
     @Test

@@ -3552,7 +3552,7 @@ public class EditorBuffer implements TabContent {
     // --- LSP (Language Server Protocol) integration ---------------------------------------------
 
     /** Language ids that have a language server (Java, JS/TS/JSX/TSX, Python, XML, JSON, shell, YAML, Go,
-     *  Rust, PHP, Ruby, C/C++, HTML, CSS, Kotlin, Lua, Dockerfile, SQL, Terraform, TOML). Hardcoded here
+     *  Rust, PHP, Ruby, C/C++, HTML, CSS, Kotlin, Lua, Dockerfile, SQL, Terraform, TOML, Typst, Astro). Hardcoded here
      *  so {@code editor} need not depend on the {@code lsp} package (kept in sync with
      *  {@code LspServerRegistry}). */
     private static final java.util.Set<String> LSP_LANGUAGES = java.util.Set.of(
@@ -3581,7 +3581,8 @@ public class EditorBuffer implements TabContent {
             "terraform",
             "toml",
             "csharp",
-            "typst");
+            "typst",
+            "astro");
 
     /** Whether this buffer's language has a language server. */
     public boolean isLspLanguage() {
