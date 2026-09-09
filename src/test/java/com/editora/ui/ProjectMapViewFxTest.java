@@ -793,6 +793,14 @@ class ProjectMapViewFxTest {
                 mapView.layout();
                 preview.layout();
                 assertTrue(preview.isVisible());
+                Map<Path, ?> connectors = FxTestSupport.field(mapView, "previewConnectors");
+                assertEquals(Set.of(file), connectors.keySet(), "the file preview should have one connector");
+                Object connector = connectors.get(file);
+                double initialEndX = (double) FxTestSupport.call(connector, "endX", new Class<?>[0]);
+                assertTrue(
+                        Math.abs(initialEndX - preview.getLayoutX()) < 0.001
+                                || Math.abs(initialEndX - preview.getLayoutX() - preview.getWidth()) < 0.001,
+                        "the connector should meet the nearest preview edge");
                 assertEquals(file, preview.path());
                 assertTrue(preview.editor().getText().contains("value = 8"), "open-buffer content should win");
                 org.fxmisc.flowless.VirtualizedScrollPane<?> editorScroll =
@@ -814,6 +822,11 @@ class ProjectMapViewFxTest {
                 assertTrue((double) FxTestSupport.field(preview, "contentZoom") > 1.0);
 
                 preview.relocate(40, 40);
+                Object movedConnector = connectors.get(file);
+                assertTrue(
+                        Math.abs((double) FxTestSupport.call(movedConnector, "endX", new Class<?>[0]) - initialEndX)
+                                > 0.001,
+                        "moving the preview should move its connector endpoint");
                 double beforeWidth = preview.getWidth();
                 FxTestSupport.invokeWith(
                         preview,
@@ -835,6 +848,7 @@ class ProjectMapViewFxTest {
                 Button close = FxTestSupport.field(preview, "close");
                 close.fire();
                 assertFalse(preview.isVisible());
+                assertTrue(connectors.isEmpty(), "closing the preview should remove its connector");
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);

@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The Project Map can now filter its visible working set to bookmarked files or files with Personal Notes.
+- Floating Project Map previews now have a live connector to their source file row, including while the
+  map is panned or zoomed and while a preview is moved or resized.
 
 ### Fixed
 
