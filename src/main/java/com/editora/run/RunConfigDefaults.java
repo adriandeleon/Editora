@@ -8,7 +8,7 @@ import java.util.Set;
 /**
  * What a newly added run configuration starts out as.
  *
- * <p>Settings → Run Configurations → <b>Add</b> used to create a wholly blank Java configuration, which is
+ * <p>Run Configurations → <b>Add</b> used to create a wholly blank Java configuration, which is
  * unrunnable until you fill the main class in — and running it before you did reported a language-server
  * stack trace (#795). It now starts from whatever the window can tell about the active file, which is usually
  * the configuration you wanted.
@@ -20,7 +20,7 @@ public final class RunConfigDefaults {
     private RunConfigDefaults() {}
 
     /**
-     * The configuration Settings → Run Configurations → <b>Add</b> creates.
+     * The configuration Run Configurations → <b>Add</b> creates.
      *
      * @param suggestedMainClass the active Java file's main class, or null when there is nothing to suggest
      * @param existingNames the names already in the list, so the new one does not collide with them

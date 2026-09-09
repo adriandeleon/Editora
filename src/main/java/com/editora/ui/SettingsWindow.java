@@ -127,7 +127,6 @@ public class SettingsWindow {
         BUILD_TOOLS(tr("settings.cat.buildTools"), Group.LANGUAGES_TOOLS),
         WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
-        RUN_CONFIGS(tr("settings.cat.runConfigs"), Group.LANGUAGES_TOOLS),
         // Version control
         GIT(tr("settings.cat.git"), Group.VERSION_CONTROL),
         GITHUB(tr("settings.cat.github"), Group.VERSION_CONTROL),
@@ -285,14 +284,6 @@ public class SettingsWindow {
     private final javafx.collections.ObservableList<com.editora.externaltool.ExternalTool> externalToolItems =
             javafx.collections.FXCollections.observableArrayList();
 
-    /** The Run Configurations ListView + its (per-window) items, so the page can restore selection on reload. */
-    private ListView<com.editora.config.RunConfiguration> runConfigList;
-
-    private final javafx.collections.ObservableList<com.editora.config.RunConfiguration> runConfigItems =
-            javafx.collections.FXCollections.observableArrayList();
-
-    private boolean loadingRunConfig = false;
-
     // Toolbar page state: the current-toolbar token list and the not-yet-added catalog items.
     private final javafx.collections.ObservableList<String> toolbarCurrentItems =
             javafx.collections.FXCollections.observableArrayList();
@@ -324,8 +315,12 @@ public class SettingsWindow {
     private String macroOriginalName; // the saved name of the selected macro (to detect rename)
     /** Re-registers the {@code macro.run.*} commands across windows after a Macros-page edit. */
     private Runnable onMacrosChanged = () -> {};
-
+    /** Hooks used by the separate Run Configurations window; kept here as the window-service owner. */
     private Runnable onRunConfigsChanged = () -> {};
+
+    private java.util.function.Supplier<String> runConfigSuggestion;
+    private RunConfigurationsWindow runConfigurationsWindow;
+
     /** Shared snippet manager (injected after construction); backs the Snippets management page. */
     private com.editora.snippet.SnippetManager snippetManager;
     /** Working copy of the snippets (bundled + user) for the language selected on the Snippets page. */
@@ -629,26 +624,18 @@ public class SettingsWindow {
         sidebar.getSelectionModel().select(Category.WORKSPACE);
     }
 
-    /**
-     * Opens Settings on the Run Configurations page with {@code selectName} selected in its list.
-     *
-     * <p>Selecting the configuration matters more than reaching the page: the toolbar dropdown's "Edit
-     * Configurations…" is asked to edit <em>this</em> one, and landing on a list you then have to search
-     * would only be half the action. A null or unknown name opens the page with whatever was selected before.
-     */
+    /** Opens the project/session-scoped Run Configurations window. */
     public void showRunConfigs(String selectName, Window owner) {
-        show(owner);
-        sidebar.getSelectionModel().select(Category.RUN_CONFIGS);
-        if (selectName == null || selectName.isBlank() || runConfigList == null) {
-            return;
+        if (runConfigurationsWindow == null) {
+            runConfigurationsWindow = new RunConfigurationsWindow(
+                    config, () -> runConfigSuggestion == null ? null : runConfigSuggestion.get(), onRunConfigsChanged);
         }
-        for (var c : runConfigItems) {
-            if (selectName.equals(c.name())) {
-                runConfigList.getSelectionModel().select(c);
-                runConfigList.scrollTo(c);
-                return;
-            }
-        }
+        runConfigurationsWindow.show(selectName, owner);
+    }
+
+    /** Supplies the active Java main class used to seed a newly added configuration. */
+    public void setRunConfigSuggestion(java.util.function.Supplier<String> suggestion) {
+        this.runConfigSuggestion = suggestion;
     }
 
     /**
@@ -1708,7 +1695,6 @@ public class SettingsWindow {
         pages.put(Category.BUILD_TOOLS, buildToolsPage());
         pages.put(Category.WEB, webPage());
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
-        pages.put(Category.RUN_CONFIGS, runConfigsPage());
         pages.put(Category.ABBREVIATIONS, abbreviationsPage());
         // Version control
         pages.put(Category.GIT, gitPage());
@@ -1951,18 +1937,14 @@ public class SettingsWindow {
                 .orElse(commandId);
     }
 
-    /**
-     * Injects the toolbar-selector refresh hook (→ {@code MainController.refreshRunConfigs}); used by the Run
-     * Configurations page. Run configurations live in the per-window {@code WorkspaceState}, so this refreshes
-     * only this window — unlike the macro hook, which re-registers commands everywhere.
-     */
-    public void setRunConfigsChangedHandler(Runnable handler) {
-        this.onRunConfigsChanged = handler == null ? () -> {} : handler;
-    }
-
     /** Injects the cross-window macro re-register hook (→ {@code MainController}); used by the Macros page. */
     public void setMacrosChangedHandler(Runnable handler) {
         this.onMacrosChanged = handler == null ? () -> {} : handler;
+    }
+
+    /** Refreshes this window's toolbar selector after the separate editor persists a change. */
+    public void setRunConfigsChangedHandler(Runnable handler) {
+        this.onRunConfigsChanged = handler == null ? () -> {} : handler;
     }
 
     /** Re-reads the Macros page's list from the store — called after a macro changes from outside this
@@ -4354,220 +4336,6 @@ public class SettingsWindow {
         return new VBox(8, top, buttons);
     }
 
-    private VBox runConfigsPage() {
-        VBox p = page(tr("settings.cat.runConfigs"));
-        Card mainCard = card(p, null);
-        cardRow(
-                mainCard,
-                Category.RUN_CONFIGS,
-                runConfigsEditor(),
-                "run debug configuration main class program vm args working directory launch project");
-        Label help = note(tr("settings.runConfig.help"));
-        help.setWrapText(true);
-        help.setMaxWidth(460);
-        cardRow(mainCard, Category.RUN_CONFIGS, help, "run configuration palette save delete");
-        return p;
-    }
-
-    /**
-     * Master-detail editor for the per-project saved run configurations ({@code WorkspaceState}). Records are
-     * immutable, so a commit rebuilds the {@link com.editora.config.RunConfiguration} and replaces it in the
-     * list at the selected index (unlike External Tools, which mutates a POJO in place).
-     */
-    /** Supplies the main class a newly added run configuration should start from; see {@link #setRunConfigSuggestion}. */
-    private java.util.function.Supplier<String> runConfigSuggestion;
-
-    /**
-     * Injects what Add should prefill a new run configuration with — the active Java file's main class, or
-     * null when there is none.
-     *
-     * <p>A supplier rather than a value: the Settings window outlives any one tab, so the suggestion has to
-     * be read when Add is clicked, not when the page was built.
-     */
-    public void setRunConfigSuggestion(java.util.function.Supplier<String> suggestion) {
-        this.runConfigSuggestion = suggestion;
-    }
-
-    private javafx.scene.Node runConfigsEditor() {
-        reloadRunConfigs();
-
-        ListView<com.editora.config.RunConfiguration> list = new ListView<>(runConfigItems);
-        runConfigList = list;
-        list.setPrefSize(200, 380);
-        list.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(com.editora.config.RunConfiguration c, boolean empty) {
-                super.updateItem(c, empty);
-                if (empty || c == null) {
-                    setText(null);
-                } else {
-                    setText(c.name().isBlank() ? tr("settings.runConfig.unnamed") : c.name());
-                }
-            }
-        });
-
-        TextField name = new TextField();
-        ComboBox<String> type = new ComboBox<>(
-                javafx.collections.FXCollections.observableArrayList("java", "python", "shell", "make", "npm"));
-        type.setConverter(enumConverter(t -> tr("settings.runConfig.type." + t)));
-        TextField target = new TextField();
-        target.setPromptText(tr("settings.runConfig.targetPrompt"));
-        TextField mainClass = new TextField();
-        TextField projectName = new TextField();
-        projectName.setPromptText(tr("settings.runConfig.projectNamePrompt"));
-        TextField args = new TextField();
-        TextField vmArgs = new TextField();
-        TextField workingDir = new TextField();
-        workingDir.setPromptText(tr("settings.runConfig.workingDirPrompt"));
-        TextField env = new TextField();
-        env.setPromptText(tr("settings.runConfig.envPrompt"));
-        TextField beforeLaunch = new TextField();
-        beforeLaunch.setPromptText(tr("settings.runConfig.beforeLaunchPrompt"));
-
-        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
-        formRow(form, 0, tr("settings.runConfig.name"), name);
-        formRow(form, 1, tr("settings.runConfig.type"), type);
-        formRow(form, 2, tr("settings.runConfig.target"), target);
-        formRow(form, 3, tr("settings.runConfig.mainClass"), mainClass);
-        formRow(form, 4, tr("settings.runConfig.projectName"), projectName);
-        formRow(form, 5, tr("settings.runConfig.args"), args);
-        formRow(form, 6, tr("settings.runConfig.vmArgs"), vmArgs);
-        formRow(form, 7, tr("settings.runConfig.workingDir"), workingDir);
-        formRow(form, 8, tr("settings.runConfig.env"), env);
-        formRow(form, 9, tr("settings.runConfig.beforeLaunch"), beforeLaunch);
-        form.setDisable(true);
-        HBox.setHgrow(form, Priority.ALWAYS);
-
-        Runnable commit = () -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i < 0 || loadingRunConfig) {
-                return;
-            }
-            com.editora.config.RunConfiguration rebuilt = new com.editora.config.RunConfiguration(
-                    name.getText(),
-                    type.getValue() == null ? "java" : type.getValue(),
-                    target.getText(),
-                    mainClass.getText(),
-                    projectName.getText(),
-                    args.getText(),
-                    vmArgs.getText(),
-                    workingDir.getText(),
-                    env.getText(),
-                    beforeLaunch.getText());
-            runConfigItems.set(i, rebuilt);
-            list.refresh();
-            persistRunConfigs();
-        };
-        type.valueProperty().addListener((o, a, b) -> commit.run());
-        java.util.function.Consumer<TextField> wire = tf -> {
-            tf.setOnAction(e -> commit.run());
-            tf.focusedProperty().addListener((o, was, now) -> {
-                if (!now) {
-                    commit.run();
-                }
-            });
-        };
-        wire.accept(name);
-        wire.accept(mainClass);
-        wire.accept(projectName);
-        wire.accept(args);
-        wire.accept(vmArgs);
-        wire.accept(workingDir);
-        wire.accept(env);
-
-        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
-            loadingRunConfig = true;
-            try {
-                form.setDisable(now == null);
-                name.setText(now == null ? "" : now.name());
-                type.setValue(now == null ? "java" : now.type());
-                target.setText(now == null ? "" : now.target());
-                mainClass.setText(now == null ? "" : now.mainClass());
-                projectName.setText(now == null ? "" : now.projectName());
-                args.setText(now == null ? "" : now.args());
-                vmArgs.setText(now == null ? "" : now.vmArgs());
-                workingDir.setText(now == null ? "" : now.workingDir());
-                env.setText(now == null ? "" : now.env());
-                beforeLaunch.setText(now == null ? "" : now.beforeLaunch());
-            } finally {
-                loadingRunConfig = false;
-            }
-        });
-
-        Button add = new Button(tr("settings.runConfig.add"));
-        add.setOnAction(e -> {
-            // Start from the active Java file rather than wholly blank: a blank Java configuration is
-            // unrunnable, and running one before you fill the main class in used to report a language-server
-            // stack trace (#795). Null when nothing is open to suggest from — then it is blank as before.
-            String suggested = runConfigSuggestion == null ? null : runConfigSuggestion.get();
-            List<String> taken = new ArrayList<>();
-            for (com.editora.config.RunConfiguration existing : runConfigItems) {
-                taken.add(existing.name());
-            }
-            com.editora.config.RunConfiguration c = com.editora.run.RunConfigDefaults.newConfiguration(
-                    suggested, taken, tr("settings.runConfig.newName"));
-            runConfigItems.add(c);
-            persistRunConfigs();
-            list.getSelectionModel().select(c);
-            // Land on the field that still needs attention: the main class when there was nothing to suggest,
-            // otherwise the name, which is the only part left as a guess.
-            javafx.application.Platform.runLater(() -> (suggested == null ? mainClass : name).requestFocus());
-        });
-        Button remove = new Button(tr("settings.runConfig.remove"));
-        remove.setOnAction(e -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i >= 0) {
-                runConfigItems.remove(i);
-                persistRunConfigs();
-            }
-        });
-        Button save = new Button(tr("settings.save"));
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
-
-        VBox left = new VBox(6, list);
-        VBox.setVgrow(list, Priority.ALWAYS);
-        VBox right = new VBox(8, form);
-        VBox.setVgrow(form, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.ALWAYS);
-        if (!runConfigItems.isEmpty()) {
-            list.getSelectionModel().select(0);
-        }
-        HBox top = new HBox(12, left, right);
-        top.setAlignment(Pos.TOP_LEFT);
-        VBox.setVgrow(top, Priority.ALWAYS);
-        HBox buttons = new HBox(6, add, remove, spacer(), save);
-        buttons.setAlignment(Pos.CENTER_LEFT);
-        return new VBox(8, top, buttons);
-    }
-
-    private void persistRunConfigs() {
-        config.getWorkspaceState().setRunConfigurations(new java.util.ArrayList<>(runConfigItems));
-        config.save();
-        // This page does not go through apply() — it edits WorkspaceState, not Settings — so nothing else
-        // would tell the toolbar selector (and the run.config.<slug> commands) that the list changed.
-        onRunConfigsChanged.run();
-    }
-
-    /** Re-reads the live per-window run-config list into the editor, restoring the selection by name. */
-    private void reloadRunConfigs() {
-        String selectedName =
-                runConfigList == null || runConfigList.getSelectionModel().getSelectedItem() == null
-                        ? null
-                        : runConfigList.getSelectionModel().getSelectedItem().name();
-        runConfigItems.setAll(config.getWorkspaceState().getRunConfigurations());
-        if (runConfigList != null && selectedName != null) {
-            for (var c : runConfigItems) {
-                if (selectedName.equals(c.name())) {
-                    runConfigList.getSelectionModel().select(c);
-                    break;
-                }
-            }
-        }
-    }
-
     /** True when {@code newName} would give {@code tool} the command id another tool already uses. */
     private boolean slugTaken(com.editora.externaltool.ExternalTool tool, String newName) {
         String id = com.editora.externaltool.ExternalTool.commandIdFor(newName);
@@ -6819,7 +6587,6 @@ public class SettingsWindow {
         loading = true;
         try {
             reloadExternalTools(); // another window may have added/removed a tool since this page was built
-            reloadRunConfigs(); // the palette save/delete commands may have changed the list since it was built
             refreshDictionaryList(); // pick up words added elsewhere (e.g. "Add to Dictionary") since last open
             if (refreshToolbarLists != null) {
                 refreshToolbarLists.run(); // reflect any on-bar drag customization since the page was built

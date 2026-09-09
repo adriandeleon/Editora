@@ -410,7 +410,7 @@ final class RunConfigurationCoordinator {
     }
 
     /**
-     * Opens Settings → Run Configurations on the configuration the dropdown currently has selected.
+     * Opens the Run Configurations window on the configuration the dropdown currently has selected.
      *
      * <p>Reached from the dropdown's "Edit Configurations…" row and the {@code run.editConfigs} command. With
      * nothing selected it opens the page, which is also how you create the first configuration.

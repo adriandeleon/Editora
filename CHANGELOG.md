@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Run configurations now open in their own project/session-scoped window instead of appearing among
+  application-wide Settings.
+
 ### Internal
 
 - Split `MainController` workflows into per-window coordinators for commands, editing, templates,
