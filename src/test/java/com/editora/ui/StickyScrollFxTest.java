@@ -153,6 +153,38 @@ class StickyScrollFxTest {
     }
 
     @Test
+    void aLongHeaderRemainsOneVisualRow() throws Exception {
+        String longHeader = "    void body(" + "String parameter, ".repeat(250) + "String last) {\n";
+        StringBuilder source = new StringBuilder("class Outer {\n").append(longHeader);
+        for (int i = 0; i < 200; i++) {
+            source.append("        int v").append(i).append(" = ").append(i).append(";\n");
+        }
+        source.append("    }\n}\n");
+
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer x = new EditorBuffer();
+            x.setLanguageOverride("java");
+            x.setContent(source.toString());
+            x.setStickyScrollEnabled(true);
+            x.getFoldManager().recompute();
+            return x;
+        });
+        javafx.scene.layout.Region bar = FxTestSupport.callOnFx(() -> {
+            javafx.scene.layout.StackPane host = new javafx.scene.layout.StackPane(b.getNode());
+            new javafx.scene.Scene(host, 600, 400);
+            host.applyCss();
+            host.layout();
+            call(b, "stickyLinesFor", int.class, 100);
+            host.applyCss();
+            host.layout();
+            return (javafx.scene.layout.Region) call(b, "stickyScrollNode");
+        });
+
+        double height = FxTestSupport.callOnFx(bar::getHeight);
+        assertTrue(height < 80, "a long logical header wrapped into an oversized sticky overlay: " + height);
+    }
+
+    @Test
     void aBufferWithNoNestingPinsNothing() throws Exception {
         EditorBuffer b = FxTestSupport.callOnFx(() -> {
             EditorBuffer x = new EditorBuffer();
