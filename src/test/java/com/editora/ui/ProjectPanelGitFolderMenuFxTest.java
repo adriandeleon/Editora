@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
@@ -14,6 +15,7 @@ import javafx.scene.control.ToggleButton;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.layout.HBox;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Project-tree folder Git comparisons are present and route the selected directory unchanged. */
 @Tag("fx")
@@ -221,6 +224,61 @@ class ProjectPanelGitFolderMenuFxTest {
         });
 
         assertEquals("Keep generated docs here", tooltip);
+    }
+
+    @Test
+    void fileStateMarkersFollowTheFileName(@TempDir Path root) throws Exception {
+        Path file = Files.writeString(root.resolve("README.md"), "# Test");
+        ProjectPanel panel = FxTestSupport.callOnFx(() -> {
+            ProjectPanel created = new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false, file::equals);
+            created.setMarkerActions(new ProjectPanel.MarkerActions() {
+                @Override
+                public boolean personalNotesEnabled() {
+                    return true;
+                }
+
+                @Override
+                public boolean hasBookmarks(Path path) {
+                    return file.equals(path);
+                }
+
+                @Override
+                public boolean hasPersonalNotes(Path path) {
+                    return file.equals(path);
+                }
+
+                @Override
+                public void addBookmark(Path path) {}
+
+                @Override
+                public void addPersonalNote(Path path) {}
+            });
+            created.setRoot(root);
+            created.setActiveFile(file);
+            return created;
+        });
+
+        FxTestSupport.runOnFx(() -> {
+            @SuppressWarnings("unchecked")
+            TreeView<Path> tree = FxTestSupport.field(panel, "tree");
+            TreeCell<Path> cell = tree.getCellFactory().call(tree);
+            FxTestSupport.call(cell, "updateItem", new Class<?>[] {Path.class, boolean.class}, file, false);
+
+            HBox row = (HBox) cell.getGraphic();
+            assertEquals("README.md", ((Label) row.getChildren().get(1)).getText());
+            assertEquals("◉", ((Label) row.getChildren().get(2)).getText());
+            assertTrue(row.getChildren()
+                            .get(3)
+                            .lookupAll(".project-bookmark-indicator")
+                            .size()
+                    == 1);
+            assertTrue(row.getChildren()
+                            .get(4)
+                            .lookupAll(".project-note-indicator")
+                            .size()
+                    == 1);
+            assertEquals("README.md", cell.getAccessibleText());
+        });
     }
 
     @Test

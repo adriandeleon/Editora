@@ -1216,10 +1216,17 @@
     -fx-background-radius: 3;
 }
 /* Open file with unsaved changes — mirrors the dirty-tab treatment (amber italic + "• " prefix). */
-.project-tree .modified-file { -fx-text-fill: -state-amber; -fx-font-style: italic; }
+.project-tree .modified-file, .project-tree .modified-file .project-file-name {
+    -fx-text-fill: -state-amber;
+    -fx-font-style: italic;
+}
 .project-tree .modified-file .toolbar-icon { -fx-fill: -state-amber; }
-.project-tree .project-open-file { -fx-text-fill: -color-fg-default; -fx-font-style: italic; }
-.project-tree .project-current-open-file {
+.project-tree .project-open-file, .project-tree .project-open-file .project-file-name {
+    -fx-text-fill: -color-fg-default;
+    -fx-font-style: italic;
+}
+.project-tree .project-current-open-file, .project-tree .project-current-open-file .project-file-name,
+.project-tree .project-current-open-file .project-open-indicator {
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;
     -fx-font-style: normal;
@@ -1229,15 +1236,20 @@
    renamed = violet, untracked = olive; a folder with changed descendants is tinted blue. Shared by the
    Project tree (file coloring + status letter) AND the Commit tool window (.git-tree), so the two match.
    The label + its file-type icon are colored together. Rides the Git feature (no separate toggle). */
-.project-tree .git-status-modified, .git-tree .git-status-modified { -fx-text-fill: -color-accent-fg; }
+.project-tree .git-status-modified, .project-tree .git-status-modified .project-file-name,
+.git-tree .git-status-modified { -fx-text-fill: -color-accent-fg; }
 .project-tree .git-status-modified .toolbar-icon, .git-tree .git-status-modified .toolbar-icon { -fx-fill: -color-accent-fg; }
-.project-tree .git-status-added, .git-tree .git-status-added { -fx-text-fill: -color-success-fg; }
+.project-tree .git-status-added, .project-tree .git-status-added .project-file-name,
+.git-tree .git-status-added { -fx-text-fill: -color-success-fg; }
 .project-tree .git-status-added .toolbar-icon, .git-tree .git-status-added .toolbar-icon { -fx-fill: -color-success-fg; }
-.project-tree .git-status-untracked, .git-tree .git-status-untracked { -fx-text-fill: -state-olive; }
+.project-tree .git-status-untracked, .project-tree .git-status-untracked .project-file-name,
+.git-tree .git-status-untracked { -fx-text-fill: -state-olive; }
 .project-tree .git-status-untracked .toolbar-icon, .git-tree .git-status-untracked .toolbar-icon { -fx-fill: -state-olive; }
-.project-tree .git-status-renamed, .git-tree .git-status-renamed { -fx-text-fill: -state-violet; }
+.project-tree .git-status-renamed, .project-tree .git-status-renamed .project-file-name,
+.git-tree .git-status-renamed { -fx-text-fill: -state-violet; }
 .project-tree .git-status-renamed .toolbar-icon, .git-tree .git-status-renamed .toolbar-icon { -fx-fill: -state-violet; }
-.project-tree .git-status-deleted, .git-tree .git-status-deleted { -fx-text-fill: -color-fg-muted; }
+.project-tree .git-status-deleted, .project-tree .git-status-deleted .project-file-name,
+.git-tree .git-status-deleted { -fx-text-fill: -color-fg-muted; }
 .project-tree .git-status-deleted .toolbar-icon, .git-tree .git-status-deleted .toolbar-icon { -fx-fill: -color-fg-muted; }
 .project-tree .git-status-dir-changed { -fx-text-fill: -color-accent-fg; }
 /* The M/A/D/R/U indicator (FileIcons.withStatusLetter) is its own Label inside the cell, so that it can
