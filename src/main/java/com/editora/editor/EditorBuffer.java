@@ -7126,7 +7126,13 @@ public class EditorBuffer implements TabContent {
             }
             com.editora.config.PersonalNote n;
             try {
-                n = notes.noteAt(area.hit(e.getX(), e.getY()).getInsertionIndex());
+                // MOUSE_MOVED bubbles from RichTextFX's paragraph/text nodes. MouseEvent#getX/Y are
+                // relative to that original event source, not reliably to the CodeArea on which this
+                // filter is installed, so feeding them directly to CodeArea.hit() misses the note (and
+                // changes as the pointer crosses child nodes). Screen coordinates are stable across the
+                // dispatch chain; translate those back into the area's coordinate space first.
+                javafx.geometry.Point2D local = area.screenToLocal(e.getScreenX(), e.getScreenY());
+                n = notes.noteAt(area.hit(local.getX(), local.getY()).getInsertionIndex());
             } catch (RuntimeException ex) {
                 n = null;
             }
