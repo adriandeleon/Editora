@@ -12,6 +12,7 @@ import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -210,7 +211,7 @@ class ProjectPanelGitFolderMenuFxTest {
             return created;
         });
 
-        String tooltip = FxTestSupport.callOnFx(() -> {
+        Tooltip tooltip = FxTestSupport.callOnFx(() -> {
             @SuppressWarnings("unchecked")
             TreeView<Path> tree = FxTestSupport.field(panel, "tree");
             TreeItem<Path> folderItem = tree.getRoot().getChildren().stream()
@@ -220,10 +221,12 @@ class ProjectPanelGitFolderMenuFxTest {
             TreeCell<Path> cell = tree.getCellFactory().call(tree);
             FxTestSupport.call(cell, "updateTreeItem", new Class<?>[] {TreeItem.class}, folderItem);
             FxTestSupport.call(cell, "updateItem", new Class<?>[] {Path.class, boolean.class}, folder, false);
-            return cell.getTooltip().getText();
+            return cell.getTooltip();
         });
 
-        assertEquals("Keep generated docs here", tooltip);
+        assertEquals("Keep generated docs here", tooltip.getText());
+        assertTrue(tooltip.getStyleClass().contains("personal-note-tooltip"));
+        assertTrue(tooltip.getStyle().contains("#fff9c4"), "folder notes must use the editor preview's yellow");
     }
 
     @Test
