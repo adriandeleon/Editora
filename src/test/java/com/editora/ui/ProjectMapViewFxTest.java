@@ -46,7 +46,10 @@ import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
 
+import com.editora.config.FileIdentity;
 import com.editora.config.NoteScope;
+import com.editora.config.PersonalNote;
+import com.editora.config.TextAnchor;
 import com.editora.editor.NoteDraft;
 import com.editora.pdf.PdfExportService;
 import org.apache.pdfbox.Loader;
@@ -909,6 +912,116 @@ class ProjectMapViewFxTest {
                 clickPreviewIcon(surface, second);
                 assertEquals(1, previews(mapView).size());
                 assertSame(secondPreview, previewFor(mapView, second), "reopening a file must reuse its card");
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
+    void personalNotesCardEditsHidesAndCoexistsWithCodePreview() throws Exception {
+        Path file = Files.writeString(root.resolve("Noted.java"), "class Noted {}\n")
+                .toAbsolutePath()
+                .normalize();
+        PersonalNote note = PersonalNote.create(
+                FileIdentity.of(file), NoteScope.LINE, new TextAnchor(0, 0, 0, 0, "", "", ""), "first note", List.of());
+        AtomicReference<String> saved = new AtomicReference<>();
+        ProjectMapView mapView = FxTestSupport.callOnFx(() -> new ProjectMapView(
+                path -> {},
+                path -> false,
+                path -> false,
+                path -> new ProjectMapPreview.Content("class Noted {}", false)));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 1200, 760);
+                mapView.resize(1200, 760);
+                mapView.applyCss();
+                mapView.layout();
+                mapView.setNotePreviewActions(new ProjectPanel.MarkerActions() {
+                    @Override
+                    public boolean personalNotesEnabled() {
+                        return true;
+                    }
+
+                    @Override
+                    public boolean hasBookmarks(Path path) {
+                        return false;
+                    }
+
+                    @Override
+                    public boolean hasPersonalNotes(Path path) {
+                        return path.equals(file);
+                    }
+
+                    @Override
+                    public void addBookmark(Path path) {}
+
+                    @Override
+                    public void addPersonalNote(Path path) {}
+
+                    @Override
+                    public List<PersonalNote> personalNotes(Path path) {
+                        return List.of(note);
+                    }
+
+                    @Override
+                    public void updatePersonalNote(Path path, PersonalNote value, String body) {
+                        saved.set(body);
+                    }
+                });
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        List.of(
+                                new ProjectMapModel.Entry(root, null, 0, true),
+                                new ProjectMapModel.Entry(file, root, 1, false)),
+                        Set.of(root));
+                FxTestSupport.call(mapView, "previewNotes", new Class<?>[] {Path.class}, file);
+                Map<Path, ProjectMapNotePreview> cards = FxTestSupport.field(mapView, "notePreviews");
+                ProjectMapNotePreview card = cards.get(file);
+                card.layout();
+                assertTrue(card.isVisible());
+                Region grip = FxTestSupport.field(card, "resizeGrip");
+                assertEquals(18, grip.getWidth(), 0.001, "the resize handle must not cover the editable note body");
+                assertEquals(18, grip.getHeight(), 0.001, "the resize handle must only occupy the lower corner");
+                javafx.scene.layout.VBox notes = FxTestSupport.field(card, "notes");
+                javafx.scene.control.TextArea editor =
+                        (javafx.scene.control.TextArea) notes.getChildren().getFirst();
+                assertTrue(editor.isEditable());
+                editor.setText("edited note");
+                editor.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, true, false, true));
+                assertEquals("edited note", saved.get());
+
+                HBox titleBar = FxTestSupport.field(card, "titleBar");
+                double beforeX = card.getLayoutX();
+                double beforeY = card.getLayoutY();
+                FxTestSupport.invokeWith(
+                        card, "dragPressed", MouseEvent.class, mouse(titleBar, MouseEvent.MOUSE_PRESSED, 30, 12));
+                FxTestSupport.invokeWith(
+                        card, "dragged", MouseEvent.class, mouse(titleBar, MouseEvent.MOUSE_DRAGGED, 70, 52));
+                assertTrue(
+                        card.getLayoutX() != beforeX || card.getLayoutY() != beforeY,
+                        "dragging the note title bar must move the card");
+
+                FxTestSupport.call(surface, "setSelected", new Class<?>[] {Path.class}, file);
+                FxTestSupport.call(mapView, "previewSelection", new Class<?>[] {Path.class}, file);
+                assertEquals(1, previews(mapView).size());
+                assertEquals(1, cards.size());
+
+                ToggleButton hide = FxTestSupport.field(mapView, "hideOpenNotes");
+                assertFalse(hide.isSelected(), "open note cards are visible by default");
+                hide.fire();
+                assertFalse(card.isVisible());
+                assertEquals(1, cards.size(), "hiding cards must not close them");
+                assertTrue(previewFor(mapView, file).isVisible(), "the code preview remains independent");
+                hide.fire();
+                assertTrue(card.isVisible());
+
+                FxTestSupport.<Button>field(card, "close").fire();
+                assertTrue(cards.isEmpty());
+                assertTrue(previewFor(mapView, file).isVisible());
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);

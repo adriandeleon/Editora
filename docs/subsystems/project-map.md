@@ -71,7 +71,10 @@ other Project menus and ensures a click elsewhere closes the menu even on platfo
 native popup grab misses the press.
 
 Files with one or more bookmarks or Personal Notes show compact, independently colored indicators
-in both the Tree and Map. Marker state is read from an open buffer when available and otherwise from
+in both the Tree and Map. Personal Notes indicators are interactive: they open a separate editable note card attached to the same
+file or folder row by a connector. Note cards and code previews have independent lifecycles. The filter row's
+default-off “Hide all open Personal Notes” toggle temporarily hides those cards without closing them.
+Marker state is read from an open buffer when available and otherwise from
 the active project's persisted stores, so adding an annotation refreshes both views without opening
 the target file.
 

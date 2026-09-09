@@ -47,6 +47,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.util.Duration;
 
+import com.editora.config.PersonalNote;
 import com.editora.editor.NoteDraft;
 import com.editora.editor.PersonalNoteTooltip;
 import com.editora.search.FuzzyMatch;
@@ -185,6 +186,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         default void addPersonalNote(Path file, NoteDraft draft) {
             addPersonalNote(file);
         }
+
+        default List<PersonalNote> personalNotes(Path path) {
+            return List.of();
+        }
+
+        default void updatePersonalNote(Path path, PersonalNote note, String body) {}
     }
 
     /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
@@ -1126,6 +1133,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Injects bookmark/note actions and state used by both Project renderers. */
     public void setMarkerActions(MarkerActions markerActions) {
         this.markerActions = markerActions;
+        mapView.setNotePreviewActions(markerActions);
         mapView.setPreviewMarkerActions(
                 markerActions == null
                         ? null

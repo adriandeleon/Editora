@@ -2141,6 +2141,17 @@ public class MainController implements com.editora.mcp.McpBridge {
             public void addPersonalNote(Path file, com.editora.editor.NoteDraft draft) {
                 notesCoordinator.addPersonalNote(file, draft);
             }
+
+            @Override
+            public java.util.List<com.editora.config.PersonalNote> personalNotes(Path path) {
+                java.util.List<com.editora.config.PersonalNote> notes = notesCoordinator.notesFor(path);
+                return notes == null ? java.util.List.of() : java.util.List.copyOf(notes);
+            }
+
+            @Override
+            public void updatePersonalNote(Path path, com.editora.config.PersonalNote note, String body) {
+                notesCoordinator.updatePersonalNote(path, note, body);
+            }
         });
         bookmarkCoordinator.setOnChanged(projectPanel::refreshMarkers);
         notesCoordinator.setOnChanged(projectPanel::refreshMarkers);

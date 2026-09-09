@@ -1,5 +1,9 @@
 # Changelog
 
+- Project Canvas Personal Notes badges now open independent, editable note cards for files and folders. Each
+  card keeps a parent connector, can coexist with its code preview, and can be temporarily hidden with the
+  default-off “Hide all open Personal Notes” filter toggle.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
