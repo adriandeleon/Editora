@@ -7,9 +7,10 @@ import java.util.function.IntConsumer;
 import javafx.scene.Node;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseButton;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
-import javafx.scene.text.TextFlow;
 
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpan;
@@ -94,11 +95,18 @@ final class StickyScrollBar {
         }
     }
 
-    private TextFlow row(CodeArea area, int line, int tabSize, IntConsumer onClick) {
-        TextFlow flow = new TextFlow();
+    private HBox row(CodeArea area, int line, int tabSize, IntConsumer onClick) {
+        HBox flow = new HBox();
         flow.getStyleClass().add("sticky-scroll-row");
         flow.setPickOnBounds(true); // the container opts out of picking; a row opts back in
         flow.getChildren().setAll(runs(area, line, tabSize));
+        // TextFlow wraps a long logical line to the available editor width. For minified files that turns
+        // one pinned header into a many-line overlay which can consume half the viewport. HBox keeps the
+        // styled Text runs on one visual line; clip their overflow at the editor edge instead.
+        Rectangle clip = new Rectangle();
+        clip.widthProperty().bind(flow.widthProperty());
+        clip.heightProperty().bind(flow.heightProperty());
+        flow.setClip(clip);
         Tooltip.install(flow, new Tooltip(String.valueOf(line + 1)));
         flow.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && onClick != null) {
