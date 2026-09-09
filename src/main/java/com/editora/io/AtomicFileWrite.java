@@ -8,6 +8,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 /**
  * Writes a <b>document</b> (the user's file) as safely as the platform allows: to a temp file in the same
@@ -38,30 +39,51 @@ public final class AtomicFileWrite {
 
     /** Writes {@code bytes} to {@code file}, replacing it atomically where the platform supports it. */
     public static void write(Path file, byte[] bytes) throws IOException {
+        writeIf(file, bytes, () -> true);
+    }
+
+    /**
+     * Stages {@code bytes}, then replaces {@code file} only when {@code commit} still permits the write.
+     *
+     * @return true when the target was written; false when the staged write became obsolete
+     */
+    public static boolean writeIf(Path file, byte[] bytes, BooleanSupplier commit) throws IOException {
         Path target = resolveLink(file);
         Path dir = target.getParent();
         if (dir == null || !Files.isDirectory(dir)) {
+            if (!commit.getAsBoolean()) {
+                return false;
+            }
             Files.write(target, bytes); // no directory to stage in — write in place
-            return;
+            return true;
         }
         Path tmp;
         try {
             tmp = Files.createTempFile(dir, "." + target.getFileName() + ".", ".editora-tmp");
         } catch (IOException cannotStage) {
+            if (!commit.getAsBoolean()) {
+                return false;
+            }
             Files.write(target, bytes); // e.g. a read-only directory holding a writable file
-            return;
+            return true;
         }
         try {
             Files.write(tmp, bytes);
             copyPermissions(target, tmp);
+            if (!commit.getAsBoolean()) {
+                return false;
+            }
             try {
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException atomicUnsupported) {
+                if (!commit.getAsBoolean()) {
+                    return false;
+                }
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
             }
-        } catch (IOException e) {
-            Files.deleteIfExists(tmp); // never leave litter next to the user's file
-            throw e;
+            return true;
+        } finally {
+            Files.deleteIfExists(tmp); // a successful move makes this a no-op
         }
     }
 

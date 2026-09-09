@@ -71,6 +71,8 @@ public final class WorkspaceEditMapper {
         List<FileCreate> creates = new ArrayList<>();
         List<FileDelete> deletes = new ArrayList<>();
         boolean terminalResourceOperation = false;
+        boolean sawTextEdit = false;
+        int resourcePhase = 0; // create=0, rename=1, delete=2; application stages in that order
         if (edit.getDocumentChanges() != null) {
             for (var change : edit.getDocumentChanges()) {
                 if (change == null) {
@@ -93,7 +95,12 @@ public final class WorkspaceEditMapper {
                         return null; // contradictory versions for one document cannot be applied atomically
                     }
                     versions.put(file, version);
+                    sawTextEdit = true;
                 } else if (change.getRight() instanceof org.eclipse.lsp4j.RenameFile rf) {
+                    if (resourcePhase > 1) {
+                        return null; // grouped staging cannot preserve a rename after a delete
+                    }
+                    resourcePhase = 1;
                     Path from = filePath(rf.getOldUri());
                     Path to = filePath(rf.getNewUri());
                     if (from == null || to == null) {
@@ -104,6 +111,9 @@ public final class WorkspaceEditMapper {
                     renames.add(new FileRename(from, to, overwrite));
                     terminalResourceOperation = true;
                 } else if (change.getRight() instanceof org.eclipse.lsp4j.CreateFile cf) {
+                    if (sawTextEdit || resourcePhase > 0) {
+                        return null; // grouped staging applies every create before every text/rename/delete
+                    }
                     Path file = filePath(cf.getUri());
                     if (file == null) {
                         return null;
@@ -114,6 +124,7 @@ public final class WorkspaceEditMapper {
                             && Boolean.TRUE.equals(cf.getOptions().getIgnoreIfExists());
                     creates.add(new FileCreate(file, overwrite, ignore));
                 } else if (change.getRight() instanceof org.eclipse.lsp4j.DeleteFile df) {
+                    resourcePhase = 2;
                     Path file = filePath(df.getUri());
                     if (file == null) {
                         return null;

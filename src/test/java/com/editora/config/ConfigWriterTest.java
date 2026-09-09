@@ -148,4 +148,40 @@ class ConfigWriterTest {
         assertEquals(target, failed.get());
         w.shutdown();
     }
+
+    @Test
+    void aFlushTimeoutNeverStartsACompetingWriter(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("settings.json");
+        ConfigWriter writer = new ConfigWriter();
+        writer.flushTimeoutMillis = 50;
+        java.util.concurrent.CountDownLatch claimed = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicBoolean first = new java.util.concurrent.atomic.AtomicBoolean(true);
+        writer.afterBatchClaimedForTest = () -> {
+            if (first.compareAndSet(true, false)) {
+                claimed.countDown();
+                try {
+                    release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+
+        try {
+            writer.enqueue(file, bytes("old"));
+            assertTrue(claimed.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            writer.enqueue(file, bytes("new"));
+            assertFalse(writer.flush(), "the caller must know durability was not reached by the deadline");
+            assertFalse(Files.exists(file), "flush must not bypass the active writer");
+
+            release.countDown();
+            writer.flushTimeoutMillis = 5_000;
+            assertTrue(writer.flush());
+            assertEquals("new", Files.readString(file), "the queued newer state must be the final write");
+        } finally {
+            release.countDown();
+            writer.shutdown();
+        }
+    }
 }

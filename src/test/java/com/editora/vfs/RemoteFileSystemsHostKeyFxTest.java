@@ -117,6 +117,10 @@ class RemoteFileSystemsHostKeyFxTest {
             fsB.shutdown(); // window B closes
             assertNotNull(Vfs.parseStorable(uriA), "A still resolves after B closed (the single-slot bug stranded it)");
             assertNull(Vfs.parseStorable(uriB), "B's host no longer resolves once its window is gone");
+            assertEquals(
+                    uriB,
+                    Vfs.toStorableString(pathB),
+                    "an open tab must retain its durable URI after disconnect for session persistence");
         } finally {
             fsA.shutdown();
             fsB.shutdown();
@@ -156,6 +160,32 @@ class RemoteFileSystemsHostKeyFxTest {
             assertEquals(1, asked.get(), "and the user must not be offered a button that waves it through");
         } finally {
             impostor.stop(true);
+        }
+    }
+
+    @Test
+    void reconnectResolvesAnOpenPathsDurableUriToTheNewFilesystem(@TempDir Path dir) throws Exception {
+        fs = new RemoteFileSystems((host, port, type, fingerprint) -> true, dir.resolve("known_hosts"));
+        SshServer server = sftpServer(dir.resolve("host.ser"), 0);
+        try {
+            RemoteFileSystems.Result first = connectAndWait(server.getPort());
+            assertTrue(first.ok(), first.error());
+            Path old = first.root().resolve("editora-reconnect-probe.txt");
+            String stored = Vfs.toStorableString(old);
+
+            fs.disconnect(connection(server.getPort()).id());
+            assertEquals(stored, Vfs.toStorableString(old));
+            RemoteFileSystems.Result second = connectAndWait(server.getPort());
+            assertTrue(second.ok(), second.error());
+
+            Path rebound = Vfs.parseStorable(stored);
+            assertNotNull(rebound);
+            assertTrue(rebound.getFileSystem() != old.getFileSystem(), "reconnect must use the new live filesystem");
+            Files.writeString(rebound, "saved after reconnect");
+            assertEquals("saved after reconnect", Files.readString(rebound));
+            Files.deleteIfExists(rebound);
+        } finally {
+            server.stop(true);
         }
     }
 

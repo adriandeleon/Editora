@@ -111,8 +111,13 @@ class NarrowingFxTest {
             FxTestSupport.call(
                     FxTestSupport.field(fx.controller, "fileWorkflows"), "save", new Class[] {EditorBuffer.class}, b);
         });
+        String expected = "one\nXtwo\nthree\nfour\nfive";
+        for (int i = 0; i < 100 && !expected.equals(Files.readString(file)); i++) {
+            Thread.sleep(20);
+            FxTestSupport.runOnFx(() -> {});
+        }
         assertEquals(
-                "one\nXtwo\nthree\nfour\nfive",
+                expected,
                 Files.readString(file),
                 "a save while narrowed must not truncate the file to the visible region");
         Files.deleteIfExists(file);

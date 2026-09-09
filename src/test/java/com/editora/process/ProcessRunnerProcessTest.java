@@ -88,9 +88,23 @@ class ProcessRunnerProcessTest {
         ProcessRunner.Result r =
                 ProcessRunner.run(dir, Duration.ofSeconds(30), List.of("sh", "-c", "yes x | head -c 12000000"));
         assertEquals(0, r.exit(), "the child must not be blocked by the cap — keep draining, stop storing");
+        assertTrue(r.outTruncated(), "a successful caller must be told that stdout is incomplete");
+        assertFalse(r.errTruncated());
         assertTrue(r.out().length() <= 10 * 1024 * 1024, "captured " + r.out().length() + " bytes");
         assertTrue(
                 r.out().length() > 1_000_000,
                 "but it still captures a lot: " + r.out().length());
+    }
+
+    @Test
+    void outputAtTheLimitIsCompleteButTheNextByteMarksItTruncated(@TempDir Path dir) {
+        ProcessRunner.Result exact =
+                ProcessRunner.run(dir, Duration.ofSeconds(30), List.of("sh", "-c", "head -c 10485760 /dev/zero"));
+        ProcessRunner.Result over =
+                ProcessRunner.run(dir, Duration.ofSeconds(30), List.of("sh", "-c", "head -c 10485761 /dev/zero"));
+
+        assertFalse(exact.outTruncated());
+        assertTrue(over.outTruncated());
+        assertEquals(exact.out().length(), over.out().length());
     }
 }

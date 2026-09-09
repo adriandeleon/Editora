@@ -377,12 +377,11 @@ public class ConfigManager {
         return shared.getSettings();
     }
 
-    /** Writes the shared preferences ({@code settings.json}) and this window's session-state file. */
     /** Writes preferences + this window's session state synchronously (blocks until both are on disk). */
-    public void save() {
+    public boolean save() {
         shared.enqueueSettings();
         enqueueWorkspace();
-        shared.flushWrites();
+        return shared.flushWrites();
     }
 
     /**

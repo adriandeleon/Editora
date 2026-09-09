@@ -28,10 +28,16 @@ public final class RipgrepOutput {
 
     /** Parse rg {@code --json} stdout into per-file results, in rg's emission order. */
     public static List<FileResult> parse(String stdout) {
+        return parse(stdout, Integer.MAX_VALUE);
+    }
+
+    /** Parses at most {@code maxMatches}; bounds allocations when rg reports a very broad query. */
+    public static List<FileResult> parse(String stdout, int maxMatches) {
         Map<String, List<LineMatch>> byFile = new LinkedHashMap<>();
         if (stdout == null || stdout.isEmpty()) {
             return List.of();
         }
+        int total = 0;
         for (String line : stdout.split("\n", -1)) {
             if (line.isBlank()) {
                 continue;
@@ -63,9 +69,16 @@ public final class RipgrepOutput {
                     int col = charIndexForByteOffset(stripped, start.asInt());
                     int endCol = charIndexForByteOffset(stripped, end.asInt());
                     matches.add(new LineMatch(lineNo.asInt(), col + 1, Math.max(0, endCol - col), stripped));
+                    total++;
+                    if (total >= maxMatches) {
+                        break;
+                    }
                 }
             } catch (Exception ignored) {
                 // skip a malformed line
+            }
+            if (total >= maxMatches) {
+                break;
             }
         }
         List<FileResult> out = new ArrayList<>(byFile.size());

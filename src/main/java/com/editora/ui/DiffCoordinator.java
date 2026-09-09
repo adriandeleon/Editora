@@ -1218,15 +1218,17 @@ final class DiffCoordinator {
      */
     private DiffSide blobSide(Path root, String spec, Path file) {
         String ecCharset = ops.editorConfigCharset(file);
-        return onText -> git.service()
-                .showBytes(
-                        root,
-                        spec,
-                        bytes -> onText.accept(
-                                BinaryDiff.isProbablyBinary(bytes)
-                                        ? BinaryDiff.describe(bytes)
-                                        : EditorConfigCharset.decode(
-                                                bytes, EditorConfigCharset.resolveName(bytes, ecCharset))));
+        return onText -> git.service().showBlob(root, spec, result -> {
+            if (result.truncated()) {
+                host.setStatus(tr("status.git.blobTooLarge"));
+                return;
+            }
+            byte[] bytes = result.found() ? result.bytes() : new byte[0];
+            onText.accept(
+                    BinaryDiff.isProbablyBinary(bytes)
+                            ? BinaryDiff.describe(bytes)
+                            : EditorConfigCharset.decode(bytes, EditorConfigCharset.resolveName(bytes, ecCharset)));
+        });
     }
 
     /** Saves a unified-diff patch (the diff viewer's export action) via a file chooser. */
@@ -1281,6 +1283,10 @@ final class DiffCoordinator {
                                         ours -> git.service().showBlob(root, ":3:" + rel, theirs -> {
                                             if (!b.text().equals(text)) {
                                                 host.setStatus(tr("status.merge.stale"));
+                                                return;
+                                            }
+                                            if (base.truncated() || ours.truncated() || theirs.truncated()) {
+                                                host.setStatus(tr("status.git.blobTooLarge"));
                                                 return;
                                             }
                                             if (!base.found()

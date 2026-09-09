@@ -105,4 +105,17 @@ class AtomicFileWriteTest {
         }
         assertEquals("precious\n", Files.readString(file), "the existing file is untouched by a failed write");
     }
+
+    @Test
+    void obsoleteStagedWriteDoesNotReplaceTheTarget() throws IOException {
+        Path file = dir.resolve("keep.txt");
+        Files.writeString(file, "current\n");
+
+        assertFalse(AtomicFileWrite.writeIf(file, bytes("obsolete\n"), () -> false));
+
+        assertEquals("current\n", Files.readString(file));
+        try (var entries = Files.list(dir)) {
+            assertEquals(1, entries.count(), "the refused staged file was cleaned up");
+        }
+    }
 }

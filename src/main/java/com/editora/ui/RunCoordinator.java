@@ -799,6 +799,6 @@ final class RunCoordinator {
     }
 
     void shutdown() {
-        service.stop();
+        service.shutdown();
     }
 }

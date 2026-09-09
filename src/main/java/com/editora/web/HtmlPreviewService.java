@@ -5,8 +5,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 import javafx.application.Platform;
 
@@ -40,6 +41,8 @@ public final class HtmlPreviewService {
 
     private volatile List<Browser> cachedBrowsers;
     private volatile Path previewedFile; // absolute, normalized; guards notifyChanged to the served file
+    private volatile AtomicReference<String> previewedText = new AtomicReference<>("");
+    private final AtomicLong previewGeneration = new AtomicLong();
 
     public HtmlPreviewService(Consumer<String> systemOpener) {
         this.systemOpener = systemOpener;
@@ -63,13 +66,19 @@ public final class HtmlPreviewService {
      * Serves {@code file} (the file itself from {@code liveText}) and opens it in {@code browser}; posts the
      * {@link Result} on the FX thread. The server starts on first use and rebinds to the file's folder.
      */
-    public void preview(Path file, Supplier<String> liveText, Browser browser, Consumer<Result> onResult) {
+    public void preview(Path file, String liveText, Browser browser, Consumer<Result> onResult) {
+        long generation = previewGeneration.incrementAndGet();
+        AtomicReference<String> text = new AtomicReference<>(liveText == null ? "" : liveText);
+        previewedText = text;
+        previewedFile = file.toAbsolutePath().normalize();
         exec.submit(() -> {
             Result result;
             try {
                 server.start();
-                server.setPreview(file, liveText);
-                previewedFile = file.toAbsolutePath().normalize();
+                if (generation != previewGeneration.get()) {
+                    return;
+                }
+                server.setPreview(file, text::get);
                 String url = server.previewUrl();
                 if (Browsers.SYSTEM_DEFAULT.equals(browser.id())) {
                     openWithSystem(url);
@@ -88,7 +97,11 @@ public final class HtmlPreviewService {
                 result = new Result(false, null, e.getMessage() == null ? "failed to start" : e.getMessage());
             }
             Result posted = result;
-            Platform.runLater(() -> onResult.accept(posted));
+            Platform.runLater(() -> {
+                if (generation == previewGeneration.get()) {
+                    onResult.accept(posted);
+                }
+            });
         });
     }
 
@@ -105,10 +118,19 @@ public final class HtmlPreviewService {
         }
     }
 
+    /** Replaces the immutable editor snapshot served for {@code file}; safe to call from the FX thread. */
+    public void updateText(Path file, String text) {
+        if (isPreviewing(file)) {
+            previewedText.set(text == null ? "" : text);
+        }
+    }
+
     /** Stops the HTTP server + clears the preview, but keeps the service usable (the feature was disabled). */
     public void stopServer() {
+        previewGeneration.incrementAndGet();
         server.stop();
         previewedFile = null;
+        previewedText = new AtomicReference<>("");
     }
 
     /** Stops the server + the background thread (called when the owning window closes). */

@@ -26,12 +26,27 @@ import com.editora.config.HistoryRevision;
 import com.editora.config.RecentFiles;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
+import com.editora.io.DocumentWriteSequencer;
 import org.fxmisc.richtext.CodeArea;
 
 import static com.editora.i18n.Messages.tr;
 
 /** Owns file loading, saving, autosave and elevated-save workflows. */
 final class FileWorkflowCoordinator {
+
+    private record SaveRequest(
+            EditorBuffer buffer,
+            Path target,
+            String content,
+            byte[] bytes,
+            long documentVersion,
+            EditorBuffer.DiskSnapshot diskSnapshot,
+            DocumentWriteSequencer.Ticket ticket) {}
+
+    private record DiskWrite(long modifiedMillis, long size) {}
+
+    private record AdminResult(int exit, String error, long modifiedMillis, long size) {}
+
     interface Host {
 
         EditorArea editorArea();
@@ -630,6 +645,7 @@ final class FileWorkflowCoordinator {
     /** Reloads a buffer's content from disk, preserving the caret position as best it can. */
     void reloadFromDisk(Tab tab, EditorBuffer buffer) {
         Path file = buffer.getPath();
+        invalidatePendingWrite(file);
         try {
             CodeArea area = buffer.getArea();
             int caret = area.getCaretPosition();
@@ -777,9 +793,24 @@ final class FileWorkflowCoordinator {
         }
         if (adminSaveApplicable(buffer.getPath())) {
             saveAsAdmin(buffer); // async elevated write; the buffer stays dirty until it completes
-            return false;
+            return true;
         }
         return writeBuffer(buffer, buffer.getPath());
+    }
+
+    /** Synchronous variant for close/run/debug flows that must observe the saved bytes before continuing. */
+    boolean saveSynchronously(EditorBuffer buffer) {
+        if (refuseTruncatedSave(buffer)) {
+            return false;
+        }
+        if (buffer.getPath() == null) {
+            return saveAsSynchronously(buffer);
+        }
+        if (adminSaveApplicable(buffer.getPath())) {
+            saveAsAdmin(buffer);
+            return false;
+        }
+        return writeBufferSynchronously(buffer, buffer.getPath());
     }
 
     /**
@@ -799,76 +830,97 @@ final class FileWorkflowCoordinator {
             host.setStatus(tr("status.admin.unavailable"));
             return;
         }
-        byte[] bytes = saveBytes(buffer); // pure transform + encode on the FX thread
+        SaveRequest request = captureSave(buffer, target);
         host.setStatus(tr("status.admin.saving", com.editora.config.PathDisplay.of(target)));
         new Thread(
                         () -> {
-                            Path tmp = null;
-                            int exit;
-                            String err;
                             try {
-                                tmp = Files.createTempFile("editora-admin-", ".tmp");
-                                try {
-                                    Files.setPosixFilePermissions(
-                                            tmp,
-                                            java.util.Set.of(
-                                                    java.nio.file.attribute.PosixFilePermission.OWNER_READ,
-                                                    java.nio.file.attribute.PosixFilePermission.OWNER_WRITE));
-                                } catch (UnsupportedOperationException | IOException ignore) {
-                                    // Non-POSIX filesystem: the temp file keeps default permissions.
-                                }
-                                Files.write(tmp, bytes);
-                                var r = com.editora.process.ProcessRunner.run(
-                                        null,
-                                        java.time.Duration.ofMinutes(2),
-                                        com.editora.process.ElevatedSave.elevatedArgv(
-                                                System.getProperty("os.name"),
-                                                com.editora.process.ElevatedSave.PKEXEC,
-                                                tmp,
-                                                target));
-                                exit = r.exit();
-                                err = r.err();
+                                var outcome = request.ticket().runIfCurrent(() -> runElevatedWrite(request));
+                                AdminResult result = outcome.executed()
+                                        ? outcome.value()
+                                        : new AdminResult(-2, "superseded", -1, -1);
+                                Platform.runLater(() -> onAdminSaveDone(request, result));
                             } catch (IOException | RuntimeException e) {
-                                exit = -1;
-                                err = e.getMessage();
-                            } finally {
-                                if (tmp != null) {
-                                    try {
-                                        Files.deleteIfExists(tmp);
-                                    } catch (IOException ignore) {
-                                        // best-effort cleanup
-                                    }
-                                }
+                                AdminResult result = new AdminResult(-1, e.getMessage(), -1, -1);
+                                Platform.runLater(() -> onAdminSaveDone(request, result));
                             }
-                            int code = exit;
-                            String detail = err;
-                            Platform.runLater(() -> onAdminSaveDone(buffer, target, code, detail));
                         },
                         "admin-save")
                 .start();
     }
 
-    /** Applies the outcome of an elevated save on the FX thread (ok / user-cancelled / failed). */
-    void onAdminSaveDone(EditorBuffer buffer, Path target, int exit, String err) {
-        if (exit == 0) {
-            host.historyCoordinator().record(buffer, HistoryRevision.REASON_SAVE);
-            buffer.markClean();
-            buffer.setDiskSnapshot(lastModifiedMillis(target), fileSize(target));
-            host.setStatus(tr("status.admin.saved", com.editora.config.PathDisplay.of(target)));
-            host.git().refresh();
-            host.lspCoordinator().notifyDocumentSaved(buffer);
-            Tab tab = host.tabForBuffer(buffer);
-            if (tab != null) {
-                host.updateTabMeta(tab, buffer);
+    private AdminResult runElevatedWrite(SaveRequest request) throws IOException {
+        Path tmp = Files.createTempFile("editora-admin-", ".tmp");
+        try {
+            try {
+                Files.setPosixFilePermissions(
+                        tmp,
+                        java.util.Set.of(
+                                java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                                java.nio.file.attribute.PosixFilePermission.OWNER_WRITE));
+            } catch (UnsupportedOperationException | IOException ignore) {
+                // Non-POSIX filesystem: the temp file keeps default permissions.
             }
-        } else if (com.editora.process.ElevatedSave.isCancellation(System.getProperty("os.name"), exit, err)) {
-            host.setStatus(tr("status.admin.cancelled")); // user dismissed the auth dialog / not authorized
-        } else {
-            host.setStatus(tr("status.admin.failed", err == null || err.isBlank() ? String.valueOf(exit) : err));
+            Files.write(tmp, request.bytes());
+            var result = com.editora.process.ProcessRunner.run(
+                    null,
+                    java.time.Duration.ofMinutes(2),
+                    com.editora.process.ElevatedSave.elevatedArgv(
+                            System.getProperty("os.name"),
+                            com.editora.process.ElevatedSave.PKEXEC,
+                            tmp,
+                            request.target()));
+            return new AdminResult(
+                    result.exit(), result.err(), lastModifiedMillis(request.target()), fileSize(request.target()));
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    /** Applies the outcome of an elevated save on the FX thread (ok / user-cancelled / failed). */
+    void onAdminSaveDone(SaveRequest request, AdminResult result) {
+        try {
+            if (!request.ticket().isCurrent()) {
+                return;
+            }
+            EditorBuffer buffer = request.buffer();
+            Path target = request.target();
+            if (result.exit() == 0) {
+                host.historyCoordinator().record(target, request.content(), HistoryRevision.REASON_SAVE);
+                acknowledgeSave(request, result.modifiedMillis(), result.size());
+                host.setStatus(tr("status.admin.saved", com.editora.config.PathDisplay.of(target)));
+                host.git().refresh();
+                host.lspCoordinator().notifyDocumentSaved(buffer);
+                Tab tab = host.tabForBuffer(buffer);
+                if (tab != null) {
+                    host.updateTabMeta(tab, buffer);
+                }
+            } else if (result.exit() == -2) {
+                return;
+            } else if (com.editora.process.ElevatedSave.isCancellation(
+                    System.getProperty("os.name"), result.exit(), result.error())) {
+                host.setStatus(tr("status.admin.cancelled"));
+            } else {
+                host.setStatus(tr(
+                        "status.admin.failed",
+                        result.error() == null || result.error().isBlank()
+                                ? String.valueOf(result.exit())
+                                : result.error()));
+            }
+        } finally {
+            request.ticket().close();
         }
     }
 
     boolean saveAs(EditorBuffer buffer) {
+        return saveAs(buffer, false);
+    }
+
+    private boolean saveAsSynchronously(EditorBuffer buffer) {
+        return saveAs(buffer, true);
+    }
+
+    private boolean saveAs(EditorBuffer buffer, boolean synchronous) {
         if (refuseTruncatedSave(buffer)) {
             return false;
         }
@@ -887,11 +939,16 @@ final class FileWorkflowCoordinator {
         if (file == null) {
             return false;
         }
-        return applySaveAsTarget(buffer, file);
+        return applySaveAsTarget(buffer, file, synchronous);
     }
 
     /** Points {@code buffer} at {@code file}, refreshes its previews/tab/breadcrumb, and writes it. */
     boolean applySaveAsTarget(EditorBuffer buffer, Path file) {
+        return applySaveAsTarget(buffer, file, false);
+    }
+
+    private boolean applySaveAsTarget(EditorBuffer buffer, Path file, boolean synchronous) {
+        invalidatePendingWrite(buffer.getPath());
         buffer.setPath(file);
         // The buffer's EditorConfig properties + charset were resolved against the OLD path. Without
         // re-resolving, a Save-As into another tree writes with the previous project's charset/EOL/trim rules
@@ -901,7 +958,7 @@ final class FileWorkflowCoordinator {
         host.previews().ensurePreviewControls(buffer); // a new untitled saved as .md/.mmd now gets the preview toggle
         host.htmlPreview().ensureControl(buffer); // a save-as to .html now gets the "open in browser" globe
         host.logViewer().ensureControl(buffer); // a save-as to .log now gets the log control + level overlay
-        boolean ok = writeBuffer(buffer, file);
+        boolean ok = synchronous ? writeBufferSynchronously(buffer, file) : writeBuffer(buffer, file);
         Tab tab = host.tabFor(buffer);
         if (tab != null) {
             host.updateTabMeta(tab, buffer);
@@ -985,11 +1042,15 @@ final class FileWorkflowCoordinator {
      * when EditorConfig is off.
      */
     byte[] saveBytes(EditorBuffer buffer) {
+        return saveBytes(buffer, buffer.getContent());
+    }
+
+    private byte[] saveBytes(EditorBuffer buffer, String content) {
         com.editora.editorconfig.EditorConfigProperties p =
                 host.editorSettings().editorConfigEnabled()
                         ? buffer.getEditorConfigProps()
                         : com.editora.editorconfig.EditorConfigProperties.EMPTY;
-        String text = com.editora.editorconfig.EditorConfigTransform.transform(buffer.getContent(), p);
+        String text = com.editora.editorconfig.EditorConfigTransform.transform(content, p);
         String charset = buffer.getEffectiveCharset();
         // A charset that can't represent what the user typed (an em dash / curly quote / emoji under
         // `charset = latin1`) would be written as '?' by String.getBytes — and the editor keeps showing the
@@ -1004,27 +1065,30 @@ final class FileWorkflowCoordinator {
     }
 
     boolean writeBuffer(EditorBuffer buffer, Path file) {
+        SaveRequest request = captureSave(buffer, file);
         try {
-            byte[] bytes = saveBytes(buffer);
-            // Serialized against auto-save (see autoSaveBuffer): a queued auto-save holding an OLDER snapshot
-            // must not land after this write and rewind the file.
-            synchronized (fileWriteLock) {
-                com.editora.io.AtomicFileWrite.write(file, bytes);
+            autoSaveExecutor.submit(() -> writeAsync(request, false));
+            return true;
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            request.ticket().close();
+            return false;
+        }
+    }
+
+    boolean writeBufferSynchronously(EditorBuffer buffer, Path file) {
+        SaveRequest request = captureSave(buffer, file);
+        try {
+            var outcome = request.ticket().runIfCurrent(() -> writeToDisk(request));
+            if (!outcome.executed() || outcome.value() == null) {
+                return false;
             }
-            host.historyCoordinator().record(buffer, HistoryRevision.REASON_SAVE); // snapshot the just-saved version
-            buffer.markClean();
-            buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our own write isn't "external"
-            host.setStatus(tr("status.saved", com.editora.config.PathDisplay.of(file)));
-            host.git().refresh(); // a save changes the working tree → update gutter + status
-            host.refreshBuildTools(); // a saved marker file (or a project-root change) may change the detected model
-            // LSP: a save-as of a new Java file opens it on the server; then notify didSave.
-            host.lspCoordinator().syncBuffer(buffer);
-            host.lspCoordinator().notifyDocumentSaved(buffer);
-            host.indexCoordinator().onBufferSaved(buffer); // rescan just this file, from the text already in memory
+            completeSave(request, outcome.value(), false);
             return true;
         } catch (IOException e) {
             host.setStatus(tr("status.failedSave", e.getMessage()));
             return false;
+        } finally {
+            request.ticket().close();
         }
     }
 
@@ -1059,47 +1123,106 @@ final class FileWorkflowCoordinator {
      */
     void autoSaveBuffer(EditorBuffer buffer) {
         Path file = buffer.getPath();
-        // Never auto-save over a file that changed underneath us. checkExternalChanges() only inspects the
-        // ACTIVE tab, so a dirty background buffer whose file was rewritten (a git checkout, a generator)
-        // would otherwise be silently overwritten by a timer, with no prompt and no way back.
-        if (buffer.diskChangedFrom(lastModifiedMillis(file), fileSize(file))) {
-            return; // leave it dirty: the external-change prompt handles it when the user comes back to it
+        SaveRequest request = captureSave(buffer, file);
+        try {
+            autoSaveExecutor.submit(() -> writeAsync(request, true));
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            request.ticket().close();
         }
-        String content = buffer.getContent();
-        byte[] bytes = saveBytes(buffer); // transform + encode on the FX thread (pure); write off-thread
-        host.historyCoordinator()
-                .record(buffer, HistoryRevision.REASON_AUTOSAVE); // snapshot before the off-thread write
-        autoSaveExecutor.submit(() -> {
-            try {
-                // Take the same lock a manual save takes, and re-check the buffer is still dirty inside it:
-                // a Ctrl-S landing between the snapshot above and this write has already written NEWER bytes,
-                // and writing our stale snapshot on top would silently rewind the user's file.
-                synchronized (fileWriteLock) {
-                    if (!buffer.isDirty()) {
-                        return; // already saved (manually) — our snapshot is stale
-                    }
-                    com.editora.io.AtomicFileWrite.write(file, bytes);
-                }
-                Platform.runLater(() -> {
-                    if (content.equals(buffer.getContent())) {
-                        buffer.markClean();
-                    }
-                    buffer.setDiskSnapshot(lastModifiedMillis(file), fileSize(file)); // our write, not external
-                    host.setStatus(tr("status.autoSaved", file.getFileName()));
-                    host.git().refresh();
-                });
-            } catch (IOException e) {
-                Platform.runLater(() -> host.setStatus(tr("status.autoSaveFailed", e.getMessage())));
-            }
-        });
     }
 
-    /**
-     * Serializes writes to the user's files. A manual save writes synchronously on the FX thread while
-     * auto-save writes an earlier snapshot on its own executor — without this, the queued auto-save could land
-     * after the manual save and put the older content back on disk, while the buffer showed "saved".
-     */
-    final Object fileWriteLock = new Object();
+    private SaveRequest captureSave(EditorBuffer buffer, Path file) {
+        String content = buffer.getContent();
+        return new SaveRequest(
+                buffer,
+                file,
+                content,
+                saveBytes(buffer, content),
+                buffer.docVersion(),
+                buffer.diskSnapshot(),
+                host.config().shared().documentWrites().begin(file));
+    }
+
+    private DiskWrite writeToDisk(SaveRequest request) throws IOException {
+        if (!com.editora.io.AtomicFileWrite.writeIf(request.target(), request.bytes(), request.ticket()::isCurrent)) {
+            return null;
+        }
+        return new DiskWrite(lastModifiedMillis(request.target()), fileSize(request.target()));
+    }
+
+    /** Invalidates queued or staged writes when a buffer stops representing this path. */
+    void invalidatePendingWrite(Path file) {
+        host.config().shared().documentWrites().supersede(file);
+    }
+
+    private void writeAsync(SaveRequest request, boolean autoSave) {
+        try {
+            var outcome = request.ticket().runIfCurrent(() -> {
+                if (autoSave
+                        && request.diskSnapshot()
+                                .differsFrom(lastModifiedMillis(request.target()), fileSize(request.target()))) {
+                    return null;
+                }
+                return writeToDisk(request);
+            });
+            if (!outcome.executed() || outcome.value() == null) {
+                request.ticket().close();
+                return;
+            }
+            Platform.runLater(() -> {
+                try {
+                    if (request.ticket().isCurrent()) {
+                        completeSave(request, outcome.value(), autoSave);
+                    }
+                } finally {
+                    request.ticket().close();
+                }
+            });
+        } catch (IOException e) {
+            Platform.runLater(() -> {
+                try {
+                    if (request.ticket().isCurrent()) {
+                        host.setStatus(tr(autoSave ? "status.autoSaveFailed" : "status.failedSave", e.getMessage()));
+                    }
+                } finally {
+                    request.ticket().close();
+                }
+            });
+        }
+    }
+
+    private void completeSave(SaveRequest request, DiskWrite disk, boolean autoSave) {
+        host.historyCoordinator()
+                .record(
+                        request.target(),
+                        request.content(),
+                        autoSave ? HistoryRevision.REASON_AUTOSAVE : HistoryRevision.REASON_SAVE);
+        acknowledgeSave(request, disk.modifiedMillis(), disk.size());
+        if (!request.buffer().isDisposed()) {
+            host.setStatus(
+                    autoSave
+                            ? tr("status.autoSaved", request.target().getFileName())
+                            : tr("status.saved", com.editora.config.PathDisplay.of(request.target())));
+            host.git().refresh();
+            if (!autoSave) {
+                host.refreshBuildTools();
+                host.lspCoordinator().syncBuffer(request.buffer());
+                host.lspCoordinator().notifyDocumentSaved(request.buffer());
+                host.indexCoordinator().onBufferSaved(request.buffer());
+            }
+        }
+    }
+
+    private void acknowledgeSave(SaveRequest request, long modifiedMillis, long size) {
+        EditorBuffer buffer = request.buffer();
+        if (buffer.isDisposed()
+                || buffer.getPath() == null
+                || !com.editora.config.PathKeys.sameNormalized(buffer.getPath(), request.target())) {
+            return;
+        }
+        buffer.acknowledgeSavedContent(request.content());
+        buffer.setDiskSnapshot(modifiedMillis, size);
+    }
 
     void toggleAutoSave() {
         String next =

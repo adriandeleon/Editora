@@ -216,6 +216,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         return t;
     });
     private final AtomicLong searchGen = new AtomicLong();
+    private Path pendingTreeSelection;
+    private Path pendingTreeReveal;
+    /** Test seam for holding directory I/O without blocking the JavaFX thread. */
+    volatile Runnable beforeDirectoryListForTest;
 
     // Filesystem watcher: auto-refresh the tree when files change on disk. Watches only the root + currently
     // -expanded directories (re-synced on expand/collapse and after each refresh) so it's cheap even on huge
@@ -453,7 +457,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 || !target.startsWith(root.toAbsolutePath().normalize())) {
             return;
         }
-        TreeItem<Path> current = item;
+        pendingTreeReveal = target;
+        continuePendingReveal(item);
+    }
+
+    /** Continues an asynchronous tree reveal as each directory level finishes loading. */
+    private void continuePendingReveal(PathItem rootItem) {
+        Path target = pendingTreeReveal;
+        if (target == null) {
+            return;
+        }
+        TreeItem<Path> current = rootItem;
         current.setExpanded(true);
         Path relative = root.toAbsolutePath().normalize().relativize(target);
         for (Path segment : relative) {
@@ -462,6 +476,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     .findFirst()
                     .orElse(null);
             if (next == null) {
+                if (current instanceof PathItem pathItem && !pathItem.childrenReady) {
+                    return;
+                }
+                pendingTreeReveal = null;
                 return;
             }
             current = next;
@@ -472,6 +490,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         tree.getSelectionModel().select(current);
         tree.scrollTo(tree.getRow(current));
         tree.requestFocus();
+        pendingTreeReveal = null;
     }
 
     /** Switches to the classic explorer tree, clears filtering, and reveals {@code path}. */
@@ -528,14 +547,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         TreeItem<Path> selected = tree.getSelectionModel().getSelectedItem();
         Path selectedPath = selected == null ? null : selected.getValue();
 
-        reExpand(rootItem, expanded);
-
-        if (selectedPath != null) {
-            TreeItem<Path> found = findVisible(rootItem, selectedPath);
-            if (found != null) {
-                tree.getSelectionModel().select(found);
-            }
-        }
+        pendingTreeSelection = selectedPath;
+        rootItem.reload(expanded);
     }
 
     /** Collects the paths of every currently-expanded directory (children are already loaded). */
@@ -546,17 +559,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         out.add(item.getValue());
         for (TreeItem<Path> child : item.getChildren()) {
             collectExpanded(child, out);
-        }
-    }
-
-    /** Re-lists {@code item} from disk and re-expands the descendants that were previously expanded. */
-    private static void reExpand(PathItem item, java.util.Set<Path> expanded) {
-        item.reload(); // re-read this directory's children from disk
-        item.setExpanded(true); // only ever called for items that were expanded
-        for (TreeItem<Path> child : item.getChildren()) {
-            if (child instanceof PathItem dir && expanded.contains(dir.getValue())) {
-                reExpand(dir, expanded);
-            }
         }
     }
 
@@ -580,6 +582,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Points the tree at {@code root} (a project folder), or shows the placeholder when {@code null}. */
     public void setRoot(Path root) {
         this.root = root;
+        pendingTreeSelection = null;
+        pendingTreeReveal = null;
         mapView.setRoot(root);
         mapView.setGitStatus(gitStatus); // recompute changed-directory ancestry against the new root
         loading = true;
@@ -622,7 +626,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Rebuilds the body: placeholder (no project), filtered flat results, or the lazy tree. */
     private void rebuildBody() {
         long gen = searchGen.incrementAndGet(); // invalidate any in-flight search
-        if (root == null || !Files.isDirectory(root)) {
+        if (root == null) {
             getChildren().setAll(placeholderPane);
             return;
         }
@@ -655,7 +659,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapView.hidePreview();
         if (q.isEmpty()) {
             filtering = false;
-            PathItem rootItem = new PathItem(root, showHidden);
+            PathItem rootItem = new PathItem(root, showHidden, true);
             rootItem.setExpanded(true);
             tree.setRoot(rootItem);
         } else {
@@ -664,7 +668,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             Path searchRoot = root;
             boolean includeHidden = showHidden;
             boolean useGitignore = respectGitignore && com.editora.vfs.Vfs.isLocal(root);
-            TreeItem<Path> pending = new TreeItem<>(root);
+            PathItem pending = new PathItem(root, includeHidden, true, true);
             pending.setExpanded(true);
             tree.setRoot(pending);
             searchExecutor.submit(() -> {
@@ -677,10 +681,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     if (gen != searchGen.get()) {
                         return; // a newer query (or a tree switch) superseded this one
                     }
-                    TreeItem<Path> rootItem = new TreeItem<>(searchRoot);
+                    PathItem rootItem = new PathItem(searchRoot, includeHidden, true, true);
                     rootItem.setExpanded(true);
                     for (Path match : matches) {
-                        rootItem.getChildren().add(new TreeItem<>(match));
+                        rootItem.getChildren().add(new PathItem(match, includeHidden, false));
                     }
                     tree.setRoot(rootItem);
                 });
@@ -694,7 +698,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Starts the watcher for a local root, or cancels all watches for a remote/absent root. */
     private void ensureWatchOrStop() {
-        if (root != null && com.editora.vfs.Vfs.isLocal(root) && Files.isDirectory(root)) {
+        if (root != null && com.editora.vfs.Vfs.isLocal(root)) {
             ensureWatchService();
         } else {
             cancelAllWatches();
@@ -727,7 +731,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         java.util.Set<Path> desired = new java.util.HashSet<>();
-        if (root != null && Files.isDirectory(root)) {
+        if (root != null) {
             desired.add(root);
         }
         if (!mapMode && tree.getRoot() instanceof PathItem rootItem) {
@@ -745,7 +749,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         });
         java.util.Set<Path> already = new java.util.HashSet<>(watchKeys.values());
         for (Path dir : desired) {
-            if (already.contains(dir) || !Files.isDirectory(dir)) {
+            if (already.contains(dir)) {
                 continue;
             }
             try {
@@ -1047,7 +1051,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         Path path = item.getValue();
-        if (Files.isDirectory(path)) {
+        if (item instanceof PathItem pathItem ? !pathItem.isLeaf() : Files.isDirectory(path)) {
             item.setExpanded(!item.isExpanded());
         } else {
             onOpenFile.accept(path);
@@ -1510,64 +1514,125 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     // --- lazy tree node ---
 
     /** Lazily-populated tree node: lists its directory the first time its children are requested. */
-    private static final class PathItem extends TreeItem<Path> {
+    private final class PathItem extends TreeItem<Path> {
         private boolean loaded;
-        private Boolean leaf;
+        private final boolean directory;
         private final boolean showHidden;
+        private boolean childrenReady;
+        private long loadGeneration;
+        private java.util.Set<Path> restoreExpanded = java.util.Set.of();
 
-        PathItem(Path path, boolean showHidden) {
+        PathItem(Path path, boolean showHidden, boolean directory) {
+            this(path, showHidden, directory, false);
+        }
+
+        PathItem(Path path, boolean showHidden, boolean directory, boolean loaded) {
             super(path);
             this.showHidden = showHidden;
+            this.directory = directory;
+            this.loaded = loaded;
+            this.childrenReady = loaded || !directory;
         }
 
         @Override
         public boolean isLeaf() {
-            if (leaf == null) {
-                leaf = !Files.isDirectory(getValue());
-            }
-            return leaf;
+            return !directory;
         }
 
         @Override
         public ObservableList<TreeItem<Path>> getChildren() {
             if (!loaded) {
                 loaded = true;
-                if (Files.isDirectory(getValue())) {
-                    List<TreeItem<Path>> kids = new ArrayList<>();
-                    for (Path child : listDir(getValue(), showHidden)) {
-                        kids.add(new PathItem(child, showHidden));
-                    }
-                    super.getChildren().setAll(kids);
+                if (directory) {
+                    childrenReady = false;
+                    long generation = ++loadGeneration;
+                    long treeGeneration = searchGen.get();
+                    Path parent = getValue();
+                    searchExecutor.submit(() -> {
+                        Runnable hook = beforeDirectoryListForTest;
+                        if (hook != null) {
+                            hook.run();
+                        }
+                        List<PathEntry> entries = listDir(parent, showHidden);
+                        Platform.runLater(() -> {
+                            if (disposed
+                                    || !loaded
+                                    || generation != loadGeneration
+                                    || treeGeneration != searchGen.get()) {
+                                return;
+                            }
+                            List<TreeItem<Path>> kids = new ArrayList<>(entries.size());
+                            for (PathEntry child : entries) {
+                                kids.add(new PathItem(child.path(), showHidden, child.directory()));
+                            }
+                            PathItem.super.getChildren().setAll(kids);
+                            childrenReady = true;
+                            for (TreeItem<Path> child : kids) {
+                                if (child instanceof PathItem dir && restoreExpanded.contains(dir.getValue())) {
+                                    dir.restoreExpanded = restoreExpanded;
+                                    dir.setExpanded(true);
+                                    dir.getChildren();
+                                }
+                            }
+                            restorePendingTreeSelection();
+                            if (tree.getRoot() instanceof PathItem currentRoot) {
+                                continuePendingReveal(currentRoot);
+                            }
+                            syncWatches();
+                        });
+                    });
                 }
             }
             return super.getChildren();
         }
 
-        void reload() {
+        void reload(java.util.Set<Path> expanded) {
             loaded = false;
-            leaf = null;
+            childrenReady = false;
+            loadGeneration++;
+            restoreExpanded = expanded == null ? java.util.Set.of() : java.util.Set.copyOf(expanded);
+            super.getChildren().clear();
+            setExpanded(true);
             getChildren();
         }
     }
 
+    private void restorePendingTreeSelection() {
+        Path selected = pendingTreeSelection;
+        TreeItem<Path> currentRoot = tree.getRoot();
+        if (selected == null || currentRoot == null) {
+            return;
+        }
+        TreeItem<Path> found = findVisible(currentRoot, selected);
+        if (found != null) {
+            tree.getSelectionModel().select(found);
+            pendingTreeSelection = null;
+        }
+    }
+
+    private record PathEntry(Path path, boolean directory) {}
+
     /** Directory children: directories first then files, case-insensitive; dotfiles hidden unless
      *  {@code includeHidden}; empty on error. */
-    private static List<Path> listDir(Path dir, boolean includeHidden) {
-        List<Path> dirs = new ArrayList<>();
-        List<Path> files = new ArrayList<>();
+    private static List<PathEntry> listDir(Path dir, boolean includeHidden) {
+        List<PathEntry> dirs = new ArrayList<>();
+        List<PathEntry> files = new ArrayList<>();
         try (Stream<Path> entries = Files.list(dir)) {
             entries.forEach(p -> {
                 if (!includeHidden && p.getFileName().toString().startsWith(".")) {
                     return;
                 }
-                (Files.isDirectory(p) ? dirs : files).add(p);
+                boolean directory = Files.isDirectory(p);
+                (directory ? dirs : files).add(new PathEntry(p, directory));
             });
         } catch (IOException | RuntimeException ex) {
             return List.of();
         }
-        dirs.sort(ProjectPathOrder.DIRECTORIES_FIRST);
-        files.sort(ProjectPathOrder.DIRECTORIES_FIRST);
-        List<Path> all = new ArrayList<>(dirs.size() + files.size());
+        java.util.Comparator<PathEntry> order =
+                (a, b) -> ProjectPathOrder.DIRECTORIES_FIRST.compare(a.path(), b.path());
+        dirs.sort(order);
+        files.sort(order);
+        List<PathEntry> all = new ArrayList<>(dirs.size() + files.size());
         all.addAll(dirs);
         all.addAll(files);
         return all;

@@ -27,6 +27,7 @@ import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.RemoteFileSystems;
+import com.editora.vfs.SftpUri;
 import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
@@ -70,6 +71,9 @@ final class RemoteCoordinator {
 
         /** Forgets a saved connection by id. */
         void removeConnection(String id);
+
+        /** Invalidates writes captured against a path that is about to be rebound. */
+        void invalidatePendingWrite(Path path);
     }
 
     private final CoordinatorHost host;
@@ -322,9 +326,30 @@ final class RemoteCoordinator {
         activeRemoteAuthority = conn.id();
         ops.putConnection(conn); // remember the connection (metadata only — no secret) for next time
         panel.refresh(); // surface the just-used site at the top of the list
+        rebindOpenBuffers(conn.id());
         ops.setProjectRoot(root);
         ops.openProjectToolWindow();
         host.setStatus(tr("status.remote.connected", conn.displayLabel()));
+    }
+
+    /** Reconnects open tabs for this authority to the new live SFTP filesystem, retaining their dirty text. */
+    private void rebindOpenBuffers(String authority) {
+        host.forEachBuffer(buffer -> {
+            Path old = buffer.getPath();
+            if (!Vfs.isRemote(old)) {
+                return;
+            }
+            String stored = Vfs.toStorableString(old);
+            SftpUri location = SftpUri.parse(stored);
+            if (location == null || !authority.equals(location.authority())) {
+                return;
+            }
+            Path rebound = remoteFs.resolve(stored);
+            if (rebound != null) {
+                ops.invalidatePendingWrite(old);
+                buffer.setPath(rebound);
+            }
+        });
     }
 
     /** A picker over the saved SFTP connections; choosing one re-opens the connect form pre-filled. */

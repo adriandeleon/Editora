@@ -7528,6 +7528,17 @@ public class EditorBuffer implements TabContent {
         return diskModifiedMillis >= 0 && (modifiedMillis != diskModifiedMillis || size != diskSize);
     }
 
+    /** Immutable copy of the last loaded/saved disk identity, captured on the FX thread for background I/O. */
+    public record DiskSnapshot(long modifiedMillis, long size) {
+        public boolean differsFrom(long currentModifiedMillis, long currentSize) {
+            return modifiedMillis >= 0 && (modifiedMillis != currentModifiedMillis || size != currentSize);
+        }
+    }
+
+    public DiskSnapshot diskSnapshot() {
+        return new DiskSnapshot(diskModifiedMillis, diskSize);
+    }
+
     /** Associates this buffer with a file and selects the grammar and fold language from its extension. */
     public void setPath(Path path) {
         this.path = path;
@@ -9439,6 +9450,16 @@ public class EditorBuffer implements TabContent {
     public void markClean() {
         cleanText = getContent(); // the whole document, so narrowing never fakes a dirty flag
         dirty.set(false);
+    }
+
+    /** Acknowledges exactly the content written by an asynchronous save, preserving later edits as dirty. */
+    public void acknowledgeSavedContent(String savedContent) {
+        cleanText = savedContent == null ? "" : savedContent;
+        dirty.set(contentLength() != cleanText.length() || !getContent().equals(cleanText));
+    }
+
+    public boolean isDisposed() {
+        return disposed;
     }
 
     public String getTitle() {

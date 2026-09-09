@@ -3,13 +3,16 @@ package com.editora.vfs;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketTimeoutException;
+import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -69,6 +72,8 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
         return t;
     });
     private final Map<String, SftpFileSystem> byAuthority = new ConcurrentHashMap<>();
+    /** Authority identity for closed/replaced filesystems that are still retained by an open buffer Path. */
+    private final Map<FileSystem, String> knownAuthorities = Collections.synchronizedMap(new WeakHashMap<>());
 
     /**
      * Asked to approve a host key that {@code known_hosts} has never seen — the trust-on-first-use decision,
@@ -156,10 +161,19 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
     public String storable(Path path) {
         for (Map.Entry<String, SftpFileSystem> e : byAuthority.entrySet()) {
             if (path.getFileSystem() == e.getValue()) {
-                return "sftp://" + e.getKey() + path; // key is user@host:port; path starts with '/'
+                return "sftp://" + e.getKey() + remotePath(path);
             }
         }
+        String remembered = knownAuthorities.get(path.getFileSystem());
+        if (remembered != null) {
+            return "sftp://" + remembered + remotePath(path);
+        }
         return null; // not one of this engine's filesystems
+    }
+
+    private static String remotePath(Path path) {
+        String value = path.toAbsolutePath().normalize().toString();
+        return value.startsWith("/") ? value : "/" + value;
     }
 
     /** Connects (off-thread) and posts the {@link Result} on the FX thread; {@code secret} (a password or
@@ -169,6 +183,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
             Result result;
             try {
                 SftpFileSystem fs = open(conn, secret);
+                knownAuthorities.put(fs, conn.id());
                 SftpFileSystem prev = byAuthority.put(conn.id(), fs);
                 if (prev != null && prev != fs) {
                     closeQuietly(prev); // reconnecting the same site: don't leak the previous filesystem

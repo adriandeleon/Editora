@@ -8,6 +8,9 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Set;
@@ -27,6 +30,8 @@ import java.util.zip.GZIPOutputStream;
 public final class HistoryBlobStore {
 
     private static final String SUFFIX = ".txt.gz";
+    private static final Set<PosixFilePermission> OWNER_FILE = PosixFilePermissions.fromString("rw-------");
+    private static final Set<PosixFilePermission> OWNER_DIRECTORY = PosixFilePermissions.fromString("rwx------");
 
     private final Path blobsDir;
 
@@ -61,15 +66,26 @@ public final class HistoryBlobStore {
     public void put(String content, String sha) {
         Path file = pathFor(sha);
         if (Files.exists(file)) {
+            harden(file, OWNER_FILE);
             return;
         }
         try {
-            Files.createDirectories(file.getParent());
+            createPrivateDirectories(file.getParent());
+            harden(blobsDir, OWNER_DIRECTORY);
+            harden(file.getParent(), OWNER_DIRECTORY);
             byte[] gz = gzip(content);
             // Write to a temp file then move, so a crash mid-write can't leave a truncated blob.
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            Files.write(tmp, gz);
-            Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            Path tmp = createOwnerOnlyTemp(file);
+            try {
+                Files.write(tmp, gz);
+                try {
+                    Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (IOException atomicUnsupported) {
+                    Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write history blob " + file, e);
         }
@@ -93,8 +109,10 @@ public final class HistoryBlobStore {
         if (!Files.isDirectory(blobsDir)) {
             return;
         }
+        harden(blobsDir, OWNER_DIRECTORY);
         try (Stream<Path> shards = Files.list(blobsDir)) {
             shards.filter(Files::isDirectory).forEach(shard -> {
+                harden(shard, OWNER_DIRECTORY);
                 try (Stream<Path> files = Files.list(shard)) {
                     files.forEach(f -> {
                         String name = f.getFileName().toString();
@@ -108,6 +126,8 @@ public final class HistoryBlobStore {
                             } catch (IOException ignored) {
                                 // a blob we can't delete just lingers; harmless
                             }
+                        } else {
+                            harden(f, OWNER_FILE);
                         }
                     });
                 } catch (IOException ignored) {
@@ -119,10 +139,70 @@ public final class HistoryBlobStore {
         }
     }
 
+    /** Tightens permissions left by older versions without changing or deleting any stored revision. */
+    void hardenExisting() {
+        if (!Files.isDirectory(blobsDir)) {
+            return;
+        }
+        harden(blobsDir, OWNER_DIRECTORY);
+        try (Stream<Path> shards = Files.list(blobsDir)) {
+            shards.forEach(shard -> {
+                if (Files.isDirectory(shard)) {
+                    harden(shard, OWNER_DIRECTORY);
+                    try (Stream<Path> files = Files.list(shard)) {
+                        files.forEach(file -> harden(file, OWNER_FILE));
+                    } catch (IOException ignored) {
+                        // Best effort: another shard can still be hardened.
+                    }
+                } else {
+                    harden(shard, OWNER_FILE);
+                }
+            });
+        } catch (IOException ignored) {
+            // Best effort on an unreadable store.
+        }
+    }
+
     /** {@code <blobsDir>/<first-2-hex>/<sha>.txt.gz}; a too-short sha shards under {@code "_"}. */
     private Path pathFor(String sha) {
         String prefix = sha != null && sha.length() >= 2 ? sha.substring(0, 2) : "_";
         return blobsDir.resolve(prefix).resolve(sha + SUFFIX);
+    }
+
+    private static Path createOwnerOnlyTemp(Path file) throws IOException {
+        Path parent = file.getParent();
+        String prefix = "." + file.getFileName() + "-";
+        if (file.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            try {
+                return Files.createTempFile(parent, prefix, ".tmp", PosixFilePermissions.asFileAttribute(OWNER_FILE));
+            } catch (UnsupportedOperationException ignored) {
+                // Fall through to the portable creation path.
+            }
+        }
+        return Files.createTempFile(parent, prefix, ".tmp");
+    }
+
+    private static void createPrivateDirectories(Path directory) throws IOException {
+        if (directory.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            try {
+                Files.createDirectories(directory, PosixFilePermissions.asFileAttribute(OWNER_DIRECTORY));
+                return;
+            } catch (UnsupportedOperationException ignored) {
+                // Fall through to the portable creation path.
+            }
+        }
+        Files.createDirectories(directory);
+    }
+
+    private static void harden(Path path, Set<PosixFilePermission> permissions) {
+        if (path == null || !path.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            return;
+        }
+        try {
+            Files.setPosixFilePermissions(path, permissions);
+        } catch (IOException | UnsupportedOperationException ignored) {
+            // Best effort on filesystems that report POSIX support but reject a chmod operation.
+        }
     }
 
     private static byte[] gzip(String content) throws IOException {

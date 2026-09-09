@@ -113,7 +113,10 @@ class HugeFileSaveFxTest {
 
         CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
         FxTestSupport.runOnFx(() -> registry.run("file.save"));
-        FxTestSupport.runOnFx(() -> {});
+        for (int i = 0; i < 100 && !"hello\nworld\n".equals(Files.readString(file)); i++) {
+            Thread.sleep(20);
+            FxTestSupport.runOnFx(() -> {});
+        }
 
         assertEquals("hello\nworld\n", Files.readString(file), "a normal save still writes");
     }

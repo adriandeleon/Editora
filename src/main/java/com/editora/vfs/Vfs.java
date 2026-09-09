@@ -2,7 +2,10 @@ package com.editora.vfs;
 
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
@@ -31,6 +34,8 @@ public final class Vfs {
 
     /** Live remote engines (one per window). Copy-on-write: registration/lookup races are harmless and rare. */
     private static final Set<RemoteProvider> providers = new CopyOnWriteArraySet<>();
+    /** URI identity retained only as long as the remote Path itself remains reachable. */
+    private static final Map<Path, String> remoteStorables = Collections.synchronizedMap(new WeakHashMap<>());
 
     private Vfs() {}
 
@@ -74,10 +79,12 @@ public final class Vfs {
         for (RemoteProvider p : providers) {
             String s = p.storable(path);
             if (s != null) {
+                remoteStorables.put(path, s);
                 return s;
             }
         }
-        return path.toString(); // no live owner (disconnected) — best-effort
+        String remembered = remoteStorables.get(path);
+        return remembered != null ? remembered : path.toString();
     }
 
     /** Reconstructs a path from {@link #toStorableString}: a local path directly, or a remote path via whichever
@@ -90,6 +97,7 @@ public final class Vfs {
             for (RemoteProvider p : providers) {
                 Path r = p.resolve(stored);
                 if (r != null) {
+                    remoteStorables.put(r, stored);
                     return r;
                 }
             }

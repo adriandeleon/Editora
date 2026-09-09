@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
@@ -46,6 +47,7 @@ public final class SearchService {
         return t;
     });
     private final AtomicLong gen = new AtomicLong();
+    private volatile Future<?> currentSearch;
 
     /** ripgrep timeout — generous so a big tree finishes, but bounded so a hung process can't pin the thread. */
     private static final Duration RG_TIMEOUT = Duration.ofSeconds(60);
@@ -91,16 +93,29 @@ public final class SearchService {
         Map<Path, String> open = openContents == null ? Map.of() : Map.copyOf(openContents);
         List<String> inc = include == null ? List.of() : List.copyOf(include);
         List<String> exc = exclude == null ? List.of() : List.copyOf(exclude);
-        exec.submit(() -> {
-            Outcome outcome = run(query, scopeRoot, open, inc, exc);
+        Future<?> previous = currentSearch;
+        if (previous != null) {
+            previous.cancel(true);
+        }
+        currentSearch = exec.submit(() -> {
+            Outcome outcome = run(query, scopeRoot, open, inc, exc, g);
             if (g == gen.get()) {
-                Platform.runLater(() -> onResult.accept(outcome));
+                Platform.runLater(() -> {
+                    if (g == gen.get()) {
+                        onResult.accept(outcome);
+                    }
+                });
             }
         });
     }
 
     private Outcome run(
-            SearchQuery query, Path scopeRoot, Map<Path, String> open, List<String> include, List<String> exclude) {
+            SearchQuery query,
+            Path scopeRoot,
+            Map<Path, String> open,
+            List<String> include,
+            List<String> exclude,
+            long generation) {
         if (query == null || query.text() == null || query.text().isEmpty()) {
             return new Outcome(List.of(), 0, 0, false);
         }
@@ -108,17 +123,24 @@ public final class SearchService {
         // On-disk results: ripgrep when enabled + local root, else the Java walker. rg falls back to the
         // walker on a pattern/IO error (exit 2) or if it failed to launch (null), so nothing regresses.
         List<FileResult> disk = null;
+        boolean[] sourceTruncated = {false};
         if (haveRoot && useRipgrep && Vfs.isLocal(scopeRoot)) {
-            disk = ripgrepDisk(query, scopeRoot, include, exclude);
+            disk = ripgrepDisk(query, scopeRoot, include, exclude, generation, sourceTruncated);
         }
         if (disk == null) {
-            disk = haveRoot ? walkDisk(query, scopeRoot, include, exclude) : new ArrayList<>();
+            disk = haveRoot ? walkDisk(query, scopeRoot, include, exclude, generation) : new ArrayList<>();
         }
-        return overlay(disk, query, open, scopeRoot, include, exclude);
+        return overlay(disk, query, open, scopeRoot, include, exclude, generation, sourceTruncated[0]);
     }
 
     /** On-disk search via ripgrep, paths resolved to absolute. Returns null to signal "fall back to the walker". */
-    private List<FileResult> ripgrepDisk(SearchQuery query, Path root, List<String> include, List<String> exclude) {
+    private List<FileResult> ripgrepDisk(
+            SearchQuery query,
+            Path root,
+            List<String> include,
+            List<String> exclude,
+            long generation,
+            boolean[] truncated) {
         List<String> cmd = new ArrayList<>(rgCommand);
         cmd.addAll(RipgrepArgs.build(query, include, exclude, respectGitignore, MAX_FILE_BYTES)); // off ⇒ --no-ignore
         cmd.add(".");
@@ -132,21 +154,27 @@ public final class SearchService {
         if (r.exit() != 0 && r.exit() != 1) {
             return null;
         }
+        truncated[0] = r.outTruncated();
         List<FileResult> out = new ArrayList<>();
-        for (FileResult fr : RipgrepOutput.parse(r.out())) {
+        for (FileResult fr : RipgrepOutput.parse(r.out(), MAX_MATCHES + 1)) {
             out.add(new FileResult(root.resolve(fr.file().toString()).normalize(), fr.matches()));
         }
         return out;
     }
 
     /** On-disk search via the built-in walker (dot-dir/oversize/binary skipping + include/exclude globs). */
-    private List<FileResult> walkDisk(SearchQuery query, Path root, List<String> include, List<String> exclude) {
+    private List<FileResult> walkDisk(
+            SearchQuery query, Path root, List<String> include, List<String> exclude, long generation) {
         Set<Path> candidates = new LinkedHashSet<>();
         GitignoreFilter gitignore = respectGitignore ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
-        collect(root, candidates, gitignore);
+        collect(root, candidates, gitignore, generation);
         boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> out = new ArrayList<>();
+        int total = 0;
         for (Path file : candidates) {
+            if (cancelled(generation) || total > MAX_MATCHES) {
+                break;
+            }
             if (filtering && !Globs.accept(relativize(root, file), include, exclude)) {
                 continue;
             }
@@ -154,9 +182,10 @@ public final class SearchService {
             if (content == null || content.indexOf('\0') >= 0) {
                 continue; // unreadable or binary
             }
-            List<LineMatch> ms = MultiFileSearch.matchesInText(content, query);
+            List<LineMatch> ms = MultiFileSearch.matchesInText(content, query, MAX_MATCHES + 1 - total);
             if (!ms.isEmpty()) {
                 out.add(new FileResult(file, ms));
+                total += ms.size();
             }
         }
         return out;
@@ -190,18 +219,38 @@ public final class SearchService {
             Path root,
             List<String> include,
             List<String> exclude) {
+        return overlay(disk, query, open, root, include, exclude, gen.get(), false);
+    }
+
+    private Outcome overlay(
+            List<FileResult> disk,
+            SearchQuery query,
+            Map<Path, String> open,
+            Path root,
+            List<String> include,
+            List<String> exclude,
+            long generation,
+            boolean sourceTruncated) {
         Set<Path> openKeys = new HashSet<>();
         for (Path p : open.keySet()) {
             openKeys.add(p.toAbsolutePath().normalize());
         }
         boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> all = new ArrayList<>();
+        int collected = 0;
         for (FileResult fr : disk) {
+            if (cancelled(generation)) {
+                return new Outcome(List.of(), 0, 0, false);
+            }
             if (!openKeys.contains(fr.file().toAbsolutePath().normalize())) {
                 all.add(fr); // a disk hit not shadowed by an open buffer (already glob-filtered)
+                collected += fr.matches().size();
             }
         }
         for (Map.Entry<Path, String> e : open.entrySet()) {
+            if (cancelled(generation) || collected > MAX_MATCHES) {
+                break;
+            }
             if (filtering && !Globs.accept(relativize(root, e.getKey()), include, exclude)) {
                 continue; // open buffer excluded by the include/exclude globs
             }
@@ -209,16 +258,17 @@ public final class SearchService {
             if (content == null || content.indexOf('\0') >= 0) {
                 continue;
             }
-            List<LineMatch> ms = MultiFileSearch.matchesInText(content, query);
+            List<LineMatch> ms = MultiFileSearch.matchesInText(content, query, MAX_MATCHES + 1 - collected);
             if (!ms.isEmpty()) {
                 all.add(new FileResult(e.getKey(), ms));
+                collected += ms.size();
             }
         }
         all.sort((a, b) -> a.file().toString().compareToIgnoreCase(b.file().toString()));
 
         List<FileResult> results = new ArrayList<>();
         int total = 0;
-        boolean truncated = false;
+        boolean truncated = sourceTruncated;
         for (FileResult fr : all) {
             List<LineMatch> ms = fr.matches();
             if (total + ms.size() > MAX_MATCHES) {
@@ -229,14 +279,14 @@ public final class SearchService {
                 results.add(new FileResult(fr.file(), ms));
                 total += ms.size();
             }
-            if (truncated) {
+            if (total >= MAX_MATCHES) {
                 break;
             }
         }
         return new Outcome(results, total, results.size(), truncated);
     }
 
-    private void collect(Path root, Set<Path> out, GitignoreFilter gitignore) {
+    private void collect(Path root, Set<Path> out, GitignoreFilter gitignore, long generation) {
         try {
             int[] scanned = {0};
             Files.walkFileTree(
@@ -246,6 +296,9 @@ public final class SearchService {
                     new SimpleFileVisitor<>() {
                         @Override
                         public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes a) {
+                            if (cancelled(generation)) {
+                                return FileVisitResult.TERMINATE;
+                            }
                             if (!dir.equals(root)
                                     && dir.getFileName().toString().startsWith(".")) {
                                 return FileVisitResult.SKIP_SUBTREE; // .git, .idea, etc.
@@ -260,6 +313,9 @@ public final class SearchService {
 
                         @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes a) {
+                            if (cancelled(generation)) {
+                                return FileVisitResult.TERMINATE;
+                            }
                             if (++scanned[0] > MAX_FILES_SCANNED) {
                                 return FileVisitResult.TERMINATE;
                             }
@@ -283,6 +339,10 @@ public final class SearchService {
         }
     }
 
+    private boolean cancelled(long generation) {
+        return Thread.currentThread().isInterrupted() || generation != gen.get();
+    }
+
     private static String readText(Path file) {
         try {
             if (Files.size(file) > MAX_FILE_BYTES) {
@@ -296,6 +356,12 @@ public final class SearchService {
 
     /** Stops the background search thread (called when the owning window closes). */
     public void shutdown() {
+        gen.incrementAndGet();
+        Future<?> active = currentSearch;
+        currentSearch = null;
+        if (active != null) {
+            active.cancel(true);
+        }
         exec.shutdownNow();
     }
 }

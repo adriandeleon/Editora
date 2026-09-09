@@ -31,6 +31,9 @@ public final class HistoryService {
     private static final Logger LOG = Logger.getLogger(HistoryService.class.getName());
 
     private final HistoryBlobStore blobs;
+    private final Object publicationLock = new Object();
+    private int publicationsInFlight;
+    private Set<String> deferredLiveHashes;
 
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "history-service");
@@ -40,6 +43,7 @@ public final class HistoryService {
 
     public HistoryService(HistoryBlobStore blobs) {
         this.blobs = blobs;
+        exec.submit(blobs::hardenExisting);
     }
 
     /**
@@ -60,13 +64,16 @@ public final class HistoryService {
             long now,
             Consumer<HistoryRevision> onRecorded) {
         List<HistoryRevision> snapshot = existing == null ? List.of() : new ArrayList<>(existing);
+        synchronized (publicationLock) {
+            publicationsInFlight++;
+        }
         exec.submit(() -> {
             try {
                 String sha = HistoryBlobStore.sha256(content);
                 if (!force && HistoryRetention.isDuplicate(snapshot, sha)) {
                     // Unchanged since the last revision — skip the blob write. Still report completion: the
                     // caller counts in-flight records to know when it is safe to GC.
-                    Platform.runLater(() -> onRecorded.accept(null));
+                    deliver(null, onRecorded);
                     return;
                 }
                 blobs.put(content, sha);
@@ -77,14 +84,35 @@ public final class HistoryService {
                 // list as it is THEN. Building the new list here from the list as it was at submit time meant a
                 // second record for the same file (a label during a slow save; two dirty buffers on one autosave)
                 // overwrote the first one's revision with a list that never contained it.
-                Platform.runLater(() -> onRecorded.accept(rev));
+                deliver(rev, onRecorded);
             } catch (Throwable t) {
                 // A failure here (e.g. the blob disk write) MUST still complete the callback: the caller
                 // decrements an in-flight counter in onRecorded and only GCs when it hits zero, so a stranded
                 // callback silently stops local-history GC for the rest of the session (blobs grow unbounded).
                 // The submit() Future is unobserved, so without this the throw is swallowed and never logged.
                 LOG.log(Level.WARNING, "Failed to record a history revision for " + file, t);
-                Platform.runLater(() -> onRecorded.accept(null));
+                deliver(null, onRecorded);
+            }
+        });
+    }
+
+    private void deliver(HistoryRevision revision, Consumer<HistoryRevision> onRecorded) {
+        Platform.runLater(() -> {
+            try {
+                onRecorded.accept(revision);
+            } finally {
+                Set<String> live = null;
+                synchronized (publicationLock) {
+                    publicationsInFlight--;
+                    if (publicationsInFlight == 0 && deferredLiveHashes != null) {
+                        live = deferredLiveHashes;
+                        deferredLiveHashes = null;
+                    }
+                }
+                if (live != null) {
+                    Set<String> snapshot = live;
+                    exec.submit(() -> blobs.deleteUnreferenced(snapshot));
+                }
             }
         });
     }
@@ -112,7 +140,14 @@ public final class HistoryService {
      * whose content is gone (and which then renders as an empty file).
      */
     public void gc(Set<String> live) {
-        exec.submit(() -> blobs.deleteUnreferenced(live));
+        Set<String> snapshot = live == null ? Set.of() : Set.copyOf(live);
+        synchronized (publicationLock) {
+            if (publicationsInFlight > 0) {
+                deferredLiveHashes = snapshot;
+                return;
+            }
+        }
+        exec.submit(() -> blobs.deleteUnreferenced(snapshot));
     }
 
     public void shutdown() {

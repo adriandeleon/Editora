@@ -11,6 +11,9 @@ import java.util.stream.Stream;
 
 import com.editora.config.migration.ConfigMigrations;
 import com.editora.config.migration.ConfigSchema;
+import com.editora.history.HistoryBlobStore;
+import com.editora.history.HistoryService;
+import com.editora.io.DocumentWriteSequencer;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,6 +46,9 @@ public class SharedConfig {
     /** Performs settings/session writes off the FX thread (async for the frequent path, flush for durable). */
     private final ConfigWriter writer = new ConfigWriter();
 
+    private final HistoryService historyService;
+    private final DocumentWriteSequencer documentWrites = new DocumentWriteSequencer();
+
     private Settings settings = new Settings();
     /** Global bookmarks (all files/projects), stored in {@code bookmarks.json} — see {@link BookmarkStore}. */
     private BookmarkStore bookmarkStore = new BookmarkStore();
@@ -71,6 +77,7 @@ public class SharedConfig {
         this.configDir = configDir;
         this.dev = dev;
         this.projects = new ProjectManager(configDir);
+        this.historyService = new HistoryService(new HistoryBlobStore(getHistoryBlobsDir()));
     }
 
     /** True when started in dev mode ({@code --dev}); the UI shows a "dev mode" badge in this case. */
@@ -85,6 +92,16 @@ public class SharedConfig {
     /** The shared projects index, one instance for the whole app. */
     public ProjectManager projects() {
         return projects;
+    }
+
+    /** The app-wide local-history worker. Sharing it coordinates blob publication and GC across windows. */
+    public HistoryService historyService() {
+        return historyService;
+    }
+
+    /** Coordinates document writes across every window that shares this configuration. */
+    public DocumentWriteSequencer documentWrites() {
+        return documentWrites;
     }
 
     /** The JSON mapper used for the bucketed stores (reused by {@link ConfigManager} for session state). */
@@ -141,9 +158,9 @@ public class SharedConfig {
     }
 
     /** Writes preferences to {@code settings.json} synchronously (serialize now, then block until written). */
-    public void saveSettings() {
+    public boolean saveSettings() {
         enqueueSettings();
-        writer.flush();
+        return writer.flush();
     }
 
     /** The shared off-thread writer (settings + session state route through it; see {@link ConfigWriter}). */
@@ -170,8 +187,14 @@ public class SharedConfig {
     }
 
     /** Blocks until all queued settings/session writes have landed (a durable save, an export, or exit). */
-    public void flushWrites() {
-        writer.flush();
+    public boolean flushWrites() {
+        return writer.flush();
+    }
+
+    /** Stops app-wide background services after the last window has closed. */
+    public boolean shutdown() {
+        historyService.shutdown();
+        return writer.shutdown();
     }
 
     /** Routes config-file write failures to {@code handler} (on the writer thread) so they can be surfaced
@@ -185,7 +208,9 @@ public class SharedConfig {
      * and returns the created file. Backs up whichever config dir is in use.
      */
     public Path exportConfig() throws IOException {
-        writer.flush(); // make sure any pending async settings/session write is on disk before zipping
+        if (!writer.flush()) {
+            throw new IOException("Timed out waiting for pending configuration writes");
+        }
         Path home = Path.of(System.getProperty("user.home"));
         return ConfigExporter.export(
                 configDir,
@@ -584,12 +609,16 @@ public class SharedConfig {
 
     /** Writes the Local File History index to {@code history/index.json}, independently of a session save. */
     public void saveHistory() {
-        try {
-            Files.createDirectories(getHistoryFile().getParent());
-            ConfigWriter.writeAtomic(getHistoryFile(), json, historyStore);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to write history to " + getHistoryFile(), e);
+        HistoryStore snapshot = new HistoryStore();
+        snapshot.setSchemaVersion(historyStore.getSchemaVersion());
+        Map<String, Map<String, List<HistoryRevision>>> projects = new LinkedHashMap<>();
+        for (var project : historyStore.getByProject().entrySet()) {
+            Map<String, List<HistoryRevision>> files = new LinkedHashMap<>();
+            project.getValue().forEach((path, revisions) -> files.put(path, List.copyOf(revisions)));
+            projects.put(project.getKey(), files);
         }
+        snapshot.setByProject(projects);
+        writer.enqueue(getHistoryFile(), () -> json.writeValueAsBytes(snapshot));
     }
 
     /** Migrates bookmarks out of the legacy session files into their per-project buckets, stripping each. */

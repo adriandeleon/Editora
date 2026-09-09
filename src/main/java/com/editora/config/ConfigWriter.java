@@ -16,9 +16,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Performs config-file writes off the JavaFX thread. Callers serialize a consistent snapshot to bytes on
- * their own thread (the FX thread is single-threaded, so no locking is needed to read the config POJOs)
- * and hand the immutable bytes here; one daemon thread does the actual disk I/O.
+ * Performs config-file writes off the JavaFX thread. Callers hand it immutable bytes or an immutable
+ * snapshot supplier; one daemon thread performs deferred serialization and disk I/O.
  *
  * <p>Writes to the same file coalesce — the latest bytes win — and a single writer thread keeps them
  * ordered, so an async (non-blocking) write can never land after and clobber a later durable one.
@@ -28,12 +27,19 @@ import java.util.logging.Logger;
  */
 public final class ConfigWriter {
 
+    @FunctionalInterface
+    interface BytesSupplier {
+        byte[] get() throws IOException;
+    }
+
     private static final Logger LOG = Logger.getLogger(ConfigWriter.class.getName());
 
     /** Config files can hold credentials + private content, so they are owner-only (0600). */
     private static final java.util.Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");
 
     private final ExecutorService io;
+    /** Serializes the executor drain with the post-shutdown synchronous fallback. */
+    private final Object writerLock = new Object();
 
     public ConfigWriter() {
         this(Executors.newSingleThreadExecutor(r -> {
@@ -59,7 +65,7 @@ public final class ConfigWriter {
     }
 
     private final Object lock = new Object();
-    private final Map<Path, byte[]> pending = new LinkedHashMap<>();
+    private final Map<Path, BytesSupplier> pending = new LinkedHashMap<>();
 
     /**
      * Notified (on the writer thread) when an atomic config-file write fails. Lets a durable save on quit /
@@ -93,6 +99,11 @@ public final class ConfigWriter {
 
     /** Queues {@code bytes} to be written to {@code file} off-thread; a newer write to the same file wins. */
     public void enqueue(Path file, byte[] bytes) {
+        enqueue(file, () -> bytes);
+    }
+
+    /** Queues off-thread serialization plus writing of an immutable snapshot. */
+    void enqueue(Path file, BytesSupplier bytes) {
         synchronized (lock) {
             pending.put(file, bytes);
             cancelled.remove(file); // a fresh, legitimate write un-cancels the file
@@ -100,26 +111,43 @@ public final class ConfigWriter {
         try {
             io.execute(this::drain);
         } catch (RejectedExecutionException shuttingDown) {
-            drain(); // executor already stopped (exit) — write synchronously on the caller
+            // A late write after shutdown still has to preserve ordering with any final drain that was
+            // already running. The writer lock makes this a handoff, never a second concurrent writer.
+            synchronized (writerLock) {
+                drain();
+            }
         }
     }
 
     /** Blocks until every queued write has been performed (a durable save, an export, or app exit). */
-    public void flush() {
+    public boolean flush() {
         try {
-            io.submit(() -> {}).get(10, TimeUnit.SECONDS); // wait for all queued drains to finish
+            io.submit(() -> {}).get(flushTimeoutMillis, TimeUnit.MILLISECONDS); // wait for all queued drains
+            return true;
         } catch (RejectedExecutionException shuttingDown) {
             drain();
+            return true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            drain();
+            return false;
         } catch (Exception e) {
-            drain(); // timeout / executor error — best-effort synchronous write
+            // The writer may still own a claimed batch. A synchronous drain here would introduce a second
+            // writer and allow that older batch to land after a newer one. Leave the single owner intact.
+            return false;
         }
     }
 
+    /** Production durability wait; package-private and mutable only so timeout ordering is testable. */
+    volatile long flushTimeoutMillis = TimeUnit.SECONDS.toMillis(10);
+
     private void drain() {
-        Map<Path, byte[]> batch;
+        synchronized (writerLock) {
+            drainOwned();
+        }
+    }
+
+    private void drainOwned() {
+        Map<Path, BytesSupplier> batch;
         synchronized (lock) {
             if (pending.isEmpty()) {
                 return;
@@ -138,10 +166,13 @@ public final class ConfigWriter {
                 }
             }
             try {
-                writeAtomicOrThrow(file, bytes);
-            } catch (IOException e) {
-                LOG.log(Level.SEVERE, "Failed to write config file " + file, e);
-                onWriteError.accept(file, e); // surface it (#418) — no longer a silent swallow
+                writeAtomicOrThrow(file, bytes.get());
+            } catch (IOException | RuntimeException e) {
+                IOException failure = e instanceof IOException ioFailure
+                        ? ioFailure
+                        : new IOException("Failed to serialize configuration snapshot", e);
+                LOG.log(Level.SEVERE, "Failed to write config file " + file, failure);
+                onWriteError.accept(file, failure); // surface it (#418) — no longer a silent swallow
             }
         });
     }
@@ -177,23 +208,34 @@ public final class ConfigWriter {
         if (parent != null) {
             Files.createDirectories(parent);
         }
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        writeOwnerOnly(tmp, bytes);
+        // Remove the fixed-name temporary file used by older Editora versions. New writes use a unique
+        // owner-only file below, so independent atomic writers cannot truncate or move each other's temp.
+        Files.deleteIfExists(file.resolveSibling(file.getFileName() + ".tmp"));
+        Path tmp = createOwnerOnlyTemp(file);
         try {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException atomicUnsupported) {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            Files.write(tmp, bytes);
+            try {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomicUnsupported) {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
         }
     }
 
-    /**
-     * Writes {@code bytes} to {@code tmp}, readable only by its owner where the filesystem supports it.
-     * The subsequent atomic move preserves the mode, which also re-tightens a file left 0644 by an older
-     * version.
-     */
-    private static void writeOwnerOnly(Path tmp, byte[] bytes) throws IOException {
-        createOwnerOnly(tmp);
-        Files.write(tmp, bytes); // CREATE+TRUNCATE_EXISTING: keeps the mode of the file just created
+    private static Path createOwnerOnlyTemp(Path file) throws IOException {
+        Path parent = file.getParent();
+        String prefix = "." + file.getFileName() + "-";
+        if (parent != null
+                && parent.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            try {
+                return Files.createTempFile(parent, prefix, ".tmp", PosixFilePermissions.asFileAttribute(OWNER_ONLY));
+            } catch (UnsupportedOperationException ignored) {
+                // No POSIX attributes after all — create with the filesystem's default mode.
+            }
+        }
+        return parent == null ? Files.createTempFile(prefix, ".tmp") : Files.createTempFile(parent, prefix, ".tmp");
     }
 
     /**
@@ -224,9 +266,14 @@ public final class ConfigWriter {
         }
     }
 
-    /** Flushes any pending writes, then stops the writer thread (final app shutdown). */
-    public void shutdown() {
-        flush();
-        io.shutdownNow();
+    /**
+     * Flushes pending writes and stops accepting executor work. Returns whether the bounded durability
+     * barrier completed; on timeout the existing single writer is allowed to finish rather than being
+     * interrupted or raced by a caller-thread drain.
+     */
+    public boolean shutdown() {
+        boolean flushed = flush();
+        io.shutdown();
+        return flushed;
     }
 }

@@ -6,6 +6,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.Iterator;
 import java.util.List;
 
 import javafx.application.Platform;
@@ -27,6 +29,17 @@ import com.editora.process.ProcessRunner;
  */
 public final class RunService {
 
+    private static final int MAX_PENDING_OUTPUT_CHARS = 256 * 1024;
+    private static final int MAX_PENDING_OUTPUT_EVENTS = 2_048;
+    private static final int MAX_OUTPUT_LINE_CHARS = 64 * 1024;
+    private static final int MAX_EVENTS_PER_PULSE = 256;
+    private static final int MAX_CHARS_PER_PULSE = 64 * 1024;
+    private static final String OUTPUT_DROPPED = "[output truncated while the UI was busy]";
+
+    private record PendingFx(int generation, int chars, boolean output, Runnable action) {}
+
+    private record Pump(Thread thread, InputStream stream) {}
+
     /** Receives lifecycle + streamed output, always on the FX thread. */
     public interface Listener {
         /** The process started; {@code commandLine} is the resolved command for display. */
@@ -44,6 +57,12 @@ public final class RunService {
 
     private volatile Process current;
     private volatile int generation;
+    private final Object outputLock = new Object();
+    private final ArrayDeque<PendingFx> pendingFx = new ArrayDeque<>();
+    private int pendingOutputChars;
+    private int pendingOutputEvents;
+    private boolean outputDrainScheduled;
+    private Runnable droppedOutputNotice;
     /** Cached {@code java -version} major (0 = not probed yet, -1 = probe failed/unparseable). */
     private volatile int javaMajor;
 
@@ -153,6 +172,12 @@ public final class RunService {
             return;
         }
         int gen = ++generation;
+        synchronized (outputLock) {
+            pendingFx.clear();
+            pendingOutputChars = 0;
+            pendingOutputEvents = 0;
+            droppedOutputNotice = null;
+        }
         List<String> command = ProcessRunner.resolveExecutable(argv);
         ProcessBuilder pb = new ProcessBuilder(command);
         Path dir = workingDir == null ? null : workingDir.toAbsolutePath();
@@ -175,8 +200,8 @@ public final class RunService {
         }
         current = process;
         listener.onStart(String.join(" ", command));
-        pump(process.getInputStream(), false, gen, listener);
-        pump(process.getErrorStream(), true, gen, listener);
+        Pump stdout = pump(process.getInputStream(), false, gen, listener);
+        Pump stderr = pump(process.getErrorStream(), true, gen, listener);
         Thread waiter = new Thread(
                 () -> {
                     int code;
@@ -186,11 +211,18 @@ public final class RunService {
                         Thread.currentThread().interrupt();
                         code = -1;
                     }
+                    finishPump(stdout);
+                    finishPump(stderr);
                     int finalCode = code;
-                    postIfCurrent(gen, () -> {
-                        current = null;
-                        listener.onExit(finalCode);
-                    });
+                    enqueueFx(
+                            gen,
+                            0,
+                            false,
+                            () -> {
+                                current = null;
+                                listener.onExit(finalCode);
+                            },
+                            null);
                 },
                 "run-wait");
         waiter.setDaemon(true);
@@ -214,16 +246,48 @@ public final class RunService {
         }
     }
 
-    /** Drains a stream line-by-line on a daemon thread, posting each line to the FX thread (if still current). */
-    private void pump(InputStream in, boolean stderr, int gen, Listener listener) {
+    /** Final owner shutdown: stop the process and discard callbacks queued for a window that is closing. */
+    public void shutdown() {
+        generation++;
+        synchronized (outputLock) {
+            pendingFx.clear();
+            pendingOutputChars = 0;
+            pendingOutputEvents = 0;
+            droppedOutputNotice = null;
+        }
+        Process p = current;
+        current = null;
+        if (p != null && p.isAlive()) {
+            com.editora.process.ProcessRegistry.killTree(p);
+        }
+    }
+
+    /** Drains a stream on a daemon thread without ever materializing more than one bounded line. */
+    private Pump pump(InputStream in, boolean stderr, int gen, Listener listener) {
         Thread t = new Thread(
                 () -> {
                     try (BufferedReader reader =
                             new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-                        String line;
-                        while ((line = reader.readLine()) != null) {
-                            String text = line;
-                            postIfCurrent(gen, () -> listener.onOutput(text, stderr));
+                        char[] chars = new char[8_192];
+                        StringBuilder line = new StringBuilder();
+                        boolean truncated = false;
+                        int read;
+                        while ((read = reader.read(chars)) != -1) {
+                            for (int i = 0; i < read; i++) {
+                                char ch = chars[i];
+                                if (ch == '\n') {
+                                    emitLine(line, truncated, stderr, gen, listener);
+                                    line.setLength(0);
+                                    truncated = false;
+                                } else if (line.length() < MAX_OUTPUT_LINE_CHARS) {
+                                    line.append(ch);
+                                } else {
+                                    truncated = true;
+                                }
+                            }
+                        }
+                        if (!line.isEmpty() || truncated) {
+                            emitLine(line, truncated, stderr, gen, listener);
                         }
                     } catch (IOException ignored) {
                         // Stream closed as the process ended — nothing to report.
@@ -232,16 +296,120 @@ public final class RunService {
                 stderr ? "run-stderr" : "run-stdout");
         t.setDaemon(true);
         t.start();
+        return new Pump(t, in);
     }
 
-    /** Runs {@code action} on the FX thread only if {@code gen} is still the active run (drops stale output). */
-    private void postIfCurrent(int gen, Runnable action) {
-        if (gen == generation) {
-            Platform.runLater(() -> {
-                if (gen == generation) {
-                    action.run();
+    private void emitLine(StringBuilder line, boolean truncated, boolean stderr, int gen, Listener listener) {
+        int length = line.length();
+        if (length > 0 && line.charAt(length - 1) == '\r') {
+            line.setLength(length - 1); // match BufferedReader.readLine() for CRLF
+        }
+        String text = line + (truncated ? " … [line truncated]" : "");
+        enqueueFx(
+                gen,
+                text.length(),
+                true,
+                () -> listener.onOutput(text, stderr),
+                () -> listener.onOutput(OUTPUT_DROPPED, stderr));
+    }
+
+    private static void finishPump(Pump pump) {
+        if (join(pump.thread())) {
+            return;
+        }
+        try {
+            pump.stream().close(); // a descendant may still hold the pipe open after the root exits
+        } catch (IOException ignored) {
+            // best effort
+        }
+        join(pump.thread()); // bounded again; no output is intentionally accepted after the exit event
+    }
+
+    private static boolean join(Thread thread) {
+        try {
+            thread.join(1_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return !thread.isAlive();
+    }
+
+    private void enqueueFx(int gen, int chars, boolean output, Runnable action, Runnable onDrop) {
+        boolean schedule = false;
+        synchronized (outputLock) {
+            if (gen != generation) {
+                return;
+            }
+            pendingFx.addLast(new PendingFx(gen, chars, output, action));
+            pendingOutputChars += chars;
+            if (output) {
+                pendingOutputEvents++;
+            }
+            while (pendingOutputChars > MAX_PENDING_OUTPUT_CHARS || pendingOutputEvents > MAX_PENDING_OUTPUT_EVENTS) {
+                PendingFx removed = removeOldestOutput();
+                if (removed == null) {
+                    break;
                 }
-            });
+                pendingOutputChars -= removed.chars();
+                pendingOutputEvents--;
+                droppedOutputNotice = onDrop;
+            }
+            if (!outputDrainScheduled) {
+                outputDrainScheduled = true;
+                schedule = true;
+            }
+        }
+        if (schedule) {
+            Platform.runLater(this::drainFx);
+        }
+    }
+
+    private PendingFx removeOldestOutput() {
+        Iterator<PendingFx> it = pendingFx.iterator();
+        while (it.hasNext()) {
+            PendingFx event = it.next();
+            if (event.output()) {
+                it.remove();
+                return event;
+            }
+        }
+        return null;
+    }
+
+    private void drainFx() {
+        java.util.ArrayList<PendingFx> batch = new java.util.ArrayList<>();
+        Runnable notice;
+        boolean more;
+        synchronized (outputLock) {
+            notice = droppedOutputNotice;
+            droppedOutputNotice = null;
+            int chars = 0;
+            while (!pendingFx.isEmpty() && batch.size() < MAX_EVENTS_PER_PULSE) {
+                PendingFx next = pendingFx.peekFirst();
+                if (!batch.isEmpty() && chars + next.chars() > MAX_CHARS_PER_PULSE) {
+                    break;
+                }
+                pendingFx.removeFirst();
+                pendingOutputChars -= next.chars();
+                if (next.output()) {
+                    pendingOutputEvents--;
+                }
+                chars += next.chars();
+                batch.add(next);
+            }
+            more = !pendingFx.isEmpty();
+            outputDrainScheduled = more;
+        }
+        if (notice != null) {
+            notice.run();
+        }
+        for (PendingFx event : batch) {
+            if (event.generation() == generation) {
+                event.action().run();
+            }
+        }
+        if (more) {
+            Platform.runLater(this::drainFx);
         }
     }
 }

@@ -41,6 +41,12 @@ class MultiFileSearchTest {
     }
 
     @Test
+    void matchProductionStopsAtTheRequestedLimit() {
+        List<LineMatch> matches = MultiFileSearch.matchesInText("hit\n".repeat(10_000), q("hit"), 37);
+        assertEquals(37, matches.size());
+    }
+
+    @Test
     void replaceAllSplicesEveryMatchAndCounts() {
         MultiFileSearch.ReplaceResult r = MultiFileSearch.replaceAll("foo bar foo", q("foo"), "X");
         assertEquals("X bar X", r.text());

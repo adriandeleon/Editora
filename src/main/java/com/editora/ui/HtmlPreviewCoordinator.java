@@ -66,6 +66,7 @@ final class HtmlPreviewCoordinator {
     /** The debounced edit pulse reloads the browser, but only while this file is the one currently served. */
     void onBufferEdited(EditorBuffer buffer) {
         if (isEnabled() && service.isPreviewing(buffer.getPath())) {
+            service.updateText(buffer.getPath(), buffer.getContent());
             service.notifyChanged();
         }
     }
@@ -90,7 +91,8 @@ final class HtmlPreviewCoordinator {
         host.settings().setHtmlPreviewBrowser(browser.id());
         host.save();
         host.setStatus(tr("status.htmlPreview.opening", browserLabel(browser)));
-        service.preview(file, buffer::getContent, browser, r -> {
+        String content = buffer.getContent();
+        service.preview(file, content, browser, r -> {
             if (r.ok()) {
                 host.setStatus(tr("status.htmlPreview.opened", r.url()));
             } else {

@@ -18,6 +18,11 @@ public final class MultiFileSearch {
 
     /** Every match in {@code text}, line by line (1-based line/col), each carrying its line's text. */
     public static List<LineMatch> matchesInText(String text, SearchQuery q) {
+        return matchesInText(text, q, Integer.MAX_VALUE);
+    }
+
+    /** As {@link #matchesInText(String, SearchQuery)}, stopping once {@code limit} matches are collected. */
+    public static List<LineMatch> matchesInText(String text, SearchQuery q, int limit) {
         List<LineMatch> out = new ArrayList<>();
         if (text == null
                 || text.isEmpty()
@@ -35,6 +40,9 @@ public final class MultiFileSearch {
                 String lineText = text.substring(start, end);
                 for (int[] m : SearchMatcher.matches(lineText, q.text(), q.caseSensitive(), q.regex(), q.wholeWord())) {
                     out.add(new LineMatch(line, m[0] + 1, m[1] - m[0], lineText));
+                    if (out.size() >= limit) {
+                        return out;
+                    }
                 }
                 line++;
                 start = i + 1;

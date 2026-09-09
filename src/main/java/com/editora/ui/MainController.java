@@ -1246,13 +1246,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
+                fileWorkflows.invalidatePendingWrite(buffer.getPath());
                 buffer.dispose();
             } else {
                 disposeViewerTab(tab); // an image/hex/PDF tab holds a thread + file handle + GPU texture too
             }
         }
         lspManager.shutdownAll(); // don't orphan this window's external language servers
-        dapManager.stop(); // end any debug session
+        dapManager.shutdown(); // end the debug session and release the per-window connect worker
         git.shutdown();
         github.shutdown(); // stop the gh worker thread
         indexCoordinator.dispose(); // stop the symbol-index walker
@@ -1583,6 +1584,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Syncs editor/session state after the Project tree renames a file on disk (old → target). */
     private void onProjectFileRenamed(Path old, Path target) {
+        fileWorkflows.invalidatePendingWrite(old);
         com.editora.config.PathKeys.invalidateCanonicalCache(); // stale resolutions must not survive a move (#680)
         Tab tab = tabForPath(old);
         if (tab != null) {
@@ -1606,6 +1608,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Path pn = p.toAbsolutePath().normalize();
                 if (pn.startsWith(oldNorm) && !pn.equals(oldNorm)) {
                     Path moved = target.resolve(oldNorm.relativize(pn));
+                    fileWorkflows.invalidatePendingWrite(p);
                     b.setPath(moved);
                     updateTabMeta(t, b);
                     migrateFileState(p, moved);
@@ -1890,6 +1893,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     for (Tab removed : c.getRemoved()) {
                         EditorBuffer closed = bufferOf(removed);
                         if (closed != null) {
+                            fileWorkflows.invalidatePendingWrite(closed.getPath());
                             if (closed.getPath() != null && lspManager.isManaged(closed.getPath())) {
                                 lspManager.closeDocument(closed.getPath());
                                 lspCoordinator.clearDiagnostics(closed.getPath());
@@ -2264,7 +2268,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         githubPanel = new GitHubPanel(gitWindows.githubActions());
         githubToolWindow = new ToolWindow(
                 "github", tr("toolwindow.github"), ToolWindow.Side.BOTTOM, Icons::github, githubPanel, "tool.github");
-        historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps());
+        historyCoordinator = new HistoryCoordinator(
+                coordinatorHost, diffCoordinator, historyOps(), config.shared().historyService());
         fileHistoryToolWindow = new ToolWindow(
                 "fileHistory",
                 tr("toolwindow.fileHistory"),
@@ -2367,7 +2372,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                     @Override
                     public boolean saveBuffer(EditorBuffer buffer) {
-                        return fileWorkflows.save(buffer);
+                        return fileWorkflows.saveSynchronously(buffer);
                     }
 
                     @Override
@@ -2688,6 +2693,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void removeConnection(String id) {
                 config.removeConnection(id);
+            }
+
+            @Override
+            public void invalidatePendingWrite(Path path) {
+                fileWorkflows.invalidatePendingWrite(path);
             }
         };
     }
@@ -3345,7 +3355,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public boolean save(EditorBuffer buffer) {
-                    return fileWorkflows.save(buffer);
+                    return fileWorkflows.saveSynchronously(buffer);
                 }
 
                 @Override
@@ -5680,7 +5690,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public boolean saveBuffer(EditorBuffer buffer) {
-                    return fileWorkflows.save(buffer);
+                    return fileWorkflows.saveSynchronously(buffer);
                 }
 
                 @Override
@@ -6334,69 +6344,45 @@ public class MainController implements com.editora.mcp.McpBridge {
     });
 
     /** Find-in-Files feature; owns the search service/panel/backend (the tool window + commands stay here). */
-    private final SearchCoordinator searchCoordinator =
-            new SearchCoordinator(coordinatorHost, new SearchCoordinator.Ops() {
-                @Override
-                public java.nio.file.Path projectRoot() {
-                    return (windowProject != null && projectsEnabled())
-                            ? java.nio.file.Path.of(windowProject.root())
-                            : null;
-                }
+    private final SearchCoordinator searchCoordinator = new SearchCoordinator(
+            coordinatorHost,
+            SearchCoordinator.ops(
+                    new SearchCoordinator.Navigation(
+                            () -> (windowProject != null && projectsEnabled()) ? Path.of(windowProject.root()) : null,
+                            this::openSearchMatch,
+                            () -> searchToolWindow != null && toolWindows.isOpen(searchToolWindow),
+                            () -> toolWindows.open(searchToolWindow, true),
+                            () -> toolWindows.close(searchToolWindow)),
+                    new SearchCoordinator.ReplaceSupport(
+                            file -> bufferOf(tabForPath(file)),
+                            fileWorkflows.loadingBuffers::contains,
+                            (file, content) -> historyCoordinator.record(file, content, "replace-in-files"),
+                            file -> config.shared().documentWrites().begin(file)),
+                    new SearchCoordinator.Persistence(
+                            query -> {
+                                if (searchHistory != null) {
+                                    searchHistory.add(query);
+                                }
+                            },
+                            () -> searchHistory != null
+                                    ? searchHistory.getList()
+                                    : javafx.collections.FXCollections.observableArrayList(),
+                            found -> {
+                                if (settingsWindow != null) {
+                                    settingsWindow.syncRipgrepStatus(found);
+                                }
+                            })));
 
-                @Override
-                public void openMatch(java.nio.file.Path file, int line, int col, boolean focusEditor) {
-                    fileWorkflows.openPath(file);
-                    Platform.runLater(() -> {
-                        sessions.gotoInFile(file, line, col, focusEditor);
-                        // A preview (single click / keyboard selection) keeps focus in the results so the user
-                        // can keep arrowing — openPath/gotoInFile would otherwise have grabbed editor focus.
-                        if (!focusEditor) {
-                            searchCoordinator.panel().focusResults();
-                        }
-                    });
-                }
-
-                @Override
-                public boolean isToolWindowOpen() {
-                    return searchToolWindow != null && toolWindows.isOpen(searchToolWindow);
-                }
-
-                @Override
-                public void openToolWindow() {
-                    toolWindows.open(searchToolWindow, true);
-                }
-
-                @Override
-                public void closeToolWindow() {
-                    toolWindows.close(searchToolWindow);
-                }
-
-                @Override
-                public EditorBuffer bufferForPath(java.nio.file.Path file) {
-                    return bufferOf(tabForPath(file));
-                }
-
-                @Override
-                public void recordSearch(String query) {
-                    if (searchHistory != null) {
-                        searchHistory.add(query);
-                    }
-                }
-
-                @Override
-                public javafx.collections.ObservableList<String> searchHistory() {
-                    return searchHistory != null
-                            ? searchHistory.getList()
-                            : javafx.collections.FXCollections.observableArrayList();
-                }
-
-                @Override
-                public void syncRipgrepStatus(boolean found) {
-                    if (settingsWindow != null) {
-                        settingsWindow.syncRipgrepStatus(found);
-                    }
-                }
-            });
+    private void openSearchMatch(Path file, int line, int col, boolean focusEditor) {
+        fileWorkflows.openPath(file);
+        Platform.runLater(() -> {
+            sessions.gotoInFile(file, line, col, focusEditor);
+            // A preview keeps focus in the results so the user can continue navigating them.
+            if (!focusEditor) {
+                searchCoordinator.panel().focusResults();
+            }
+        });
+    }
 
     /** Run-a-file feature; owns the run service/console panel (the tool window + commands stay here). */
     private final RunCoordinator runCoordinator = new RunCoordinator(coordinatorHost, new RunCoordinator.Ops() {
@@ -6417,7 +6403,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public boolean saveBuffer(EditorBuffer buffer) {
-            return fileWorkflows.save(buffer);
+            return fileWorkflows.saveSynchronously(buffer);
         }
 
         @Override
@@ -8767,6 +8753,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     // canonical/real path, which can't be recomputed once the file has moved away).
                     String oldBookmarkKey = old.toString();
                     String oldNoteKey = noteKey(buffer);
+                    fileWorkflows.invalidatePendingWrite(old);
                     try {
                         Files.move(old, target);
                     } catch (IOException e) {
@@ -8996,7 +8983,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return false;
         }
         if (result.get() == save) {
-            return fileWorkflows.save(buffer);
+            return fileWorkflows.saveSynchronously(buffer);
         }
         return true; // discard
     }

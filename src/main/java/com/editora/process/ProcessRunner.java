@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Runs an external command via {@link ProcessBuilder}, capturing stdout, stderr, and the exit code
@@ -35,7 +36,11 @@ public final class ProcessRunner {
     private static final int MAX_CAPTURED_BYTES = 10 * 1024 * 1024;
 
     /** Outcome of one command: process {@code exit} code plus its captured {@code out}/{@code err}. */
-    public record Result(int exit, String out, String err) {
+    public record Result(int exit, String out, String err, boolean outTruncated, boolean errTruncated) {
+        public Result(int exit, String out, String err) {
+            this(exit, out, err, false, false);
+        }
+
         public boolean ok() {
             return exit == 0;
         }
@@ -73,12 +78,21 @@ public final class ProcessRunner {
     public static Result run(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
         BytesResult raw = runRaw(workingDir, timeout, command, extraEnv, stdin);
-        return new Result(raw.exit(), new String(raw.out(), StandardCharsets.UTF_8), raw.err());
+        return new Result(
+                raw.exit(),
+                new String(raw.out(), StandardCharsets.UTF_8),
+                raw.err(),
+                raw.outTruncated(),
+                raw.errTruncated());
     }
 
     /** Raw stdout bytes of a command — for output whose encoding is <em>not</em> UTF-8, e.g. a git blob of a
      *  Latin-1/UTF-16 file (decoding it as UTF-8 mojibakes every non-ASCII byte). {@code err} stays a String. */
-    public record BytesResult(int exit, byte[] out, String err) {
+    public record BytesResult(int exit, byte[] out, String err, boolean outTruncated, boolean errTruncated) {
+        public BytesResult(int exit, byte[] out, String err) {
+            this(exit, out, err, false, false);
+        }
+
         public boolean ok() {
             return exit == 0;
         }
@@ -137,29 +151,39 @@ public final class ProcessRunner {
         // unreachable: a child that outlives it (or never exits at all) blocked this thread indefinitely,
         // and `waitFor(timeout)` was only reached once the child had already finished.
         ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
-        Thread errReader = new Thread(() -> drain(process.getErrorStream(), errBuf), "proc-stderr");
+        AtomicBoolean errTruncated = new AtomicBoolean();
+        Thread errReader = new Thread(() -> drain(process.getErrorStream(), errBuf, errTruncated), "proc-stderr");
         errReader.setDaemon(true);
         errReader.start();
         ByteArrayOutputStream outBuf = new ByteArrayOutputStream();
-        Thread outReader = new Thread(() -> drain(process.getInputStream(), outBuf), "proc-stdout");
+        AtomicBoolean outTruncated = new AtomicBoolean();
+        Thread outReader = new Thread(() -> drain(process.getInputStream(), outBuf, outTruncated), "proc-stdout");
         outReader.setDaemon(true);
         outReader.start();
 
         try {
             if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
                 ProcessRegistry.killTree(process); // children first — a wrapper script's real work is a child
-                return new BytesResult(-1, outBuf.toByteArray(), "command timed out");
+                return new BytesResult(
+                        -1, outBuf.toByteArray(), "command timed out", outTruncated.get(), errTruncated.get());
             }
             // The child is gone; give the readers a moment to finish the pipe's tail. A bounded join (rather
             // than an open-ended read) so a grandchild holding the pipe open can't hang us.
             outReader.join(DRAIN_GRACE_MS);
             errReader.join(DRAIN_GRACE_MS);
+            if (outReader.isAlive()) {
+                outTruncated.set(true);
+            }
+            if (errReader.isAlive()) {
+                errTruncated.set(true);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             ProcessRegistry.killTree(process);
             return new BytesResult(-1, new byte[0], "interrupted");
         }
-        return new BytesResult(process.exitValue(), outBuf.toByteArray(), text(errBuf));
+        return new BytesResult(
+                process.exitValue(), outBuf.toByteArray(), text(errBuf), outTruncated.get(), errTruncated.get());
     }
 
     /**
@@ -394,7 +418,7 @@ public final class ProcessRunner {
      * {@code find /} can't exhaust the heap (the packaged app runs {@code -Xmx2g}, and an OOM here would be
      * swallowed into the executor's discarded Future, leaving the caller's status spinning forever).
      */
-    private static void drain(InputStream in, ByteArrayOutputStream out) {
+    private static void drain(InputStream in, ByteArrayOutputStream out, AtomicBoolean truncated) {
         byte[] buf = new byte[8192];
         try (in) {
             int n;
@@ -402,6 +426,9 @@ public final class ProcessRunner {
                 int room = MAX_CAPTURED_BYTES - out.size();
                 if (room > 0) {
                     out.write(buf, 0, Math.min(n, room));
+                }
+                if (n > room) {
+                    truncated.set(true);
                 }
             }
         } catch (IOException ignored) {
