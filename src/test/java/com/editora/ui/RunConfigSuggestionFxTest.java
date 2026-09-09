@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
- * What Settings → Run Configurations → <b>Add</b> prefills from, and {@code run.saveConfig} saves.
+ * What Run Configurations → <b>Add</b> prefills from, and {@code run.saveConfig} saves.
  *
  * <p>The pure naming rules are covered by {@code RunConfigDefaultsTest}; what only the controller can answer
  * is which buffers count as a source of a main class at all.

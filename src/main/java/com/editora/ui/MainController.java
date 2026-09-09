@@ -9400,7 +9400,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * The main class a new run configuration should start from: the one the active Java file's project
      * declares, else the first {@code main} in that file. Null when there is nothing to suggest.
      *
-     * <p>Shared by {@code run.saveConfig} and Settings → Run Configurations → Add, so the two cannot disagree
+     * <p>Shared by {@code run.saveConfig} and Run Configurations → Add, so the two cannot disagree
      * about what "the obvious main class here" is.
      */
     String suggestedMainClass() {
