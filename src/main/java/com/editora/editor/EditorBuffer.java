@@ -6521,10 +6521,16 @@ public class EditorBuffer implements TabContent {
         return SCROLLBAR_GUTTER + ((minimapVisible && !largeFile && !heavyFile) ? Minimap.WIDTH + 6 : 10);
     }
 
-    /** Keeps the control clear of the minimap when it toggles (no full view rebuild). */
-    private void positionViewModeControl() {
+    /** Keeps every floating editor control clear of the minimap when it toggles (no full view rebuild). */
+    private void positionCornerControls() {
         if (viewModeControl != null && root.getChildren().contains(viewModeControl)) {
             AnchorPane.setRightAnchor(viewModeControl, codePaneControlInset());
+        }
+        if (htmlPreviewControl != null && root.getChildren().contains(htmlPreviewControl)) {
+            AnchorPane.setRightAnchor(htmlPreviewControl, codePaneControlInset());
+        }
+        if (logControl != null && root.getChildren().contains(logControl)) {
+            AnchorPane.setRightAnchor(logControl, codePaneControlInset());
         }
         if (expertExitControl != null && root.getChildren().contains(expertExitControl)) {
             AnchorPane.setRightAnchor(expertExitControl, codePaneControlInset());
@@ -7330,7 +7336,7 @@ public class EditorBuffer implements TabContent {
             applyMinimap(scrollPane2, minimap2, effective);
         }
         updateDiagnosticStripe(); // show the scrollbar stripe when the minimap no longer carries marks
-        positionViewModeControl(); // keep the floating Markdown control clear of the minimap
+        positionCornerControls(); // keep floating editor controls clear of the minimap
     }
 
     /** Show/hide the "hidden characters" markers (spaces, tabs, line ends). */

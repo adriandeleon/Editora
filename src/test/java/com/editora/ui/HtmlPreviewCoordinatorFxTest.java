@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
+import javafx.scene.Node;
+import javafx.scene.layout.AnchorPane;
 import javafx.stage.Window;
 
 import com.editora.config.Settings;
@@ -121,6 +123,26 @@ class HtmlPreviewCoordinatorFxTest {
         host.settings.setHtmlPreviewSupport(false);
         FxTestSupport.runOnFx(() -> c.ensureControl(html));
         assertFalse(FxTestSupport.callOnFx(html::hasHtmlPreviewControl), "disabling the feature removes the globe");
+    }
+
+    @Test
+    void browserControlMovesInsideTheEditorWhenMinimapAppears() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setHtmlPreviewSupport(true);
+        HtmlPreviewCoordinator c = new HtmlPreviewCoordinator(host);
+        EditorBuffer html = htmlBuffer();
+
+        FxTestSupport.runOnFx(() -> {
+            html.setMinimapVisible(false);
+            c.ensureControl(html);
+        });
+        Node control = FxTestSupport.field(html, "htmlPreviewControl");
+        double withoutMinimap = FxTestSupport.callOnFx(() -> AnchorPane.getRightAnchor(control));
+
+        FxTestSupport.runOnFx(() -> html.setMinimapVisible(true));
+        double withMinimap = FxTestSupport.callOnFx(() -> AnchorPane.getRightAnchor(control));
+
+        assertTrue(withMinimap > withoutMinimap, "browser control must move left instead of covering the minimap");
     }
 
     @Test
