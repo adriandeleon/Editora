@@ -55,9 +55,10 @@ last selected flow is stored in workspace state and restored when the editor is 
 Floating previews stay at screen scale instead of participating in canvas zoom. Each title bar moves
 its card, each lower corner resizes it, and each editor scrolls independently. Opening another file
 keeps existing cards visible; clicking an already-previewed file focuses its existing card, and each
-close button removes only that card. Initial placement tries to avoid other cards and cascades them
-when the viewport cannot fit them without overlap. Up to eight previews remain open, with a ninth
-replacing the least recently focused card to keep editor and loader memory bounded.
+close button removes only that card. An accent connector runs from every preview to its source file row
+and follows map pan/zoom plus card movement and resizing. Initial placement tries to avoid other cards
+and cascades them when the viewport cannot fit them without overlap. Up to eight previews remain open,
+with a ninth replacing the least recently focused card to keep editor and loader memory bounded.
 
 A preview uses current unsaved text when the file is already open; otherwise it reads the file off
 the JavaFX application thread. It is visibly marked read-only, has independent text/image zoom

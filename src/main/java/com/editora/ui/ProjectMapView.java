@@ -103,6 +103,8 @@ final class ProjectMapView extends VBox {
     private final Button exportPdfButton = new Button(tr("project.map.exportPdf"));
     private final HBox breadcrumbs = new HBox(2);
     private final MapSurface surface = new MapSurface();
+    private final Canvas previewConnectorCanvas = new Canvas(1, 1);
+    private final Map<Path, PreviewConnector> previewConnectors = new HashMap<>();
     private final Map<Path, ProjectMapPreview> previews = new LinkedHashMap<>(16, 0.75f, true);
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "project-map-loader");
@@ -292,13 +294,23 @@ final class ProjectMapView extends VBox {
         zoomBar.getStyleClass().add("project-map-zoom");
         zoomBar.setAlignment(Pos.CENTER);
         zoomBar.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
-        StackPane host = new StackPane(surface, zoomBar);
+        previewConnectorCanvas.setManaged(false);
+        previewConnectorCanvas.setMouseTransparent(true);
+        StackPane host = new StackPane(surface, previewConnectorCanvas, zoomBar);
         canvasHost = host;
         host.getStyleClass().add("project-map-host");
         StackPane.setAlignment(zoomBar, Pos.BOTTOM_LEFT);
         StackPane.setMargin(zoomBar, new Insets(8));
-        host.widthProperty().addListener((obs, old, value) -> constrainPreviews(value.doubleValue(), host.getHeight()));
-        host.heightProperty().addListener((obs, old, value) -> constrainPreviews(host.getWidth(), value.doubleValue()));
+        host.widthProperty().addListener((obs, old, value) -> {
+            previewConnectorCanvas.setWidth(value.doubleValue());
+            constrainPreviews(value.doubleValue(), host.getHeight());
+            repaintPreviewConnectors();
+        });
+        host.heightProperty().addListener((obs, old, value) -> {
+            previewConnectorCanvas.setHeight(value.doubleValue());
+            constrainPreviews(host.getWidth(), value.doubleValue());
+            repaintPreviewConnectors();
+        });
         return host;
     }
 
@@ -621,6 +633,11 @@ final class ProjectMapView extends VBox {
         preview.setMarkerActions(previewMarkerActions);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchPreview(path, preview));
+        preview.layoutXProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
+        preview.layoutYProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
+        preview.widthProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
+        preview.heightProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
+        preview.visibleProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
         previews.put(path, preview);
         canvasHost.getChildren().add(preview);
         return preview;
@@ -635,6 +652,7 @@ final class ProjectMapView extends VBox {
             canvasHost.getChildren().remove(preview);
         }
         preview.dispose();
+        repaintPreviewConnectors();
     }
 
     private void touchPreview(Path path, ProjectMapPreview preview) {
@@ -739,6 +757,61 @@ final class ProjectMapView extends VBox {
     private static double clampPreview(double value, double minimum, double maximum) {
         return Math.max(minimum, Math.min(maximum, value));
     }
+
+    private void repaintPreviewConnectors() {
+        GraphicsContext g = previewConnectorCanvas.getGraphicsContext2D();
+        g.clearRect(0, 0, previewConnectorCanvas.getWidth(), previewConnectorCanvas.getHeight());
+        previewConnectors.clear();
+        g.setStroke(surface.accentColor());
+        g.setGlobalAlpha(0.78);
+        g.setLineWidth(1.5);
+        for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
+            ProjectMapPreview preview = entry.getValue();
+            MapSurface.NodeBox anchor = surface.nodeBox(entry.getKey());
+            if (!preview.isVisible() || anchor == null || preview.getWidth() <= 0 || preview.getHeight() <= 0) {
+                continue;
+            }
+            previewConnectors.put(entry.getKey(), drawPreviewConnector(g, anchor, preview));
+        }
+        g.setGlobalAlpha(1);
+    }
+
+    private PreviewConnector drawPreviewConnector(
+            GraphicsContext g, MapSurface.NodeBox anchor, ProjectMapPreview preview) {
+        double x1;
+        double y1;
+        double x2;
+        double y2;
+        boolean horizontal = flowFilter.getValue() == FlowDirection.LEFT_TO_RIGHT
+                || flowFilter.getValue() == FlowDirection.RIGHT_TO_LEFT;
+        if (horizontal) {
+            boolean previewAfter = preview.getLayoutX() + preview.getWidth() / 2 >= anchor.x() + anchor.width() / 2;
+            x1 = previewAfter ? anchor.x() + anchor.width() : anchor.x();
+            y1 = anchor.y() + anchor.height() / 2;
+            x2 = previewAfter ? preview.getLayoutX() : preview.getLayoutX() + preview.getWidth();
+            y2 = clampPreview(y1, preview.getLayoutY(), preview.getLayoutY() + preview.getHeight());
+            double control = Math.max(18, Math.abs(x2 - x1) * 0.45);
+            g.beginPath();
+            g.moveTo(x1, y1);
+            g.bezierCurveTo(
+                    x1 + (previewAfter ? control : -control), y1, x2 + (previewAfter ? -control : control), y2, x2, y2);
+        } else {
+            boolean previewAfter = preview.getLayoutY() + preview.getHeight() / 2 >= anchor.y() + anchor.height() / 2;
+            x1 = anchor.x() + anchor.width() / 2;
+            y1 = previewAfter ? anchor.y() + anchor.height() : anchor.y();
+            x2 = clampPreview(x1, preview.getLayoutX(), preview.getLayoutX() + preview.getWidth());
+            y2 = previewAfter ? preview.getLayoutY() : preview.getLayoutY() + preview.getHeight();
+            double control = Math.max(18, Math.abs(y2 - y1) * 0.45);
+            g.beginPath();
+            g.moveTo(x1, y1);
+            g.bezierCurveTo(
+                    x1, y1 + (previewAfter ? control : -control), x2, y2 + (previewAfter ? -control : control), x2, y2);
+        }
+        g.stroke();
+        return new PreviewConnector(x1, y1, x2, y2);
+    }
+
+    private record PreviewConnector(double startX, double startY, double endX, double endY) {}
 
     private void recordSelection(Path path) {
         Path normalized = ProjectMapModel.normalize(path);
@@ -1172,6 +1245,7 @@ final class ProjectMapView extends VBox {
             try {
                 paint();
                 completedPaints++;
+                repaintPreviewConnectors();
             } finally {
                 painting = false;
             }
@@ -2626,6 +2700,17 @@ final class ProjectMapView extends VBox {
         private Color color(Rectangle probe, Color fallback) {
             Paint fill = probe.getFill();
             return fill instanceof Color value ? value : fallback;
+        }
+
+        private Color accentColor() {
+            return color(accentProbe, Color.web("#58a6ff"));
+        }
+
+        private NodeBox nodeBox(Path path) {
+            return boxes.stream()
+                    .filter(box -> box.entry().path().equals(path))
+                    .findFirst()
+                    .orElse(null);
         }
 
         private boolean inViewport(NodeBox box, double width, double height) {
