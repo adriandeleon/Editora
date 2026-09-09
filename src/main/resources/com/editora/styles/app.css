@@ -1202,6 +1202,40 @@
     -fx-border-width: 0 2 2 0;
     -fx-opacity: 0.72;
 }
+.project-map-note-preview-frame,
+.project-map-note-preview-scroll,
+.project-map-note-preview-scroll > .viewport,
+.project-map-note-preview-notes {
+    -fx-background-color: #fff9c4;
+}
+.project-map-note-preview-header {
+    -fx-background-color: #fff3ad;
+    -fx-border-color: transparent transparent #eadf9b transparent;
+}
+.project-map-note-preview .label,
+.project-map-note-preview .button {
+    -fx-text-fill: #3d3520;
+}
+.project-map-note-preview-kind {
+    -fx-background-color: rgba(112, 90, 0, 0.12);
+    -fx-background-radius: 4;
+    -fx-padding: 1 5 1 5;
+    -fx-font-size: 8px;
+    -fx-font-weight: bold;
+}
+.project-map-note-preview-editor {
+    -fx-control-inner-background: #fff9c4;
+    -fx-text-fill: #3d3520;
+    -fx-highlight-fill: #eadf9b;
+    -fx-highlight-text-fill: #3d3520;
+    -fx-border-color: #eadf9b;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-font-size: 12px;
+}
+.project-map-note-preview-empty {
+    -fx-text-fill: #6b6040;
+}
 
 /* Zero-sized Shapes let Canvas painting consume the active AtlantaFX palette after CSS resolution. */
 .project-map-probe-bg { -fx-fill: -color-bg-default; }

@@ -227,7 +227,7 @@ final class NotesCoordinator {
             open.refreshGutter();
             return;
         }
-        String key = PathKeys.canonicalKey(file);
+        String key = noteStoreKey(file);
         FileIdentity identity = FileIdentity.of(file);
         if (draft == null) {
             draft = new NoteDraft(folder ? NoteScope.FOLDER : NoteScope.LINE, new TextAnchor(0, 0, 0, 0, "", "", ""));
@@ -240,7 +240,7 @@ final class NotesCoordinator {
         refreshViews();
     }
 
-    private List<PersonalNote> notesFor(Path file) {
+    List<PersonalNote> notesFor(Path file) {
         String literal = file.toString();
         Map<String, List<PersonalNote>> map = ops.notes();
         List<PersonalNote> direct = map.get(literal);
@@ -259,6 +259,41 @@ final class NotesCoordinator {
             }
         }
         return null;
+    }
+
+    void updatePersonalNote(Path file, PersonalNote note, String body) {
+        if (!isEnabled() || file == null || note == null || body == null || body.isBlank()) {
+            return;
+        }
+        EditorBuffer open = ops.bufferForPath(file);
+        if (open != null) {
+            open.getNoteManager().update(note.withBody(body.strip()));
+            open.refreshGutter();
+            refreshViews();
+            return;
+        }
+        String key = PathKeys.canonicalKey(file);
+        updateBucketNotes(
+                ops.currentProjectKey(),
+                key,
+                list -> list.replaceAll(
+                        candidate -> candidate.id().equals(note.id()) ? candidate.withBody(body.strip()) : candidate));
+    }
+
+    private String noteStoreKey(Path file) {
+        String literal = file.toString();
+        for (Map.Entry<String, List<PersonalNote>> entry : ops.notes().entrySet()) {
+            if (entry.getKey().equals(literal)) {
+                return entry.getKey();
+            }
+            for (PersonalNote candidate : entry.getValue() == null ? List.<PersonalNote>of() : entry.getValue()) {
+                FileIdentity identity = candidate.file();
+                if (identity != null && (literal.equals(identity.path()) || literal.equals(identity.canonicalPath()))) {
+                    return entry.getKey();
+                }
+            }
+        }
+        return PathKeys.canonicalKey(file);
     }
 
     private void refreshViews() {

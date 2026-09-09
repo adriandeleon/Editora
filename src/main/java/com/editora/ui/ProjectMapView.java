@@ -66,6 +66,7 @@ import javafx.stage.WindowEvent;
 import javafx.util.Duration;
 import javafx.util.StringConverter;
 
+import com.editora.config.PersonalNote;
 import com.editora.git.GitFileStatus;
 
 import static com.editora.i18n.Messages.tr;
@@ -95,6 +96,7 @@ final class ProjectMapView extends VBox {
     private final ToggleButton gitFilter = filterButton("project.map.filter.gitChanged");
     private final ToggleButton bookmarksFilter = filterButton("project.map.filter.bookmarks");
     private final ToggleButton personalNotesFilter = filterButton("project.map.filter.personalNotes");
+    private final ToggleButton hideOpenNotes = filterButton("project.map.filter.hideOpenNotes");
     private final ComboBox<ProjectMapModel.TypeFilter> typeFilter = new ComboBox<>();
     private final ComboBox<FlowDirection> flowFilter = new ComboBox<>();
     private final Button backButton = new Button("‹");
@@ -106,6 +108,7 @@ final class ProjectMapView extends VBox {
     private final Canvas previewConnectorCanvas = new Canvas(1, 1);
     private final Map<Path, PreviewConnector> previewConnectors = new HashMap<>();
     private final Map<Path, ProjectMapPreview> previews = new LinkedHashMap<>(16, 0.75f, true);
+    private final Map<Path, ProjectMapNotePreview> notePreviews = new LinkedHashMap<>(16, 0.75f, true);
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "project-map-loader");
         thread.setDaemon(true);
@@ -129,6 +132,7 @@ final class ProjectMapView extends VBox {
     private Consumer<Image> onPrint = ignored -> {};
     private Consumer<Image> onExportPdf = ignored -> {};
     private ProjectMapPreview.MarkerActions previewMarkerActions;
+    private ProjectPanel.MarkerActions notePreviewActions;
     private StackPane canvasHost;
 
     ProjectMapView(Consumer<Path> onOpenFile, Predicate<Path> isOpen, Predicate<Path> isModified) {
@@ -153,6 +157,7 @@ final class ProjectMapView extends VBox {
         surface.setOnActivate(this::activate);
         surface.setOnCloseColumn(this::closeColumn);
         surface.setOnPreview(this::previewSelection);
+        surface.setOnNotesPreview(this::previewNotes);
         surface.setOnSelectionChanged(this::selectionChanged);
         surface.setStatusSuppliers(this.isOpen, this.isModified);
         updateFilters();
@@ -220,6 +225,8 @@ final class ProjectMapView extends VBox {
             gitFilter.setSelected(false);
             bookmarksFilter.setSelected(false);
             personalNotesFilter.setSelected(false);
+            hideOpenNotes.setSelected(false);
+            updateNotePreviewVisibility();
             typeFilter.setValue(ProjectMapModel.TypeFilter.ALL);
             surface.clearColumnFilters();
             updateFilters();
@@ -229,6 +236,7 @@ final class ProjectMapView extends VBox {
                 List.of(openFilter, modifiedFilter, gitFilter, bookmarksFilter, personalNotesFilter)) {
             button.setOnAction(event -> updateFilters());
         }
+        hideOpenNotes.setOnAction(event -> updateNotePreviewVisibility());
         typeFilter.setOnAction(event -> updateFilters());
         flowFilter.setOnAction(event -> {
             FlowDirection flow = flowFilter.getValue();
@@ -245,6 +253,7 @@ final class ProjectMapView extends VBox {
                 gitFilter,
                 bookmarksFilter,
                 personalNotesFilter,
+                hideOpenNotes,
                 typeFilter,
                 flowFilter,
                 clear);
@@ -452,6 +461,10 @@ final class ProjectMapView extends VBox {
         previews.values().forEach(preview -> preview.setMarkerActions(actions));
     }
 
+    void setNotePreviewActions(ProjectPanel.MarkerActions actions) {
+        notePreviewActions = actions;
+    }
+
     void refresh() {
         reload();
     }
@@ -625,6 +638,38 @@ final class ProjectMapView extends VBox {
                         previewPlacement(selectedPreview, entry.path(), width, height, parentWidth, parentHeight));
     }
 
+    private void previewNotes(Path path) {
+        if (notePreviewActions == null || !notePreviewActions.personalNotesEnabled()) {
+            return;
+        }
+        Path selected = path.toAbsolutePath().normalize();
+        ProjectMapNotePreview existing = notePreviews.get(selected);
+        if (existing != null) {
+            existing.setVisible(!hideOpenNotes.isSelected());
+            existing.toFront();
+            existing.requestFocus();
+            return;
+        }
+        List<PersonalNote> values = notePreviewActions.personalNotes(selected);
+        if (values.isEmpty()) {
+            return;
+        }
+        if (notePreviews.size() >= MAX_OPEN_PREVIEWS) {
+            closeNotePreview(notePreviews.values().iterator().next());
+        }
+        ProjectMapNotePreview preview =
+                new ProjectMapNotePreview((note, body) -> notePreviewActions.updatePersonalNote(selected, note, body));
+        preview.setOnClose(() -> closeNotePreview(preview));
+        preview.setOnActivate(() -> touchNotePreview(selected, preview));
+        installPreviewListeners(preview);
+        notePreviews.put(selected, preview);
+        canvasHost.getChildren().add(preview);
+        ProjectMapPreview.Placement placement =
+                previewPlacement(preview, selected, 420, 300, canvasHost.getWidth(), canvasHost.getHeight());
+        preview.showNotes(selected, values, placement);
+        updateNotePreviewVisibility();
+    }
+
     private ProjectMapPreview createPreview(Path path) {
         if (previews.size() >= MAX_OPEN_PREVIEWS) {
             closePreview(previews.values().iterator().next());
@@ -633,14 +678,42 @@ final class ProjectMapView extends VBox {
         preview.setMarkerActions(previewMarkerActions);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchPreview(path, preview));
+        installPreviewListeners(preview);
+        previews.put(path, preview);
+        canvasHost.getChildren().add(preview);
+        return preview;
+    }
+
+    private void installPreviewListeners(Region preview) {
         preview.layoutXProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
         preview.layoutYProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
         preview.widthProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
         preview.heightProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
         preview.visibleProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
-        previews.put(path, preview);
-        canvasHost.getChildren().add(preview);
-        return preview;
+    }
+
+    private void closeNotePreview(ProjectMapNotePreview preview) {
+        if (preview == null) {
+            return;
+        }
+        notePreviews.entrySet().removeIf(entry -> entry.getValue() == preview);
+        if (canvasHost != null) {
+            canvasHost.getChildren().remove(preview);
+        }
+        preview.dispose();
+        repaintPreviewConnectors();
+    }
+
+    private void touchNotePreview(Path path, ProjectMapNotePreview preview) {
+        if (notePreviews.get(path) == preview) {
+            preview.toFront();
+        }
+    }
+
+    private void updateNotePreviewVisibility() {
+        boolean visible = !hideOpenNotes.isSelected();
+        notePreviews.values().forEach(preview -> preview.setVisible(visible));
+        repaintPreviewConnectors();
     }
 
     private void closePreview(ProjectMapPreview preview) {
@@ -671,6 +744,15 @@ final class ProjectMapView extends VBox {
             }
             preview.dispose();
         }
+        List<ProjectMapNotePreview> openNotes = List.copyOf(notePreviews.values());
+        notePreviews.clear();
+        for (ProjectMapNotePreview preview : openNotes) {
+            if (canvasHost != null) {
+                canvasHost.getChildren().remove(preview);
+            }
+            preview.dispose();
+        }
+        repaintPreviewConnectors();
     }
 
     private void closePreviewsUnder(Path directory) {
@@ -679,19 +761,20 @@ final class ProjectMapView extends VBox {
                 .map(Map.Entry::getValue)
                 .toList();
         closing.forEach(this::closePreview);
+        List<ProjectMapNotePreview> closingNotes = notePreviews.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith(directory))
+                .map(Map.Entry::getValue)
+                .toList();
+        closingNotes.forEach(this::closeNotePreview);
     }
 
     private void constrainPreviews(double width, double height) {
         previews.values().forEach(preview -> preview.constrainTo(width, height));
+        notePreviews.values().forEach(preview -> preview.constrainTo(width, height));
     }
 
     private ProjectMapPreview.Placement previewPlacement(
-            ProjectMapPreview preview,
-            Path path,
-            double width,
-            double height,
-            double parentWidth,
-            double parentHeight) {
+            Region preview, Path path, double width, double height, double parentWidth, double parentHeight) {
         ProjectMapPreview.Placement preferred =
                 surface.previewPlacement(path, width, height, parentWidth, parentHeight);
         if (!overlapsPreview(preview, preferred.x(), preferred.y(), preferred.width(), preferred.height())) {
@@ -739,8 +822,10 @@ final class ProjectMapView extends VBox {
         return new ProjectMapPreview.Placement(x, y, preferred.width(), preferred.height());
     }
 
-    private boolean overlapsPreview(ProjectMapPreview candidate, double x, double y, double width, double height) {
-        for (ProjectMapPreview other : previews.values()) {
+    private boolean overlapsPreview(Region candidate, double x, double y, double width, double height) {
+        List<Region> all = new ArrayList<>(previews.values());
+        all.addAll(notePreviews.values());
+        for (Region other : all) {
             if (other == candidate || !other.isVisible()) {
                 continue;
             }
@@ -773,11 +858,19 @@ final class ProjectMapView extends VBox {
             }
             previewConnectors.put(entry.getKey(), drawPreviewConnector(g, anchor, preview));
         }
+        g.setStroke(Color.web("#b08a00"));
+        for (Map.Entry<Path, ProjectMapNotePreview> entry : notePreviews.entrySet()) {
+            ProjectMapNotePreview preview = entry.getValue();
+            MapSurface.NodeBox anchor = surface.nodeBox(entry.getKey());
+            if (!preview.isVisible() || anchor == null || preview.getWidth() <= 0 || preview.getHeight() <= 0) {
+                continue;
+            }
+            drawPreviewConnector(g, anchor, preview);
+        }
         g.setGlobalAlpha(1);
     }
 
-    private PreviewConnector drawPreviewConnector(
-            GraphicsContext g, MapSurface.NodeBox anchor, ProjectMapPreview preview) {
+    private PreviewConnector drawPreviewConnector(GraphicsContext g, MapSurface.NodeBox anchor, Region preview) {
         double x1;
         double y1;
         double x2;
@@ -984,6 +1077,7 @@ final class ProjectMapView extends VBox {
         private Consumer<ProjectMapModel.Entry> onActivate = entry -> {};
         private Consumer<Path> onCloseColumn = path -> {};
         private Consumer<Path> onPreview = path -> {};
+        private Consumer<Path> onNotesPreview = path -> {};
         private Consumer<Path> onSelectionChanged = path -> {};
         private Function<ProjectMapModel.Entry, ContextMenu> contextMenuFactory = entry -> null;
         private Runnable onZoomChanged = () -> {};
@@ -1096,6 +1190,10 @@ final class ProjectMapView extends VBox {
 
         void setOnPreview(Consumer<Path> onPreview) {
             this.onPreview = onPreview == null ? path -> {} : onPreview;
+        }
+
+        void setOnNotesPreview(Consumer<Path> onNotesPreview) {
+            this.onNotesPreview = onNotesPreview == null ? path -> {} : onNotesPreview;
         }
 
         void setOnSelectionChanged(Consumer<Path> callback) {
@@ -1944,8 +2042,8 @@ final class ProjectMapView extends VBox {
             g.fillText(entry.name(), box.x() + 31 * zoom, box.y() + 20.5 * zoom);
 
             drawStatusDots(g, entry, box);
+            drawFileMarkers(g, entry, box, isSelected);
             if (!entry.directory()) {
-                drawFileMarkers(g, entry, box, isSelected);
                 g.setFill(isSelected ? Color.WHITE : color(mutedProbe, Color.web("#8b949e")));
                 g.setFont(Font.font(Math.max(9, 11 * zoom)));
                 g.fillText("◉", box.x() + box.width() - 21 * zoom, box.y() + 20.5 * zoom);
@@ -2058,9 +2156,6 @@ final class ProjectMapView extends VBox {
         /** Small bookmark and note outlines drawn directly on the Canvas (no scene-graph nodes per row). */
         private void drawFileMarkers(
                 GraphicsContext g, ProjectMapModel.Entry entry, NodeBox box, boolean selectedNode) {
-            if (entry.directory()) {
-                return;
-            }
             double x = box.x() + box.width() - 35 * zoom;
             double y = box.y() + 10 * zoom;
             g.setLineWidth(Math.max(1, 1.25 * zoom));
@@ -2265,7 +2360,9 @@ final class ProjectMapView extends VBox {
                 return;
             }
             select(hit.entry().path());
-            if (!hit.entry().directory() && previewHit(hit, event.getX())) {
+            if (notePreviewHit(hit, event.getX())) {
+                onNotesPreview.accept(hit.entry().path());
+            } else if (!hit.entry().directory() && previewHit(hit, event.getX())) {
                 onPreview.accept(hit.entry().path());
             } else if (event.getClickCount() == 1) {
                 onActivate.accept(hit.entry());
@@ -2275,6 +2372,14 @@ final class ProjectMapView extends VBox {
 
         private boolean previewHit(NodeBox box, double x) {
             return x >= box.x() + box.width() - 29 * zoom;
+        }
+
+        private boolean notePreviewHit(NodeBox box, double x) {
+            if (!notedPaths.contains(box.entry().path())) {
+                return false;
+            }
+            double right = box.x() + box.width() - 29 * zoom;
+            return x >= right - 13 * zoom && x < right;
         }
 
         private void contextMenuRequested(ContextMenuEvent event) {
