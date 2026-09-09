@@ -2908,6 +2908,9 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 0.9em;
 }
+.welcome-recent-disclosure {
+    -fx-padding: 3 6 3 6;
+}
 .recent-project-name {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 0.9em;

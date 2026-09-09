@@ -1,5 +1,8 @@
 # Changelog
 
+- **The Welcome page keeps long Recent lists compact.** It now shows the five newest valid files first and
+  provides an accessible disclosure chevron to show or hide any remaining entries.
+
 - Project Canvas Personal Notes badges now open independent, editable note cards for files and folders. Each
   card keeps a parent connector, can coexist with its code preview, and can be temporarily hidden with the
   default-off “Hide all open Personal Notes” filter toggle.
