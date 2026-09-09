@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The HTML **Open in Browser** control now stays inside the code editor when the minimap is shown instead
+  of floating over the minimap.
+
 ## [0.17.0] - 2026-09-08
 
 ### Changed
