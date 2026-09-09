@@ -48,6 +48,7 @@ import javafx.scene.paint.Color;
 import javafx.util.Duration;
 
 import com.editora.editor.NoteDraft;
+import com.editora.editor.PersonalNoteTooltip;
 import com.editora.search.FuzzyMatch;
 
 import static com.editora.i18n.Messages.tr;
@@ -1753,7 +1754,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     if (isDir) {
                         String text = markerActions.personalNotesTooltip(item);
                         if (text != null && !text.isBlank()) {
-                            Tooltip notes = new Tooltip(text);
+                            Tooltip notes = PersonalNoteTooltip.create(text);
                             notes.setWrapText(true);
                             notes.setMaxWidth(420);
                             setTooltip(notes);

@@ -685,20 +685,10 @@ public class EditorBuffer implements TabContent {
     /** Invoked when the user clicks a note's inline start marker — the controller opens the note editor. */
     private java.util.function.BiConsumer<EditorBuffer, com.editora.config.PersonalNote> noteMarkerClick = (b, n) -> {};
     /** Reused hover tooltip + the id of the note it's currently showing (so we only update on change). */
-    private final javafx.scene.control.Tooltip noteTip = personalNoteTooltip();
+    private final javafx.scene.control.Tooltip noteTip = PersonalNoteTooltip.create();
 
     private java.util.UUID hoverNoteId;
 
-    private static javafx.scene.control.Tooltip personalNoteTooltip() {
-        javafx.scene.control.Tooltip tooltip = new javafx.scene.control.Tooltip();
-        tooltip.getStyleClass().add("personal-note-tooltip");
-        // Tooltip owns a separate popup scene and may replace it when first shown, so an author stylesheet
-        // attached here would be lost. Keep the shell color inline; the graphic carries app.css for its
-        // richer Markdown subtree below.
-        tooltip.setStyle("-fx-background-color: #fff9c4; -fx-text-fill: #3d3520; "
-                + "-fx-border-color: #eadf9b; -fx-border-width: 1px; -fx-border-radius: 7px;");
-        return tooltip;
-    }
     /** Handles a gutter note-marker click (the controller opens/edits that line's note). Default: no-op. */
     /** Handles a click on a line's blame annotation (the controller shows that line's commit). Default: no-op. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBlameClick = (buffer, line) -> {};
