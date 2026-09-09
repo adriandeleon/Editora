@@ -1,6 +1,8 @@
 package com.editora.history;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
@@ -10,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Content-addressed gzip blob storage: round-trip, idempotent writes, dedup by hash, and GC. */
 class HistoryBlobStoreTest {
@@ -56,6 +59,25 @@ class HistoryBlobStoreTest {
         store.deleteUnreferenced(Set.of(keep));
         assertEquals("keep me", store.get(keep));
         assertNull(store.get(drop));
+    }
+
+    @Test
+    void blobsAndDirectoriesAreOwnerOnly(@TempDir Path dir) throws Exception {
+        assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
+        HistoryBlobStore store = new HistoryBlobStore(dir);
+        String sha = store.put("private history");
+        Path shard = dir.resolve(sha.substring(0, 2));
+        Path blob = shard.resolve(sha + ".txt.gz");
+
+        assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(dir)));
+        assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(shard)));
+        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(blob)));
+
+        Files.setPosixFilePermissions(blob, PosixFilePermissions.fromString("rw-r--r--"));
+        Files.setPosixFilePermissions(shard, PosixFilePermissions.fromString("rwxr-xr-x"));
+        store.hardenExisting();
+        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(blob)));
+        assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(shard)));
     }
 
     @Test

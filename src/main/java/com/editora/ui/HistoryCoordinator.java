@@ -18,7 +18,6 @@ import javafx.scene.control.ButtonType;
 import com.editora.config.HistoryRevision;
 import com.editora.config.PathKeys;
 import com.editora.editor.EditorBuffer;
-import com.editora.history.HistoryBlobStore;
 import com.editora.history.HistoryQueries;
 import com.editora.history.HistoryRetention;
 import com.editora.history.HistoryService;
@@ -70,16 +69,31 @@ final class HistoryCoordinator {
     private final DiffCoordinator diff;
     private final Ops ops;
     private final HistoryService historyService;
+    private final boolean ownsHistoryService;
     /** Records submitted but not yet folded into the index — blob GC is only safe at zero (FX-confined). */
     private int recordsInFlight;
 
     private final FileHistoryPanel panel;
 
     HistoryCoordinator(CoordinatorHost host, DiffCoordinator diff, Ops ops) {
+        this(host, diff, ops, new HistoryService(new com.editora.history.HistoryBlobStore(ops.blobsDir())), true);
+    }
+
+    HistoryCoordinator(CoordinatorHost host, DiffCoordinator diff, Ops ops, HistoryService historyService) {
+        this(host, diff, ops, historyService, false);
+    }
+
+    private HistoryCoordinator(
+            CoordinatorHost host,
+            DiffCoordinator diff,
+            Ops ops,
+            HistoryService historyService,
+            boolean ownsHistoryService) {
         this.host = host;
         this.diff = diff;
         this.ops = ops;
-        this.historyService = new HistoryService(new HistoryBlobStore(ops.blobsDir()));
+        this.historyService = historyService;
+        this.ownsHistoryService = ownsHistoryService;
         this.panel = new FileHistoryPanel(historyActions());
         this.panel.setDiffSupport(diffSupport());
     }
@@ -140,7 +154,9 @@ final class HistoryCoordinator {
     }
 
     void shutdown() {
-        historyService.shutdown();
+        if (ownsHistoryService) {
+            historyService.shutdown();
+        }
     }
 
     /** Effective Local File History gate: the setting, but off in Simple UI mode (saved setting unchanged). */
@@ -184,6 +200,11 @@ final class HistoryCoordinator {
             return;
         }
         recordFor(buffer.getPath(), buffer.getContent(), reason, "", false);
+    }
+
+    /** Records caller-captured content, used before a closed-file bulk replacement rewrites the file. */
+    void record(Path file, String content, String reason) {
+        recordFor(file, content, reason, "", false);
     }
 
     /**

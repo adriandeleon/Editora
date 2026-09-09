@@ -122,13 +122,22 @@ public final class ProcessRegistry {
         if (p == null) {
             return;
         }
-        destroyTree(p, false);
+        List<ProcessHandle> descendants;
         try {
+            descendants = p.descendants().toList();
+        } catch (RuntimeException ignored) {
+            descendants = List.of();
+        }
+        destroyHandles(descendants, false);
+        destroyRoot(p, false);
+        try {
+            List<ProcessHandle> captured = descendants;
             SCHEDULER.schedule(
                     () -> {
-                        if (p.isAlive() || p.descendants().findAny().isPresent()) {
-                            destroyTree(p, true);
-                        }
+                        // A child can be reparented as soon as the wrapper exits. Keep the original handles;
+                        // asking the dead parent for descendants again can no longer find those survivors.
+                        destroyHandles(captured, true);
+                        destroyTree(p, true); // also catch descendants forked during the grace period
                         untrack(p);
                     },
                     GRACE_MS,
@@ -145,17 +154,37 @@ public final class ProcessRegistry {
     private static void destroyTree(Process p, boolean force) {
         try {
             List<ProcessHandle> tree = p.descendants().toList();
-            for (ProcessHandle h : tree) {
-                if (force) {
-                    h.destroyForcibly();
-                } else {
-                    h.destroy();
+            destroyHandles(tree, force);
+            destroyRoot(p, force);
+        } catch (RuntimeException ignored) {
+            // best effort
+        }
+    }
+
+    private static void destroyHandles(List<ProcessHandle> handles, boolean force) {
+        for (ProcessHandle handle : handles) {
+            try {
+                if (handle.isAlive()) {
+                    if (force) {
+                        handle.destroyForcibly();
+                    } else {
+                        handle.destroy();
+                    }
                 }
+            } catch (RuntimeException ignored) {
+                // best effort per descendant; one inaccessible process must not skip the rest
             }
-            if (force) {
-                p.destroyForcibly();
-            } else {
-                p.destroy();
+        }
+    }
+
+    private static void destroyRoot(Process process, boolean force) {
+        try {
+            if (process.isAlive()) {
+                if (force) {
+                    process.destroyForcibly();
+                } else {
+                    process.destroy();
+                }
             }
         } catch (RuntimeException ignored) {
             // best effort

@@ -218,7 +218,11 @@ public final class GitService {
     // --- diff viewer: blob content + history -----------------------------------------------------
 
     /** Raw blob lookup result. {@code found} distinguishes a valid empty blob from a missing stage/spec. */
-    public record BlobResult(boolean found, byte[] bytes) {
+    public record BlobResult(boolean found, byte[] bytes, boolean truncated) {
+        public BlobResult(boolean found, byte[] bytes) {
+            this(found, bytes, false);
+        }
+
         public BlobResult {
             bytes = bytes == null ? new byte[0] : bytes.clone();
         }
@@ -241,7 +245,9 @@ public final class GitService {
                 List<String> cmd = gitArgv("show", spec);
                 ProcessRunner.BytesResult r =
                         ProcessRunner.runBytes(root, QUICK, cmd, Map.of("GIT_OPTIONAL_LOCKS", "0"));
-                if (r.ok()) {
+                if (r.ok() && r.outTruncated()) {
+                    result = new BlobResult(false, new byte[0], true);
+                } else if (r.ok()) {
                     result = new BlobResult(true, r.out());
                 }
             }

@@ -43,6 +43,24 @@ class GitBlobLookupFxTest {
         }
     }
 
+    @Test
+    void refusesABlobWhoseCapturedBytesAreIncomplete() throws Exception {
+        Path repo = Files.createTempDirectory("editora-large-blob");
+        git(repo, "init", "-q");
+        Path file = repo.resolve("large.txt");
+        Files.write(file, new byte[10 * 1024 * 1024 + 1]);
+        String hash = gitOutput(repo, "hash-object", "-w", file.toString()).strip();
+
+        GitService service = new GitService();
+        try {
+            GitService.BlobResult result = lookup(service, repo, hash);
+            assertFalse(result.found(), "a truncated prefix must never be presented as an exact Git blob");
+            assertTrue(result.truncated(), "the caller must be able to distinguish size refusal from absence");
+        } finally {
+            service.shutdown();
+        }
+    }
+
     private static GitService.BlobResult lookup(GitService service, Path repo, String spec) throws Exception {
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<GitService.BlobResult> result = new AtomicReference<>();
@@ -55,6 +73,10 @@ class GitBlobLookupFxTest {
     }
 
     private static void git(Path dir, String... args) throws Exception {
+        gitOutput(dir, args);
+    }
+
+    private static String gitOutput(Path dir, String... args) throws Exception {
         String[] command = new String[args.length + 1];
         command[0] = "git";
         System.arraycopy(args, 0, command, 1, args.length);
@@ -66,5 +88,6 @@ class GitBlobLookupFxTest {
         if (process.waitFor() != 0) {
             throw new IllegalStateException(output);
         }
+        return output;
     }
 }

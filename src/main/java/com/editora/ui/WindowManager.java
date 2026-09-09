@@ -581,12 +581,19 @@ public class WindowManager {
         }
         for (Holder h : new ArrayList<>(windows)) {
             try {
+                h.controller().disposePlugins();
+            } catch (RuntimeException | Error t) {
+                java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                        .log(java.util.logging.Level.WARNING, "plugin disposal failed during quit", t);
+            }
+            try {
                 h.controller().disposeWindow(); // shut this window's services + kill its subprocesses
             } catch (RuntimeException | Error t) {
                 java.util.logging.Logger.getLogger(WindowManager.class.getName())
                         .log(java.util.logging.Level.WARNING, "disposeWindow failed during quit", t);
             }
         }
+        pluginManager.closeAll();
         return true;
     }
 

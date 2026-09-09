@@ -25,6 +25,8 @@ import com.editora.ui.Themes;
  */
 public class App extends Application {
 
+    private SharedConfig sharedConfig;
+
     // Quiet tm4e/Oniguruma grammar-compile WARNINGs ("']' without escape", "No grammar source for
     // scope …") — benign noise from bundled-grammar regex quirks. Held in a static field so the JUL
     // logger isn't garbage-collected (which would silently drop the configured level). SEVERE still
@@ -67,6 +69,7 @@ public class App extends Application {
         ConfigManager bootstrap = boot.manager();
         Settings settings = boot.settings();
         SharedConfig shared = bootstrap.shared();
+        sharedConfig = shared;
         com.editora.perf.Startup.mark(com.editora.perf.Startup.CONFIG_LOADED);
         // Flush any pending off-thread settings/session writes on exit, covering paths where persistSession()
         // doesn't run (the normal quit already flushes via its blocking config.save()).
@@ -151,6 +154,14 @@ public class App extends Application {
         // on the accept thread, so hop to the FX thread before touching any window.
         if (singleInstance != null && singleInstance.instance() != null) {
             singleInstance.instance().setListener(args -> Platform.runLater(() -> openForwardedLaunch(windows, args)));
+        }
+    }
+
+    @Override
+    public void stop() {
+        if (sharedConfig != null) {
+            sharedConfig.shutdown();
+            sharedConfig = null;
         }
     }
 

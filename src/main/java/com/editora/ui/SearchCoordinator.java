@@ -1,18 +1,30 @@
 package com.editora.ui;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import javafx.application.Platform;
+import javafx.collections.ObservableList;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.io.DocumentWriteSequencer;
 import com.editora.search.Globs;
 import com.editora.search.MultiFileSearch;
 import com.editora.search.Ripgrep;
@@ -48,6 +60,17 @@ final class SearchCoordinator {
         /** The open buffer for {@code file}, or {@code null} if it isn't open (replace then rewrites disk). */
         EditorBuffer bufferForPath(Path file);
 
+        /** True while {@code buffer}'s real content is still being loaded. */
+        default boolean isBufferLoading(EditorBuffer buffer) {
+            return false;
+        }
+
+        /** Captures local history before a closed file is rewritten. */
+        default void recordHistory(Path file, String content) {}
+
+        /** Orders this rewrite with saves from every window. */
+        DocumentWriteSequencer.Ticket beginDocumentWrite(Path file);
+
         /** Records a run query into the persistent search history. */
         void recordSearch(String query);
 
@@ -58,9 +81,102 @@ final class SearchCoordinator {
         void syncRipgrepStatus(boolean found);
     }
 
+    @FunctionalInterface
+    interface MatchOpener {
+        void open(Path file, int line, int col, boolean focusEditor);
+    }
+
+    record Navigation(
+            Supplier<Path> projectRoot,
+            MatchOpener openMatch,
+            BooleanSupplier toolWindowOpen,
+            Runnable openToolWindow,
+            Runnable closeToolWindow) {}
+
+    record ReplaceSupport(
+            Function<Path, EditorBuffer> bufferForPath,
+            Predicate<EditorBuffer> bufferLoading,
+            BiConsumer<Path, String> recordHistory,
+            Function<Path, DocumentWriteSequencer.Ticket> beginDocumentWrite) {}
+
+    record Persistence(
+            Consumer<String> recordSearch,
+            Supplier<ObservableList<String>> searchHistory,
+            Consumer<Boolean> syncRipgrepStatus) {}
+
+    /** Builds the production adapter without another long anonymous class in {@link MainController}. */
+    static Ops ops(Navigation navigation, ReplaceSupport replace, Persistence persistence) {
+        return new Ops() {
+            @Override
+            public Path projectRoot() {
+                return navigation.projectRoot().get();
+            }
+
+            @Override
+            public void openMatch(Path file, int line, int col, boolean focusEditor) {
+                navigation.openMatch().open(file, line, col, focusEditor);
+            }
+
+            @Override
+            public boolean isToolWindowOpen() {
+                return navigation.toolWindowOpen().getAsBoolean();
+            }
+
+            @Override
+            public void openToolWindow() {
+                navigation.openToolWindow().run();
+            }
+
+            @Override
+            public void closeToolWindow() {
+                navigation.closeToolWindow().run();
+            }
+
+            @Override
+            public EditorBuffer bufferForPath(Path file) {
+                return replace.bufferForPath().apply(file);
+            }
+
+            @Override
+            public boolean isBufferLoading(EditorBuffer buffer) {
+                return replace.bufferLoading().test(buffer);
+            }
+
+            @Override
+            public void recordHistory(Path file, String content) {
+                replace.recordHistory().accept(file, content);
+            }
+
+            @Override
+            public DocumentWriteSequencer.Ticket beginDocumentWrite(Path file) {
+                return replace.beginDocumentWrite().apply(file);
+            }
+
+            @Override
+            public void recordSearch(String query) {
+                persistence.recordSearch().accept(query);
+            }
+
+            @Override
+            public ObservableList<String> searchHistory() {
+                return persistence.searchHistory().get();
+            }
+
+            @Override
+            public void syncRipgrepStatus(boolean found) {
+                persistence.syncRipgrepStatus().accept(found);
+            }
+        };
+    }
+
     private final CoordinatorHost host;
     private final Ops ops;
     private final SearchService service = new SearchService();
+    private final ExecutorService replaceExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "replace-in-files");
+        t.setDaemon(true);
+        return t;
+    });
     private final SearchPanel panel;
     private SearchInFilesPopup popup; // lazily built on first use of the popup command
 
@@ -287,31 +403,141 @@ final class SearchCoordinator {
         }
         int total = 0;
         int changedFiles = 0;
+        List<Path> failedFiles = new java.util.ArrayList<>();
+        List<Path> closed = new java.util.ArrayList<>();
         for (Path file : files) {
             try {
                 EditorBuffer buffer = ops.bufferForPath(file);
                 if (buffer != null) {
-                    var r = MultiFileSearch.replaceAll(buffer.getContent(), query, replacement);
-                    if (r.count() > 0) {
-                        buffer.setContent(r.text());
-                        total += r.count();
+                    ClosedReplace result = replaceOpenBuffer(buffer, query, replacement, ops.isBufferLoading(buffer));
+                    total += result.count();
+                    if (result.changed()) {
                         changedFiles++;
+                    }
+                    if (result.failed()) {
+                        failedFiles.add(file);
                     }
                 } else {
-                    String text = Files.readString(file);
-                    var r = MultiFileSearch.replaceAll(text, query, replacement);
-                    if (r.count() > 0) {
-                        Files.writeString(file, r.text());
-                        total += r.count();
-                        changedFiles++;
-                    }
+                    closed.add(file);
                 }
-            } catch (IOException | RuntimeException e) {
-                host.setStatus(tr("search.replaceFailed", String.valueOf(file.getFileName())));
+            } catch (RuntimeException e) {
+                failedFiles.add(file);
             }
         }
-        host.setStatus(tr("search.replaced", total, changedFiles));
-        panel.refresh(); // re-run with the panel's current query + globs to refresh the results
+        if (closed.isEmpty()) {
+            finishReplace(total, changedFiles, failedFiles);
+            return;
+        }
+        int openTotal = total;
+        int openChanged = changedFiles;
+        List<Path> openFailed = List.copyOf(failedFiles);
+        replaceExecutor.submit(() -> {
+            int diskTotal = 0;
+            int diskChanged = 0;
+            List<Path> diskFailed = new java.util.ArrayList<>();
+            for (Path file : closed) {
+                ClosedReplace result;
+                try (DocumentWriteSequencer.Ticket ticket = ops.beginDocumentWrite(file)) {
+                    var outcome = ticket.runIfCurrent(() -> replaceClosedFile(
+                            file,
+                            query,
+                            replacement,
+                            original -> recordBeforeWrite(file, original),
+                            ticket::isCurrent));
+                    result = outcome.executed() ? outcome.value() : new ClosedReplace(0, false, true);
+                } catch (IOException | RuntimeException e) {
+                    result = new ClosedReplace(0, false, true);
+                }
+                diskTotal += result.count();
+                if (result.changed()) {
+                    diskChanged++;
+                }
+                if (result.failed()) {
+                    diskFailed.add(file);
+                }
+            }
+            int finalTotal = openTotal + diskTotal;
+            int finalChanged = openChanged + diskChanged;
+            List<Path> finalFailed = new java.util.ArrayList<>(openFailed);
+            finalFailed.addAll(diskFailed);
+            Platform.runLater(() -> finishReplace(finalTotal, finalChanged, finalFailed));
+        });
+    }
+
+    private void recordBeforeWrite(Path file, String original) {
+        CountDownLatch accepted = new CountDownLatch(1);
+        Platform.runLater(() -> {
+            try {
+                ops.recordHistory(file, original);
+            } finally {
+                accepted.countDown();
+            }
+        });
+        try {
+            if (!accepted.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out while recording pre-replace history");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while recording pre-replace history", e);
+        }
+    }
+
+    private void finishReplace(int total, int changedFiles, List<Path> failedFiles) {
+        if (failedFiles.isEmpty()) {
+            host.setStatus(tr("search.replaced", total, changedFiles));
+        } else {
+            String paths = failedFiles.stream()
+                    .limit(8)
+                    .map(Path::toString)
+                    .collect(java.util.stream.Collectors.joining(", "));
+            if (failedFiles.size() > 8) {
+                paths += ", …";
+            }
+            host.setError(tr("search.replacePartial", total, changedFiles, failedFiles.size()) + ": " + paths);
+        }
+        panel.refresh();
+    }
+
+    record ClosedReplace(int count, boolean changed, boolean failed) {}
+
+    static ClosedReplace replaceOpenBuffer(
+            EditorBuffer buffer, SearchQuery query, String replacement, boolean loading) {
+        if (buffer == null || loading || !buffer.isEditable() || buffer.isTruncatedLoad()) {
+            return new ClosedReplace(0, false, true);
+        }
+        var result = MultiFileSearch.replaceAll(buffer.getContent(), query, replacement);
+        if (result.count() == 0) {
+            return new ClosedReplace(0, false, false);
+        }
+        buffer.replaceWholeDocument(result.text());
+        return new ClosedReplace(result.count(), true, false);
+    }
+
+    static ClosedReplace replaceClosedFile(
+            Path file, SearchQuery query, String replacement, Consumer<String> beforeWrite) {
+        return replaceClosedFile(file, query, replacement, beforeWrite, () -> true);
+    }
+
+    static ClosedReplace replaceClosedFile(
+            Path file, SearchQuery query, String replacement, Consumer<String> beforeWrite, BooleanSupplier commit) {
+        try {
+            String original = Files.readString(file);
+            var result = MultiFileSearch.replaceAll(original, query, replacement);
+            if (result.count() == 0) {
+                return new ClosedReplace(0, false, false);
+            }
+            beforeWrite.accept(original);
+            if (!original.equals(Files.readString(file))) {
+                return new ClosedReplace(0, false, true);
+            }
+            if (!com.editora.io.AtomicFileWrite.writeIf(file, result.text().getBytes(StandardCharsets.UTF_8), commit)) {
+                return new ClosedReplace(0, false, true);
+            }
+            return new ClosedReplace(result.count(), true, false);
+        } catch (IOException | RuntimeException e) {
+            return new ClosedReplace(0, false, true);
+        }
     }
 
     /**
@@ -370,5 +596,6 @@ final class SearchCoordinator {
 
     void shutdown() {
         service.shutdown();
+        replaceExecutor.shutdownNow();
     }
 }

@@ -3,14 +3,28 @@ package com.editora.dap;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class DapManagerTest {
+
+    @Test
+    void protocolRequestsHaveABoundedDeadline() {
+        CompletableFuture<String> silent = new CompletableFuture<>();
+        CompletionException failure = org.junit.jupiter.api.Assertions.assertThrows(
+                CompletionException.class,
+                () -> DapClient.withTimeout(silent, Duration.ofMillis(20)).join());
+        assertInstanceOf(TimeoutException.class, failure.getCause());
+    }
 
     @Test
     void mainClassFromFileUsesPackagePlusBaseName(@TempDir Path dir) throws IOException {

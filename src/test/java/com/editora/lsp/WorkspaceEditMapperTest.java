@@ -119,6 +119,24 @@ class WorkspaceEditMapperTest {
         assertTrue(WorkspaceEditMapper.map(new WorkspaceEdit()).edits().isEmpty());
     }
 
+    @Test
+    void rejectsResourceOperationsWhoseOrderGroupedStagingCannotPreserve() {
+        var deleteThenCreate = new WorkspaceEdit(List.of(
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new DeleteFile(uri("/tmp/A.java"))),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/A.java")))));
+        var deleteThenRename = new WorkspaceEdit(List.of(
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new DeleteFile(uri("/tmp/A.java"))),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(
+                        new org.eclipse.lsp4j.RenameFile(uri("/tmp/B.java"), uri("/tmp/C.java")))));
+        var textThenCreate = new WorkspaceEdit(List.of(
+                Either.<TextDocumentEdit, ResourceOperation>forLeft(docEdit("/tmp/A.java", edit(0, 0, 0, 0, "text"))),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/B.java")))));
+
+        assertNull(WorkspaceEditMapper.map(deleteThenCreate));
+        assertNull(WorkspaceEditMapper.map(deleteThenRename));
+        assertNull(WorkspaceEditMapper.map(textThenCreate));
+    }
+
     // --- RenameFile resource operations (#676) -------------------------------------------------
 
     @Test

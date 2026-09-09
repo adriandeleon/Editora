@@ -3,12 +3,15 @@ package com.editora.dap;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -55,6 +58,7 @@ import org.eclipse.lsp4j.jsonrpc.Launcher;
 public final class DapClient implements IDebugProtocolClient {
 
     private static final Logger LOG = Logger.getLogger(DapClient.class.getName());
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
 
     /** Event sink (implemented by {@link DapManager}); calls arrive on the launcher's reader thread. */
     public interface Host {
@@ -67,6 +71,10 @@ public final class DapClient implements IDebugProtocolClient {
         void onTerminated();
 
         void onError(String message);
+
+        default void onTransportClosed(Throwable error) {
+            onTerminated();
+        }
     }
 
     private final Host host;
@@ -113,7 +121,7 @@ public final class DapClient implements IDebugProtocolClient {
             try {
                 SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
                 ex.setFilters(this.exceptionFilters.toArray(new String[0]));
-                server.setExceptionBreakpoints(ex);
+                ignore(timed(server.setExceptionBreakpoints(ex)));
             } catch (RuntimeException e) {
                 LOG.log(Level.WARNING, "live setExceptionBreakpoints failed", e);
             }
@@ -141,12 +149,25 @@ public final class DapClient implements IDebugProtocolClient {
      */
     public CompletableFuture<Capabilities> connect(int port, String adapterId) {
         try {
-            socket = openWithRetry(port, 50);
+            if (disposed) {
+                return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("disposed"));
+            }
+            Socket opened = openWithRetry(port, 50);
+            if (disposed) {
+                opened.close();
+                return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("disposed"));
+            }
+            socket = opened;
+            if (disposed) {
+                socket = null;
+                opened.close();
+                return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("disposed"));
+            }
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
                     this, socket.getInputStream(), socket.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
-            launcher.startListening();
-            return server.initialize(initArgs(adapterId)).thenApply(c -> {
+            watchTransport(launcher.startListening());
+            return timed(server.initialize(initArgs(adapterId))).thenApply(c -> {
                 this.capabilities = c;
                 return c;
             });
@@ -164,13 +185,23 @@ public final class DapClient implements IDebugProtocolClient {
      */
     public CompletableFuture<Capabilities> connectStdio(Process process, String adapterId) {
         try {
+            if (disposed) {
+                ProcessRegistry.killTree(process);
+                return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("disposed"));
+            }
             this.adapterProcess = process;
+            if (disposed) {
+                this.adapterProcess = null;
+                ProcessRegistry.killTree(process);
+                return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("disposed"));
+            }
             ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
+            watchProcess(process);
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
                     this, process.getInputStream(), process.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
-            launcher.startListening();
-            return server.initialize(initArgs(adapterId)).thenApply(c -> {
+            watchTransport(launcher.startListening());
+            return timed(server.initialize(initArgs(adapterId))).thenApply(c -> {
                 this.capabilities = c;
                 return c;
             });
@@ -184,7 +215,13 @@ public final class DapClient implements IDebugProtocolClient {
      *  {@link #dispose} kills it and its descendants. */
     public void setAdapterProcess(Process process) {
         this.adapterProcess = process;
+        if (disposed) {
+            this.adapterProcess = null;
+            ProcessRegistry.killTree(process);
+            return;
+        }
         ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
+        watchProcess(process);
     }
 
     private static Socket openWithRetry(int port, int tries) throws InterruptedException {
@@ -212,14 +249,51 @@ public final class DapClient implements IDebugProtocolClient {
         return a;
     }
 
+    private void watchTransport(Future<Void> listening) {
+        executor.submit(() -> {
+            Throwable failure = null;
+            try {
+                listening.get();
+            } catch (java.util.concurrent.ExecutionException e) {
+                failure = e.getCause();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            } catch (RuntimeException e) {
+                failure = e;
+            }
+            if (!disposed) {
+                host.onTransportClosed(failure);
+            }
+        });
+    }
+
+    private void watchProcess(Process process) {
+        if (process != null) {
+            process.onExit().thenRun(() -> {
+                if (!disposed) {
+                    host.onTransportClosed(null);
+                }
+            });
+        }
+    }
+
+    private static <T> CompletableFuture<T> timed(CompletableFuture<T> future) {
+        return withTimeout(future, REQUEST_TIMEOUT);
+    }
+
+    static <T> CompletableFuture<T> withTimeout(CompletableFuture<T> future, Duration timeout) {
+        return future.orTimeout(Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
+    }
+
     /** Sends the {@code launch} request (body from {@link LaunchConfig#launch}). */
     public CompletableFuture<Void> launch(Map<String, Object> args) {
-        return server.launch(args);
+        return timed(server.launch(args));
     }
 
     /** Sends the {@code attach} request (body from {@link LaunchConfig#attach}). */
     public CompletableFuture<Void> attach(Map<String, Object> args) {
-        return server.attach(args);
+        return timed(server.attach(args));
     }
 
     // --- IDebugProtocolClient events (launcher reader thread) -----------------------------------
@@ -241,9 +315,9 @@ public final class DapClient implements IDebugProtocolClient {
             if (!exceptionFilters.isEmpty()) {
                 SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
                 ex.setFilters(exceptionFilters.toArray(new String[0]));
-                server.setExceptionBreakpoints(ex);
+                ignore(timed(server.setExceptionBreakpoints(ex)));
             }
-            server.configurationDone(new ConfigurationDoneArguments());
+            ignore(timed(server.configurationDone(new ConfigurationDoneArguments())));
             configured = true; // later filter/breakpoint changes must now go on the wire themselves
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "configuration phase failed", e);
@@ -302,11 +376,11 @@ public final class DapClient implements IDebugProtocolClient {
         a.setSource(source);
         a.setBreakpoints(sbs.toArray(new SourceBreakpoint[0]));
         a.setSourceModified(false);
-        return server.setBreakpoints(a).thenApply(r -> null);
+        return timed(server.setBreakpoints(a)).thenApply(r -> null);
     }
 
     public CompletableFuture<List<DapModels.ThreadInfo>> threads() {
-        return server.threads().thenApply(r -> {
+        return timed(server.threads()).thenApply(r -> {
             List<DapModels.ThreadInfo> out = new ArrayList<>();
             if (r != null && r.getThreads() != null) {
                 for (org.eclipse.lsp4j.debug.Thread t : r.getThreads()) {
@@ -320,7 +394,7 @@ public final class DapClient implements IDebugProtocolClient {
     public CompletableFuture<List<DapModels.StackFrameInfo>> stackTrace(int threadId) {
         StackTraceArguments a = new StackTraceArguments();
         a.setThreadId(threadId);
-        return server.stackTrace(a).thenApply(r -> {
+        return timed(server.stackTrace(a)).thenApply(r -> {
             List<DapModels.StackFrameInfo> out = new ArrayList<>();
             if (r != null && r.getStackFrames() != null) {
                 for (StackFrame f : r.getStackFrames()) {
@@ -337,7 +411,7 @@ public final class DapClient implements IDebugProtocolClient {
     public CompletableFuture<List<DapModels.ScopeInfo>> scopes(int frameId) {
         ScopesArguments a = new ScopesArguments();
         a.setFrameId(frameId);
-        return server.scopes(a).thenApply(r -> {
+        return timed(server.scopes(a)).thenApply(r -> {
             List<DapModels.ScopeInfo> out = new ArrayList<>();
             if (r != null && r.getScopes() != null) {
                 for (Scope s : r.getScopes()) {
@@ -351,7 +425,7 @@ public final class DapClient implements IDebugProtocolClient {
     public CompletableFuture<List<DapModels.VariableInfo>> variables(int variablesReference) {
         VariablesArguments a = new VariablesArguments();
         a.setVariablesReference(variablesReference);
-        return server.variables(a).thenApply(r -> {
+        return timed(server.variables(a)).thenApply(r -> {
             List<DapModels.VariableInfo> out = new ArrayList<>();
             if (r != null && r.getVariables() != null) {
                 for (Variable v : r.getVariables()) {
@@ -369,7 +443,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setExpression(expression);
         a.setFrameId(frameId);
         a.setContext(context);
-        return server.evaluate(a).thenApply(r -> r == null ? null : r.getResult()); // adapter may null the body
+        return timed(server.evaluate(a)).thenApply(r -> r == null ? null : r.getResult());
     }
 
     /** Like {@link #evaluate} but keeps the full response: result + expandable children reference + type
@@ -379,7 +453,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setExpression(expression);
         a.setFrameId(frameId);
         a.setContext(context);
-        return server.evaluate(a)
+        return timed(server.evaluate(a))
                 .thenApply(r -> r == null
                         ? null
                         : new DapModels.EvalResult(r.getResult(), r.getVariablesReference(), r.getType()));
@@ -390,20 +464,20 @@ public final class DapClient implements IDebugProtocolClient {
         a.setVariablesReference(variablesReference);
         a.setName(name);
         a.setValue(value);
-        return server.setVariable(a).thenApply(r -> r == null ? value : r.getValue());
+        return timed(server.setVariable(a)).thenApply(r -> r == null ? value : r.getValue());
     }
 
     public void resume(int threadId) {
         ContinueArguments a = new ContinueArguments();
         a.setThreadId(threadId);
-        ignore(server.continue_(a));
+        ignore(timed(server.continue_(a)));
     }
 
     /** Pauses a running thread; the adapter answers with a {@code stopped(reason=pause)} event. */
     public void pause(int threadId) {
         org.eclipse.lsp4j.debug.PauseArguments a = new org.eclipse.lsp4j.debug.PauseArguments();
         a.setThreadId(threadId);
-        ignore(server.pause(a));
+        ignore(timed(server.pause(a)));
     }
 
     /** Asks the adapter for the goto targets at {@code line} (0-based) of {@code file}; the first
@@ -415,7 +489,7 @@ public final class DapClient implements IDebugProtocolClient {
         org.eclipse.lsp4j.debug.GotoTargetsArguments a = new org.eclipse.lsp4j.debug.GotoTargetsArguments();
         a.setSource(source);
         a.setLine(line + 1); // DAP is 1-based
-        return server.gotoTargets(a).thenApply(r -> {
+        return timed(server.gotoTargets(a)).thenApply(r -> {
             List<Integer> ids = new ArrayList<>();
             if (r != null && r.getTargets() != null) {
                 for (org.eclipse.lsp4j.debug.GotoTarget t : r.getTargets()) {
@@ -432,25 +506,25 @@ public final class DapClient implements IDebugProtocolClient {
         org.eclipse.lsp4j.debug.GotoArguments a = new org.eclipse.lsp4j.debug.GotoArguments();
         a.setThreadId(threadId);
         a.setTargetId(targetId);
-        return server.goto_(a);
+        return timed(server.goto_(a));
     }
 
     public void next(int threadId) {
         NextArguments a = new NextArguments();
         a.setThreadId(threadId);
-        ignore(server.next(a));
+        ignore(timed(server.next(a)));
     }
 
     public void stepIn(int threadId) {
         StepInArguments a = new StepInArguments();
         a.setThreadId(threadId);
-        ignore(server.stepIn(a));
+        ignore(timed(server.stepIn(a)));
     }
 
     public void stepOut(int threadId) {
         StepOutArguments a = new StepOutArguments();
         a.setThreadId(threadId);
-        ignore(server.stepOut(a));
+        ignore(timed(server.stepOut(a)));
     }
 
     /** Disconnects (terminates the debuggee), closes the socket, and kills the adapter subprocess tree. */
@@ -463,7 +537,7 @@ public final class DapClient implements IDebugProtocolClient {
             if (server != null) {
                 DisconnectArguments a = new DisconnectArguments();
                 a.setTerminateDebuggee(true);
-                server.disconnect(a);
+                ignore(timed(server.disconnect(a)));
             }
         } catch (RuntimeException ignored) {
             // best effort
