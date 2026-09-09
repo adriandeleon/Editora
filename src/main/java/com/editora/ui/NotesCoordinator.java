@@ -136,8 +136,7 @@ final class NotesCoordinator {
                 tr("notes.jumpPrompt"),
                 this::allNoteEntries,
                 e -> noteEntryLabel(e.note()),
-                e -> Path.of(e.fileKey()).getFileName() + ":"
-                        + (e.note().anchor().line() + 1),
+                e -> noteLocation(e.fileKey(), e.note()),
                 // The jump/search pickers are scoped to the active project's notes, so they open in this window.
                 e -> noteActivate(ops.currentProjectKey(), e.fileKey(), e.note()));
         // Search Notes: same picker, but the query matches the full body + tags + file (not just the
@@ -147,8 +146,7 @@ final class NotesCoordinator {
                 tr("notes.searchPrompt"),
                 this::allNoteEntries,
                 e -> noteEntryLabel(e.note()),
-                e -> Path.of(e.fileKey()).getFileName() + ":"
-                        + (e.note().anchor().line() + 1),
+                e -> noteLocation(e.fileKey(), e.note()),
                 NotesCoordinator::noteSearchText,
                 // The jump/search pickers are scoped to the active project's notes, so they open in this window.
                 e -> noteActivate(ops.currentProjectKey(), e.fileKey(), e.note()));
@@ -174,6 +172,33 @@ final class NotesCoordinator {
         return stored != null && !stored.isEmpty();
     }
 
+    String personalNotesTooltip(Path path) {
+        if (!isEnabled() || path == null) {
+            return "";
+        }
+        List<PersonalNote> notes = notesFor(path);
+        if (notes == null) {
+            return "";
+        }
+        return notes.stream()
+                .filter(note -> note.scope() == NoteScope.FOLDER)
+                .map(NotesCoordinator::tooltipLine)
+                .filter(text -> !text.isBlank())
+                .collect(java.util.stream.Collectors.joining("\n\n"));
+    }
+
+    private static String tooltipLine(PersonalNote note) {
+        String body = note.body().strip();
+        if (body.isEmpty()) {
+            body = tr("notes.empty");
+        }
+        return switch (note.status()) {
+            case RESOLVED -> "✓ " + body;
+            case ORPHANED -> "⚠ " + body;
+            default -> body;
+        };
+    }
+
     /** Prompts for and adds a first-line note without opening the file in an editor tab. */
     void addPersonalNote(Path file) {
         addPersonalNote(file, (NoteDraft) null);
@@ -190,6 +215,7 @@ final class NotesCoordinator {
     }
 
     private void addPersonalNote(Path file, NoteDraft requestedDraft, String body) {
+        boolean folder = java.nio.file.Files.isDirectory(file);
         EditorBuffer open = ops.bufferForPath(file);
         NoteDraft draft = requestedDraft;
         if (open != null) {
@@ -204,7 +230,7 @@ final class NotesCoordinator {
         String key = PathKeys.canonicalKey(file);
         FileIdentity identity = FileIdentity.of(file);
         if (draft == null) {
-            draft = new NoteDraft(NoteScope.LINE, new TextAnchor(0, 0, 0, 0, "", "", ""));
+            draft = new NoteDraft(folder ? NoteScope.FOLDER : NoteScope.LINE, new TextAnchor(0, 0, 0, 0, "", "", ""));
         }
         PersonalNote note = PersonalNote.create(identity, draft.scope(), draft.anchor(), body, List.of());
         List<PersonalNote> updated = new ArrayList<>(ops.notes().getOrDefault(key, List.of()));
@@ -573,6 +599,13 @@ final class NotesCoordinator {
         return first.isEmpty() ? tr("notes.empty") : first;
     }
 
+    private static String noteLocation(String fileKey, PersonalNote note) {
+        Path path = Path.of(fileKey);
+        return note.scope() == NoteScope.FOLDER
+                ? path.toString()
+                : path.getFileName() + ":" + (note.anchor().line() + 1);
+    }
+
     // --- NotesPanel.Actions (open buffer if loaded, else mutate the persisted closed-file list) -------
 
     /**
@@ -584,7 +617,10 @@ final class NotesCoordinator {
         String path = note.file() != null && !note.file().path().isBlank()
                 ? note.file().path()
                 : fileKey;
-        ops.openInProjectWindow(projectKey, Path.of(path), note.anchor().line());
+        ops.openInProjectWindow(
+                projectKey,
+                Path.of(path),
+                note.scope() == NoteScope.FOLDER ? -1 : note.anchor().line());
     }
 
     private void noteEditBody(String projectKey, String fileKey, PersonalNote note) {

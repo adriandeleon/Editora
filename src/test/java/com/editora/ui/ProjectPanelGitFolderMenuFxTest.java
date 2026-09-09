@@ -1,13 +1,19 @@
 package com.editora.ui;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
+import javafx.scene.control.TreeView;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -16,6 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 /** Project-tree folder Git comparisons are present and route the selected directory unchanged. */
 @Tag("fx")
@@ -104,6 +111,146 @@ class ProjectPanelGitFolderMenuFxTest {
         fire(git, "project.menu.git.compareRevision");
 
         assertEquals(Map.of("head", folder, "branch", folder, "tag", folder, "revision", folder), calls);
+    }
+
+    @Test
+    void folderOffersBookmarkAndPersonalNoteActions(@TempDir Path folder) throws Exception {
+        AtomicReference<Path> bookmarked = new AtomicReference<>();
+        AtomicReference<Path> noted = new AtomicReference<>();
+        ProjectPanel panel = FxTestSupport.callOnFx(() -> {
+            ProjectPanel created = new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false);
+            created.setMarkerActions(new ProjectPanel.MarkerActions() {
+                @Override
+                public boolean personalNotesEnabled() {
+                    return true;
+                }
+
+                @Override
+                public boolean hasBookmarks(Path path) {
+                    return false;
+                }
+
+                @Override
+                public boolean hasPersonalNotes(Path path) {
+                    return false;
+                }
+
+                @Override
+                public void addBookmark(Path path) {
+                    bookmarked.set(path);
+                }
+
+                @Override
+                public void addPersonalNote(Path path) {
+                    noted.set(path);
+                }
+            });
+            return created;
+        });
+        ContextMenu context = FxTestSupport.callOnFx(() -> (ContextMenu) FxTestSupport.call(
+                panel,
+                "contextMenuFor",
+                new Class<?>[] {TreeItem.class, boolean.class, boolean.class},
+                new TreeItem<>(folder),
+                true,
+                false));
+
+        FxTestSupport.runOnFx(() -> {
+            context.getItems().stream()
+                    .filter(item -> tr("project.menu.addFolderBookmark").equals(item.getText()))
+                    .findFirst()
+                    .orElseThrow()
+                    .fire();
+            context.getItems().stream()
+                    .filter(item -> tr("project.menu.addFolderPersonalNote").equals(item.getText()))
+                    .findFirst()
+                    .orElseThrow()
+                    .fire();
+        });
+        assertSame(folder, bookmarked.get());
+        assertSame(folder, noted.get());
+    }
+
+    @Test
+    void folderPersonalNotesAppearInTreeTooltip(@TempDir Path root) throws Exception {
+        Path folder = Files.createDirectory(root.resolve("docs"));
+        ProjectPanel panel = FxTestSupport.callOnFx(() -> {
+            ProjectPanel created = new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false);
+            created.setMarkerActions(new ProjectPanel.MarkerActions() {
+                @Override
+                public boolean personalNotesEnabled() {
+                    return true;
+                }
+
+                @Override
+                public boolean hasBookmarks(Path path) {
+                    return false;
+                }
+
+                @Override
+                public boolean hasPersonalNotes(Path path) {
+                    return folder.equals(path);
+                }
+
+                @Override
+                public String personalNotesTooltip(Path path) {
+                    return "Keep generated docs here";
+                }
+
+                @Override
+                public void addBookmark(Path path) {}
+
+                @Override
+                public void addPersonalNote(Path path) {}
+            });
+            created.setRoot(root);
+            return created;
+        });
+
+        String tooltip = FxTestSupport.callOnFx(() -> {
+            @SuppressWarnings("unchecked")
+            TreeView<Path> tree = FxTestSupport.field(panel, "tree");
+            TreeItem<Path> folderItem = tree.getRoot().getChildren().stream()
+                    .filter(item -> folder.equals(item.getValue()))
+                    .findFirst()
+                    .orElseThrow();
+            TreeCell<Path> cell = tree.getCellFactory().call(tree);
+            FxTestSupport.call(cell, "updateTreeItem", new Class<?>[] {TreeItem.class}, folderItem);
+            FxTestSupport.call(cell, "updateItem", new Class<?>[] {Path.class, boolean.class}, folder, false);
+            return cell.getTooltip().getText();
+        });
+
+        assertEquals("Keep generated docs here", tooltip);
+    }
+
+    @Test
+    void revealFolderForcesTreeModeClearsFilterAndSelectsFolder(@TempDir Path root) throws Exception {
+        Path parent = Files.createDirectory(root.resolve("src"));
+        Path folder = Files.createDirectory(parent.resolve("main"));
+        ProjectPanel panel = FxTestSupport.callOnFx(() -> {
+            ProjectPanel created = new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false);
+            created.setRoot(root);
+            return created;
+        });
+
+        FxTestSupport.runOnFx(() -> {
+            ToggleButton map = FxTestSupport.field(panel, "mapModeButton");
+            TextField filter = FxTestSupport.field(panel, "filterField");
+            map.setSelected(true);
+            filter.setText("something else");
+            panel.revealPathInTree(folder);
+        });
+
+        ToggleButton treeMode = FxTestSupport.field(panel, "treeMode");
+        TextField filter = FxTestSupport.field(panel, "filterField");
+        @SuppressWarnings("unchecked")
+        TreeView<Path> tree = FxTestSupport.field(panel, "tree");
+        assertEquals(true, FxTestSupport.callOnFx(treeMode::isSelected));
+        assertEquals("", FxTestSupport.callOnFx(filter::getText));
+        assertEquals(
+                folder,
+                FxTestSupport.callOnFx(
+                        () -> tree.getSelectionModel().getSelectedItem().getValue()));
     }
 
     private static void fire(Menu menu, String labelKey) throws Exception {

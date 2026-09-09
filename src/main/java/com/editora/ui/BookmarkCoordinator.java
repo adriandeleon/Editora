@@ -119,7 +119,7 @@ final class BookmarkCoordinator {
                 "Type to filter bookmarks…",
                 this::allBookmarkEntries,
                 e -> bookmarkLabel(e.bm()),
-                e -> e.file().getFileName() + ":" + (e.bm().line() + 1),
+                e -> e.bm().isFolder() ? e.file().toString() : e.file().getFileName() + ":" + (e.bm().line() + 1),
                 // The jump picker is scoped to the active project's bookmarks, so they open in this window.
                 e -> bookmarkActivate(ops.currentProjectKey(), e.file(), e.bm().line()));
     }
@@ -146,7 +146,26 @@ final class BookmarkCoordinator {
 
     /** Adds a deterministic file-manager bookmark at the file's first line without opening a tab. */
     void addBookmark(Path file) {
+        if (file == null) {
+            return;
+        }
+        if (java.nio.file.Files.isDirectory(file)) {
+            addFolderBookmark(file);
+            return;
+        }
         addBookmark(file, 0);
+    }
+
+    private void addFolderBookmark(Path folder) {
+        String key = normalizedKey(folder);
+        List<Bookmark> marks = bookmarksFor(folder);
+        List<Bookmark> updated = marks == null ? new ArrayList<>() : new ArrayList<>(marks);
+        if (updated.stream().noneMatch(Bookmark::isFolder)) {
+            updated.add(Bookmark.folder());
+            ops.bookmarks().put(key, updated);
+            ops.saveBookmarks();
+            refreshViews();
+        }
     }
 
     /** Adds a bookmark to a specific line from a read-only code preview without opening an editor tab. */
@@ -472,6 +491,9 @@ final class BookmarkCoordinator {
     }
 
     private static String bookmarkLabel(Bookmark bm) {
+        if (bm.isFolder()) {
+            return tr("bookmarks.folder");
+        }
         if (!bm.note().isEmpty()) {
             return bm.note();
         }

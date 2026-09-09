@@ -769,7 +769,7 @@ final class ProjectMapView extends VBox {
         updateNavigation();
     }
 
-    private void revealPath(Path path) {
+    void revealPath(Path path) {
         Path normalized = ProjectMapModel.normalize(path);
         if (normalized == null || root == null || !normalized.startsWith(root)) {
             return;

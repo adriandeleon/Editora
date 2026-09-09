@@ -500,6 +500,17 @@ public class WindowManager {
             existing.controller().openAndNavigate(file, line);
             return;
         }
+        if (line < 0) {
+            Path stateFile = key.isEmpty() ? null : projects().stateFile(project);
+            buildWindow(key, project, stateFile, List.of(), false, false, null, false);
+            projects().markOpen(key);
+            setActiveAndSave(key);
+            Holder created = findHolder(key);
+            if (created != null && created.controller() != null) {
+                javafx.application.Platform.runLater(() -> created.controller().openAndNavigate(file, line));
+            }
+            return;
+        }
         // Not open — build it, passing the file as a startup target (1-based line) so it opens + jumps after
         // this window's own session restore, exactly like a command-line FILE:line argument.
         List<MainController.OpenTarget> targets = List.of(new MainController.OpenTarget(file, line + 1, 1));

@@ -80,7 +80,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     private record ProjectRow(String key, String name, boolean current) implements Row {}
 
-    private record FileRow(String projectKey, Path file) implements Row {}
+    private record FileRow(String projectKey, Path file, boolean folder) implements Row {}
 
     private record MarkRow(String projectKey, Path file, Bookmark bm) implements Row {}
 
@@ -215,7 +215,8 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 }
                 Path file = Path.of(e.getKey());
                 boolean fileMatches = fileName(file).toLowerCase().contains(query);
-                TreeItem<Row> fileNode = new TreeItem<>(new FileRow(key, file));
+                boolean folder = e.getValue().stream().anyMatch(Bookmark::isFolder);
+                TreeItem<Row> fileNode = new TreeItem<>(new FileRow(key, file, folder));
                 fileNode.setExpanded(true);
                 for (Bookmark bm : e.getValue()) {
                     if (query.isEmpty()
@@ -561,6 +562,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
      * shortcut you will not remember you assigned.
      */
     private static String markLabel(Bookmark bm) {
+        if (bm.isFolder()) {
+            return tr("bookmarks.folder");
+        }
         String mnemonic = com.editora.config.BookmarkMnemonics.label(bm);
         String prefix = mnemonic.isEmpty() ? "" : mnemonic + " ";
         if (!bm.note().isEmpty()) {
@@ -666,7 +670,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             } else if (item instanceof FileRow f) {
                 setText(fileName(f.file()));
                 getStyleClass().add("bookmark-file-row");
-                setGraphic(FileIcons.forFileName(fileName(f.file())));
+                setGraphic(FileIcons.forProjectItem(fileName(f.file()), f.folder()));
                 setTooltip(new Tooltip(f.file().toString()));
                 MenuItem deleteAll = new MenuItem(tr("bookmarks.deleteAllInFile"));
                 deleteAll.setGraphic(Icons.trash());
@@ -680,11 +684,14 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 row.setAlignment(Pos.CENTER_LEFT);
                 Text label = new Text(markLabel(m.bm()));
                 label.getStyleClass().add("bookmark-label");
-                Text line = new Text("line " + (m.bm().line() + 1));
-                line.getStyleClass().add("bookmark-line-number");
-                row.getChildren().addAll(Icons.bookmark(), label, line);
+                row.getChildren().addAll(Icons.bookmark(), label);
+                if (!m.bm().isFolder()) {
+                    Text line = new Text("line " + (m.bm().line() + 1));
+                    line.getStyleClass().add("bookmark-line-number");
+                    row.getChildren().add(line);
+                }
                 setGraphic(row);
-                setTooltip(new Tooltip(m.file() + ":" + (m.bm().line() + 1)));
+                setTooltip(new Tooltip(m.bm().isFolder() ? m.file().toString() : m.file() + ":" + (m.bm().line() + 1)));
                 MenuItem edit = new MenuItem(tr("bookmarks.editNoteItem"));
                 edit.setGraphic(Icons.edit());
                 edit.setOnAction(e -> editNote(m));

@@ -15,6 +15,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record Bookmark(int line, String note, String lineText, String mnemonic) {
 
+    /** Sentinel line used by bookmarks attached to a folder rather than file content. */
+    public static final int FOLDER_LINE = -1;
+
     /** Max stored length of the captured line snapshot. */
     public static final int MAX_LINE_TEXT = 200;
 
@@ -36,6 +39,14 @@ public record Bookmark(int line, String note, String lineText, String mnemonic) 
 
     public boolean hasMnemonic() {
         return !mnemonic.isEmpty();
+    }
+
+    public boolean isFolder() {
+        return line == FOLDER_LINE;
+    }
+
+    public static Bookmark folder() {
+        return new Bookmark(FOLDER_LINE, "", "", "");
     }
 
     /** This bookmark moved to a different line (keeps the note, captured text and mnemonic). */

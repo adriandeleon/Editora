@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Bookmarks and Personal Notes can now be attached to folders from the Project tree; folder entries carry
+  folder icons in their tool windows, open the Project explorer tree with the owning folder selected when
+  activated, and expose Personal Notes as folder-row tooltips.
+
 ### Added
 
 - The Project Map can now filter its visible working set to bookmarked files or files with Personal Notes.
