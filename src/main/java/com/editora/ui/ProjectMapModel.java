@@ -59,14 +59,27 @@ final class ProjectMapModel {
         }
     }
 
-    record Filters(String query, boolean open, boolean modified, boolean gitChanged, TypeFilter type) {
+    record Filters(
+            String query,
+            boolean open,
+            boolean modified,
+            boolean gitChanged,
+            boolean bookmarked,
+            boolean personalNotes,
+            TypeFilter type) {
         Filters {
             query = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
             type = type == null ? TypeFilter.ALL : type;
         }
 
         boolean active() {
-            return !query.isEmpty() || open || modified || gitChanged || type != TypeFilter.ALL;
+            return !query.isEmpty()
+                    || open
+                    || modified
+                    || gitChanged
+                    || bookmarked
+                    || personalNotes
+                    || type != TypeFilter.ALL;
         }
     }
 
@@ -252,7 +265,14 @@ final class ProjectMapModel {
         }
     }
 
-    static boolean matches(Entry entry, Filters filters, boolean open, boolean modified, boolean gitChanged) {
+    static boolean matches(
+            Entry entry,
+            Filters filters,
+            boolean open,
+            boolean modified,
+            boolean gitChanged,
+            boolean bookmarked,
+            boolean personalNotes) {
         if (entry == null || filters == null) {
             return false;
         }
@@ -261,11 +281,17 @@ final class ProjectMapModel {
         }
         // Status chips are alternatives: "Open + Modified" means either useful working set, not the much
         // narrower intersection. Type and text remain AND constraints around that set.
-        boolean hasStatusFilter = filters.open() || filters.modified() || filters.gitChanged();
+        boolean hasStatusFilter = filters.open()
+                || filters.modified()
+                || filters.gitChanged()
+                || filters.bookmarked()
+                || filters.personalNotes();
         if (hasStatusFilter
                 && !((filters.open() && open)
                         || (filters.modified() && modified)
-                        || (filters.gitChanged() && gitChanged))) {
+                        || (filters.gitChanged() && gitChanged)
+                        || (filters.bookmarked() && bookmarked)
+                        || (filters.personalNotes() && personalNotes))) {
             return false;
         }
         return matchesType(entry, filters.type());

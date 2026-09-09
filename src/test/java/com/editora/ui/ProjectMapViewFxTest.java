@@ -169,6 +169,16 @@ class ProjectMapViewFxTest {
                 assertTrue(((Set<?>) FxTestSupport.field(surface, "bookmarkedPaths")).contains(readme));
                 assertTrue(((Set<?>) FxTestSupport.field(surface, "notedPaths")).contains(readme));
 
+                ToggleButton bookmarksFilter = FxTestSupport.field(mapView, "bookmarksFilter");
+                ToggleButton personalNotesFilter = FxTestSupport.field(mapView, "personalNotesFilter");
+                assertEquals(tr("project.map.filter.bookmarks"), bookmarksFilter.getText());
+                assertEquals(tr("project.map.filter.personalNotes"), personalNotesFilter.getText());
+                bookmarksFilter.fire();
+                assertTrue(((Set<?>) FxTestSupport.field(surface, "emphasized")).contains(readme));
+                bookmarksFilter.fire();
+                personalNotesFilter.fire();
+                assertTrue(((Set<?>) FxTestSupport.field(surface, "emphasized")).contains(readme));
+
                 StackPane host = (StackPane) mapView.getChildren().getLast();
                 Region zoomBar = (Region) host.lookup(".project-map-zoom");
                 assertTrue(zoomBar.getWidth() < host.getWidth() / 2, "zoom controls must not cover the canvas");

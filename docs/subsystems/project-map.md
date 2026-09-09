@@ -103,12 +103,12 @@ automatically fitted once the surface has usable dimensions.
 
 The Project tool window's search field becomes the map's global fuzzy name query. It combines with:
 
-- status chips for files that are open, modified, or Git-changed;
+- status chips for files that are open, modified, Git-changed, bookmarked, or have Personal Notes;
 - a type selector for source, markup, configuration, other files, or all files;
 - a fuzzy free-text filter in every non-root column;
 - a per-column **Hidden** checkbox, enabled by default.
 
-The status chips are alternatives to one another: selecting Open and Modified matches either state.
+The status chips are alternatives to one another: selecting Open and Bookmarks matches either state.
 The type and text criteria constrain that working set. A global filename query uses the Project tree's
 bounded, off-thread search and temporarily opens every ancestor column needed to reveal its matches;
 clearing the query restores the manually expanded branches. Global matches and their ancestors remain

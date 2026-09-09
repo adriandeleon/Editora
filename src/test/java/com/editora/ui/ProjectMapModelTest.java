@@ -62,15 +62,18 @@ class ProjectMapModelTest {
     @Test
     void statusChipsAreAlternativesAndTypeIsAnAdditionalConstraint() {
         ProjectMapModel.Entry java = new ProjectMapModel.Entry(root.resolve("App.java"), root, 1, false);
-        var workingSet = new ProjectMapModel.Filters("", true, true, false, ProjectMapModel.TypeFilter.ALL);
-        assertTrue(ProjectMapModel.matches(java, workingSet, true, false, false));
-        assertTrue(ProjectMapModel.matches(java, workingSet, false, true, false));
-        assertFalse(ProjectMapModel.matches(java, workingSet, false, false, true));
+        var workingSet = new ProjectMapModel.Filters("", true, true, false, true, true, ProjectMapModel.TypeFilter.ALL);
+        assertTrue(ProjectMapModel.matches(java, workingSet, true, false, false, false, false));
+        assertTrue(ProjectMapModel.matches(java, workingSet, false, true, false, false, false));
+        assertTrue(ProjectMapModel.matches(java, workingSet, false, false, false, true, false));
+        assertTrue(ProjectMapModel.matches(java, workingSet, false, false, false, false, true));
+        assertFalse(ProjectMapModel.matches(java, workingSet, false, false, true, false, false));
 
-        var sourceOnly = new ProjectMapModel.Filters("app", false, false, false, ProjectMapModel.TypeFilter.SOURCE);
-        assertTrue(ProjectMapModel.matches(java, sourceOnly, false, false, false));
+        var sourceOnly = new ProjectMapModel.Filters(
+                "app", false, false, false, false, false, ProjectMapModel.TypeFilter.SOURCE);
+        assertTrue(ProjectMapModel.matches(java, sourceOnly, false, false, false, false, false));
         ProjectMapModel.Entry markdown = new ProjectMapModel.Entry(root.resolve("app.md"), root, 1, false);
-        assertFalse(ProjectMapModel.matches(markdown, sourceOnly, false, false, false));
+        assertFalse(ProjectMapModel.matches(markdown, sourceOnly, false, false, false, false, false));
     }
 
     @Test

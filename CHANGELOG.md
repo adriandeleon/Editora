@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The Project Map can now filter its visible working set to bookmarked files or files with Personal Notes.
+
 ### Fixed
 
 - The HTML **Open in Browser** control now stays inside the code editor when the minimap is shown instead
