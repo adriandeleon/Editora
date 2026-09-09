@@ -3,8 +3,13 @@ package com.editora.ui;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.git.GitService;
@@ -108,6 +113,48 @@ class DiffEditableResultIntegrationFxTest {
         EditorBuffer buffer = FxTestSupport.callOnFx(
                 () -> (EditorBuffer) FxTestSupport.call(ops, "openBufferFor", new Class<?>[] {Path.class}, file));
         assertEquals(null, buffer, "stale rejection must happen before opening or mutating an editor buffer");
+    }
+
+    @Test
+    void gitFolderReviewKeepsEachWorkingFileEditable() throws Exception {
+        Path repo = Files.createTempDirectory("editora-diff-folder-editable");
+        Path folder = Files.createDirectories(repo.resolve("src"));
+        Path file = folder.resolve("sample.txt");
+        Files.writeString(file, "base\n");
+        git(repo, "init", "-q");
+        git(repo, "add", "src/sample.txt");
+        git(repo, "-c", "user.email=t@e.st", "-c", "user.name=Test", "commit", "-q", "-m", "init");
+        Files.writeString(file, "working\n");
+
+        Object git = FxTestSupport.field(fx.controller, "git");
+        Object diff = FxTestSupport.field(fx.controller, "diffCoordinator");
+        applyState(git, repo(repo));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(diff, "diffPathVsHead", new Class<?>[] {Path.class}, folder));
+
+        DiffViewerPane pane = awaitGitFolderPane();
+        assertEquals(DiffViewerPane.EditableSide.RIGHT, pane.editableSide());
+        assertTrue(((javafx.scene.control.Button) FxTestSupport.field(pane, "applyAllButton")).isVisible());
+    }
+
+    private DiffViewerPane awaitGitFolderPane() throws Exception {
+        TabPane tabs = FxTestSupport.field(fx.controller, "tabPane");
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(10));
+        while (Instant.now().isBefore(deadline)) {
+            DiffViewerPane pane = FxTestSupport.callOnFx(() -> {
+                for (int i = tabs.getTabs().size() - 1; i >= 0; i--) {
+                    Tab tab = tabs.getTabs().get(i);
+                    if (tab.getUserData() instanceof DirectoryReviewPane review && review.activePane() != null) {
+                        return review.activePane();
+                    }
+                }
+                return null;
+            });
+            if (pane != null) {
+                return pane;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("Git folder diff did not load");
     }
 
     private void applyState(Object git, GitService.RepoState state) throws Exception {
