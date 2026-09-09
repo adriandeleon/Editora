@@ -396,6 +396,7 @@ public final class DiffViewerPane implements TabContent {
         this.onUndo = onUndo == null ? () -> {} : onUndo;
         this.onSave = onSave == null ? () -> {} : onSave;
         boolean editable = this.editableSide != EditableSide.NONE;
+        updateApplyAllButton();
         for (Button b : new Button[] {applyAllButton, undoButton, saveButton}) {
             b.setVisible(editable);
             b.setManaged(editable);
@@ -497,6 +498,7 @@ public final class DiffViewerPane implements TabContent {
             case RIGHT -> EditableSide.LEFT;
             case NONE -> EditableSide.NONE;
         };
+        updateApplyAllButton();
         sidesSwapped = !sidesSwapped;
         model = swappedModel;
         root.setAccessibleText(tr("diff.accessibleViewer", headerLeft, headerRight));
@@ -626,8 +628,7 @@ public final class DiffViewerPane implements TabContent {
         updateEofButton();
         // "Apply all": replace the editable file with the other side entirely. Shown only when a side is
         // editable (set by setEditable, which runs after construction), so it starts hidden.
-        applyAllButton.setGraphic(Icons.check());
-        applyAllButton.setTooltip(new Tooltip(tr("diff.applyAll")));
+        updateApplyAllButton();
         applyAllButton.getStyleClass().addAll("flat", "diff-toolbar-button");
         applyAllButton.setFocusTraversable(false);
         applyAllButton.setOnAction(e -> applyAll());
@@ -920,6 +921,14 @@ public final class DiffViewerPane implements TabContent {
         b.setOnAction(e -> action.run());
         b.setVisible(false);
         b.setManaged(false);
+    }
+
+    /** Keeps the whole-file transfer action visually consistent with the per-line and per-hunk arrows. */
+    private void updateApplyAllButton() {
+        applyAllButton.setGraphic(
+                editableSide == EditableSide.LEFT ? Icons.doubleChevronLeft() : Icons.doubleChevronRight());
+        applyAllButton.setAccessibleText(tr("diff.applyAll"));
+        applyAllButton.setTooltip(new Tooltip(tr("diff.applyAll")));
     }
 
     private void updateToggleButton() {

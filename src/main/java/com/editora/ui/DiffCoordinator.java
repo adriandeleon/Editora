@@ -967,7 +967,7 @@ final class DiffCoordinator {
                             entry.label(),
                             leftSide,
                             rightSide,
-                            DiffViewerPane.EditableSide.NONE,
+                            DiffViewerPane.EditableSide.RIGHT,
                             workingFile,
                             pane -> pane.setExitDiffUiAction(null),
                             built -> ready.accept(
