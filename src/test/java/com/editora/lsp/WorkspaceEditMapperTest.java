@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import org.eclipse.lsp4j.CreateFile;
+import org.eclipse.lsp4j.DeleteFile;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.ResourceOperation;
@@ -64,6 +65,26 @@ class WorkspaceEditMapperTest {
         var files = WorkspaceEditMapper.map(we).edits();
         assertEquals(1, files.size(), "same-file batches merge");
         assertEquals(2, files.get(0).edits().size());
+        assertEquals(1, files.get(0).version());
+    }
+
+    @Test
+    void contradictoryVersionsForOneFileRefuseTheWholeEdit() {
+        TextDocumentEdit first = docEdit("/tmp/A.java", edit(0, 0, 0, 0, "a"));
+        TextDocumentEdit second = new TextDocumentEdit(
+                new VersionedTextDocumentIdentifier(uri("/tmp/A.java"), 2),
+                List.of(Either.forLeft(edit(0, 0, 0, 0, "b"))));
+
+        assertNull(WorkspaceEditMapper.map(new WorkspaceEdit(List.of(Either.forLeft(first), Either.forLeft(second)))));
+    }
+
+    @Test
+    void requestSnapshotIsAttachedToAnUnversionedEdit() {
+        WorkspaceEdit mappedFrom = new WorkspaceEdit(Map.of(uri("/tmp/A.java"), List.of(edit(0, 0, 0, 1, "x"))));
+        var mapped = WorkspaceEditMapper.withExpectedText(
+                WorkspaceEditMapper.map(mappedFrom), Map.of(Path.of("/tmp/A.java"), "class A {}"));
+
+        assertEquals("class A {}", mapped.edits().get(0).expectedText());
     }
 
     @Test
@@ -76,13 +97,13 @@ class WorkspaceEditMapperTest {
     }
 
     @Test
-    void aResourceOperationRefusesTheWholeEdit() {
-        // A create/delete can't be applied faithfully — the whole edit must be refused, not the
-        // text half applied around a file that was never created. (Renames ARE supported — below.)
+    void createAndDeleteResourceOperationsMap() {
         WorkspaceEdit we = new WorkspaceEdit(List.of(
-                Either.forLeft(docEdit("/tmp/A.java", edit(0, 0, 0, 1, "a"))),
-                Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/New.java")))));
-        assertNull(WorkspaceEditMapper.map(we));
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/New.java"))),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new DeleteFile(uri("/tmp/Old.java")))));
+        var mapped = WorkspaceEditMapper.map(we);
+        assertEquals(Path.of("/tmp/New.java"), mapped.creates().get(0).file());
+        assertEquals(Path.of("/tmp/Old.java"), mapped.deletes().get(0).file());
     }
 
     @Test

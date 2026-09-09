@@ -300,6 +300,74 @@ class LspSessionLifecycleFxTest {
         }
     }
 
+    /** A jdtls session that cannot finish initialize may have a corrupt Eclipse resource tree. Its data
+     *  directory is only a rebuildable index, so an unlocked failed cache is removed before auto-restart. */
+    @Test
+    void failedJdtlsInitializationRemovesItsUnlockedWorkspace() throws Exception {
+        Path base = root.resolve("jdtls-workspaces");
+        Path project = root.resolve("proj");
+        Files.createDirectories(project);
+        Path f = project.resolve("A.java");
+        Files.writeString(f, "class A {}");
+
+        manager.setJdtlsWorkspaceBase(base);
+        manager.setSessionStarterForTest(sessions::add); // leave initialize incomplete
+        manager.openDocument(f, project, "java", "class A {}");
+
+        Path workspace;
+        try (var entries = Files.list(base)) {
+            workspace = entries.findFirst().orElseThrow();
+        }
+        Path corruptIndex = workspace.resolve(".metadata/corrupt-index");
+        Files.createDirectories(corruptIndex.getParent());
+        Files.writeString(corruptIndex, "broken");
+
+        sessions.get(0).simulateServerDeathForTest();
+        awaitFx(() -> !crashedServers.isEmpty(), "the failed initialize crash callback");
+
+        assertFalse(Files.exists(workspace), "the unlocked failed jdtls cache should be discarded");
+    }
+
+    /** If another process still owns Eclipse's lock, recovery must preserve its directory and route the
+     *  retry to a fresh suffix instead of timing out against the same cache forever. */
+    @Test
+    void failedLockedJdtlsWorkspaceIsMarkedAndBypassed() throws Exception {
+        Path base = root.resolve("jdtls-workspaces");
+        Path project = root.resolve("proj");
+        Files.createDirectories(project);
+        Path f = project.resolve("A.java");
+        Files.writeString(f, "class A {}");
+
+        manager.setJdtlsWorkspaceBase(base);
+        manager.setSessionStarterForTest(sessions::add);
+        manager.openDocument(f, project, "java", "class A {}");
+
+        Path workspace;
+        try (var entries = Files.list(base)) {
+            workspace = entries.findFirst().orElseThrow();
+        }
+        Path lockFile = workspace.resolve(".metadata/.lock");
+        Files.createDirectories(lockFile.getParent());
+        try (var channel = java.nio.channels.FileChannel.open(
+                        lockFile, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE);
+                var ignored = channel.lock()) {
+            sessions.get(0).simulateServerDeathForTest();
+            awaitFx(() -> !crashedServers.isEmpty(), "the failed initialize crash callback");
+            assertTrue(Files.exists(workspace), "a cache owned by another process must not be deleted");
+        }
+
+        manager.openDocument(f, project, "java", "class A {}");
+        assertEquals(2, sessions.size(), "the retry should create a fresh session");
+        try (var entries = Files.list(base)) {
+            List<String> dirs = entries.filter(Files::isDirectory)
+                    .map(p -> p.getFileName().toString())
+                    .sorted()
+                    .toList();
+            assertEquals(2, dirs.size());
+            assertTrue(dirs.get(1).endsWith("-2"), "the failed canonical cache should be bypassed: " + dirs);
+        }
+    }
+
     /** Only jdtls gets a {@code -data} dir; another server must not have one invented for it. */
     @Test
     void aNonJavaServerGetsNoJdtlsWorkspace() throws Exception {

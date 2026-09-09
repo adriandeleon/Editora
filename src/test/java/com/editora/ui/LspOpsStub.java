@@ -61,6 +61,12 @@ class LspOpsStub implements LspCoordinator.Ops {
     public void fileRenamed(Path from, Path to) {}
 
     @Override
+    public void fileCreated(Path file) {}
+
+    @Override
+    public void fileDeleted(Path file) {}
+
+    @Override
     public void setStatusBarLsp(String label) {}
 
     @Override

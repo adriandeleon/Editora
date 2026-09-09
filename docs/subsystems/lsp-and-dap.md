@@ -14,7 +14,7 @@ LSP uses lsp4j (`org.eclipse.lsp4j` + `.jsonrpc`); DAP uses lsp4j.debug (`org.ec
 same version). Both are automatic modules that `jlink` can't link, so the `dist` profile's moditect
 step injects descriptors — see [dependencies.md](../dependencies.md). jsonrpc reuses the existing
 gson, and `module-info` carries `opens com.editora.lsp;` (unqualified — gson reflectively reads the
-`@JsonNotification("language/status")` DTO, which under `mvn javafx:run` runs in the unnamed module)
+JDT vendor-notification DTOs, which under `mvn javafx:run` run in the unnamed module)
 and `opens com.editora.dap` (gson parses jdtls's untyped `executeCommand` results).
 
 The neutral value types ([`lsp/LspDiagnostic`](../../src/main/java/com/editora/editor/LspDiagnostic.java)
@@ -33,7 +33,7 @@ and project-root markers. The registry is server-centric, not language-centric: 
 several language ids, so the `typescript` server's `languageIds` is
 `{javascript, javascriptreact, typescript, typescriptreact}` and `clangd` serves `{c, cpp}`.
 
-It ships **twenty-one** servers (the `ServerDef` enum). A few examples:
+It ships **twenty-two** servers (the `ServerDef` enum). A few examples:
 
 | Server id | Default command | Root markers (nearest-first) |
 | --- | --- | --- |
@@ -78,22 +78,35 @@ since both detection and the FX-thread session start read it. Remote (SFTP) file
 ### `LanguageServerSession`: one process over stdio
 
 [`lsp/LanguageServerSession`](../../src/main/java/com/editora/lsp/LanguageServerSession.java) drives
-one external server process for a single root over stdio, via an lsp4j `LSPLauncher` on a daemon
-executor. It implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-message.
+one external server process for a single root over stdio, via an lsp4j `Launcher` on a daemon
+executor. Its remote interface extends `LanguageServer` with the raw JDT request names Editora uses;
+this registration gives LSP4J the response types it needs to retain their JSON payloads. The session
+implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-message.
 
 - **Launch** reuses `ProcessRunner.resolveExecutable`/`applyStandardEnv` (the GUI-launch PATH fix, so
   a Finder-launched `.app` finds `jdtls`), then registers the process with `ProcessRegistry.track`.
 - **Handshake**: `initialize` (client capabilities + workspace folder + optional
   `initializationOptions`) → on success cache the server `ServerCapabilities`, send `initialized`,
   push default configuration (enables Pyright auto-imports), then flush queued requests.
+- **Startup preparation** runs on `lsp-start`: per-project JDT workspace directory creation and installed-JDK
+  discovery never execute on the JavaFX routing path.
 - **Queue-until-initialized**: `whenReady(action)` runs an action now if initialized, else parks it in
   `pending` to flush when `initialize` resolves. So a document open issued before the handshake
   completes is held rather than dropped.
-- **Document sync** is full-text (`didOpen`/`didChange`/`didSave`/`didClose`), with per-uri versions.
-  `didChange` is skipped entirely when the server explicitly negotiated `TextDocumentSyncKind.None`.
-- **Requests** are a subset: completion (+ `resolveCompletionItem` for auto-import additional edits),
-  hover, definition, references, document/range formatting, document symbols, pull diagnostics,
-  semantic tokens (range or full), and `executeCommand` (used by the DAP layer to drive jdtls).
+- **Document sync** follows the negotiated mode: incremental servers receive a minimal splice against a
+  per-URI shadow, with periodic full resynchronization; full-sync servers receive the whole document.
+  Open/change/close shadow updates are serialized in wire order across initialization, and `didChange` is
+  skipped when the server explicitly negotiates `TextDocumentSyncKind.None`.
+- **Requests** cover completion and resolve, hover, signature help, definitions and related navigation,
+  references, highlights, rename, code actions, document/range/on-type formatting, symbols, folding and
+  selection ranges, pull diagnostics, semantic tokens, inlay hints, workspace symbols, call/type hierarchy,
+  `executeCommand`, and the registered JDT extension requests used by Java editing and debugging.
+  Ordinary requests use a shared 30-second bound that cancels the JSON-RPC future; initialization retains
+  its 60-second budget. Disposing or losing a session completes command/raw-request futures that were still
+  queued for initialization.
+- **Dynamic registration and refresh**: `client/registerCapability` and unregister update the effective
+  capability object used by UI gates, including trigger/options data. Diagnostic, semantic-token, inlay-hint,
+  and folding refresh requests immediately re-request data for managed open buffers.
 - **stderr must be drained.** A daemon thread (`drainStderr`) reads the server's stderr to EOF and
   logs the first 200 lines to the Debug Log. An undrained PIPE fills its ~64 KB OS buffer on a chatty
   server (jdtls logs heavily) and the server blocks mid-startup, deadlocking the handshake. Capturing
@@ -112,7 +125,11 @@ run — contend for it, so `initialize` never resolves (loading bar spins foreve
 command. The dir is `jdtlsWorkspaceBase / workspaceDirName(root)`, where `workspaceDirName` is a stable
 truncated SHA-256 of the root's absolute path (pure, unit-tested). `withDataDir` is a no-op if the
 user's configured command already specifies `-data`. The workspace persists across sessions so jdtls's
-index is reused.
+index is reused. If a session dies before completing `initialize`, `LspManager` treats that data directory
+as suspect: it removes the rebuildable cache when the Eclipse lock is free, or writes a sidecar failure
+marker and selects a fresh suffixed directory when another process still owns the lock. Automatic crash
+restarts are scoped to the failed `(server, root)` pair so one broken project cannot deactivate or restart
+Java buffers belonging to another root.
 
 ### Diagnostics → overlay, stripe, minimap, Problems
 
@@ -128,8 +145,9 @@ buffer being LSP-active:
 - the minimap edge stripes.
 - `ui/ProblemsPanel` (the `problems` tool window), grouped language → file → diagnostic.
 
-The Problems map is **scoped to open files**: a server publishes diagnostics project-wide (jdtls
-especially), so the controller drops any file without an open tab. The open-tab lookup matches by
+The Problems window defaults to **Open files** and can switch to **Whole project**. In open-file mode the
+controller drops diagnostics for files without a tab; project mode retains project-wide publishes and is
+selected automatically by Build Project. The open-tab lookup matches by
 **canonical (symlink-resolved) path** (`MainController.canonicalPath` via `Path.toRealPath`) — a server
 reports diagnostics under the file's real URI (`/private/tmp/…` for a `/tmp/…` symlink on macOS), so
 plain `normalize()` matching silently dropped every diagnostic.
@@ -154,12 +172,14 @@ plain `normalize()` matching silently dropped every diagnostic.
 - **Loading bar**: the status bar shows an indeterminate bar while a server starts. It is cleared when
   `initialize` resolves — `LanguageServerSession` emits a synthetic `onStatus("ServiceReady", null)` on
   success / `("Error", null)` on failure. This is universal across every server (and a clean file that
-  never publishes a diagnostic); earlier the bar only stopped on an incoming diagnostic or jdtls's
-  vendor-specific `language/status` notification, leaving non-jdtls servers spinning forever.
+  never publishes a diagnostic). Standard work-done progress and JDT's `language/status` and legacy
+  `language/progressReport` notifications drive the same bar. Repeated report updates are coalesced so a
+  project import cannot flood the JavaFX queue.
 
 Capability gating throughout reads the cached `ServerCapabilities` through pure, null-safe predicates
 (`formattingProvider`, `rangeFormattingProvider`, `documentSymbolProvider`, `semanticTokensProvider`,
-`triggerCharsOf`), so a feature is offered only when the server advertises it.
+`triggerCharsOf`), so a feature is offered only when the server advertises it. Dynamic registrations are
+folded into that same effective object, so static and post-initialize providers follow one gating path.
 
 ### LspCoordinator
 
@@ -170,6 +190,11 @@ settings apply) sets the jdtls workspace base, calls `lspManager.configure(...)`
 detection (the package-private `SERVER_IDS` array) and gating. `wireBuffer` installs the per-buffer
 hooks (didChange, pull diagnostics, semantic tokens, completion, nav actions). `LspManager` itself
 stays a `MainController` field (the DAP layer and the MCP bridge read it) and is passed in.
+
+Workspace edits retain protocol versions and request-time text snapshots. Create, rename, and delete resource
+operations are staged with overwrite backups and rolled back as a batch on failure or stale text. Production
+application decodes unopened files through the host's background loader and runs filesystem staging and
+cleanup on virtual threads; only RichTextFX mutation and tab/session bookkeeping run on the FX thread.
 
 ---
 

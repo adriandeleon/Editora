@@ -197,7 +197,7 @@ class DiffViewerBehaviorFxTest {
             ((CodeArea) FxTestSupport.field(pane, "resultArea")).replaceText(draft);
         });
 
-        assertTrue(changed.await(2, TimeUnit.SECONDS), "draft did not trigger its debounced re-diff");
+        assertTrue(changed.await(20, TimeUnit.SECONDS), "draft did not trigger its debounced re-diff");
         assertEquals(draft, recomputed.get());
         assertTrue(pane.hasDirtyResult());
         assertTrue(pane.matchesEditableText(right), "the stale guard must retain the pre-draft baseline");

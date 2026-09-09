@@ -85,6 +85,8 @@ class LspWorkspaceEditFxTest {
     private static final class FakeOps extends LspOpsStub {
         final Map<Path, EditorBuffer> open = new HashMap<>();
         final List<Path[]> renamed = new ArrayList<>();
+        final List<Path> created = new ArrayList<>();
+        final List<Path> deleted = new ArrayList<>();
 
         @Override
         public EditorBuffer bufferForPath(Path file) {
@@ -101,6 +103,16 @@ class LspWorkspaceEditFxTest {
         @Override
         public void fileRenamed(Path from, Path to) {
             renamed.add(new Path[] {from, to});
+        }
+
+        @Override
+        public void fileCreated(Path file) {
+            created.add(file);
+        }
+
+        @Override
+        public void fileDeleted(Path file) {
+            deleted.add(file);
         }
     }
 
@@ -134,7 +146,12 @@ class LspWorkspaceEditFxTest {
     }
 
     private static TextDocumentEdit edit(Path file, int line, int startCol, int endCol, String newText) {
-        var id = new VersionedTextDocumentIdentifier(file.toUri().toString(), 1);
+        return edit(file, null, line, startCol, endCol, newText);
+    }
+
+    private static TextDocumentEdit edit(
+            Path file, Integer version, int line, int startCol, int endCol, String newText) {
+        var id = new VersionedTextDocumentIdentifier(file.toUri().toString(), version);
         var te = new TextEdit(new Range(new Position(line, startCol), new Position(line, endCol)), newText);
         return new TextDocumentEdit(id, List.of(Either.forLeft(te)));
     }
@@ -210,6 +227,36 @@ class LspWorkspaceEditFxTest {
 
         assertFalse(apply(we));
         assertEquals("class A {}\n", FxTestSupport.callOnFx(a::getContent), "nothing applied");
+    }
+
+    @Test
+    void aStaleVersionRefusesTheWholeEdit() throws Exception {
+        EditorBuffer a = openBuffer("A.java", "class A {}\n");
+        manager.openDocument(a.getPath(), root, "java", a.getContent());
+        FxTestSupport.runOnFx(() -> a.setContent("// note\nclass A {}\n"));
+        manager.changeDocument(a.getPath(), a.getContent());
+
+        var we = new WorkspaceEdit();
+        we.setDocumentChanges(List.of(Either.forLeft(edit(a.getPath(), 1, 1, 6, 7, "B"))));
+
+        assertFalse(apply(we));
+        assertEquals("// note\nclass A {}\n", FxTestSupport.callOnFx(a::getContent));
+    }
+
+    @Test
+    void aChangedRequestSnapshotRefusesAnUnversionedEdit() throws Exception {
+        EditorBuffer a = openBuffer("A.java", "class A {}\n");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        a.getPath(),
+                        List.of(new com.editora.editor.LspTextEdit(0, 6, 0, 7, "B")),
+                        null,
+                        "class A {}\n")),
+                List.of());
+        FxTestSupport.runOnFx(() -> a.setContent("// note\nclass A {}\n"));
+
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)));
+        assertEquals("// note\nclass A {}\n", FxTestSupport.callOnFx(a::getContent));
     }
 
     // --- file renames (#676) -------------------------------------------------------------------------
@@ -297,16 +344,100 @@ class LspWorkspaceEditFxTest {
         assertTrue(Files.exists(to), "the destination directory should have been created");
     }
 
+    @Test
+    void aLateFailureRollsBackEveryEarlierFileMove() throws Exception {
+        EditorBuffer a = openBuffer("A.java", "class A {}\n");
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        Path movedA = root.resolve("MovedA.java");
+        Path blocker = root.resolve("blocked");
+        Files.writeString(blocker, "not a directory");
+        Path impossibleB = blocker.resolve("MovedB.java");
+
+        var we = new WorkspaceEdit();
+        we.setDocumentChanges(List.of(
+                Either.forLeft(edit(a.getPath(), 0, 6, 7, "X")),
+                Either.forRight(new RenameFile(
+                        a.getPath().toUri().toString(), movedA.toUri().toString())),
+                Either.forRight(new RenameFile(
+                        b.getPath().toUri().toString(), impossibleB.toUri().toString()))));
+
+        assertFalse(apply(we));
+        assertTrue(Files.exists(a.getPath()), "the first move must be rolled back");
+        assertTrue(Files.exists(b.getPath()), "the second staged source must be restored");
+        assertFalse(Files.exists(movedA));
+        assertEquals("class A {}\n", FxTestSupport.callOnFx(a::getContent), "text applies only after all moves commit");
+        assertTrue(ops.renamed.isEmpty(), "no in-memory rename events may be emitted for a failed batch");
+    }
+
     // --- what the mapper refuses outright ------------------------------------------------------------
 
-    /** Create/delete resource operations are not supported; the mapper refuses so nothing half-applies. */
     @Test
-    void aCreateOrDeleteResourceOperationIsRefusedByTheMapper() {
+    void createAndDeleteResourceOperationsApply() throws Exception {
+        Path old = root.resolve("Old.java");
+        Path created = root.resolve("New.java");
+        Files.writeString(old, "old");
         var we = new WorkspaceEdit();
-        we.setDocumentChanges(List.of(Either.forRight(new org.eclipse.lsp4j.CreateFile(
-                root.resolve("New.java").toUri().toString()))));
+        we.setDocumentChanges(List.of(
+                Either.forRight(new org.eclipse.lsp4j.CreateFile(created.toUri().toString())),
+                Either.forRight(new org.eclipse.lsp4j.DeleteFile(old.toUri().toString()))));
 
-        assertTrue(WorkspaceEditMapper.map(we) == null, "an unsupported resource op must refuse the whole edit");
+        assertTrue(apply(we));
+        assertTrue(Files.isRegularFile(created));
+        assertFalse(Files.exists(old));
+        assertEquals(List.of(created), ops.created);
+        assertEquals(List.of(old), ops.deleted);
+    }
+
+    @Test
+    void productionApplyPathRunsResourceTransactionAsynchronously() throws Exception {
+        Path old = root.resolve("AsyncOld.java");
+        Path created = root.resolve("AsyncNew.java");
+        Files.writeString(old, "old");
+        var we = new WorkspaceEdit();
+        we.setDocumentChanges(List.of(
+                Either.forRight(new org.eclipse.lsp4j.CreateFile(created.toUri().toString())),
+                Either.forRight(new org.eclipse.lsp4j.DeleteFile(old.toUri().toString()))));
+        var result = new java.util.concurrent.CompletableFuture<Boolean>();
+
+        FxTestSupport.runOnFx(
+                () -> coordinator.applyWorkspaceEditsAsync(WorkspaceEditMapper.map(we), result::complete));
+
+        assertTrue(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertTrue(Files.exists(created));
+        assertFalse(Files.exists(old));
+    }
+
+    @Test
+    void failedAsyncApplyReportsOnlyAfterItsResourceRollback() throws Exception {
+        EditorBuffer buffer = openBuffer("Stale.java", "class Stale {}\n");
+        Path created = root.resolve("MustRollback.java");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(buffer.getPath(), List.of(), null, "older text")),
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileCreate(created, false, false)),
+                List.of());
+        var result = new java.util.concurrent.CompletableFuture<Boolean>();
+
+        FxTestSupport.runOnFx(() -> coordinator.applyWorkspaceEditsAsync(mapped, result::complete));
+
+        assertFalse(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertFalse(Files.exists(created), "the failure response must wait until rollback has restored disk state");
+    }
+
+    @Test
+    void failedCreateRollsBackEarlierCreates() throws Exception {
+        Path first = root.resolve("First.java");
+        Path occupied = root.resolve("Occupied.java");
+        Files.writeString(occupied, "keep");
+        var we = new WorkspaceEdit();
+        we.setDocumentChanges(List.of(
+                Either.forRight(new org.eclipse.lsp4j.CreateFile(first.toUri().toString())),
+                Either.forRight(
+                        new org.eclipse.lsp4j.CreateFile(occupied.toUri().toString()))));
+
+        assertFalse(apply(we));
+        assertFalse(Files.exists(first));
+        assertEquals("keep", Files.readString(occupied));
     }
 
     /** A text edit appearing AFTER a rename addresses the post-rename world — refused rather than guessed. */

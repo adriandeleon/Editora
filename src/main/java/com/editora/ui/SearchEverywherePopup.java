@@ -150,6 +150,9 @@ final class SearchEverywherePopup {
                 () -> {
                     input.requestFocus();
                     input.selectAll();
+                    // setText(seed) may have armed the query debounce. We refresh synchronously for an open,
+                    // so letting that redundant timer fire later can reset a cursor the user has already moved.
+                    debounce.stop();
                     refresh();
                     // Re-assert the cursor once the pulse that laid the card out has run. The first
                     // populate happens before the ListView has a skin, so it has no cells: the selection

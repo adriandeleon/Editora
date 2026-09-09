@@ -156,29 +156,44 @@ public final class JdtlsGenerate {
         return sb.toString();
     }
 
+    /** A check response together with the choices rendered from it. Constructors need the response's
+     *  separate {@code constructors} array when the generate request is assembled. */
+    public record Plan(List<Candidate> candidates, JsonElement status) {}
+
+    public static Plan plan(Kind kind, JsonElement checkResponse) {
+        return new Plan(List.copyOf(candidates(kind, checkResponse)), checkResponse);
+    }
+
     /**
-     * The parameters for the generate request: the original {@code CodeActionParams} the prompt command
-     * carried, plus the chosen candidates (and, for constructors, the constructors the check reported).
-     *
-     * <p>The argument order is positional and server-defined; each is what jdtls's handler for that request
-     * expects. {@code java/generateConstructors} takes <em>two</em> lists — the constructors to base the
-     * generated ones on, then the fields to assign — which is why {@code extras} exists.
+     * The single object parameter JDT LS expects for a generate request. Each handler receives one DTO,
+     * rather than positional JSON-RPC parameters; using an array makes LSP4J reject the request while parsing.
      */
-    public static List<Object> generateParams(Kind kind, JsonElement actionParams, List<Candidate> chosen) {
-        List<Object> args = new ArrayList<>();
-        args.add(actionParams);
-        if (kind == Kind.CONSTRUCTORS) {
-            args.add(new JsonArray()); // constructors: an empty list means "the default", matching VS Code
-        }
+    public static JsonObject generateParams(
+            Kind kind, JsonElement actionParams, List<Candidate> chosen, JsonElement checkResponse) {
         JsonArray picked = new JsonArray();
         for (Candidate c : chosen) {
             picked.add(c.raw());
         }
-        args.add(picked);
-        if (kind == Kind.HASH_CODE_EQUALS) {
-            args.add(Boolean.FALSE); // regenerate: we never silently replace existing methods
+        JsonObject params = new JsonObject();
+        params.add("context", actionParams);
+        switch (kind) {
+            case TO_STRING -> params.add("fields", picked);
+            case HASH_CODE_EQUALS -> {
+                params.add("fields", picked);
+                params.addProperty("regenerate", false); // never silently replace existing methods
+            }
+            case CONSTRUCTORS -> {
+                JsonElement constructors = checkResponse != null && checkResponse.isJsonObject()
+                        ? checkResponse.getAsJsonObject().get("constructors")
+                        : null;
+                params.add(
+                        "constructors",
+                        constructors != null && constructors.isJsonArray() ? constructors : new JsonArray());
+                params.add("fields", picked);
+            }
+            case OVERRIDE_METHODS -> params.add("overridableMethods", picked);
         }
-        return args;
+        return params;
     }
 
     private static String string(JsonObject o, String key) {

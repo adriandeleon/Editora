@@ -116,7 +116,6 @@ public final class CompletionMapper {
     }
 
     /** Whether the item is deprecated — via the modern {@code tags} list or the legacy {@code deprecated} flag. */
-    @SuppressWarnings("deprecation")
     static boolean isDeprecated(CompletionItem item) {
         if (item.getTags() != null) {
             for (CompletionItemTag t : item.getTags()) {

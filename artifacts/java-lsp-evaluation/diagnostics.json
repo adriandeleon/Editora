@@ -1,0 +1,3943 @@
+[
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/pom.xml",
+    "severity": "Information",
+    "message": "Plugin execution not covered by lifecycle configuration: org.apache.maven.plugins:maven-antrun-plugin:3.1.0:run (execution: mac-jpackage-app-version, phase: initialize)",
+    "code": "0",
+    "line": 1188
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/lsp/LanguageServerSession.java",
+    "severity": "Warning",
+    "message": "The value of the field LanguageServerSession.nextVersion is not used",
+    "code": "570425421",
+    "line": 110
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/lsp/LanguageServerSession.java",
+    "severity": "Warning",
+    "message": "The method markDead(Process) from the type LanguageServerSession is never used locally",
+    "code": "603979894",
+    "line": 537
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/App.java",
+    "severity": "Warning",
+    "message": "The type Stage from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 47
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/command/KeyDispatcher.java",
+    "severity": "Warning",
+    "message": "The type EventTarget from module javafx.base may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 90
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/command/KeyDispatcher.java",
+    "severity": "Warning",
+    "message": "The type Scene from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 116
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/command/KeyDispatcher.java",
+    "severity": "Warning",
+    "message": "The type KeyEvent from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 452
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/command/KeyDispatcher.java",
+    "severity": "Warning",
+    "message": "The type EventTarget from module javafx.base may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 63
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/command/TextInputKeymap.java",
+    "severity": "Warning",
+    "message": "The type TextInputControl from module javafx.controls may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 51
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/command/TextInputKeymap.java",
+    "severity": "Warning",
+    "message": "The type TextInputControl from module javafx.controls may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 56
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/ConfigManager.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 196
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/ConfigManager.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 200
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/ConfigManager.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 208
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/ConfigWriter.java",
+    "severity": "Warning",
+    "message": "The type ObjectMapper from module com.fasterxml.jackson.databind may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 170
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/ConnectionStore.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 23
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/ConnectionStore.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 20
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/MacroStore.java",
+    "severity": "Warning",
+    "message": "The type Macro is not exported from this module",
+    "code": "8390066",
+    "line": 21
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/MacroStore.java",
+    "severity": "Warning",
+    "message": "The type Macro is not exported from this module",
+    "code": "8390066",
+    "line": 24
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/MacroStore.java",
+    "severity": "Warning",
+    "message": "The type Macro is not exported from this module",
+    "code": "8390066",
+    "line": 34
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Warning",
+    "message": "The type AiProvider is not exported from this module",
+    "code": "8390066",
+    "line": 952
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Warning",
+    "message": "The type AiProvider is not exported from this module",
+    "code": "8390066",
+    "line": 957
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Warning",
+    "message": "The type TodoPattern is not exported from this module",
+    "code": "8390066",
+    "line": 1230
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Warning",
+    "message": "The type TodoPattern is not exported from this module",
+    "code": "8390066",
+    "line": 1234
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Warning",
+    "message": "The type ExternalTool is not exported from this module",
+    "code": "8390066",
+    "line": 1286
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Warning",
+    "message": "The type ExternalTool is not exported from this module",
+    "code": "8390066",
+    "line": 1290
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Information",
+    "message": "TODO, the previews,",
+    "code": "536871362",
+    "line": 23
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Information",
+    "message": "TODO/\u2026) in the editor + list them in the",
+    "code": "536871362",
+    "line": 159
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Information",
+    "message": "FIXME/\u2026) in the editor + list them in the",
+    "code": "536871362",
+    "line": 159
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Information",
+    "message": "TODO tool window.",
+    "code": "536871362",
+    "line": 159
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Information",
+    "message": "TODO (amber) +",
+    "code": "536871362",
+    "line": 161
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Information",
+    "message": "FIXME (red).",
+    "code": "536871362",
+    "line": 161
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Information",
+    "message": "TODO tool window's \"Group by\" dimension (FILE/PRIORITY/TAG/KEYWORD); persisted across sessions.",
+    "code": "536871362",
+    "line": 163
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/Settings.java",
+    "severity": "Information",
+    "message": "TODO comment (web hex); defaults from {@code TodoColors}.",
+    "code": "536871362",
+    "line": 165
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/SharedConfig.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 385
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/SharedConfig.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 370
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/SharedConfig.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 374
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/SharedRunConfigs.java",
+    "severity": "Warning",
+    "message": "The type ObjectMapper from module com.fasterxml.jackson.databind may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 44
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/SharedRunConfigs.java",
+    "severity": "Warning",
+    "message": "The type ObjectMapper from module com.fasterxml.jackson.databind may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 58
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/migration/ConfigMigrations.java",
+    "severity": "Information",
+    "message": "FIXME, appending any whose",
+    "code": "536871362",
+    "line": 227
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/migration/ConfigMigrations.java",
+    "severity": "Information",
+    "message": "XXX / DONE) that joined",
+    "code": "536871362",
+    "line": 227
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/migration/ConfigMigrations.java",
+    "severity": "Information",
+    "message": "TODO /",
+    "code": "536871362",
+    "line": 227
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/migration/ConfigSchema.java",
+    "severity": "Information",
+    "message": "TODO keywords",
+    "code": "536871362",
+    "line": 94
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/config/migration/ConfigSchema.java",
+    "severity": "Information",
+    "message": "TODO part colors (additive)",
+    "code": "536871362",
+    "line": 105
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/cron/Crontab.java",
+    "severity": "Warning",
+    "message": "The value of the local variable start is not used",
+    "code": "536870973",
+    "line": 112
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/BookmarkManager.java",
+    "severity": "Warning",
+    "message": "The type CodeArea from module org.fxmisc.richtext may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 38
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/BreakpointManager.java",
+    "severity": "Warning",
+    "message": "The type CodeArea from module org.fxmisc.richtext may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 35
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CodeActionPopup.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 119
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CodeActionPopup.java",
+    "severity": "Warning",
+    "message": "The type Bounds from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 119
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CompletionPopup.java",
+    "severity": "Warning",
+    "message": "The type Completion is not exported from this module",
+    "code": "8390066",
+    "line": 89
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CompletionPopup.java",
+    "severity": "Warning",
+    "message": "The type Completion is not exported from this module",
+    "code": "8390066",
+    "line": 94
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CompletionPopup.java",
+    "severity": "Warning",
+    "message": "The type Completion is not exported from this module",
+    "code": "8390066",
+    "line": 112
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CompletionPopup.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 174
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CompletionPopup.java",
+    "severity": "Warning",
+    "message": "The type Bounds from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 174
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CompletionPopup.java",
+    "severity": "Warning",
+    "message": "The type Completion is not exported from this module",
+    "code": "8390066",
+    "line": 174
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CompletionPopup.java",
+    "severity": "Warning",
+    "message": "The type Bounds from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 208
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CrontabPreview.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 38
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CrontabPreview.java",
+    "severity": "Warning",
+    "message": "The type Crontab is not exported from this module",
+    "code": "8390066",
+    "line": 38
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CrontabPreview.java",
+    "severity": "Warning",
+    "message": "The type VBox from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 46
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/CrontabPreview.java",
+    "severity": "Warning",
+    "message": "The type Crontab is not exported from this module",
+    "code": "8390066",
+    "line": 46
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/DiagramImages.java",
+    "severity": "Warning",
+    "message": "The type DiagramKind is not exported from this module",
+    "code": "8390066",
+    "line": 84
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/DiagramImages.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 110
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/DiagramImages.java",
+    "severity": "Warning",
+    "message": "The type DiagramKind is not exported from this module",
+    "code": "8390066",
+    "line": 110
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/DiagramImages.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 116
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/DiagramImages.java",
+    "severity": "Warning",
+    "message": "The type DiagramKind is not exported from this module",
+    "code": "8390066",
+    "line": 117
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/DockerfilePreview.java",
+    "severity": "Warning",
+    "message": "The type Dockerfile is not exported from this module",
+    "code": "8390066",
+    "line": 22
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/DockerfilePreview.java",
+    "severity": "Warning",
+    "message": "The type VBox from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 29
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/DockerfilePreview.java",
+    "severity": "Warning",
+    "message": "The type Dockerfile is not exported from this module",
+    "code": "8390066",
+    "line": 29
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/DockerfilePreview.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 22
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type DiagramKind is not exported from this module",
+    "code": "8390066",
+    "line": 2772
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type StructuredParser.Format is not exported from this module",
+    "code": "8390066",
+    "line": 2931
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type MaidOutput.Diagnostic is not exported from this module",
+    "code": "8390066",
+    "line": 3170
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type MarkdownLint.Diagnostic is not exported from this module",
+    "code": "8390066",
+    "line": 3251
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Image from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 3345
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type JavaTestScanner.TestTarget is not exported from this module",
+    "code": "8390066",
+    "line": 3623
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type MainMethodScanner.MainMethod is not exported from this module",
+    "code": "8390066",
+    "line": 3637
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type MainMethodScanner.MainMethod is not exported from this module",
+    "code": "8390066",
+    "line": 3642
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type MainMethodScanner.MainMethod is not exported from this module",
+    "code": "8390066",
+    "line": 3648
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type JavaTestScanner.TestTarget is not exported from this module",
+    "code": "8390066",
+    "line": 3666
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type JavaTestScanner.TestTarget is not exported from this module",
+    "code": "8390066",
+    "line": 3680
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 4360
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 4371
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 4386
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 4407
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 4449
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type LogLevel is not exported from this module",
+    "code": "8390066",
+    "line": 4809
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type LogLevel is not exported from this module",
+    "code": "8390066",
+    "line": 4832
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 6404
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 6582
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 6591
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 6591
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 6647
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 6647
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type EditorConfigProperties is not exported from this module",
+    "code": "8390066",
+    "line": 7586
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type EditorConfigProperties is not exported from this module",
+    "code": "8390066",
+    "line": 7590
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Snippet is not exported from this module",
+    "code": "8390066",
+    "line": 7969
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type EventTarget from module javafx.base may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 8536
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Snippet is not exported from this module",
+    "code": "8390066",
+    "line": 8723
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type ParsedSnippet is not exported from this module",
+    "code": "8390066",
+    "line": 8815
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type CompletionProvider is not exported from this module",
+    "code": "8390066",
+    "line": 8847
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Completion is not exported from this module",
+    "code": "8390066",
+    "line": 9622
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type NavigationActions.SelectionPolicy from module org.fxmisc.richtext may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 10123
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type BooleanProperty from module javafx.base may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 10262
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Information",
+    "message": "TODO/highlight overview stripe over the scrollbar (beside the diagnostic stripe).",
+    "code": "536871362",
+    "line": 480
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Information",
+    "message": "TODO/diagnostic stripes).",
+    "code": "536871362",
+    "line": 482
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Information",
+    "message": "TODO-style patterns (per-pattern color), behind the text.",
+    "code": "536871362",
+    "line": 529
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Information",
+    "message": "FIXME-style patterns (per-pattern color), behind the text.",
+    "code": "536871362",
+    "line": 529
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Information",
+    "message": "TODO-pattern highlight for this buffer and re-scans (the controller pushes the",
+    "code": "536871362",
+    "line": 2655
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Information",
+    "message": "TODO scan whose result would be stale (mirrors {@link #highlightGen}).",
+    "code": "536871362",
+    "line": 2671
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Information",
+    "message": "TODO overview stripe over the scrollbar: at the edge (inside the minimap when shown),",
+    "code": "536871362",
+    "line": 4017
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Information",
+    "message": "TODO scan result",
+    "code": "536871362",
+    "line": 5214
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Information",
+    "message": "TODO scan refuse to dispatch once",
+    "code": "536871362",
+    "line": 5219
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Information",
+    "message": "TODO/highlight match after the caret (wrapping); false if none exist.",
+    "code": "536871362",
+    "line": 7045
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Information",
+    "message": "TODO/highlight match before the caret (wrapping); false if none.",
+    "code": "536871362",
+    "line": 7050
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type MarkdownTable.Align is not exported from this module",
+    "code": "8390066",
+    "line": 1666
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type MenuItem from module javafx.controls may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 2061
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type MenuItem from module javafx.controls may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 2066
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type CodeArea from module org.fxmisc.richtext may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 2440
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type CodeArea from module org.fxmisc.richtext may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 2445
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Region from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 2721
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/EditorBuffer.java",
+    "severity": "Warning",
+    "message": "The type Region from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 2727
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/FoldManager.java",
+    "severity": "Warning",
+    "message": "The type CodeArea from module org.fxmisc.richtext may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 143
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/FoldManager.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 251
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/FoldManager.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 251
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/FoldManager.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 1038
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/FstabPreview.java",
+    "severity": "Warning",
+    "message": "The type FstabEntry is not exported from this module",
+    "code": "8390066",
+    "line": 26
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/FstabPreview.java",
+    "severity": "Warning",
+    "message": "The type VBox from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 34
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/FstabPreview.java",
+    "severity": "Warning",
+    "message": "The type FstabEntry is not exported from this module",
+    "code": "8390066",
+    "line": 34
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/FstabPreview.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 26
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/GithubActionsPreview.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 23
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/GithubActionsPreview.java",
+    "severity": "Warning",
+    "message": "The type Workflow is not exported from this module",
+    "code": "8390066",
+    "line": 23
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/GithubActionsPreview.java",
+    "severity": "Warning",
+    "message": "The type VBox from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 30
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/GithubActionsPreview.java",
+    "severity": "Warning",
+    "message": "The type Workflow is not exported from this module",
+    "code": "8390066",
+    "line": 30
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/GrammarRegistry.java",
+    "severity": "Warning",
+    "message": "The type IGrammar from module org.eclipse.tm4e.core may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 70
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/GrammarRegistry.java",
+    "severity": "Warning",
+    "message": "The type IGrammar from module org.eclipse.tm4e.core may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 85
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/GrammarRegistry.java",
+    "severity": "Warning",
+    "message": "The type IGrammar from module org.eclipse.tm4e.core may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 94
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkdownLintService.java",
+    "severity": "Warning",
+    "message": "The type MarkdownLint.Diagnostic is not exported from this module",
+    "code": "8390066",
+    "line": 30
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkdownLintService.java",
+    "severity": "Warning",
+    "message": "The type MarkdownLint.Diagnostic is not exported from this module",
+    "code": "8390066",
+    "line": 36
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkdownLintStripe.java",
+    "severity": "Information",
+    "message": "TODO",
+    "code": "536871362",
+    "line": 19
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkdownRenderer.java",
+    "severity": "Warning",
+    "message": "The type Node from module org.commonmark may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 110
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkdownRenderer.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 121
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkdownRenderer.java",
+    "severity": "Warning",
+    "message": "The type Node from module org.commonmark may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 121
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkdownRenderer.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 132
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkdownRenderer.java",
+    "severity": "Warning",
+    "message": "The type Node from module org.commonmark may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 133
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkwhenCalendar.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 48
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkwhenCalendar.java",
+    "severity": "Warning",
+    "message": "The type Timeline is not exported from this module",
+    "code": "8390066",
+    "line": 48
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkwhenTimeline.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 51
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MarkwhenTimeline.java",
+    "severity": "Warning",
+    "message": "The type Timeline is not exported from this module",
+    "code": "8390066",
+    "line": 51
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MathImages.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 56
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MathImages.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 60
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MermaidImages.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 150
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/MermaidImages.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 141
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/Minimap.java",
+    "severity": "Information",
+    "message": "TODO/highlight matches as colored stripes on the LEFT edge (each in its pattern's color).",
+    "code": "536871362",
+    "line": 598
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/Minimap.java",
+    "severity": "Information",
+    "message": "TODO/highlight matches drawn as colored stripes on the LEFT edge (so they never clash with the",
+    "code": "536871362",
+    "line": 75
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/Minimap.java",
+    "severity": "Information",
+    "message": "TODO/highlight matches drawn as left-edge stripes; a cheap stripe-only repaint.",
+    "code": "536871362",
+    "line": 146
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/Minimap.java",
+    "severity": "Information",
+    "message": "TODO stripes (driven by",
+    "code": "536871362",
+    "line": 152
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/Minimap.java",
+    "severity": "Information",
+    "message": "TODO-highlight-on for this buffer); a cheap repaint.",
+    "code": "536871362",
+    "line": 152
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/NoteManager.java",
+    "severity": "Warning",
+    "message": "The type CodeArea from module org.fxmisc.richtext may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 59
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/OpenApiDoc.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 25
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/OpenApiDoc.java",
+    "severity": "Warning",
+    "message": "The type OpenApiModel is not exported from this module",
+    "code": "8390066",
+    "line": 25
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/PomPreview.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 49
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/PomPreview.java",
+    "severity": "Warning",
+    "message": "The type PomSummary is not exported from this module",
+    "code": "8390066",
+    "line": 49
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/PomPreview.java",
+    "severity": "Warning",
+    "message": "The type VBox from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 56
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/PomPreview.java",
+    "severity": "Warning",
+    "message": "The type PomSummary is not exported from this module",
+    "code": "8390066",
+    "line": 56
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/PreviewImageLoader.java",
+    "severity": "Warning",
+    "message": "The type Image from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 397
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/PreviewImageLoader.java",
+    "severity": "Warning",
+    "message": "The type BufferedImage from module java.desktop may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 397
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/PreviewImageLoader.java",
+    "severity": "Warning",
+    "message": "The type Image from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 161
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/PreviewImageLoader.java",
+    "severity": "Warning",
+    "message": "The type SVGDocument from module com.github.weisj.jsvg may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 326
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/SpellDictionaries.java",
+    "severity": "Warning",
+    "message": "The type Hunspell from module org.apache.lucene.analysis.common may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 59
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/SshConfigPreview.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 24
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/SshConfigPreview.java",
+    "severity": "Warning",
+    "message": "The type SshConfig.Block is not exported from this module",
+    "code": "8390066",
+    "line": 24
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/SshConfigPreview.java",
+    "severity": "Warning",
+    "message": "The type VBox from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 31
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/SshConfigPreview.java",
+    "severity": "Warning",
+    "message": "The type SshConfig.Block is not exported from this module",
+    "code": "8390066",
+    "line": 31
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/StructuredTree.java",
+    "severity": "Warning",
+    "message": "The type StructuredNode is not exported from this module",
+    "code": "8390066",
+    "line": 40
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/StructuredTree.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 26
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/StructuredTree.java",
+    "severity": "Warning",
+    "message": "The type StructuredNode is not exported from this module",
+    "code": "8390066",
+    "line": 26
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/StructuredTree.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 40
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/SvgImages.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 70
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/SystemdPreview.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 33
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/SystemdPreview.java",
+    "severity": "Warning",
+    "message": "The type SystemdUnit is not exported from this module",
+    "code": "8390066",
+    "line": 33
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/SystemdPreview.java",
+    "severity": "Warning",
+    "message": "The type VBox from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 40
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/SystemdPreview.java",
+    "severity": "Warning",
+    "message": "The type SystemdUnit is not exported from this module",
+    "code": "8390066",
+    "line": 40
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TabContent.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 20
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TabContent.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 26
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TextMateHighlighter.java",
+    "severity": "Warning",
+    "message": "The type IGrammar from module org.eclipse.tm4e.core may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 80
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TextMateHighlighter.java",
+    "severity": "Warning",
+    "message": "The type IStateStack from module org.eclipse.tm4e.core may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 80
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TextMateHighlighter.java",
+    "severity": "Warning",
+    "message": "The type IGrammar from module org.eclipse.tm4e.core may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 95
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TextMateHighlighter.java",
+    "severity": "Warning",
+    "message": "The type IStateStack from module org.eclipse.tm4e.core may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 95
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TextMateHighlighter.java",
+    "severity": "Warning",
+    "message": "The type IGrammar from module org.eclipse.tm4e.core may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 56
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TextMateHighlighter.java",
+    "severity": "Warning",
+    "message": "The type IGrammar from module org.eclipse.tm4e.core may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 66
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TodoHighlightOverlay.java",
+    "severity": "Information",
+    "message": "FIXME-style pattern matches behind the editor text, without touching the",
+    "code": "536871362",
+    "line": 17
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TodoHighlightOverlay.java",
+    "severity": "Information",
+    "message": "TODO-style pattern matches behind the editor text, without touching the",
+    "code": "536871362",
+    "line": 17
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TodoMark.java",
+    "severity": "Information",
+    "message": "TODO/highlight match for {@link TodoHighlightOverlay} (which uses the absolute",
+    "code": "536871362",
+    "line": 4
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TodoStripe.java",
+    "severity": "Information",
+    "message": "TODO-highlight-on for this buffer).",
+    "code": "536871362",
+    "line": 56
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TodoStripe.java",
+    "severity": "Information",
+    "message": "TODO/highlight stripe docked over the editor's vertical scrollbar (beside the LSP",
+    "code": "536871362",
+    "line": 19
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TodoStripe.java",
+    "severity": "Information",
+    "message": "TODO matches are \u2014 IntelliJ-style. Each mark is drawn in its pattern's color; hovering shows",
+    "code": "536871362",
+    "line": 21
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TodoStripe.java",
+    "severity": "Information",
+    "message": "FIXME matches are \u2014 IntelliJ-style. Each mark is drawn in its pattern's color; hovering shows",
+    "code": "536871362",
+    "line": 21
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TypstImages.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 170
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/TypstImages.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 176
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/XmlTree.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 25
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/XmlTree.java",
+    "severity": "Warning",
+    "message": "The type XmlNode is not exported from this module",
+    "code": "8390066",
+    "line": 25
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/XmlTree.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 39
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/editor/XmlTree.java",
+    "severity": "Warning",
+    "message": "The type XmlNode is not exported from this module",
+    "code": "8390066",
+    "line": 39
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ghactions/Workflow.java",
+    "severity": "Warning",
+    "message": "The method fields() from the type JsonNode is deprecated",
+    "code": "67108967",
+    "line": 278
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/module-info.java",
+    "severity": "Warning",
+    "message": "Name of automatic module 'reactfx' is unstable, it is derived from the module's file name.",
+    "code": "8390069",
+    "line": 7
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/module-info.java",
+    "severity": "Warning",
+    "message": "Name of automatic module 'jlatexmath' is unstable, it is derived from the module's file name.",
+    "code": "8390069",
+    "line": 24
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/module-info.java",
+    "severity": "Warning",
+    "message": "Name of automatic module 'org.eclipse.lsp4j' is unstable, it is derived from the module's file name.",
+    "code": "8390069",
+    "line": 47
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/module-info.java",
+    "severity": "Warning",
+    "message": "Name of automatic module 'org.eclipse.lsp4j.jsonrpc' is unstable, it is derived from the module's file name.",
+    "code": "8390069",
+    "line": 48
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/module-info.java",
+    "severity": "Warning",
+    "message": "Name of automatic module 'org.eclipse.lsp4j.debug' is unstable, it is derived from the module's file name.",
+    "code": "8390069",
+    "line": 50
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/module-info.java",
+    "severity": "Warning",
+    "message": "The package com.editora.grammars does not exist or is empty",
+    "code": "8389919",
+    "line": 92
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ipc/SingleInstance.java",
+    "severity": "Warning",
+    "message": "The value of the field SingleInstance.CLAIM_ATTEMPTS is not used",
+    "code": "570425421",
+    "line": 68
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/lsp/CompletionMapper.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"deprecation\")",
+    "code": "536871547",
+    "line": 119
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/markdown/MarkdownLintConfig.java",
+    "severity": "Warning",
+    "message": "The method fields() from the type JsonNode is deprecated",
+    "code": "67108967",
+    "line": 47
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/mcp/McpBridge.java",
+    "severity": "Information",
+    "message": "TODO highlighting is off.",
+    "code": "536871362",
+    "line": 120
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/mcp/McpBridge.java",
+    "severity": "Information",
+    "message": "TODO/highlight match (1-based line/col). {@code keyword}/{@code tag}/{@code priority}",
+    "code": "536871362",
+    "line": 25
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/mcp/McpBridge.java",
+    "severity": "Information",
+    "message": "TODO/highlight",
+    "code": "536871362",
+    "line": 119
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/office/DocxWriter.java",
+    "severity": "Warning",
+    "message": "The method addPicture(InputStream, int, String, int, int) from the type XWPFRun is deprecated",
+    "code": "67108967",
+    "line": 291
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/office/DocxWriter.java",
+    "severity": "Warning",
+    "message": "The method addPicture(InputStream, int, String, int, int) from the type XWPFRun is deprecated",
+    "code": "67108967",
+    "line": 338
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/pdf/MarkdownPdfWriter.java",
+    "severity": "Warning",
+    "message": "The value of the field MarkdownPdfWriter.Cur.bodyBoldItalic is not used",
+    "code": "570425421",
+    "line": 115
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/pdf/MarkdownPdfWriter.java",
+    "severity": "Warning",
+    "message": "The value of the local variable link is not used",
+    "code": "536870973",
+    "line": 499
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/plugin/PluginContext.java",
+    "severity": "Warning",
+    "message": "The type Region from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 33
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/plugin/PluginContext.java",
+    "severity": "Warning",
+    "message": "The type Region from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 47
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/plugin/PluginContext.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 47
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/plugin/PluginContext.java",
+    "severity": "Warning",
+    "message": "The type Region from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 67
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/plugin/PluginContext.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 69
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/plugin/PluginContext.java",
+    "severity": "Information",
+    "message": "TODO windows.",
+    "code": "536871362",
+    "line": 58
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/plugin/RegistryIndex.java",
+    "severity": "Warning",
+    "message": "The type ObjectMapper from module com.fasterxml.jackson.databind may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 25
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/snippet/SnippetSession.java",
+    "severity": "Warning",
+    "message": "The value of the field SnippetSession.Field.number is not used",
+    "code": "570425421",
+    "line": 48
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/snippet/SnippetSession.java",
+    "severity": "Warning",
+    "message": "The method hasTransforms() from the type SnippetSession.Field is never used locally",
+    "code": "603979894",
+    "line": 72
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/structured/OpenApiParser.java",
+    "severity": "Warning",
+    "message": "The method fields() from the type JsonNode is deprecated",
+    "code": "67108967",
+    "line": 77
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/structured/OpenApiParser.java",
+    "severity": "Warning",
+    "message": "The method fields() from the type JsonNode is deprecated",
+    "code": "67108967",
+    "line": 109
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/structured/OpenApiParser.java",
+    "severity": "Warning",
+    "message": "The method fields() from the type JsonNode is deprecated",
+    "code": "67108967",
+    "line": 131
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/structured/OpenApiParser.java",
+    "severity": "Warning",
+    "message": "The method fields() from the type JsonNode is deprecated",
+    "code": "67108967",
+    "line": 138
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/structured/OpenApiParser.java",
+    "severity": "Warning",
+    "message": "The method fields() from the type JsonNode is deprecated",
+    "code": "67108967",
+    "line": 71
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/structured/StructuredParser.java",
+    "severity": "Warning",
+    "message": "The method fields() from the type JsonNode is deprecated",
+    "code": "67108967",
+    "line": 98
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/test/JavaTestScanner.java",
+    "severity": "Warning",
+    "message": "The value of the field JavaTestScanner.TEST_ANNOTATIONS is not used",
+    "code": "570425421",
+    "line": 35
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/test/TapParser.java",
+    "severity": "Information",
+    "message": "TODO} directive \u2192 skipped) and",
+    "code": "536871362",
+    "line": 10
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoColors.java",
+    "severity": "Information",
+    "message": "TODO comment ({@code KEYWORD [tag] (priority) description}):",
+    "code": "536871362",
+    "line": 4
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoComment.java",
+    "severity": "Information",
+    "message": "TODO: fix it}",
+    "code": "536871362",
+    "line": 13
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoComment.java",
+    "severity": "Information",
+    "message": "TODO:\" colon right after the keyword",
+    "code": "536871362",
+    "line": 47
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoComment.java",
+    "severity": "Information",
+    "message": "TODO line can end with, which are part of the comment, not its text.",
+    "code": "536871362",
+    "line": 131
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoComment.java",
+    "severity": "Information",
+    "message": "TODO x *}{@code /}",
+    "code": "536871362",
+    "line": 135
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoComment.java",
+    "severity": "Information",
+    "message": "TODO: x *}{@code /} then emitted {@code /",
+    "code": "536871362",
+    "line": 140
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoComment.java",
+    "severity": "Information",
+    "message": "TODO <new text>} \u2014 an unterminated",
+    "code": "536871362",
+    "line": 140
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoComment.java",
+    "severity": "Information",
+    "message": "TODO-style comment, the IntelliJ \"Comment Manager\" format:",
+    "code": "536871362",
+    "line": 7
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoComment.java",
+    "severity": "Information",
+    "message": "TODO [auth] (high) token refresh races on logout}. Only the {@code keyword} is required;",
+    "code": "536871362",
+    "line": 11
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoEdit.java",
+    "severity": "Information",
+    "message": "TODO comment line for the tool window's edit actions \u2014 set priority, mark",
+    "code": "536871362",
+    "line": 4
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoEdit.java",
+    "severity": "Information",
+    "message": "TODO} to reopen).",
+    "code": "536871362",
+    "line": 48
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoGrouping.java",
+    "severity": "Information",
+    "message": "TODO matches for the tool window: turns the flat set of {@code (file, match)} entries into",
+    "code": "536871362",
+    "line": 11
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoPartColors.java",
+    "severity": "Information",
+    "message": "TODO comment",
+    "code": "536871362",
+    "line": 4
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoPattern.java",
+    "severity": "Information",
+    "message": "TODO\" patterns): a display {@code name}, a",
+    "code": "536871362",
+    "line": 4
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoPatterns.java",
+    "severity": "Information",
+    "message": "TODO /",
+    "code": "536871362",
+    "line": 10
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoPatterns.java",
+    "severity": "Information",
+    "message": "FIXME). Disabled, blank, or invalid-regex patterns are skipped so one bad",
+    "code": "536871362",
+    "line": 10
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoPatterns.java",
+    "severity": "Information",
+    "message": "TODO,",
+    "code": "536871362",
+    "line": 49
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoPatterns.java",
+    "severity": "Information",
+    "message": "FIXME, HACK, NOTE,",
+    "code": "536871362",
+    "line": 49
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoPatterns.java",
+    "severity": "Information",
+    "message": "XXX (plus DONE, the \"marked done\" state) \u2014",
+    "code": "536871362",
+    "line": 49
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/todo/TodoService.java",
+    "severity": "Information",
+    "message": "TODO/highlight pattern matches off the JavaFX thread (the {@code SearchService} idiom: a",
+    "code": "536871362",
+    "line": 24
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ActiveFileOrder.java",
+    "severity": "Information",
+    "message": "TODO, \u2026),",
+    "code": "536871362",
+    "line": 7
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/AgentPanel.java",
+    "severity": "Warning",
+    "message": "The value of the field AgentPanel.onStop is not used",
+    "code": "570425421",
+    "line": 79
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/AgentPanel.java",
+    "severity": "Warning",
+    "message": "The type AcpJson.PlanEntry is not exported from this module",
+    "code": "8390066",
+    "line": 404
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BranchPopup.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 136
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BranchPopup.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 137
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BranchPopup.java",
+    "severity": "Warning",
+    "message": "The type GitService.BranchInfo is not exported from this module",
+    "code": "8390066",
+    "line": 139
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BranchPopup.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 193
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BranchPopup.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 193
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildActionsPopup.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 150
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildActionsPopup.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 150
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildActionsPopup.java",
+    "severity": "Warning",
+    "message": "The type BuildActionsProvider is not exported from this module",
+    "code": "8390066",
+    "line": 150
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildActionsPopup.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 160
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildActionsPopup.java",
+    "severity": "Warning",
+    "message": "The type BuildActionsProvider is not exported from this module",
+    "code": "8390066",
+    "line": 160
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildActionsTree.java",
+    "severity": "Warning",
+    "message": "The type BuildActionsProvider is not exported from this module",
+    "code": "8390066",
+    "line": 187
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildActionsTree.java",
+    "severity": "Warning",
+    "message": "The type BuildActionsProvider is not exported from this module",
+    "code": "8390066",
+    "line": 197
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildOutputPanel.java",
+    "severity": "Warning",
+    "message": "The type StackTraceLinks.Link is not exported from this module",
+    "code": "8390066",
+    "line": 50
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildOutputPanel.java",
+    "severity": "Warning",
+    "message": "The type OutputStyle is not exported from this module",
+    "code": "8390066",
+    "line": 69
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildOutputPanel.java",
+    "severity": "Warning",
+    "message": "The type CommandLog.Entry is not exported from this module",
+    "code": "8390066",
+    "line": 82
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildToolPanel.java",
+    "severity": "Warning",
+    "message": "The type StackTraceLinks.Link is not exported from this module",
+    "code": "8390066",
+    "line": 106
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/BuildToolPanel.java",
+    "severity": "Warning",
+    "message": "The type OutputStyle is not exported from this module",
+    "code": "8390066",
+    "line": 155
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ClearableField.java",
+    "severity": "Information",
+    "message": "TODO",
+    "code": "536871362",
+    "line": 11
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ConsoleNav.java",
+    "severity": "Warning",
+    "message": "The type CodeArea from module org.fxmisc.richtext may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 39
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ConsoleNav.java",
+    "severity": "Warning",
+    "message": "The type CodeArea from module org.fxmisc.richtext may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 44
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DebugLogWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 44
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DebugPanel.java",
+    "severity": "Warning",
+    "message": "The type DapModels.StackFrameInfo is not exported from this module",
+    "code": "8390066",
+    "line": 78
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DebugPanel.java",
+    "severity": "Warning",
+    "message": "The type DapModels.VariableInfo is not exported from this module",
+    "code": "8390066",
+    "line": 81
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DebugPanel.java",
+    "severity": "Warning",
+    "message": "The type DapModels.EvalResult is not exported from this module",
+    "code": "8390066",
+    "line": 87
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DebugPanel.java",
+    "severity": "Warning",
+    "message": "The type StackTraceLinks.Link is not exported from this module",
+    "code": "8390066",
+    "line": 120
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DebugPanel.java",
+    "severity": "Warning",
+    "message": "The type DapManager.State is not exported from this module",
+    "code": "8390066",
+    "line": 393
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DebugPanel.java",
+    "severity": "Warning",
+    "message": "The type DapModels.ThreadInfo is not exported from this module",
+    "code": "8390066",
+    "line": 431
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DebugPanel.java",
+    "severity": "Warning",
+    "message": "The type DapModels.StackFrameInfo is not exported from this module",
+    "code": "8390066",
+    "line": 450
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DebugPanel.java",
+    "severity": "Warning",
+    "message": "The type DapModels.ScopeInfo is not exported from this module",
+    "code": "8390066",
+    "line": 459
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DiffViewerPane.java",
+    "severity": "Warning",
+    "message": "The type DiffModels.DiffModel is not exported from this module",
+    "code": "8390066",
+    "line": 220
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DiffViewerPane.java",
+    "severity": "Warning",
+    "message": "The type DiffEngine.DiffOptions is not exported from this module",
+    "code": "8390066",
+    "line": 286
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DiffViewerPane.java",
+    "severity": "Warning",
+    "message": "The type DiffEngine.DiffOptions is not exported from this module",
+    "code": "8390066",
+    "line": 320
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DiffViewerPane.java",
+    "severity": "Warning",
+    "message": "The type DiffModels.DiffModel is not exported from this module",
+    "code": "8390066",
+    "line": 460
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DiffViewerPane.java",
+    "severity": "Warning",
+    "message": "The type DiffModels.DiffModel is not exported from this module",
+    "code": "8390066",
+    "line": 465
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DiffViewerPane.java",
+    "severity": "Warning",
+    "message": "The type DiffModels.DiffModel is not exported from this module",
+    "code": "8390066",
+    "line": 471
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DiffViewerPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 2251
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/DiffViewerPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 2261
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/EditorThemes.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 349
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/EditorThemes.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 355
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/EditorThemes.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 331
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/EditorThemes.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 337
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/EditorThemes.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 343
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ExtendedWindow.java",
+    "severity": "Warning",
+    "message": "The type HeaderBar is deprecated since version 25",
+    "code": "16778621",
+    "line": 83
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ExtendedWindow.java",
+    "severity": "Warning",
+    "message": "The type HeaderBar is deprecated since version 25",
+    "code": "16778621",
+    "line": 87
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ExtendedWindow.java",
+    "severity": "Warning",
+    "message": "The type HeaderDragType is deprecated since version 25",
+    "code": "16778621",
+    "line": 87
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ExtendedWindow.java",
+    "severity": "Warning",
+    "message": "The type HeaderBar is deprecated since version 25",
+    "code": "16778621",
+    "line": 88
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ExtendedWindow.java",
+    "severity": "Warning",
+    "message": "The type HeaderDragType is deprecated since version 25",
+    "code": "16778621",
+    "line": 88
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ExtendedWindow.java",
+    "severity": "Warning",
+    "message": "The type HeaderBar is deprecated since version 25",
+    "code": "16778621",
+    "line": 90
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ExtendedWindow.java",
+    "severity": "Warning",
+    "message": "The type HeaderBar is deprecated since version 25",
+    "code": "16778621",
+    "line": 90
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ExternalToolPanel.java",
+    "severity": "Warning",
+    "message": "The type StackTraceLinks.Link is not exported from this module",
+    "code": "8390066",
+    "line": 65
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/FileFinder.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 119
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/FileHistoryPanel.java",
+    "severity": "Warning",
+    "message": "The type DiffEngine.DiffOptions is not exported from this module",
+    "code": "8390066",
+    "line": 73
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/FileHistoryPanel.java",
+    "severity": "Warning",
+    "message": "The type DiffModels.DiffModel is not exported from this module",
+    "code": "8390066",
+    "line": 73
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/FileIcons.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 327
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/FileIcons.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 353
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/FileIcons.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 353
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/FileIcons.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 376
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/FileIcons.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 376
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/GitHubPanel.java",
+    "severity": "Warning",
+    "message": "The type RunListParser.WorkflowRun is not exported from this module",
+    "code": "8390066",
+    "line": 320
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/GitHubPanel.java",
+    "severity": "Warning",
+    "message": "The type PrListParser.PullRequest is not exported from this module",
+    "code": "8390066",
+    "line": 302
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/GitHubPanel.java",
+    "severity": "Warning",
+    "message": "The type IssueListParser.Issue is not exported from this module",
+    "code": "8390066",
+    "line": 311
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/GitLogPanel.java",
+    "severity": "Warning",
+    "message": "The type GitService.Commit is not exported from this module",
+    "code": "8390066",
+    "line": 217
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/GitLogPanel.java",
+    "severity": "Warning",
+    "message": "The type GitService.CommitFile is not exported from this module",
+    "code": "8390066",
+    "line": 233
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/GitPanel.java",
+    "severity": "Warning",
+    "message": "The type GitStatus is not exported from this module",
+    "code": "8390066",
+    "line": 297
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/GitPanel.java",
+    "severity": "Warning",
+    "message": "The method fileName(String) from the type GitPanel is never used locally",
+    "code": "603979894",
+    "line": 741
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HexViewerPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 114
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HexViewerPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 124
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HierarchyPanel.java",
+    "severity": "Warning",
+    "message": "The type LspManager.HierarchyNode is not exported from this module",
+    "code": "8390066",
+    "line": 37
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HierarchyPanel.java",
+    "severity": "Warning",
+    "message": "The type LspManager.HierarchyNode is not exported from this module",
+    "code": "8390066",
+    "line": 37
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HierarchyPanel.java",
+    "severity": "Warning",
+    "message": "The type LspManager.HierarchyNode is not exported from this module",
+    "code": "8390066",
+    "line": 113
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HtmlPreviewToggle.java",
+    "severity": "Warning",
+    "message": "The type Browsers.Browser is not exported from this module",
+    "code": "8390066",
+    "line": 32
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HtmlPreviewToggle.java",
+    "severity": "Warning",
+    "message": "The type Browsers.Browser is not exported from this module",
+    "code": "8390066",
+    "line": 32
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HtmlPreviewToggle.java",
+    "severity": "Warning",
+    "message": "The type Browsers.Browser is not exported from this module",
+    "code": "8390066",
+    "line": 32
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HttpClientPanel.java",
+    "severity": "Warning",
+    "message": "The value of the field HttpClientPanel.onCopyAsCurl is not used",
+    "code": "570425421",
+    "line": 64
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HttpClientPanel.java",
+    "severity": "Warning",
+    "message": "The value of the field HttpClientPanel.onOpenInTab is not used",
+    "code": "570425421",
+    "line": 65
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HttpClientPanel.java",
+    "severity": "Warning",
+    "message": "The type HttpExchange is not exported from this module",
+    "code": "8390066",
+    "line": 76
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HttpClientPanel.java",
+    "severity": "Warning",
+    "message": "The type HttpExchange is not exported from this module",
+    "code": "8390066",
+    "line": 77
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HttpClientPanel.java",
+    "severity": "Warning",
+    "message": "The type HttpExchange is not exported from this module",
+    "code": "8390066",
+    "line": 225
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/HttpClientPanel.java",
+    "severity": "Warning",
+    "message": "The type HttpExchange is not exported from this module",
+    "code": "8390066",
+    "line": 386
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/Icons.java",
+    "severity": "Information",
+    "message": "TODO/highlight tool window.",
+    "code": "536871362",
+    "line": 318
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/Icons.java",
+    "severity": "Information",
+    "message": "TODO: Material \"checklist\" \u2014 a checklist for the",
+    "code": "536871362",
+    "line": 318
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ImageViewerPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 207
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ImageViewerPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 217
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/LogControlBar.java",
+    "severity": "Warning",
+    "message": "The type LogLevel is not exported from this module",
+    "code": "8390066",
+    "line": 109
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/LogControlBar.java",
+    "severity": "Warning",
+    "message": "The value of the field LogControlBar.onFollow is not used",
+    "code": "570425421",
+    "line": 38
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/LogControlBar.java",
+    "severity": "Warning",
+    "message": "The type LogLevel is not exported from this module",
+    "code": "8390066",
+    "line": 41
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type Stage from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 537
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type StackPane from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 1267
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type HostServices from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 1484
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The field StageStyle.EXTENDED is deprecated since version 25",
+    "code": "33555840",
+    "line": 2494
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The method placeholder(String) from the type MainController is never used locally",
+    "code": "603979894",
+    "line": 3111
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The static method fileSize(Path) from the type MainController should be accessed in a static way",
+    "code": "603979893",
+    "line": 3300
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The method buildCoordinator(BuildTool) from the type MainController is never used locally",
+    "code": "603979894",
+    "line": 3891
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The static method homeCollapsed(String) from the type MainController should be accessed in a static way",
+    "code": "603979893",
+    "line": 4059
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type McpBridge.OpenFile is not exported from this module",
+    "code": "8390066",
+    "line": 5102
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type McpBridge.BufferContent is not exported from this module",
+    "code": "8390066",
+    "line": 5123
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type McpBridge.Diagnostic is not exported from this module",
+    "code": "8390066",
+    "line": 5139
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type McpBridge.SearchMatch is not exported from this module",
+    "code": "8390066",
+    "line": 5163
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type McpBridge.CommandInfo is not exported from this module",
+    "code": "8390066",
+    "line": 5199
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type McpBridge.Selection is not exported from this module",
+    "code": "8390066",
+    "line": 5279
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type McpBridge.Symbol is not exported from this module",
+    "code": "8390066",
+    "line": 5304
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type McpBridge.GitState is not exported from this module",
+    "code": "8390066",
+    "line": 5338
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type McpBridge.TabInfo is not exported from this module",
+    "code": "8390066",
+    "line": 5368
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type McpBridge.TodoItem is not exported from this module",
+    "code": "8390066",
+    "line": 5381
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The method largeFileNote(Path) from the type MainController is never used locally",
+    "code": "603979894",
+    "line": 8682
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Warning",
+    "message": "The type ScrollEvent from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 13104
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO patterns + highlight (on by default)",
+    "code": "536871362",
+    "line": 917
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "FIXME patterns + highlight (on by default)",
+    "code": "536871362",
+    "line": 917
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO tool windows so the active file's group is on top (IDE convention).",
+    "code": "536871362",
+    "line": 2331
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO by as-walked (scan) paths.",
+    "code": "536871362",
+    "line": 2332
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO task discards its result instead of touching a",
+    "code": "536871362",
+    "line": 2387
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO / highlight-pattern feature; owns the service/panel/scan/commands (the tool window stays here).",
+    "code": "536871362",
+    "line": 3916
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO tool-window edit (set priority / mark done / edit description):",
+    "code": "536871362",
+    "line": 4070
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO in a read-only buffer is common (a .log opens in View",
+    "code": "536871362",
+    "line": 4083
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO / highlight patterns ---------------------------------------------------------------",
+    "code": "536871362",
+    "line": 6401
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO/highlight matcher (on by default)",
+    "code": "536871362",
+    "line": 7724
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO need any buffer; Markdown Lint additionally needs a Markdown buffer (with the feature",
+    "code": "536871362",
+    "line": 10469
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO per-part colors: pick a part (tag / priority level), then enter a web-hex",
+    "code": "536871362",
+    "line": 12267
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO part's setting, then re-highlights.",
+    "code": "536871362",
+    "line": 12293
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MainController.java",
+    "severity": "Information",
+    "message": "TODO patterns + push the matcher to every buffer",
+    "code": "536871362",
+    "line": 14439
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MarkdownLintPanel.java",
+    "severity": "Warning",
+    "message": "The type MarkdownLint.Diagnostic is not exported from this module",
+    "code": "8390066",
+    "line": 130
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MergeViewerPane.java",
+    "severity": "Warning",
+    "message": "The type ConflictParser.ConflictFile is not exported from this module",
+    "code": "8390066",
+    "line": 57
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MergeViewerPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 222
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MergeViewerPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 232
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MessageLogPopup.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 182
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MessageLogPopup.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 182
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MessageLogPopup.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 209
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/MessageLogPopup.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 209
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayHost.java",
+    "severity": "Warning",
+    "message": "The type StackPane from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 66
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayHost.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 79
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayHost.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 85
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayHost.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 91
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayHost.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 91
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayHost.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 97
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayHost.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 97
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayHost.java",
+    "severity": "Warning",
+    "message": "The type BooleanProperty from module javafx.base may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 215
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayInput.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 67
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayInput.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 68
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayInput.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 82
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/OverlayInput.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 83
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/PdfViewerPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 353
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/PdfViewerPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 363
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/PrReviewPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 319
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/PrReviewPane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 329
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ProjectMapPreview.java",
+    "severity": "Warning",
+    "message": "The value of the field ProjectMapPreview.onOpenFile is not used",
+    "code": "570425421",
+    "line": 105
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ProjectMapView.java",
+    "severity": "Warning",
+    "message": "The value of the field ProjectMapView.MapSurface.lastPaintedConnectorCount is not used",
+    "code": "570425421",
+    "line": 920
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ProjectMapView.java",
+    "severity": "Warning",
+    "message": "The value of the field ProjectMapView.MapSurface.completedPaints is not used",
+    "code": "570425421",
+    "line": 921
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ProjectPanel.java",
+    "severity": "Warning",
+    "message": "The type Image from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 1032
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ProjectPanel.java",
+    "severity": "Warning",
+    "message": "The type Image from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 1032
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ProjectPanel.java",
+    "severity": "Warning",
+    "message": "The type NewFileType is not exported from this module",
+    "code": "8390066",
+    "line": 1107
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ProjectPanel.java",
+    "severity": "Warning",
+    "message": "The type Menu from module javafx.controls may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 111
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ProjectPanel.java",
+    "severity": "Warning",
+    "message": "The type ProjectMapPreview.Content is not accessible to clients that require this module",
+    "code": "8390065",
+    "line": 258
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ProjectPanel.java",
+    "severity": "Warning",
+    "message": "The type GitFileStatus is not exported from this module",
+    "code": "8390066",
+    "line": 435
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/QuickOpen.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 128
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/QuickOpen.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 338
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/RemoteConnectionsPanel.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 42
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/RemoteConnectionsPanel.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 45
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/RemoteConnectionsPanel.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 56
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/RunPanel.java",
+    "severity": "Warning",
+    "message": "The type StackTraceLinks.Link is not exported from this module",
+    "code": "8390066",
+    "line": 130
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SearchPanel.java",
+    "severity": "Warning",
+    "message": "The type SearchQuery is not exported from this module",
+    "code": "8390066",
+    "line": 52
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SearchPanel.java",
+    "severity": "Warning",
+    "message": "The type SearchService.Outcome is not exported from this module",
+    "code": "8390066",
+    "line": 326
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SearchPanel.java",
+    "severity": "Warning",
+    "message": "The type SearchQuery is not exported from this module",
+    "code": "8390066",
+    "line": 43
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 2816
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 4180
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The method section(VBox, String) from the type SettingsWindow is never used locally",
+    "code": "603979894",
+    "line": 6444
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 7645
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type ReleaseInfo is not exported from this module",
+    "code": "8390066",
+    "line": 7650
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Information",
+    "message": "TODO/highlight pattern editor: one row per pattern (enabled / name / regex / color / case) plus",
+    "code": "536871362",
+    "line": 2579
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Information",
+    "message": "TODO: in-editor",
+    "code": "536871362",
+    "line": 3026
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Information",
+    "message": "TODO highlighting + the per-pattern editor.",
+    "code": "536871362",
+    "line": 3026
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Information",
+    "message": "FIXME highlighting + the per-pattern editor.",
+    "code": "536871362",
+    "line": 3026
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Information",
+    "message": "TODO comment; each writes its {@code Settings} field and applies live.",
+    "code": "536871362",
+    "line": 3047
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Information",
+    "message": "TODO part-color pickers from settings (after a palette color change).",
+    "code": "536871362",
+    "line": 3092
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type GitService is not exported from this module",
+    "code": "8390066",
+    "line": 517
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type GitHubService is not exported from this module",
+    "code": "8390066",
+    "line": 518
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type MermaidService is not exported from this module",
+    "code": "8390066",
+    "line": 519
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type DiagramService is not exported from this module",
+    "code": "8390066",
+    "line": 520
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type TypstService is not exported from this module",
+    "code": "8390066",
+    "line": 521
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type BuildCoordinator is not accessible to clients that require this module",
+    "code": "8390065",
+    "line": 522
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type LspManager is not exported from this module",
+    "code": "8390066",
+    "line": 523
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type DapManager is not exported from this module",
+    "code": "8390066",
+    "line": 524
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type SnippetManager is not exported from this module",
+    "code": "8390066",
+    "line": 559
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 570
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 575
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 581
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type TemplateRegistry is not exported from this module",
+    "code": "8390066",
+    "line": 604
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 609
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 627
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 639
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 659
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/SettingsWindow.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 770
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/StatusBar.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 438
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/StatusBar.java",
+    "severity": "Warning",
+    "message": "The type ChecksParser.ChecksSummary is not exported from this module",
+    "code": "8390066",
+    "line": 491
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/StructurePanel.java",
+    "severity": "Warning",
+    "message": "The type SymbolNode is not exported from this module",
+    "code": "8390066",
+    "line": 473
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/Switcher.java",
+    "severity": "Warning",
+    "message": "The type Tab from module javafx.controls may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 50
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/Switcher.java",
+    "severity": "Warning",
+    "message": "The type Tab from module javafx.controls may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 51
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/Switcher.java",
+    "severity": "Warning",
+    "message": "The type Tab from module javafx.controls may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 52
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/Switcher.java",
+    "severity": "Warning",
+    "message": "The type Tab from module javafx.controls may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 53
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/Switcher.java",
+    "severity": "Warning",
+    "message": "The type Window from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 143
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TestRunCoordinator.java",
+    "severity": "Warning",
+    "message": "The value of the local variable files is not used",
+    "code": "536870973",
+    "line": 379
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/Themes.java",
+    "severity": "Warning",
+    "message": "The type Theme from module atlantafx.base may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 111
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/Themes.java",
+    "severity": "Warning",
+    "message": "The type Color from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 194
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoCoordinator.java",
+    "severity": "Warning",
+    "message": "The value of the field TodoCoordinator.registry is not used",
+    "code": "570425421",
+    "line": 62
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoCoordinator.java",
+    "severity": "Information",
+    "message": "TODO / highlight-pattern feature (in-editor highlight matcher + the tool-window project/open-files scan +",
+    "code": "536871362",
+    "line": 26
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoCoordinator.java",
+    "severity": "Information",
+    "message": "TODO tool window).",
+    "code": "536871362",
+    "line": 34
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoCoordinator.java",
+    "severity": "Information",
+    "message": "TODO result).",
+    "code": "536871362",
+    "line": 39
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoCoordinator.java",
+    "severity": "Information",
+    "message": "TODO tree so the active file's group is on top (pass the normalized path; on tab switch).",
+    "code": "536871362",
+    "line": 157
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoCoordinator.java",
+    "severity": "Information",
+    "message": "TODO match in the active buffer (wrapping).",
+    "code": "536871362",
+    "line": 176
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoCoordinator.java",
+    "severity": "Information",
+    "message": "TODO tool window is lazy (refreshed on demand).",
+    "code": "536871362",
+    "line": 186
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoCoordinator.java",
+    "severity": "Information",
+    "message": "TODO tool-window scan if it's open (e.g. after the patterns changed).",
+    "code": "536871362",
+    "line": 254
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoCoordinator.java",
+    "severity": "Information",
+    "message": "TODO/highlight matches and fills the tool window: the open project's tree when a project",
+    "code": "536871362",
+    "line": 261
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoCoordinator.java",
+    "severity": "Information",
+    "message": "TODO scan for the MCP bridge \u2014 same scope/patterns as {@link #runScan} but delivering the",
+    "code": "536871362",
+    "line": 291
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoCoordinator.java",
+    "severity": "Information",
+    "message": "TODO scan scope to the panel's label: this window's project tree (when one is",
+    "code": "536871362",
+    "line": 311
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Information",
+    "message": "TODO rows as you type (keyword / tag / description / file),",
+    "code": "536871362",
+    "line": 141
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Information",
+    "message": "TODO or a",
+    "code": "536871362",
+    "line": 398
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Information",
+    "message": "FIXME. It used to assume \"",
+    "code": "536871362",
+    "line": 398
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Information",
+    "message": "TODO\", quietly",
+    "code": "536871362",
+    "line": 398
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Information",
+    "message": "FIXME/HACK/",
+    "code": "536871362",
+    "line": 399
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Information",
+    "message": "XXX that was ever marked done and reopened. Ask instead.",
+    "code": "536871362",
+    "line": 399
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Warning",
+    "message": "The type TodoMatch is not exported from this module",
+    "code": "8390066",
+    "line": 67
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Warning",
+    "message": "The type TodoMatch is not exported from this module",
+    "code": "8390066",
+    "line": 70
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Warning",
+    "message": "The type TodoMatch is not exported from this module",
+    "code": "8390066",
+    "line": 73
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Warning",
+    "message": "The type TodoGrouping.GroupBy is not exported from this module",
+    "code": "8390066",
+    "line": 168
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Warning",
+    "message": "The type TodoGrouping.GroupBy is not exported from this module",
+    "code": "8390066",
+    "line": 175
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Warning",
+    "message": "The type TodoService.Outcome is not exported from this module",
+    "code": "8390066",
+    "line": 262
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/TodoPanel.java",
+    "severity": "Information",
+    "message": "TODO\" results tool window, an IntelliJ-style Comment Manager list: every configured-keyword match,",
+    "code": "536871362",
+    "line": 34
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ToolWindow.java",
+    "severity": "Warning",
+    "message": "The type Region from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 65
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ToolWindow.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 30
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ToolWindow.java",
+    "severity": "Warning",
+    "message": "The type Region from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 30
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ToolWindow.java",
+    "severity": "Warning",
+    "message": "The type StringProperty from module javafx.base may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 52
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ToolWindow.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 61
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ToolWindowManager.java",
+    "severity": "Warning",
+    "message": "The type BorderPane from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 129
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ToolWindowManager.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 129
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ToolWindowManager.java",
+    "severity": "Warning",
+    "message": "The type EventTarget from module javafx.base may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 659
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/ToolWindowPanel.java",
+    "severity": "Warning",
+    "message": "The value of the field ToolWindowPanel.headerMenu is not used",
+    "code": "570425421",
+    "line": 34
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WelcomePane.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 80
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WelcomePane.java",
+    "severity": "Warning",
+    "message": "The type RemoteConnection is not exported from this module",
+    "code": "8390066",
+    "line": 81
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WelcomePane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 117
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WelcomePane.java",
+    "severity": "Warning",
+    "message": "The type Node from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 137
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WindowManager.java",
+    "severity": "Warning",
+    "message": "The type Stage from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 138
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WindowManager.java",
+    "severity": "Warning",
+    "message": "The type Stage from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 214
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WindowManager.java",
+    "severity": "Warning",
+    "message": "The type Stage from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 290
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WindowManager.java",
+    "severity": "Warning",
+    "message": "The type Stage from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 311
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WindowManager.java",
+    "severity": "Warning",
+    "message": "The type Stage from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 465
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WindowManager.java",
+    "severity": "Warning",
+    "message": "The field StageStyle.EXTENDED is deprecated since version 25",
+    "code": "33555840",
+    "line": 733
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WindowManager.java",
+    "severity": "Warning",
+    "message": "The type HostServices from module javafx.graphics may not be accessible to clients due to missing 'requires transitive'",
+    "code": "8390067",
+    "line": 92
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/main/java/com/editora/ui/WorkspaceSymbolPopup.java",
+    "severity": "Warning",
+    "message": "The value of the field WorkspaceSymbolPopup.showing is not used",
+    "code": "570425421",
+    "line": 65
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/config/ProjectManagerTest.java",
+    "severity": "Warning",
+    "message": "The value of the local variable b is not used",
+    "code": "536870973",
+    "line": 63
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/editor/BracketColorsTest.java",
+    "severity": "Warning",
+    "message": "The value of the local variable ignored is not used",
+    "code": "536870973",
+    "line": 164
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/history/HistoryBlobStoreTest.java",
+    "severity": "Warning",
+    "message": "The value of the local variable store is not used",
+    "code": "536870973",
+    "line": 65
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/lsp/LspManagerTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 107
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/lsp/LspManagerTest.java",
+    "severity": "Warning",
+    "message": "Type safety: Unchecked cast from Object to Map<String,Object>",
+    "code": "16777761",
+    "line": 131
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/lsp/LspManagerTest.java",
+    "severity": "Warning",
+    "message": "Type safety: Unchecked cast from Object to Map<String,Object>",
+    "code": "16777761",
+    "line": 132
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/lsp/LspManagerTest.java",
+    "severity": "Warning",
+    "message": "Type safety: Unchecked cast from Object to Map<String,Object>",
+    "code": "16777761",
+    "line": 133
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/lsp/LspSessionLifecycleFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the local variable commandsSeen is not used",
+    "code": "536870973",
+    "line": 250
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/todo/TodoEditTest.java",
+    "severity": "Information",
+    "message": "TODO's text. It used to be swept into",
+    "code": "536871362",
+    "line": 68
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/todo/TodoEditTest.java",
+    "severity": "Information",
+    "message": "TODO.md is exactly where this lives.",
+    "code": "536871362",
+    "line": 93
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/todo/TodoScannerTest.java",
+    "severity": "Information",
+    "message": "TODO",
+    "code": "536871362",
+    "line": 24
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/todo/TodoScannerTest.java",
+    "severity": "Information",
+    "message": "TODO\" is.",
+    "code": "536871362",
+    "line": 33
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/AgentCommandHighlighterTest.java",
+    "severity": "Warning",
+    "message": "The value of the local variable s is not used",
+    "code": "536870973",
+    "line": 69
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/BookmarksPanelFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 167
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/BuildCoordinatorFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the field BuildCoordinatorFxTest.FakeOps.openTasksCount is not used",
+    "code": "570425421",
+    "line": 63
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/CommandPaletteDisabledFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 33
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/CsvCoordinatorFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the field CsvCoordinatorFxTest.FakeHost.lastStatus is not used",
+    "code": "570425421",
+    "line": 40
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/CsvCoordinatorFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the field CsvCoordinatorFxTest.FakeOps.jumps is not used",
+    "code": "570425421",
+    "line": 74
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/DiagnosticStaleOnEditFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 31
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/DictionaryBroadcastFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 42
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/DiffUiStartupFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 96
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/DiffUiStartupFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 127
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/DoctorCoordinatorFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the field DoctorCoordinatorFxTest.FakeOps.installedTypstCli is not used",
+    "code": "570425421",
+    "line": 50
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/EditorGroupsFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the local variable first is not used",
+    "code": "536870973",
+    "line": 247
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/GitMultiFileReviewFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 112
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/HtmlPreviewCoordinatorFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the field HtmlPreviewCoordinatorFxTest.FakeHost.lastStatus is not used",
+    "code": "570425421",
+    "line": 38
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/HttpClientCoordinatorFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the field HttpClientCoordinatorFxTest.FakeOps.persistedEnv is not used",
+    "code": "570425421",
+    "line": 73
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/IndexCoordinatorFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 173
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/InlayPlacementSpikeFxTest.java",
+    "severity": "Warning",
+    "message": "The method rangeShape(int, int) from the type TextFlow is deprecated since version 25",
+    "code": "67110270",
+    "line": 41
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/InlayPlacementSpikeFxTest.java",
+    "severity": "Warning",
+    "message": "The method hitTest(Point2D) from the type TextFlow is deprecated since version 25",
+    "code": "67110270",
+    "line": 88
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/LogViewerCoordinatorFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the field LogViewerCoordinatorFxTest.FakeHost.lastStatus is not used",
+    "code": "570425421",
+    "line": 42
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/LspCoordinatorSyncFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the field LspCoordinatorSyncFxTest.FakeHost.lastStatus is not used",
+    "code": "570425421",
+    "line": 58
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/MarkdownPrintLayoutFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the field MarkdownPrintLayoutFxTest.PH is not used",
+    "code": "570425421",
+    "line": 64
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/MarkdownPrintLayoutFxTest.java",
+    "severity": "Warning",
+    "message": "The method pageContentHeights(String) from the type MarkdownPrintLayoutFxTest is never used locally",
+    "code": "603979894",
+    "line": 67
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/MarkdownPrintLayoutFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the field MarkdownPrintLayoutFxTest.PW is not used",
+    "code": "570425421",
+    "line": 62
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/MavenMenuFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 160
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/NewFileMenuFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 54
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/PaletteContextFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 112
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/PaletteContextFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 38
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/PreviewTabFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the local variable area is not used",
+    "code": "536870973",
+    "line": 84
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/ProjectMapViewFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 139
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/ProjectMapViewFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 1377
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/ProjectMapViewFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 1843
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/QuickOpenPreviewFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 78
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/RectangleFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 92
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/RunConfigToolbarFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 58
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/SearchEverywhereFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 57
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/StructurePanelFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 185
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/StructurePanelFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 159
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/TestRunnerPanelFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 251
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/TestRunnerPanelFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 293
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/TestRunnerPanelFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 45
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/TestRunnerPanelFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 123
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/TestRunnerPanelFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 165
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/TestRunnerPanelFxTest.java",
+    "severity": "Warning",
+    "message": "Unnecessary @SuppressWarnings(\"unchecked\")",
+    "code": "536871547",
+    "line": 216
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/ThreeWayMergeIntegrationFxTest.java",
+    "severity": "Warning",
+    "message": "The value of the local variable pane is not used",
+    "code": "536870973",
+    "line": 125
+  },
+  {
+    "uri": "file:///Users/adriandeleon/src/adl/Editora-V2-worktrees/codex-java-lsp-evaluation/src/test/java/com/editora/ui/TypingLatencyBenchmarkTest.java",
+    "severity": "Warning",
+    "message": "The value of the local variable arr is not used",
+    "code": "536870973",
+    "line": 616
+  }
+]
