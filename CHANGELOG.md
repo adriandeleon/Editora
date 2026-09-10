@@ -1,18 +1,13 @@
 # Changelog
 
-- **The Welcome page keeps long Recent lists compact.** It now shows the five newest valid files first and
-  provides an accessible disclosure chevron to show or hide any remaining entries.
-
-- Project Canvas Personal Notes badges now open independent, editable note cards for files and folders. Each
-  card keeps a parent connector, can coexist with its code preview, and can be temporarily hidden with the
-  default-off “Hide all open Personal Notes” filter toggle.
-
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.18.0] - 2026-09-09
 
 - `.astro` files are now recognized as Astro, use the official Astro TextMate grammar for mixed
   frontmatter/HTML/CSS syntax highlighting and Structure symbols, and support the configurable
@@ -25,12 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Project Canvas Personal Notes badges now open independent, editable note cards for files and folders. Each
+  card keeps a parent connector, can coexist with its code preview, and can be temporarily hidden with the
+  default-off “Hide all open Personal Notes” filter toggle.
 - The Project Map can now filter its visible working set to bookmarked files or files with Personal Notes.
 - Floating Project Map previews now have a live connector to their source file row, including while the
   map is panned or zoomed and while a preview is moved or resized.
 
 ### Fixed
 
+- **The Welcome page keeps long Recent lists compact.** It now shows the five newest valid files first and
+  provides an accessible disclosure chevron to show or hide any remaining entries.
 - The Quit confirmation now presents its destructive Quit action as a red danger button while keeping
   Cancel neutral.
 - Save, history, bulk-replace, search, preview, process, and configuration shutdown paths now preserve
