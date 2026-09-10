@@ -172,6 +172,17 @@ class WorkspaceEditMapperTest {
         assertTrue(WorkspaceEditMapper.map(we).renames().get(0).overwrite());
     }
 
+    @Test
+    void dependentRenameChainIsRefusedRatherThanAppliedAsSimultaneousMoves() {
+        var first = new org.eclipse.lsp4j.RenameFile(uri("/tmp/A.java"), uri("/tmp/B.java"));
+        var second = new org.eclipse.lsp4j.RenameFile(uri("/tmp/B.java"), uri("/tmp/C.java"));
+        WorkspaceEdit edit = new WorkspaceEdit(List.of(
+                Either.<TextDocumentEdit, ResourceOperation>forRight(first),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(second)));
+
+        assertNull(WorkspaceEditMapper.map(edit));
+    }
+
     // --- LSP 3.18 snippet edits -----------------------------------------------------------------
 
     @Test

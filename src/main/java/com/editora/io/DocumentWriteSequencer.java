@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 import com.editora.config.PathKeys;
 
@@ -24,6 +25,7 @@ public final class DocumentWriteSequencer {
 
     private static final class State {
         final AtomicLong generation = new AtomicLong();
+        final ReentrantLock writeLock = new ReentrantLock();
         int users;
     }
 
@@ -44,11 +46,14 @@ public final class DocumentWriteSequencer {
         }
 
         public <T> Outcome<T> runIfCurrent(IoSupplier<T> action) throws IOException {
-            synchronized (state) {
+            state.writeLock.lock();
+            try {
                 if (!isCurrent()) {
                     return new Outcome<>(false, null);
                 }
                 return new Outcome<>(true, action.get());
+            } finally {
+                state.writeLock.unlock();
             }
         }
 

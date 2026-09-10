@@ -43,6 +43,33 @@ class DocumentWriteSequencerTest {
     }
 
     @Test
+    void supersedeNeverWaitsForAnInFlightWrite() throws Exception {
+        DocumentWriteSequencer sequencer = new DocumentWriteSequencer();
+        Path file = Path.of("file.txt");
+        java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+                var ticket = sequencer.begin(file)) {
+            var write = executor.submit(() -> ticket.runIfCurrent(() -> {
+                entered.countDown();
+                try {
+                    release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return true;
+            }));
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            var supersede = executor.submit(() -> sequencer.supersede(file));
+            supersede.get(1, java.util.concurrent.TimeUnit.SECONDS);
+            release.countDown();
+            write.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
     void aNewerTicketPreventsAnOlderStagedCommit(@TempDir Path dir) throws Exception {
         DocumentWriteSequencer sequencer = new DocumentWriteSequencer();
         Path file = Files.writeString(dir.resolve("file.txt"), "baseline");

@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MultiFileSearchTest {
 
@@ -44,6 +45,25 @@ class MultiFileSearchTest {
     void matchProductionStopsAtTheRequestedLimit() {
         List<LineMatch> matches = MultiFileSearch.matchesInText("hit\n".repeat(10_000), q("hit"), 37);
         assertEquals(37, matches.size());
+    }
+
+    @Test
+    void denseSingleLineStopsAllocationAtTheRequestedLimitAndHonorsCancellation() {
+        var bean = (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean();
+        bean.setThreadAllocatedMemoryEnabled(true);
+        String text = "x".repeat(500_000);
+        long before = bean.getThreadAllocatedBytes(Thread.currentThread().threadId());
+
+        assertEquals(1, MultiFileSearch.matchesInText(text, q("x"), 1).size());
+        long allocated = bean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - before;
+        assertTrue(allocated < 2_000_000, "the matcher must not materialize the other 499,999 matches");
+
+        Thread.currentThread().interrupt();
+        try {
+            assertTrue(MultiFileSearch.matchesInText(text, q("x"), 1).isEmpty());
+        } finally {
+            Thread.interrupted();
+        }
     }
 
     @Test

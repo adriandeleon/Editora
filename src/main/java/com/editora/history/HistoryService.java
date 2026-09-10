@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -27,6 +28,9 @@ import com.editora.history.HistoryRetention.RetentionPolicy;
  * (the auto-save precedent), so the executor never touches live editor state.
  */
 public final class HistoryService {
+
+    /** A null revision can mean an unchanged successful snapshot; {@code successful} distinguishes I/O failure. */
+    public record SnapshotOutcome(HistoryRevision revision, boolean successful) {}
 
     private static final Logger LOG = Logger.getLogger(HistoryService.class.getName());
 
@@ -63,43 +67,72 @@ public final class HistoryService {
             RetentionPolicy policy,
             long now,
             Consumer<HistoryRevision> onRecorded) {
+        snapshotWithOutcome(
+                file,
+                content,
+                reason,
+                label,
+                force,
+                existing,
+                policy,
+                now,
+                outcome -> onRecorded.accept(outcome.revision()));
+    }
+
+    public void snapshotWithOutcome(
+            Path file,
+            String content,
+            String reason,
+            String label,
+            boolean force,
+            List<HistoryRevision> existing,
+            RetentionPolicy policy,
+            long now,
+            Consumer<SnapshotOutcome> onRecorded) {
         List<HistoryRevision> snapshot = existing == null ? List.of() : new ArrayList<>(existing);
         synchronized (publicationLock) {
             publicationsInFlight++;
         }
-        exec.submit(() -> {
-            try {
-                String sha = HistoryBlobStore.sha256(content);
-                if (!force && HistoryRetention.isDuplicate(snapshot, sha)) {
-                    // Unchanged since the last revision — skip the blob write. Still report completion: the
-                    // caller counts in-flight records to know when it is safe to GC.
-                    deliver(null, onRecorded);
-                    return;
+        try {
+            exec.submit(() -> {
+                try {
+                    String sha = HistoryBlobStore.sha256(content);
+                    if (!force && HistoryRetention.isDuplicate(snapshot, sha)) {
+                        // Unchanged since the last revision — skip the blob write. Still report completion: the
+                        // caller counts in-flight records to know when it is safe to GC.
+                        deliver(new SnapshotOutcome(null, true), onRecorded);
+                        return;
+                    }
+                    blobs.put(content, sha);
+                    long size = content.getBytes(StandardCharsets.UTF_8).length;
+                    HistoryRevision rev =
+                            new HistoryRevision(file.toString(), now, size, sha, reason, label == null ? "" : label);
+                    // Deliver just the revision: the caller folds it into the index on the FX thread, against the
+                    // list as it is THEN. Building the new list here from the list as it was at submit time meant a
+                    // second record for the same file (a label during a slow save; two dirty buffers on one autosave)
+                    // overwrote the first one's revision with a list that never contained it.
+                    deliver(new SnapshotOutcome(rev, true), onRecorded);
+                } catch (Throwable t) {
+                    // A failure here (e.g. the blob disk write) MUST still complete the callback: the caller
+                    // decrements an in-flight counter in onRecorded and only GCs when it hits zero, so a stranded
+                    // callback silently stops local-history GC for the rest of the session (blobs grow unbounded).
+                    // The submit() Future is unobserved, so without this the throw is swallowed and never logged.
+                    LOG.log(Level.WARNING, "Failed to record a history revision for " + file, t);
+                    deliver(new SnapshotOutcome(null, false), onRecorded);
                 }
-                blobs.put(content, sha);
-                long size = content.getBytes(StandardCharsets.UTF_8).length;
-                HistoryRevision rev =
-                        new HistoryRevision(file.toString(), now, size, sha, reason, label == null ? "" : label);
-                // Deliver just the revision: the caller folds it into the index on the FX thread, against the
-                // list as it is THEN. Building the new list here from the list as it was at submit time meant a
-                // second record for the same file (a label during a slow save; two dirty buffers on one autosave)
-                // overwrote the first one's revision with a list that never contained it.
-                deliver(rev, onRecorded);
-            } catch (Throwable t) {
-                // A failure here (e.g. the blob disk write) MUST still complete the callback: the caller
-                // decrements an in-flight counter in onRecorded and only GCs when it hits zero, so a stranded
-                // callback silently stops local-history GC for the rest of the session (blobs grow unbounded).
-                // The submit() Future is unobserved, so without this the throw is swallowed and never logged.
-                LOG.log(Level.WARNING, "Failed to record a history revision for " + file, t);
-                deliver(null, onRecorded);
+            });
+        } catch (RejectedExecutionException shuttingDown) {
+            synchronized (publicationLock) {
+                publicationsInFlight--;
             }
-        });
+            Platform.runLater(() -> onRecorded.accept(new SnapshotOutcome(null, false)));
+        }
     }
 
-    private void deliver(HistoryRevision revision, Consumer<HistoryRevision> onRecorded) {
+    private void deliver(SnapshotOutcome outcome, Consumer<SnapshotOutcome> onRecorded) {
         Platform.runLater(() -> {
             try {
-                onRecorded.accept(revision);
+                onRecorded.accept(outcome);
             } finally {
                 Set<String> live = null;
                 synchronized (publicationLock) {
@@ -111,7 +144,11 @@ public final class HistoryService {
                 }
                 if (live != null) {
                     Set<String> snapshot = live;
-                    exec.submit(() -> blobs.deleteUnreferenced(snapshot));
+                    try {
+                        exec.submit(() -> blobs.deleteUnreferenced(snapshot));
+                    } catch (RejectedExecutionException shuttingDown) {
+                        // Retaining stale blobs during final shutdown is safer than deleting without an owner.
+                    }
                 }
             }
         });
@@ -119,16 +156,20 @@ public final class HistoryService {
 
     /** Fetches a revision's body off the FX thread and delivers it (or {@code null}) on the FX thread. */
     public void content(HistoryRevision rev, Consumer<String> onText) {
-        exec.submit(() -> {
-            try {
-                String text = rev == null ? null : blobs.get(rev.sha256());
-                Platform.runLater(() -> onText.accept(text));
-            } catch (Throwable t) {
-                // Always complete the callback so a diff/preview view doesn't hang "loading" on a read failure.
-                LOG.log(Level.WARNING, "Failed to read a history revision body", t);
-                Platform.runLater(() -> onText.accept(null));
-            }
-        });
+        try {
+            exec.submit(() -> {
+                try {
+                    String text = rev == null ? null : blobs.get(rev.sha256());
+                    Platform.runLater(() -> onText.accept(text));
+                } catch (Throwable t) {
+                    // Always complete the callback so a diff/preview view doesn't hang "loading" on a read failure.
+                    LOG.log(Level.WARNING, "Failed to read a history revision body", t);
+                    Platform.runLater(() -> onText.accept(null));
+                }
+            });
+        } catch (RejectedExecutionException shuttingDown) {
+            Platform.runLater(() -> onText.accept(null));
+        }
     }
 
     /**
@@ -147,7 +188,11 @@ public final class HistoryService {
                 return;
             }
         }
-        exec.submit(() -> blobs.deleteUnreferenced(snapshot));
+        try {
+            exec.submit(() -> blobs.deleteUnreferenced(snapshot));
+        } catch (RejectedExecutionException shuttingDown) {
+            // Final shutdown owns no future GC work; retaining blobs is the safe failure mode.
+        }
     }
 
     public void shutdown() {

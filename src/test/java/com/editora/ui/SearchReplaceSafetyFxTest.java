@@ -90,4 +90,23 @@ class SearchReplaceSafetyFxTest {
         assertFalse(result.changed());
         assertEquals("old text", Files.readString(file));
     }
+
+    @Test
+    void closedFileReplacementRechecksAfterTheCommitGuard(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("file.txt"), "old text");
+
+        SearchCoordinator.ClosedReplace result =
+                SearchCoordinator.replaceClosedFile(file, QUERY, "new", ignored -> {}, () -> {
+                    try {
+                        Files.writeString(file, "external edit");
+                    } catch (java.io.IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                    return true;
+                });
+
+        assertTrue(result.failed());
+        assertFalse(result.changed());
+        assertEquals("external edit", Files.readString(file));
+    }
 }

@@ -1280,8 +1280,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (installCoordinator != null) {
             installCoordinator.shutdown();
         }
-        fileWorkflows.autoSaveExecutor.shutdownNow();
-        fileWorkflows.fileLoadExecutor.shutdownNow();
+        fileWorkflows.shutdown();
         diffCoordinator.shutdown(); // the diff-service worker thread
         mavenProjectCoordinator.shutdown(); // archetype:generate process + catalog fetch thread
         externalToolCoordinator.shutdown(); // the external-tool worker thread
@@ -2718,6 +2717,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void saveHistory() {
                 config.saveHistory();
+            }
+
+            @Override
+            public void saveHistory(java.util.function.Consumer<Boolean> completion) {
+                config.saveHistory(completion);
             }
 
             @Override
@@ -6356,7 +6360,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                     new SearchCoordinator.ReplaceSupport(
                             file -> bufferOf(tabForPath(file)),
                             fileWorkflows.loadingBuffers::contains,
-                            (file, content) -> historyCoordinator.record(file, content, "replace-in-files"),
+                            (file, content, completion) ->
+                                    historyCoordinator.recordDurably(file, content, "replace-in-files", completion),
                             file -> config.shared().documentWrites().begin(file)),
                     new SearchCoordinator.Persistence(
                             query -> {
@@ -8544,7 +8549,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void closeTabs(List<Tab> targets) {
         for (Tab tab : targets) {
             EditorBuffer buffer = bufferOf(tab);
-            if (buffer != null && !buffer.isDirty()) {
+            if (buffer != null && !buffer.isDirty() && !fileWorkflows.hasPendingSave(buffer)) {
                 editorArea.remove(tab);
                 continue;
             }
@@ -8966,7 +8971,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** @return true if the tab is allowed to close (saved, discarded, or wasn't dirty). */
     private boolean confirmCloseIfDirty(EditorBuffer buffer) {
-        if (!buffer.isDirty()) {
+        if (!buffer.isDirty() && !fileWorkflows.hasPendingSave(buffer)) {
             return true;
         }
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
@@ -9111,7 +9116,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     boolean confirmCloseAllBuffers() {
         for (Tab tab : new ArrayList<>(editorArea.tabs())) {
             EditorBuffer buffer = bufferOf(tab);
-            if (buffer == null || !buffer.isDirty()) {
+            if (buffer == null || !buffer.isDirty() && !fileWorkflows.hasPendingSave(buffer)) {
                 continue;
             }
             editorArea.select(tab);

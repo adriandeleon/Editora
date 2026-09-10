@@ -3,10 +3,13 @@ package com.editora.lsp;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import com.editora.config.PathKeys;
 import com.editora.editor.LspTextEdit;
 import org.eclipse.lsp4j.SnippetTextEdit;
 import org.eclipse.lsp4j.TextDocumentEdit;
@@ -148,7 +151,22 @@ public final class WorkspaceEditMapper {
         }
         List<FileEdit> out = new ArrayList<>(byFile.size());
         byFile.forEach((file, edits) -> out.add(new FileEdit(file, List.copyOf(edits), versions.get(file), null)));
+        if (!independentRenames(renames)) {
+            return null;
+        }
         return new Mapped(out, List.copyOf(renames), List.copyOf(creates), List.copyOf(deletes));
+    }
+
+    /** Grouped execution can preserve only renames whose source and destination paths are disjoint. */
+    private static boolean independentRenames(List<FileRename> renames) {
+        Set<String> touched = new HashSet<>();
+        for (FileRename rename : renames) {
+            if (!touched.add(PathKeys.normalizedKey(rename.from()))
+                    || !touched.add(PathKeys.normalizedKey(rename.to()))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Adds request-time document snapshots to unversioned edits so an async response can be rejected if

@@ -36,6 +36,8 @@ public final class SearchService {
     /** The result set, with caps so a huge tree can't freeze the UI. */
     public record Outcome(List<FileResult> files, int totalMatches, int fileCount, boolean truncated) {}
 
+    private record DiskSearch(List<FileResult> files, boolean truncated) {}
+
     private static final int MAX_DEPTH = 25;
     private static final int MAX_FILES_SCANNED = 20_000;
     private static final long MAX_FILE_BYTES = 2L * 1024 * 1024;
@@ -120,15 +122,20 @@ public final class SearchService {
             return new Outcome(List.of(), 0, 0, false);
         }
         boolean haveRoot = scopeRoot != null && Files.isDirectory(scopeRoot);
+        Set<Path> openKeys = normalizedPaths(open.keySet());
         // On-disk results: ripgrep when enabled + local root, else the Java walker. rg falls back to the
         // walker on a pattern/IO error (exit 2) or if it failed to launch (null), so nothing regresses.
         List<FileResult> disk = null;
         boolean[] sourceTruncated = {false};
         if (haveRoot && useRipgrep && Vfs.isLocal(scopeRoot)) {
-            disk = ripgrepDisk(query, scopeRoot, include, exclude, generation, sourceTruncated);
+            disk = ripgrepDisk(query, scopeRoot, include, exclude, openKeys, generation, sourceTruncated);
         }
         if (disk == null) {
-            disk = haveRoot ? walkDisk(query, scopeRoot, include, exclude, generation) : new ArrayList<>();
+            DiskSearch walked = haveRoot
+                    ? walkDisk(query, scopeRoot, include, exclude, openKeys, generation)
+                    : new DiskSearch(new ArrayList<>(), false);
+            disk = walked.files();
+            sourceTruncated[0] |= walked.truncated();
         }
         return overlay(disk, query, open, scopeRoot, include, exclude, generation, sourceTruncated[0]);
     }
@@ -139,6 +146,7 @@ public final class SearchService {
             Path root,
             List<String> include,
             List<String> exclude,
+            Set<Path> openKeys,
             long generation,
             boolean[] truncated) {
         List<String> cmd = new ArrayList<>(rgCommand);
@@ -156,24 +164,39 @@ public final class SearchService {
         }
         truncated[0] = r.outTruncated();
         List<FileResult> out = new ArrayList<>();
-        for (FileResult fr : RipgrepOutput.parse(r.out(), MAX_MATCHES + 1)) {
+        for (FileResult fr : RipgrepOutput.parse(
+                r.out(),
+                MAX_MATCHES + 1,
+                path -> !openKeys.contains(root.resolve(path).toAbsolutePath().normalize()))) {
             out.add(new FileResult(root.resolve(fr.file().toString()).normalize(), fr.matches()));
         }
         return out;
     }
 
     /** On-disk search via the built-in walker (dot-dir/oversize/binary skipping + include/exclude globs). */
-    private List<FileResult> walkDisk(
-            SearchQuery query, Path root, List<String> include, List<String> exclude, long generation) {
+    private DiskSearch walkDisk(
+            SearchQuery query,
+            Path root,
+            List<String> include,
+            List<String> exclude,
+            Set<Path> openKeys,
+            long generation) {
         Set<Path> candidates = new LinkedHashSet<>();
         GitignoreFilter gitignore = respectGitignore ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
-        collect(root, candidates, gitignore, generation);
+        boolean truncated = collect(root, candidates, gitignore, openKeys, generation);
         boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> out = new ArrayList<>();
         int total = 0;
         for (Path file : candidates) {
-            if (cancelled(generation) || total > MAX_MATCHES) {
+            if (cancelled(generation)) {
                 break;
+            }
+            if (total > MAX_MATCHES) {
+                truncated = true;
+                break;
+            }
+            if (openKeys.contains(file.toAbsolutePath().normalize())) {
+                continue;
             }
             if (filtering && !Globs.accept(relativize(root, file), include, exclude)) {
                 continue;
@@ -188,7 +211,7 @@ public final class SearchService {
                 total += ms.size();
             }
         }
-        return out;
+        return new DiskSearch(out, truncated);
     }
 
     /** Root-relative, '/'-separated path for glob matching; falls back to the file name if not under root. */
@@ -220,6 +243,12 @@ public final class SearchService {
             List<String> include,
             List<String> exclude) {
         return overlay(disk, query, open, root, include, exclude, gen.get(), false);
+    }
+
+    private static Set<Path> normalizedPaths(Set<Path> paths) {
+        Set<Path> normalized = new HashSet<>();
+        paths.forEach(path -> normalized.add(path.toAbsolutePath().normalize()));
+        return normalized;
     }
 
     private Outcome overlay(
@@ -286,7 +315,8 @@ public final class SearchService {
         return new Outcome(results, total, results.size(), truncated);
     }
 
-    private void collect(Path root, Set<Path> out, GitignoreFilter gitignore, long generation) {
+    private boolean collect(Path root, Set<Path> out, GitignoreFilter gitignore, Set<Path> openKeys, long generation) {
+        boolean[] truncated = {false};
         try {
             int[] scanned = {0};
             Files.walkFileTree(
@@ -307,7 +337,7 @@ public final class SearchService {
                                 return FileVisitResult.SKIP_SUBTREE; // target/, node_modules/, …
                             }
                             return scanned[0] > MAX_FILES_SCANNED
-                                    ? FileVisitResult.TERMINATE
+                                    ? terminateTruncated(truncated)
                                     : FileVisitResult.CONTINUE;
                         }
 
@@ -316,27 +346,44 @@ public final class SearchService {
                             if (cancelled(generation)) {
                                 return FileVisitResult.TERMINATE;
                             }
+                            if (a.isDirectory()) {
+                                truncated[0] = true; // reached MAX_DEPTH with an unvisited subtree
+                                return FileVisitResult.CONTINUE;
+                            }
+                            if (openKeys.contains(file.toAbsolutePath().normalize())) {
+                                return FileVisitResult.CONTINUE; // authoritative in-memory content uses no disk budget
+                            }
                             if (++scanned[0] > MAX_FILES_SCANNED) {
-                                return FileVisitResult.TERMINATE;
+                                return terminateTruncated(truncated);
                             }
                             String name = file.getFileName().toString();
                             if (!name.startsWith(".")
                                     && a.isRegularFile()
-                                    && a.size() <= MAX_FILE_BYTES
                                     && !gitignore.ignored(relativize(root, file), false)) {
-                                out.add(file);
+                                if (a.size() <= MAX_FILE_BYTES) {
+                                    out.add(file);
+                                } else {
+                                    truncated[0] = true;
+                                }
                             }
                             return FileVisitResult.CONTINUE;
                         }
 
                         @Override
                         public FileVisitResult visitFileFailed(Path file, IOException e) {
+                            truncated[0] = true;
                             return FileVisitResult.CONTINUE;
                         }
                     });
         } catch (IOException ignored) {
             // best-effort walk
         }
+        return truncated[0];
+    }
+
+    private static FileVisitResult terminateTruncated(boolean[] truncated) {
+        truncated[0] = true;
+        return FileVisitResult.TERMINATE;
     }
 
     private boolean cancelled(long generation) {

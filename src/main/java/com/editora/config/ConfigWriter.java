@@ -12,6 +12,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -32,6 +34,14 @@ public final class ConfigWriter {
         byte[] get() throws IOException;
     }
 
+    enum WriteOutcome {
+        WRITTEN,
+        SUPERSEDED,
+        FAILED
+    }
+
+    private record PendingWrite(BytesSupplier bytes, Consumer<WriteOutcome> completion) {}
+
     private static final Logger LOG = Logger.getLogger(ConfigWriter.class.getName());
 
     /** Config files can hold credentials + private content, so they are owner-only (0600). */
@@ -40,6 +50,8 @@ public final class ConfigWriter {
     private final ExecutorService io;
     /** Serializes the executor drain with the post-shutdown synchronous fallback. */
     private final Object writerLock = new Object();
+
+    private final AtomicBoolean failureSinceFlush = new AtomicBoolean();
 
     public ConfigWriter() {
         this(Executors.newSingleThreadExecutor(r -> {
@@ -65,7 +77,7 @@ public final class ConfigWriter {
     }
 
     private final Object lock = new Object();
-    private final Map<Path, BytesSupplier> pending = new LinkedHashMap<>();
+    private final Map<Path, PendingWrite> pending = new LinkedHashMap<>();
 
     /**
      * Notified (on the writer thread) when an atomic config-file write fails. Lets a durable save on quit /
@@ -91,10 +103,12 @@ public final class ConfigWriter {
      * the {@code cancelled} set, re-checked per file just before each write, closes that race (#491).
      */
     public void cancel(Path file) {
+        PendingWrite removed;
         synchronized (lock) {
-            pending.remove(file);
+            removed = pending.remove(file);
             cancelled.add(file);
         }
+        complete(removed, WriteOutcome.SUPERSEDED);
     }
 
     /** Queues {@code bytes} to be written to {@code file} off-thread; a newer write to the same file wins. */
@@ -104,17 +118,30 @@ public final class ConfigWriter {
 
     /** Queues off-thread serialization plus writing of an immutable snapshot. */
     void enqueue(Path file, BytesSupplier bytes) {
+        enqueue(file, bytes, ignored -> {});
+    }
+
+    /** Queues an immutable snapshot and reports whether this exact snapshot became durable. */
+    void enqueue(Path file, BytesSupplier bytes, Consumer<WriteOutcome> completion) {
+        PendingWrite requested = new PendingWrite(bytes, completion);
+        PendingWrite superseded;
         synchronized (lock) {
-            pending.put(file, bytes);
+            superseded = pending.put(file, requested);
             cancelled.remove(file); // a fresh, legitimate write un-cancels the file
         }
+        complete(superseded, WriteOutcome.SUPERSEDED);
         try {
             io.execute(this::drain);
         } catch (RejectedExecutionException shuttingDown) {
-            // A late write after shutdown still has to preserve ordering with any final drain that was
-            // already running. The writer lock makes this a handoff, never a second concurrent writer.
-            synchronized (writerLock) {
-                drain();
+            PendingWrite rejected = null;
+            synchronized (lock) {
+                if (pending.get(file) == requested) {
+                    rejected = pending.remove(file);
+                }
+            }
+            if (rejected != null) {
+                failureSinceFlush.set(true);
+                complete(rejected, WriteOutcome.FAILED);
             }
         }
     }
@@ -123,10 +150,19 @@ public final class ConfigWriter {
     public boolean flush() {
         try {
             io.submit(() -> {}).get(flushTimeoutMillis, TimeUnit.MILLISECONDS); // wait for all queued drains
-            return true;
+            return !failureSinceFlush.getAndSet(false);
         } catch (RejectedExecutionException shuttingDown) {
-            drain();
-            return true;
+            try {
+                if (!io.awaitTermination(flushTimeoutMillis, TimeUnit.MILLISECONDS)) {
+                    return false;
+                }
+                synchronized (lock) {
+                    return pending.isEmpty() && !failureSinceFlush.getAndSet(false);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;
@@ -147,7 +183,7 @@ public final class ConfigWriter {
     }
 
     private void drainOwned() {
-        Map<Path, BytesSupplier> batch;
+        Map<Path, PendingWrite> batch;
         synchronized (lock) {
             if (pending.isEmpty()) {
                 return;
@@ -159,22 +195,41 @@ public final class ConfigWriter {
         if (hook != null) {
             hook.run(); // test-only: a window for a racing cancel() (#491); null in production
         }
-        batch.forEach((file, bytes) -> {
+        batch.forEach((file, write) -> {
             synchronized (lock) {
                 if (cancelled.contains(file)) {
+                    complete(write, WriteOutcome.SUPERSEDED);
                     return; // cancelled after this drain claimed the bytes — don't write (#491)
                 }
             }
             try {
-                writeAtomicOrThrow(file, bytes.get());
+                writeAtomicOrThrow(file, write.bytes().get());
+                complete(write, WriteOutcome.WRITTEN);
             } catch (IOException | RuntimeException e) {
                 IOException failure = e instanceof IOException ioFailure
                         ? ioFailure
                         : new IOException("Failed to serialize configuration snapshot", e);
                 LOG.log(Level.SEVERE, "Failed to write config file " + file, failure);
-                onWriteError.accept(file, failure); // surface it (#418) — no longer a silent swallow
+                failureSinceFlush.set(true);
+                complete(write, WriteOutcome.FAILED);
+                try {
+                    onWriteError.accept(file, failure); // surface it (#418) — no longer a silent swallow
+                } catch (RuntimeException handlerFailure) {
+                    LOG.log(Level.WARNING, "Config write failure handler failed", handlerFailure);
+                }
             }
         });
+    }
+
+    private static void complete(PendingWrite write, WriteOutcome outcome) {
+        if (write == null) {
+            return;
+        }
+        try {
+            write.completion().accept(outcome);
+        } catch (RuntimeException completionFailure) {
+            LOG.log(Level.WARNING, "Config write completion handler failed", completionFailure);
+        }
     }
 
     /** Writes {@code bytes} to {@code file} via a temp file + atomic move (a crash never leaves a partial file). */

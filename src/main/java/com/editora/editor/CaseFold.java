@@ -86,6 +86,9 @@ final class CaseFold {
             return false;
         }
         for (int i = 0; i < s.length(); i++) {
+            if ((i & 0x3FF) == 0 && Thread.currentThread().isInterrupted()) {
+                return false;
+            }
             char c = s.charAt(i);
             if (c >= MIN_EXPANDING && c <= MAX_EXPANDING && Table.EXPANDING.get(c)) {
                 return true;

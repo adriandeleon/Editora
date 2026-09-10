@@ -21,12 +21,18 @@ public final class SearchMatcher {
      */
     public static List<int[]> matches(
             String text, String query, boolean caseSensitive, boolean regex, boolean wholeWord) {
+        return matches(text, query, caseSensitive, regex, wholeWord, Integer.MAX_VALUE);
+    }
+
+    /** Bounded variant used by multi-file search so dense lines cannot allocate past its result budget. */
+    public static List<int[]> matches(
+            String text, String query, boolean caseSensitive, boolean regex, boolean wholeWord, int limit) {
         if (text == null || query == null || query.isEmpty()) {
             return List.of();
         }
         return regex
-                ? regexMatches(text, query, caseSensitive, wholeWord)
-                : literalMatches(text, query, caseSensitive, wholeWord);
+                ? regexMatches(text, query, caseSensitive, wholeWord, DEFAULT_MATCH_BUDGET_NANOS, limit)
+                : literalMatches(text, query, caseSensitive, wholeWord, limit);
     }
 
     /** The regex compile error description, or {@code null} if {@code query} is a valid pattern. */
@@ -74,21 +80,41 @@ public final class SearchMatcher {
         return -1;
     }
 
-    private static List<int[]> literalMatches(String text, String query, boolean caseSensitive, boolean wholeWord) {
+    private static List<int[]> literalMatches(
+            String text, String query, boolean caseSensitive, boolean wholeWord, int limit) {
+        if (limit <= 0 || Thread.currentThread().isInterrupted()) {
+            return List.of();
+        }
         // regionMatches folds per character, so it cannot match a case pair of different lengths (ß↔SS,
         // ﬁ↔FI). Take the full-folding path only when one side actually contains such a character — the
         // check is one comparison per char and rejects all ASCII, so ordinary code pays nothing (#444).
-        if (!caseSensitive && (CaseFold.mayExpand(query) || CaseFold.mayExpand(text))) {
-            return foldedMatches(text, query, wholeWord);
+        if (!caseSensitive) {
+            boolean expandingQuery = CaseFold.mayExpand(query);
+            if (Thread.currentThread().isInterrupted()) {
+                return List.of();
+            }
+            boolean expandingText = !expandingQuery && CaseFold.mayExpand(text);
+            if (Thread.currentThread().isInterrupted()) {
+                return List.of();
+            }
+            if (expandingQuery || expandingText) {
+                return foldedMatches(text, query, wholeWord, limit);
+            }
         }
         List<int[]> out = new ArrayList<>();
         int n = text.length();
         int m = query.length();
         for (int i = 0; i + m <= n; ) {
+            if ((i & 0x3FF) == 0 && Thread.currentThread().isInterrupted()) {
+                return out;
+            }
             if (text.regionMatches(!caseSensitive, i, query, 0, m)) {
                 int end = i + m;
                 if (!wholeWord || isWordBounded(text, i, end)) {
                     out.add(new int[] {i, end});
+                    if (out.size() >= limit) {
+                        return out;
+                    }
                     i = end; // non-overlapping
                     continue;
                 }
@@ -103,7 +129,7 @@ public final class SearchMatcher {
      * both directions. Offsets are the original text's throughout — {@link CaseFold#matchAt} folds on the fly
      * rather than searching a folded copy, so there is no index map to translate back through.
      */
-    private static List<int[]> foldedMatches(String text, String query, boolean wholeWord) {
+    private static List<int[]> foldedMatches(String text, String query, boolean wholeWord, int limit) {
         String folded = CaseFold.fold(query);
         if (folded.isEmpty()) {
             return List.of();
@@ -111,9 +137,15 @@ public final class SearchMatcher {
         List<int[]> out = new ArrayList<>();
         int n = text.length();
         for (int i = 0; i < n; ) {
+            if ((i & 0x3FF) == 0 && Thread.currentThread().isInterrupted()) {
+                return out;
+            }
             int end = CaseFold.matchAt(text, i, folded);
             if (end > i && (!wholeWord || isWordBounded(text, i, end))) {
                 out.add(new int[] {i, end});
+                if (out.size() >= limit) {
+                    return out;
+                }
                 i = end; // non-overlapping
                 continue;
             }
@@ -155,7 +187,7 @@ public final class SearchMatcher {
     }
 
     private static List<int[]> regexMatches(String text, String query, boolean caseSensitive, boolean wholeWord) {
-        return regexMatches(text, query, caseSensitive, wholeWord, DEFAULT_MATCH_BUDGET_NANOS);
+        return regexMatches(text, query, caseSensitive, wholeWord, DEFAULT_MATCH_BUDGET_NANOS, Integer.MAX_VALUE);
     }
 
     /**
@@ -171,6 +203,14 @@ public final class SearchMatcher {
      */
     static List<int[]> regexMatches(
             String text, String query, boolean caseSensitive, boolean wholeWord, long budgetNanos) {
+        return regexMatches(text, query, caseSensitive, wholeWord, budgetNanos, Integer.MAX_VALUE);
+    }
+
+    private static List<int[]> regexMatches(
+            String text, String query, boolean caseSensitive, boolean wholeWord, long budgetNanos, int limit) {
+        if (limit <= 0 || Thread.currentThread().isInterrupted()) {
+            return List.of();
+        }
         Pattern p = compileRegex(query, caseSensitive, wholeWord);
         if (p == null) {
             return List.of();
@@ -180,9 +220,15 @@ public final class SearchMatcher {
         int from = 0;
         try {
             while (from <= text.length() && matcher.find(from)) {
+                if (Thread.currentThread().isInterrupted()) {
+                    return out;
+                }
                 int start = matcher.start();
                 int end = matcher.end();
                 out.add(new int[] {start, end});
+                if (out.size() >= limit) {
+                    return out;
+                }
                 from = end > start ? end : end + 1; // advance past a zero-width match
             }
         } catch (MatchBudgetExceededException aborted) {
@@ -219,7 +265,8 @@ public final class SearchMatcher {
 
         @Override
         public char charAt(int index) {
-            if ((++ticks & 0x3FF) == 0 && System.nanoTime() > deadlineNanos) {
+            if ((++ticks & 0x3FF) == 0
+                    && (Thread.currentThread().isInterrupted() || System.nanoTime() > deadlineNanos)) {
                 throw new MatchBudgetExceededException();
             }
             return text.charAt(index);

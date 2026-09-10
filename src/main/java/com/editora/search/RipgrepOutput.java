@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,6 +34,11 @@ public final class RipgrepOutput {
 
     /** Parses at most {@code maxMatches}; bounds allocations when rg reports a very broad query. */
     public static List<FileResult> parse(String stdout, int maxMatches) {
+        return parse(stdout, maxMatches, ignored -> true);
+    }
+
+    /** Parses only authoritative paths, so discarded open-file disk hits do not consume the match budget. */
+    public static List<FileResult> parse(String stdout, int maxMatches, Predicate<Path> includePath) {
         Map<String, List<LineMatch>> byFile = new LinkedHashMap<>();
         if (stdout == null || stdout.isEmpty()) {
             return List.of();
@@ -53,6 +59,10 @@ public final class RipgrepOutput {
                 JsonNode lineNo = data.get("line_number");
                 if (path == null || lineText == null || lineNo == null || !lineNo.isInt()) {
                     continue; // binary (base64 bytes) or missing fields
+                }
+                Path parsedPath = Path.of(path);
+                if (!includePath.test(parsedPath)) {
+                    continue;
                 }
                 String stripped = stripEol(lineText);
                 List<LineMatch> matches = byFile.computeIfAbsent(path, k -> new ArrayList<>());

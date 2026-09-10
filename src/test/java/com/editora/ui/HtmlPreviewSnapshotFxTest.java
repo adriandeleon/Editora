@@ -8,10 +8,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import com.editora.web.Browsers;
 import com.editora.web.HtmlPreviewService;
+import com.editora.web.LivePreviewServer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -60,6 +62,55 @@ class HtmlPreviewSnapshotFxTest {
             assertTrue(second.contains("second snapshot"));
             assertFalse(second.contains("first snapshot"));
         } finally {
+            service.shutdown();
+        }
+    }
+
+    @Test
+    void stoppedQueuedPreviewCannotRestartTheServerOrOpenABrowser(@TempDir Path dir) throws Exception {
+        java.util.concurrent.atomic.AtomicInteger opened = new java.util.concurrent.atomic.AtomicInteger();
+        HtmlPreviewService service = new HtmlPreviewService(url -> opened.incrementAndGet());
+        ExecutorService worker = FxTestSupport.field(service, "exec");
+        LivePreviewServer server = FxTestSupport.field(service, "server");
+        CountDownLatch blocked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        worker.submit(() -> {
+            blocked.countDown();
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertTrue(blocked.await(5, TimeUnit.SECONDS));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                service.preview(
+                        dir.resolve("index.html"),
+                        "text",
+                        new Browsers.Browser(Browsers.SYSTEM_DEFAULT, "System Default"),
+                        ignored -> {});
+                service.stopServer();
+            });
+            release.countDown();
+            worker.submit(() -> {}).get(10, TimeUnit.SECONDS);
+            FxTestSupport.runOnFx(() -> {});
+            assertFalse(server.isRunning());
+            assertTrue(opened.get() == 0);
+
+            CountDownLatch restarted = new CountDownLatch(1);
+            FxTestSupport.runOnFx(() -> service.preview(
+                    dir.resolve("index.html"),
+                    "new text",
+                    new Browsers.Browser(Browsers.SYSTEM_DEFAULT, "System Default"),
+                    ignored -> restarted.countDown()));
+            assertTrue(restarted.await(10, TimeUnit.SECONDS));
+            assertTrue(server.isRunning());
+            FxTestSupport.runOnFx(service::stopServer);
+            worker.submit(() -> {}).get(10, TimeUnit.SECONDS);
+            assertFalse(server.isRunning());
+        } finally {
+            release.countDown();
             service.shutdown();
         }
     }

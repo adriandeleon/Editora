@@ -18,6 +18,28 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class ConfigWriterTest {
 
+    public static final class TimedShutdownProcess {
+        public static void main(String[] args) throws Exception {
+            ConfigWriter writer = new ConfigWriter();
+            writer.flushTimeoutMillis = 20;
+            java.util.concurrent.CountDownLatch claimed = new java.util.concurrent.CountDownLatch(1);
+            writer.afterBatchClaimedForTest = () -> {
+                claimed.countDown();
+                try {
+                    new java.util.concurrent.CountDownLatch(1).await(30, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            };
+            Runtime.getRuntime().addShutdownHook(new Thread(writer::flush, "test-config-flush"));
+            writer.enqueue(java.nio.file.Path.of(args[0]), bytes("pending"));
+            if (!claimed.await(5, java.util.concurrent.TimeUnit.SECONDS) || writer.shutdown()) {
+                System.exit(2);
+            }
+            System.exit(0);
+        }
+    }
+
     private static byte[] bytes(String s) {
         return s.getBytes(StandardCharsets.UTF_8);
     }
@@ -117,12 +139,16 @@ class ConfigWriterTest {
     }
 
     @Test
-    void enqueueAfterShutdownStillWritesSynchronously(@TempDir Path dir) throws IOException {
+    void enqueueAfterShutdownReportsFailureWithoutWriting(@TempDir Path dir) {
         ConfigWriter w = new ConfigWriter();
         w.shutdown();
         Path file = dir.resolve("late.json");
-        w.enqueue(file, bytes("late")); // executor rejected → synchronous fallback
-        assertEquals("late", Files.readString(file));
+        java.util.concurrent.atomic.AtomicReference<ConfigWriter.WriteOutcome> outcome =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        w.enqueue(file, () -> bytes("late"), outcome::set);
+        assertEquals(ConfigWriter.WriteOutcome.FAILED, outcome.get());
+        assertFalse(Files.exists(file));
+        assertFalse(w.flush(), "the rejected write must remain visible to the durability barrier");
     }
 
     @Test
@@ -146,6 +172,7 @@ class ConfigWriterTest {
                 latch.await(5, java.util.concurrent.TimeUnit.SECONDS),
                 "the write-error handler must be invoked on a failed write");
         assertEquals(target, failed.get());
+        assertFalse(w.flush(), "a completed flush must report that one of its writes failed");
         w.shutdown();
     }
 
@@ -182,6 +209,59 @@ class ConfigWriterTest {
         } finally {
             release.countDown();
             writer.shutdown();
+        }
+    }
+
+    @Test
+    void aSecondFlushAfterTimedOutShutdownRemainsBounded(@TempDir Path dir) throws Exception {
+        ConfigWriter writer = new ConfigWriter();
+        writer.flushTimeoutMillis = 20;
+        java.util.concurrent.CountDownLatch claimed = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        writer.afterBatchClaimedForTest = () -> {
+            claimed.countDown();
+            try {
+                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        };
+
+        java.util.concurrent.ExecutorService hook = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            writer.enqueue(dir.resolve("index.json"), bytes("pending"));
+            assertTrue(claimed.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertFalse(writer.shutdown());
+
+            Path late = dir.resolve("late.json");
+            java.util.concurrent.Future<?> enqueue = hook.submit(() -> writer.enqueue(late, bytes("late")));
+            enqueue.get(500, java.util.concurrent.TimeUnit.MILLISECONDS);
+            assertFalse(Files.exists(late), "shutdown must reject a late write instead of blocking to perform it");
+
+            java.util.concurrent.Future<Boolean> result = hook.submit(writer::flush);
+            assertFalse(result.get(500, java.util.concurrent.TimeUnit.MILLISECONDS));
+        } finally {
+            release.countDown();
+            hook.shutdownNow();
+            writer.flushTimeoutMillis = 5_000;
+            writer.flush();
+        }
+    }
+
+    @Test
+    void realShutdownHookExitsAfterTheConfiguredDeadline(@TempDir Path dir) throws Exception {
+        Process helper = new ProcessBuilder(
+                        Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                        "-cp",
+                        System.getProperty("java.class.path"),
+                        TimedShutdownProcess.class.getName(),
+                        dir.resolve("blocked.json").toString())
+                .start();
+        try {
+            assertTrue(helper.waitFor(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(0, helper.exitValue());
+        } finally {
+            helper.destroyForcibly();
         }
     }
 }

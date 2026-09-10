@@ -51,6 +51,9 @@ public final class ProcessRegistry {
     /** Live tracked roots (the {@link Process} we started). */
     private static final Set<Process> LIVE = ConcurrentHashMap.newKeySet();
 
+    /** Descendants captured for delayed escalation, retained independently after their root exits. */
+    private static final Set<ProcessHandle> PENDING_REAPS = ConcurrentHashMap.newKeySet();
+
     /** Metadata for the on-disk ledger, keyed by pid (so a crash-leaked server can be reaped next run). */
     private static final ConcurrentHashMap<Long, LedgerEntry> LEDGER = new ConcurrentHashMap<>();
 
@@ -122,12 +125,8 @@ public final class ProcessRegistry {
         if (p == null) {
             return;
         }
-        List<ProcessHandle> descendants;
-        try {
-            descendants = p.descendants().toList();
-        } catch (RuntimeException ignored) {
-            descendants = List.of();
-        }
+        List<ProcessHandle> descendants = descendantsOf(p);
+        retainPending(descendants);
         destroyHandles(descendants, false);
         destroyRoot(p, false);
         try {
@@ -137,14 +136,20 @@ public final class ProcessRegistry {
                         // A child can be reparented as soon as the wrapper exits. Keep the original handles;
                         // asking the dead parent for descendants again can no longer find those survivors.
                         destroyHandles(captured, true);
-                        destroyTree(p, true); // also catch descendants forked during the grace period
+                        List<ProcessHandle> late = descendantsOf(p);
+                        retainPending(late);
+                        destroyHandles(late, true); // also catch descendants forked during the grace period
+                        destroyRoot(p, true);
+                        releaseDeadPending();
                         untrack(p);
                     },
                     GRACE_MS,
                     TimeUnit.MILLISECONDS);
         } catch (RuntimeException ex) {
             // Scheduler rejected (JVM shutting down): force-kill now and move on.
+            destroyHandles(descendants, true);
             destroyTree(p, true);
+            releaseDeadPending();
             untrack(p);
         }
     }
@@ -158,6 +163,48 @@ public final class ProcessRegistry {
             destroyRoot(p, force);
         } catch (RuntimeException ignored) {
             // best effort
+        }
+    }
+
+    private static List<ProcessHandle> descendantsOf(Process process) {
+        try {
+            return process.descendants().toList();
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
+    }
+
+    private static void retainPending(List<ProcessHandle> handles) {
+        boolean changed = false;
+        for (ProcessHandle handle : handles) {
+            if (handle != null && handle.isAlive() && PENDING_REAPS.add(handle)) {
+                LEDGER.put(handle.pid(), LedgerEntry.of(handle));
+                handle.onExit().thenRun(() -> releasePending(handle));
+                changed = true;
+            }
+        }
+        if (changed) {
+            writeLedger();
+        }
+    }
+
+    private static void releaseDeadPending() {
+        boolean changed = false;
+        for (ProcessHandle handle : List.copyOf(PENDING_REAPS)) {
+            if (!handle.isAlive() && PENDING_REAPS.remove(handle)) {
+                LEDGER.remove(handle.pid());
+                changed = true;
+            }
+        }
+        if (changed) {
+            writeLedger();
+        }
+    }
+
+    private static void releasePending(ProcessHandle handle) {
+        if (PENDING_REAPS.remove(handle)) {
+            LEDGER.remove(handle.pid());
+            writeLedger();
         }
     }
 
@@ -193,9 +240,11 @@ public final class ProcessRegistry {
 
     /** The shutdown hook: force-kill every live tree. Synchronous (the JVM is exiting) and fast. */
     private static void killAll() {
+        destroyHandles(List.copyOf(PENDING_REAPS), true);
         for (Process p : LIVE) {
             destroyTree(p, true);
         }
+        PENDING_REAPS.clear();
         LIVE.clear();
         // The killed PIDs are now dead, so the next launch's reapOrphans would no-op on them anyway; still,
         // clear the ledger we can account for (a hard crash that skips this hook is what reaping handles).
@@ -260,10 +309,14 @@ public final class ProcessRegistry {
     record LedgerEntry(long pid, long startEpochMillis, String command) {
 
         static LedgerEntry of(Process p) {
-            ProcessHandle.Info info = p.info();
+            return of(p.toHandle());
+        }
+
+        static LedgerEntry of(ProcessHandle process) {
+            ProcessHandle.Info info = process.info();
             long start = info.startInstant().map(Instant::toEpochMilli).orElse(0L);
             String cmd = info.command().orElse("");
-            return new LedgerEntry(p.pid(), start, cmd);
+            return new LedgerEntry(process.pid(), start, cmd);
         }
 
         /** Tab-separated: {@code pid \t startEpochMillis \t command} (command is last so tabs in it are

@@ -28,17 +28,24 @@ public final class MultiFileSearch {
                 || text.isEmpty()
                 || q == null
                 || q.text() == null
-                || q.text().isEmpty()) {
+                || q.text().isEmpty()
+                || limit <= 0
+                || Thread.currentThread().isInterrupted()) {
             return out;
         }
         int line = 1;
         int start = 0;
         int n = text.length();
         for (int i = 0; i <= n; i++) {
+            if ((i & 0x3FF) == 0 && Thread.currentThread().isInterrupted()) {
+                return out;
+            }
             if (i == n || text.charAt(i) == '\n') {
                 int end = i > start && text.charAt(i - 1) == '\r' ? i - 1 : i; // drop a trailing CR
                 String lineText = text.substring(start, end);
-                for (int[] m : SearchMatcher.matches(lineText, q.text(), q.caseSensitive(), q.regex(), q.wholeWord())) {
+                int remaining = Math.max(0, limit - out.size());
+                for (int[] m : SearchMatcher.matches(
+                        lineText, q.text(), q.caseSensitive(), q.regex(), q.wholeWord(), remaining)) {
                     out.add(new LineMatch(line, m[0] + 1, m[1] - m[0], lineText));
                     if (out.size() >= limit) {
                         return out;

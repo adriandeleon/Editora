@@ -11,7 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -66,7 +66,9 @@ final class SearchCoordinator {
         }
 
         /** Captures local history before a closed file is rewritten. */
-        default void recordHistory(Path file, String content) {}
+        default void recordHistory(Path file, String content, Consumer<Boolean> completion) {
+            completion.accept(true);
+        }
 
         /** Orders this rewrite with saves from every window. */
         DocumentWriteSequencer.Ticket beginDocumentWrite(Path file);
@@ -86,6 +88,11 @@ final class SearchCoordinator {
         void open(Path file, int line, int col, boolean focusEditor);
     }
 
+    @FunctionalInterface
+    interface HistoryRecorder {
+        void record(Path file, String content, Consumer<Boolean> completion);
+    }
+
     record Navigation(
             Supplier<Path> projectRoot,
             MatchOpener openMatch,
@@ -96,7 +103,7 @@ final class SearchCoordinator {
     record ReplaceSupport(
             Function<Path, EditorBuffer> bufferForPath,
             Predicate<EditorBuffer> bufferLoading,
-            BiConsumer<Path, String> recordHistory,
+            HistoryRecorder recordHistory,
             Function<Path, DocumentWriteSequencer.Ticket> beginDocumentWrite) {}
 
     record Persistence(
@@ -143,8 +150,8 @@ final class SearchCoordinator {
             }
 
             @Override
-            public void recordHistory(Path file, String content) {
-                replace.recordHistory().accept(file, content);
+            public void recordHistory(Path file, String content, Consumer<Boolean> completion) {
+                replace.recordHistory().record(file, content, completion);
             }
 
             @Override
@@ -466,16 +473,23 @@ final class SearchCoordinator {
 
     private void recordBeforeWrite(Path file, String original) {
         CountDownLatch accepted = new CountDownLatch(1);
+        AtomicBoolean durable = new AtomicBoolean();
         Platform.runLater(() -> {
             try {
-                ops.recordHistory(file, original);
-            } finally {
+                ops.recordHistory(file, original, success -> {
+                    durable.set(Boolean.TRUE.equals(success));
+                    accepted.countDown();
+                });
+            } catch (RuntimeException failure) {
                 accepted.countDown();
             }
         });
         try {
-            if (!accepted.await(5, TimeUnit.SECONDS)) {
+            if (!accepted.await(10, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("Timed out while recording pre-replace history");
+            }
+            if (!durable.get()) {
+                throw new IllegalStateException("Could not make pre-replace history durable");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -528,10 +542,11 @@ final class SearchCoordinator {
                 return new ClosedReplace(0, false, false);
             }
             beforeWrite.accept(original);
-            if (!original.equals(Files.readString(file))) {
-                return new ClosedReplace(0, false, true);
-            }
-            if (!com.editora.io.AtomicFileWrite.writeIf(file, result.text().getBytes(StandardCharsets.UTF_8), commit)) {
+            if (!com.editora.io.AtomicFileWrite.replaceIfUnchanged(
+                    file,
+                    original.getBytes(StandardCharsets.UTF_8),
+                    result.text().getBytes(StandardCharsets.UTF_8),
+                    commit)) {
                 return new ClosedReplace(0, false, true);
             }
             return new ClosedReplace(result.count(), true, false);
