@@ -294,6 +294,16 @@ class AtomicFileWriteTest {
     }
 
     @Test
+    void strictReplacementRefusesWhenTheSourceChangedBeforeCommit() throws IOException {
+        Path file = Files.writeString(dir.resolve("strict-conflict.txt"), "changed concurrently");
+
+        assertFalse(AtomicFileWrite.replaceIfUnchanged(file, bytes("expected"), bytes("replacement"), () -> true));
+
+        assertEquals("changed concurrently", Files.readString(file));
+        assertEquals(1, entryCount(), "the refused staging file is removed");
+    }
+
+    @Test
     void obsoleteStagedWriteDoesNotReplaceTheTarget() throws IOException {
         Path file = dir.resolve("keep.txt");
         Files.writeString(file, "current\n");

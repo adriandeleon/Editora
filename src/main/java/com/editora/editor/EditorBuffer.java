@@ -742,10 +742,12 @@ public class EditorBuffer implements TabContent {
     /** Suggested name for a still-unsaved buffer (e.g. from {@code --new-file=foo.txt}); drives the tab
      *  title and extension-based highlighting while {@link #path} stays null (so Save prompts Save-As). */
     private String displayName;
-    /** Last-known on-disk modified time (epoch millis) and size, to detect external changes; -1 = unknown. */
+    /** Last-known on-disk identity used to detect external changes; modified time -1 means unknown. */
     private long diskModifiedMillis = -1;
 
     private long diskSize = -1;
+    /** SHA-256 of the exact bytes last loaded/saved; used for remote save conflict detection. */
+    private String diskFingerprint;
     /** Language name for the current file (drives fold strategy); see {@link LanguageRegistry}. */
     private String language = LanguageRegistry.plaintext();
     /** TextMate grammar for the current file, or {@code null} when no grammar is bundled. */
@@ -7519,10 +7521,16 @@ public class EditorBuffer implements TabContent {
         return path;
     }
 
-    /** Records the file's on-disk modified time + size as last loaded/saved, for external-change detection. */
+    /** Records file metadata as last loaded/saved, for external-change detection. */
     public void setDiskSnapshot(long modifiedMillis, long size) {
+        setDiskSnapshot(modifiedMillis, size, null);
+    }
+
+    /** Records metadata plus the exact-content identity used by save-time remote conflict checks. */
+    public void setDiskSnapshot(long modifiedMillis, long size, String fingerprint) {
         this.diskModifiedMillis = modifiedMillis;
         this.diskSize = size;
+        this.diskFingerprint = fingerprint;
     }
 
     /** Whether {@code modifiedMillis}/{@code size} differ from the last recorded on-disk snapshot. */
@@ -7531,14 +7539,22 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Immutable copy of the last loaded/saved disk identity, captured on the FX thread for background I/O. */
-    public record DiskSnapshot(long modifiedMillis, long size) {
+    public record DiskSnapshot(long modifiedMillis, long size, String fingerprint) {
         public boolean differsFrom(long currentModifiedMillis, long currentSize) {
             return modifiedMillis >= 0 && (modifiedMillis != currentModifiedMillis || size != currentSize);
+        }
+
+        /** Compares exact bytes when both snapshots have them, otherwise falls back to metadata. */
+        public boolean differsFrom(long currentModifiedMillis, long currentSize, String currentFingerprint) {
+            if (fingerprint != null && currentFingerprint != null) {
+                return !fingerprint.equals(currentFingerprint);
+            }
+            return differsFrom(currentModifiedMillis, currentSize);
         }
     }
 
     public DiskSnapshot diskSnapshot() {
-        return new DiskSnapshot(diskModifiedMillis, diskSize);
+        return new DiskSnapshot(diskModifiedMillis, diskSize, diskFingerprint);
     }
 
     /** Associates this buffer with a file and selects the grammar and fold language from its extension. */

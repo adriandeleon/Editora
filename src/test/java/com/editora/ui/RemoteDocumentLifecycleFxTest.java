@@ -2,11 +2,15 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
+import javafx.animation.AnimationTimer;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.scene.control.Button;
@@ -164,6 +168,114 @@ class RemoteDocumentLifecycleFxTest {
         }
     }
 
+    @Test
+    void remoteConflictUsesLastOpenedThenLastSavedBytes(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            EmbeddedSftpFixture sftp = async.own(EmbeddedSftpFixture.start(dir));
+            Path serverFile = sftp.serverPath("conflict.txt");
+            Files.writeString(serverFile, "remote version A\n");
+            FileTime openedTime = Files.getLastModifiedTime(serverFile);
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            FileWorkflowCoordinator workflows = workflows(fx);
+            EditorBuffer buffer = openRemote(async, fx, sftp.remotePath("conflict.txt"));
+
+            FxTestSupport.runOnFx(() -> buffer.replaceWholeDocument("editor version A\n"));
+            Files.writeString(serverFile, "remote version B\n");
+            Files.setLastModifiedTime(serverFile, openedTime); // exact bytes must catch same-size/same-mtime changes
+
+            CountDownLatch cancelled = pressNextDialog(async, ButtonBar.ButtonData.CANCEL_CLOSE);
+            FxTestSupport.runOnFx(() -> assertTrue(workflows.save(buffer)));
+            awaitSave(async, workflows);
+            async.await(cancelled, "remote conflict cancel choice");
+
+            assertEquals("remote version B\n", Files.readString(serverFile));
+            assertEquals("editor version A\n", FxTestSupport.callOnFx(buffer::getContent));
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty));
+            assertFalse(cancelClose(async, fx, buffer), "cancelled conflict keeps the dirty copy close-protected");
+
+            CountDownLatch overwritten = pressNextDialog(async, ButtonBar.ButtonData.OK_DONE);
+            FxTestSupport.runOnFx(() -> assertTrue(workflows.save(buffer)));
+            awaitSave(async, workflows);
+            async.await(overwritten, "remote conflict overwrite choice");
+
+            assertEquals("editor version A\n", Files.readString(serverFile));
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+            FileTime savedTime = Files.getLastModifiedTime(serverFile);
+
+            FxTestSupport.runOnFx(() -> buffer.replaceWholeDocument("editor version C\n"));
+            Files.writeString(serverFile, "editor version B\n");
+            Files.setLastModifiedTime(serverFile, savedTime);
+            CountDownLatch reloaded = pressNextDialog(async, ButtonBar.ButtonData.LEFT);
+            FxTestSupport.runOnFx(() -> assertTrue(workflows.save(buffer)));
+            awaitSave(async, workflows);
+            async.await(reloaded, "remote conflict reload choice");
+
+            assertEquals("editor version B\n", Files.readString(serverFile));
+            assertEquals("editor version B\n", FxTestSupport.callOnFx(buffer::getContent));
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+        }
+    }
+
+    @Test
+    void consecutiveRemoteSavesUseTheLatestPhysicalCommitBeforeFxAcknowledgment(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            EmbeddedSftpFixture sftp = async.own(EmbeddedSftpFixture.start(dir));
+            Path serverFile = sftp.serverPath("ordered.txt");
+            Files.writeString(serverFile, "opened\n");
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            FileWorkflowCoordinator workflows = workflows(fx);
+            EditorBuffer buffer = openRemote(async, fx, sftp.remotePath("ordered.txt"));
+            ExecutorService saveWorker = FxTestSupport.field(workflows, "autoSaveExecutor");
+            CountDownLatch unexpectedConflict = pressNextDialog(async, ButtonBar.ButtonData.CANCEL_CLOSE);
+
+            FxTestSupport.runOnFx(() -> {
+                buffer.replaceWholeDocument("first save\n");
+                assertTrue(workflows.save(buffer));
+                workerBarrier(saveWorker); // physical commit done; its FX acknowledgment remains queued
+                buffer.replaceWholeDocument("second save\n");
+                assertTrue(workflows.save(buffer));
+                workerBarrier(saveWorker); // must not wait for a false external-change prompt
+            });
+            async.awaitFx();
+
+            assertEquals("second save\n", Files.readString(serverFile));
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+            assertEquals(1, unexpectedConflict.getCount(), "an application-owned commit is not a conflict");
+        }
+    }
+
+    @Test
+    void remoteChangeAfterPreflightIsRecheckedBeforeReplacement(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            EmbeddedSftpFixture sftp = async.own(EmbeddedSftpFixture.start(dir));
+            Path serverFile = sftp.serverPath("late-conflict.txt");
+            Files.writeString(serverFile, "opened baseline\n");
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            FileWorkflowCoordinator workflows = workflows(fx);
+            EditorBuffer buffer = openRemote(async, fx, sftp.remotePath("late-conflict.txt"));
+            AtomicBoolean changed = new AtomicBoolean();
+            workflows.beforeDocumentWriteForTest = () -> {
+                if (changed.compareAndSet(false, true)) {
+                    try {
+                        Files.writeString(serverFile, "late remote edit\n");
+                    } catch (Exception failure) {
+                        throw new AssertionError(failure);
+                    }
+                }
+            };
+
+            FxTestSupport.runOnFx(() -> buffer.replaceWholeDocument("editor replacement\n"));
+            CountDownLatch cancelled = pressNextDialog(async, ButtonBar.ButtonData.CANCEL_CLOSE);
+            FxTestSupport.runOnFx(() -> assertTrue(workflows.save(buffer)));
+            awaitSave(async, workflows);
+            async.await(cancelled, "late remote conflict cancel choice");
+
+            assertEquals("late remote edit\n", Files.readString(serverFile));
+            assertEquals("editor replacement\n", FxTestSupport.callOnFx(buffer::getContent));
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty));
+        }
+    }
+
     private static RemoteCoordinator injectedRemoteCoordinator(FxWindowFixture fx, EmbeddedSftpFixture sftp) {
         CoordinatorHost host = FxTestSupport.field(fx.controller, "coordinatorHost");
         RemoteCoordinator.Ops ops =
@@ -193,6 +305,14 @@ class RemoteDocumentLifecycleFxTest {
         async.awaitFx();
     }
 
+    private static void workerBarrier(ExecutorService worker) {
+        try {
+            worker.submit(() -> {}).get(10, TimeUnit.SECONDS);
+        } catch (Exception failure) {
+            throw new AssertionError("remote save worker did not complete", failure);
+        }
+    }
+
     private static boolean cancelClose(AsyncTestScope async, FxWindowFixture fx, EditorBuffer buffer) throws Exception {
         CountDownLatch prompted = new CountDownLatch(1);
         boolean allowed = FxTestSupport.callOnFx(() -> {
@@ -217,6 +337,23 @@ class RemoteDocumentLifecycleFxTest {
                         ((Button) pane.lookupButton(type)).fire();
                     });
         }
+    }
+
+    private static CountDownLatch pressNextDialog(AsyncTestScope async, ButtonBar.ButtonData buttonData)
+            throws Exception {
+        CountDownLatch pressed = new CountDownLatch(1);
+        AnimationTimer timer = new AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                pressDialog(buttonData, pressed);
+                if (pressed.getCount() == 0) {
+                    stop();
+                }
+            }
+        };
+        FxTestSupport.runOnFx(timer::start);
+        async.onClose(() -> FxTestSupport.runOnFx(timer::stop));
+        return pressed;
     }
 
     private static CountDownLatch watchStatus(FxWindowFixture fx, Predicate<String> expected) throws Exception {
