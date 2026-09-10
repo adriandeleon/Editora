@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
@@ -98,6 +99,9 @@ final class LspCoordinator {
 
         void fileDeleted(Path file);
 
+        /** Cancels a save captured before an LSP resource mutation can move, replace, or delete its path. */
+        default void invalidatePendingWrite(Path file) {}
+
         /** Sets (or clears, when {@code null}) the status-bar {@code LSP: <server>} segment label. */
         void setStatusBarLsp(String label);
 
@@ -141,9 +145,112 @@ final class LspCoordinator {
         Path canonicalize(Path file);
     }
 
+    /** Filesystem boundary for staging and recovering LSP create/rename/delete transactions. */
+    interface WorkspaceFileOperations {
+
+        WorkspaceFileOperations SYSTEM = new WorkspaceFileOperations() {
+            @Override
+            public boolean exists(Path path) {
+                return java.nio.file.Files.exists(path);
+            }
+
+            @Override
+            public boolean isDirectory(Path path) {
+                return java.nio.file.Files.isDirectory(path);
+            }
+
+            @Override
+            public boolean isRegularFile(Path path) {
+                return java.nio.file.Files.isRegularFile(path);
+            }
+
+            @Override
+            public long size(Path path) throws java.io.IOException {
+                return java.nio.file.Files.size(path);
+            }
+
+            @Override
+            public WorkspaceFileIdentity identity(Path path) throws java.io.IOException {
+                var attributes =
+                        java.nio.file.Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
+                return new WorkspaceFileIdentity(
+                        attributes.fileKey(),
+                        attributes.size(),
+                        attributes.lastModifiedTime().toMillis());
+            }
+
+            @Override
+            public void createDirectories(Path path) throws java.io.IOException {
+                java.nio.file.Files.createDirectories(path);
+            }
+
+            @Override
+            public void createFile(Path path) throws java.io.IOException {
+                java.nio.file.Files.createFile(path);
+            }
+
+            @Override
+            public void move(Path from, Path to, java.nio.file.CopyOption... options) throws java.io.IOException {
+                java.nio.file.Files.move(from, to, options);
+            }
+
+            @Override
+            public Path createTempFile(Path directory, String prefix, String suffix) throws java.io.IOException {
+                return java.nio.file.Files.createTempFile(directory, prefix, suffix);
+            }
+
+            @Override
+            public boolean deleteIfExists(Path path) throws java.io.IOException {
+                return java.nio.file.Files.deleteIfExists(path);
+            }
+
+            @Override
+            public List<Path> list(Path path) throws java.io.IOException {
+                try (var children = java.nio.file.Files.list(path)) {
+                    return children.toList();
+                }
+            }
+
+            @Override
+            public List<Path> walk(Path path) throws java.io.IOException {
+                try (var descendants = java.nio.file.Files.walk(path)) {
+                    return descendants.toList();
+                }
+            }
+        };
+
+        boolean exists(Path path);
+
+        boolean isDirectory(Path path);
+
+        boolean isRegularFile(Path path);
+
+        long size(Path path) throws java.io.IOException;
+
+        WorkspaceFileIdentity identity(Path path) throws java.io.IOException;
+
+        void createDirectories(Path path) throws java.io.IOException;
+
+        void createFile(Path path) throws java.io.IOException;
+
+        void move(Path from, Path to, java.nio.file.CopyOption... options) throws java.io.IOException;
+
+        Path createTempFile(Path directory, String prefix, String suffix) throws java.io.IOException;
+
+        boolean deleteIfExists(Path path) throws java.io.IOException;
+
+        List<Path> list(Path path) throws java.io.IOException;
+
+        List<Path> walk(Path path) throws java.io.IOException;
+    }
+
+    record WorkspaceFileIdentity(Object fileKey, long size, long lastModifiedMillis) {}
+
     private final CoordinatorHost host;
     private final LspManager lspManager;
     private final Ops ops;
+    private final WorkspaceFileOperations workspaceFiles;
+    private final Executor workspaceExecutor;
 
     /** Diagnostics by file, <b>scoped to open files only</b> (a server publishes project-wide). */
     private final Map<Path, List<LspDiagnostic>> problems = new LinkedHashMap<>();
@@ -198,9 +305,25 @@ final class LspCoordinator {
     private Popup signaturePopup;
 
     LspCoordinator(CoordinatorHost host, LspManager lspManager, Ops ops) {
+        this(
+                host,
+                lspManager,
+                ops,
+                WorkspaceFileOperations.SYSTEM,
+                task -> Thread.ofVirtual().name("lsp-workspace-edit").start(task));
+    }
+
+    LspCoordinator(
+            CoordinatorHost host,
+            LspManager lspManager,
+            Ops ops,
+            WorkspaceFileOperations workspaceFiles,
+            Executor workspaceExecutor) {
         this.host = host;
         this.lspManager = lspManager;
         this.ops = ops;
+        this.workspaceFiles = java.util.Objects.requireNonNull(workspaceFiles, "workspaceFiles");
+        this.workspaceExecutor = java.util.Objects.requireNonNull(workspaceExecutor, "workspaceExecutor");
         this.problemsPanel = new ProblemsPanel(new ProblemsPanel.Actions() {
             @Override
             public void open(java.nio.file.Path file, int line, int col) {
@@ -2315,6 +2438,7 @@ final class LspCoordinator {
      */
     void applyWorkspaceEditsAsync(
             com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
+        invalidateResourceWrites(mapped);
         java.util.List<EditorBuffer> buffers =
                 new java.util.ArrayList<>(mapped.edits().size());
         java.util.Set<Path> createdPaths = mapped.creates().stream()
@@ -2325,27 +2449,43 @@ final class LspCoordinator {
                 createdPaths,
                 0,
                 buffers,
-                () -> Thread.ofVirtual().name("lsp-workspace-edit").start(() -> {
-                    java.util.List<StagedCreate> creates = stageCreates(mapped.creates());
-                    java.util.List<StagedRename> renames = creates == null ? null : stageRenames(mapped.renames());
+                () -> workspaceExecutor.execute(() -> {
+                    WorkspaceTransactionStatus transaction = new WorkspaceTransactionStatus();
+                    java.util.List<StagedCreate> creates = stageCreates(mapped.creates(), transaction);
+                    java.util.List<StagedRename> renames =
+                            creates == null ? null : stageRenames(mapped.renames(), transaction);
                     java.util.List<StagedDelete> deletes =
-                            creates == null || renames == null ? null : stageDeletes(mapped.deletes());
+                            creates == null || renames == null ? null : stageDeletes(mapped.deletes(), transaction);
                     if (creates == null || renames == null || deletes == null) {
                         if (renames != null) {
-                            rollbackRenames(renames);
+                            rollbackRenames(renames, transaction);
                         }
                         if (creates != null) {
-                            rollbackCreates(creates);
+                            rollbackCreates(creates, transaction);
                         }
-                        Platform.runLater(() -> done.accept(false));
+                        Platform.runLater(() -> {
+                            reportIncompleteRollback(transaction);
+                            done.accept(false);
+                        });
                         return;
                     }
                     Platform.runLater(() -> collectCreatedWorkspaceBuffers(
                             mapped,
                             buffers,
                             0,
-                            () -> finishWorkspaceEdit(mapped, buffers, creates, renames, deletes, done)));
+                            () -> finishWorkspaceEdit(mapped, buffers, creates, renames, deletes, transaction, done)));
                 }));
+    }
+
+    private void invalidateResourceWrites(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
+        java.util.Set<Path> paths = new java.util.LinkedHashSet<>();
+        mapped.creates().forEach(operation -> paths.add(operation.file()));
+        mapped.renames().forEach(operation -> {
+            paths.add(operation.from());
+            paths.add(operation.to());
+        });
+        mapped.deletes().forEach(operation -> paths.add(operation.file()));
+        paths.forEach(ops::invalidatePendingWrite);
     }
 
     private void collectWorkspaceBuffers(
@@ -2394,9 +2534,12 @@ final class LspCoordinator {
     /** Package-private so {@code LspWorkspaceEditFxTest} can drive it: this is the only LSP path that
      *  writes and MOVES files on disk, so its all-or-nothing refusals need direct tests. */
     boolean applyWorkspaceEdits(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
+        invalidateResourceWrites(mapped);
+        WorkspaceTransactionStatus transaction = new WorkspaceTransactionStatus();
         var files = mapped.edits();
-        java.util.List<StagedCreate> creates = stageCreates(mapped.creates());
+        java.util.List<StagedCreate> creates = stageCreates(mapped.creates(), transaction);
         if (creates == null) {
+            reportIncompleteRollback(transaction);
             return false;
         }
         java.util.List<EditorBuffer> buffers = new java.util.ArrayList<>(files.size());
@@ -2406,42 +2549,51 @@ final class LspCoordinator {
                 buf = ops.openBackgroundBuffer(fe.file());
             }
             if (buf == null || !buf.isEditable()) {
-                rollbackCreates(creates);
+                rollbackCreates(creates, transaction);
+                reportIncompleteRollback(transaction);
                 return false;
             }
             // A versioned edit is valid only for the exact server document it names. JDT LS commonly sends
             // a null version, so request-time text is retained as the equivalent guard for those edits.
             if (fe.version() != null
                     && !java.util.Objects.equals(fe.version(), lspManager.documentVersion(fe.file()))) {
-                rollbackCreates(creates);
+                rollbackCreates(creates, transaction);
+                reportIncompleteRollback(transaction);
                 return false;
             }
             if (fe.expectedText() != null && !fe.expectedText().equals(buf.getContent())) {
-                rollbackCreates(creates);
+                rollbackCreates(creates, transaction);
+                reportIncompleteRollback(transaction);
                 return false;
             }
             buffers.add(buf);
         }
-        java.util.List<StagedRename> staged = stageRenames(mapped.renames());
+        java.util.List<StagedRename> staged = stageRenames(mapped.renames(), transaction);
         if (staged == null) {
-            rollbackCreates(creates);
+            rollbackCreates(creates, transaction);
+            reportIncompleteRollback(transaction);
             return false;
         }
-        java.util.List<StagedDelete> deletes = stageDeletes(mapped.deletes());
+        java.util.List<StagedDelete> deletes = stageDeletes(mapped.deletes(), transaction);
         if (deletes == null) {
-            rollbackRenames(staged);
-            rollbackCreates(creates);
+            rollbackRenames(staged, transaction);
+            rollbackCreates(creates, transaction);
+            reportIncompleteRollback(transaction);
             return false;
         }
-        for (int i = 0; i < files.size(); i++) {
-            var fileEdit = files.get(i);
-            EditorBuffer buffer = buffers.get(i);
-            buffer.applyLspEdits(fileEdit.edits());
-            if (lspManager.isManaged(fileEdit.file())) {
-                // Workspace edits change the client document too. Sync immediately so a trailing command in
-                // the same CodeAction runs against the applied text rather than waiting for the edit debounce.
-                lspManager.changeDocument(fileEdit.file(), buffer.getContent());
-            }
+        if (!resourceStateCurrent(creates, staged, deletes)) {
+            rollbackDeletes(deletes, transaction);
+            rollbackRenames(staged, transaction);
+            rollbackCreates(creates, transaction);
+            reportIncompleteRollback(transaction);
+            return false;
+        }
+        if (!applyWorkspaceTextEdits(mapped, buffers, transaction)) {
+            rollbackDeletes(deletes, transaction);
+            rollbackRenames(staged, transaction);
+            rollbackCreates(creates, transaction);
+            reportIncompleteRollback(transaction);
+            return false;
         }
         // The filesystem transaction completed before any text changed. Now remap open buffers/session state
         // in protocol order; this part is in-memory and cannot leave a failed disk move behind.
@@ -2480,31 +2632,31 @@ final class LspCoordinator {
             java.util.List<StagedCreate> creates,
             java.util.List<StagedRename> renames,
             java.util.List<StagedDelete> deletes,
+            WorkspaceTransactionStatus transaction,
             java.util.function.Consumer<Boolean> done) {
-        for (int i = 0; i < mapped.edits().size(); i++) {
-            var edit = mapped.edits().get(i);
-            EditorBuffer buffer = buffers.get(i);
-            if (buffer == null
-                    || !buffer.isEditable()
-                    || (edit.version() != null
-                            && !java.util.Objects.equals(edit.version(), lspManager.documentVersion(edit.file())))
-                    || (edit.expectedText() != null && !edit.expectedText().equals(buffer.getContent()))) {
-                Thread.ofVirtual().name("lsp-workspace-rollback").start(() -> {
-                    rollbackDeletes(deletes);
-                    rollbackRenames(renames);
-                    rollbackCreates(creates);
-                    Platform.runLater(() -> done.accept(false));
-                });
-                return;
-            }
+        // Supersede saves started while the resource transaction was staging, before UI identity changes.
+        invalidateResourceWrites(mapped);
+        if (!resourceStateCurrent(creates, renames, deletes)) {
+            rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
+            return;
         }
         for (int i = 0; i < mapped.edits().size(); i++) {
             var edit = mapped.edits().get(i);
             EditorBuffer buffer = buffers.get(i);
-            buffer.applyLspEdits(edit.edits());
-            if (lspManager.isManaged(edit.file())) {
-                lspManager.changeDocument(edit.file(), buffer.getContent());
+            if (buffer == null
+                    || buffer.isDisposed()
+                    || ops.bufferForPath(edit.file()) != buffer
+                    || !buffer.isEditable()
+                    || (edit.version() != null
+                            && !java.util.Objects.equals(edit.version(), lspManager.documentVersion(edit.file())))
+                    || (edit.expectedText() != null && !edit.expectedText().equals(buffer.getContent()))) {
+                rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
+                return;
             }
+        }
+        if (!applyWorkspaceTextEdits(mapped, buffers, transaction)) {
+            rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
+            return;
         }
         for (StagedRename item : renames) {
             var rename = item.rename();
@@ -2527,7 +2679,7 @@ final class LspCoordinator {
             clearDiagnostics(file);
             ops.fileDeleted(file);
         }
-        Thread.ofVirtual().name("lsp-workspace-cleanup").start(() -> {
+        workspaceExecutor.execute(() -> {
             commitRenames(renames);
             commitCreates(creates);
             commitDeletes(deletes);
@@ -2535,135 +2687,259 @@ final class LspCoordinator {
         done.accept(true);
     }
 
+    private boolean resourceStateCurrent(
+            java.util.List<StagedCreate> creates,
+            java.util.List<StagedRename> renames,
+            java.util.List<StagedDelete> deletes) {
+        try {
+            for (StagedCreate item : creates) {
+                Path file = item.operation().file().toAbsolutePath().normalize();
+                if (item.created()
+                        && (!workspaceFiles.exists(file)
+                                || !java.util.Objects.equals(item.identity(), workspaceFiles.identity(file)))) {
+                    return false;
+                }
+            }
+            for (StagedRename item : renames) {
+                Path from = item.rename().from().toAbsolutePath().normalize();
+                Path to = item.rename().to().toAbsolutePath().normalize();
+                if (workspaceFiles.exists(from)
+                        || !workspaceFiles.exists(to)
+                        || !java.util.Objects.equals(item.identity(), workspaceFiles.identity(to))) {
+                    return false;
+                }
+            }
+            for (StagedDelete item : deletes) {
+                Path file = item.operation().file().toAbsolutePath().normalize();
+                if (workspaceFiles.exists(file)
+                        || !workspaceFiles.exists(item.stage())
+                        || !java.util.Objects.equals(item.identity(), workspaceFiles.identity(item.stage()))) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (java.io.IOException | RuntimeException failure) {
+            return false;
+        }
+    }
+
+    private void rollbackWorkspaceAsync(
+            java.util.List<StagedCreate> creates,
+            java.util.List<StagedRename> renames,
+            java.util.List<StagedDelete> deletes,
+            WorkspaceTransactionStatus transaction,
+            java.util.function.Consumer<Boolean> done) {
+        workspaceExecutor.execute(() -> {
+            rollbackDeletes(deletes, transaction);
+            rollbackRenames(renames, transaction);
+            rollbackCreates(creates, transaction);
+            Platform.runLater(() -> {
+                reportIncompleteRollback(transaction);
+                done.accept(false);
+            });
+        });
+    }
+
+    private boolean applyWorkspaceTextEdits(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
+            java.util.List<EditorBuffer> buffers,
+            WorkspaceTransactionStatus transaction) {
+        java.util.List<AppliedWorkspaceText> applied = new java.util.ArrayList<>();
+        try {
+            for (int i = 0; i < mapped.edits().size(); i++) {
+                var edit = mapped.edits().get(i);
+                EditorBuffer buffer = buffers.get(i);
+                String original = buffer.getContent();
+                buffer.applyLspEdits(edit.edits());
+                if (!original.equals(buffer.getContent())) {
+                    applied.add(new AppliedWorkspaceText(buffer, edit.file(), original));
+                }
+                if (lspManager.isManaged(edit.file())) {
+                    // Keep the server document synchronized before a trailing CodeAction command runs.
+                    lspManager.changeDocument(edit.file(), buffer.getContent());
+                }
+            }
+            return true;
+        } catch (RuntimeException failure) {
+            for (int i = applied.size() - 1; i >= 0; i--) {
+                try {
+                    var snapshot = applied.get(i);
+                    snapshot.buffer().replaceWholeDocument(snapshot.original());
+                    if (lspManager.isManaged(snapshot.file())) {
+                        lspManager.changeDocument(snapshot.file(), snapshot.original());
+                    }
+                } catch (RuntimeException rollbackFailure) {
+                    transaction.rollbackFailed = true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private void reportIncompleteRollback(WorkspaceTransactionStatus transaction) {
+        if (transaction.rollbackFailed) {
+            host.setError(tr("status.lsp.workspaceEditRollbackFailed"));
+        }
+    }
+
+    private static final class WorkspaceTransactionStatus {
+        private boolean rollbackFailed;
+    }
+
+    private record AppliedWorkspaceText(EditorBuffer buffer, Path file, String original) {}
+
     private record StagedCreate(
-            com.editora.lsp.WorkspaceEditMapper.FileCreate operation, Path overwrittenBackup, boolean created) {}
+            com.editora.lsp.WorkspaceEditMapper.FileCreate operation,
+            Path overwrittenBackup,
+            boolean created,
+            WorkspaceFileIdentity identity) {}
 
-    private record StagedDelete(com.editora.lsp.WorkspaceEditMapper.FileDelete operation, Path stage) {}
+    private record StagedDelete(
+            com.editora.lsp.WorkspaceEditMapper.FileDelete operation, Path stage, WorkspaceFileIdentity identity) {}
 
-    private static java.util.List<StagedCreate> stageCreates(
-            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileCreate> operations) {
+    private java.util.List<StagedCreate> stageCreates(
+            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileCreate> operations,
+            WorkspaceTransactionStatus transaction) {
         java.util.List<StagedCreate> staged = new java.util.ArrayList<>();
         try {
             for (var operation : operations) {
                 Path file = operation.file().toAbsolutePath().normalize();
-                if (java.nio.file.Files.exists(file)) {
+                if (workspaceFiles.exists(file)) {
                     if (operation.ignoreIfExists()) {
-                        staged.add(new StagedCreate(operation, null, false));
+                        staged.add(new StagedCreate(operation, null, false, null));
                         continue;
                     }
-                    if (!operation.overwrite() || java.nio.file.Files.isDirectory(file)) {
-                        rollbackCreates(staged);
+                    if (!operation.overwrite() || workspaceFiles.isDirectory(file)) {
+                        rollbackCreates(staged, transaction);
                         return null;
                     }
                     Path backup = temporarySibling(file, ".created-overwrite");
-                    java.nio.file.Files.move(file, backup);
-                    staged.add(new StagedCreate(operation, backup, false));
-                    java.nio.file.Files.createFile(file);
-                    staged.set(staged.size() - 1, new StagedCreate(operation, backup, true));
+                    workspaceFiles.move(file, backup);
+                    staged.add(new StagedCreate(operation, backup, false, null));
+                    workspaceFiles.createFile(file);
+                    staged.set(staged.size() - 1, new StagedCreate(operation, backup, true, null));
+                    staged.set(
+                            staged.size() - 1,
+                            new StagedCreate(operation, backup, true, workspaceFiles.identity(file)));
                 } else {
                     Path parent = file.getParent();
                     if (parent != null) {
-                        java.nio.file.Files.createDirectories(parent);
+                        workspaceFiles.createDirectories(parent);
                     }
-                    java.nio.file.Files.createFile(file);
-                    staged.add(new StagedCreate(operation, null, true));
+                    workspaceFiles.createFile(file);
+                    staged.add(new StagedCreate(operation, null, true, null));
+                    staged.set(
+                            staged.size() - 1, new StagedCreate(operation, null, true, workspaceFiles.identity(file)));
                 }
             }
             return staged;
         } catch (java.io.IOException | RuntimeException failure) {
-            rollbackCreates(staged);
+            rollbackCreates(staged, transaction);
             return null;
         }
     }
 
-    private static void rollbackCreates(java.util.List<StagedCreate> staged) {
+    private void rollbackCreates(java.util.List<StagedCreate> staged, WorkspaceTransactionStatus transaction) {
         for (int i = staged.size() - 1; i >= 0; i--) {
             StagedCreate item = staged.get(i);
             Path file = item.operation().file().toAbsolutePath().normalize();
             try {
-                if (item.created()) {
-                    java.nio.file.Files.deleteIfExists(file);
+                if (item.created() && workspaceFiles.exists(file)) {
+                    if (workspaceFiles.size(file) == 0) {
+                        workspaceFiles.deleteIfExists(file);
+                    } else {
+                        transaction.rollbackFailed = true;
+                    }
                 }
-                if (item.overwrittenBackup() != null) {
-                    java.nio.file.Files.move(
-                            item.overwrittenBackup(), file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                if (item.overwrittenBackup() != null && workspaceFiles.exists(item.overwrittenBackup())) {
+                    if (workspaceFiles.exists(file)) {
+                        transaction.rollbackFailed = true;
+                    } else {
+                        workspaceFiles.move(item.overwrittenBackup(), file);
+                    }
                 }
             } catch (java.io.IOException ignored) {
+                transaction.rollbackFailed = true;
                 // Continue restoring independent paths.
             }
         }
     }
 
-    private static void commitCreates(java.util.List<StagedCreate> staged) {
+    private void commitCreates(java.util.List<StagedCreate> staged) {
         for (StagedCreate item : staged) {
             deleteRecursively(item.overwrittenBackup());
         }
     }
 
-    private static java.util.List<StagedDelete> stageDeletes(
-            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileDelete> operations) {
+    private java.util.List<StagedDelete> stageDeletes(
+            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileDelete> operations,
+            WorkspaceTransactionStatus transaction) {
         java.util.List<StagedDelete> staged = new java.util.ArrayList<>();
         try {
             for (var operation : operations) {
                 Path file = operation.file().toAbsolutePath().normalize();
-                if (!java.nio.file.Files.exists(file)) {
+                if (!workspaceFiles.exists(file)) {
                     if (operation.ignoreIfNotExists()) {
                         continue;
                     }
-                    rollbackDeletes(staged);
+                    rollbackDeletes(staged, transaction);
                     return null;
                 }
-                if (java.nio.file.Files.isDirectory(file) && !operation.recursive()) {
-                    try (var children = java.nio.file.Files.list(file)) {
-                        if (children.findAny().isPresent()) {
-                            rollbackDeletes(staged);
-                            return null;
-                        }
-                    }
+                if (workspaceFiles.isDirectory(file)
+                        && !operation.recursive()
+                        && !workspaceFiles.list(file).isEmpty()) {
+                    rollbackDeletes(staged, transaction);
+                    return null;
                 }
                 Path stage = temporarySibling(file, ".deleted");
-                java.nio.file.Files.move(file, stage);
-                staged.add(new StagedDelete(operation, stage));
+                workspaceFiles.move(file, stage);
+                staged.add(new StagedDelete(operation, stage, null));
+                staged.set(staged.size() - 1, new StagedDelete(operation, stage, workspaceFiles.identity(stage)));
             }
             return staged;
         } catch (java.io.IOException | RuntimeException failure) {
-            rollbackDeletes(staged);
+            rollbackDeletes(staged, transaction);
             return null;
         }
     }
 
-    private static void rollbackDeletes(java.util.List<StagedDelete> staged) {
+    private void rollbackDeletes(java.util.List<StagedDelete> staged, WorkspaceTransactionStatus transaction) {
         for (int i = staged.size() - 1; i >= 0; i--) {
             StagedDelete item = staged.get(i);
             try {
-                java.nio.file.Files.move(
-                        item.stage(),
-                        item.operation().file().toAbsolutePath().normalize(),
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                Path original = item.operation().file().toAbsolutePath().normalize();
+                if (workspaceFiles.exists(original)) {
+                    transaction.rollbackFailed = true;
+                } else {
+                    workspaceFiles.move(item.stage(), original);
+                }
             } catch (java.io.IOException ignored) {
+                transaction.rollbackFailed = true;
                 // Continue restoring independent paths.
             }
         }
     }
 
-    private static void commitDeletes(java.util.List<StagedDelete> staged) {
+    private void commitDeletes(java.util.List<StagedDelete> staged) {
         for (StagedDelete item : staged) {
             deleteRecursively(item.stage());
         }
     }
 
-    private static void deleteRecursively(Path path) {
-        if (path == null || !java.nio.file.Files.exists(path)) {
+    private void deleteRecursively(Path path) {
+        if (path == null || !workspaceFiles.exists(path)) {
             return;
         }
-        try (var paths = java.nio.file.Files.walk(path)) {
-            paths.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    java.nio.file.Files.deleteIfExists(p);
-                } catch (java.io.IOException ignored) {
-                    // A committed edit should not be rolled back because cleanup of a hidden stage failed.
-                }
-            });
+        try {
+            workspaceFiles.walk(path).stream()
+                    .sorted(java.util.Comparator.reverseOrder())
+                    .forEach(p -> {
+                        try {
+                            workspaceFiles.deleteIfExists(p);
+                        } catch (java.io.IOException ignored) {
+                            // A committed edit should not be rolled back because cleanup of a hidden stage failed.
+                        }
+                    });
         } catch (java.io.IOException ignored) {
             // Best effort cleanup.
         }
@@ -2671,14 +2947,18 @@ final class LspCoordinator {
 
     /** One completed filesystem rename plus the temporary paths used to make the batch transactional. */
     private record StagedRename(
-            com.editora.lsp.WorkspaceEditMapper.FileRename rename, Path stage, Path overwrittenBackup) {}
+            com.editora.lsp.WorkspaceEditMapper.FileRename rename,
+            Path stage,
+            Path overwrittenBackup,
+            WorkspaceFileIdentity identity) {}
 
     /**
      * Executes every file move as one recoverable batch before editor text is touched. Sources and overwritten
      * destinations are first moved aside; if any later move fails, every path is restored from those stages.
      */
-    private static java.util.List<StagedRename> stageRenames(
-            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileRename> renames) {
+    private java.util.List<StagedRename> stageRenames(
+            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileRename> renames,
+            WorkspaceTransactionStatus transaction) {
         java.util.List<StagedRename> staged = new java.util.ArrayList<>();
         java.util.Set<Path> sources = new java.util.HashSet<>();
         java.util.Set<Path> destinations = new java.util.HashSet<>();
@@ -2689,7 +2969,7 @@ final class LspCoordinator {
                 if (from.equals(to)) {
                     continue;
                 }
-                if (!sources.add(from) || !destinations.add(to) || !java.nio.file.Files.isRegularFile(from)) {
+                if (!sources.add(from) || !destinations.add(to) || !workspaceFiles.isRegularFile(from)) {
                     return null;
                 }
             }
@@ -2698,7 +2978,7 @@ final class LspCoordinator {
             for (var r : renames) {
                 Path from = r.from().toAbsolutePath().normalize();
                 Path to = r.to().toAbsolutePath().normalize();
-                if (!from.equals(to) && !r.overwrite() && java.nio.file.Files.exists(to) && !sources.contains(to)) {
+                if (!from.equals(to) && !r.overwrite() && workspaceFiles.exists(to) && !sources.contains(to)) {
                     return null;
                 }
             }
@@ -2709,59 +2989,61 @@ final class LspCoordinator {
                     continue;
                 }
                 Path stage = temporarySibling(from, ".source");
-                java.nio.file.Files.move(from, stage);
-                staged.add(new StagedRename(r, stage, null));
+                workspaceFiles.move(from, stage);
+                staged.add(new StagedRename(r, stage, null, null));
+                staged.set(staged.size() - 1, new StagedRename(r, stage, null, workspaceFiles.identity(stage)));
             }
             for (int i = 0; i < staged.size(); i++) {
                 StagedRename item = staged.get(i);
                 Path to = item.rename().to().toAbsolutePath().normalize();
                 Path parent = to.getParent();
                 if (parent != null) {
-                    java.nio.file.Files.createDirectories(parent);
+                    workspaceFiles.createDirectories(parent);
                 }
                 Path backup = null;
-                if (java.nio.file.Files.exists(to)) {
+                if (workspaceFiles.exists(to)) {
                     backup = temporarySibling(to, ".destination");
-                    java.nio.file.Files.move(to, backup);
-                    item = new StagedRename(item.rename(), item.stage(), backup);
+                    workspaceFiles.move(to, backup);
+                    item = new StagedRename(item.rename(), item.stage(), backup, item.identity());
                     staged.set(i, item);
                 }
-                java.nio.file.Files.move(item.stage(), to);
+                workspaceFiles.move(item.stage(), to);
             }
             return List.copyOf(staged);
         } catch (java.io.IOException | RuntimeException failure) {
-            rollbackRenames(staged);
+            rollbackRenames(staged, transaction);
             return null;
         }
     }
 
-    private static void commitRenames(java.util.List<StagedRename> staged) {
+    private void commitRenames(java.util.List<StagedRename> staged) {
         for (StagedRename item : staged) {
             deleteRecursively(item.overwrittenBackup());
         }
     }
 
-    private static Path temporarySibling(Path file, String suffix) throws java.io.IOException {
+    private Path temporarySibling(Path file, String suffix) throws java.io.IOException {
         Path parent = file.getParent();
         if (parent == null) {
             throw new java.io.IOException("file has no parent: " + file);
         }
-        Path temp = java.nio.file.Files.createTempFile(parent, ".editora-lsp-", suffix);
-        java.nio.file.Files.delete(temp);
+        Path temp = workspaceFiles.createTempFile(parent, ".editora-lsp-", suffix);
+        workspaceFiles.deleteIfExists(temp);
         return temp;
     }
 
-    private static void rollbackRenames(java.util.List<StagedRename> staged) {
+    private void rollbackRenames(java.util.List<StagedRename> staged, WorkspaceTransactionStatus transaction) {
         // Put completed destinations back into their per-source stages first. This also handles chains such
         // as A→B and B→C without one restored source overwriting another staged source.
         for (int i = staged.size() - 1; i >= 0; i--) {
             StagedRename item = staged.get(i);
             Path to = item.rename().to().toAbsolutePath().normalize();
             try {
-                if (!java.nio.file.Files.exists(item.stage()) && java.nio.file.Files.exists(to)) {
-                    java.nio.file.Files.move(to, item.stage());
+                if (!workspaceFiles.exists(item.stage()) && workspaceFiles.exists(to)) {
+                    workspaceFiles.move(to, item.stage());
                 }
             } catch (java.io.IOException ignored) {
+                transaction.rollbackFailed = true;
                 // Continue restoring the other independently staged paths.
             }
         }
@@ -2770,14 +3052,24 @@ final class LspCoordinator {
             Path from = item.rename().from().toAbsolutePath().normalize();
             Path to = item.rename().to().toAbsolutePath().normalize();
             try {
-                if (java.nio.file.Files.exists(item.stage())) {
-                    java.nio.file.Files.move(item.stage(), from, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                if (workspaceFiles.exists(item.stage())) {
+                    if (workspaceFiles.exists(from)) {
+                        transaction.rollbackFailed = true;
+                    } else {
+                        workspaceFiles.move(item.stage(), from);
+                    }
                 }
-                if (item.overwrittenBackup() != null && java.nio.file.Files.exists(item.overwrittenBackup())) {
-                    java.nio.file.Files.move(
-                            item.overwrittenBackup(), to, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                if (item.overwrittenBackup() != null
+                        && workspaceFiles.exists(item.overwrittenBackup())
+                        && !workspaceFiles.exists(to)) {
+                    workspaceFiles.move(item.overwrittenBackup(), to);
+                } else if (item.overwrittenBackup() != null && workspaceFiles.exists(item.overwrittenBackup())) {
+                    // The completed destination could not be moved back to its source stage. Replacing it
+                    // here would destroy that source's only surviving copy, so retain both paths for recovery.
+                    transaction.rollbackFailed = true;
                 }
             } catch (java.io.IOException ignored) {
+                transaction.rollbackFailed = true;
                 // Best effort after the original failure; all recoverable stages are attempted.
             }
         }

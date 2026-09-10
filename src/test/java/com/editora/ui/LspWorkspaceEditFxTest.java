@@ -1,15 +1,24 @@
 package com.editora.ui;
 
+import java.io.IOException;
+import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.LspTextEdit;
+import com.editora.io.DocumentWriteSequencer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
 import com.editora.lsp.WorkspaceEditMapper;
@@ -22,11 +31,14 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -62,6 +74,7 @@ class LspWorkspaceEditFxTest {
         final Settings settings = new Settings();
         final List<EditorBuffer> buffers = new ArrayList<>();
         EditorBuffer active;
+        String error;
 
         @Override
         public Settings settings() {
@@ -80,6 +93,11 @@ class LspWorkspaceEditFxTest {
 
         @Override
         public void setStatus(String message) {}
+
+        @Override
+        public void setError(String message) {
+            error = message;
+        }
     }
 
     private static final class FakeOps extends LspOpsStub {
@@ -87,6 +105,8 @@ class LspWorkspaceEditFxTest {
         final List<Path[]> renamed = new ArrayList<>();
         final List<Path> created = new ArrayList<>();
         final List<Path> deleted = new ArrayList<>();
+        final List<Path> invalidated = new ArrayList<>();
+        Consumer<Path> onInvalidate = ignored -> {};
 
         @Override
         public EditorBuffer bufferForPath(Path file) {
@@ -114,6 +134,38 @@ class LspWorkspaceEditFxTest {
         public void fileDeleted(Path file) {
             deleted.add(file);
         }
+
+        @Override
+        public void invalidatePendingWrite(Path file) {
+            invalidated.add(file);
+            onInvalidate.accept(file);
+        }
+    }
+
+    private static final class ManualExecutor implements Executor {
+        private final Deque<Runnable> queued = new ArrayDeque<>();
+
+        @Override
+        public void execute(Runnable command) {
+            queued.addLast(command);
+        }
+
+        void runNext() {
+            Runnable next = queued.pollFirst();
+            assertTrue(next != null, "expected a queued workspace task");
+            next.run();
+        }
+
+        int queued() {
+            return queued.size();
+        }
+    }
+
+    private static final class ThrowingEditorBuffer extends EditorBuffer {
+        @Override
+        public void applyLspEdits(List<LspTextEdit> edits) {
+            throw new IllegalStateException("injected FX edit failure");
+        }
     }
 
     @BeforeEach
@@ -129,20 +181,43 @@ class LspWorkspaceEditFxTest {
         });
     }
 
+    @AfterEach
+    void tearDown() throws Exception {
+        FxTestSupport.runOnFx(() -> host.buffers.forEach(EditorBuffer::dispose));
+        manager.shutdownAll();
+    }
+
     /** Creates the file and an open buffer for it, registered with the fakes. */
     private EditorBuffer openBuffer(String name, String text) throws Exception {
+        return openBuffer(name, text, new EditorBuffer());
+    }
+
+    private <T extends EditorBuffer> T openBuffer(String name, String text, T buffer) throws Exception {
         Path f = root.resolve(name);
         Files.writeString(f, text);
-        EditorBuffer b = FxTestSupport.callOnFx(() -> {
-            EditorBuffer x = new EditorBuffer();
-            x.setPath(f);
-            x.setContent(text);
-            host.buffers.add(x);
-            host.active = x;
-            return x;
+        T opened = FxTestSupport.callOnFx(() -> {
+            buffer.setPath(f);
+            buffer.setContent(text);
+            host.buffers.add(buffer);
+            host.active = buffer;
+            return buffer;
         });
-        ops.open.put(f.toAbsolutePath().normalize(), b);
-        return b;
+        ops.open.put(f.toAbsolutePath().normalize(), opened);
+        return opened;
+    }
+
+    private void useControlledCoordinator(LspCoordinator.WorkspaceFileOperations files, Executor executor)
+            throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            coordinator = new LspCoordinator(host, manager, ops, files, executor);
+            coordinator.setServerAvailableForTest("java", true);
+        });
+    }
+
+    private CompletableFuture<Boolean> applyAsync(WorkspaceEditMapper.Mapped mapped) throws Exception {
+        CompletableFuture<Boolean> result = new CompletableFuture<>();
+        FxTestSupport.runOnFx(() -> coordinator.applyWorkspaceEditsAsync(mapped, result::complete));
+        return result;
     }
 
     private static TextDocumentEdit edit(Path file, int line, int startCol, int endCol, String newText) {
@@ -438,6 +513,254 @@ class LspWorkspaceEditFxTest {
         assertFalse(apply(we));
         assertFalse(Files.exists(first));
         assertEquals("keep", Files.readString(occupied));
+    }
+
+    private enum StagedInterference {
+        EDIT,
+        READ_ONLY,
+        CLOSE
+    }
+
+    @ParameterizedTest(name = "{0} after staging rejects and rolls back the complete workspace edit")
+    @EnumSource(StagedInterference.class)
+    void bufferChangesAfterResourceStagingAreRejected(StagedInterference interference) throws Exception {
+        String original = "class Stable {}\n";
+        EditorBuffer buffer = openBuffer("Stable.java", original);
+        Path created = root.resolve("CreatedBeforeValidation.java");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        buffer.getPath(), List.of(new LspTextEdit(0, 6, 0, 12, "Changed")), null, original)),
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileCreate(created, false, false)),
+                List.of());
+        ManualExecutor executor = new ManualExecutor();
+        var files = new DelegatingWorkspaceFileOperations() {
+            @Override
+            public void createFile(Path path) throws IOException {
+                super.createFile(path);
+                try {
+                    FxTestSupport.runOnFx(() -> {
+                        switch (interference) {
+                            case EDIT -> buffer.replaceWholeDocument("// user edit\n" + original);
+                            case READ_ONLY -> buffer.setViewMode(true);
+                            case CLOSE -> {
+                                ops.open.remove(
+                                        buffer.getPath().toAbsolutePath().normalize());
+                                buffer.dispose();
+                            }
+                        }
+                    });
+                } catch (Exception failure) {
+                    throw new IOException("failed to inject staged-buffer interference", failure);
+                }
+            }
+        };
+        useControlledCoordinator(files, executor);
+
+        CompletableFuture<Boolean> result = applyAsync(mapped);
+        executor.runNext(); // stage, inject the buffer change, then enqueue final validation on FX
+        assertTrue(Files.exists(created), "the resource operation must be staged before the interference");
+
+        FxTestSupport.drainFx();
+        assertFalse(result.isDone(), "failure is not reported until the staged resource is restored");
+        assertEquals(1, executor.queued(), "rollback must use the owned worker boundary");
+        executor.runNext();
+        FxTestSupport.drainFx();
+
+        assertFalse(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertFalse(Files.exists(created), "the staged create must be rolled back");
+        String expected = interference == StagedInterference.EDIT ? "// user edit\n" + original : original;
+        assertEquals(expected, buffer.getContent(), "the user's current buffer state must survive");
+        assertTrue(ops.created.isEmpty(), "no successful resource notification may escape a rejected edit");
+    }
+
+    @Test
+    void aQueuedSaveCapturedBeforeRenameCannotRecreateTheSourcePath() throws Exception {
+        Path source = Files.writeString(root.resolve("Queued.java"), "current");
+        Path destination = root.resolve("Moved.java");
+        DocumentWriteSequencer writes = new DocumentWriteSequencer();
+        ops.onInvalidate = writes::supersede;
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileRename(source, destination, false)),
+                List.of(),
+                List.of());
+
+        try (DocumentWriteSequencer.Ticket oldSave = writes.begin(source)) {
+            assertTrue(FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)));
+            var outcome = oldSave.runIfCurrent(() -> {
+                Files.writeString(source, "obsolete queued save");
+                return true;
+            });
+
+            assertFalse(outcome.executed(), "the resource transaction must supersede the old save ticket");
+        }
+        assertFalse(Files.exists(source));
+        assertEquals("current", Files.readString(destination));
+        assertTrue(ops.invalidated.contains(source));
+        assertTrue(ops.invalidated.contains(destination));
+    }
+
+    @Test
+    void rollbackFailureReportsTheProblemAndRetainsTheRecoveryStage() throws Exception {
+        Path a = Files.writeString(root.resolve("RecoverA.txt"), "recoverable A");
+        Path b = Files.writeString(root.resolve("RecoverB.txt"), "recoverable B");
+        Path movedA = root.resolve("MovedA.txt");
+        Path movedB = root.resolve("MovedB.txt");
+        AtomicReference<Path> aStage = new AtomicReference<>();
+        var files = new DelegatingWorkspaceFileOperations() {
+            @Override
+            public void move(Path from, Path to, CopyOption... options) throws IOException {
+                boolean sourceStage = to.getFileName().toString().endsWith(".source");
+                if (from.equals(a) && sourceStage) {
+                    aStage.set(to);
+                } else if (from.equals(b) && sourceStage) {
+                    throw new IOException("fail second source stage");
+                } else if (from.equals(aStage.get()) && to.equals(a)) {
+                    throw new IOException("fail rollback restore");
+                }
+                super.move(from, to, options);
+            }
+        };
+        useControlledCoordinator(files, Runnable::run);
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(),
+                List.of(
+                        new WorkspaceEditMapper.FileRename(a, movedA, false),
+                        new WorkspaceEditMapper.FileRename(b, movedB, false)),
+                List.of(),
+                List.of());
+
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)));
+
+        assertFalse(Files.exists(a), "the injected rollback failure is observable at the original path");
+        assertEquals("recoverable A", Files.readString(aStage.get()), "the only copy must remain recoverable");
+        assertEquals("recoverable B", Files.readString(b), "independent source files must still be restored");
+        assertTrue(host.error != null && !host.error.isBlank(), "irrecoverable rollback must be reported");
+    }
+
+    @Test
+    void rollbackNeverOverwritesAPathRecreatedByACompetingSave() throws Exception {
+        String original = "class Original {}\n";
+        Path source = Files.writeString(root.resolve("Original.java"), original);
+        Path destination = root.resolve("Moved.java");
+        AtomicReference<Path> sourceStage = new AtomicReference<>();
+        var files = new DelegatingWorkspaceFileOperations() {
+            @Override
+            public void move(Path from, Path to, CopyOption... options) throws IOException {
+                boolean stagingSource =
+                        from.equals(source) && to.getFileName().toString().endsWith(".source");
+                if (stagingSource) {
+                    sourceStage.set(to);
+                }
+                super.move(from, to, options);
+                if (from.equals(sourceStage.get()) && to.equals(destination)) {
+                    Files.writeString(source, "newer save at original path");
+                }
+            }
+        };
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileRename(source, destination, false)),
+                List.of(),
+                List.of());
+        ManualExecutor executor = new ManualExecutor();
+        useControlledCoordinator(files, executor);
+
+        CompletableFuture<Boolean> result = applyAsync(mapped);
+        executor.runNext();
+        FxTestSupport.drainFx();
+        executor.runNext();
+        FxTestSupport.drainFx();
+
+        assertFalse(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals("newer save at original path", Files.readString(source));
+        assertEquals(original, Files.readString(sourceStage.get()), "the staged preimage must also remain recoverable");
+        assertTrue(host.error != null && !host.error.isBlank());
+        assertTrue(ops.renamed.isEmpty());
+    }
+
+    @Test
+    void rollbackRetainsConcurrentCreateAndDeletePathChanges() throws Exception {
+        Path created = root.resolve("Created.java");
+        Path deleted = Files.writeString(root.resolve("Deleted.java"), "deleted preimage");
+        AtomicReference<Path> deletedStage = new AtomicReference<>();
+        var files = new DelegatingWorkspaceFileOperations() {
+            @Override
+            public void createFile(Path path) throws IOException {
+                super.createFile(path);
+                if (path.equals(created)) {
+                    Files.writeString(path, "concurrent content in created path");
+                }
+            }
+
+            @Override
+            public void move(Path from, Path to, CopyOption... options) throws IOException {
+                super.move(from, to, options);
+                if (from.equals(deleted) && to.getFileName().toString().endsWith(".deleted")) {
+                    deletedStage.set(to);
+                    Files.writeString(deleted, "concurrently recreated delete path");
+                }
+            }
+        };
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(),
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileCreate(created, false, false)),
+                List.of(new WorkspaceEditMapper.FileDelete(deleted, false, false)));
+        ManualExecutor executor = new ManualExecutor();
+        useControlledCoordinator(files, executor);
+
+        CompletableFuture<Boolean> result = applyAsync(mapped);
+        executor.runNext();
+        FxTestSupport.drainFx();
+        executor.runNext();
+        FxTestSupport.drainFx();
+
+        assertFalse(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals("concurrent content in created path", Files.readString(created));
+        assertEquals("concurrently recreated delete path", Files.readString(deleted));
+        assertEquals("deleted preimage", Files.readString(deletedStage.get()));
+        assertTrue(host.error != null && !host.error.isBlank());
+        assertTrue(ops.created.isEmpty());
+        assertTrue(ops.deleted.isEmpty());
+    }
+
+    @Test
+    void anFxEditExceptionRollsBackResourcesAndCompletesAsFailed() throws Exception {
+        String firstOriginal = "class First {}\n";
+        String throwingOriginal = "class Throws {}\n";
+        EditorBuffer first = openBuffer("First.java", firstOriginal);
+        EditorBuffer throwing = openBuffer("Throws.java", throwingOriginal, new ThrowingEditorBuffer());
+        Path created = root.resolve("MustNotSurvive.java");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(
+                        new WorkspaceEditMapper.FileEdit(
+                                first.getPath(), List.of(new LspTextEdit(0, 6, 0, 11, "Changed")), null, firstOriginal),
+                        new WorkspaceEditMapper.FileEdit(
+                                throwing.getPath(),
+                                List.of(new LspTextEdit(0, 6, 0, 12, "Changed")),
+                                null,
+                                throwingOriginal)),
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileCreate(created, false, false)),
+                List.of());
+        ManualExecutor executor = new ManualExecutor();
+        useControlledCoordinator(LspCoordinator.WorkspaceFileOperations.SYSTEM, executor);
+
+        CompletableFuture<Boolean> result = applyAsync(mapped);
+        executor.runNext();
+        FxTestSupport.drainFx();
+        assertFalse(result.isDone(), "the callback must wait for resource rollback after the edit exception");
+        executor.runNext();
+        FxTestSupport.drainFx();
+
+        assertFalse(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertFalse(Files.exists(created));
+        assertEquals(firstOriginal, first.getContent(), "an earlier text edit must be rolled back too");
+        assertFalse(first.isDirty(), "restoring the clean preimage must also restore clean state");
+        assertEquals(throwingOriginal, throwing.getContent());
+        assertTrue(ops.created.isEmpty());
     }
 
     /** A text edit appearing AFTER a rename addresses the post-rename world — refused rather than guessed. */

@@ -6641,10 +6641,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
             });
 
-    /** The whole LSP integration (nav/format, diagnostics routing, the configure/detect/per-buffer-sync
-     *  gating + lifecycle, the status-bar segment, structure outline, semantic tokens); see
-     *  {@link LspCoordinator}. The {@code LspManager} stays owned here (DAP layers on its jdtls session, the
-     *  MCP bridge reads its diagnostics) and is passed in. */
+    /** LSP UI/lifecycle integration; the shared manager remains here because DAP and MCP also use it. */
     private final LspCoordinator lspCoordinator =
             new LspCoordinator(coordinatorHost, lspManager, new LspCoordinator.Ops() {
                 @Override
@@ -6731,6 +6728,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     if (projectPanel != null) {
                         projectPanel.refreshTree();
                     }
+                }
+
+                @Override
+                public void invalidatePendingWrite(Path file) {
+                    fileWorkflows.invalidatePendingWrite(file);
                 }
 
                 @Override
