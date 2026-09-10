@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Opening or restoring editable files no longer flashes the yellow **View Mode** banner or retains a stale
   **Read-Only** status while their content loads.
+- Sticky headers for long lines (such as generated HTML) no longer expand the editor beyond its viewport
+  and push the minimap off screen when scrolling.
 
 ## [0.18.0] - 2026-09-09
 

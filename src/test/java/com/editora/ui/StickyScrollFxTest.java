@@ -25,6 +25,71 @@ class StickyScrollFxTest {
 
     private FxWindowFixture fx;
 
+    @Test
+    void longHtmlHeaderKeepsMinimapInsideViewport() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            try {
+                // Like generated HTML, the enclosing scope starts on one very long logical line.
+                b.setLanguageOverride("html");
+                b.setContent("<!DOCTYPE html><html data-description=\"" + "metadata ".repeat(300) + "\"><body>\n"
+                        + "    <p>content</p>\n".repeat(100) + "</body></html>\n");
+                b.setWordWrap(false);
+                b.setStickyScrollEnabled(true);
+                b.getFoldManager().recompute();
+                call(b, "stickyLinesFor", int.class, 0);
+                javafx.scene.layout.StackPane host = new javafx.scene.layout.StackPane(b.getNode());
+                new javafx.scene.Scene(host, 1100, 700);
+                host.applyCss();
+                host.layout();
+                javafx.scene.layout.Region root = FxTestSupport.field(b, "root");
+                double initialMin = root.minWidth(-1);
+                double initialPref = root.prefWidth(-1);
+                call(b, "stickyLinesFor", int.class, 6);
+                host.applyCss();
+                host.layout();
+
+                assertFalse(
+                        ((List<?>) FxTestSupport.field(b, "stickyLines")).isEmpty(),
+                        "the long HTML scope must actually be pinned");
+                assertEquals(
+                        initialMin,
+                        root.minWidth(-1),
+                        0.01,
+                        "pinning a long header must not increase the editor's minimum width");
+                assertEquals(
+                        initialPref,
+                        root.prefWidth(-1),
+                        0.01,
+                        "pinning a long header must not increase the editor's preferred width");
+
+                // Also shrink and grow while pinned: a clip does not by itself constrain HBox/VBox sizing.
+                for (double width : new double[] {1100, 600, 1400}) {
+                    host.resize(width, 700);
+                    host.layout();
+                    javafx.scene.layout.Region mm = FxTestSupport.field(b, "minimap");
+                    javafx.scene.layout.Region bar = (javafx.scene.layout.Region) call(b, "stickyScrollNode");
+                    var viewport = host.localToScene(host.getLayoutBounds());
+                    var overview = mm.localToScene(mm.getLayoutBounds());
+                    assertEquals(width, root.getWidth(), 0.01, "the editor must fit its allocated viewport");
+                    assertTrue(mm.isVisible() && mm.getWidth() > 0);
+                    assertTrue(
+                            overview.getMinX() >= viewport.getMinX() && overview.getMaxX() <= viewport.getMaxX() + 0.01,
+                            "the minimap must stay inside the visible viewport");
+                    assertTrue(bar.isVisible() && bar.getHeight() > 0);
+                    for (javafx.scene.Node row : bar.getChildrenUnmodifiable()) {
+                        var rowBounds = row.localToScene(row.getLayoutBounds());
+                        assertTrue(
+                                rowBounds.getMaxX() <= overview.getMinX(),
+                                "each clipped header row must stop before the minimap");
+                    }
+                }
+            } finally {
+                b.dispose();
+            }
+        });
+    }
+
     @BeforeAll
     void setUp() throws Exception {
         FxTestSupport.bootToolkit();
