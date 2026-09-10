@@ -43,6 +43,27 @@ class DocumentWriteSequencerTest {
     }
 
     @Test
+    void ticketInvalidationDoesNotCancelANewerOwner() throws Exception {
+        DocumentWriteSequencer sequencer = new DocumentWriteSequencer();
+        Path file = Path.of("file.txt");
+        try (var old = sequencer.begin(file);
+                var current = sequencer.begin(file)) {
+            old.invalidate();
+            assertFalse(old.runIfCurrent(() -> true).executed());
+            assertTrue(current.runIfCurrent(() -> true).executed());
+        }
+    }
+
+    @Test
+    void currentTicketCanInvalidateItself() throws Exception {
+        DocumentWriteSequencer sequencer = new DocumentWriteSequencer();
+        try (var ticket = sequencer.begin(Path.of("file.txt"))) {
+            ticket.invalidate();
+            assertFalse(ticket.runIfCurrent(() -> true).executed());
+        }
+    }
+
+    @Test
     void supersedeNeverWaitsForAnInFlightWrite() throws Exception {
         DocumentWriteSequencer sequencer = new DocumentWriteSequencer();
         Path file = Path.of("file.txt");

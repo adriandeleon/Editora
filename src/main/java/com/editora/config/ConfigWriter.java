@@ -17,6 +17,8 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.editora.io.AtomicFileWrite;
+
 /**
  * Performs config-file writes off the JavaFX thread. Callers hand it immutable bytes or an immutable
  * snapshot supplier; one daemon thread performs deferred serialization and disk I/O.
@@ -43,6 +45,8 @@ public final class ConfigWriter {
     private record PendingWrite(BytesSupplier bytes, Consumer<WriteOutcome> completion) {}
 
     private static final Logger LOG = Logger.getLogger(ConfigWriter.class.getName());
+
+    private static final AtomicFileWrite.FileOperations FILES = AtomicFileWrite.systemFileOperations();
 
     /** Config files can hold credentials + private content, so they are owner-only (0600). */
     private static final java.util.Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");
@@ -259,38 +263,52 @@ public final class ConfigWriter {
     }
 
     private static void writeAtomicOrThrow(Path file, byte[] bytes) throws IOException {
+        writeAtomicOrThrow(file, bytes, FILES);
+    }
+
+    /** Atomic config replacement with an injectable filesystem boundary. */
+    static void writeAtomic(Path file, byte[] bytes, AtomicFileWrite.FileOperations files) throws IOException {
+        writeAtomicOrThrow(file, bytes, files);
+    }
+
+    private static void writeAtomicOrThrow(Path file, byte[] bytes, AtomicFileWrite.FileOperations files)
+            throws IOException {
         Path parent = file.getParent();
         if (parent != null) {
-            Files.createDirectories(parent);
+            files.createDirectories(parent);
         }
         // Remove the fixed-name temporary file used by older Editora versions. New writes use a unique
         // owner-only file below, so independent atomic writers cannot truncate or move each other's temp.
-        Files.deleteIfExists(file.resolveSibling(file.getFileName() + ".tmp"));
-        Path tmp = createOwnerOnlyTemp(file);
+        files.deleteIfExists(file.resolveSibling(file.getFileName() + ".tmp"));
+        Path tmp = createOwnerOnlyTemp(file, files);
+        boolean replaced = false;
         try {
-            Files.write(tmp, bytes);
+            files.write(tmp, bytes);
             try {
-                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException atomicUnsupported) {
-                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+                files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
             }
+            replaced = true;
         } finally {
-            Files.deleteIfExists(tmp);
+            if (!replaced) {
+                files.deleteIfExists(tmp);
+            }
         }
     }
 
-    private static Path createOwnerOnlyTemp(Path file) throws IOException {
+    private static Path createOwnerOnlyTemp(Path file, AtomicFileWrite.FileOperations files) throws IOException {
         Path parent = file.getParent();
         String prefix = "." + file.getFileName() + "-";
         if (parent != null
                 && parent.getFileSystem().supportedFileAttributeViews().contains("posix")) {
             try {
-                return Files.createTempFile(parent, prefix, ".tmp", PosixFilePermissions.asFileAttribute(OWNER_ONLY));
+                return files.createTempFile(parent, prefix, ".tmp", PosixFilePermissions.asFileAttribute(OWNER_ONLY));
             } catch (UnsupportedOperationException ignored) {
                 // No POSIX attributes after all — create with the filesystem's default mode.
             }
         }
-        return parent == null ? Files.createTempFile(prefix, ".tmp") : Files.createTempFile(parent, prefix, ".tmp");
+        return parent == null ? files.createTempFile(prefix, ".tmp") : files.createTempFile(parent, prefix, ".tmp");
     }
 
     /**
@@ -327,8 +345,7 @@ public final class ConfigWriter {
      * interrupted or raced by a caller-thread drain.
      */
     public boolean shutdown() {
-        boolean flushed = flush();
         io.shutdown();
-        return flushed;
+        return flush();
     }
 }

@@ -9431,7 +9431,20 @@ public class EditorBuffer implements TabContent {
      */
     public void replaceWholeDocument(String text) {
         widen();
+        preventUndoMerge();
         area.replaceText(text == null ? "" : text);
+        preventUndoMerge();
+    }
+
+    /** Keeps a programmatic whole-document mutation separate from adjacent user typing in both views. */
+    private void preventUndoMerge() {
+        if (largeFile) {
+            return;
+        }
+        area.getUndoManager().preventMerge();
+        if (area2 != null) {
+            area2.getUndoManager().preventMerge();
+        }
     }
 
     /** The accessible portion — the narrowed region, or the whole document when not narrowed. */

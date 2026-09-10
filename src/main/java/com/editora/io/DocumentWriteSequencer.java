@@ -57,6 +57,14 @@ public final class DocumentWriteSequencer {
             }
         }
 
+        /**
+         * Invalidates this ticket only if no newer ticket already owns the path. This lets one buffer close
+         * or change destination without cancelling a newer save from another window.
+         */
+        public void invalidate() {
+            state.generation.compareAndSet(generation, generation + 1);
+        }
+
         @Override
         public void close() {
             if (!closed.compareAndSet(false, true)) {

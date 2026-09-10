@@ -83,6 +83,11 @@ final class FxTestSupport {
         }
     }
 
+    /** Wait until all FX work queued before this call has completed. */
+    static void drainFx() throws Exception {
+        runOnFx(() -> {});
+    }
+
     /** Compute a value on the FX thread and return it (blocking). */
     static <T> T callOnFx(Callable<T> task) throws Exception {
         var result = new AtomicReference<T>();

@@ -1246,7 +1246,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
-                fileWorkflows.invalidatePendingWrite(buffer.getPath());
+                fileWorkflows.invalidatePendingWrites(buffer);
                 buffer.dispose();
             } else {
                 disposeViewerTab(tab); // an image/hex/PDF tab holds a thread + file handle + GPU texture too
@@ -1892,7 +1892,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     for (Tab removed : c.getRemoved()) {
                         EditorBuffer closed = bufferOf(removed);
                         if (closed != null) {
-                            fileWorkflows.invalidatePendingWrite(closed.getPath());
+                            fileWorkflows.invalidatePendingWrites(closed);
                             if (closed.getPath() != null && lspManager.isManaged(closed.getPath())) {
                                 lspManager.closeDocument(closed.getPath());
                                 lspCoordinator.clearDiagnostics(closed.getPath());
@@ -2008,9 +2008,14 @@ public class MainController implements com.editora.mcp.McpBridge {
             config.save();
         });
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
-        // Lazy lambda: historyCoordinator is constructed later in this method, so defer the field read to call time.
-        projectPanel.setOnBeforeDelete(
-                file -> historyCoordinator.captureBeforeDelete(file)); // snapshot to Local History before delete
+        projectPanel.setDeletePreparation(new ProjectDeleteCoordinator(
+                path -> bufferOf(tabForPath(path)),
+                path -> editorArea.select(tabForPath(path)),
+                fileWorkflows::hasPendingSave,
+                this::confirmCloseIfDirty,
+                fileWorkflows::invalidatePendingWrite,
+                (path, completion) -> historyCoordinator.captureBeforeDeleteDurably(path, completion),
+                this::setStatus));
         projectPanel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
         projectPanel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
         projectPanel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
@@ -2267,8 +2272,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         githubPanel = new GitHubPanel(gitWindows.githubActions());
         githubToolWindow = new ToolWindow(
                 "github", tr("toolwindow.github"), ToolWindow.Side.BOTTOM, Icons::github, githubPanel, "tool.github");
-        historyCoordinator = new HistoryCoordinator(
-                coordinatorHost, diffCoordinator, historyOps(), config.shared().historyService());
+        historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps(), config.shared());
         fileHistoryToolWindow = new ToolWindow(
                 "fileHistory",
                 tr("toolwindow.fileHistory"),

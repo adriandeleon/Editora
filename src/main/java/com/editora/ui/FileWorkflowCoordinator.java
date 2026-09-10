@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
@@ -36,6 +37,12 @@ import static com.editora.i18n.Messages.tr;
 
 /** Owns file loading, saving, autosave and elevated-save workflows. */
 final class FileWorkflowCoordinator {
+
+    @FunctionalInterface
+    interface DocumentWriter {
+
+        boolean write(Path target, byte[] bytes, BooleanSupplier commit) throws IOException;
+    }
 
     private record SaveRequest(
             EditorBuffer buffer,
@@ -140,11 +147,18 @@ final class FileWorkflowCoordinator {
     private final Set<SaveRequest> activeSaveRequests = ConcurrentHashMap.newKeySet();
     private final AtomicLong saveSequence = new AtomicLong();
 
+    /** Local-document persistence boundary. Package-visible replacement supports deterministic faults. */
+    private volatile DocumentWriter documentWriter = com.editora.io.AtomicFileWrite::writeIf;
+
     /** Test seam for holding an actual write worker while proving the FX thread remains responsive. */
     volatile Runnable beforeDocumentWriteForTest;
 
     FileWorkflowCoordinator(Host host) {
         this.host = host;
+    }
+
+    void setDocumentWriter(DocumentWriter documentWriter) {
+        this.documentWriter = java.util.Objects.requireNonNull(documentWriter, "documentWriter");
     }
 
     static final String AUTOSAVE_OFF = "off";
@@ -967,7 +981,7 @@ final class FileWorkflowCoordinator {
     }
 
     private boolean applySaveAsTarget(EditorBuffer buffer, Path file, boolean synchronous) {
-        invalidatePendingWrite(buffer.getPath());
+        invalidatePendingWrites(buffer);
         buffer.setPath(file);
         // The buffer's EditorConfig properties + charset were resolved against the OLD path. Without
         // re-resolving, a Save-As into another tree writes with the previous project's charset/EOL/trim rules
@@ -1166,7 +1180,7 @@ final class FileWorkflowCoordinator {
         if (hook != null) {
             hook.run();
         }
-        if (!com.editora.io.AtomicFileWrite.writeIf(request.target(), request.bytes(), request.ticket()::isCurrent)) {
+        if (!documentWriter.write(request.target(), request.bytes(), request.ticket()::isCurrent)) {
             return null;
         }
         return new DiskWrite(lastModifiedMillis(request.target()), fileSize(request.target()));
@@ -1175,6 +1189,17 @@ final class FileWorkflowCoordinator {
     /** Invalidates queued or staged writes when a buffer stops representing this path. */
     void invalidatePendingWrite(Path file) {
         host.config().shared().documentWrites().supersede(file);
+        if (file != null) {
+            committedSaves.remove(com.editora.config.PathKeys.key(file));
+        }
+    }
+
+    /** Cancels saves captured from one buffer without invalidating another window's newer path ticket. */
+    void invalidatePendingWrites(EditorBuffer buffer) {
+        List.copyOf(activeSaveRequests).stream()
+                .filter(request -> request.buffer() == buffer)
+                .forEach(request -> request.ticket().invalidate());
+        Path file = buffer.getPath();
         if (file != null) {
             committedSaves.remove(com.editora.config.PathKeys.key(file));
         }

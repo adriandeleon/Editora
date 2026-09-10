@@ -6,7 +6,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
@@ -67,6 +69,60 @@ import static com.editora.i18n.Messages.tr;
  */
 public class ProjectPanel extends VBox implements ToolWindowContent {
 
+    /** Exact pre-delete bytes for every file whose content was captured during preparation. */
+    public record DeleteApproval(boolean permitted, Map<Path, byte[]> expectedBytes) {
+
+        public DeleteApproval {
+            Map<Path, byte[]> copy = new java.util.LinkedHashMap<>();
+            if (expectedBytes != null) {
+                expectedBytes.forEach((path, bytes) -> {
+                    if (path != null && bytes != null) {
+                        copy.put(path, bytes.clone());
+                    }
+                });
+            }
+            expectedBytes = java.util.Collections.unmodifiableMap(copy);
+        }
+
+        static DeleteApproval approved() {
+            return new DeleteApproval(true, Map.of());
+        }
+
+        static DeleteApproval denied() {
+            return new DeleteApproval(false, Map.of());
+        }
+    }
+
+    @FunctionalInterface
+    public interface DeletePreparation {
+        void prepare(List<Path> files, Consumer<DeleteApproval> completion);
+    }
+
+    public interface DeleteOperations {
+
+        DeleteOperations SYSTEM = new DeleteOperations() {
+            @Override
+            public byte[] readAllBytes(Path file) throws IOException {
+                return Files.readAllBytes(file);
+            }
+
+            @Override
+            public void delete(Path file) throws IOException {
+                Files.delete(file);
+            }
+        };
+
+        byte[] readAllBytes(Path file) throws IOException;
+
+        void delete(Path file) throws IOException;
+    }
+
+    record DeleteResult(boolean prepared, int deleted, List<Path> failed) {
+        DeleteResult {
+            failed = List.copyOf(failed);
+        }
+    }
+
     private static final java.util.logging.Logger LOG =
             java.util.logging.Logger.getLogger(ProjectPanel.class.getName());
 
@@ -84,8 +140,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private java.util.Map<Path, com.editora.git.GitFileStatus> gitStatus = java.util.Map.of();
     /** Directories that contain at least one Git-changed descendant (colored to hint at nested changes). */
     private java.util.Set<Path> gitChangedDirs = java.util.Set.of();
-    /** Injected by MainController: snapshot a regular file into Local History just before it's deleted. */
-    private Consumer<Path> onBeforeDelete = p -> {};
+    /** Resolves dirty buffers and durable history before any selected file is deleted. */
+    private DeletePreparation deletePreparation = (files, completion) -> completion.accept(DeleteApproval.approved());
+    /** Filesystem boundary for guarded deletion and deterministic failure testing. */
+    private DeleteOperations deleteOperations = DeleteOperations.SYSTEM;
     /** Injected by MainController: show a transient status-bar message (drag-move / multi-delete feedback). */
     private Consumer<String> onStatus = m -> {};
     /** Notified after the filesystem watcher picks up an <em>external</em> change (not the app's own edit), so
@@ -1074,9 +1132,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.onNewFromTemplate = onNewFromTemplate;
     }
 
-    /** Injects a hook called with a regular file just before it's deleted (to snapshot it into Local History). */
-    public void setOnBeforeDelete(Consumer<Path> onBeforeDelete) {
-        this.onBeforeDelete = onBeforeDelete == null ? p -> {} : onBeforeDelete;
+    /** Injects the dirty-buffer and durable-history gate run after confirmation but before filesystem changes. */
+    public void setDeletePreparation(DeletePreparation deletePreparation) {
+        this.deletePreparation = deletePreparation == null
+                ? (files, completion) -> completion.accept(DeleteApproval.approved())
+                : deletePreparation;
+    }
+
+    void setDeleteOperations(DeleteOperations deleteOperations) {
+        this.deleteOperations = Objects.requireNonNull(deleteOperations, "deleteOperations");
     }
 
     /** Injects the status-message sink used for drag-move / multi-delete feedback. */
@@ -1324,18 +1388,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
-        if (Files.isRegularFile(path)) {
-            onBeforeDelete.accept(path); // snapshot into Local History so the file can be recovered
-        }
-        try {
-            Files.delete(path);
-        } catch (IOException ex) {
-            showError(tr("project.deleteError", path.getFileName(), ex.getMessage()));
-            return;
-        }
-        markLocalChange(); // suppress the watcher's redundant ~1s-later refresh for our own delete
-        refreshAfterChange();
-        onFileDeleted.accept(path);
+        deleteConfirmed(List.of(path));
     }
 
     // --- drag-to-move + multi-delete (mini file-manager) ---
@@ -1464,21 +1517,77 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
-        int deleted = 0;
-        for (Path p : files) {
-            onBeforeDelete.accept(p); // snapshot into Local History first
+        deleteConfirmed(files);
+    }
+
+    /** Runs the post-confirmation delete transaction: preflight every file, verify every captured preimage,
+     *  then perform the filesystem deletes. Package-visible completion lets integration tests await the same
+     *  asynchronous boundary the UI uses without timing sleeps. */
+    CompletableFuture<DeleteResult> deleteConfirmed(List<Path> requested) {
+        CompletableFuture<DeleteResult> completion = new CompletableFuture<>();
+        List<Path> files = requested == null
+                ? List.of()
+                : requested.stream().filter(Objects::nonNull).distinct().toList();
+        if (files.isEmpty()) {
+            completion.complete(new DeleteResult(true, 0, List.of()));
+            return completion;
+        }
+        try {
+            deletePreparation.prepare(files, approval -> onFx(() -> finishDelete(files, approval, completion)));
+        } catch (RuntimeException failure) {
+            completion.complete(new DeleteResult(false, 0, files));
+        }
+        return completion;
+    }
+
+    private void finishDelete(List<Path> files, DeleteApproval approval, CompletableFuture<DeleteResult> completion) {
+        if (completion.isDone()) {
+            return;
+        }
+        if (approval == null || !approval.permitted()) {
+            completion.complete(new DeleteResult(false, 0, files));
+            return;
+        }
+        for (Map.Entry<Path, byte[]> expected : approval.expectedBytes().entrySet()) {
             try {
-                Files.delete(p);
-            } catch (IOException ex) {
-                showError(tr("project.deleteError", p.getFileName(), ex.getMessage()));
+                if (!java.util.Arrays.equals(expected.getValue(), deleteOperations.readAllBytes(expected.getKey()))) {
+                    onStatus.accept(
+                            tr("project.deleteChanged", expected.getKey().getFileName()));
+                    completion.complete(new DeleteResult(false, 0, files));
+                    return;
+                }
+            } catch (IOException | RuntimeException changedOrMissing) {
+                onStatus.accept(tr("project.deleteChanged", expected.getKey().getFileName()));
+                completion.complete(new DeleteResult(false, 0, files));
+                return;
+            }
+        }
+
+        int deleted = 0;
+        List<Path> failed = new ArrayList<>();
+        for (Path file : files) {
+            try {
+                deleteOperations.delete(file);
+            } catch (IOException | RuntimeException failure) {
+                failed.add(file);
+                showError(tr("project.deleteError", file.getFileName(), failure.getMessage()));
                 continue;
             }
-            onFileDeleted.accept(p);
+            onFileDeleted.accept(file);
             deleted++;
         }
         if (deleted > 0) {
             markLocalChange();
             refreshAfterChange();
+        }
+        completion.complete(new DeleteResult(true, deleted, failed));
+    }
+
+    private static void onFx(Runnable action) {
+        if (Platform.isFxApplicationThread()) {
+            action.run();
+        } else {
+            Platform.runLater(action);
         }
     }
 
