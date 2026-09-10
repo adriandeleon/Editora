@@ -5568,11 +5568,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    // --- Git (native-CLI integration; off-thread via GitService) -------------------------------------
-
-    /** The stateful core of the Git integration (GitService + repo state + the status/gutter state
-     *  machine); see {@link GitCoordinator}. Operations (commit/branch/log/blame/diff) stay below and
-     *  reach in via {@code git.service()}/{@code git.repoRoot()}. */
     private final GitCoordinator git = new GitCoordinator(coordinatorHost, new GitCoordinator.WindowOps() {
         @Override
         public void setStatusBarGitEnabled(boolean enabled) {
@@ -5627,6 +5622,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void invalidatePendingWrite(Path file) {
+            fileWorkflows.invalidatePendingWrite(file);
+        }
+
+        @Override
         public void reloadAllFromDiskSilently() {
             MainController.this.reloadAllFromDiskSilently();
         }
@@ -5659,11 +5659,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void openCommitFileDiff(String hash, String repoRel) {
             diffCoordinator.diffCommitFile(hash, repoRel);
-        }
-
-        @Override
-        public void checkExternalChanges() {
-            fileWorkflows.checkExternalChanges();
         }
 
         @Override

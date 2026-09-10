@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.scene.control.Alert;
@@ -80,8 +79,8 @@ final class GitCoordinator {
         /** The active project's root folder, or {@code null} when no project is open. */
         Path projectRoot();
 
-        /** Re-checks the active file's on-disk stamp + reloads it if a git command changed it under us. */
-        void checkExternalChanges();
+        /** Invalidates queued or staged editor writes before Git mutates the same working-tree path. */
+        void invalidatePendingWrite(Path file);
 
         /** After a branch switch / pull, silently reload any open buffer whose file changed on disk. */
         void reloadAllFromDiskSilently();
@@ -559,22 +558,57 @@ final class GitCoordinator {
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
-        if (!tracked.isEmpty()) {
-            gitOp(
-                    tracked.size() == 1
-                            ? tr("status.git.discarded", tracked.get(0))
-                            : tr("status.git.discardedMany", tracked.size()),
-                    argv(tracked, "checkout", "--"));
-        }
-        if (!untracked.isEmpty()) {
-            gitOp(
-                    untracked.size() == 1
-                            ? tr("status.git.deleted", untracked.get(0))
-                            : tr("status.git.deletedMany", untracked.size()),
+        List<String> affected = new ArrayList<>(tracked.size() + untracked.size());
+        affected.addAll(tracked);
+        affected.addAll(untracked);
+        invalidatePendingWrites(affected);
+        runDiscardCommands(tracked, untracked, affected);
+    }
+
+    /** Runs a mixed discard in order and refreshes/reloads once, after every requested path was attempted. */
+    private void runDiscardCommands(List<String> tracked, List<String> untracked, List<String> affected) {
+        Consumer<ProcessRunner.Result> afterTracked = trackedResult -> {
+            if (untracked.isEmpty()) {
+                finishDiscard(trackedResult, tracked, untracked, affected);
+                return;
+            }
+            service.run(
+                    repoRoot,
+                    untrackedResult -> finishDiscard(
+                            trackedResult != null && !trackedResult.ok() ? trackedResult : untrackedResult,
+                            tracked,
+                            untracked,
+                            affected),
                     argv(untracked, "clean", "-f", "--"));
+        };
+        if (tracked.isEmpty()) {
+            afterTracked.accept(null);
+        } else {
+            service.run(repoRoot, afterTracked, argv(tracked, "checkout", "--"));
         }
-        // The on-disk files changed under any open buffer for them — re-check so they reload if needed.
-        Platform.runLater(ops::checkExternalChanges);
+    }
+
+    private void finishDiscard(
+            ProcessRunner.Result result, List<String> tracked, List<String> untracked, List<String> affected) {
+        invalidatePendingWrites(affected);
+        if (result != null && result.ok()) {
+            host.setStatus(discardSuccessMessage(tracked, untracked));
+        } else {
+            gitError("Git command failed", result == null ? "Git command failed" : result.message());
+        }
+        afterMutation();
+        ops.reloadAllFromDiskSilently();
+    }
+
+    private static String discardSuccessMessage(List<String> tracked, List<String> untracked) {
+        if (!untracked.isEmpty()) {
+            return untracked.size() == 1
+                    ? tr("status.git.deleted", untracked.get(0))
+                    : tr("status.git.deletedMany", untracked.size());
+        }
+        return tracked.size() == 1
+                ? tr("status.git.discarded", tracked.get(0))
+                : tr("status.git.discardedMany", tracked.size());
     }
 
     /** The confirmation body: names the single file, else counts, and spells out a mixed set exactly. */
@@ -616,9 +650,11 @@ final class GitCoordinator {
         if (repoRoot == null || name == null || name.isBlank()) {
             return;
         }
+        invalidatePendingWrites(List.of());
         service.run(
                 repoRoot,
                 r -> {
+                    invalidatePendingWrites(List.of());
                     if (r.ok()) {
                         host.setStatus(tr("status.switchedBranch", name));
                     } else {
@@ -636,9 +672,11 @@ final class GitCoordinator {
         if (repoRoot == null || remote == null || remote.isBlank()) {
             return;
         }
+        invalidatePendingWrites(List.of());
         service.run(
                 repoRoot,
                 r -> {
+                    invalidatePendingWrites(List.of());
                     if (r.ok()) {
                         host.setStatus(tr("status.checkedOut", remote));
                     } else {
@@ -867,16 +905,18 @@ final class GitCoordinator {
         host.promptText(tr("stash.prompt.title"), tr("stash.prompt.label"), "", msg -> {
             String m = msg.strip();
             String[] args = m.isEmpty() ? new String[] {"stash", "push"} : new String[] {"stash", "push", "-m", m};
+            invalidatePendingWrites(List.of());
             service.run(
                     repoRoot,
                     r -> {
+                        invalidatePendingWrites(List.of());
                         if (r.ok()) {
                             host.setStatus(tr("stash.pushed"));
                         } else {
                             gitError(tr("status.git.opFailed"), r.message());
                         }
                         afterMutation();
-                        Platform.runLater(ops::checkExternalChanges);
+                        ops.reloadAllFromDiskSilently();
                     },
                     args);
         });
@@ -927,18 +967,50 @@ final class GitCoordinator {
         if (reportIfNoRepo()) {
             return;
         }
+        boolean changesWorkingTree = args.length < 2 || !"drop".equals(args[1]);
+        if (changesWorkingTree) {
+            invalidatePendingWrites(List.of());
+        }
         service.run(
                 repoRoot,
                 r -> {
+                    if (changesWorkingTree) {
+                        invalidatePendingWrites(List.of());
+                    }
                     if (r.ok()) {
                         host.setStatus(successMessage);
                     } else {
                         gitError(tr("status.git.opFailed"), r.message());
                     }
                     afterMutation();
-                    Platform.runLater(ops::checkExternalChanges);
+                    if (changesWorkingTree) {
+                        ops.reloadAllFromDiskSilently();
+                    }
                 },
                 args);
+    }
+
+    /** Supersedes pending saves for open files selected by the working-tree mutation. Empty means the repo. */
+    private void invalidatePendingWrites(List<String> pathspecs) {
+        Path root = repoRoot;
+        if (root == null) {
+            return;
+        }
+        host.forEachBuffer(buffer -> {
+            Path file = buffer.getPath();
+            String relative = GitService.repoRelative(root, file);
+            if (relative != null && (pathspecs.isEmpty() || pathspecs.stream().anyMatch(p -> selects(p, relative)))) {
+                ops.invalidatePendingWrite(file);
+            }
+        });
+    }
+
+    private static boolean selects(String pathspec, String relative) {
+        if (".".equals(pathspec) || relative.equals(pathspec)) {
+            return true;
+        }
+        String directory = pathspec.endsWith("/") ? pathspec : pathspec + "/";
+        return relative.startsWith(directory);
     }
 
     /**
