@@ -35,7 +35,8 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The Git Log / History tool window: a commit list (whole-repo or filtered to one file) over the
  * selected commit's changed files. Selecting a commit asks the controller (via {@link Actions}) to
- * fetch its files; double-clicking a file opens a read-only diff (commit vs parent). A commit's
+ * fetch its files. In whole-repository mode, double-clicking a file opens its commit-vs-parent diff;
+ * in file-history mode it compares that revision with the editable working file instead. A commit's
  * context menu offers Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. Like
  * {@link GitPanel} it is purely a view — the controller knows the repo root and runs {@code git}.
  */
@@ -51,6 +52,9 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
         /** Diff a commit's file against its parent; {@code origRepoRelativePath} is the pre-rename path (or null). */
         void openFileDiff(String hash, String repoRelativePath, String origRepoRelativePath);
+
+        /** Compare a commit's file with its working-tree copy so selected changes can be applied locally. */
+        void compareFileWithWorking(String hash, String repoRelativePath);
 
         void copyHash(String hash);
 
@@ -88,6 +92,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     private final SplitPane split = new SplitPane();
     private final Label placeholder = new Label(tr("gitlog.noCommits"));
     private boolean focusPending; // focusFirstItem() ran before the async log arrived
+    private boolean fileHistoryMode;
 
     public GitLogPanel(Actions actions) {
         this.actions = actions;
@@ -216,6 +221,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     /** Replaces the commit list. {@code fileName} = null ⇒ whole-repo; else the filtered file's name. */
     public void setLog(List<Commit> log, String fileName) {
         boolean filtered = fileName != null && !fileName.isBlank();
+        fileHistoryMode = filtered;
         filterLabel.setText(filtered ? tr("gitlog.history", fileName) : tr("gitlog.all"));
         showAllButton.setVisible(filtered);
         showAllButton.setManaged(filtered);
@@ -244,7 +250,11 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         Commit c = commits.getSelectionModel().getSelectedItem();
         CommitFile f = files.getSelectionModel().getSelectedItem();
         if (c != null && f != null) {
-            actions.openFileDiff(c.hash(), f.path(), f.origPath());
+            if (fileHistoryMode) {
+                actions.compareFileWithWorking(c.hash(), f.path());
+            } else {
+                actions.openFileDiff(c.hash(), f.path(), f.origPath());
+            }
         }
     }
 
@@ -348,12 +358,18 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
                     actions.openFileDiff(c.hash(), path, f.origPath());
                 }
             });
+            MenuItem compareWorking = item(tr("gitlog.menu.compareWorking"), Icons.merge(), () -> {
+                Commit c = commits.getSelectionModel().getSelectedItem();
+                if (c != null) {
+                    actions.compareFileWithWorking(c.hash(), path);
+                }
+            });
             MenuItem open = item(tr("gitlog.menu.openFile"), Icons.fileSheet(), () -> actions.openFile(path));
             MenuItem history = item(tr("gitlog.menu.fileHistory"), Icons.gitLog(), () -> actions.showFileHistory(path));
             MenuItem copy = item(tr("gitlog.menu.copyPath"), Icons.copy(), () -> actions.copyPath(path));
             // A deleted file has no working-tree copy to open.
             open.setDisable(GitFileStatus.fromLetter(f.status()) == GitFileStatus.DELETED);
-            return new ContextMenu(diff, open, history, copy);
+            return new ContextMenu(diff, compareWorking, open, history, copy);
         }
 
         private void clearStatusClasses() {

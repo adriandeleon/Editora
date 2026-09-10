@@ -136,6 +136,43 @@ class DiffEditableResultIntegrationFxTest {
         assertTrue(((javafx.scene.control.Button) FxTestSupport.field(pane, "applyAllButton")).isVisible());
     }
 
+    @Test
+    void gitHistoryRevisionCanApplyChangesToTheWorkingFile() throws Exception {
+        Path repo = Files.createTempDirectory("editora-diff-history-editable");
+        Path file = repo.resolve("sample.txt");
+        Files.writeString(file, "committed\n");
+        git(repo, "init", "-q");
+        git(repo, "add", "sample.txt");
+        git(repo, "-c", "user.email=t@e.st", "-c", "user.name=Test", "commit", "-q", "-m", "init");
+        Files.writeString(file, "working\n");
+
+        Object git = FxTestSupport.field(fx.controller, "git");
+        Object diff = FxTestSupport.field(fx.controller, "diffCoordinator");
+        Object ops = FxTestSupport.field(diff, "ops");
+        applyState(git, repo(repo));
+        int previousPanes = paneCount(ops);
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                diff,
+                "diffCommitFileVsWorking",
+                new Class<?>[] {String.class, String.class, Path.class},
+                "HEAD",
+                "sample.txt",
+                file));
+
+        DiffViewerPane pane = awaitPaneAfter(ops, previousPanes);
+        assertNotNull(pane);
+        assertEquals(DiffViewerPane.EditableSide.RIGHT, pane.editableSide());
+        assertTrue(pane.matchesEditableText("working\n"));
+        assertTrue(((javafx.scene.control.Button) FxTestSupport.field(pane, "applyAllButton")).isVisible());
+
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(pane, "applyBlock", new Class<?>[] {int.class}, 0));
+        EditorBuffer buffer = FxTestSupport.callOnFx(
+                () -> (EditorBuffer) FxTestSupport.call(ops, "openBufferFor", new Class<?>[] {Path.class}, file));
+        assertNotNull(buffer, "applying a history hunk should open the working file in a background buffer");
+        assertEquals("committed\n", FxTestSupport.callOnFx(buffer::text));
+        assertEquals("working\n", Files.readString(file), "history hunk apply must not save implicitly");
+    }
+
     private DiffViewerPane awaitGitFolderPane() throws Exception {
         TabPane tabs = FxTestSupport.field(fx.controller, "tabPane");
         Instant deadline = Instant.now().plus(Duration.ofSeconds(10));

@@ -539,8 +539,11 @@ Editora is built with the help of AI coding tools.
   (focused on open) and Emacs navigation — `C-n`/`C-p` to move, `C-f`/`C-b` to expand a group. Palette/keys cover commit (`C-x g`), stage
   current file, switch/new branch, fetch/pull/push, and **clone** ("Git: Clone Repository…" clones a
   repo and opens a file from it — independent of projects). A **Git Log** tool window (`M-g h`, or *Show
-  File History* on a tab) browses commits — select one to see its files, double-click for a read-only
-  diff, right-click to Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. **Inline blame**
+  File History* on a tab) browses commits — select one to see its files. In a file-filtered history,
+  double-click a revision's file to compare it with the editable working copy and apply individual lines,
+  hunks, or the whole revision; in the full repository log, double-click keeps the read-only parent-to-commit
+  diff and **Compare with Working Tree** is available from the file menu. Right-click a commit to Copy Hash /
+  Checkout / Reset / Revert / Cherry-Pick / New Branch. **Inline blame**
   (`M-g a`, GitLens-style) annotates the current line with "author, time ago • summary" (toggle in
   *Settings → Git*, off by default). **Stash** push / pop / apply / drop from the palette or the branch
   dropdown. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.

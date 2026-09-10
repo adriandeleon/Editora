@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Git file history now compares a selected revision with the editable working file on double-click or Enter,
+  exposing the diff viewer's line, hunk, whole-file, Result, Undo, and Save controls. Full-repository Git logs
+  retain their parent-to-commit inspection and add **Compare with Working Tree** to each file's menu.
 - Opening or restoring editable files no longer flashes the yellow **View Mode** banner or retains a stale
   **Read-Only** status while their content loads.
 - Sticky headers for long lines (such as generated HTML) no longer expand the editor beyond its viewport

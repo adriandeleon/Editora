@@ -228,6 +228,17 @@ final class GitWindowCoordinator {
             }
 
             @Override
+            public void compareFileWithWorking(String hash, String repoRel) {
+                Path root = host.git().repoRoot();
+                if (root == null) {
+                    return;
+                }
+                Path workingFile =
+                        gitLogFilter != null && !Files.isDirectory(gitLogFilter) ? gitLogFilter : root.resolve(repoRel);
+                host.diffCoordinator().diffCommitFileVsWorking(hash, repoRel, workingFile);
+            }
+
+            @Override
             public void openFile(String repoRel) {
                 Path root = host.git().repoRoot();
                 if (root == null) {
