@@ -1185,6 +1185,37 @@ final class DiffCoordinator {
                 null);
     }
 
+    /**
+     * Compares a commit's version of a file with its current working-tree copy. The working side is the
+     * editable target, so the normal line, hunk, whole-file, Result, Undo, and Save controls are available.
+     * {@code repoRel} names the blob in the selected commit while {@code workingFile} may name the file's
+     * current path after a rename.
+     */
+    void diffCommitFileVsWorking(String hash, String repoRel, Path workingFile) {
+        Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
+        if (root == null || workingFile == null) {
+            return;
+        }
+        Path target = workingFile.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(target) && ops.openBufferFor(target) == null) {
+            host.setStatus(tr("status.git.fileGone", repoRel));
+            return;
+        }
+        String name =
+                target.getFileName() == null ? repoRel : target.getFileName().toString();
+        String displayHash = GitFormat.shortHash(hash);
+        openDiff(
+                tr("diff.title.vsCommit", name, displayHash),
+                tr("diff.title.vsCommitShort", displayHash),
+                tr("diff.side.working"),
+                name,
+                name,
+                blobSide(root, hash + ":" + repoRel, target),
+                cb -> cb.accept(worktreeText(target)),
+                DiffViewerPane.EditableSide.RIGHT,
+                target);
+    }
+
     /** The current working-tree text of {@code abs}: an open buffer's (incl. unsaved edits) if open,
      *  else the file on disk ("" when unreadable / deleted). */
     private String worktreeText(Path abs) {
