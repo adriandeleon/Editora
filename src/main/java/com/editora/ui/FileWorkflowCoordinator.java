@@ -239,7 +239,7 @@ final class FileWorkflowCoordinator {
         buffer.setPath(file);
         // Prevent the empty shell from starting LSP/minimap work or accepting edits before its document lands.
         buffer.setHeavyFile(true);
-        buffer.setViewMode(true);
+        buffer.setLoading(true);
         loadingBuffers.add(buffer);
         Tab tab = host.addBuffer(buffer, true, false);
         fileLoadExecutor.execute(() -> {

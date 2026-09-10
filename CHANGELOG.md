@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Opening or restoring editable files no longer flashes the yellow **View Mode** banner or retains a stale
+  **Read-Only** status while their content loads.
+
 ## [0.18.0] - 2026-09-09
 
 - `.astro` files are now recognized as Astro, use the official Astro TextMate grammar for mixed
