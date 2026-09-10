@@ -83,8 +83,14 @@ final class RemoteCoordinator {
     private String activeRemoteAuthority; // the connection backing the mounted remote root
 
     RemoteCoordinator(CoordinatorHost host, Ops ops) {
+        this(host, ops, null);
+    }
+
+    /** Connection-engine injection used by an already-connected host and deterministic integration tests. */
+    RemoteCoordinator(CoordinatorHost host, Ops ops, RemoteFileSystems remoteFs) {
         this.host = host;
         this.ops = ops;
+        this.remoteFs = remoteFs;
         this.panel = new RemoteConnectionsPanel(ops::connections, new RemoteConnectionsPanel.Actions() {
             @Override
             public void connect(RemoteConnection c) {

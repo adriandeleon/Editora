@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -264,6 +265,17 @@ final class FileWorkflowCoordinator {
                 Platform.runLater(() -> host.failAsyncOpen(tab, buffer, file, e));
             }
         });
+    }
+
+    /** Runs an action after an asynchronous buffer load reaches the FX thread, or now if it already has. */
+    void afterBufferLoad(EditorBuffer buffer, Runnable action) {
+        if (loadingBuffers.contains(buffer)) {
+            afterBufferLoad
+                    .computeIfAbsent(buffer, ignored -> new ArrayList<>())
+                    .add(action);
+        } else {
+            action.run();
+        }
     }
 
     /** Opens {@code file} in a read-only {@link ImageViewerPane} tab (raster images render, not their bytes). */

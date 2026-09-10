@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git file history now compares a selected revision with the editable working file on double-click or Enter,
   exposing the diff viewer's line, hunk, whole-file, Result, Undo, and Save controls. Full-repository Git logs
   retain their parent-to-commit inspection and add **Compare with Working Tree** to each file's menu.
+- Remote SFTP saves now replace existing files with a server-side atomic rename when supported and fail
+  without deleting the prior remote copy when safe replacement is unavailable or interrupted.
 - Git branch switches, discard, and stash operations now invalidate overlapping pending editor saves before
   and after the working tree changes; mixed tracked/untracked discards finish in order before clean buffers
   reload, while dirty and deleted open copies remain recoverable.

@@ -2400,14 +2400,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                     @Override
                     public void afterBufferLoad(EditorBuffer buffer, Runnable action) {
-                        if (fileWorkflows.loadingBuffers.contains(buffer)) {
-                            fileWorkflows
-                                    .afterBufferLoad
-                                    .computeIfAbsent(buffer, ignored -> new ArrayList<>())
-                                    .add(action);
-                        } else {
-                            action.run();
-                        }
+                        fileWorkflows.afterBufferLoad(buffer, action);
                     }
 
                     @Override

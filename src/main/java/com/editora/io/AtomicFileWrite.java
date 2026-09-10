@@ -5,6 +5,7 @@ import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.ProviderMismatchException;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileAttribute;
@@ -13,6 +14,10 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+
+import org.apache.sshd.sftp.client.SftpClient;
+import org.apache.sshd.sftp.client.extensions.openssh.OpenSSHPosixRenameExtension;
+import org.apache.sshd.sftp.client.fs.SftpFileSystem;
 
 /**
  * Writes a <b>document</b> (the user's file) as safely as the platform allows: to a temp file in the same
@@ -106,6 +111,9 @@ public final class AtomicFileWrite {
 
         @Override
         public void move(Path source, Path target, CopyOption... options) throws IOException {
+            if (replaceRemote(source, target)) {
+                return;
+            }
             Files.move(source, target, options);
         }
 
@@ -121,6 +129,37 @@ public final class AtomicFileWrite {
     };
 
     private AtomicFileWrite() {}
+
+    /**
+     * Apache MINA's {@code SftpFileSystemProvider.move(..., REPLACE_EXISTING)} deletes the destination before
+     * issuing its rename request. A lost connection or rejected rename in that gap therefore destroys the
+     * previous remote file. Use a server-side replacement operation instead, where the server supports one,
+     * and fail without touching the destination otherwise.
+     */
+    private static boolean replaceRemote(Path source, Path target) throws IOException {
+        if (!(source.getFileSystem() instanceof SftpFileSystem fs)) {
+            return false;
+        }
+        if (target.getFileSystem() != fs) {
+            throw new ProviderMismatchException("Mismatched SFTP filesystems for " + source + " and " + target);
+        }
+        try (SftpClient client = fs.getClient()) {
+            OpenSSHPosixRenameExtension posix = client.getExtension(OpenSSHPosixRenameExtension.class);
+            if (posix != null && posix.isSupported()) {
+                posix.posixRename(source.toString(), target.toString());
+                return true;
+            }
+            if (client.getVersion() >= 5) {
+                client.rename(
+                        source.toString(),
+                        target.toString(),
+                        SftpClient.CopyMode.Atomic,
+                        SftpClient.CopyMode.Overwrite);
+                return true;
+            }
+        }
+        throw new IOException("The SFTP server does not support safe remote file replacement");
+    }
 
     /** The production {@link Files}-backed operations implementation. */
     public static FileOperations systemFileOperations() {
@@ -184,6 +223,9 @@ public final class AtomicFileWrite {
             try {
                 files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException atomicUnsupported) {
+                if (isRemote(tmp)) {
+                    throw atomicUnsupported;
+                }
                 if (!commit.getAsBoolean()) {
                     return false;
                 }
@@ -244,6 +286,9 @@ public final class AtomicFileWrite {
             try {
                 files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException atomicUnsupported) {
+                if (isRemote(tmp)) {
+                    throw atomicUnsupported;
+                }
                 if (!commit.getAsBoolean() || !Arrays.equals(expectedBytes, files.readAllBytes(target))) {
                     return false;
                 }
@@ -268,6 +313,10 @@ public final class AtomicFileWrite {
         } catch (IOException brokenLink) {
             return file;
         }
+    }
+
+    private static boolean isRemote(Path path) {
+        return path.getFileSystem() instanceof SftpFileSystem;
     }
 
     /** Copies {@code from}'s POSIX permissions onto {@code to}, so the saved file keeps its mode (e.g. +x). */
