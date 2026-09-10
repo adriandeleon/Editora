@@ -9097,8 +9097,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         ButtonType quit = new ButtonType(tr("dialog.quit.button"));
         ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(quit, cancel);
+        styleQuitButtonAsDanger(alert, quit);
         Optional<ButtonType> result = alert.showAndWait();
         return result.isPresent() && result.get() == quit;
+    }
+
+    static void styleQuitButtonAsDanger(Alert alert, ButtonType quit) {
+        alert.getDialogPane().lookupButton(quit).getStyleClass().add("danger");
     }
 
     /** Walks every tab and prompts to save/discard each dirty buffer, then persists this window's session.
