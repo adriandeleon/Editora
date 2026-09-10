@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 
@@ -14,7 +15,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -70,6 +73,46 @@ class SessionRestoreDeferralFxTest {
         } finally {
             fx.dispose();
         }
+    }
+
+    @Test
+    void restoredEditableFileRefreshesTemporaryReadOnlyStatus() throws Exception {
+        Path dir = Files.createTempDirectory("editora-session-read-only-status");
+        Path selected = Files.writeString(dir.resolve("selected.txt"), SELECTED_TEXT);
+        seedSession(dir, selected);
+
+        List<Boolean> initialViewMode = new ArrayList<>();
+        List<Boolean> initialEditable = new ArrayList<>();
+        FxWindowFixture fx = FxWindowFixture.create(dir, false, false, false, List.of(), controller -> {
+            EditorBuffer buffer = selectedBuffer(controller);
+            initialViewMode.add(buffer.isViewMode());
+            initialEditable.add(buffer.isEditable());
+        });
+        try {
+            assertEquals(List.of(false), initialViewMode, "loading shell must not present itself as View Mode");
+            assertEquals(List.of(false), initialEditable, "loading shell must still reject edits");
+            assertTrue(
+                    waitUntil(() -> selectedBufferIsLoadedAndEditable(fx.controller)),
+                    "restored buffer should finish loading as editable");
+
+            StatusBar statusBar = FxTestSupport.field(fx.controller, "statusBar");
+            Label readOnly = FxTestSupport.field(statusBar, "readOnly");
+            assertEquals(tr("statusbar.editable"), FxTestSupport.callOnFx(readOnly::getText));
+            assertFalse(FxTestSupport.callOnFx(() -> readOnly.getStyleClass().contains("active")));
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    private static boolean selectedBufferIsLoadedAndEditable(MainController controller) {
+        EditorBuffer buffer = selectedBuffer(controller);
+        return !buffer.getContent().isEmpty() && buffer.isEditable();
+    }
+
+    private static EditorBuffer selectedBuffer(MainController controller) {
+        TabPane tabPane = FxTestSupport.field(controller, "tabPane");
+        Tab selected = tabPane.getSelectionModel().getSelectedItem();
+        return (EditorBuffer) selected.getUserData();
     }
 
     /** How many open editor buffers currently hold their file's text. */

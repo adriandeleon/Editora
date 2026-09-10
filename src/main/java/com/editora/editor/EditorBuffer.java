@@ -452,6 +452,8 @@ public class EditorBuffer implements TabContent {
     private boolean truncatedLoad;
     /** User "View mode": non-editable but keeps all normal editor features (separate from huge-file). */
     private boolean viewMode;
+    /** Temporary non-editable shell while file content is loaded; never presented as user View mode. */
+    private boolean loading;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
     private CodeArea focusedArea = area;
     /** Floating Markdown format bar (lazily created), shown on a non-empty selection in a Markdown buffer. */
@@ -7937,9 +7939,15 @@ public class EditorBuffer implements TabContent {
         return viewMode;
     }
 
-    /** True when the buffer accepts edits — neither huge-file mode nor user View mode is active. */
+    /** Keeps an empty loading shell non-editable without showing the user-facing View Mode banner. */
+    public void setLoading(boolean loading) {
+        this.loading = loading;
+        applyEditable();
+    }
+
+    /** True when the buffer accepts edits — no huge-file, user View mode, or loading shell is active. */
     public boolean isEditable() {
-        return !hugeFile && !viewMode;
+        return !hugeFile && !viewMode && !loading;
     }
 
     /** Applies editability to both views from the current flags, and tags the surface for CSS. */

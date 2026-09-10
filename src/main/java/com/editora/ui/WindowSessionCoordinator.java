@@ -97,6 +97,8 @@ final class WindowSessionCoordinator {
         Tab tabForBuffer(EditorBuffer buffer);
 
         void restoreReadOnly(EditorBuffer buffer);
+
+        void refreshStatusBar();
     }
 
     private final Host host;
@@ -187,7 +189,7 @@ final class WindowSessionCoordinator {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(p); // sets the tab title/language; content comes later
             buffer.setHeavyFile(true); // suppress LSP/minimap while this restored tab is only a shell
-            buffer.setViewMode(true);
+            buffer.setLoading(true);
             host.fileWorkflows().loadingBuffers.add(buffer);
             Tab tab = host.addBuffer(buffer, active, false);
             if (f.isPinned()) {
@@ -594,7 +596,6 @@ final class WindowSessionCoordinator {
                                 host.pinned().add(hex);
                             }
                         } else {
-                            buffer.setViewMode(false);
                             finishSessionBuffer(f, buffer, load);
                             host.clearLoading(buffer);
                         }
@@ -624,7 +625,12 @@ final class WindowSessionCoordinator {
         host.debugCoordinator().restoreBreakpoints(buffer);
         host.notesCoordinator().restoreNotes(buffer);
         host.restoreReadOnly(buffer);
+        buffer.setLoading(false);
         host.previews().restoreMarkdownMode(buffer);
+        // The tab was selected while it was still a non-editable loading shell. Refresh after the
+        // restored file's real View mode has been applied so the status segment cannot retain that
+        // temporary "Read-Only" state for an editable buffer.
+        host.refreshStatusBar();
         // The tab was set up before content loaded; start or close its server now that its real tier is known.
         host.lspCoordinator().syncBuffer(buffer);
         CodeArea area = buffer.getArea();

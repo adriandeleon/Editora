@@ -5276,6 +5276,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         public void restoreReadOnly(EditorBuffer buffer) {
             MainController.this.restoreReadOnly(buffer);
         }
+
+        @Override
+        public void refreshStatusBar() {
+            statusBar.refresh();
+        }
     });
 
     private final TestNavigationCoordinator testNavigation =
@@ -8395,7 +8400,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.opened", com.editora.config.PathDisplay.of(load.file())));
             return;
         }
-        buffer.setViewMode(false);
         String note = fileWorkflows.applyPreparedLoad(buffer, load);
         fileWorkflows.notePerfContentLoaded(buffer);
         restoreFolds(buffer);
@@ -8403,6 +8407,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         debugCoordinator.restoreBreakpoints(buffer);
         notesCoordinator.restoreNotes(buffer);
         restoreReadOnly(buffer);
+        buffer.setLoading(false);
         previews.restoreMarkdownMode(buffer);
         updateTabMeta(tab, buffer);
         // The loading shell is deliberately read-only until its document lands. Selection attached the
