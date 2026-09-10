@@ -311,6 +311,10 @@ public class ConfigManager {
         shared.saveHistory();
     }
 
+    public void saveHistory(java.util.function.Consumer<Boolean> completion) {
+        shared.saveHistory(completion);
+    }
+
     /** Removes a project's entire history bucket (called when the project is deleted) and persists. */
     public void deleteHistoryForProject(String projectKey) {
         shared.deleteHistoryForProject(projectKey);

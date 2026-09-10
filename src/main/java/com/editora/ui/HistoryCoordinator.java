@@ -46,6 +46,12 @@ final class HistoryCoordinator {
         /** Persists {@code history.json}. */
         void saveHistory();
 
+        /** Reports durable publication when a caller must not proceed on an enqueue acknowledgment alone. */
+        default void saveHistory(java.util.function.Consumer<Boolean> completion) {
+            saveHistory();
+            completion.accept(true);
+        }
+
         /** Directory holding the content-addressed history blobs. */
         Path blobsDir();
 
@@ -70,9 +76,6 @@ final class HistoryCoordinator {
     private final Ops ops;
     private final HistoryService historyService;
     private final boolean ownsHistoryService;
-    /** Records submitted but not yet folded into the index — blob GC is only safe at zero (FX-confined). */
-    private int recordsInFlight;
-
     private final FileHistoryPanel panel;
 
     HistoryCoordinator(CoordinatorHost host, DiffCoordinator diff, Ops ops) {
@@ -103,8 +106,9 @@ final class HistoryCoordinator {
     private FileHistoryPanel.DiffSupport diffSupport() {
         return new FileHistoryPanel.DiffSupport() {
             @Override
-            public void fetchContent(HistoryRevision revision, java.util.function.Consumer<String> onText) {
-                historyService.content(revision, text -> onText.accept(text == null ? "" : text));
+            public void fetchContent(
+                    HistoryRevision revision, java.util.function.Consumer<java.util.Optional<String>> onText) {
+                historyService.content(revision, text -> onText.accept(java.util.Optional.ofNullable(text)));
             }
 
             @Override
@@ -199,12 +203,17 @@ final class HistoryCoordinator {
         if (!isEnabled() || buffer == null || buffer.getPath() == null || !host.isLocalBuffer(buffer)) {
             return;
         }
-        recordFor(buffer.getPath(), buffer.getContent(), reason, "", false);
+        recordFor(buffer.getPath(), buffer.getContent(), reason, "", false, null);
     }
 
     /** Records caller-captured content, used before a closed-file bulk replacement rewrites the file. */
     void record(Path file, String content, String reason) {
-        recordFor(file, content, reason, "", false);
+        recordFor(file, content, reason, "", false, null);
+    }
+
+    /** Records and waits for the index snapshot to become durable before acknowledging the caller. */
+    void recordDurably(Path file, String content, String reason, java.util.function.Consumer<Boolean> completion) {
+        recordFor(file, content, reason, "", false, completion);
     }
 
     /**
@@ -214,7 +223,20 @@ final class HistoryCoordinator {
      * user name ({@code ""} for automatic revisions).
      */
     private void recordFor(Path file, String content, String reason, String label, boolean force) {
+        recordFor(file, content, reason, label, force, null);
+    }
+
+    private void recordFor(
+            Path file,
+            String content,
+            String reason,
+            String label,
+            boolean force,
+            java.util.function.Consumer<Boolean> durableCompletion) {
         if (!isEnabled() || file == null || content == null || !com.editora.vfs.Vfs.isLocal(file)) {
+            if (durableCompletion != null) {
+                durableCompletion.accept(true);
+            }
             return;
         }
         String key = historyKey(file);
@@ -224,16 +246,12 @@ final class HistoryCoordinator {
         var policy = new HistoryRetention.RetentionPolicy(
                 s.getHistoryMaxPerFile(), maxAgeMillis, (long) Math.max(0, s.getHistoryMaxTotalMb()) * 1024L * 1024L);
         long now = System.currentTimeMillis();
-        recordsInFlight++;
-        historyService.snapshot(file, content, reason, label, force, existing, policy, now, rev -> {
-            recordsInFlight--;
+        historyService.snapshotWithOutcome(file, content, reason, label, force, existing, policy, now, outcome -> {
+            HistoryRevision rev = outcome.revision();
             if (rev != null) {
-                applyRecorded(key, rev, policy, now);
-            }
-            // Only safe once nothing is in flight: every blob is written before its revision reaches the
-            // index here, so GCing mid-flight deleted the blob of a revision that was about to be indexed.
-            if (recordsInFlight == 0) {
-                historyService.gc(HistoryRetention.liveHashes(ops.historyByProject()));
+                applyRecorded(key, rev, policy, now, durableCompletion);
+            } else if (durableCompletion != null) {
+                durableCompletion.accept(outcome.successful());
             }
             EditorBuffer active = host.activeBuffer();
             if (rev != null
@@ -250,7 +268,12 @@ final class HistoryCoordinator {
      * now</b> — the executor no longer builds the list, because it could only see the list as it was when the
      * record was submitted.
      */
-    private void applyRecorded(String key, HistoryRevision rev, HistoryRetention.RetentionPolicy policy, long now) {
+    private void applyRecorded(
+            String key,
+            HistoryRevision rev,
+            HistoryRetention.RetentionPolicy policy,
+            long now,
+            java.util.function.Consumer<Boolean> durableCompletion) {
         Map<String, List<HistoryRevision>> bucket = ops.historyMap();
         List<HistoryRevision> current = bucket.getOrDefault(key, List.of());
         List<HistoryRevision> updated = new ArrayList<>(current.size() + 1);
@@ -261,7 +284,11 @@ final class HistoryCoordinator {
         var trimmed = HistoryRetention.enforceProjectBudget(bucket, policy.maxTotalBytesPerProject());
         bucket.clear();
         bucket.putAll(trimmed);
-        ops.saveHistory();
+        if (durableCompletion == null) {
+            ops.saveHistory();
+        } else {
+            ops.saveHistory(durableCompletion);
+        }
     }
 
     private FileHistoryPanel.Actions historyActions() {

@@ -14,6 +14,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisabledOnOs(OS.WINDOWS)
 class ProcessRegistryProcessTest {
 
+    public static final class ExitDuringGrace {
+        public static void main(String[] args) throws Exception {
+            ProcessRegistry.installShutdownHook();
+            Process parent = new ProcessBuilder(
+                            "/usr/bin/python3",
+                            "-u",
+                            "-c",
+                            "import subprocess,sys,time; "
+                                    + "p=subprocess.Popen([sys.executable,'-u','-c',"
+                                    + "'import signal,os,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+                                    + "print(os.getpid(),flush=True);time.sleep(30)'],stdout=subprocess.PIPE,text=True); "
+                                    + "print(p.stdout.readline().strip(),flush=True);time.sleep(30)")
+                    .start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(parent.getInputStream()))) {
+                System.out.println(reader.readLine());
+                System.out.flush();
+            }
+            ProcessRegistry.track(parent);
+            ProcessRegistry.killTree(parent);
+            parent.waitFor(3, TimeUnit.SECONDS);
+            Thread.sleep(50);
+            System.exit(0);
+        }
+    }
+
     @Test
     void forcePhaseRetainsAChildAfterItsParentExits() throws Exception {
         Process parent = new ProcessBuilder(
@@ -44,6 +69,34 @@ class ProcessRegistryProcessTest {
         } finally {
             child.destroyForcibly();
             parent.destroyForcibly();
+        }
+    }
+
+    @Test
+    void shutdownHookOwnsCapturedChildrenDuringTheGracePeriod() throws Exception {
+        Process helper = new ProcessBuilder(
+                        java.nio.file.Path.of(System.getProperty("java.home"), "bin", "java")
+                                .toString(),
+                        "-cp",
+                        System.getProperty("java.class.path"),
+                        ExitDuringGrace.class.getName())
+                .start();
+        ProcessHandle child = null;
+        try {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(helper.getInputStream()))) {
+                child = ProcessHandle.of(Long.parseLong(reader.readLine())).orElseThrow();
+            }
+            assertTrue(helper.waitFor(8, TimeUnit.SECONDS));
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (child.isAlive() && System.nanoTime() < deadline) {
+                Thread.sleep(25);
+            }
+            assertFalse(child.isAlive(), "the forked JVM shutdown hook must force-kill the captured child");
+        } finally {
+            if (child != null) {
+                child.destroyForcibly();
+            }
+            helper.destroyForcibly();
         }
     }
 }

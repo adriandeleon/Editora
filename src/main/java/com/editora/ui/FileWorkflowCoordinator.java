@@ -8,8 +8,11 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
@@ -41,9 +44,12 @@ final class FileWorkflowCoordinator {
             byte[] bytes,
             long documentVersion,
             EditorBuffer.DiskSnapshot diskSnapshot,
+            long sequence,
             DocumentWriteSequencer.Ticket ticket) {}
 
     private record DiskWrite(long modifiedMillis, long size) {}
+
+    private record CommittedSave(long sequence, Path target, String content, byte[] bytes, DiskWrite disk) {}
 
     private record AdminResult(int exit, String error, long modifiedMillis, long size) {}
 
@@ -125,6 +131,17 @@ final class FileWorkflowCoordinator {
     }
 
     private final Host host;
+    /** Physical commits are published before their FX callbacks, so a following autosave can identify the
+     * previous application-owned disk state without mistaking it for an external edit. */
+    private final Map<String, CommittedSave> committedSaves = new ConcurrentHashMap<>();
+    /** FX-confined count used by close decisions: a clean buffer with an unresolved save is not safe to close. */
+    private final Map<EditorBuffer, Integer> pendingSaves = new IdentityHashMap<>();
+
+    private final Set<SaveRequest> activeSaveRequests = ConcurrentHashMap.newKeySet();
+    private final AtomicLong saveSequence = new AtomicLong();
+
+    /** Test seam for holding an actual write worker while proving the FX thread remains responsive. */
+    volatile Runnable beforeDocumentWriteForTest;
 
     FileWorkflowCoordinator(Host host) {
         this.host = host;
@@ -839,6 +856,9 @@ final class FileWorkflowCoordinator {
                                 AdminResult result = outcome.executed()
                                         ? outcome.value()
                                         : new AdminResult(-2, "superseded", -1, -1);
+                                if (result.exit() == 0) {
+                                    publishCommit(request, new DiskWrite(result.modifiedMillis(), result.size()));
+                                }
                                 Platform.runLater(() -> onAdminSaveDone(request, result));
                             } catch (IOException | RuntimeException e) {
                                 AdminResult result = new AdminResult(-1, e.getMessage(), -1, -1);
@@ -880,22 +900,21 @@ final class FileWorkflowCoordinator {
     /** Applies the outcome of an elevated save on the FX thread (ok / user-cancelled / failed). */
     void onAdminSaveDone(SaveRequest request, AdminResult result) {
         try {
-            if (!request.ticket().isCurrent()) {
-                return;
-            }
             EditorBuffer buffer = request.buffer();
             Path target = request.target();
             if (result.exit() == 0) {
                 host.historyCoordinator().record(target, request.content(), HistoryRevision.REASON_SAVE);
-                acknowledgeSave(request, result.modifiedMillis(), result.size());
-                host.setStatus(tr("status.admin.saved", com.editora.config.PathDisplay.of(target)));
-                host.git().refresh();
-                host.lspCoordinator().notifyDocumentSaved(buffer);
-                Tab tab = host.tabForBuffer(buffer);
-                if (tab != null) {
-                    host.updateTabMeta(tab, buffer);
+                acknowledgeLatestCommit(buffer);
+                if (request.ticket().isCurrent() && !buffer.isDisposed()) {
+                    host.setStatus(tr("status.admin.saved", com.editora.config.PathDisplay.of(target)));
+                    host.git().refresh();
+                    host.lspCoordinator().notifyDocumentSaved(buffer);
+                    Tab tab = host.tabForBuffer(buffer);
+                    if (tab != null) {
+                        host.updateTabMeta(tab, buffer);
+                    }
                 }
-            } else if (result.exit() == -2) {
+            } else if (result.exit() == -2 || !request.ticket().isCurrent()) {
                 return;
             } else if (com.editora.process.ElevatedSave.isCancellation(
                     System.getProperty("os.name"), result.exit(), result.error())) {
@@ -908,7 +927,7 @@ final class FileWorkflowCoordinator {
                                 : result.error()));
             }
         } finally {
-            request.ticket().close();
+            finishRequest(request);
         }
     }
 
@@ -1070,26 +1089,21 @@ final class FileWorkflowCoordinator {
             autoSaveExecutor.submit(() -> writeAsync(request, false));
             return true;
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
-            request.ticket().close();
+            finishRequest(request);
             return false;
         }
     }
 
     boolean writeBufferSynchronously(EditorBuffer buffer, Path file) {
         SaveRequest request = captureSave(buffer, file);
+        CompletableFuture<Boolean> completed = new CompletableFuture<>();
         try {
-            var outcome = request.ticket().runIfCurrent(() -> writeToDisk(request));
-            if (!outcome.executed() || outcome.value() == null) {
-                return false;
-            }
-            completeSave(request, outcome.value(), false);
-            return true;
-        } catch (IOException e) {
-            host.setStatus(tr("status.failedSave", e.getMessage()));
+            autoSaveExecutor.submit(() -> writeAsync(request, false, completed));
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            finishRequest(request);
             return false;
-        } finally {
-            request.ticket().close();
         }
+        return awaitSave(completed);
     }
 
     /** Current auto-save mode, parsed leniently from settings. */
@@ -1127,23 +1141,31 @@ final class FileWorkflowCoordinator {
         try {
             autoSaveExecutor.submit(() -> writeAsync(request, true));
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
-            request.ticket().close();
+            finishRequest(request);
         }
     }
 
     private SaveRequest captureSave(EditorBuffer buffer, Path file) {
         String content = buffer.getContent();
-        return new SaveRequest(
+        pendingSaves.merge(buffer, 1, Integer::sum);
+        SaveRequest request = new SaveRequest(
                 buffer,
                 file,
                 content,
                 saveBytes(buffer, content),
                 buffer.docVersion(),
                 buffer.diskSnapshot(),
+                saveSequence.incrementAndGet(),
                 host.config().shared().documentWrites().begin(file));
+        activeSaveRequests.add(request);
+        return request;
     }
 
     private DiskWrite writeToDisk(SaveRequest request) throws IOException {
+        Runnable hook = beforeDocumentWriteForTest;
+        if (hook != null) {
+            hook.run();
+        }
         if (!com.editora.io.AtomicFileWrite.writeIf(request.target(), request.bytes(), request.ticket()::isCurrent)) {
             return null;
         }
@@ -1153,52 +1175,66 @@ final class FileWorkflowCoordinator {
     /** Invalidates queued or staged writes when a buffer stops representing this path. */
     void invalidatePendingWrite(Path file) {
         host.config().shared().documentWrites().supersede(file);
+        if (file != null) {
+            committedSaves.remove(com.editora.config.PathKeys.key(file));
+        }
     }
 
     private void writeAsync(SaveRequest request, boolean autoSave) {
+        writeAsync(request, autoSave, null);
+    }
+
+    private void writeAsync(SaveRequest request, boolean autoSave, CompletableFuture<Boolean> completed) {
         try {
             var outcome = request.ticket().runIfCurrent(() -> {
-                if (autoSave
-                        && request.diskSnapshot()
-                                .differsFrom(lastModifiedMillis(request.target()), fileSize(request.target()))) {
-                    return null;
+                if (autoSave) {
+                    long modified = lastModifiedMillis(request.target());
+                    long size = fileSize(request.target());
+                    boolean ownCommit = hasOwnCommitMetadata(request.target(), modified, size);
+                    if (ownCommit
+                            ? !matchesOwnCommit(request.target(), modified, size)
+                            : request.diskSnapshot().differsFrom(modified, size)) {
+                        return null;
+                    }
                 }
                 return writeToDisk(request);
             });
-            if (!outcome.executed() || outcome.value() == null) {
-                request.ticket().close();
-                return;
+            DiskWrite disk = outcome.executed() ? outcome.value() : null;
+            if (disk != null) {
+                publishCommit(request, disk);
             }
             Platform.runLater(() -> {
                 try {
-                    if (request.ticket().isCurrent()) {
-                        completeSave(request, outcome.value(), autoSave);
+                    if (disk != null) {
+                        completeSave(request, disk, autoSave, request.ticket().isCurrent());
                     }
+                    completeFuture(completed, disk != null);
                 } finally {
-                    request.ticket().close();
+                    finishRequest(request);
                 }
             });
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             Platform.runLater(() -> {
                 try {
                     if (request.ticket().isCurrent()) {
                         host.setStatus(tr(autoSave ? "status.autoSaveFailed" : "status.failedSave", e.getMessage()));
                     }
+                    completeFuture(completed, false);
                 } finally {
-                    request.ticket().close();
+                    finishRequest(request);
                 }
             });
         }
     }
 
-    private void completeSave(SaveRequest request, DiskWrite disk, boolean autoSave) {
+    private void completeSave(SaveRequest request, DiskWrite disk, boolean autoSave, boolean showFeedback) {
         host.historyCoordinator()
                 .record(
                         request.target(),
                         request.content(),
                         autoSave ? HistoryRevision.REASON_AUTOSAVE : HistoryRevision.REASON_SAVE);
-        acknowledgeSave(request, disk.modifiedMillis(), disk.size());
-        if (!request.buffer().isDisposed()) {
+        acknowledgeLatestCommit(request.buffer());
+        if (showFeedback && !request.buffer().isDisposed()) {
             host.setStatus(
                     autoSave
                             ? tr("status.autoSaved", request.target().getFileName())
@@ -1213,15 +1249,100 @@ final class FileWorkflowCoordinator {
         }
     }
 
-    private void acknowledgeSave(SaveRequest request, long modifiedMillis, long size) {
-        EditorBuffer buffer = request.buffer();
-        if (buffer.isDisposed()
-                || buffer.getPath() == null
-                || !com.editora.config.PathKeys.sameNormalized(buffer.getPath(), request.target())) {
+    private void publishCommit(SaveRequest request, DiskWrite disk) {
+        CommittedSave committed =
+                new CommittedSave(request.sequence(), request.target(), request.content(), request.bytes(), disk);
+        committedSaves.compute(
+                com.editora.config.PathKeys.key(request.target()),
+                (ignored, previous) ->
+                        previous == null || previous.sequence() < committed.sequence() ? committed : previous);
+    }
+
+    private boolean matchesOwnCommit(Path target, long modifiedMillis, long size) {
+        CommittedSave committed = committedSaves.get(com.editora.config.PathKeys.key(target));
+        if (!hasOwnCommitMetadata(committed, target, modifiedMillis, size)) {
+            return false;
+        }
+        try {
+            return java.util.Arrays.equals(committed.bytes(), java.nio.file.Files.readAllBytes(target));
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private boolean hasOwnCommitMetadata(Path target, long modifiedMillis, long size) {
+        return hasOwnCommitMetadata(
+                committedSaves.get(com.editora.config.PathKeys.key(target)), target, modifiedMillis, size);
+    }
+
+    private static boolean hasOwnCommitMetadata(CommittedSave committed, Path target, long modifiedMillis, long size) {
+        return committed != null
+                && com.editora.config.PathKeys.sameNormalized(committed.target(), target)
+                && committed.disk().modifiedMillis() == modifiedMillis
+                && committed.disk().size() == size;
+    }
+
+    private void acknowledgeLatestCommit(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        CommittedSave committed = path == null ? null : committedSaves.get(com.editora.config.PathKeys.key(path));
+        if (committed == null || buffer.isDisposed()) {
             return;
         }
-        buffer.acknowledgeSavedContent(request.content());
-        buffer.setDiskSnapshot(modifiedMillis, size);
+        if (buffer.isDisposed()
+                || buffer.getPath() == null
+                || !com.editora.config.PathKeys.sameNormalized(buffer.getPath(), committed.target())) {
+            return;
+        }
+        buffer.acknowledgeSavedContent(committed.content());
+        buffer.setDiskSnapshot(
+                committed.disk().modifiedMillis(), committed.disk().size());
+    }
+
+    boolean hasPendingSave(EditorBuffer buffer) {
+        return pendingSaves.getOrDefault(buffer, 0) > 0;
+    }
+
+    void shutdown() {
+        autoSaveIdleTimer.stop();
+        autoSaveExecutor.shutdownNow();
+        fileLoadExecutor.shutdownNow();
+        List.copyOf(activeSaveRequests).forEach(this::finishRequest);
+        committedSaves.clear();
+        pendingSaves.clear();
+    }
+
+    private void finishRequest(SaveRequest request) {
+        if (!activeSaveRequests.remove(request)) {
+            return;
+        }
+        request.ticket().close();
+        pendingSaves.computeIfPresent(request.buffer(), (ignored, count) -> count > 1 ? count - 1 : null);
+    }
+
+    private static void completeFuture(CompletableFuture<Boolean> completed, boolean result) {
+        if (completed != null) {
+            completed.complete(result);
+        }
+    }
+
+    private boolean awaitSave(CompletableFuture<Boolean> completed) {
+        if (!Platform.isFxApplicationThread()) {
+            try {
+                return completed.get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            } catch (java.util.concurrent.ExecutionException e) {
+                return false;
+            }
+        }
+        Object key = new Object();
+        completed.whenComplete((ok, error) -> Platform.runLater(() -> {
+            if (Platform.isNestedLoopRunning()) {
+                Platform.exitNestedEventLoop(key, error == null && Boolean.TRUE.equals(ok));
+            }
+        }));
+        return Boolean.TRUE.equals(Platform.enterNestedEventLoop(key));
     }
 
     void toggleAutoSave() {

@@ -160,7 +160,9 @@ public class App extends Application {
     @Override
     public void stop() {
         if (sharedConfig != null) {
-            sharedConfig.shutdown();
+            if (!sharedConfig.shutdown()) {
+                LOG.warning("Timed out while making configuration writes durable during shutdown");
+            }
             sharedConfig = null;
         }
     }

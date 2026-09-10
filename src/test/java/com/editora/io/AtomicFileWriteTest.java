@@ -118,4 +118,16 @@ class AtomicFileWriteTest {
             assertEquals(1, entries.count(), "the refused staged file was cleaned up");
         }
     }
+
+    @Test
+    void strictReplacementRefusesWhenNoStagingDirectoryExists() throws IOException {
+        Path original = Files.writeString(dir.resolve("original.txt"), "precious");
+        Path impossible = original.resolve("child.txt");
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IOException.class,
+                () -> AtomicFileWrite.replaceIfUnchanged(impossible, bytes("precious"), bytes("changed"), () -> true));
+
+        assertEquals("precious", Files.readString(original));
+    }
 }

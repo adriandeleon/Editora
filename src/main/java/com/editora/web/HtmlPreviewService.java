@@ -74,19 +74,23 @@ public final class HtmlPreviewService {
         exec.submit(() -> {
             Result result;
             try {
+                if (generation != previewGeneration.get()) {
+                    return;
+                }
                 server.start();
                 if (generation != previewGeneration.get()) {
+                    server.stop();
                     return;
                 }
                 server.setPreview(file, text::get);
                 String url = server.previewUrl();
                 if (Browsers.SYSTEM_DEFAULT.equals(browser.id())) {
-                    openWithSystem(url);
+                    openWithSystem(url, generation);
                     result = new Result(true, url, null);
                 } else {
                     List<String> argv = Browsers.launchArgv(browser, url);
                     if (argv.isEmpty()) {
-                        openWithSystem(url); // browser vanished between detect and launch — use the default
+                        openWithSystem(url, generation); // browser vanished between detect and launch
                         result = new Result(true, url, "fallback-default");
                     } else {
                         launchDetached(argv);
@@ -128,19 +132,27 @@ public final class HtmlPreviewService {
     /** Stops the HTTP server + clears the preview, but keeps the service usable (the feature was disabled). */
     public void stopServer() {
         previewGeneration.incrementAndGet();
-        server.stop();
         previewedFile = null;
         previewedText = new AtomicReference<>("");
+        try {
+            exec.submit(server::stop);
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            server.stop();
+        }
     }
 
     /** Stops the server + the background thread (called when the owning window closes). */
     public void shutdown() {
         stopServer();
-        exec.shutdownNow();
+        exec.shutdown();
     }
 
-    private void openWithSystem(String url) {
-        Platform.runLater(() -> systemOpener.accept(url));
+    private void openWithSystem(String url, long generation) {
+        Platform.runLater(() -> {
+            if (generation == previewGeneration.get()) {
+                systemOpener.accept(url);
+            }
+        });
     }
 
     /** Launches the browser without waiting (fire-and-forget) so a foreground process can't stall us. */

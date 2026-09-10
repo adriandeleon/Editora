@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The Quit confirmation now presents its destructive Quit action as a red danger button while keeping
   Cancel neutral.
+- Save, history, bulk-replace, search, preview, process, and configuration shutdown paths now preserve
+  acknowledged data and bounded lifecycle ownership during concurrent completion, cancellation, and exit.
 - Personal Notes hover previews in the editor and Project tree now share a soft, light-yellow paper color
   reminiscent of a Post-it note.
 - Editor overlays now cap their backing textures using the window's HiDPI output scale, preventing

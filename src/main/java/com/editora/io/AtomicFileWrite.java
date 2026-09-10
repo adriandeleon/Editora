@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.Arrays;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
@@ -84,6 +85,39 @@ public final class AtomicFileWrite {
             return true;
         } finally {
             Files.deleteIfExists(tmp); // a successful move makes this a no-op
+        }
+    }
+
+    /**
+     * Strict staged replacement for destructive bulk edits. Unlike {@link #writeIf}, this method refuses
+     * to fall back to an in-place truncating write, and it verifies the expected source bytes immediately
+     * before each move attempt.
+     */
+    public static boolean replaceIfUnchanged(
+            Path file, byte[] expectedBytes, byte[] replacementBytes, BooleanSupplier commit) throws IOException {
+        Path target = resolveLink(file);
+        Path dir = target.getParent();
+        if (dir == null || !Files.isDirectory(dir)) {
+            throw new IOException("Cannot stage a safe replacement for " + target);
+        }
+        Path tmp = Files.createTempFile(dir, "." + target.getFileName() + ".", ".editora-tmp");
+        try {
+            Files.write(tmp, replacementBytes);
+            copyPermissions(target, tmp);
+            if (!commit.getAsBoolean() || !Arrays.equals(expectedBytes, Files.readAllBytes(target))) {
+                return false;
+            }
+            try {
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomicUnsupported) {
+                if (!commit.getAsBoolean() || !Arrays.equals(expectedBytes, Files.readAllBytes(target))) {
+                    return false;
+                }
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return true;
+        } finally {
+            Files.deleteIfExists(tmp);
         }
     }
 

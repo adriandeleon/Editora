@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
@@ -68,7 +69,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
      * a view. {@code applyToLocal}/{@code undoLocal}/{@code saveLocal} back the per-hunk chevrons.
      */
     public interface DiffSupport {
-        void fetchContent(HistoryRevision revision, Consumer<String> onText);
+        void fetchContent(HistoryRevision revision, Consumer<Optional<String>> onText);
 
         void computeDiff(String left, String right, DiffEngine.DiffOptions opts, Consumer<DiffModel> onResult);
 
@@ -269,8 +270,22 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         }
         headerInfo.setText(tr("history.window.header", absoluteTime(rev.timestamp())));
         baseText = support.currentText(target);
-        support.fetchContent(rev, text -> {
-            snapshotText = text == null ? "" : text;
+        int request = ++gen;
+        rightPane.getTop().setDisable(false);
+        support.fetchContent(rev, content -> {
+            if (request != gen) {
+                return;
+            }
+            if (content.isEmpty()) {
+                pane = null;
+                diffCount.setText("");
+                rightPane.getTop().setDisable(true);
+                Label unavailable = new Label(tr("history.window.unavailable"));
+                unavailable.getStyleClass().add("tool-window-placeholder");
+                rightPane.setCenter(new StackPane(unavailable));
+                return;
+            }
+            snapshotText = content.orElseThrow();
             recompute();
         });
     }

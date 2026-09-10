@@ -5,13 +5,17 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import com.editora.config.migration.ConfigMigrations;
 import com.editora.config.migration.ConfigSchema;
 import com.editora.history.HistoryBlobStore;
+import com.editora.history.HistoryRetention;
 import com.editora.history.HistoryService;
 import com.editora.io.DocumentWriteSequencer;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -48,6 +52,15 @@ public class SharedConfig {
 
     private final HistoryService historyService;
     private final DocumentWriteSequencer documentWrites = new DocumentWriteSequencer();
+    /** Durable and pending history-index references. GC may delete only outside their union. */
+    private final Object historyPublicationLock = new Object();
+
+    private long nextHistoryPublication;
+    private long durableHistoryPublication;
+    private Set<String> durableHistoryHashes = Set.of();
+    private Set<String> currentHistoryHashes = Set.of();
+    private final Map<Long, Set<String>> pendingHistoryHashes = new LinkedHashMap<>();
+    private final Map<Long, Consumer<Boolean>> historyPublicationWaiters = new LinkedHashMap<>();
 
     private Settings settings = new Settings();
     /** Global bookmarks (all files/projects), stored in {@code bookmarks.json} — see {@link BookmarkStore}. */
@@ -193,8 +206,9 @@ public class SharedConfig {
 
     /** Stops app-wide background services after the last window has closed. */
     public boolean shutdown() {
+        boolean durable = writer.shutdown();
         historyService.shutdown();
-        return writer.shutdown();
+        return durable;
     }
 
     /** Routes config-file write failures to {@code handler} (on the writer thread) so they can be surfaced
@@ -605,10 +619,21 @@ public class SharedConfig {
         } else {
             historyStore = new HistoryStore();
         }
+        Set<String> loaded = HistoryRetention.liveHashes(historyStore.getByProject());
+        synchronized (historyPublicationLock) {
+            durableHistoryHashes = loaded;
+            currentHistoryHashes = loaded;
+            durableHistoryPublication = ++nextHistoryPublication;
+        }
     }
 
     /** Writes the Local File History index to {@code history/index.json}, independently of a session save. */
     public void saveHistory() {
+        saveHistory(null);
+    }
+
+    /** Queues the index and reports whether this exact snapshot became durable. */
+    public void saveHistory(Consumer<Boolean> completion) {
         HistoryStore snapshot = new HistoryStore();
         snapshot.setSchemaVersion(historyStore.getSchemaVersion());
         Map<String, Map<String, List<HistoryRevision>>> projects = new LinkedHashMap<>();
@@ -618,7 +643,42 @@ public class SharedConfig {
             projects.put(project.getKey(), files);
         }
         snapshot.setByProject(projects);
-        writer.enqueue(getHistoryFile(), () -> json.writeValueAsBytes(snapshot));
+        Set<String> hashes = HistoryRetention.liveHashes(projects);
+        long publication;
+        synchronized (historyPublicationLock) {
+            publication = ++nextHistoryPublication;
+            currentHistoryHashes = hashes;
+            pendingHistoryHashes.put(publication, hashes);
+            if (completion != null) {
+                historyPublicationWaiters.put(publication, completion);
+            }
+        }
+        writer.enqueue(
+                getHistoryFile(),
+                () -> json.writeValueAsBytes(snapshot),
+                outcome -> finishHistoryPublication(publication, hashes, outcome));
+    }
+
+    private void finishHistoryPublication(long publication, Set<String> hashes, ConfigWriter.WriteOutcome outcome) {
+        Set<String> protectedHashes;
+        Map<Long, Consumer<Boolean>> finished = new LinkedHashMap<>();
+        synchronized (historyPublicationLock) {
+            pendingHistoryHashes.remove(publication);
+            if (outcome == ConfigWriter.WriteOutcome.WRITTEN && publication > durableHistoryPublication) {
+                durableHistoryPublication = publication;
+                durableHistoryHashes = hashes;
+            }
+            Consumer<Boolean> waiter = historyPublicationWaiters.remove(publication);
+            if (waiter != null) {
+                finished.put(publication, waiter);
+            }
+            protectedHashes = new LinkedHashSet<>(durableHistoryHashes);
+            protectedHashes.addAll(currentHistoryHashes);
+            pendingHistoryHashes.values().forEach(protectedHashes::addAll);
+        }
+        boolean durable = outcome == ConfigWriter.WriteOutcome.WRITTEN;
+        finished.forEach((ignored, waiter) -> waiter.accept(durable));
+        historyService.gc(protectedHashes);
     }
 
     /** Migrates bookmarks out of the legacy session files into their per-project buckets, stripping each. */
