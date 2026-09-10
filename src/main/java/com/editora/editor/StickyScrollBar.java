@@ -43,6 +43,11 @@ final class StickyScrollBar {
         // Unmanaged, the anchors are ignored, the box stays 0x0 at the origin, and the feature is simply
         // invisible while every model-level test still passes.
         box.setManaged(true);
+        // A pinned line can be thousands of characters long. Its intrinsic width must not become the
+        // editor's minimum/preferred width and push the right-docked minimap outside the viewport.
+        // AnchorPane supplies the bar's width; rows clip their text to that available space.
+        box.setMinWidth(0);
+        box.setPrefWidth(0);
         // The bar explains the code behind it; it must never swallow a click meant for the editor. Rows
         // re-enable picking for themselves so their own click still works.
         box.setPickOnBounds(false);
@@ -97,6 +102,7 @@ final class StickyScrollBar {
 
     private HBox row(CodeArea area, int line, int tabSize, IntConsumer onClick) {
         HBox flow = new HBox();
+        flow.setMinWidth(0);
         flow.getStyleClass().add("sticky-scroll-row");
         flow.setPickOnBounds(true); // the container opts out of picking; a row opts back in
         flow.getChildren().setAll(runs(area, line, tabSize));

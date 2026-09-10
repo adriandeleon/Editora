@@ -179,7 +179,10 @@ prefer-server-then-fall-back dispatch.
   header has scrolled above the viewport while its body is still inside it is exactly a scope you are
   in but cannot see the name of. Capped at `DEFAULT_MAX` (5) rows, beyond which the pin eats the
   viewport it exists to explain. `StickyScrollBar` renders it **from the area's already-applied style
-  spans**, which sidesteps re-tokenizing on the shared, non-thread-safe grammar.
+  spans**, which sidesteps re-tokenizing on the shared, non-thread-safe grammar. The managed bar gets
+  its width from the editor's anchors, with zero minimum/preferred width; each single-line row can
+  shrink and clips its text. Long headers must never inflate the editor's minimum size and push its
+  right-docked minimap outside the viewport.
 - **Preview tabs** — italic, single-slot, promoted to a real tab by editing or by an explicit open,
   so browsing does not shred the tab strip.
 - **Related file** (`nav.relatedFile`) — a test and its subject, a C header and its implementation, a
