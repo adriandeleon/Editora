@@ -4,6 +4,8 @@ import java.lang.reflect.Field;
 import java.util.List;
 
 import javafx.scene.Scene;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -21,6 +23,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -170,6 +174,59 @@ class StructurePanelFxTest {
         });
 
         assertEquals("  line 2", renderedLine, "the stored zero-based line matches the Bookmarks line label");
+    }
+
+    @Test
+    void sourceRowsOfferBookmarkAndPersonalNoteActionsForTheirLine() throws Exception {
+        int[] bookmarkLine = {-1};
+        int[] noteLine = {-1};
+        ContextMenu menu = FxTestSupport.callOnFx(() -> {
+            StructurePanel panel = shownPanel();
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setPath(java.nio.file.Path.of("Example.java"));
+            buffer.setContent("class Example {\n  void target() {}\n}\n");
+            panel.setMarkerActions(new StructurePanel.MarkerActions() {
+                @Override
+                public void addBookmark(EditorBuffer ignored, int line) {
+                    bookmarkLine[0] = line;
+                }
+
+                @Override
+                public void addPersonalNote(EditorBuffer ignored, int line) {
+                    noteLine[0] = line;
+                }
+
+                @Override
+                public boolean personalNotesEnabled() {
+                    return true;
+                }
+            });
+            panel.attach(buffer);
+            panel.setLspSymbols(buffer, List.of(method("target", 1)));
+            TreeItem<Object> item = tree(panel).getRoot().getChildren().getFirst();
+            @SuppressWarnings("unchecked")
+            TreeCell<Object> cell =
+                    (TreeCell<Object>) tree(panel).getCellFactory().call(tree(panel));
+            FxTestSupport.call(
+                    cell,
+                    "updateItem",
+                    new Class<?>[] {item.getValue().getClass(), boolean.class},
+                    item.getValue(),
+                    false);
+            return cell.getContextMenu();
+        });
+
+        assertNotNull(menu);
+        assertEquals(
+                List.of("Add Bookmark", "Add Personal Note"),
+                menu.getItems().stream().map(MenuItem::getText).toList());
+        assertFalse(menu.getItems().get(1).isDisable());
+        FxTestSupport.runOnFx(() -> {
+            menu.getItems().get(0).fire();
+            menu.getItems().get(1).fire();
+        });
+        assertEquals(1, bookmarkLine[0]);
+        assertEquals(1, noteLine[0]);
     }
 
     private static List<String> renderedNameStyles(TreeView<Object> tree, TreeItem<Object> item) {
