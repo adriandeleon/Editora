@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added Emacs tool-window keys: `C-x 0` closes the current window, `C-x ^` grows the bottom window (`C-u C-x
+  ^` shrinks it), `C-x >` and `C-x <` resize side windows toward or away from the editor, and repeated `C-x f`
+  toggles maximize / restore.
 - Fixed the Emacs `C-x 1` command so it collapses independent editor groups as well as a second view of the
   active document.
 - Color Save buttons green and Discard buttons red throughout the application, while neutral actions such as Cancel retain their existing appearance.

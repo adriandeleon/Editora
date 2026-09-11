@@ -1325,10 +1325,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             dispatcher.setKeyListener(macroCoordinator::onKey);
             dispatcher.setRecordTarget(macroCoordinator::isRecordableTarget);
         }
-        // Prefix argument (C-u): setMark reads it (C-u C-SPC = pop-to-mark); every other command is repeated;
-        // a self-inserting character is typed N times.
         dispatcher.setPrefixArgumentSupport(
-                "edit.setMark"::equals, arg -> editing.currentPrefixArg = arg, editing::selfInsertRepeat);
+                id -> "edit.setMark".equals(id) || toolWindows.isKeyboardCountAware(id),
+                arg -> toolWindows.setKeyboardPrefixArgument(editing.currentPrefixArg = arg),
+                editing::selfInsertRepeat);
         dispatcher.setPreDispatch((token, target) -> {
             if (!"M-g".equals(token)) {
                 return false;

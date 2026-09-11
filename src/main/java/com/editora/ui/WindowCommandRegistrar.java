@@ -738,6 +738,25 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("view.toggleColumnRuler", host.editorSettings()::toggleColumnRuler));
         host.registry().register(Command.of("view.toggleToolStripe", host::toggleToolStripe));
         host.registry().register(Command.of("view.maximizeToolWindow", host::toggleMaximizedToolWindow));
+        host.registry().register(Command.of("view.closeFocusedToolWindow", () -> {
+            if (host.toolWindows().keyboardClose(host::setStatus)) {
+                EditorBuffer buffer = host.activeBuffer();
+                if (buffer != null) {
+                    buffer.getFocusedArea().requestFocus();
+                }
+            }
+        }));
+        host.registry()
+                .register(Command.of(
+                        "view.resizeBottomToolWindow", () -> host.toolWindows().keyboardResizeBottom(host::setStatus)));
+        host.registry()
+                .register(Command.of(
+                        "view.resizeHorizontalToolWindowGreater",
+                        () -> host.toolWindows().keyboardResizeHorizontal(true, host::setStatus)));
+        host.registry()
+                .register(Command.of(
+                        "view.resizeHorizontalToolWindowLess",
+                        () -> host.toolWindows().keyboardResizeHorizontal(false, host::setStatus)));
         host.registry().register(Command.of("view.splitToolWindow", host::showSplitToolWindowPalette));
         host.registry().register(Command.of("view.floatToolWindow", host::toggleFloatingToolWindow));
         host.registry().register(Command.of("view.toggleSimpleMode", host.chrome()::toggleSimpleMode));
