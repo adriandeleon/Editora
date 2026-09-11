@@ -324,6 +324,31 @@ class EditorGroupsFxTest {
         cleanUp();
     }
 
+    /** Ordinary tab titles stay upright even when an ancestor carries an italic font style. */
+    @Test
+    void ordinaryTabTitlesDoNotInheritItalicStyle() throws Exception {
+        Tab tab = addBuffer();
+
+        String style = FxTestSupport.callOnFx(() -> {
+            javafx.scene.Node graphic = tab.getGraphic();
+            graphic.setStyle("-fx-font-style: italic;");
+            graphic.applyCss();
+            return ((javafx.scene.layout.HBox) graphic)
+                    .getChildren().stream()
+                            .filter(javafx.scene.control.Label.class::isInstance)
+                            .map(javafx.scene.control.Label.class::cast)
+                            .filter(label -> label.getStyleClass().contains("tab-title"))
+                            .map(label -> label.getFont().getStyle())
+                            .findFirst()
+                            .orElse(null);
+        });
+
+        org.junit.jupiter.api.Assertions.assertNotNull(style, "the tab header has a .tab-title label");
+        assertFalse(style.toLowerCase(java.util.Locale.ROOT).contains("italic"), "ordinary tab was: " + style);
+
+        cleanUp();
+    }
+
     /** An unsplit area writes no layout at all, so an unsplit session file is byte-identical to before. */
     @Test
     void anUnsplitAreaSavesNoLayout() throws Exception {

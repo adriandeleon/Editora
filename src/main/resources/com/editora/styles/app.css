@@ -1825,6 +1825,7 @@
    too — the state rules (dirty/pinned/read-only) follow, so an unsaved active tab stays amber. */
 .tab .tab-title {
     -fx-text-fill: -color-fg-muted;
+    -fx-font-style: normal;
 }
 
 .tab:selected .tab-title {
