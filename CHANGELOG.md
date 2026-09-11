@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fixed the Emacs `C-x 1` command so it collapses independent editor groups as well as a second view of the
+  active document.
 - Color Save buttons green and Discard buttons red throughout the application, while neutral actions such as Cancel retain their existing appearance.
 - Ordinary editable tab labels no longer inherit italic styling from their window or a previous transient state.
 

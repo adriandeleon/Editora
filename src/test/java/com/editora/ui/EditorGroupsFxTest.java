@@ -6,6 +6,7 @@ import java.util.List;
 import javafx.geometry.Orientation;
 import javafx.scene.control.Tab;
 
+import com.editora.command.CommandRegistry;
 import com.editora.config.EditorGroupLayout;
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.AfterAll;
@@ -448,6 +449,26 @@ class EditorGroupsFxTest {
         assertEquals(2, FxTestSupport.callOnFx(() -> area.size()), "with both files still open");
         assertTrue(FxTestSupport.callOnFx(() -> area.contains(first) && area.contains(second)), "neither was lost");
         assertFalse(FxTestSupport.callOnFx(() -> area.unsplit()), "merging an unsplit area is a no-op");
+
+        cleanUp();
+    }
+
+    @Test
+    void emacsUnsplitCommandCollapsesEditorGroupsAndTheActiveBuffersSecondView() throws Exception {
+        addBuffer();
+        Tab active = addBuffer();
+        FxTestSupport.runOnFx(() -> {
+            area.splitActive(Orientation.HORIZONTAL);
+            ((EditorBuffer) active.getUserData()).setSplit(EditorBuffer.Split.SIDE_BY_SIDE);
+            CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+            registry.run("view.unsplit");
+        });
+
+        assertEquals(1, groupCount(), "C-x 1 merges independent editor groups");
+        assertEquals(
+                EditorBuffer.Split.NONE,
+                FxTestSupport.callOnFx(() -> ((EditorBuffer) active.getUserData()).getSplit()),
+                "C-x 1 also collapses the active document's second view");
 
         cleanUp();
     }
