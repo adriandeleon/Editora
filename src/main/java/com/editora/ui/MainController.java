@@ -2170,7 +2170,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::project,
                 projectPanel,
                 "tool.project");
-        structurePanel = new StructurePanel();
+        structurePanel = new StructurePanel(bookmarkCoordinator, notesCoordinator);
         structureToolWindow = new ToolWindow(
                 "structure",
                 tr("toolwindow.structure"),

@@ -18,8 +18,10 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.IndexedCell;
 import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
@@ -54,6 +56,15 @@ import static com.editora.i18n.Messages.tr;
  */
 public class StructurePanel extends VBox implements ToolWindowContent {
 
+    /** Actions offered for a concrete source row in the outline's right-click menu. */
+    interface MarkerActions {
+        void addBookmark(EditorBuffer buffer, int line);
+
+        void addPersonalNote(EditorBuffer buffer, int line);
+
+        boolean personalNotesEnabled();
+    }
+
     /** How the outline rows are ordered (session-only, like the filter box). */
     public enum SortMode {
         POSITION,
@@ -67,6 +78,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     private final MenuButton kindFilter = new MenuButton();
 
     private EditorBuffer buffer;
+    private MarkerActions markerActions;
     private List<StructureNode> roots = List.of();
     /**
      * The LSP document-symbol outline for the active buffer, or {@code null} to use the TextMate/fold
@@ -99,6 +111,11 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 rebuild();
             }
         });
+    }
+
+    StructurePanel(BookmarkCoordinator bookmarks, NotesCoordinator notes) {
+        this();
+        setMarkerActions(markerActions(bookmarks, notes));
     }
 
     /** The tree is only worth rebuilding while the tool window is open (its node is in the scene). */
@@ -227,6 +244,47 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     /** Moves keyboard focus into the panel (the search field), for window-switching. */
     public void focusContent() {
         filterField.requestFocus();
+    }
+
+    /** Installs bookmark and Personal Note actions for source rows in the outline. */
+    void setMarkerActions(MarkerActions actions) {
+        markerActions = actions;
+    }
+
+    static MarkerActions markerActions(BookmarkCoordinator bookmarks, NotesCoordinator notes) {
+        return new MarkerActions() {
+            @Override
+            public void addBookmark(EditorBuffer buffer, int line) {
+                bookmarks.addBookmark(buffer.getPath(), line);
+            }
+
+            @Override
+            public void addPersonalNote(EditorBuffer buffer, int line) {
+                notes.addPersonalNote(buffer.getPath(), buffer.captureLineNoteDraft(line));
+            }
+
+            @Override
+            public boolean personalNotesEnabled() {
+                return notes.isEnabled();
+            }
+        };
+    }
+
+    private ContextMenu markerMenu(StructureNode node) {
+        if (markerActions == null || buffer == null || buffer.getPath() == null || node == null || node.line() < 0) {
+            return null;
+        }
+        MenuItem bookmark = new MenuItem(tr("editmenu.addBookmark"));
+        bookmark.setGraphic(Icons.bookmark());
+        bookmark.setOnAction(e -> markerActions.addBookmark(buffer, node.line()));
+
+        MenuItem note = new MenuItem(tr("editmenu.addNote"));
+        note.setGraphic(Icons.notes());
+        note.setDisable(!markerActions.personalNotesEnabled());
+        note.setOnAction(e -> markerActions.addPersonalNote(buffer, node.line()));
+        ContextMenu menu = new ContextMenu(bookmark, note);
+        menu.setOnShowing(e -> note.setDisable(!markerActions.personalNotesEnabled()));
+        return menu;
     }
 
     @Override
@@ -1118,7 +1176,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         return item;
     }
 
-    private static final class StructureCell extends TreeCell<StructureNode> {
+    private final class StructureCell extends TreeCell<StructureNode> {
         @Override
         protected void updateItem(StructureNode item, boolean empty) {
             super.updateItem(item, empty);
@@ -1126,6 +1184,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 setText(null);
                 setGraphic(null);
                 setTooltip(null);
+                setContextMenu(null);
+                setOnContextMenuRequested(null);
                 return;
             }
             // Show the cleaned leading doc comment (if any) as a hover tooltip.
@@ -1139,6 +1199,13 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 setTooltip(null);
             }
             boolean real = item.kind() != null && item.line() >= 0;
+            setContextMenu(real ? markerMenu(item) : null);
+            setOnContextMenuRequested(
+                    real
+                            ? e -> {
+                                tree.getSelectionModel().select(getTreeItem());
+                            }
+                            : null);
             if (!real) {
                 setText(item.label());
                 setGraphic(null);
