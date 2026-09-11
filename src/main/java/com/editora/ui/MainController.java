@@ -7442,6 +7442,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupButton(openFolderButton, Icons.openFolder(), tr("tooltip.openFolder"), "project.open");
         setupButton(saveButton, Icons.save(), tr("tooltip.save"), "file.save");
         setupButton(saveAsButton, Icons.saveAs(), tr("tooltip.saveAs"), "file.saveAs");
+        saveButton.getStyleClass().add("success");
+        saveAsButton.getStyleClass().add("success");
         setupButton(undoButton, Icons.undo(), tr("tooltip.undo"), "edit.undo");
         setupButton(redoButton, Icons.redo(), tr("tooltip.redo"), "edit.redo");
         setupButton(cutButton, Icons.cut(), tr("tooltip.cut"), "edit.cut");
@@ -8982,6 +8984,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         ButtonType discard = new ButtonType(tr("dialog.discard"));
         ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(save, discard, cancel);
+        styleUnsavedChangesButtons(alert, save, discard);
         Optional<ButtonType> result = alert.showAndWait();
         if (result.isEmpty() || result.get() == cancel) {
             return false;
@@ -8990,6 +8993,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             return fileWorkflows.saveSynchronously(buffer);
         }
         return true; // discard
+    }
+
+    static void styleUnsavedChangesButtons(Alert alert, ButtonType save, ButtonType discard) {
+        alert.getDialogPane().lookupButton(save).getStyleClass().add("success");
+        alert.getDialogPane().lookupButton(discard).getStyleClass().add("danger");
     }
 
     private Tab tabFor(EditorBuffer buffer) {

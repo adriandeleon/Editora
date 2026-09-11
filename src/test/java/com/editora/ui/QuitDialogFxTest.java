@@ -38,4 +38,25 @@ class QuitDialogFxTest {
             assertFalse(cancelButton.getStyleClass().contains("danger"));
         });
     }
+
+    @Test
+    void unsavedChangesUsesSemanticSaveAndDiscardColorsWhileCancelRemainsNeutral() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            ButtonType save = new ButtonType("Save");
+            ButtonType discard = new ButtonType("Discard");
+            ButtonType cancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+            alert.getButtonTypes().setAll(save, discard, cancel);
+
+            MainController.styleUnsavedChangesButtons(alert, save, discard);
+
+            Node saveButton = alert.getDialogPane().lookupButton(save);
+            Node discardButton = alert.getDialogPane().lookupButton(discard);
+            Node cancelButton = alert.getDialogPane().lookupButton(cancel);
+            assertTrue(saveButton.getStyleClass().contains("success"));
+            assertTrue(discardButton.getStyleClass().contains("danger"));
+            assertFalse(cancelButton.getStyleClass().contains("success"));
+            assertFalse(cancelButton.getStyleClass().contains("danger"));
+        });
+    }
 }

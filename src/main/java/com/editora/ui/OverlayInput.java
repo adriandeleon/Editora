@@ -94,7 +94,7 @@ public final class OverlayInput {
         titleLabel.getStyleClass().add("palette-title");
 
         Button ok = new Button(okLabel);
-        ok.getStyleClass().add("accent");
+        ok.getStyleClass().add(okLabel.equals(tr("dialog.save")) ? "success" : "accent");
         Button cancel = new Button(tr("dialog.cancel"));
 
         Runnable accept = () -> {

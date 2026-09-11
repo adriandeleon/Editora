@@ -1847,6 +1847,7 @@ public class SettingsWindow {
                 capture.setText(seq.toString());
             });
             Button save = new Button(tr("settings.shortcuts.save"));
+            save.getStyleClass().add("success");
             save.setDefaultButton(false);
             save.setOnAction(e -> commitRecording(s.id(), seq.toString()));
             Button cancel = new Button(tr("settings.shortcuts.cancel"));
@@ -2110,6 +2111,7 @@ public class SettingsWindow {
         });
 
         Button save = new Button(tr("settings.save"));
+        save.getStyleClass().add("success");
         save.disableProperty().bind(form.disabledProperty());
         save.setOnAction(e -> saveMacro(list, name.getText()));
         Button delete = new Button(tr("settings.macro.delete"));
@@ -2171,6 +2173,7 @@ public class SettingsWindow {
             capture.setText(seq.toString());
         });
         Button save = new Button(tr("settings.shortcuts.save"));
+        save.getStyleClass().add("success");
         save.setOnAction(e -> {
             rebindWithConflictCheck(commandId, seq.toString());
             rebuildKeybindingFor(keybinding, m, steps);
@@ -3627,6 +3630,7 @@ public class SettingsWindow {
 
         // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
         Button save = new Button(tr("settings.save"));
+        save.getStyleClass().add("success");
         save.setDefaultButton(false);
         save.disableProperty().bind(form.disabledProperty());
         save.setOnAction(e -> commit.run());
@@ -3928,6 +3932,7 @@ public class SettingsWindow {
 
         // Explicit Save (edits also auto-save on Enter / focus-loss); disabled for a read-only row.
         Button save = new Button(tr("settings.save"));
+        save.getStyleClass().add("success");
         save.disableProperty().bind(form.disabledProperty());
         save.setOnAction(e -> commit.run());
         HBox saveRow = new HBox(save);
@@ -4136,6 +4141,7 @@ public class SettingsWindow {
 
         // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
         Button save = new Button(tr("settings.save"));
+        save.getStyleClass().add("success");
         save.disableProperty().bind(form.disabledProperty());
         save.setOnAction(e -> commit.run());
         HBox saveRow = new HBox(save);
@@ -4314,6 +4320,7 @@ public class SettingsWindow {
         });
         // Explicit Save (edits also auto-save on Enter / focus-loss + combo/checkbox change).
         Button save = new Button(tr("settings.save"));
+        save.getStyleClass().add("success");
         save.disableProperty().bind(form.disabledProperty());
         save.setOnAction(e -> commit.run());
 
@@ -4444,6 +4451,7 @@ public class SettingsWindow {
             }
         });
         Button save = new Button(tr("settings.save"));
+        save.getStyleClass().add("success");
         save.disableProperty().bind(form.disabledProperty());
         save.setOnAction(e -> commit.run());
 

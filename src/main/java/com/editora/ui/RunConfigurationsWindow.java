@@ -197,6 +197,7 @@ public final class RunConfigurationsWindow {
             }
         });
         Button save = new Button(tr("settings.save"));
+        save.getStyleClass().add("success");
         save.disableProperty().bind(form.disabledProperty());
         save.setOnAction(e -> commit.run());
         Button close = new Button(tr("settings.close"));

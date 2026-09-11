@@ -64,6 +64,9 @@ class ToolbarCustomizationFxTest {
         int size = FxTestSupport.callOnFx(nodes::size);
         assertEquals(ToolbarCatalog.defaultLayout().size(), size, "default toolbar size matches the default layout");
         assertTrue(FxTestSupport.callOnFx(() -> nodes.contains(saveButton)), "default toolbar reuses the Save button");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> saveButton.getStyleClass().contains("success")),
+                "the application Save button uses the green semantic style");
     }
 
     @Test

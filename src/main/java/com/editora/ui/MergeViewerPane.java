@@ -78,7 +78,7 @@ public final class MergeViewerPane implements TabContent {
     private HBox buildToolbar() {
         status.getStyleClass().add("merge-status");
         Button save = new Button(tr("merge.save"));
-        save.getStyleClass().add("merge-save");
+        save.getStyleClass().addAll("merge-save", "success");
         save.setOnAction(e -> onSave.accept(resultTextForSave()));
         HBox bar = new HBox(8, status, spacer(), save);
         bar.getStyleClass().add("merge-toolbar");
