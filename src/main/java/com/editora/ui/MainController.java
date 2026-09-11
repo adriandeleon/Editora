@@ -8090,7 +8090,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         return tab;
     }
-
     /** Refreshes a tab's title (pin + dirty markers), style classes, and full-path tooltip. */
     private void updateTabMeta(Tab tab, EditorBuffer buffer) {
         // Keep the window title's file name/path + dirty marker in step (dirty flips, Save-As, rename).
@@ -8103,21 +8102,24 @@ public class MainController implements com.editora.mcp.McpBridge {
             promoteTab(tab);
         }
         boolean isPinned = pinned.contains(tab);
-        // The title lives in a graphic node (not tab.setText) so it can be a drag handle for
-        // mouse reordering. Pinned tabs show an SVG pin graphic (matching the toolbar icons).
+        // The graphic header supports drag reordering and optional state/file icons.
         Label title = new Label((dirty ? "• " : "") + buffer.getTitle());
         title.getStyleClass().add("tab-title");
         if (tab == previewTab) {
             title.getStyleClass().add("preview-tab-title"); // italic: this tab will be reused
         }
+        Path p = buffer.getPath();
+        boolean remote = com.editora.vfs.Vfs.isRemote(p);
         HBox header = new HBox(6);
         header.getStyleClass().add("tab-header");
+        if (dirty) header.getStyleClass().add("dirty");
+        if (isPinned) header.getStyleClass().add("pinned");
+        if (!buffer.isEditable()) header.getStyleClass().add("read-only");
+        if (remote) header.getStyleClass().add("remote");
         header.setAlignment(Pos.CENTER_LEFT);
         if (isPinned) {
             header.getChildren().add(Icons.pin());
         }
-        Path p = buffer.getPath();
-        boolean remote = com.editora.vfs.Vfs.isRemote(p);
         if (remote) {
             header.getChildren().add(Icons.remote()); // cloud glyph: this file lives on a remote host
         }

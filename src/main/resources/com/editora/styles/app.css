@@ -1827,7 +1827,7 @@
 /* The tab title lives in a graphic Label (.tab-title) so it can act as a drag handle for
    mouse reordering; inherit the default tab-label appearance.
 
-   Kept at low specificity on purpose: `.tab.dirty .tab-title` and friends below must still win, so
+   Kept at low specificity on purpose: `.tab-header.dirty .tab-title` and friends below must still win, so
    these two rules must never grow a `.tab-pane > .tab-header-area > …` prefix. Source order matters
    too — the state rules (dirty/pinned/read-only) follow, so an unsaved active tab stays amber. */
 .tab .tab-title {
@@ -1843,18 +1843,18 @@
 }
 
 /* Unsaved/dirty tab: amber/italic label so the bullet prefix is reinforced visually. */
-.tab.dirty .tab-title {
+.tab-header.dirty .tab-title {
     -fx-text-fill: -state-amber;
     -fx-font-style: italic;
 }
 
 /* Pinned tab: bold label so the pin marker is reinforced (mirrors the dirty treatment). */
-.tab.pinned .tab-title {
+.tab-header.pinned .tab-title {
     -fx-font-weight: bold;
 }
 
 /* Read-only (View mode) tab: muted/italic label, echoing the status-bar "Read-Only" indicator. */
-.tab.read-only .tab-title {
+.tab-header.read-only .tab-title {
     -fx-text-fill: -color-fg-muted;
     -fx-font-style: italic;
 }

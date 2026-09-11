@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   active document.
 - Color Save buttons green and Discard buttons red throughout the application, while neutral actions such as Cancel retain their existing appearance.
 - Ordinary editable tab labels now pin the upright Inter UI face instead of inheriting an editor font or
-  italic styling from their window or a previous transient state.
+  retaining the temporary italic read-only styling used while their contents load.
 
 ## [0.18.1] - 2026-09-10
 
