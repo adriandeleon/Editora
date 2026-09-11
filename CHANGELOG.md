@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Local History garbage collection now preserves blobs written by an in-flight publication until its
+  complete index becomes durable.
 - Git file history now compares a selected revision with the editable working file on double-click or Enter,
   exposing the diff viewer's line, hunk, whole-file, Result, Undo, and Save controls. Full-repository Git logs
   retain their parent-to-commit inspection and add **Compare with Working Tree** to each file's menu.

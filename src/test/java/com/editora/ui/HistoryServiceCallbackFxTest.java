@@ -106,4 +106,37 @@ class HistoryServiceCallbackFxTest {
         assertEquals(content, blobs.get(sha), "the post-publication live set must replace the stale GC request");
         svc.shutdown();
     }
+
+    @Test
+    void deferredGcProtectsTheBlobUntilItsIndexPublicationCanSupplyTheCompleteLiveSet(@TempDir Path dir)
+            throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            HistoryBlobStore blobs = new HistoryBlobStore(dir.resolve("blobs"));
+            HistoryService svc = new HistoryService(blobs);
+            async.onClose(svc::shutdown);
+            String existingSha = blobs.put("already indexed");
+            String content = "new in-flight revision";
+            CountDownLatch recorded = new CountDownLatch(1);
+            AtomicReference<HistoryRevision> revision = new AtomicReference<>();
+            RetentionPolicy policy = new RetentionPolicy(20, Long.MAX_VALUE, Long.MAX_VALUE);
+
+            svc.snapshot(Path.of("/x/Second.java"), content, "delete", null, true, List.of(), policy, 2000L, value -> {
+                revision.set(value);
+                recorded.countDown();
+            });
+            svc.gc(Set.of(existingSha));
+
+            async.await(recorded, "in-flight history revision");
+            async.awaitFx();
+            CountDownLatch loaded = new CountDownLatch(1);
+            AtomicReference<String> restored = new AtomicReference<>();
+            svc.content(revision.get(), value -> {
+                restored.set(value);
+                loaded.countDown();
+            });
+            async.await(loaded, "history body after deferred garbage collection");
+
+            assertEquals(content, restored.get());
+        }
+    }
 }
