@@ -231,6 +231,13 @@
     -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.2), 12, 0.15, 0, 3);
 }
 
+/* Plain runs in the rich fold preview need Text's -fx-fill (Tooltip's -fx-text-fill only colors its
+   built-in label). Token selectors in syntax.css and the selected editor theme have equal or greater
+   specificity and are loaded later, so highlighted runs retain their exact editor colors. */
+.fold-preview-content .text {
+    -fx-fill: -fold-preview-foreground;
+}
+
 /* Structure / Bookmarks / Personal Notes trees carry no font size of their own: they inherit the root
    14px, which is what the Project tree has always used. The four file-list tool windows are the same kind
    of surface and used to disagree — Project at 14px, the other three pinned to 12px — so a glance from one
