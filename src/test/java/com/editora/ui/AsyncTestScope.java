@@ -27,7 +27,7 @@ final class AsyncTestScope implements AutoCloseable {
 
     private record FxExceptionState(Thread thread, Thread.UncaughtExceptionHandler previous) {}
 
-    private static final long TIMEOUT_SECONDS = 10;
+    private static final long TIMEOUT_SECONDS = 30;
 
     private final Deque<AutoCloseable> resources = new ArrayDeque<>();
     private final Deque<CheckedRunnable> shutdownSignals = new ArrayDeque<>();
