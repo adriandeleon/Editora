@@ -14,6 +14,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -71,6 +72,17 @@ class KeymapsTest {
             r.add("/com/editora/keymaps/" + id + ".mac.json");
         }
         return r;
+    }
+
+    @Test
+    void emacsToolWindowSizingBindingsStayOnTheirRequestedChords() {
+        Map<String, String> emacs = load("/com/editora/keymaps/emacs.json");
+        assertEquals("view.closeFocusedToolWindow", emacs.get("C-x 0"));
+        assertEquals("view.resizeBottomToolWindow", emacs.get("C-x S-6"));
+        assertEquals("view.resizeHorizontalToolWindowGreater", emacs.get("C-x S-."));
+        assertEquals("view.resizeHorizontalToolWindowLess", emacs.get("C-x S-,"));
+        assertEquals("view.maximizeToolWindow", emacs.get("C-x f"));
+        assertFalse(emacs.containsKey("C-x S-f"));
     }
 
     @Test

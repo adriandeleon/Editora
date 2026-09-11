@@ -134,6 +134,22 @@ class ToolWindowMaximizeFxTest {
         });
     }
 
+    @Test
+    void explicitMaximizeAndRestoreAreIdempotentForKeyboardCommands() throws Exception {
+        Rig r = rig();
+        FxTestSupport.runOnFx(() -> {
+            openAt(r, r.right(), r.hSplit(), 0.70);
+
+            assertTrue(r.manager().setMaximized(r.right(), true));
+            assertFalse(r.manager().setMaximized(r.right(), true), "a repeated maximize must not toggle restore");
+            assertTrue(r.manager().isMaximized(r.right()));
+
+            assertTrue(r.manager().setMaximized(r.right(), false));
+            assertFalse(r.manager().setMaximized(r.right(), false), "a repeated restore is a no-op");
+            assertFalse(r.manager().isMaximized(r.right()));
+        });
+    }
+
     /** The bottom window lives in the vertical split, so maximizing it must drive that one. */
     @Test
     void aBottomWindowMaximizesOverItsOwnSplit() throws Exception {

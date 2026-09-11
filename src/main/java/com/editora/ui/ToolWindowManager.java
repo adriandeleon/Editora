@@ -123,6 +123,8 @@ public class ToolWindowManager {
     private final Map<Region, Double> collapsedMinSizes = new java.util.IdentityHashMap<>();
     /** The open tool window holding keyboard focus, or null — the default target of a maximize request. */
     private ToolWindow activeToolWindow;
+    /** Non-null only while a count-aware tool-window command is running under {@code C-u}. */
+    private Integer keyboardPrefixArgument;
     /** True while a stripe button is being dragged, which reveals the empty stripes as drop targets. */
     private boolean draggingStripeButton;
 
@@ -1242,18 +1244,106 @@ public class ToolWindowManager {
         return tw != null && maximized == tw;
     }
 
-    /** Expands the tool window over its whole split, or hands the space back if it already holds it. */
-    public void toggleMaximized(ToolWindow tw) {
-        if (isMaximized(tw)) {
+    /** Current dock side, including a user re-dock override. */
+    public ToolWindow.Side sideOf(ToolWindow tw) {
+        return currentSide(tw);
+    }
+
+    public void setKeyboardPrefixArgument(Integer value) {
+        keyboardPrefixArgument = value;
+    }
+
+    public boolean isKeyboardCountAware(String commandId) {
+        return "view.resizeBottomToolWindow".equals(commandId);
+    }
+
+    /** {@code C-x ^}: grow a bottom window, or shrink it when introduced by {@code C-u}. */
+    public void keyboardResizeBottom(java.util.function.Consumer<String> status) {
+        ToolWindow tw = maximizeTarget();
+        if (tw == null || sideOf(tw) != ToolWindow.Side.BOTTOM) {
+            status.accept(tr("status.toolwindow.noResizeTarget"));
+            return;
+        }
+        boolean grow = keyboardPrefixArgument == null;
+        if (resize(tw, grow)) {
+            status.accept(tr(grow ? "status.toolwindow.larger" : "status.toolwindow.smaller", tw.getTitle()));
+        }
+    }
+
+    /** {@code C-x >}/{@code C-x <}: resize toward the editor, mirrored across left and right sides. */
+    public void keyboardResizeHorizontal(boolean greaterKey, java.util.function.Consumer<String> status) {
+        ToolWindow tw = maximizeTarget();
+        if (tw == null || sideOf(tw) == ToolWindow.Side.BOTTOM) {
+            status.accept(tr("status.toolwindow.noResizeTarget"));
+            return;
+        }
+        boolean grow = sideOf(tw) == ToolWindow.Side.RIGHT ? greaterKey : !greaterKey;
+        if (resize(tw, grow)) {
+            status.accept(tr(grow ? "status.toolwindow.larger" : "status.toolwindow.smaller", tw.getTitle()));
+        }
+    }
+
+    /** {@code C-x 0}: closes the focused tool window, or the sole open one when focus is elsewhere. */
+    public boolean keyboardClose(java.util.function.Consumer<String> status) {
+        ToolWindow tw = maximizeTarget();
+        if (tw == null) {
+            status.accept(tr("status.toolwindow.noCloseTarget"));
+            return false;
+        }
+        String title = tw.getTitle();
+        close(tw);
+        status.accept(tr("status.toolwindow.closed", title));
+        return true;
+    }
+
+    /** Makes an open docked tool window larger or smaller by one keyboard-sized step. */
+    public boolean resize(ToolWindow tw, boolean grow) {
+        if (tw == null || !isOpen(tw) || isFloating(tw)) {
+            return false;
+        }
+        restoreMaximized();
+        ToolWindow.Side side = currentSide(tw);
+        Region container = sideContainers.get(side);
+        SplitPane split = outerSplitFor(side);
+        int item = container == null ? -1 : split.getItems().indexOf(container);
+        int divider = side == ToolWindow.Side.LEFT ? item : item - 1;
+        if (divider < 0 || divider >= split.getDividers().size()) {
+            return false;
+        }
+        double direction = side == ToolWindow.Side.LEFT ? 1.0 : -1.0;
+        double current = split.getDividers().get(divider).getPosition();
+        double position = Math.max(0.05, Math.min(0.95, current + direction * (grow ? 0.05 : -0.05)));
+        if (Math.abs(position - current) < 0.0001) {
+            return false;
+        }
+        split.setDividerPosition(divider, position);
+        rememberDivider(tw, side, position);
+        config.save();
+        return true;
+    }
+
+    /** Idempotently maximizes or restores {@code tw}; unlike the header action this never toggles twice. */
+    public boolean setMaximized(ToolWindow tw, boolean value) {
+        if (tw == null || !isOpen(tw) || isFloating(tw) || isMaximized(tw) == value) {
+            return false;
+        }
+        if (value) {
+            maximize(tw);
+            if (!isMaximized(tw)) {
+                return false;
+            }
+            rememberPresentation(tw, MODE_MAXIMIZED);
+        } else {
             restoreMaximized();
             rememberPresentation(tw, MODE_DOCKED);
-        } else {
-            maximize(tw);
-            if (isMaximized(tw)) {
-                rememberPresentation(tw, MODE_MAXIMIZED);
-            }
         }
         persist();
+        return true;
+    }
+
+    /** Expands the tool window over its whole split, or hands the space back if it already holds it. */
+    public void toggleMaximized(ToolWindow tw) {
+        setMaximized(tw, !isMaximized(tw));
     }
 
     /**
