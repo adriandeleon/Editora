@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-09-11
+
 - Added Emacs tool-window keys: `C-x 0` closes the current window, `C-x ^` grows the bottom window (`C-u C-x
   ^` shrinks it), `C-x >` and `C-x <` resize side windows toward or away from the editor, and repeated `C-x f`
   toggles maximize / restore.
