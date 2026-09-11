@@ -5,6 +5,9 @@ import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javafx.scene.control.Label;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
+import javafx.scene.layout.HBox;
 
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.BeforeAll;
@@ -48,6 +51,7 @@ class InitialFileLoadFxTest {
                                         FxTestSupport.field(fx.controller, "fileWorkflows"), "loadingBuffers"))
                                 .contains(shell),
                         "even a small local text file should start as a loading shell");
+                assertTrue(tabHeader(fx.controller, shell).getStyleClass().contains("read-only"));
             });
 
             EditorBuffer buffer = opened.get();
@@ -56,6 +60,27 @@ class InitialFileLoadFxTest {
             assertEquals(content, FxTestSupport.callOnFx(buffer::getContent));
             assertTrue(!FxTestSupport.callOnFx(buffer::isDirty), "a freshly loaded document must stay clean");
             assertTrue(FxTestSupport.callOnFx(buffer::isEditable), "the completed small-file load is editable");
+            FxTestSupport.runOnFx(() -> {
+                HBox header = tabHeader(fx.controller, buffer);
+                TabPane tabs = FxTestSupport.field(fx.controller, "tabPane");
+                tabs.getScene().getRoot().applyCss();
+                tabs.getScene().getRoot().layout();
+                assertTrue(
+                        !header.getStyleClass().contains("read-only"),
+                        "the rebuilt header must drop the loading shell's temporary state");
+                Label title = header.getChildren().stream()
+                        .filter(Label.class::isInstance)
+                        .map(Label.class::cast)
+                        .filter(label -> label.getStyleClass().contains("tab-title"))
+                        .findFirst()
+                        .orElseThrow();
+                assertTrue(
+                        !title.getFont()
+                                .getStyle()
+                                .toLowerCase(java.util.Locale.ROOT)
+                                .contains("italic"),
+                        "the completed editable tab must render upright: " + title.getFont());
+            });
             StatusBar statusBar = FxTestSupport.field(fx.controller, "statusBar");
             Label readOnly = FxTestSupport.field(statusBar, "readOnly");
             assertEquals(
@@ -67,6 +92,15 @@ class InitialFileLoadFxTest {
             Files.deleteIfExists(file);
             Files.deleteIfExists(dir);
         }
+    }
+
+    private static HBox tabHeader(MainController controller, EditorBuffer buffer) {
+        TabPane tabs = FxTestSupport.field(controller, "tabPane");
+        Tab tab = tabs.getTabs().stream()
+                .filter(candidate -> candidate.getUserData() == buffer)
+                .findFirst()
+                .orElseThrow();
+        return (HBox) tab.getGraphic();
     }
 
     @Test

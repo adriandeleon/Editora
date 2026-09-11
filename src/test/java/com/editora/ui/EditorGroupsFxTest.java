@@ -317,10 +317,11 @@ class EditorGroupsFxTest {
     void ordinaryTabTitlesDoNotInheritItalicStyle() throws Exception {
         Tab tab = addBuffer();
 
-        String style = renderedTabFont(tab, "-fx-font-family: 'JetBrains Mono'; -fx-font-style: italic;")
-                .getStyle();
+        javafx.scene.text.Font font =
+                renderedTabFont(tab, "-fx-font-family: 'JetBrains Mono'; -fx-font-style: italic;");
 
-        assertFalse(style.toLowerCase(java.util.Locale.ROOT).contains("italic"), "ordinary tab was: " + style);
+        assertEquals("Inter", font.getFamily(), "ordinary tab inherited the editor family: " + font);
+        assertFalse(font.getStyle().toLowerCase(java.util.Locale.ROOT).contains("italic"), "ordinary tab was: " + font);
 
         cleanUp();
     }
