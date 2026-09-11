@@ -218,6 +218,32 @@ class StickyScrollFxTest {
     }
 
     @Test
+    void fileSpecificCornerControlsStayAboveTheLazilyAttachedBar() throws Exception {
+        EditorBuffer markdown = buffer();
+        EditorBuffer html = buffer();
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.Button viewMode = new javafx.scene.control.Button("Editor / Split / Preview");
+            javafx.scene.control.Button openInBrowser = new javafx.scene.control.Button("Open in Browser");
+            markdown.setViewModeControl(viewMode);
+            html.setHtmlPreviewControl(openInBrowser);
+
+            // Reproduce the failing order: the file controls exist before the first scroll makes the sticky
+            // bar attach itself. AnchorPane paints children in list order, so each control must follow it.
+            assertCornerControlAboveSticky(markdown, viewMode, "the view-mode control must paint above it");
+            assertCornerControlAboveSticky(html, openInBrowser, "the open-in-browser control must paint above it");
+        });
+    }
+
+    private static void assertCornerControlAboveSticky(EditorBuffer b, javafx.scene.Node control, String message) {
+        call(b, "stickyLinesFor", int.class, 100);
+        javafx.scene.layout.AnchorPane root = FxTestSupport.field(b, "root");
+        javafx.scene.Node bar = (javafx.scene.Node) call(b, "stickyScrollNode");
+        int barIndex = root.getChildren().indexOf(bar);
+        assertTrue(barIndex >= 0, "the sticky bar must be attached for this z-order check");
+        assertTrue(root.getChildren().indexOf(control) > barIndex, message);
+    }
+
+    @Test
     void aLongHeaderRemainsOneVisualRow() throws Exception {
         String longHeader = "    void body(" + "String parameter, ".repeat(250) + "String last) {\n";
         StringBuilder source = new StringBuilder("class Outer {\n").append(longHeader);

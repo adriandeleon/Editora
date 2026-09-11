@@ -6507,6 +6507,25 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setTopAnchor(bar, 0d);
         AnchorPane.setLeftAnchor(bar, 0d);
         AnchorPane.setRightAnchor(bar, codePaneControlInset());
+        // The bar is attached lazily when scrolling first produces pinned lines, while file-specific
+        // controls may already be present. AnchorPane paints later children on top, so without an explicit
+        // order that timing lets the full-width bar cover Markdown's view-mode toggle or HTML's browser
+        // button. Keep every compact corner action above the informational sticky overlay regardless of
+        // which feature attached first.
+        bringCornerControlsToFront();
+    }
+
+    private void bringCornerControlsToFront() {
+        bringCornerControlToFront(viewModeControl);
+        bringCornerControlToFront(htmlPreviewControl);
+        bringCornerControlToFront(logControl);
+        bringCornerControlToFront(expertExitControl);
+    }
+
+    private void bringCornerControlToFront(Node control) {
+        if (control != null && root.getChildren().contains(control)) {
+            control.toFront();
+        }
     }
 
     private void placeCornerControl(Node control) {
