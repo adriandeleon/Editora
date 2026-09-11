@@ -1246,7 +1246,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(tab);
             if (buffer != null) {
-                fileWorkflows.invalidatePendingWrite(buffer.getPath());
+                fileWorkflows.invalidatePendingWrites(buffer);
                 buffer.dispose();
             } else {
                 disposeViewerTab(tab); // an image/hex/PDF tab holds a thread + file handle + GPU texture too
@@ -1892,7 +1892,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     for (Tab removed : c.getRemoved()) {
                         EditorBuffer closed = bufferOf(removed);
                         if (closed != null) {
-                            fileWorkflows.invalidatePendingWrite(closed.getPath());
+                            fileWorkflows.invalidatePendingWrites(closed);
                             if (closed.getPath() != null && lspManager.isManaged(closed.getPath())) {
                                 lspManager.closeDocument(closed.getPath());
                                 lspCoordinator.clearDiagnostics(closed.getPath());
@@ -2008,9 +2008,14 @@ public class MainController implements com.editora.mcp.McpBridge {
             config.save();
         });
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
-        // Lazy lambda: historyCoordinator is constructed later in this method, so defer the field read to call time.
-        projectPanel.setOnBeforeDelete(
-                file -> historyCoordinator.captureBeforeDelete(file)); // snapshot to Local History before delete
+        projectPanel.setDeletePreparation(new ProjectDeleteCoordinator(
+                path -> bufferOf(tabForPath(path)),
+                path -> editorArea.select(tabForPath(path)),
+                fileWorkflows::hasPendingSave,
+                this::confirmCloseIfDirty,
+                fileWorkflows::invalidatePendingWrite,
+                (path, completion) -> historyCoordinator.captureBeforeDeleteDurably(path, completion),
+                this::setStatus));
         projectPanel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
         projectPanel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
         projectPanel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
@@ -2267,8 +2272,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         githubPanel = new GitHubPanel(gitWindows.githubActions());
         githubToolWindow = new ToolWindow(
                 "github", tr("toolwindow.github"), ToolWindow.Side.BOTTOM, Icons::github, githubPanel, "tool.github");
-        historyCoordinator = new HistoryCoordinator(
-                coordinatorHost, diffCoordinator, historyOps(), config.shared().historyService());
+        historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps(), config.shared());
         fileHistoryToolWindow = new ToolWindow(
                 "fileHistory",
                 tr("toolwindow.fileHistory"),
@@ -2396,14 +2400,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                     @Override
                     public void afterBufferLoad(EditorBuffer buffer, Runnable action) {
-                        if (fileWorkflows.loadingBuffers.contains(buffer)) {
-                            fileWorkflows
-                                    .afterBufferLoad
-                                    .computeIfAbsent(buffer, ignored -> new ArrayList<>())
-                                    .add(action);
-                        } else {
-                            action.run();
-                        }
+                        fileWorkflows.afterBufferLoad(buffer, action);
                     }
 
                     @Override
@@ -5564,11 +5561,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    // --- Git (native-CLI integration; off-thread via GitService) -------------------------------------
-
-    /** The stateful core of the Git integration (GitService + repo state + the status/gutter state
-     *  machine); see {@link GitCoordinator}. Operations (commit/branch/log/blame/diff) stay below and
-     *  reach in via {@code git.service()}/{@code git.repoRoot()}. */
     private final GitCoordinator git = new GitCoordinator(coordinatorHost, new GitCoordinator.WindowOps() {
         @Override
         public void setStatusBarGitEnabled(boolean enabled) {
@@ -5623,6 +5615,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void invalidatePendingWrite(Path file) {
+            fileWorkflows.invalidatePendingWrite(file);
+        }
+
+        @Override
         public void reloadAllFromDiskSilently() {
             MainController.this.reloadAllFromDiskSilently();
         }
@@ -5655,11 +5652,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void openCommitFileDiff(String hash, String repoRel) {
             diffCoordinator.diffCommitFile(hash, repoRel);
-        }
-
-        @Override
-        public void checkExternalChanges() {
-            fileWorkflows.checkExternalChanges();
         }
 
         @Override
@@ -6637,10 +6629,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
             });
 
-    /** The whole LSP integration (nav/format, diagnostics routing, the configure/detect/per-buffer-sync
-     *  gating + lifecycle, the status-bar segment, structure outline, semantic tokens); see
-     *  {@link LspCoordinator}. The {@code LspManager} stays owned here (DAP layers on its jdtls session, the
-     *  MCP bridge reads its diagnostics) and is passed in. */
+    /** LSP UI/lifecycle integration; the shared manager remains here because DAP and MCP also use it. */
     private final LspCoordinator lspCoordinator =
             new LspCoordinator(coordinatorHost, lspManager, new LspCoordinator.Ops() {
                 @Override
@@ -6727,6 +6716,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     if (projectPanel != null) {
                         projectPanel.refreshTree();
                     }
+                }
+
+                @Override
+                public void invalidatePendingWrite(Path file) {
+                    fileWorkflows.invalidatePendingWrite(file);
                 }
 
                 @Override

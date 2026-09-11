@@ -97,6 +97,17 @@ public final class HistoryService {
             exec.submit(() -> {
                 try {
                     String sha = HistoryBlobStore.sha256(content);
+                    // A GC request can become deferred while this publication is in flight. Its live set was
+                    // captured before this revision reached the index, so protect the newly written blob until
+                    // the next index publication supplies a complete live set. Otherwise the deferred GC can
+                    // delete the blob between its write and the durable index callback.
+                    synchronized (publicationLock) {
+                        if (deferredLiveHashes != null && !deferredLiveHashes.contains(sha)) {
+                            var protectedHashes = new java.util.LinkedHashSet<>(deferredLiveHashes);
+                            protectedHashes.add(sha);
+                            deferredLiveHashes = Set.copyOf(protectedHashes);
+                        }
+                    }
                     if (!force && HistoryRetention.isDuplicate(snapshot, sha)) {
                         // Unchanged since the last revision — skip the blob write. Still report completion: the
                         // caller counts in-flight records to know when it is safe to GC.

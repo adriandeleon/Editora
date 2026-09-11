@@ -1,15 +1,23 @@
 package com.editora.io;
 
 import java.io.IOException;
+import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.ProviderMismatchException;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+
+import org.apache.sshd.sftp.client.SftpClient;
+import org.apache.sshd.sftp.client.extensions.openssh.OpenSSHPosixRenameExtension;
+import org.apache.sshd.sftp.client.fs.SftpFileSystem;
 
 /**
  * Writes a <b>document</b> (the user's file) as safely as the platform allows: to a temp file in the same
@@ -30,13 +38,133 @@ import java.util.function.BooleanSupplier;
  *       the temp file before the move.
  * </ul>
  *
- * <p>If the platform can't do any of that (a filesystem without atomic move, a directory we can't create a
- * temp file in — e.g. a read-only dir holding a writable file), it falls back to a plain in-place write, which
- * is what the editor did before: no worse than the status quo, and the save still happens.
+ * <p>If an existing target cannot be staged safely, the save fails without touching it. A plain in-place
+ * write truncates first and could destroy the only recoverable copy if the write then fails. Direct writing
+ * is retained only for a brand-new target, where there is no prior file to preserve.
  */
 public final class AtomicFileWrite {
 
+    /**
+     * Narrow filesystem boundary used to verify failures at each stage of document replacement. The
+     * production implementation delegates directly to {@link Files}; callers normally use {@link #writeIf}.
+     */
+    public interface FileOperations {
+
+        boolean isDirectory(Path path);
+
+        boolean exists(Path path, LinkOption... options);
+
+        void createDirectories(Path path) throws IOException;
+
+        Path createTempFile(Path directory, String prefix, String suffix, FileAttribute<?>... attributes)
+                throws IOException;
+
+        Path createTempFile(String prefix, String suffix, FileAttribute<?>... attributes) throws IOException;
+
+        void write(Path path, byte[] bytes) throws IOException;
+
+        void writeNew(Path path, byte[] bytes) throws IOException;
+
+        void move(Path source, Path target, CopyOption... options) throws IOException;
+
+        byte[] readAllBytes(Path path) throws IOException;
+
+        boolean deleteIfExists(Path path) throws IOException;
+    }
+
+    private static final FileOperations FILES = new FileOperations() {
+        @Override
+        public boolean isDirectory(Path path) {
+            return Files.isDirectory(path);
+        }
+
+        @Override
+        public boolean exists(Path path, LinkOption... options) {
+            return Files.exists(path, options);
+        }
+
+        @Override
+        public void createDirectories(Path path) throws IOException {
+            Files.createDirectories(path);
+        }
+
+        @Override
+        public Path createTempFile(Path directory, String prefix, String suffix, FileAttribute<?>... attributes)
+                throws IOException {
+            return Files.createTempFile(directory, prefix, suffix, attributes);
+        }
+
+        @Override
+        public Path createTempFile(String prefix, String suffix, FileAttribute<?>... attributes) throws IOException {
+            return Files.createTempFile(prefix, suffix, attributes);
+        }
+
+        @Override
+        public void write(Path path, byte[] bytes) throws IOException {
+            Files.write(path, bytes);
+        }
+
+        @Override
+        public void writeNew(Path path, byte[] bytes) throws IOException {
+            Files.write(path, bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        }
+
+        @Override
+        public void move(Path source, Path target, CopyOption... options) throws IOException {
+            if (replaceRemote(source, target)) {
+                return;
+            }
+            Files.move(source, target, options);
+        }
+
+        @Override
+        public byte[] readAllBytes(Path path) throws IOException {
+            return Files.readAllBytes(path);
+        }
+
+        @Override
+        public boolean deleteIfExists(Path path) throws IOException {
+            return Files.deleteIfExists(path);
+        }
+    };
+
     private AtomicFileWrite() {}
+
+    /**
+     * Apache MINA's {@code SftpFileSystemProvider.move(..., REPLACE_EXISTING)} deletes the destination before
+     * issuing its rename request. A lost connection or rejected rename in that gap therefore destroys the
+     * previous remote file. Use a server-side replacement operation instead, where the server supports one,
+     * and fail without touching the destination otherwise.
+     */
+    private static boolean replaceRemote(Path source, Path target) throws IOException {
+        if (!(source.getFileSystem() instanceof SftpFileSystem fs)) {
+            return false;
+        }
+        if (target.getFileSystem() != fs) {
+            throw new ProviderMismatchException("Mismatched SFTP filesystems for " + source + " and " + target);
+        }
+        try (SftpClient client = fs.getClient()) {
+            OpenSSHPosixRenameExtension posix = client.getExtension(OpenSSHPosixRenameExtension.class);
+            if (posix != null && posix.isSupported()) {
+                posix.posixRename(source.toString(), target.toString());
+                return true;
+            }
+            if (client.getVersion() >= 5) {
+                client.rename(
+                        source.toString(),
+                        target.toString(),
+                        SftpClient.CopyMode.Atomic,
+                        SftpClient.CopyMode.Overwrite);
+                return true;
+            }
+        }
+        throw new IOException("The SFTP server does not support safe remote file replacement");
+    }
+
+    /** The production {@link Files}-backed operations implementation. */
+    public static FileOperations systemFileOperations() {
+        return FILES;
+    }
 
     /** Writes {@code bytes} to {@code file}, replacing it atomically where the platform supports it. */
     public static void write(Path file, byte[] bytes) throws IOException {
@@ -49,43 +177,80 @@ public final class AtomicFileWrite {
      * @return true when the target was written; false when the staged write became obsolete
      */
     public static boolean writeIf(Path file, byte[] bytes, BooleanSupplier commit) throws IOException {
+        return writeIf(file, bytes, commit, FILES);
+    }
+
+    /**
+     * Creates a document only when the path is still absent. This is the safe counterpart to a restore or
+     * generated-file operation that must never overwrite a file which appeared after the operation began.
+     * There is no prior target to preserve, so {@link StandardOpenOption#CREATE_NEW} is the commit boundary.
+     */
+    public static boolean createNew(Path file, byte[] bytes, BooleanSupplier commit) throws IOException {
+        if (!commit.getAsBoolean()) {
+            return false;
+        }
+        FILES.writeNew(file, bytes);
+        return true;
+    }
+
+    /**
+     * As {@link #writeIf(Path, byte[], BooleanSupplier)}, using the supplied filesystem boundary.
+     * Intended for deterministic fault injection and alternate filesystem adapters.
+     */
+    public static boolean writeIf(Path file, byte[] bytes, BooleanSupplier commit, FileOperations files)
+            throws IOException {
         Path target = resolveLink(file);
         Path dir = target.getParent();
-        if (dir == null || !Files.isDirectory(dir)) {
-            if (!commit.getAsBoolean()) {
-                return false;
-            }
-            Files.write(target, bytes); // no directory to stage in — write in place
-            return true;
+        if (dir == null) {
+            dir = target.toAbsolutePath().getParent();
+        }
+        if (dir == null || !files.isDirectory(dir)) {
+            return writeUnstagedNewTarget(target, bytes, commit, files, null);
         }
         Path tmp;
         try {
-            tmp = Files.createTempFile(dir, "." + target.getFileName() + ".", ".editora-tmp");
+            tmp = files.createTempFile(dir, "." + target.getFileName() + ".", ".editora-tmp");
         } catch (IOException cannotStage) {
-            if (!commit.getAsBoolean()) {
-                return false;
-            }
-            Files.write(target, bytes); // e.g. a read-only directory holding a writable file
-            return true;
+            return writeUnstagedNewTarget(target, bytes, commit, files, cannotStage);
         }
+        boolean replaced = false;
         try {
-            Files.write(tmp, bytes);
+            files.write(tmp, bytes);
             copyPermissions(target, tmp);
             if (!commit.getAsBoolean()) {
                 return false;
             }
             try {
-                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException atomicUnsupported) {
+                if (isRemote(tmp)) {
+                    throw atomicUnsupported;
+                }
                 if (!commit.getAsBoolean()) {
                     return false;
                 }
-                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+                files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
             }
+            replaced = true;
             return true;
         } finally {
-            Files.deleteIfExists(tmp); // a successful move makes this a no-op
+            if (!replaced) {
+                files.deleteIfExists(tmp);
+            }
         }
+    }
+
+    private static boolean writeUnstagedNewTarget(
+            Path target, byte[] bytes, BooleanSupplier commit, FileOperations files, IOException stagingFailure)
+            throws IOException {
+        if (!commit.getAsBoolean()) {
+            return false;
+        }
+        if (files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Cannot stage a safe replacement for existing file " + target, stagingFailure);
+        }
+        files.writeNew(target, bytes);
+        return true;
     }
 
     /**
@@ -95,29 +260,46 @@ public final class AtomicFileWrite {
      */
     public static boolean replaceIfUnchanged(
             Path file, byte[] expectedBytes, byte[] replacementBytes, BooleanSupplier commit) throws IOException {
+        return replaceIfUnchanged(file, expectedBytes, replacementBytes, commit, FILES);
+    }
+
+    /** Strict replacement with an injectable filesystem boundary. */
+    public static boolean replaceIfUnchanged(
+            Path file, byte[] expectedBytes, byte[] replacementBytes, BooleanSupplier commit, FileOperations files)
+            throws IOException {
         Path target = resolveLink(file);
         Path dir = target.getParent();
-        if (dir == null || !Files.isDirectory(dir)) {
+        if (dir == null) {
+            dir = target.toAbsolutePath().getParent();
+        }
+        if (dir == null || !files.isDirectory(dir)) {
             throw new IOException("Cannot stage a safe replacement for " + target);
         }
-        Path tmp = Files.createTempFile(dir, "." + target.getFileName() + ".", ".editora-tmp");
+        Path tmp = files.createTempFile(dir, "." + target.getFileName() + ".", ".editora-tmp");
+        boolean replaced = false;
         try {
-            Files.write(tmp, replacementBytes);
+            files.write(tmp, replacementBytes);
             copyPermissions(target, tmp);
-            if (!commit.getAsBoolean() || !Arrays.equals(expectedBytes, Files.readAllBytes(target))) {
+            if (!commit.getAsBoolean() || !Arrays.equals(expectedBytes, files.readAllBytes(target))) {
                 return false;
             }
             try {
-                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException atomicUnsupported) {
-                if (!commit.getAsBoolean() || !Arrays.equals(expectedBytes, Files.readAllBytes(target))) {
+                if (isRemote(tmp)) {
+                    throw atomicUnsupported;
+                }
+                if (!commit.getAsBoolean() || !Arrays.equals(expectedBytes, files.readAllBytes(target))) {
                     return false;
                 }
-                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+                files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
             }
+            replaced = true;
             return true;
         } finally {
-            Files.deleteIfExists(tmp);
+            if (!replaced) {
+                files.deleteIfExists(tmp);
+            }
         }
     }
 
@@ -131,6 +313,10 @@ public final class AtomicFileWrite {
         } catch (IOException brokenLink) {
             return file;
         }
+    }
+
+    private static boolean isRemote(Path path) {
+        return path.getFileSystem() instanceof SftpFileSystem;
     }
 
     /** Copies {@code from}'s POSIX permissions onto {@code to}, so the saved file keeps its mode (e.g. +x). */

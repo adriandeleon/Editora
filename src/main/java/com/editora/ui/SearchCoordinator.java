@@ -7,10 +7,14 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -42,6 +46,12 @@ import static com.editora.i18n.Messages.tr;
  * {@link #openToggle()}).
  */
 final class SearchCoordinator {
+
+    @FunctionalInterface
+    interface ReplaceConfirmation {
+
+        boolean confirm(int fileCount);
+    }
 
     /** Window hooks beyond {@link CoordinatorHost} (project root, open-in-editor, the Search tool window). */
     interface Ops {
@@ -179,21 +189,35 @@ final class SearchCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private final SearchService service = new SearchService();
-    private final ExecutorService replaceExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "replace-in-files");
-        t.setDaemon(true);
-        return t;
-    });
+    private final ExecutorService replaceExecutor;
+    private final ReplaceConfirmation replaceConfirmation;
+    private final java.util.concurrent.atomic.AtomicBoolean shutdown = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.Set<ReplaceJob> queuedReplaces = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final SearchPanel panel;
     private SearchInFilesPopup popup; // lazily built on first use of the popup command
+
+    private static ExecutorService newReplaceExecutor() {
+        return Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "replace-in-files");
+            t.setDaemon(true);
+            return t;
+        });
+    }
 
     private List<String> ripgrepProbedCommand = null;
     private volatile boolean ripgrepAvailable = false;
     private boolean backendRipgrep = false; // effective backend, pushed to the panel + the popup's badge
 
     SearchCoordinator(CoordinatorHost host, Ops ops) {
+        this(host, ops, newReplaceExecutor(), count -> showReplaceConfirmation(host, count));
+    }
+
+    SearchCoordinator(
+            CoordinatorHost host, Ops ops, ExecutorService replaceExecutor, ReplaceConfirmation replaceConfirmation) {
         this.host = host;
         this.ops = ops;
+        this.replaceExecutor = java.util.Objects.requireNonNull(replaceExecutor, "replaceExecutor");
+        this.replaceConfirmation = java.util.Objects.requireNonNull(replaceConfirmation, "replaceConfirmation");
         this.panel = new SearchPanel(new SearchPanel.Actions() {
             @Override
             public void search(SearchQuery query, String includeGlobs, String excludeGlobs) {
@@ -394,19 +418,12 @@ final class SearchCoordinator {
      * are edited in-memory (undoable); closed files are rewritten on disk (UTF-8, line endings kept as
      * they live in the text). Asks for confirmation, then re-runs the search to refresh the panel.
      */
-    private void replaceInFiles(SearchQuery query, String replacement, List<Path> files) {
+    CompletableFuture<ReplaceResult> replaceInFiles(SearchQuery query, String replacement, List<Path> files) {
         if (query == null || query.text() == null || query.text().isEmpty() || files.isEmpty()) {
-            return;
+            return CompletableFuture.completedFuture(new ReplaceResult(0, 0, List.of(), false));
         }
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("search.replaceConfirm", files.size()),
-                ButtonType.OK,
-                ButtonType.CANCEL);
-        confirm.initOwner(host.window());
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
-            return;
+        if (!replaceConfirmation.confirm(files.size())) {
+            return CompletableFuture.completedFuture(new ReplaceResult(0, 0, List.of(), true));
         }
         int total = 0;
         int changedFiles = 0;
@@ -432,43 +449,175 @@ final class SearchCoordinator {
             }
         }
         if (closed.isEmpty()) {
-            finishReplace(total, changedFiles, failedFiles);
-            return;
+            return CompletableFuture.completedFuture(finishReplace(total, changedFiles, failedFiles));
         }
+        CompletableFuture<ReplaceResult> completion = new CompletableFuture<>();
         int openTotal = total;
         int openChanged = changedFiles;
         List<Path> openFailed = List.copyOf(failedFiles);
-        replaceExecutor.submit(() -> {
-            int diskTotal = 0;
-            int diskChanged = 0;
-            List<Path> diskFailed = new java.util.ArrayList<>();
-            for (Path file : closed) {
-                ClosedReplace result;
-                try (DocumentWriteSequencer.Ticket ticket = ops.beginDocumentWrite(file)) {
-                    var outcome = ticket.runIfCurrent(() -> replaceClosedFile(
-                            file,
-                            query,
-                            replacement,
-                            original -> recordBeforeWrite(file, original),
-                            ticket::isCurrent));
-                    result = outcome.executed() ? outcome.value() : new ClosedReplace(0, false, true);
-                } catch (IOException | RuntimeException e) {
-                    result = new ClosedReplace(0, false, true);
-                }
-                diskTotal += result.count();
-                if (result.changed()) {
-                    diskChanged++;
-                }
-                if (result.failed()) {
-                    diskFailed.add(file);
-                }
-            }
-            int finalTotal = openTotal + diskTotal;
-            int finalChanged = openChanged + diskChanged;
+        ReplaceJob job = new ReplaceJob(query, replacement, closed, openTotal, openChanged, openFailed, completion);
+        queuedReplaces.add(job);
+        try {
+            replaceExecutor.execute(job);
+        } catch (RejectedExecutionException rejected) {
+            queuedReplaces.remove(job);
             List<Path> finalFailed = new java.util.ArrayList<>(openFailed);
-            finalFailed.addAll(diskFailed);
-            Platform.runLater(() -> finishReplace(finalTotal, finalChanged, finalFailed));
+            finalFailed.addAll(closed);
+            completeReplace(completion, openTotal, openChanged, finalFailed);
+        }
+        return completion;
+    }
+
+    private final class ReplaceJob implements Runnable {
+
+        private final SearchQuery query;
+        private final String replacement;
+        private final List<Path> closed;
+        private final int openTotal;
+        private final int openChanged;
+        private final List<Path> openFailed;
+        private final CompletableFuture<ReplaceResult> completion;
+
+        private ReplaceJob(
+                SearchQuery query,
+                String replacement,
+                List<Path> closed,
+                int openTotal,
+                int openChanged,
+                List<Path> openFailed,
+                CompletableFuture<ReplaceResult> completion) {
+            this.query = query;
+            this.replacement = replacement;
+            this.closed = List.copyOf(closed);
+            this.openTotal = openTotal;
+            this.openChanged = openChanged;
+            this.openFailed = List.copyOf(openFailed);
+            this.completion = completion;
+        }
+
+        @Override
+        public void run() {
+            if (!queuedReplaces.remove(this)) {
+                return;
+            }
+            runClosedReplacements(query, replacement, closed, openTotal, openChanged, openFailed, completion);
+        }
+
+        private void abandon() {
+            if (!queuedReplaces.remove(this)) {
+                return;
+            }
+            List<Path> failed = new java.util.ArrayList<>(openFailed);
+            failed.addAll(closed);
+            completion.complete(new ReplaceResult(openTotal, openChanged, failed, false));
+        }
+    }
+
+    private static boolean showReplaceConfirmation(CoordinatorHost host, int fileCount) {
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION, tr("search.replaceConfirm", fileCount), ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(host.window());
+        confirm.setHeaderText(null);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    private void runClosedReplacements(
+            SearchQuery query,
+            String replacement,
+            List<Path> closed,
+            int openTotal,
+            int openChanged,
+            List<Path> openFailed,
+            CompletableFuture<ReplaceResult> completion) {
+        int diskTotal = 0;
+        int diskChanged = 0;
+        List<Path> diskFailed = new java.util.ArrayList<>();
+        for (Path file : closed) {
+            if (shutdown.get()) {
+                diskFailed.add(file);
+                continue;
+            }
+            ClosedReplace result = replaceClosedCandidate(file, query, replacement);
+            diskTotal += result.count();
+            if (result.changed()) {
+                diskChanged++;
+            }
+            if (result.failed()) {
+                diskFailed.add(file);
+            }
+        }
+        int finalTotal = openTotal + diskTotal;
+        int finalChanged = openChanged + diskChanged;
+        List<Path> finalFailed = new java.util.ArrayList<>(openFailed);
+        finalFailed.addAll(diskFailed);
+        completeReplace(completion, finalTotal, finalChanged, finalFailed);
+    }
+
+    private ClosedReplace replaceClosedCandidate(Path file, SearchQuery query, String replacement) {
+        try {
+            EditorBuffer newlyOpened = callOnFx(() -> ops.bufferForPath(file));
+            if (newlyOpened != null) {
+                return callOnFx(
+                        () -> replaceOpenBuffer(newlyOpened, query, replacement, ops.isBufferLoading(newlyOpened)));
+            }
+            try (DocumentWriteSequencer.Ticket ticket = ops.beginDocumentWrite(file)) {
+                var outcome = ticket.runIfCurrent(() -> replaceClosedFile(
+                        file,
+                        query,
+                        replacement,
+                        original -> recordBeforeWrite(file, original),
+                        () -> ticket.isCurrent() && noOpenBuffer(file)));
+                return outcome.executed() ? outcome.value() : new ClosedReplace(0, false, true);
+            }
+        } catch (IOException | RuntimeException e) {
+            return new ClosedReplace(0, false, true);
+        }
+    }
+
+    private boolean noOpenBuffer(Path file) {
+        try {
+            return callOnFx(() -> ops.bufferForPath(file) == null);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private static <T> T callOnFx(Supplier<T> task) throws IOException {
+        if (Platform.isFxApplicationThread()) {
+            return task.get();
+        }
+        CompletableFuture<T> result = new CompletableFuture<>();
+        Platform.runLater(() -> {
+            try {
+                result.complete(task.get());
+            } catch (Throwable failure) {
+                result.completeExceptionally(failure);
+            }
         });
+        try {
+            return result.get(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while checking open buffers", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw new IOException("Failed while checking open buffers", cause);
+        } catch (TimeoutException e) {
+            throw new IOException("Timed out while checking open buffers", e);
+        }
+    }
+
+    private void completeReplace(
+            CompletableFuture<ReplaceResult> completion, int total, int changedFiles, List<Path> failedFiles) {
+        Runnable finish = () -> completion.complete(finishReplace(total, changedFiles, failedFiles));
+        if (Platform.isFxApplicationThread()) {
+            finish.run();
+        } else {
+            Platform.runLater(finish);
+        }
     }
 
     private void recordBeforeWrite(Path file, String original) {
@@ -497,7 +646,7 @@ final class SearchCoordinator {
         }
     }
 
-    private void finishReplace(int total, int changedFiles, List<Path> failedFiles) {
+    private ReplaceResult finishReplace(int total, int changedFiles, List<Path> failedFiles) {
         if (failedFiles.isEmpty()) {
             host.setStatus(tr("search.replaced", total, changedFiles));
         } else {
@@ -511,6 +660,14 @@ final class SearchCoordinator {
             host.setError(tr("search.replacePartial", total, changedFiles, failedFiles.size()) + ": " + paths);
         }
         panel.refresh();
+        return new ReplaceResult(total, changedFiles, failedFiles, false);
+    }
+
+    record ReplaceResult(int count, int changedFiles, List<Path> failedFiles, boolean cancelled) {
+
+        ReplaceResult {
+            failedFiles = List.copyOf(failedFiles);
+        }
     }
 
     record ClosedReplace(int count, boolean changed, boolean failed) {}
@@ -610,7 +767,11 @@ final class SearchCoordinator {
     }
 
     void shutdown() {
+        shutdown.set(true);
         service.shutdown();
         replaceExecutor.shutdownNow();
+        for (ReplaceJob queued : List.copyOf(queuedReplaces)) {
+            queued.abandon();
+        }
     }
 }

@@ -2,6 +2,7 @@ package com.editora.history;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Set;
 
@@ -49,6 +50,19 @@ class HistoryBlobStoreTest {
         assertNull(store.get("deadbeef"));
         assertNull(store.get(null));
         assertNull(store.get(""));
+    }
+
+    @Test
+    void getRejectsValidGzipStoredUnderTheWrongContentHash(@TempDir Path dir) throws Exception {
+        HistoryBlobStore store = new HistoryBlobStore(dir);
+        String actualSha = store.put("tampered history body");
+        String expectedSha = HistoryBlobStore.sha256("expected history body");
+        Path actual = dir.resolve(actualSha.substring(0, 2)).resolve(actualSha + ".txt.gz");
+        Path wrong = dir.resolve(expectedSha.substring(0, 2)).resolve(expectedSha + ".txt.gz");
+        Files.createDirectories(wrong.getParent());
+        Files.copy(actual, wrong, StandardCopyOption.REPLACE_EXISTING);
+
+        assertNull(store.get(expectedSha), "a readable but corrupted blob must never be restored as trusted text");
     }
 
     @Test

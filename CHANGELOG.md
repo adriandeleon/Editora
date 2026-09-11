@@ -9,9 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Local History garbage collection now preserves blobs written by an in-flight publication until its
+  complete index becomes durable.
 - Git file history now compares a selected revision with the editable working file on double-click or Enter,
   exposing the diff viewer's line, hunk, whole-file, Result, Undo, and Save controls. Full-repository Git logs
   retain their parent-to-commit inspection and add **Compare with Working Tree** to each file's menu.
+- Undo after distributed multi-cursor paste no longer fails when the edit batch shortens the document.
+- ACP agent writes to closed files now use staged atomic replacement, so an interrupted write preserves the
+  prior file instead of leaving it truncated or partially replaced; agent writes also respect read-only
+  buffers.
+- Remote SFTP saves now detect exact server-byte changes since the last open or successful save, prompt
+  before overwriting them, use a server-side atomic rename when supported, and retain the prior remote copy
+  when safe replacement is unavailable or interrupted.
+- Git branch switches, discard, and stash operations now invalidate overlapping pending editor saves before
+  and after the working tree changes; mixed tracked/untracked discards finish in order before clean buffers
+  reload, while dirty and deleted open copies remain recoverable.
+- LSP workspace resource edits now reject buffers changed, closed, or made read-only after filesystem staging,
+  cancel older queued saves, restore earlier text edits after an FX-side failure, and retain/report recovery
+  files instead of overwriting concurrent filesystem changes when rollback cannot complete.
+- Deleting files from the Project tree now resolves dirty-buffer Save/Discard/Cancel choices first, waits
+  for recoverable Local History to become durable, rejects changed preimages as one batch, and prevents a
+  pending save from recreating a deleted path.
+- Local File History restores now reject corrupted revision bodies, preserve files changed while a revision
+  is loading, use guarded document writes, and leave editor changes untouched when an asynchronous restore
+  becomes stale.
+- Replace in Files now preserves the disk copy when a formerly closed file opens during the operation,
+  reports history and decoding failures accurately, and keeps each open-buffer replacement separate from
+  the user's preceding undo history.
+- Closing a window or using Save As no longer cancels a newer in-flight save from another window editing the
+  same file through the same path, a normalized alias, a case alias, or a symlink.
+- Saving an existing file now fails without touching its bytes when Editora cannot create a safe staging
+  file, instead of falling back to an in-place write that could truncate the only disk copy.
 - Opening or restoring editable files no longer flashes the yellow **View Mode** banner or retains a stale
   **Read-Only** status while their content loads.
 - Sticky headers for long lines (such as generated HTML) no longer expand the editor beyond its viewport

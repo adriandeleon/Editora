@@ -2,21 +2,88 @@ package com.editora.config;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.AbstractExecutorService;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import com.editora.io.DelegatingFileOperations;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class ConfigWriterTest {
+
+    private static final class SubmissionObservingExecutor extends AbstractExecutorService {
+
+        private final ExecutorService delegate = Executors.newSingleThreadExecutor();
+        private final AtomicInteger submissions = new AtomicInteger();
+        private final CountDownLatch secondSubmission = new CountDownLatch(1);
+
+        @Override
+        public void execute(Runnable command) {
+            if (submissions.incrementAndGet() == 2) {
+                secondSubmission.countDown();
+            }
+            delegate.execute(command);
+        }
+
+        @Override
+        public void shutdown() {
+            delegate.shutdown();
+        }
+
+        @Override
+        public List<Runnable> shutdownNow() {
+            return delegate.shutdownNow();
+        }
+
+        @Override
+        public boolean isShutdown() {
+            return delegate.isShutdown();
+        }
+
+        @Override
+        public boolean isTerminated() {
+            return delegate.isTerminated();
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+            return delegate.awaitTermination(timeout, unit);
+        }
+
+        void awaitSecondSubmission() throws InterruptedException {
+            assertTrue(secondSubmission.await(5, TimeUnit.SECONDS));
+        }
+    }
+
+    private enum AtomicFailureStage {
+        TEMP_CREATION,
+        TEMP_WRITE,
+        BOTH_MOVES,
+        CLEANUP
+    }
 
     public static final class TimedShutdownProcess {
         public static void main(String[] args) throws Exception {
@@ -105,6 +172,106 @@ class ConfigWriterTest {
         assertEquals("new", Files.readString(file));
     }
 
+    @ParameterizedTest(name = "{0} failure preserves the previous configuration")
+    @EnumSource(AtomicFailureStage.class)
+    void atomicReplacementFailuresKeepThePreviousConfiguration(AtomicFailureStage stage, @TempDir Path dir)
+            throws IOException {
+        Path file = Files.writeString(dir.resolve("settings.json"), "previous configuration");
+        DelegatingFileOperations files = new DelegatingFileOperations() {
+            @Override
+            public Path createTempFile(Path directory, String prefix, String suffix, FileAttribute<?>... attributes)
+                    throws IOException {
+                if (stage == AtomicFailureStage.TEMP_CREATION) {
+                    throw new IOException("temp creation failed");
+                }
+                return super.createTempFile(directory, prefix, suffix, attributes);
+            }
+
+            @Override
+            public Path createTempFile(String prefix, String suffix, FileAttribute<?>... attributes)
+                    throws IOException {
+                if (stage == AtomicFailureStage.TEMP_CREATION) {
+                    throw new IOException("temp creation failed");
+                }
+                return super.createTempFile(prefix, suffix, attributes);
+            }
+
+            @Override
+            public void write(Path path, byte[] content) throws IOException {
+                if (stage == AtomicFailureStage.TEMP_WRITE || stage == AtomicFailureStage.CLEANUP) {
+                    Files.write(path, Arrays.copyOf(content, 3));
+                    throw new IOException("temp write failed");
+                }
+                super.write(path, content);
+            }
+
+            @Override
+            public void move(Path source, Path target, CopyOption... options) throws IOException {
+                if (stage == AtomicFailureStage.BOTH_MOVES) {
+                    throw new IOException("move failed");
+                }
+                super.move(source, target, options);
+            }
+
+            @Override
+            public boolean deleteIfExists(Path path) throws IOException {
+                if (stage == AtomicFailureStage.CLEANUP
+                        && path.getFileName().toString().startsWith(".settings.json-")) {
+                    throw new IOException("cleanup failed");
+                }
+                return super.deleteIfExists(path);
+            }
+        };
+
+        assertThrows(IOException.class, () -> ConfigWriter.writeAtomic(file, bytes("new configuration"), files));
+
+        assertEquals("previous configuration", Files.readString(file));
+        if (stage != AtomicFailureStage.CLEANUP) {
+            try (var entries = Files.list(dir)) {
+                assertEquals(1, entries.count(), "failed config staging must be cleaned up when possible");
+            }
+        }
+    }
+
+    @Test
+    void configAtomicMoveFailureUsesTheFallbackMove(@TempDir Path dir) throws IOException {
+        Path file = Files.writeString(dir.resolve("settings.json"), "previous");
+        AtomicInteger moves = new AtomicInteger();
+        DelegatingFileOperations files = new DelegatingFileOperations() {
+            @Override
+            public void move(Path source, Path target, CopyOption... options) throws IOException {
+                moves.incrementAndGet();
+                if (Arrays.asList(options).contains(StandardCopyOption.ATOMIC_MOVE)) {
+                    throw new IOException("atomic move unsupported");
+                }
+                super.move(source, target, options);
+            }
+        };
+
+        ConfigWriter.writeAtomic(file, bytes("replacement"), files);
+
+        assertEquals(2, moves.get());
+        assertEquals("replacement", Files.readString(file));
+    }
+
+    @Test
+    void configCleanupCannotOverrideAnAlreadyCommittedWrite(@TempDir Path dir) throws IOException {
+        Path file = Files.writeString(dir.resolve("settings.json"), "previous");
+        DelegatingFileOperations files = new DelegatingFileOperations() {
+            @Override
+            public boolean deleteIfExists(Path path) throws IOException {
+                if (path.getFileName().toString().startsWith(".settings.json-")) {
+                    throw new IOException("cleanup should not run after commit");
+                }
+                return super.deleteIfExists(path);
+            }
+        };
+
+        ConfigWriter.writeAtomic(file, bytes("replacement"), files);
+
+        assertEquals("replacement", Files.readString(file));
+    }
+
     @Test
     void enqueueThenFlushWritesLatestBytes(@TempDir Path dir) throws IOException {
         ConfigWriter w = new ConfigWriter();
@@ -149,6 +316,47 @@ class ConfigWriterTest {
         assertEquals(ConfigWriter.WriteOutcome.FAILED, outcome.get());
         assertFalse(Files.exists(file));
         assertFalse(w.flush(), "the rejected write must remain visible to the durability barrier");
+    }
+
+    @Test
+    void shutdownRejectsAWriteThatArrivesAtItsDurabilityBarrier(@TempDir Path dir) throws Exception {
+        SubmissionObservingExecutor io = new SubmissionObservingExecutor();
+        ConfigWriter writer = new ConfigWriter(io);
+        CountDownLatch claimed = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        writer.afterBatchClaimedForTest = () -> {
+            claimed.countDown();
+            try {
+                release.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        ExecutorService caller = Executors.newSingleThreadExecutor();
+
+        try {
+            writer.enqueue(dir.resolve("first.json"), bytes("first"));
+            assertTrue(claimed.await(5, TimeUnit.SECONDS));
+
+            Future<Boolean> shutdown = caller.submit(writer::shutdown);
+            io.awaitSecondSubmission();
+
+            java.util.concurrent.atomic.AtomicReference<ConfigWriter.WriteOutcome> lateOutcome =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            Path late = dir.resolve("late.json");
+            writer.enqueue(late, () -> bytes("late"), lateOutcome::set);
+            release.countDown();
+
+            assertFalse(
+                    shutdown.get(5, TimeUnit.SECONDS),
+                    "a write rejected during shutdown must be visible to the durability result");
+            assertEquals(ConfigWriter.WriteOutcome.FAILED, lateOutcome.get());
+            assertFalse(Files.exists(late), "shutdown must leave no accepted write running behind its barrier");
+        } finally {
+            release.countDown();
+            caller.shutdownNow();
+            io.shutdownNow();
+        }
     }
 
     @Test

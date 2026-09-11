@@ -173,14 +173,20 @@ class WorkspaceEditMapperTest {
     }
 
     @Test
-    void dependentRenameChainIsRefusedRatherThanAppliedAsSimultaneousMoves() {
+    void dependentRenameGraphsAreRefusedRatherThanAppliedAsSimultaneousMoves() {
         var first = new org.eclipse.lsp4j.RenameFile(uri("/tmp/A.java"), uri("/tmp/B.java"));
         var second = new org.eclipse.lsp4j.RenameFile(uri("/tmp/B.java"), uri("/tmp/C.java"));
-        WorkspaceEdit edit = new WorkspaceEdit(List.of(
+        WorkspaceEdit chain = new WorkspaceEdit(List.of(
                 Either.<TextDocumentEdit, ResourceOperation>forRight(first),
                 Either.<TextDocumentEdit, ResourceOperation>forRight(second)));
+        WorkspaceEdit swap = new WorkspaceEdit(List.of(
+                Either.<TextDocumentEdit, ResourceOperation>forRight(
+                        new org.eclipse.lsp4j.RenameFile(uri("/tmp/A.java"), uri("/tmp/B.java"))),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(
+                        new org.eclipse.lsp4j.RenameFile(uri("/tmp/B.java"), uri("/tmp/A.java")))));
 
-        assertNull(WorkspaceEditMapper.map(edit));
+        assertNull(WorkspaceEditMapper.map(chain));
+        assertNull(WorkspaceEditMapper.map(swap));
     }
 
     // --- LSP 3.18 snippet edits -----------------------------------------------------------------

@@ -1,7 +1,9 @@
 package com.editora.ui;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -9,6 +11,8 @@ import java.util.concurrent.TimeUnit;
 import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.DialogPane;
+import javafx.scene.control.Label;
+import javafx.scene.control.Tab;
 import javafx.stage.Window;
 
 import com.editora.editor.EditorBuffer;
@@ -28,6 +32,78 @@ class FileWorkflowSaveLifecycleFxTest {
     @BeforeAll
     static void boot() throws Exception {
         FxTestSupport.bootToolkit();
+    }
+
+    @Test
+    void failedSaveFromDirtyCloseKeepsTheLatestTextDirtyAndTheTabOpen(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            Path file = Files.writeString(dir.resolve("failed-close.txt"), "A");
+            EditorBuffer buffer = open(fx, file);
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            ExecutorService worker = FxTestSupport.field(workflows, "autoSaveExecutor");
+            CountDownLatch writeStarted = new CountDownLatch(1);
+            CountDownLatch releaseWrite = new CountDownLatch(1);
+            CountDownLatch promptSeen = new CountDownLatch(1);
+            async.onClose(releaseWrite::countDown);
+
+            workflows.setDocumentWriter((target, content, commit) -> {
+                Path staged =
+                        Files.createTempFile(target.getParent(), "." + target.getFileName() + ".", ".editora-tmp");
+                try {
+                    Files.write(staged, Arrays.copyOf(content, Math.min(2, content.length)));
+                    writeStarted.countDown();
+                    if (!releaseWrite.await(10, TimeUnit.SECONDS)) {
+                        throw new IOException("timed out waiting to fail the staged write");
+                    }
+                    throw new IOException("staged write failed");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("staged write interrupted", e);
+                } finally {
+                    Files.deleteIfExists(staged);
+                }
+            });
+
+            async.start("edit-during-failed-save", () -> {
+                async.await(writeStarted, "the document writer to start");
+                Platform.runLater(() -> {
+                    try {
+                        buffer.replaceWholeDocument("snapshot plus later edit");
+                    } finally {
+                        releaseWrite.countDown();
+                    }
+                });
+            });
+
+            Tab tab = FxTestSupport.callOnFx(() ->
+                    FxTestSupport.<EditorArea>field(fx.controller, "editorArea").selectedTab());
+            FxTestSupport.runOnFx(() -> {
+                buffer.replaceWholeDocument("snapshot");
+                Platform.runLater(() -> dismissAlert(tr("dialog.save"), promptSeen));
+                FxTestSupport.call(fx.controller, "closeTab", new Class<?>[] {Tab.class}, tab);
+            });
+            async.await(promptSeen, "the dirty-close Save choice");
+            async.awaitWorker(worker);
+            async.awaitFx();
+
+            assertEquals("A", Files.readString(file), "the original disk copy must survive");
+            assertEquals("snapshot plus later edit", FxTestSupport.callOnFx(buffer::getContent));
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty), "a failed save must not acknowledge any text");
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> FxTestSupport.<EditorArea>field(fx.controller, "editorArea")
+                            .tabs()
+                            .contains(tab)),
+                    "the failed Save choice must not close the dirty tab");
+            assertFalse(FxTestSupport.callOnFx(() -> workflows.hasPendingSave(buffer)));
+            assertEquals(tr("status.failedSave", "staged write failed"), FxTestSupport.callOnFx(() -> {
+                StatusBar status = FxTestSupport.field(fx.controller, "statusBar");
+                return FxTestSupport.<Label>field(status, "echo").getText();
+            }));
+            try (var entries = Files.list(dir)) {
+                assertEquals(1, entries.count(), "the failed staging file must not become a recovery hazard");
+            }
+        }
     }
 
     @Test

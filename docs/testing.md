@@ -36,7 +36,16 @@ prototype platform's input/rendering limitations don't apply.
   run on the **classpath** as the unnamed module, so `setAccessible` is unrestricted.
 - **`FxWindowFixture`** builds a real window via `WindowManager.buildWindowForTest()` — a
   package-private seam mirroring `buildWindow` — against a temp config dir. **If that boot path
-  changes, the fixture/seam must track it.**
+  changes, the fixture/seam must track it.** Its idempotent `dispose` force-releases controller,
+  plugin, shared-config, and temporary-file resources without opening user-facing close prompts.
+- For tests with workers or deferred FX callbacks, own the fixture and any test threads with
+  **`AsyncTestScope`**. Use its worker/Future, latch, and FX barriers instead of `Thread.sleep`; the
+  scope reports exceptions from its threads and uncaught FX callbacks before closing every owned
+  resource.
+- Persistence tests should hold work at a real commit boundary and assert the surviving bytes and editor
+  state, rather than merely checking that an exception was thrown. The save-ordering, atomic-write, Replace
+  in Files, and Local File History restore tests use the app-wide document-write sequencer and injected I/O
+  boundaries to cover stale completion, concurrent changes, and failed replacement without timing sleeps.
 
 ### The surefire config that makes it work
 

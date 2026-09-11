@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -13,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
@@ -37,6 +39,12 @@ import static com.editora.i18n.Messages.tr;
 /** Owns file loading, saving, autosave and elevated-save workflows. */
 final class FileWorkflowCoordinator {
 
+    @FunctionalInterface
+    interface DocumentWriter {
+
+        boolean write(Path target, byte[] bytes, BooleanSupplier commit) throws IOException;
+    }
+
     private record SaveRequest(
             EditorBuffer buffer,
             Path target,
@@ -50,6 +58,14 @@ final class FileWorkflowCoordinator {
     private record DiskWrite(long modifiedMillis, long size) {}
 
     private record CommittedSave(long sequence, Path target, String content, byte[] bytes, DiskWrite disk) {}
+
+    private record RemoteWritePlan(boolean proceed, byte[] expectedBytes) {}
+
+    private enum RemoteSaveChoice {
+        RELOAD,
+        OVERWRITE,
+        CANCEL
+    }
 
     private record AdminResult(int exit, String error, long modifiedMillis, long size) {}
 
@@ -140,11 +156,18 @@ final class FileWorkflowCoordinator {
     private final Set<SaveRequest> activeSaveRequests = ConcurrentHashMap.newKeySet();
     private final AtomicLong saveSequence = new AtomicLong();
 
+    /** Local-document persistence boundary. Package-visible replacement supports deterministic faults. */
+    private volatile DocumentWriter documentWriter = com.editora.io.AtomicFileWrite::writeIf;
+
     /** Test seam for holding an actual write worker while proving the FX thread remains responsive. */
     volatile Runnable beforeDocumentWriteForTest;
 
     FileWorkflowCoordinator(Host host) {
         this.host = host;
+    }
+
+    void setDocumentWriter(DocumentWriter documentWriter) {
+        this.documentWriter = java.util.Objects.requireNonNull(documentWriter, "documentWriter");
     }
 
     static final String AUTOSAVE_OFF = "off";
@@ -250,6 +273,17 @@ final class FileWorkflowCoordinator {
                 Platform.runLater(() -> host.failAsyncOpen(tab, buffer, file, e));
             }
         });
+    }
+
+    /** Runs an action after an asynchronous buffer load reaches the FX thread, or now if it already has. */
+    void afterBufferLoad(EditorBuffer buffer, Runnable action) {
+        if (loadingBuffers.contains(buffer)) {
+            afterBufferLoad
+                    .computeIfAbsent(buffer, ignored -> new ArrayList<>())
+                    .add(action);
+        } else {
+            action.run();
+        }
     }
 
     /** Opens {@code file} in a read-only {@link ImageViewerPane} tab (raster images render, not their bytes). */
@@ -373,7 +407,8 @@ final class FileWorkflowCoordinator {
             boolean truncated,
             boolean log,
             long logOffset,
-            boolean tail) {}
+            boolean tail,
+            byte[] sourceBytes) {}
 
     /** Document shape computed while the decoded text is already in background-thread memory. */
     record TextStats(int lines, int maxLineLength) {}
@@ -430,7 +465,8 @@ final class FileWorkflowCoordinator {
                         true,
                         isLog,
                         0,
-                        false);
+                        false,
+                        null);
             }
             if (isLog) {
                 // A huge log opens at its END (the tail is what matters) instead of the first chunk.
@@ -453,7 +489,8 @@ final class FileWorkflowCoordinator {
                         true,
                         true,
                         tail.offset(),
-                        true);
+                        true,
+                        null);
             }
             String content = readCapped(file, (int) EditorBuffer.HUGE_FILE_BYTES);
             TextStats stats = textStats(content);
@@ -473,7 +510,8 @@ final class FileWorkflowCoordinator {
                     true,
                     false,
                     0,
-                    false);
+                    false,
+                    null);
         }
         byte[] bytes = Files.readAllBytes(file);
         if (sniffBinary) {
@@ -497,7 +535,8 @@ final class FileWorkflowCoordinator {
                         false,
                         false,
                         0,
-                        false);
+                        false,
+                        bytes);
             }
         }
         String charset = com.editora.editorconfig.EditorConfigCharset.resolveName(bytes, editorConfig.charset());
@@ -525,12 +564,16 @@ final class FileWorkflowCoordinator {
                 false,
                 isLog,
                 size,
-                false);
+                false,
+                bytes);
     }
 
     /** Applies a prepared document atomically on the FX thread, with all expensive-mode flags already active. */
     String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load) {
-        buffer.setDiskSnapshot(load.mtime(), load.size());
+        buffer.setDiskSnapshot(
+                load.mtime(),
+                load.size(),
+                com.editora.vfs.Vfs.isRemote(load.file()) ? fingerprint(load.sourceBytes()) : null);
         buffer.setTruncatedLoad(load.truncated());
         host.editorSettings().applyResolvedEditorConfig(buffer, load.editorConfig());
         buffer.setDetectedCharset(load.charset());
@@ -664,19 +707,25 @@ final class FileWorkflowCoordinator {
         Path file = buffer.getPath();
         invalidatePendingWrite(file);
         try {
-            CodeArea area = buffer.getArea();
-            int caret = area.getCaretPosition();
-            host.historyCoordinator()
-                    .record(buffer, HistoryRevision.REASON_EXTERNAL); // snapshot the in-memory version before disk wins
-            String note = loadInto(buffer, file); // replaces content + re-baselines the disk snapshot
-            buffer.markClean();
-            area.moveTo(Math.min(caret, area.getLength()));
-            host.updateTabMeta(tab, buffer);
-            host.lspCoordinator().watchedFilesReloaded(java.util.List.of(file)); // the server's model too (#677)
-            host.setStatus(note.isEmpty() ? tr("status.reloaded", file.getFileName()) : note);
+            applyPreparedReload(tab, buffer, prepareLoad(file, false));
         } catch (IOException e) {
             host.setStatus(tr("status.failedReload", file.getFileName(), e.getMessage()));
         }
+    }
+
+    /** Applies bytes prepared off-thread after the user explicitly chooses the external copy. FX thread. */
+    private void applyPreparedReload(Tab tab, EditorBuffer buffer, PreparedLoad load) {
+        CodeArea area = buffer.getArea();
+        int caret = area.getCaretPosition();
+        host.historyCoordinator()
+                .record(buffer, HistoryRevision.REASON_EXTERNAL); // snapshot the in-memory version before disk wins
+        String note = applyPreparedLoad(buffer, load);
+        notePerfContentLoaded(buffer);
+        buffer.markClean();
+        area.moveTo(Math.min(caret, area.getLength()));
+        host.updateTabMeta(tab, buffer);
+        host.lspCoordinator().watchedFilesReloaded(java.util.List.of(load.file()));
+        host.setStatus(note.isEmpty() ? tr("status.reloaded", load.file().getFileName()) : note);
     }
 
     void onSave() {
@@ -967,7 +1016,7 @@ final class FileWorkflowCoordinator {
     }
 
     private boolean applySaveAsTarget(EditorBuffer buffer, Path file, boolean synchronous) {
-        invalidatePendingWrite(buffer.getPath());
+        invalidatePendingWrites(buffer);
         buffer.setPath(file);
         // The buffer's EditorConfig properties + charset were resolved against the OLD path. Without
         // re-resolving, a Save-As into another tree writes with the previous project's charset/EOL/trim rules
@@ -1083,6 +1132,18 @@ final class FileWorkflowCoordinator {
         return com.editora.editorconfig.EditorConfigCharset.encode(text, charset);
     }
 
+    private static String fingerprint(byte[] bytes) {
+        if (bytes == null) {
+            return null;
+        }
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
+    }
+
     boolean writeBuffer(EditorBuffer buffer, Path file) {
         SaveRequest request = captureSave(buffer, file);
         try {
@@ -1161,20 +1222,114 @@ final class FileWorkflowCoordinator {
         return request;
     }
 
-    private DiskWrite writeToDisk(SaveRequest request) throws IOException {
+    private DiskWrite writeToDisk(SaveRequest request, byte[] expectedRemoteBytes) throws IOException {
         Runnable hook = beforeDocumentWriteForTest;
         if (hook != null) {
             hook.run();
         }
-        if (!com.editora.io.AtomicFileWrite.writeIf(request.target(), request.bytes(), request.ticket()::isCurrent)) {
+        boolean written = expectedRemoteBytes != null
+                ? com.editora.io.AtomicFileWrite.replaceIfUnchanged(
+                        request.target(), expectedRemoteBytes, request.bytes(), request.ticket()::isCurrent)
+                : documentWriter.write(request.target(), request.bytes(), request.ticket()::isCurrent);
+        if (!written) {
             return null;
         }
         return new DiskWrite(lastModifiedMillis(request.target()), fileSize(request.target()));
     }
 
+    /**
+     * Reads the remote file off the FX thread and compares it with the last successfully loaded/saved bytes.
+     * The returned preimage is checked again at the atomic replacement boundary, closing the gap between
+     * conflict detection and commit.
+     */
+    private RemoteWritePlan prepareRemoteWrite(SaveRequest request) throws IOException {
+        PreparedLoad current = prepareLoad(request.target(), false);
+        byte[] currentBytes = current.sourceBytes();
+        CommittedSave ownCommit = committedSaves.get(com.editora.config.PathKeys.key(request.target()));
+        boolean ownCommitAwaitingFx = ownCommit != null
+                && ownCommit.sequence() < request.sequence()
+                && activeSaveRequests.stream()
+                        .anyMatch(active ->
+                                active.buffer() == request.buffer() && active.sequence() == ownCommit.sequence());
+        boolean changed = ownCommitAwaitingFx
+                ? !java.util.Arrays.equals(ownCommit.bytes(), currentBytes)
+                : request.diskSnapshot().differsFrom(current.mtime(), current.size(), fingerprint(currentBytes));
+        if (!changed) {
+            return new RemoteWritePlan(true, currentBytes);
+        }
+        RemoteSaveChoice choice = promptRemoteSaveConflict(request, current);
+        return new RemoteWritePlan(choice == RemoteSaveChoice.OVERWRITE, currentBytes);
+    }
+
+    private RemoteSaveChoice promptRemoteSaveConflict(SaveRequest request, PreparedLoad current) throws IOException {
+        CompletableFuture<RemoteSaveChoice> choice = new CompletableFuture<>();
+        Platform.runLater(() -> {
+            try {
+                EditorBuffer buffer = request.buffer();
+                if (buffer.isDisposed()
+                        || buffer.getPath() == null
+                        || !com.editora.config.PathKeys.sameNormalized(buffer.getPath(), request.target())
+                        || !request.ticket().isCurrent()) {
+                    choice.complete(RemoteSaveChoice.CANCEL);
+                    return;
+                }
+                Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+                alert.initOwner(host.stage());
+                alert.setTitle(tr("dialog.externalChange.title"));
+                alert.setHeaderText(
+                        tr("dialog.externalChange.header", request.target().getFileName()));
+                alert.setContentText(tr("dialog.externalChange.dirty"));
+                ButtonType reload = new ButtonType(tr("dialog.externalChange.reload"), ButtonBar.ButtonData.LEFT);
+                ButtonType overwrite =
+                        new ButtonType(tr("dialog.externalChange.keepMine"), ButtonBar.ButtonData.OK_DONE);
+                ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+                alert.getButtonTypes().setAll(reload, overwrite, cancel);
+                ButtonType selected = alert.showAndWait().orElse(cancel);
+                if (selected == reload) {
+                    invalidatePendingWrite(request.target());
+                    Tab tab = host.editorArea().tabs().stream()
+                            .filter(candidate -> host.bufferOf(candidate) == buffer)
+                            .findFirst()
+                            .orElse(null);
+                    if (tab != null) {
+                        applyPreparedReload(tab, buffer, current);
+                    }
+                    choice.complete(RemoteSaveChoice.RELOAD);
+                } else {
+                    choice.complete(selected == overwrite ? RemoteSaveChoice.OVERWRITE : RemoteSaveChoice.CANCEL);
+                }
+            } catch (Throwable failure) {
+                choice.completeExceptionally(failure);
+            }
+        });
+        try {
+            return choice.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while resolving a remote save conflict", e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw new IOException("Failed to resolve a remote save conflict", cause);
+        }
+    }
+
     /** Invalidates queued or staged writes when a buffer stops representing this path. */
     void invalidatePendingWrite(Path file) {
         host.config().shared().documentWrites().supersede(file);
+        if (file != null) {
+            committedSaves.remove(com.editora.config.PathKeys.key(file));
+        }
+    }
+
+    /** Cancels saves captured from one buffer without invalidating another window's newer path ticket. */
+    void invalidatePendingWrites(EditorBuffer buffer) {
+        List.copyOf(activeSaveRequests).stream()
+                .filter(request -> request.buffer() == buffer)
+                .forEach(request -> request.ticket().invalidate());
+        Path file = buffer.getPath();
         if (file != null) {
             committedSaves.remove(com.editora.config.PathKeys.key(file));
         }
@@ -1187,7 +1342,8 @@ final class FileWorkflowCoordinator {
     private void writeAsync(SaveRequest request, boolean autoSave, CompletableFuture<Boolean> completed) {
         try {
             var outcome = request.ticket().runIfCurrent(() -> {
-                if (autoSave) {
+                boolean remote = com.editora.vfs.Vfs.isRemote(request.target());
+                if (autoSave && !remote) {
                     long modified = lastModifiedMillis(request.target());
                     long size = fileSize(request.target());
                     boolean ownCommit = hasOwnCommitMetadata(request.target(), modified, size);
@@ -1197,7 +1353,22 @@ final class FileWorkflowCoordinator {
                         return null;
                     }
                 }
-                return writeToDisk(request);
+                while (request.ticket().isCurrent()) {
+                    RemoteWritePlan plan = remote ? prepareRemoteWrite(request) : new RemoteWritePlan(true, null);
+                    if (!plan.proceed()) {
+                        return null;
+                    }
+                    DiskWrite disk = writeToDisk(request, plan.expectedBytes());
+                    if (disk != null
+                            || !remote
+                            || plan.expectedBytes() == null
+                            || !request.ticket().isCurrent()) {
+                        return disk;
+                    }
+                    // The remote content changed after preflight but before replacement. Read the new
+                    // preimage and ask again instead of overwriting a change the user never saw.
+                }
+                return null;
             });
             DiskWrite disk = outcome.executed() ? outcome.value() : null;
             if (disk != null) {
@@ -1295,7 +1466,9 @@ final class FileWorkflowCoordinator {
         }
         buffer.acknowledgeSavedContent(committed.content());
         buffer.setDiskSnapshot(
-                committed.disk().modifiedMillis(), committed.disk().size());
+                committed.disk().modifiedMillis(),
+                committed.disk().size(),
+                com.editora.vfs.Vfs.isRemote(committed.target()) ? fingerprint(committed.bytes()) : null);
     }
 
     boolean hasPendingSave(EditorBuffer buffer) {

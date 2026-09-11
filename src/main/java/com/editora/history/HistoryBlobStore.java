@@ -98,7 +98,8 @@ public final class HistoryBlobStore {
             return null;
         }
         try (InputStream in = new GZIPInputStream(Files.newInputStream(file))) {
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            String content = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            return sha.equals(sha256(content)) ? content : null;
         } catch (IOException e) {
             return null;
         }

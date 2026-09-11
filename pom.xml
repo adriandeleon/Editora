@@ -1100,6 +1100,8 @@
                                             requires org.slf4j;
                                             exports org.apache.sshd.sftp;
                                             exports org.apache.sshd.sftp.client;
+                                            exports org.apache.sshd.sftp.client.extensions;
+                                            exports org.apache.sshd.sftp.client.extensions.openssh;
                                             exports org.apache.sshd.sftp.client.fs;
                                             exports org.apache.sshd.sftp.common;
                                             provides java.nio.file.spi.FileSystemProvider

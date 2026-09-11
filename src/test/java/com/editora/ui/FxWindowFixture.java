@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -20,12 +21,14 @@ import com.editora.config.SharedConfig;
  * <p>Usage: {@code FxTestSupport.bootToolkit()} once, then {@code FxWindowFixture.create()} per test class
  * (the build is ~100–300 ms), and {@link #dispose()} after.
  */
-final class FxWindowFixture {
+final class FxWindowFixture implements AutoCloseable {
 
     final Path configDir;
     final SharedConfig shared;
     final WindowManager windowManager;
     final MainController controller;
+
+    private boolean disposed;
 
     private FxWindowFixture(Path configDir, SharedConfig shared, WindowManager wm, MainController controller) {
         this.configDir = configDir;
@@ -108,34 +111,115 @@ final class FxWindowFixture {
         });
     }
 
-    /** Hide the window and delete the temp config dir. Programmatic close() doesn't fire onCloseRequest. */
-    void dispose() throws Exception {
-        FxTestSupport.runOnFx(() -> {
-            try {
-                FxTestSupport.<javafx.stage.Stage>field(controller, "stage").close();
-            } catch (RuntimeException ignored) {
-                // best-effort teardown
-            }
-        });
-        // Drain any queued async config writes (settings.json/session) before deleting the temp dir —
-        // otherwise the ConfigWriter's temp-file + ATOMIC_MOVE can race the delete and throw
-        // NoSuchFileException, an intermittent test error.
-        shared.flushWrites();
-        deleteRecursively(configDir);
+    /**
+     * Force-dispose the test window without invoking user-facing close prompts, then stop every resource
+     * owner created by this fixture before deleting its config directory.
+     */
+    synchronized void dispose() throws Exception {
+        if (disposed) {
+            return;
+        }
+        disposed = true;
+        Exception failure = null;
+        try {
+            FxTestSupport.runOnFx(() -> {
+                RuntimeException cleanupFailure = null;
+                List<?> holders = List.copyOf(FxTestSupport.<List<?>>field(windowManager, "windows"));
+                for (Object holder : holders) {
+                    MainController ownedController =
+                            (MainController) FxTestSupport.call(holder, "controller", new Class<?>[] {});
+                    javafx.stage.Stage ownedStage =
+                            (javafx.stage.Stage) FxTestSupport.call(holder, "stage", new Class<?>[] {});
+                    try {
+                        ownedController.disposePlugins();
+                    } catch (RuntimeException e) {
+                        cleanupFailure = combineRuntime(cleanupFailure, e);
+                    }
+                    try {
+                        ownedController.disposeWindow();
+                    } catch (RuntimeException e) {
+                        cleanupFailure = combineRuntime(cleanupFailure, e);
+                    }
+                    try {
+                        ownedStage.close();
+                    } catch (RuntimeException e) {
+                        cleanupFailure = combineRuntime(cleanupFailure, e);
+                    }
+                }
+                try {
+                    FxTestSupport.<com.editora.plugin.PluginManager>field(windowManager, "pluginManager")
+                            .closeAll();
+                } catch (RuntimeException e) {
+                    cleanupFailure = combineRuntime(cleanupFailure, e);
+                }
+                if (cleanupFailure != null) {
+                    throw cleanupFailure;
+                }
+            });
+        } catch (Exception e) {
+            failure = e;
+        }
+        try {
+            // Controller shutdown can release worker completions that were already queued for the FX thread.
+            // Let those callbacks observe sessionClosed before shutting down the shared config writer.
+            FxTestSupport.drainFx();
+        } catch (Exception e) {
+            failure = combine(failure, e);
+        }
+        try {
+            shared.shutdown();
+        } catch (RuntimeException e) {
+            failure = combine(failure, e);
+        }
+        try {
+            deleteRecursively(configDir);
+        } catch (IOException e) {
+            failure = combine(failure, e);
+        }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    @Override
+    public void close() throws Exception {
+        dispose();
+    }
+
+    private static Exception combine(Exception first, Exception next) {
+        if (first == null) {
+            return next;
+        }
+        first.addSuppressed(next);
+        return first;
+    }
+
+    private static RuntimeException combineRuntime(RuntimeException first, RuntimeException next) {
+        if (first == null) {
+            return next;
+        }
+        first.addSuppressed(next);
+        return first;
     }
 
     private static void deleteRecursively(Path root) throws IOException {
-        if (!Files.exists(root)) {
-            return;
-        }
-        try (Stream<Path> paths = Files.walk(root)) {
-            paths.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.deleteIfExists(p);
-                } catch (IOException ignored) {
-                    // leftover temp files are harmless
+        IOException failure = null;
+        for (int attempt = 0; attempt < 4 && Files.exists(root); attempt++) {
+            try (Stream<Path> paths = Files.walk(root)) {
+                for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(path);
                 }
-            });
+                failure = null;
+            } catch (IOException e) {
+                failure = e;
+            } catch (UncheckedIOException e) {
+                // Files.walk wraps a file disappearing during traversal. Retry the whole tree; a persistent
+                // resource leak still fails below when the root remains after the bounded attempts.
+                failure = e.getCause();
+            }
+        }
+        if (Files.exists(root)) {
+            throw failure == null ? new IOException("Failed to delete test directory " + root) : failure;
         }
     }
 }
