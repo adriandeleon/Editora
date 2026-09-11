@@ -7693,11 +7693,13 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void unsplit() {
         EditorBuffer buffer = activeBuffer();
-        if (buffer != null) {
+        boolean bufferWasSplit = buffer != null && buffer.getSplit() != EditorBuffer.Split.NONE;
+        boolean groupsWereSplit = editorArea.unsplit();
+        if (bufferWasSplit) {
             buffer.setSplit(EditorBuffer.Split.NONE);
-            refreshSplitButtons();
-            setStatus(tr("status.editorUnsplit"));
         }
+        refreshSplitButtons();
+        setStatus(tr(groupsWereSplit ? "status.editorGroupsMerged" : "status.editorUnsplit"));
     }
 
     /**
