@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -30,6 +31,7 @@ import com.editora.config.AgentSessionHistory;
 import com.editora.config.PathKeys;
 import com.editora.editor.EditorBuffer;
 import com.editora.git.RelativeTime;
+import com.editora.io.AtomicFileWrite;
 import com.editora.process.ProcessRunner;
 import org.fxmisc.richtext.CodeArea;
 
@@ -91,6 +93,7 @@ final class AgentCoordinator implements AcpClient.Host {
 
     private final CoordinatorHost host;
     private final Ops ops;
+    private final AtomicFileWrite.FileOperations documentFiles;
     /** Spawning the agent runs a login-shell PATH probe + process start — keep it off the FX thread. */
     private final ExecutorService lifecycleExec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "acp-agent-lifecycle");
@@ -118,8 +121,14 @@ final class AgentCoordinator implements AcpClient.Host {
     private final Map<String, Boolean> agentAvailableCache = new ConcurrentHashMap<>();
 
     AgentCoordinator(CoordinatorHost host, Ops ops) {
+        this(host, ops, AtomicFileWrite.systemFileOperations());
+    }
+
+    /** Filesystem boundary for deterministic document-write failures; production uses the JDK-backed implementation. */
+    AgentCoordinator(CoordinatorHost host, Ops ops, AtomicFileWrite.FileOperations documentFiles) {
         this.host = host;
         this.ops = ops;
+        this.documentFiles = java.util.Objects.requireNonNull(documentFiles, "documentFiles");
     }
 
     /** Whether the AI Agent is enabled (the master AI kill switch + the feature's own setting,
@@ -787,19 +796,25 @@ final class AgentCoordinator implements AcpClient.Host {
         String body = content == null ? "" : content;
         EditorBuffer open = fxCall(() -> ops.bufferForPath(path));
         if (open != null) {
-            // Undoable, review-first: the buffer goes dirty and the user saves (one C-z reverts the edit).
-            fxCall(() -> {
+            boolean applied = fxCall(() -> {
+                if (!open.isEditable()) {
+                    return false;
+                }
+                // Undoable, review-first: the buffer goes dirty and the user saves (one C-z reverts the edit).
                 open.getArea().replaceText(body);
                 host.setStatus(tr("status.agent.editedBuffer", open.getTitle()));
-                return null;
+                return true;
             });
+            if (!applied) {
+                throw new IOException("Cannot apply an agent edit to read-only buffer " + path);
+            }
             return;
         }
         Path file = Path.of(path);
         if (file.getParent() != null) {
-            Files.createDirectories(file.getParent());
+            documentFiles.createDirectories(file.getParent());
         }
-        Files.writeString(file, body);
+        AtomicFileWrite.writeIf(file, body.getBytes(StandardCharsets.UTF_8), () -> true, documentFiles);
         // No open buffer matched this path (a brand-new file, or an unsaved/untitled buffer the agent
         // couldn't have targeted since it has no path yet) — open it as a background tab so the user
         // actually sees what the agent wrote, instead of it only landing on disk with no visible tab.

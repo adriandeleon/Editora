@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git file history now compares a selected revision with the editable working file on double-click or Enter,
   exposing the diff viewer's line, hunk, whole-file, Result, Undo, and Save controls. Full-repository Git logs
   retain their parent-to-commit inspection and add **Compare with Working Tree** to each file's menu.
+- Undo after distributed multi-cursor paste no longer fails when the edit batch shortens the document.
+- ACP agent writes to closed files now use staged atomic replacement, so an interrupted write preserves the
+  prior file instead of leaving it truncated or partially replaced; agent writes also respect read-only
+  buffers.
 - Remote SFTP saves now detect exact server-byte changes since the last open or successful save, prompt
   before overwriting them, use a server-side atomic rename when supported, and retain the prior remote copy
   when safe replacement is unavailable or interrupted.

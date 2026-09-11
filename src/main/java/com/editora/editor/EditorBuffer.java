@@ -974,8 +974,12 @@ public class EditorBuffer implements TabContent {
         configureSettledEditDispatcher();
         settledEditSub = area.multiPlainChanges().subscribe(changes -> {
             for (var change : changes) {
-                int line = area.offsetToPosition(
-                                change.getPosition(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                // Multi-change undo reports each replacement in the coordinate space where that
+                // replacement ran. After a batch of deletions, an earlier high offset can therefore lie
+                // beyond the final shortened document even though the batch is valid. The earliest dirty
+                // line only needs the surviving edit boundary, so clamp before resolving it.
+                int position = Math.min(change.getPosition(), area.getLength());
+                int line = area.offsetToPosition(position, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
                         .getMajor();
                 dirtyFromLine = Math.min(dirtyFromLine, line);
             }
