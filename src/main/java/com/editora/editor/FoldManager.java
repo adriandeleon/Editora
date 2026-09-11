@@ -28,13 +28,17 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.shape.SVGPath;
+import javafx.scene.text.Text;
 
 import com.editora.editor.FoldRegions.Region;
 import org.fxmisc.richtext.CharacterHit;
 import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.StyleSpan;
+import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
 
 /**
@@ -139,6 +143,8 @@ public final class FoldManager {
     private final Tooltip linePreview = new Tooltip();
     /** Paragraph whose preview is currently showing, or -1 when hidden. */
     private int previewPar = -1;
+    /** Current preview foreground, also exposed as a looked-up color to plain styled-text runs. */
+    private Color previewForeground = Color.web("#24292f");
 
     public FoldManager(CodeArea area) {
         this(area, area::getText);
@@ -249,6 +255,7 @@ public final class FoldManager {
      * popup that the scene's editor-theme stylesheet doesn't reach, so the colors are set inline.
      */
     public void setPreviewColors(Color background, Color foreground) {
+        previewForeground = foreground;
         Color border = background.interpolate(foreground, 0.3);
         linePreview.setStyle("-fx-background-color: " + hex(background) + ";"
                 + "-fx-text-fill: " + hex(foreground) + ";"
@@ -272,7 +279,8 @@ public final class FoldManager {
         if (par >= 0 && byStart.containsKey(par) && isCollapsed(par)) {
             if (par != previewPar || !linePreview.isShowing()) {
                 previewPar = par;
-                linePreview.setText(foldPreview(byStart.get(par)));
+                linePreview.setText(null);
+                linePreview.setGraphic(foldPreviewGraphic(byStart.get(par)));
                 linePreview.show(area, e.getScreenX() + 12, e.getScreenY() + 16);
             }
         } else {
@@ -1284,21 +1292,73 @@ public final class FoldManager {
         return new Group(svg);
     }
 
-    /** The collapsed region's text (header through end line), capped at {@link #PREVIEW_LINES}. */
-    private String foldPreview(Region region) {
+    /**
+     * The collapsed region rendered from the editor's already-applied style spans, capped at
+     * {@link #PREVIEW_LINES}. Reading those spans is both cheaper and safer than re-tokenizing on the FX
+     * thread: TextMate grammars are shared with the background highlighter and are not thread-safe.
+     */
+    Node foldPreviewGraphic(Region region) {
         int total = area.getParagraphs().size();
         int last = Math.min(region.endLine(), region.startLine() + PREVIEW_LINES - 1);
-        StringBuilder sb = new StringBuilder();
+        VBox lines = new VBox();
+        lines.getStyleClass().add("fold-preview-content");
+        lines.setStyle("-fold-preview-foreground: " + hex(previewForeground) + ";");
+        if (area.getScene() != null) {
+            // A Tooltip owns a separate popup scene, so it cannot inherit the editor theme. Copy the live
+            // scene's app, syntax, and selected editor-theme stylesheets onto the graphic itself.
+            lines.getStylesheets().setAll(area.getScene().getStylesheets());
+        }
         for (int p = region.startLine(); p <= last && p < total; p++) {
-            if (p > region.startLine()) {
-                sb.append('\n');
-            }
-            sb.append(area.getParagraph(p).getText());
+            lines.getChildren().add(styledLine(p));
         }
         if (region.endLine() > last) {
-            sb.append("\n…");
+            lines.getChildren().add(textRun("…", null));
         }
-        return sb.toString();
+        return lines;
+    }
+
+    /** One logical line split into the same styled text runs the editor displays. */
+    private HBox styledLine(int paragraph) {
+        HBox line = new HBox();
+        String raw = area.getParagraph(paragraph).getText();
+        StyleSpans<Collection<String>> spans;
+        try {
+            spans = area.getStyleSpans(paragraph);
+        } catch (RuntimeException ex) {
+            spans = null; // a transient styling mismatch must not make the fold preview disappear
+        }
+        if (spans == null) {
+            line.getChildren().add(textRun(raw, null));
+            return line;
+        }
+        int pos = 0;
+        for (StyleSpan<Collection<String>> span : spans) {
+            if (pos >= raw.length()) {
+                break;
+            }
+            int end = Math.min(raw.length(), pos + span.getLength());
+            if (end > pos) {
+                line.getChildren().add(textRun(raw.substring(pos, end), span.getStyle()));
+            }
+            pos = end;
+        }
+        if (pos < raw.length()) {
+            line.getChildren().add(textRun(raw.substring(pos), null));
+        }
+        if (line.getChildren().isEmpty()) {
+            // Preserve blank logical lines. An empty Text has no layout height and would collapse the row.
+            line.getChildren().add(textRun("\u200b", null));
+        }
+        return line;
+    }
+
+    private static Text textRun(String value, Collection<String> styles) {
+        Text text = new Text(value);
+        text.getStyleClass().add("text");
+        if (styles != null) {
+            text.getStyleClass().addAll(styles);
+        }
+        return text;
     }
 
     private static String formatLineNo(int line, int total) {
