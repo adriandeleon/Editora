@@ -305,22 +305,9 @@ class EditorGroupsFxTest {
     void tabTitlesDoNotInheritTheEditorFont() throws Exception {
         Tab tab = addBuffer();
 
-        String family = FxTestSupport.callOnFx(() -> {
-            javafx.scene.Node graphic = tab.getGraphic();
-            graphic.applyCss();
-            for (javafx.scene.Node n : ((javafx.scene.layout.HBox) graphic).getChildren()) {
-                if (n instanceof javafx.scene.control.Label label
-                        && label.getStyleClass().contains("tab-title")) {
-                    return label.getFont().getFamily();
-                }
-            }
-            return null;
-        });
+        String family = renderedTabFont(tab, null).getFamily();
 
-        org.junit.jupiter.api.Assertions.assertNotNull(family, "the tab header has a .tab-title label");
-        assertFalse(
-                family.contains("JetBrains Mono"),
-                "tab titles must use the UI font, not the editor's monospace — was: " + family);
+        assertEquals("Inter", family, "tab titles must pin the UI font instead of inheriting from content");
 
         cleanUp();
     }
@@ -330,24 +317,35 @@ class EditorGroupsFxTest {
     void ordinaryTabTitlesDoNotInheritItalicStyle() throws Exception {
         Tab tab = addBuffer();
 
-        String style = FxTestSupport.callOnFx(() -> {
-            javafx.scene.Node graphic = tab.getGraphic();
-            graphic.setStyle("-fx-font-style: italic;");
-            graphic.applyCss();
-            return ((javafx.scene.layout.HBox) graphic)
-                    .getChildren().stream()
-                            .filter(javafx.scene.control.Label.class::isInstance)
-                            .map(javafx.scene.control.Label.class::cast)
-                            .filter(label -> label.getStyleClass().contains("tab-title"))
-                            .map(label -> label.getFont().getStyle())
-                            .findFirst()
-                            .orElse(null);
-        });
+        String style = renderedTabFont(tab, "-fx-font-family: 'JetBrains Mono'; -fx-font-style: italic;")
+                .getStyle();
 
-        org.junit.jupiter.api.Assertions.assertNotNull(style, "the tab header has a .tab-title label");
         assertFalse(style.toLowerCase(java.util.Locale.ROOT).contains("italic"), "ordinary tab was: " + style);
 
         cleanUp();
+    }
+
+    /** Returns the font on the label inside the live TabPane skin, after production CSS and layout. */
+    private javafx.scene.text.Font renderedTabFont(Tab tab, String inheritedStyle) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            javafx.stage.Window window = tab.getTabPane().getScene().getWindow();
+            String uiFont =
+                    com.editora.App.class.getResource("styles/ui-font.css").toExternalForm();
+            if (!window.getScene().getStylesheets().contains(uiFont)) {
+                window.getScene().getStylesheets().add(uiFont);
+            }
+            if (inheritedStyle != null) {
+                tab.getTabPane().setStyle(inheritedStyle);
+            }
+            window.getScene().getRoot().applyCss();
+            window.getScene().getRoot().layout();
+            return tab.getTabPane().lookupAll(".tab-title").stream()
+                    .filter(javafx.scene.control.Label.class::isInstance)
+                    .map(javafx.scene.control.Label.class::cast)
+                    .map(javafx.scene.control.Label::getFont)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("the rendered tab header has a .tab-title label"));
+        });
     }
 
     /** An unsplit area writes no layout at all, so an unsplit session file is byte-identical to before. */
