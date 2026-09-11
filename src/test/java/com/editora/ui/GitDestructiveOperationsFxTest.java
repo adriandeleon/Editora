@@ -373,7 +373,11 @@ class GitDestructiveOperationsFxTest {
                     .findFirst()
                     .ifPresent(type -> {
                         pressed.countDown();
-                        ((Button) pane.lookupButton(type)).fire();
+                        Button button = (Button) pane.lookupButton(type);
+                        if (tr("dialog.discard").equals(type.getText())) {
+                            assertTrue(button.getStyleClass().contains("danger"));
+                        }
+                        button.fire();
                     });
         }
     }

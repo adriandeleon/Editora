@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Color Save buttons green and Discard buttons red throughout the application, while neutral actions such as Cancel retain their existing appearance.
+
 ## [0.18.1] - 2026-09-10
 
 ### Fixed

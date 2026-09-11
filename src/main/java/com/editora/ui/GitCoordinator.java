@@ -13,6 +13,7 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
@@ -550,12 +551,14 @@ final class GitCoordinator {
         if (repoRoot == null || (tracked.isEmpty() && untracked.isEmpty())) {
             return;
         }
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION, discardPrompt(tracked, untracked), ButtonType.OK, ButtonType.CANCEL);
+        ButtonType discard = new ButtonType(tr("dialog.discard"), ButtonBar.ButtonData.OK_DONE);
+        Alert confirm =
+                new Alert(Alert.AlertType.CONFIRMATION, discardPrompt(tracked, untracked), discard, ButtonType.CANCEL);
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.discard.title"));
         confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+        confirm.getDialogPane().lookupButton(discard).getStyleClass().add("danger");
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != discard) {
             return;
         }
         List<String> affected = new ArrayList<>(tracked.size() + untracked.size());

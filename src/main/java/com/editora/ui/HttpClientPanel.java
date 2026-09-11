@@ -129,6 +129,7 @@ public final class HttpClientPanel extends VBox {
         openTabButton.setDisable(true);
         openTabButton.setOnAction(e -> withSelected(onOpenInTab));
         saveButton.setText(tr("httppanel.save"));
+        saveButton.getStyleClass().add("success");
         saveButton.setDisable(true);
         saveButton.setOnAction(e -> {
             if (onSaveResponse != null) {

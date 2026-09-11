@@ -646,6 +646,7 @@ public final class DiffViewerPane implements TabContent {
             onSave.run();
             saveButton.setDisable(true);
         });
+        saveButton.getStyleClass().add("success");
         updateEditButtons();
         editResultButton.setGraphic(Icons.edit());
         editResultButton.setAccessibleText(tr("diff.editResult"));
