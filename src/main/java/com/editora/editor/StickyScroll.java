@@ -60,4 +60,31 @@ public final class StickyScroll {
     public static List<Integer> headerLines(List<Region> regions, int firstVisible) {
         return headerLines(regions, firstVisible, DEFAULT_MAX);
     }
+
+    /**
+     * The first viewport line that leaves {@code target} unobscured by the pinned headers above it.
+     *
+     * <p>Navigation surfaces commonly put their destination at the top of the viewport. That position is
+     * underneath this overlay whenever the destination is inside a fold region. Work backwards by the
+     * number of headers that the resulting viewport would pin; iterating matters near a nested scope's
+     * header, where moving the viewport up can make that scope visible and remove it from the pinned set.
+     */
+    public static int navigationFirstVisible(List<Region> regions, int target, int max) {
+        int clampedTarget = Math.max(0, target);
+        int firstVisible = clampedTarget;
+        for (int i = 0; i <= Math.max(0, max); i++) {
+            int candidate = Math.max(
+                    0, clampedTarget - headerLines(regions, firstVisible, max).size());
+            if (candidate == firstVisible) {
+                return candidate;
+            }
+            firstVisible = candidate;
+        }
+        return firstVisible;
+    }
+
+    /** As {@link #navigationFirstVisible(List, int, int)} with {@link #DEFAULT_MAX}. */
+    public static int navigationFirstVisible(List<Region> regions, int target) {
+        return navigationFirstVisible(regions, target, DEFAULT_MAX);
+    }
 }

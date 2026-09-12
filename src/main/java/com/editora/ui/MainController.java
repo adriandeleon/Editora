@@ -1668,25 +1668,26 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.deleted", path.getFileName()));
     }
 
-    /** Moves the active editor's caret to {@code line} and anchors it at the top of the viewport. */
+    /** Moves the active editor's caret to {@code line} and anchors it below any sticky-scroll rows. */
     private void navigateToLine(int line) {
         EditorBuffer buffer = activeBuffer();
         CodeArea area = activeArea();
-        if (area == null || line < 0 || line >= area.getParagraphs().size()) {
+        if (buffer == null
+                || area == null
+                || line < 0
+                || line >= area.getParagraphs().size()) {
             return;
         }
         NavigationHistory.Location origin = navigation.navigating ? null : navigation.captureCurrent();
         // Reveal the target if it's hidden inside a collapsed fold, so we don't scroll to a hidden line.
-        if (buffer != null) {
-            buffer.getFoldManager().unfoldContaining(line);
-        }
+        buffer.getFoldManager().unfoldContaining(line);
         area.moveTo(line, 0);
-        if (!navigation.navigating && buffer != null && buffer.getPath() != null) {
+        if (!navigation.navigating && buffer.getPath() != null) {
             navigation.recordJump(origin, new NavigationHistory.Location(buffer.getPath(), line, 0));
         }
         Platform.runLater(() -> {
             try {
-                area.showParagraphAtTop(line);
+                buffer.showParagraphAtTopClearOfStickyScroll(area, line);
             } catch (RuntimeException ignored) {
                 // Viewport not ready; ignore.
             }

@@ -1329,6 +1329,16 @@ public class EditorBuffer implements TabContent {
         return stickyScrollEnabled;
     }
 
+    /**
+     * Places a navigation target at the top of the usable editor viewport, below any sticky-scroll rows.
+     * Call after moving the caret and after the editor has been laid out.
+     */
+    public void showParagraphAtTopClearOfStickyScroll(CodeArea targetArea, int line) {
+        int firstVisible =
+                stickyScrollEnabled ? StickyScroll.navigationFirstVisible(folds.regions(), line) : Math.max(0, line);
+        targetArea.showParagraphAtTop(firstVisible);
+    }
+
     /** Package-visible for the FX test: what is pinned right now, as 0-based lines. */
     java.util.List<Integer> stickyScrollLines() {
         return stickyLines;

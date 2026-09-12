@@ -443,15 +443,17 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return;
         }
         CodeArea area = buffer.getArea();
+        EditorBuffer targetBuffer = buffer;
         int line = item.getValue().line();
         if (line < 0 || line >= area.getParagraphs().size()) {
             return;
         }
         area.moveTo(line, 0);
-        // Anchor the target line at the top of the viewport (deferred until layout is ready).
+        // Anchor the target at the top of the usable viewport, below any sticky-scroll rows (deferred
+        // until layout is ready).
         Platform.runLater(() -> {
             try {
-                area.showParagraphAtTop(line);
+                targetBuffer.showParagraphAtTopClearOfStickyScroll(area, line);
             } catch (RuntimeException ignored) {
                 // Viewport not ready; ignore.
             }

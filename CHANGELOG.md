@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Changed the Emacs `C-x 1` command so that, when the editor is already unsplit, it closes every open tool
   window, including floating windows.
+- Structure, Bookmark, and Personal Note navigation now keep the selected line visible below sticky-scroll
+  headers instead of placing it underneath the overlay.
 
 ## [0.18.2] - 2026-09-11
 
