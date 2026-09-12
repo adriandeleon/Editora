@@ -456,9 +456,12 @@ class EditorGroupsFxTest {
     void emacsUnsplitCommandCollapsesEditorGroupsAndTheActiveBuffersSecondView() throws Exception {
         addBuffer();
         Tab active = addBuffer();
+        ToolWindowManager toolWindows = FxTestSupport.field(fx.controller, "toolWindows");
+        ToolWindow project = FxTestSupport.field(fx.controller, "projectToolWindow");
         FxTestSupport.runOnFx(() -> {
             area.splitActive(Orientation.HORIZONTAL);
             ((EditorBuffer) active.getUserData()).setSplit(EditorBuffer.Split.SIDE_BY_SIDE);
+            toolWindows.open(project);
             CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
             registry.run("view.unsplit");
         });
@@ -468,6 +471,17 @@ class EditorGroupsFxTest {
                 EditorBuffer.Split.NONE,
                 FxTestSupport.callOnFx(() -> ((EditorBuffer) active.getUserData()).getSplit()),
                 "C-x 1 also collapses the active document's second view");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> toolWindows.isOpen(project)), "the first C-x 1 keeps tool windows open");
+
+        FxTestSupport.runOnFx(() -> {
+            CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+            registry.run("view.unsplit");
+        });
+
+        assertTrue(
+                FxTestSupport.callOnFx(() -> toolWindows.getOpenToolWindows().isEmpty()),
+                "C-x 1 closes every tool window once the editor is unsplit");
 
         cleanUp();
     }

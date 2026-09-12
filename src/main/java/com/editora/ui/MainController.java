@@ -7698,15 +7698,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (bufferWasSplit) {
             buffer.setSplit(EditorBuffer.Split.NONE);
         }
+        if (!groupsWereSplit && !bufferWasSplit) {
+            toolWindows.closeAllOpen();
+        }
         refreshSplitButtons();
         setStatus(tr(groupsWereSplit ? "status.editorGroupsMerged" : "status.editorUnsplit"));
     }
 
-    /**
-     * Moves the active tab into a new editor group beside its own, so two different files show at once.
-     * Refused with a status when there is nothing to move or only one tab in the group — moving the only
-     * tab would empty its group, collapse it, and land back where it started.
-     */
+    /** Moves the active tab into a new group; refuses when that would immediately empty and collapse its group. */
     private void splitEditorGroup(Orientation orientation) {
         if (editorArea.splitActive(orientation)) {
             setStatus(tr("status.editorGroupSplit"));
@@ -7720,7 +7719,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr(editorArea.moveActiveToNextGroup() ? "status.editorGroupMoved" : "status.editorGroupNone"));
     }
 
-    /** Moves keyboard focus to the next editor group. */
     private void focusNextEditorGroup() {
         if (!editorArea.focusNextGroup()) {
             setStatus(tr("status.editorGroupNotSplit"));
