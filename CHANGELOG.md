@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Changed the Emacs `C-x 1` command so that, when the editor is already unsplit, it closes every open tool
+  window, including floating windows.
+
 ## [0.18.2] - 2026-09-11
 
 - Added Emacs tool-window keys: `C-x 0` closes the current window, `C-x ^` grows the bottom window (`C-u C-x
