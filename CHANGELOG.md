@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-09-11
+
+- Added Project Map session options to keep the current zoom while opening folders and focus newly created
+  columns independently.
 - Changed the Emacs `C-x 1` command so that, when the editor is already unsplit, it closes every open tool
   window, including floating windows.
 - Structure, Bookmark, and Personal Note navigation now keep the selected line visible below sticky-scroll
