@@ -3891,8 +3891,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void runTestAtCaret(boolean classLevel) {
-            testNavigation.runTestAtCaret(classLevel);
+        public void runTestAtCaret(boolean classLevel, boolean debug) {
+            testNavigation.runTestAtCaret(classLevel, debug);
         }
 
         @Override
@@ -5350,6 +5350,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public TestRunCoordinator testRunCoordinator() {
+                    return testRunCoordinator;
+                }
+
+                @Override
                 public LspCoordinator lspCoordinator() {
                     return lspCoordinator;
                 }
@@ -6572,9 +6577,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         return "";
     }
 
-    /** The IntelliJ-style Test Results feature: it hooks each build coordinator (see the injection where the
-     *  tool windows are built) and builds the results tree from a recognized {@code test} run. See
-     *  {@link TestRunCoordinator}. */
+    /** Builds IntelliJ-style Test Results from recognized build-tool test runs. */
     private final TestRunCoordinator testRunCoordinator =
             new TestRunCoordinator(coordinatorHost, new TestRunCoordinator.Ops() {
                 @Override
@@ -6618,7 +6621,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void attachDebugger(String className, String host, int port) {
-                    // Anchor the session on the test's own source when we can find it, else the active buffer.
                     String hint = com.editora.test.TestSourceLocator.fileHint(className, BuildTool.MAVEN);
                     Path anchor = hint == null ? null : testNavigation.resolveTestSourceFile(hint);
                     if (anchor == null) {
@@ -7939,14 +7941,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setHttpRunHandler(line -> httpClient.runRequest(buffer, line)); // .http request ▶
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
-        // Makefile-run rides the same Run-feature gate as Java/Python/shell (setRunEnabled above).
         buffer.setTestRunHandler(testNavigation::runSingleTest); // JUnit class/method gutter ▶ → the build tool
+        buffer.setTestDebugHandler(testNavigation::debugSingleTest); // editor menu → suspended test + debugger attach
         testNavigation.applyTestGutter(
                 buffer); // gated by the Test Runner feature + a detected JVM (Maven/Gradle) project
         buffer.setMainRunHandler(m -> runCoordinator.runMainClassNamed(m.fqn())); // project main() ▶ → run
         buffer.setMainDebugHandler(m -> debugCoordinator.debugMainClassNamed(m.fqn())); // editor menu → debug
         testNavigation.applyMainGutter(buffer); // gated by not-Simple + local + JVM project + Java run/debug available
-        // Debugging: the breakpoint gutter gate + change/hover hooks (debuggable languages only).
         debugCoordinator.wireBuffer(buffer);
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
         buffer.setNotesEnabled(notesCoordinator.isEnabled());

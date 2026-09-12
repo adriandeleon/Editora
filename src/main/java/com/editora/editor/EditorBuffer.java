@@ -572,6 +572,8 @@ public class EditorBuffer implements TabContent {
     private java.util.Map<Integer, com.editora.test.JavaTestScanner.TestTarget> testLines = java.util.Map.of();
     /** Fired with a test target when its gutter ▶ is clicked (runs one class/method via the build tool). */
     private java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> testRunHandler = t -> {};
+    /** Fired with a test target from the editor context menu (debugs one class/method via the build tool). */
+    private java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> testDebugHandler = t -> {};
     /** Main-method gutter gate (a Java file in a Maven/Gradle project with run/debug available), pushed by
      *  MainController. When on, {@code public static void main} lines get a green ▶ to run the project class. */
     private boolean mainGutterEnabled;
@@ -2099,14 +2101,19 @@ public class EditorBuffer implements TabContent {
         contextMenu.getStyleClass().add("editor-context-menu");
         area.setOnContextMenuRequested(e -> {
             List<MenuItem> items = new java.util.ArrayList<>();
-            // A JUnit test file runs its tests ("Run Tests", blue ▶ matching the gutter) rather than the
-            // generic green "Run File"; anything else runnable (compact Java source / Python script) keeps it.
-            com.editora.test.JavaTestScanner.TestTarget classTarget = testClassTarget();
-            if (classTarget != null) {
-                MenuItem runTests = new MenuItem(tr("editmenu.runTests"));
+            // A JUnit test file runs/debugs the method at the caret (or the class from its declaration)
+            // rather than offering generic "Run File"; anything else runnable keeps that generic action.
+            com.editora.test.JavaTestScanner.TestTarget testTarget = testTargetAtCaret(false);
+            if (testTarget != null) {
+                boolean method = testTarget.methodName() != null;
+                MenuItem runTests = new MenuItem(tr(method ? "editmenu.runTestMethod" : "editmenu.runTests"));
                 runTests.setGraphic(FoldManager.runGlyph("test-run-marker")); // blue, matching the test gutter ▶
-                runTests.setOnAction(ev -> testRunHandler.accept(classTarget));
-                items.add(runTests);
+                runTests.setOnAction(ev -> testRunHandler.accept(testTarget));
+                MenuItem debugTest =
+                        new MenuItem(tr(method ? "testrunner.menu.debugTest" : "testrunner.menu.debugClass"));
+                debugTest.setGraphic(MenuIcons.debug());
+                debugTest.setOnAction(ev -> testDebugHandler.accept(testTarget));
+                items.addAll(java.util.List.of(runTests, debugTest));
                 items.add(new SeparatorMenuItem());
             } else if (runnable && runHandler != null) {
                 MenuItem run = new MenuItem(tr("command.file.run"));
@@ -3777,6 +3784,11 @@ public class EditorBuffer implements TabContent {
     /** Injects the handler run with the clicked test target (class ▶ has {@code methodName == null}). */
     public void setTestRunHandler(java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> handler) {
         this.testRunHandler = handler == null ? t -> {} : handler;
+    }
+
+    /** Injects the handler that debugs the test class/method selected by the editor context menu. */
+    public void setTestDebugHandler(java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> handler) {
+        this.testDebugHandler = handler == null ? t -> {} : handler;
     }
 
     /** Gate for the project {@code main}-method gutter ▶ (a Java file in a Maven/Gradle project with run/debug

@@ -44,6 +44,8 @@ final class TestNavigationCoordinator {
 
         RunCoordinator runCoordinator();
 
+        TestRunCoordinator testRunCoordinator();
+
         LspCoordinator lspCoordinator();
 
         boolean isLocalBuffer(EditorBuffer b);
@@ -270,15 +272,30 @@ final class TestNavigationCoordinator {
         host.setStatus(tr("status.testrunner.noBuildTool"));
     }
 
-    /** {@code test.runAtCaret} (method) / {@code test.runClassAtCaret} (whole class) at the caret. */
-    void runTestAtCaret(boolean classLevel) {
+    /** Runs/debugs a test method (or its whole class) at the caret. */
+    void runTestAtCaret(boolean classLevel, boolean debug) {
         EditorBuffer b = host.activeBuffer();
         com.editora.test.JavaTestScanner.TestTarget target = b == null ? null : b.testTargetAtCaret(classLevel);
         if (target == null) {
             host.setStatus(tr("status.testrunner.noTestAtCaret"));
             return;
         }
-        runSingleTest(target);
+        if (debug) {
+            debugSingleTest(target);
+        } else {
+            runSingleTest(target);
+        }
+    }
+
+    /** Editor context-menu path for a scanned JUnit class/method. */
+    void debugSingleTest(com.editora.test.JavaTestScanner.TestTarget target) {
+        for (BuildCoordinator c : host.buildCoordinators()) {
+            if ((c.tool() == BuildTool.MAVEN || c.tool() == BuildTool.GRADLE) && c.isEnabled() && c.isDetected()) {
+                host.testRunCoordinator().debugSingleTest(c.tool(), target, args -> c.runTask(args, List.of()));
+                return;
+            }
+        }
+        host.setStatus(tr("status.testrunner.noBuildTool"));
     }
 
     /** Gates the Test Results tool window: hidden when the feature is off or in Simple UI mode (it becomes
