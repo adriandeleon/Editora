@@ -76,4 +76,22 @@ class StickyScrollTest {
         assertEquals(
                 StickyScroll.DEFAULT_MAX, StickyScroll.headerLines(deep, 50).size());
     }
+
+    @Test
+    void navigationLeavesOneRowForEachPinnedHeader() {
+        assertEquals(22, StickyScroll.navigationFirstVisible(NESTED, 25, 5));
+    }
+
+    @Test
+    void navigationRecomputesClearanceWhenItRevealsANestedHeader() {
+        // Moving up from line 21 initially needs three rows, but that exposes the if header. The class and
+        // method remain pinned, so line 19 is the stable viewport start and line 21 stays visible below them.
+        assertEquals(19, StickyScroll.navigationFirstVisible(NESTED, 21, 5));
+    }
+
+    @Test
+    void navigationNeedsNoClearanceWithoutPinnedHeaders() {
+        assertEquals(250, StickyScroll.navigationFirstVisible(NESTED, 250, 5));
+        assertEquals(0, StickyScroll.navigationFirstVisible(NESTED, -4, 5));
+    }
 }
