@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added editor context-menu and command-palette actions to debug the JUnit test method at the caret through
+  Maven or Gradle, with automatic attachment to the suspended test JVM.
+
 ## [0.18.3] - 2026-09-11
 
 - Added Project Map session options to keep the current zoom while opening folders and focus newly created

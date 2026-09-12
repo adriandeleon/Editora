@@ -212,7 +212,7 @@ final class WindowCommandRegistrar {
 
         void runTestsForContext();
 
-        void runTestAtCaret(boolean classLevel);
+        void runTestAtCaret(boolean classLevel, boolean debug);
 
         void applyTestRunner();
 
@@ -1614,8 +1614,9 @@ final class WindowCommandRegistrar {
         // Test Results (IntelliJ-style test runner): intercepts a build tool's `test` run. Gated by the
         // "Enable Test Results" setting (default on) + suppressed in Simple UI mode.
         host.registry().register(Command.of("test.run", host::runTestsForContext));
-        host.registry().register(Command.of("test.runAtCaret", () -> host.runTestAtCaret(false)));
-        host.registry().register(Command.of("test.runClassAtCaret", () -> host.runTestAtCaret(true)));
+        host.registry().register(Command.of("test.runAtCaret", () -> host.runTestAtCaret(false, false)));
+        host.registry().register(Command.of("test.runClassAtCaret", () -> host.runTestAtCaret(true, false)));
+        host.registry().register(Command.of("test.debugAtCaret", () -> host.runTestAtCaret(false, true)));
         host.registry().register(Command.of("test.rerun", host.testRunCoordinator()::rerun));
         host.registry().register(Command.of("test.rerunFailed", host.testRunCoordinator()::rerunFailed));
         host.registry().register(Command.of("test.stop", host.testRunCoordinator()::stop));

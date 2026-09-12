@@ -538,6 +538,23 @@ final class TestRunCoordinator implements TestRunHook {
         runOne(node, true);
     }
 
+    /** Editor action: debug one scanned JUnit class/method without requiring a previous test-results row. */
+    void debugSingleTest(
+            BuildTool tool, JavaTestScanner.TestTarget target, java.util.function.Consumer<List<String>> launch) {
+        if (!ops.debugAvailable()) {
+            host.setStatus(tr("status.debug.unavailable"));
+            return;
+        }
+        List<String> args = TestDebug.debugTaskArgs(tool, target.className(), target.methodName());
+        if (args.isEmpty()) {
+            host.setStatus(tr("status.testrunner.debugUnsupported"));
+            return;
+        }
+        host.setStatus(tr("status.testrunner.debugWaiting"));
+        launch.accept(args);
+        armDebugger(target.className());
+    }
+
     private void runOne(TestNode node, boolean debug) {
         if (node == null || currentRun == null || node.className() == null) {
             return;
@@ -554,16 +571,24 @@ final class TestRunCoordinator implements TestRunHook {
         Path dir = currentRun.workingDir();
         List<String> toggles = currentRun.toggleArgs();
         if (debug) {
-            host.setStatus(tr("status.testrunner.debugWaiting"));
+            startDebugRun(tool, dir, args, toggles, node.className());
+        } else {
+            ops.runTest(tool, dir, args, toggles);
         }
+    }
+
+    private void startDebugRun(BuildTool tool, Path dir, List<String> args, List<String> toggles, String className) {
+        host.setStatus(tr("status.testrunner.debugWaiting"));
         ops.runTest(tool, dir, args, toggles);
-        if (debug) {
-            // Set AFTER the launch: ops.runTest re-enters onTestRunStart synchronously, which resets the
-            // per-run state (including this flag) — arming it beforehand would be wiped before the JVM ever
-            // printed its JDWP banner. Surefire/Gradle fork the test JVM suspended; onTestOutput sees the
-            // banner and attaches.
-            awaitingAttachFor = node.className();
-        }
+        armDebugger(className);
+    }
+
+    private void armDebugger(String className) {
+        // Set AFTER the launch: ops.runTest re-enters onTestRunStart synchronously, which resets the
+        // per-run state (including this flag) — arming it beforehand would be wiped before the JVM ever
+        // printed its JDWP banner. Surefire/Gradle fork the test JVM suspended; onTestOutput sees the
+        // banner and attaches.
+        awaitingAttachFor = className;
     }
 
     /** {@code test.showOnlyFailed}: open the window and narrow the tree to failures/errors. */
