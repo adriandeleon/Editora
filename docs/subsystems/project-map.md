@@ -103,6 +103,10 @@ The bottom-left controls provide zoom out, the current percentage, zoom in, Fit,
 and Reset. Reset restores 100% zoom and clears manual column positions and locks. Initial content is
 automatically fitted once the surface has usable dimensions.
 
+The filter row also has default-on **Keep current zoom** and **Focus new column** session options.
+Opening a folder therefore preserves the user's scale while centering the newly created column. Either
+effect can be disabled independently; disabling zoom preservation restores fit-to-content on expansion.
+
 ## Filters, ordering, and state
 
 The Project tool window's search field becomes the map's global fuzzy name query. It combines with:

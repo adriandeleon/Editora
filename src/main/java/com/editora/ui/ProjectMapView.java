@@ -97,6 +97,8 @@ final class ProjectMapView extends VBox {
     private final ToggleButton bookmarksFilter = filterButton("project.map.filter.bookmarks");
     private final ToggleButton personalNotesFilter = filterButton("project.map.filter.personalNotes");
     private final ToggleButton hideOpenNotes = filterButton("project.map.filter.hideOpenNotes");
+    private final CheckBox keepZoomOnOpen = navigationOption("project.map.navigation.keepZoom");
+    private final CheckBox focusNewColumn = navigationOption("project.map.navigation.focusNewColumn");
     private final ComboBox<ProjectMapModel.TypeFilter> typeFilter = new ComboBox<>();
     private final ComboBox<FlowDirection> flowFilter = new ComboBox<>();
     private final Button backButton = new Button("‹");
@@ -237,6 +239,8 @@ final class ProjectMapView extends VBox {
             button.setOnAction(event -> updateFilters());
         }
         hideOpenNotes.setOnAction(event -> updateNotePreviewVisibility());
+        keepZoomOnOpen.setOnAction(event -> surface.setKeepZoomOnColumnOpen(keepZoomOnOpen.isSelected()));
+        focusNewColumn.setOnAction(event -> surface.setFocusNewColumn(focusNewColumn.isSelected()));
         typeFilter.setOnAction(event -> updateFilters());
         flowFilter.setOnAction(event -> {
             FlowDirection flow = flowFilter.getValue();
@@ -254,6 +258,8 @@ final class ProjectMapView extends VBox {
                 bookmarksFilter,
                 personalNotesFilter,
                 hideOpenNotes,
+                keepZoomOnOpen,
+                focusNewColumn,
                 typeFilter,
                 flowFilter,
                 clear);
@@ -327,6 +333,13 @@ final class ProjectMapView extends VBox {
         ToggleButton button = new ToggleButton(tr(key));
         button.getStyleClass().add("project-map-filter-chip");
         return button;
+    }
+
+    private static CheckBox navigationOption(String key) {
+        CheckBox option = new CheckBox(tr(key));
+        option.getStyleClass().add("project-map-navigation-option");
+        option.setSelected(true);
+        return option;
     }
 
     private static ListCell<ProjectMapModel.TypeFilter> typeCell() {
@@ -1082,6 +1095,8 @@ final class ProjectMapView extends VBox {
         private Function<ProjectMapModel.Entry, ContextMenu> contextMenuFactory = entry -> null;
         private Runnable onZoomChanged = () -> {};
         private double zoom = 1.0;
+        private boolean keepZoomOnColumnOpen = true;
+        private boolean focusNewColumn = true;
         private double offsetX;
         private double offsetY;
         private double pressX;
@@ -1100,7 +1115,6 @@ final class ProjectMapView extends VBox {
         private boolean viewportRepaintPending;
         private boolean viewportInitialized;
         private boolean initialFitPending;
-        private int laidOutColumnCount;
         private int lastPaintedConnectorCount;
         private long completedPaints;
 
@@ -1219,12 +1233,13 @@ final class ProjectMapView extends VBox {
         }
 
         void setEntries(List<ProjectMapModel.Entry> entries, Set<Path> expanded) {
-            int oldColumnCount = laidOutColumnCount;
-            this.entries = entries == null ? List.of() : List.copyOf(entries);
-            laidOutColumnCount = this.entries.stream()
+            Set<ProjectMapModel.ColumnId> oldColumnIds = this.entries.stream()
                     .map(entry -> new ProjectMapModel.ColumnId(entry.depth(), entry.parent()))
-                    .collect(java.util.stream.Collectors.toSet())
-                    .size();
+                    .collect(java.util.stream.Collectors.toSet());
+            this.entries = entries == null ? List.of() : List.copyOf(entries);
+            Set<ProjectMapModel.ColumnId> newColumnIds = this.entries.stream()
+                    .map(entry -> new ProjectMapModel.ColumnId(entry.depth(), entry.parent()))
+                    .collect(java.util.stream.Collectors.toSet());
             measuredLabelWidths.clear();
             expandedSnapshot = expanded == null ? Set.of() : Set.copyOf(expanded);
             clearNodeTooltip();
@@ -1242,11 +1257,42 @@ final class ProjectMapView extends VBox {
                 viewportInitialized = true;
                 initialFitPending = true;
                 Platform.runLater(this::fitIfPending);
-            } else if (laidOutColumnCount > oldColumnCount) {
-                // A freshly opened column should arrive inside the viewport and keep the complete path
-                // centred. This also prevents reverse/vertical flows from placing it above existing cards.
-                Platform.runLater(this::fitContent);
+            } else {
+                newColumnIds.removeAll(oldColumnIds);
+                newColumnIds.stream()
+                        .max(java.util.Comparator.comparingInt(ProjectMapModel.ColumnId::depth))
+                        .ifPresent(id -> Platform.runLater(() -> showOpenedColumn(id)));
             }
+        }
+
+        void setKeepZoomOnColumnOpen(boolean keep) {
+            keepZoomOnColumnOpen = keep;
+        }
+
+        void setFocusNewColumn(boolean focus) {
+            focusNewColumn = focus;
+        }
+
+        private void showOpenedColumn(ProjectMapModel.ColumnId id) {
+            if (!keepZoomOnColumnOpen) {
+                fitContent();
+            }
+            if (focusNewColumn) {
+                centerColumn(id);
+            }
+        }
+
+        private void centerColumn(ProjectMapModel.ColumnId id) {
+            ColumnBox box = columnBoxes.stream()
+                    .filter(candidate -> candidate.column().id().equals(id))
+                    .findFirst()
+                    .orElse(null);
+            if (box == null) {
+                return;
+            }
+            offsetX += getWidth() / 2 - (box.x() + box.width() / 2);
+            offsetY += getHeight() / 2 - (box.y() + box.height() / 2);
+            repaint();
         }
 
         void resetForRoot() {

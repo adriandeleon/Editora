@@ -478,6 +478,59 @@ class ProjectMapViewFxTest {
     }
 
     @Test
+    void openingAColumnKeepsZoomAndFocusesTheNewColumnByDefault() throws Exception {
+        Path project = root.toAbsolutePath().normalize();
+        Path src = project.resolve("src");
+        Path main = src.resolve("Main.java");
+        List<ProjectMapModel.Entry> collapsed = List.of(
+                new ProjectMapModel.Entry(project, null, 0, true), new ProjectMapModel.Entry(src, project, 1, true));
+        List<ProjectMapModel.Entry> expanded =
+                List.of(collapsed.get(0), collapsed.get(1), new ProjectMapModel.Entry(main, src, 2, false));
+        double[] zoomBeforeExpansion = new double[1];
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                new Scene(mapView, 900, 600);
+                mapView.resize(900, 600);
+                mapView.layout();
+                CheckBox keepZoom = FxTestSupport.field(mapView, "keepZoomOnOpen");
+                CheckBox focusColumn = FxTestSupport.field(mapView, "focusNewColumn");
+                assertTrue(keepZoom.isSelected());
+                assertTrue(focusColumn.isSelected());
+
+                Region surface = FxTestSupport.field(mapView, "surface");
+                surface.resize(900, 530);
+                FxTestSupport.call(
+                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, collapsed, Set.of(project));
+            });
+            FxTestSupport.runOnFx(() -> {
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(surface, "zoomBy", new Class<?>[] {double.class}, 0.7);
+                zoomBeforeExpansion[0] = FxTestSupport.field(surface, "zoom");
+                FxTestSupport.call(
+                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, expanded, Set.of(project, src));
+            });
+            FxTestSupport.runOnFx(() -> {
+                Region surface = FxTestSupport.field(mapView, "surface");
+                assertEquals(zoomBeforeExpansion[0], (double) FxTestSupport.field(surface, "zoom"), 0.001);
+                Object newColumn = columnBoxForParent(surface, src);
+                assertEquals(surface.getWidth() / 2, center(newColumn, "x", "width"), 0.001);
+                assertEquals(surface.getHeight() / 2, center(newColumn, "y", "height"), 0.001);
+
+                CheckBox keepZoom = FxTestSupport.field(mapView, "keepZoomOnOpen");
+                CheckBox focusColumn = FxTestSupport.field(mapView, "focusNewColumn");
+                keepZoom.fire();
+                focusColumn.fire();
+                assertFalse((boolean) FxTestSupport.field(surface, "keepZoomOnColumnOpen"));
+                assertFalse((boolean) FxTestSupport.field(surface, "focusNewColumn"));
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
+    @Test
     void siblingBranchColumnsStayOpenWithoutOverlapAndExposeIndependentCloseButtons() throws Exception {
         Path src = root.resolve("src").toAbsolutePath().normalize();
         Path docs = root.resolve("docs").toAbsolutePath().normalize();
