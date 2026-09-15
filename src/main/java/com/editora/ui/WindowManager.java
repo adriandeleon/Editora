@@ -743,15 +743,12 @@ public class WindowManager {
             primaryStage = null; // only the first window reuses the JavaFX primary stage
             // Before anything else touches the stage: initStyle throws once a stage has been shown, and
             // this is read per window at construction, which is why the setting applies on restart.
-            if (ExtendedWindow.enabled(
-                    shared.getSettings().isExtendedWindow(),
-                    System.getProperty("os.name"),
-                    ExtendedWindow.previewEnabled())) {
+            if (ExtendedWindow.enabled(shared.getSettings().isExtendedWindow(), System.getProperty("os.name"))) {
                 try {
                     stage.initStyle(StageStyle.EXTENDED);
                 } catch (RuntimeException e) {
-                    // Belt as well as braces: the gate above already checks the preview flag, but a window
-                    // is not something a chrome preference gets to prevent. Fall back to a decorated one.
+                    // A window is not something a chrome preference gets to prevent. Fall back to a
+                    // decorated one if the platform rejects extended decorations despite the OS gate.
                     java.util.logging.Logger.getLogger(WindowManager.class.getName())
                             .log(
                                     java.util.logging.Level.WARNING,

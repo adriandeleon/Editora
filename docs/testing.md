@@ -21,8 +21,8 @@ JavaFX code so it can be tested directly.
 ## The headless-FX harness
 
 Real controller behavior (Zen toggling chrome, Simple-mode stripping, tab/window lifecycle, the
-coordinators) is covered end-to-end by a **TestFX** harness running over **JavaFX 26's built-in
-Headless Glass platform** (`-Dglass.platform=Headless`, part of `javafx.graphics` since 26), so
+coordinators) is covered end-to-end by a **TestFX** harness running over JavaFX's built-in
+**Headless Glass platform** (`-Dglass.platform=Headless`, part of `javafx.graphics` since 26), so
 FX tests run headless on CI with **no display/xvfb** — no Monocle jar, no native libs, nothing
 vendored. The harness only uses `FxToolkit` to boot the toolkit; it never drives the TestFX robot
 (no `clickOn`/key simulation — everything goes through `runOnFx`/`callOnFx` + reflection), so the

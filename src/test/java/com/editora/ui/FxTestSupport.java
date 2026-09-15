@@ -15,7 +15,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
  * Shared plumbing for the headless-JavaFX tests (tagged {@code fx}). Boots the toolkit once via
- * JavaFX 26's built-in Headless Glass platform (no display/xvfb), runs work on the FX thread, and
+ * JavaFX's built-in Headless Glass platform (available since 26; no display/xvfb), runs work on the FX thread, and
  * reads private {@code @FXML} nodes by reflection (tests run on the classpath as the unnamed module, so
  * {@code setAccessible} is unrestricted).
  *

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Upgraded the UI runtime from JavaFX 26.0.2 to JavaFX 27. The JDK 25 baseline already satisfies
+  JavaFX 27's minimum, and the now-stable extended-window API no longer needs the preview flag.
 - Added editor context-menu and command-palette actions to debug the JUnit test method at the caret through
   Maven or Gradle, with automatic attachment to the suspended test JVM.
 - Personal Notes now render source-line references with the same compact, subdued treatment used by the

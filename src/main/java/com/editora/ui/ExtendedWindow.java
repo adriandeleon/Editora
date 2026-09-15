@@ -11,7 +11,7 @@ import javafx.stage.StageStyle;
 
 /**
  * The window drawn without a system title bar, with the menu bar in its place
- * ({@link StageStyle#EXTENDED}, JavaFX 24+).
+ * ({@link StageStyle#EXTENDED}, JavaFX 27+).
  *
  * <p>{@code EXTENDED} is the reason this is worth doing at all: it drops the title bar while <b>keeping
  * the system window buttons</b>, so none of minimise/maximise/close, drag-to-move, double-click-to-
@@ -49,26 +49,12 @@ final class ExtendedWindow {
         return os.contains("win") || os.contains("linux") || os.contains("bsd") || os.contains("unix");
     }
 
-    /** The system property JavaFX requires before any preview API may be used. */
-    static final String PREVIEW_PROPERTY = "javafx.enablePreview";
-
     /**
-     * Whether a window built now should be extended: the user asked for it, the OS allows it, and JavaFX's
-     * preview features are switched on.
-     *
-     * <p>That last condition is not optional and not defensive. {@code StageStyle.EXTENDED} is a
-     * <b>preview</b> feature in JavaFX 26, and {@code Stage.initStyle} <em>throws</em> without
-     * {@code -Djavafx.enablePreview=true} — which, thrown out of window construction, means the
-     * application starts with no window at all. Asking first is what keeps a cosmetic setting from being
-     * able to do that.
+     * Whether a window built now should be extended: the user asked for it and the OS allows it.
+     * {@code StageStyle.EXTENDED} is a stable API in JavaFX 27, so no preview-feature gate is required.
      */
-    static boolean enabled(boolean setting, String osName, boolean previewEnabled) {
-        return setting && previewEnabled && supportedOn(osName);
-    }
-
-    /** Whether this JVM was started with JavaFX's preview features enabled. */
-    static boolean previewEnabled() {
-        return Boolean.getBoolean(PREVIEW_PROPERTY);
+    static boolean enabled(boolean setting, String osName) {
+        return setting && supportedOn(osName);
     }
 
     /**

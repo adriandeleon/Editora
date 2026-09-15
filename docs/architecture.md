@@ -11,7 +11,7 @@ the deeper conventions live in [conventions.md](conventions.md) and
 
 ## What it is
 
-A keyboard-driven, cross-platform programmer's text editor: **JDK 25 + JavaFX 26**, Maven,
+A keyboard-driven, cross-platform programmer's text editor: **JDK 25 + JavaFX 27**, Maven,
 a single JPMS module `com.editora` (see [`src/main/java/module-info.java`](../src/main/java/module-info.java)).
 The editor surface is a [RichTextFX](dependencies.md) `CodeArea`; standard controls are
 themed by AtlantaFX.

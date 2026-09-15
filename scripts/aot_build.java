@@ -251,7 +251,7 @@ public class aot_build {
                     // without this the SVG preview draws nothing on the module path (see the pom).
                     "--add-exports=com.github.weisj.jsvg/com.github.weisj.jsvg.logging.impl=com.github.weisj.jsvg.javafx",
                     // Training must not depend on the host having a REAL GPU. CI runners present
-                    // virtualized ones, and JavaFX 26 made Metal the default macOS pipeline (pom.xml's
+                    // virtualized ones, and JavaFX 27 makes Metal the default macOS pipeline (pom.xml's
                     // os-mac ${prism.pipeline} = mtl,es2,sw) — on the macOS ARM runner's paravirtual GPU
                     // that aborts the process outright:
                     //   -[AppleParavirtDevice newArgumentEncoderWithLayout:]: unrecognized selector
@@ -268,10 +268,6 @@ public class aot_build {
                     // weight in the cache, not a correctness problem, and any class not archived simply
                     // loads normally.
                     "-Dprism.order=es2,sw",
-                    // Mirror the launcher's JavaFX-preview flag (pom.xml dist javaOptions): the app
-                    // can be started with StageStyle.EXTENDED, so the trainer must be able to as
-                    // well or the cache is trained under a configuration the app never runs under.
-                    "-Djavafx.enablePreview=true",
                     "-Dprism.maxvram=2G", "-Dprism.maxTextureSize=16384",
                     "-Deditora.aotTrainExit=true",
                     // Mirror the launcher's adapter-caching opt-out (pom.xml dist javaOptions, where the

@@ -72,12 +72,12 @@ measurable (first paint 1024 ms without them, against 1704 ms with the whole cac
 Set via the `${prism.pipeline}` property in the `os-mac`/`os-windows`/`os-linux` profiles and
 passed as `-Dprism.order`:
 
-- **macOS** = `mtl,es2,sw` — the **Metal** pipeline (JavaFX 26) fixes render-to-texture glitches
-  on Apple silicon; es2/sw are fallbacks.
+- **macOS** = `mtl,es2,sw` — the **Metal** pipeline, JavaFX 27's default, fixes
+  render-to-texture glitches on Apple silicon; es2/sw are fallbacks.
 - **Windows** = `d3d,es2,sw` — must keep Direct3D.
 - **Linux** = `es2,sw`.
 
-JavaFX 26 runs on JDK 24+, so the JDK stays 25.
+JavaFX 27 requires JDK 25+, matching Editora's JDK baseline.
 
 ## Runnable fat jar (`-Pfatjar`)
 

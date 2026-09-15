@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * P0 smoke test: proves the JavaFX toolkit boots and a scene graph can be built headlessly via
- * JavaFX 26's built-in Headless Glass platform ({@code -Dglass.platform=Headless}, no display/xvfb,
+ * JavaFX's built-in Headless Glass platform ({@code -Dglass.platform=Headless}, no display/xvfb,
  * no Monocle jar). If this is green, the harness works. Tagged {@code fx} so the pure suite can
  * exclude it with {@code -DexcludedGroups=fx}.
  */
