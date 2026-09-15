@@ -270,7 +270,8 @@
 }
 
 .structure-tree .structure-line-number,
-.bookmarks-tree .bookmark-line-number {
+.bookmarks-tree .bookmark-line-number,
+.notes-tree .note-line-number {
     -fx-fill: -color-fg-subtle;
     -fx-font-size: 0.85em;
 }
@@ -325,11 +326,14 @@
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
 }
-.notes-tree .tree-cell.note-resolved {
-    -fx-text-fill: -color-fg-muted;
+.notes-tree .note-label {
+    -fx-fill: -color-fg-default;
 }
-.notes-tree .tree-cell.note-orphaned {
-    -fx-text-fill: -color-danger-fg;
+.notes-tree .tree-cell.note-resolved .note-label {
+    -fx-fill: -color-fg-muted;
+}
+.notes-tree .tree-cell.note-orphaned .note-label {
+    -fx-fill: -color-danger-fg;
 }
 
 /* ---- Git (Commit) tool window ---- */

@@ -24,6 +24,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.text.Text;
 
 import com.editora.config.NoteScope;
 import com.editora.config.NoteStatus;
@@ -259,20 +260,17 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         return slash >= 0 ? key.substring(slash + 1) : key;
     }
 
-    /** First non-blank line of the note body, or a scope/status placeholder. */
+    /** First line of the note body, or a scope/status placeholder. */
     private static String noteLabel(PersonalNote note) {
         String body = note.body().strip();
         String firstLine = body.isEmpty() ? "" : body.lines().findFirst().orElse("");
-        String prefix = note.scope() == NoteScope.FOLDER
-                ? ""
-                : tr("notes.line", note.anchor().line() + 1) + ": ";
         String text = firstLine.isEmpty() ? tr("notes.empty") : firstLine;
         if (note.status() == NoteStatus.RESOLVED) {
             text = "✓ " + text;
         } else if (note.status() == NoteStatus.ORPHANED) {
             text = "⚠ " + text;
         }
-        return prefix + text;
+        return text;
     }
 
     private final class NoteCell extends TreeCell<Row> {
@@ -310,8 +308,18 @@ public class NotesPanel extends VBox implements ToolWindowContent {
                 deleteAll.setOnAction(e -> actions.deleteAll(f.projectKey(), f.fileKey()));
                 setContextMenu(new ContextMenu(deleteAll));
             } else if (item instanceof NoteRow n) {
-                setText(noteLabel(n.note()));
-                setGraphic(Icons.notes());
+                setText(null);
+                HBox row = new HBox(4);
+                row.setAlignment(Pos.CENTER_LEFT);
+                Text label = new Text(noteLabel(n.note()));
+                label.getStyleClass().add("note-label");
+                row.getChildren().addAll(Icons.notes(), label);
+                if (n.note().scope() != NoteScope.FOLDER) {
+                    Text line = new Text(tr("notes.line", n.note().anchor().line() + 1));
+                    line.getStyleClass().add("note-line-number");
+                    row.getChildren().add(line);
+                }
+                setGraphic(row);
                 if (n.note().status() == NoteStatus.RESOLVED) {
                     getStyleClass().add("note-resolved");
                 } else if (n.note().status() == NoteStatus.ORPHANED) {
