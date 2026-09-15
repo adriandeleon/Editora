@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added editor context-menu and command-palette actions to debug the JUnit test method at the caret through
   Maven or Gradle, with automatic attachment to the suspended test JVM.
+- Personal Notes now render source-line references with the same compact, subdued treatment used by the
+  Structure and Bookmarks tool windows.
 
 ## [0.18.3] - 2026-09-11
 

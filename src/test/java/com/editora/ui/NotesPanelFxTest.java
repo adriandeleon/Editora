@@ -6,9 +6,12 @@ import java.util.Map;
 
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
+import javafx.scene.text.Text;
 
 import com.editora.config.FileIdentity;
 import com.editora.config.NoteScope;
@@ -168,5 +171,44 @@ class NotesPanelFxTest {
                 () -> tree(p).getRoot().getChildren().getFirst().getChildren().getFirst());
         assertEquals(1, target.getChildren().size());
         assertTrue(target.getValue().toString().contains("folder=true"));
+    }
+
+    @Test
+    void noteRowsRenderTheLineAsSeparateSecondaryText() throws Exception {
+        source.clear();
+        source.put("/proj/Alpha.java", List.of(note("Remember this")));
+        NotesPanel p = panel();
+        FxTestSupport.runOnFx(p::refresh);
+
+        List<Text> rendered = FxTestSupport.callOnFx(() -> {
+            TreeView<Object> tree = tree(p);
+            Object value = tree.getRoot()
+                    .getChildren()
+                    .getFirst()
+                    .getChildren()
+                    .getFirst()
+                    .getChildren()
+                    .getFirst()
+                    .getValue();
+            @SuppressWarnings("unchecked")
+            TreeCell<Object> cell = (TreeCell<Object>) tree.getCellFactory().call(tree);
+            FxTestSupport.call(
+                    cell,
+                    "updateItem",
+                    new Class<?>[] {value.getClass().getInterfaces()[0], boolean.class},
+                    value,
+                    false);
+            return ((HBox) cell.getGraphic())
+                    .getChildren().stream()
+                            .filter(Text.class::isInstance)
+                            .map(Text.class::cast)
+                            .toList();
+        });
+
+        assertEquals(
+                List.of("Remember this", "Line 1"),
+                rendered.stream().map(Text::getText).toList());
+        assertTrue(rendered.get(0).getStyleClass().contains("note-label"));
+        assertTrue(rendered.get(1).getStyleClass().contains("note-line-number"));
     }
 }
