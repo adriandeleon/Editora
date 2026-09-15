@@ -41,7 +41,7 @@ profile's antrun step strips `META-INF/*.SF,*.RSA,*.DSA,*.EC` before linking.
 
 ## The headless test backend (no vendored dependency)
 
-The `@Tag("fx")` harness runs over **JavaFX 26's built-in Headless Glass platform**
+The `@Tag("fx")` harness runs over JavaFX's **built-in Headless Glass platform**
 (`-Dglass.platform=Headless`, part of `javafx.graphics` since 26 — set in the surefire
 `<systemPropertyVariables>`). Nothing is vendored: no jar, no native libs, no rebuild on a
 JavaFX bump.

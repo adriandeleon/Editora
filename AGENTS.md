@@ -1,7 +1,7 @@
 # Editora agent guide
 
 Editora is a keyboard-driven, cross-platform programmer's text editor built with JDK 25,
-JavaFX 26, Maven, and JPMS module `com.editora`.
+JavaFX 27, Maven, and JPMS module `com.editora`.
 
 This file is the operational guide for coding agents. Durable architecture, rationale, and
 subsystem history belong in [`docs/`](docs/README.md); do not grow this file into a changelog.

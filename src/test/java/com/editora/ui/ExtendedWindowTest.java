@@ -35,19 +35,9 @@ class ExtendedWindowTest {
 
     @Test
     void theSettingAndThePlatformMustBothAgree() {
-        assertTrue(ExtendedWindow.enabled(true, "Linux", true));
-        assertFalse(ExtendedWindow.enabled(false, "Linux", true), "off is off even where it would work");
-        assertFalse(ExtendedWindow.enabled(true, "Mac OS X", true), "and on is not enough where it should not");
-        assertTrue(ExtendedWindow.enabled(true, "Windows 11", true));
-    }
-
-    /**
-     * The condition that cost a windowless launch to discover: {@code StageStyle.EXTENDED} is a JavaFX 26
-     * PREVIEW feature, and {@code Stage.initStyle} throws without {@code -Djavafx.enablePreview=true} —
-     * out of window construction, so the application comes up with no window at all.
-     */
-    @Test
-    void withoutJavaFxPreviewFeaturesItStaysOff() {
-        assertFalse(ExtendedWindow.enabled(true, "Linux", false));
+        assertTrue(ExtendedWindow.enabled(true, "Linux"));
+        assertFalse(ExtendedWindow.enabled(false, "Linux"), "off is off even where it would work");
+        assertFalse(ExtendedWindow.enabled(true, "Mac OS X"), "and on is not enough where it should not");
+        assertTrue(ExtendedWindow.enabled(true, "Windows 11"));
     }
 }

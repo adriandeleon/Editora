@@ -66,7 +66,7 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   fat jar, the per-OS Prism pipeline.
 - [dependencies.md](dependencies.md) — the vendored/forked/repackaged deps (the RichTextFX fork,
   tm4e) and the moditect story.
-- [testing.md](testing.md) — pure tests, the headless-FX harness (JavaFX 26's built-in Headless
+- [testing.md](testing.md) — pure tests, the headless-FX harness (JavaFX's built-in Headless
   platform), the JaCoCo floors.
 - [release.md](release.md) — cutting a release and the CI matrix.
 

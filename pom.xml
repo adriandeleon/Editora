@@ -19,9 +19,9 @@
              ignored when maven.build.timestamp is filtered into a resource directly. -->
         <maven.build.timestamp.format>yyyy-MM-dd HH:mm:ss 'UTC'</maven.build.timestamp.format>
         <build.timestamp>${maven.build.timestamp}</build.timestamp>
-        <!-- JavaFX 26 (runs on JDK 24+, we stay on JDK 25) — adds the macOS Metal Prism pipeline
-             (com.sun.prism.mtl), enabled per-OS via ${prism.order} below. -->
-        <javafx.version>26.0.2</javafx.version>
+        <!-- JavaFX 27 requires JDK 25+, matching the compiler/runtime baseline. Metal is the default
+             macOS pipeline in 27; we still set the per-OS order explicitly via ${prism.order} below. -->
+        <javafx.version>27</javafx.version>
         <javafx.plugin.version>0.0.8</javafx.plugin.version>
         <!-- Prism pipeline order (passed as -Dprism.order to both javafx:run and the packaged app). Set
              per-OS in the os-* profiles: mac=mtl,es2,sw (Metal, the M-series rendering fix; es2/sw fallback),
@@ -107,7 +107,7 @@
              dependency drags in javafx-swing 17.0.15 otherwise: OpenJFX publishes no `linux-aarch64`
              classifier for 17.0.15, so the linux arm64 release leg cannot resolve it and the whole
              release fails (it did, on v0.14.0's first attempt). The other four legs resolved it happily
-             and would have linked a JavaFX 17 javafx.swing into an otherwise-26 runtime image, which is
+             and would have linked a JavaFX 17 javafx.swing into an otherwise-27 runtime image, which is
              the worse half of the same bug. Pinning it to ${javafx.version} fixes both. -->
         <dependency>
             <groupId>org.openjfx</groupId>
@@ -119,9 +119,9 @@
             <artifactId>richtextfx</artifactId>
             <version>${richtextfx.version}</version>
             <!-- The fork's pom pins JavaFX 21.0.5 (with a mac-aarch64 classifier baked in). Letting that
-                 transitively onto the path mixes javafx.base/graphics 21.0.5 with our javafx.controls 25 —
+                 transitively onto the path mixes javafx.base/graphics 21.0.5 with our javafx.controls 27 —
                  e.g. Spinner crashes with NoSuchFieldError AccessibleAttribute.VALUE_STRING. Exclude it so
-                 only our JavaFX 25 (declared above) is used. -->
+                 only our JavaFX 27 (declared above) is used. -->
             <exclusions>
                 <exclusion>
                     <groupId>org.openjfx</groupId>
@@ -367,9 +367,8 @@
         </dependency>
 
         <!-- Headless-JavaFX test harness (test scope only; never shipped). TestFX drives only the
-             toolkit lifecycle (FxToolkit); the headless Glass backend is JavaFX 26's built-in Headless
-             platform (-Dglass.platform=Headless in surefire), so FX tests run with no display/xvfb and
-             no Monocle jar on CI. See docs/testing.md. -->
+             toolkit lifecycle (FxToolkit); the built-in Headless Glass backend (available since JavaFX
+             26) runs FX tests with no display/xvfb and no Monocle jar on CI. See docs/testing.md. -->
         <dependency>
             <groupId>org.testfx</groupId>
             <artifactId>testfx-core</artifactId>
@@ -662,15 +661,6 @@
                         <option>-Xms64m</option>
                         <option>-XX:+UseG1GC</option>
                         <option>-XX:G1PeriodicGCInterval=30000</option>
-                        <!-- StageStyle.EXTENDED (the menu-bar-in-the-title-bar setting, ui/ExtendedWindow)
-                             is a JavaFX 26 PREVIEW feature: Stage.initStyle THROWS without this flag, and
-                             thrown out of window construction that means starting with no window at all.
-                             Mirrored in the dist javaOptions and in scripts/aot_build.java's trainer, so
-                             the setting works in a packaged build and the cache is trained under the same
-                             configuration the app runs (AotTrainerOptionsTest fails the build on drift).
-                             It enables JavaFX preview APIs generally; EXTENDED is the only one used, and
-                             ExtendedWindow.previewEnabled() is what gates on it. -->
-                        <option>-Djavafx.enablePreview=true</option>
                     </options>
                     <launcher>editora</launcher>
                     <jlinkImageName>editora</jlinkImageName>
@@ -1155,8 +1145,8 @@
             <properties>
                 <jpackage.type>DMG</jpackage.type>
                 <jpackage.icon>${project.basedir}/branding/editora.icns</jpackage.icon>
-                <!-- Metal first (JavaFX 26): fixes the es2/OpenGL RTT glitches on Apple silicon (M-series);
-                     es2/sw remain as fallbacks if Metal ever fails to init. -->
+                <!-- Metal first (the JavaFX 27 default): fixes the es2/OpenGL RTT glitches on Apple silicon
+                     (M-series); es2/sw remain as fallbacks if Metal ever fails to init. -->
                 <prism.pipeline>mtl,es2,sw</prism.pipeline>
             </properties>
             <!-- macOS "Open With": Editora.app's Info.plist CFBundleDocumentTypes is written by
@@ -1449,19 +1439,12 @@
                                              could be exhausted by many open files' GPU textures, after
                                              which JavaFX NPEs in the render thread (black screen). These
                                              are harmless ceilings, not reservations. -->
-                                        <!-- JavaFX preview APIs. Required by StageStyle.EXTENDED, which
-                                             backs the menu-bar-in-the-title-bar setting (ui/ExtendedWindow):
-                                             Stage.initStyle throws without it, so without this the setting
-                                             could not work in a packaged build at all. Mirrored in
-                                             scripts/aot_build.java's trainer — AotTrainerOptionsTest fails
-                                             the build if the two drift. -->
-                                        <javaOption>-Djavafx.enablePreview=true</javaOption>
                                         <javaOption>-Dprism.maxvram=2G</javaOption>
                                         <javaOption>-Dprism.maxTextureSize=16384</javaOption>
                                         <!-- Prism pipeline order, per-OS (see the os-* profiles): macOS =
-                                             mtl,es2,sw (JavaFX 26 Metal — fixes the es2/OpenGL RTT glitches on
-                                             Apple silicon; es2/sw fallback), Windows = d3d,es2,sw, Linux =
-                                             es2,sw. Metal is opt-in in JFX 26, so this degrades safely. -->
+                                             mtl,es2,sw (JavaFX 27's default Metal pipeline — fixes the
+                                             es2/OpenGL RTT glitches on Apple silicon; es2/sw fallback),
+                                             Windows = d3d,es2,sw, Linux = es2,sw. -->
                                         <javaOption>-Dprism.order=${prism.pipeline}</javaOption>
                                         <!-- Heap/GC footprint. With no -Xmx, jpackage inherits the
                                              default ergonomic max heap (~1/4 of physical RAM), which on

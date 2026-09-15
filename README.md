@@ -5,7 +5,7 @@
 [![CI](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml/badge.svg)](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/adriandeleon/Editora)](LICENSE)
 ![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk&logoColor=white)
-![JavaFX](https://img.shields.io/badge/JavaFX-26-1e90ff)
+![JavaFX](https://img.shields.io/badge/JavaFX-27-1e90ff)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 [![Stars](https://img.shields.io/github/stars/adriandeleon/Editora?style=flat)](https://github.com/adriandeleon/Editora/stargazers)
 
@@ -17,7 +17,7 @@
 
 
 A keyboard-driven, cross-platform programmer's text editor built with **JDK 25**,
-**JavaFX 26**, [**RichTextFX**](https://github.com/FXMisc/RichTextFX) and **Maven**. Every action is a registered command, reachable by an
+**JavaFX 27**, [**RichTextFX**](https://github.com/FXMisc/RichTextFX) and **Maven**. Every action is a registered command, reachable by an
 Emacs-style keymap or a fuzzy command palette.
 
 Editora is built with the help of AI coding tools.
@@ -769,8 +769,8 @@ Two conventions the build checks for:
 - **Every action is a command.** User-facing features are registered in the command registry so they
   appear in the command palette (`M-x`); toolbar buttons and keybindings dispatch through commands too.
 
-Tests are mostly pure logic, plus a headless-FX harness for toolkit-bound behavior (TestFX over JavaFX 26's
-built-in headless platform, no display/xvfb) —
+Tests are mostly pure logic, plus a headless-FX harness for toolkit-bound behavior (TestFX over JavaFX's
+built-in headless platform, available since 26; no display/xvfb) —
 run all with `./mvnw test`, or the pure suite alone with `./mvnw test -DexcludedGroups=fx`. `./mvnw verify`
 also enforces the Spotless check and the JaCoCo per-package coverage floors. See
 [`docs/testing.md`](docs/testing.md).
