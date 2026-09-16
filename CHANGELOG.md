@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.4] - 2026-09-15
+
 - Made Editora's Java 27 compatibility a blocking CI lane while retaining Java 25 as the release
   baseline, upgraded JaCoCo for Java 27 class files, and isolated formatting on JDK 25 until its
   javac-dependent formatter supports 27.
