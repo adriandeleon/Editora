@@ -6402,6 +6402,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void onRunStateChanged() {
             runConfigurations.updateRunConfigButtons();
+            updateRunButton();
         }
 
         @Override
@@ -9197,14 +9198,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         searchCoordinator.openToggle();
     }
 
-    /** Shows the Run tool window's stripe button only for a runnable file (the in-editor affordance is
-     *  the green gutter Run glyph on the entry line + the right-click menu). */
+    /** Shows the Run tool window's stripe button for a runnable file or while a process is still active.
+     *
+     * <p>The live-process half is essential even when the active buffer itself is not directly runnable (for
+     * example, a project Java or NPM configuration). Otherwise a normal context refresh can close a console
+     * that {@link RunCoordinator} just reopened when the user pressed Run again.
+     */
     private void updateRunButton() {
         EditorBuffer buffer = activeBuffer();
         boolean http = buffer != null && buffer.isHttpFile();
         boolean runnable = buffer != null && buffer.isRunnable() && !http;
         if (runToolWindow != null) {
-            toolWindows.setAvailable(runToolWindow, runnable);
+            toolWindows.setAvailable(runToolWindow, runnable || runCoordinator.isRunning());
         }
         if (http && httpClient.isEnabled()) {
             httpClient.refreshEnvironments(buffer); // the response preview's environment picker
