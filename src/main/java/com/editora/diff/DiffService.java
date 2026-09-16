@@ -3,6 +3,7 @@ package com.editora.diff;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
@@ -38,17 +39,25 @@ public final class DiffService {
 
     /** As {@link #compute(String, String, Consumer)}, with explicit {@link DiffEngine.DiffOptions}. */
     public void compute(String leftText, String rightText, DiffEngine.DiffOptions opts, Consumer<DiffModel> onResult) {
-        exec.submit(() -> {
-            List<String> left = DiffEngine.lines(leftText);
-            List<String> right = DiffEngine.lines(rightText);
-            int largest = Math.max(left.size(), right.size());
-            DiffModel model = largest <= MAX_FULL_LINES
-                    ? DiffEngine.compute(leftText, rightText, opts)
-                    : largest <= MAX_RENDERED_LINES
-                            ? DiffEngine.computeCoarse(leftText, rightText)
-                            : DiffEngine.metadataOnly(leftText, rightText);
-            Platform.runLater(() -> onResult.accept(model));
-        });
+        try {
+            exec.submit(() -> {
+                List<String> left = DiffEngine.lines(leftText);
+                List<String> right = DiffEngine.lines(rightText);
+                int largest = Math.max(left.size(), right.size());
+                DiffModel model = largest <= MAX_FULL_LINES
+                        ? DiffEngine.compute(leftText, rightText, opts)
+                        : largest <= MAX_RENDERED_LINES
+                                ? DiffEngine.computeCoarse(leftText, rightText)
+                                : DiffEngine.metadataOnly(leftText, rightText);
+                Platform.runLater(() -> onResult.accept(model));
+            });
+        } catch (RejectedExecutionException shuttingDown) {
+            // Git/blob reads can complete on the FX queue after the owning window has closed. At that point
+            // there is no consumer left to update, so a late diff request is expected lifecycle fallout.
+            if (!exec.isShutdown()) {
+                throw shuttingDown;
+            }
+        }
     }
 
     public void shutdown() {
