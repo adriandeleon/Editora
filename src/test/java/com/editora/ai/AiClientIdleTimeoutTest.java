@@ -24,10 +24,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Regression test for #482: a dead-but-accepting AI endpoint must not wedge the streaming client forever.
- * The response timeout only bounds the wait for the *headers*, so an endpoint that returns {@code 200 …} and
- * then writes nothing would block the read forever — and {@code AiService} runs on a single-thread executor,
- * so every later request would queue behind it permanently. The idle-read watchdog closes the stream once no
- * data has arrived for the response-timeout, freeing the worker; a slow-but-alive stream is untouched.
+ * The response timeout bounds the header phase and each idle body-read interval independently. An endpoint
+ * that returns {@code 200 …} and then writes nothing would otherwise block the read forever — and
+ * {@code AiService} runs on a single-thread executor, so every later request would queue behind it
+ * permanently. The idle-read watchdog closes the stream once no data has arrived for the response-timeout,
+ * freeing the worker; a slow-but-alive stream is untouched even when its total lifetime exceeds that timeout.
  *
  * <p>Driven against a real loopback {@link ServerSocket} that controls exactly what it writes after the
  * headers.
@@ -40,6 +41,31 @@ class AiClientIdleTimeoutTest {
     /** Runs a server that writes {@code 200} headers then does {@code afterHeaders} with the client socket. */
     private interface AfterHeaders {
         void accept(Socket s, OutputStream out) throws IOException, InterruptedException;
+    }
+
+    @Test
+    void anEndpointThatAcceptsButNeverSendsHeadersTimesOut() throws Exception {
+        AtomicReference<String> error = new AtomicReference<>();
+        AtomicBoolean textSeen = new AtomicBoolean(false);
+        CountDownLatch done = new CountDownLatch(1);
+
+        try (ServerSocket server = startServerWithoutHeaders()) {
+            String endpoint = "http://127.0.0.1:" + server.getLocalPort() + "/v1/chat/completions";
+            new AiClient()
+                    .stream(
+                            AiProvider.OPENAI,
+                            endpoint,
+                            "",
+                            body,
+                            Duration.ofMillis(500),
+                            () -> false,
+                            listener(error, textSeen, done));
+
+            assertEquals(0, done.getCount());
+            assertNotNull(error.get(), "a headerless endpoint must surface an error");
+            assertTrue(error.get().toLowerCase().contains("timed out"), error.get());
+            assertTrue(!textSeen.get(), "no content should have been produced");
+        }
     }
 
     @Test
@@ -164,6 +190,22 @@ class AiClientIdleTimeoutTest {
                 after.accept(s, out);
             } catch (IOException | InterruptedException ignored) {
                 ignore.incrementAndGet(); // the client closing the socket is expected
+            }
+        });
+        t.setDaemon(true);
+        t.start();
+        return server;
+    }
+
+    /** Accepts and reads a request but deliberately never starts an HTTP response. */
+    private ServerSocket startServerWithoutHeaders() throws IOException {
+        ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+        Thread t = new Thread(() -> {
+            try (Socket s = server.accept()) {
+                drainRequestHeaders(s.getInputStream());
+                Thread.sleep(30_000);
+            } catch (IOException | InterruptedException ignored) {
+                // The client cancels the exchange after the header deadline.
             }
         });
         t.setDaemon(true);

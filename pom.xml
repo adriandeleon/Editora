@@ -58,7 +58,8 @@
         <moditect.version>1.3.0.Final</moditect.version>
         <spotless.version>3.6.0</spotless.version>
         <palantir.version>2.92.0</palantir.version>
-        <jacoco.version>0.8.13</jacoco.version>
+        <!-- 0.8.15 adds Java 27 class-file instrumentation (experimental upstream support). -->
+        <jacoco.version>0.8.15</jacoco.version>
         <testfx.version>4.0.18</testfx.version>
         <jpackage.plugin.version>1.8.0</jpackage.plugin.version>
         <maven-javadoc-plugin.version>3.11.2</maven-javadoc-plugin.version>
@@ -434,7 +435,7 @@
                     <useModulePath>false</useModulePath>
                     <!-- @{argLine} preserves JaCoCo's injected agent (it sets the `argLine` property); a plain
                          <argLine> would clobber coverage. Keep the token first. -->
-                    <argLine>@{argLine}</argLine>
+                    <argLine>@{argLine} --enable-native-access=ALL-UNNAMED</argLine>
                     <!-- Headless JavaFX via the built-in Headless Glass platform (JavaFX 26+, part of
                          javafx.graphics — no Monocle jar, no display/xvfb needed). The harness only uses
                          TestFX's FxToolkit to boot the toolkit lifecycle; it never drives the robot, so the

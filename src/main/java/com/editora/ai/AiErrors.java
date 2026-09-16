@@ -5,6 +5,7 @@ import java.net.NoRouteToHostException;
 import java.net.UnknownHostException;
 import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Turns a request/connection exception into a short human-readable description for the AI status
@@ -24,7 +25,7 @@ final class AiErrors {
             if (t instanceof HttpConnectTimeoutException) {
                 return "cannot connect (timed out)";
             }
-            if (t instanceof HttpTimeoutException) {
+            if (t instanceof HttpTimeoutException || t instanceof TimeoutException) {
                 return "timed out";
             }
             if (t instanceof UnknownHostException) {
