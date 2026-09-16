@@ -52,13 +52,28 @@ prototype platform's input/rendering limitations don't apply.
 In `pom.xml`:
 
 - `<useModulePath>false</useModulePath>` — classpath mode.
+- `--enable-native-access=ALL-UNNAMED` — JavaFX loads its test natives from that unnamed module;
+  declaring the access keeps the JDK 27 lane free of restricted-native-access warnings.
 - headless system properties: `glass.platform=Headless`, `prism.order=sw`.
-- `<argLine>@{argLine}</argLine>` — **the `@{argLine}` token is mandatory** so JaCoCo's injected
+- `<argLine>@{argLine} …</argLine>` — **the `@{argLine}` token is mandatory** so JaCoCo's injected
   coverage agent (set via the `argLine` property) survives. A plain `<argLine>` would clobber it.
 
 Because the backend ships inside JavaFX, it can never go stale on a JavaFX bump — unlike the
 previously self-built Monocle backend it replaced (see
 [dependencies.md](dependencies.md#the-headless-test-backend-no-vendored-dependency)).
+
+## JDK compatibility lanes
+
+CI compiles and tests the project twice: with the supported Temurin JDK 25 baseline and with
+Oracle JDK 27, using each JDK's matching `--release`. Oracle supplies the Java 27 GA build while
+Temurin 27 binaries are not yet available. The JDK 27 lane is a blocking forward-compatibility
+gate; release packaging remains on JDK 25 until the native five-platform matrix has been
+qualified.
+
+Formatting is a separate JDK 25 job. Palantir Java Format currently reaches into javac internals
+that changed in JDK 27, so the two build lanes skip Spotless while the dedicated job preserves the
+same formatting gate. Local `mvn verify` on the supported JDK 25 baseline remains the complete
+one-command check.
 
 ## Coverage
 

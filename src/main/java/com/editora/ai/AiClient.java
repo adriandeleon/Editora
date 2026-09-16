@@ -9,6 +9,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -23,7 +27,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public final class AiClient {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(15);
-    /** Generous default response-headers timeout (a reasoning model can be slow to first token). */
+    /** Generous default header/idle timeout (a reasoning model can be slow to first token). */
     static final Duration DEFAULT_RESPONSE_TIMEOUT = Duration.ofSeconds(120);
     /** Short timeout for the Settings connection check — it must resolve quickly, not hang. */
     public static final Duration PING_TIMEOUT = Duration.ofSeconds(30);
@@ -68,9 +72,10 @@ public final class AiClient {
 
     /**
      * As {@link #stream(AiProvider, String, String, JsonNode, BooleanSupplier, Listener)}, with an explicit
-     * response timeout. The timeout bounds the wait for the response <em>headers</em> (not the streamed
-     * body), so a dead / slow-to-start endpoint fails fast instead of hanging forever — while a long,
-     * healthy generation still streams to completion. {@code onError} fires on timeout.
+     * response timeout. The timeout bounds both the wait for response <em>headers</em> and each idle
+     * interval between body reads, but not the total lifetime of the streamed body. A dead / slow-to-start
+     * endpoint therefore fails fast while a long, healthy generation still streams to completion.
+     * {@code onError} fires on timeout.
      */
     public void stream(
             AiProvider provider,
@@ -88,7 +93,6 @@ public final class AiClient {
         HttpRequest req;
         try {
             HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(endpoint))
-                    .timeout(responseTimeout)
                     .header("content-type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(request)));
             if (provider == AiProvider.OPENAI) {
@@ -105,20 +109,20 @@ public final class AiClient {
         }
         java.util.concurrent.atomic.AtomicBoolean idleTimedOut = new java.util.concurrent.atomic.AtomicBoolean(false);
         try {
-            HttpResponse<java.io.InputStream> resp = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<java.io.InputStream> resp = sendUntilHeaders(req, responseTimeout);
             if (resp.statusCode() != 200) {
                 listener.onError(errorBody(resp));
                 return;
             }
             java.io.InputStream body = resp.body();
-            // Idle-read watchdog. The response timeout only bounds the wait for the *headers*, so an endpoint
-            // that returns "200 …" and then writes nothing would block this read forever — and because
-            // AiService runs on a single-thread executor, every later request would queue behind it
-            // permanently (until restart). A healthy stream keeps arriving (even a slow reasoning model:
-            // Anthropic sends periodic ping events), so each line resets the clock and a long generation is
-            // never cut off; only a genuine stall past responseTimeout closes the stream, failing the read
-            // fast so the worker thread returns to the queue. (cancel() is polled between lines, which can't
-            // interrupt a read already blocked mid-line — closing the stream is what actually unblocks it.)
+            // sendUntilHeaders bounds only the header phase. An endpoint that returns "200 …" and then
+            // writes nothing would still block this read forever — and because AiService runs on a
+            // single-thread executor, every later request would queue behind it permanently (until restart).
+            // A healthy stream keeps arriving (even a slow reasoning model: Anthropic sends periodic ping
+            // events), so each line resets the clock and a long generation is never cut off; only a genuine
+            // stall past responseTimeout closes the stream, failing the read fast so the worker thread returns
+            // to the queue. (cancel() is polled between lines, which can't interrupt a read already blocked
+            // mid-line — closing the stream is what actually unblocks it.)
             java.util.concurrent.atomic.AtomicLong lastActivity =
                     new java.util.concurrent.atomic.AtomicLong(System.nanoTime());
             long idleNanos = responseTimeout.toNanos();
@@ -202,12 +206,37 @@ public final class AiClient {
                 watchdog.cancel(false);
             }
             listener.onDone(stopReason);
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException | InterruptedException | TimeoutException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
             // A read we closed on an idle timeout throws a generic IOException — report the real reason.
             listener.onError(idleTimedOut.get() ? "timed out (no data from the endpoint)" : AiErrors.describe(e));
+        }
+    }
+
+    /**
+     * Waits for response headers without installing {@link HttpRequest.Builder#timeout(Duration)} on the
+     * request. Since JDK 27 that request timeout covers the complete response body, which would impose an
+     * absolute deadline on an otherwise healthy long-lived stream. The input-stream body handler completes
+     * its future as soon as the headers and stream are available; body liveness is then owned by the idle
+     * watchdog above.
+     */
+    private HttpResponse<java.io.InputStream> sendUntilHeaders(HttpRequest request, Duration timeout)
+            throws IOException, InterruptedException, TimeoutException {
+        CompletableFuture<HttpResponse<java.io.InputStream>> exchange =
+                http.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream());
+        try {
+            return exchange.get(timeout.toNanos(), TimeUnit.NANOSECONDS);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException io) {
+                throw io;
+            }
+            throw new IOException("stream request failed", cause);
+        } catch (InterruptedException | TimeoutException e) {
+            exchange.cancel(true);
+            throw e;
         }
     }
 

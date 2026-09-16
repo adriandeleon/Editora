@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -98,6 +99,14 @@ class DiffViewerBehaviorFxTest {
         } finally {
             service.shutdown();
         }
+    }
+
+    @Test
+    void lateDiffRequestAfterWindowShutdownIsIgnored() {
+        DiffService service = new DiffService();
+        service.shutdown();
+
+        assertDoesNotThrow(() -> service.compute("before", "after", ignored -> {}));
     }
 
     @Test

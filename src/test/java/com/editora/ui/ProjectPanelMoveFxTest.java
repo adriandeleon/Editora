@@ -47,8 +47,8 @@ class ProjectPanelMoveFxTest {
         });
 
         // Move a.txt (no conflict) into sub/.
-        FxTestSupport.call(
-                panel, "moveInto", new Class<?>[] {List.class, Path.class}, List.of(root.resolve("a.txt")), sub);
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                panel, "moveInto", new Class<?>[] {List.class, Path.class}, List.of(root.resolve("a.txt")), sub));
         assertTrue(Files.exists(sub.resolve("a.txt")), "a.txt moved into sub/");
         assertFalse(Files.exists(root.resolve("a.txt")), "a.txt gone from root");
         assertEquals(1, renames.size(), "one rename notified");
@@ -56,8 +56,8 @@ class ProjectPanelMoveFxTest {
         assertEquals(sub.resolve("a.txt"), renames.get(0).to());
 
         // Move c.txt into sub/ where a sub/c.txt already exists → skipped, nothing clobbered.
-        FxTestSupport.call(
-                panel, "moveInto", new Class<?>[] {List.class, Path.class}, List.of(root.resolve("c.txt")), sub);
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                panel, "moveInto", new Class<?>[] {List.class, Path.class}, List.of(root.resolve("c.txt")), sub));
         assertTrue(Files.exists(root.resolve("c.txt")), "c.txt stays in root (target name taken)");
         assertEquals("existing", Files.readString(sub.resolve("c.txt")), "existing sub/c.txt untouched");
         assertEquals(1, renames.size(), "no new rename for the skipped conflict");

@@ -6,6 +6,7 @@ import java.net.NoRouteToHostException;
 import java.net.UnknownHostException;
 import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
+import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.Test;
 
@@ -31,6 +32,7 @@ class AiErrorsTest {
     void connectTimeoutIsDistinguishedFromResponseTimeout() {
         assertEquals("cannot connect (timed out)", AiErrors.describe(new HttpConnectTimeoutException("x")));
         assertEquals("timed out", AiErrors.describe(new HttpTimeoutException("request timed out")));
+        assertEquals("timed out", AiErrors.describe(new TimeoutException()));
     }
 
     @Test

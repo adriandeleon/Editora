@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Made Editora's Java 27 compatibility a blocking CI lane while retaining Java 25 as the release
+  baseline, upgraded JaCoCo for Java 27 class files, and isolated formatting on JDK 25 until its
+  javac-dependent formatter supports 27.
+- Fixed streamed AI responses on Java 27 so the response timeout still bounds header and idle-read
+  waits without imposing an absolute deadline on a healthy long-running generation.
 - Upgraded the UI runtime from JavaFX 26.0.2 to JavaFX 27. The JDK 25 baseline already satisfies
   JavaFX 27's minimum, and the now-stable extended-window API no longer needs the preview flag.
 - Added editor context-menu and command-palette actions to debug the JUnit test method at the caret through
