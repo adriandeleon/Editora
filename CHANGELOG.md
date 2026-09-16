@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added a global Maven JDK selector and per-project run-configuration override. Run, debug, Maven
+  classpath resolution, before-launch steps, and Maven task invocations now use the selected toolchain;
+  installed JDK discovery includes standard platform locations plus SDKMAN, asdf, mise, Jabba, and
+  JetBrains-managed JDKs.
+
 ## [0.18.4] - 2026-09-15
 
 - Closed a Local History garbage-collection race so a collection request arriving after an in-flight

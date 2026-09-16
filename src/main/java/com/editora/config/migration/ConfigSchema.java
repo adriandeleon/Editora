@@ -168,7 +168,8 @@ public enum ConfigSchema {
                     // v100→101: Recent moved from the fixed tail into the customizable cluster — put it back
                     // into a layout the user had already rearranged, which is used verbatim.
                     Map.entry(100, (Migration) ConfigMigrations::restoreRecentToToolbarLayout),
-                    Map.entry(101, (Migration) ConfigMigrations::identity))), // v101→102: + Astro LSP
+                    Map.entry(101, (Migration) ConfigMigrations::identity), // v101→102: + Astro LSP
+                    Map.entry(102, (Migration) ConfigMigrations::identity))), // v102→103: + Maven JDK
     // v1 → v2 added the editor-group layout + OpenFile.group. Both default to the old single-group
     // behaviour, so the step is identity.
     // v1→v2 editor-group layout, v2→v3 RunConfiguration type/target, v3→v4 selectedRunConfig — all additive
@@ -176,24 +177,25 @@ public enum ConfigSchema {
     WORKSPACE(
             WorkspaceState.SCHEMA_VERSION,
             1,
-            Map.of(
-                    1, ConfigMigrations::identity,
-                    2, ConfigMigrations::identity,
-                    3, ConfigMigrations::identity,
-                    4, ConfigMigrations::identity, // v4→5: + manualFoldRegions (additive)
-                    5, ConfigMigrations::identity, // v5→6: + toolWindowSizes (additive)
+            Map.ofEntries(
+                    Map.entry(1, ConfigMigrations::identity),
+                    Map.entry(2, ConfigMigrations::identity),
+                    Map.entry(3, ConfigMigrations::identity),
+                    Map.entry(4, ConfigMigrations::identity), // v4→5: + manualFoldRegions (additive)
+                    Map.entry(5, ConfigMigrations::identity), // v5→6: + toolWindowSizes (additive)
                     // v6→7: RunConfiguration lost `kind` ("run"/"debug"). A removal, but still identity: the
                     // field is unknown on load and dropped on the next write, and a v6 reader copes with a
                     // v7 file for the same reason (a missing `kind` defaulted to "run" there anyway).
-                    6, ConfigMigrations::identity,
+                    Map.entry(6, ConfigMigrations::identity),
                     // v7→8: a side can now hold two tool windows, so the open set became a per-side list.
-                    7, ConfigMigrations::seedOpenToolWindows,
+                    Map.entry(7, ConfigMigrations::seedOpenToolWindows),
                     // v8→9: + floatingToolWindows / floatingToolWindowBounds (additive)
-                    8, ConfigMigrations::identity,
+                    Map.entry(8, ConfigMigrations::identity),
                     // v9→10: + toolWindowPresentationModes (additive; missing means docked)
-                    9, ConfigMigrations::identity,
+                    Map.entry(9, ConfigMigrations::identity),
                     // v10→v11: + projectMapFlow (additive; right-to-left is the default canvas layout)
-                    10, ConfigMigrations::identity)),
+                    Map.entry(10, ConfigMigrations::identity),
+                    Map.entry(11, ConfigMigrations::identity))), // v11→12: + RunConfiguration.jdkHome
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.

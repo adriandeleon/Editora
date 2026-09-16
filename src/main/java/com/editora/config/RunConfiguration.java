@@ -7,7 +7,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * A saved launch configuration: a {@code name}, the {@code mainClass} (fully-qualified) + its {@code
  * projectName} (multi-module), program {@code args}, JVM {@code vmArgs}, an optional {@code workingDir}
  * (blank ⇒ the project root), and {@code env} — environment variables as quote-aware {@code KEY=VALUE} pairs
- * (see {@code run/EnvVars}).
+ * (see {@code run/EnvVars}). {@code jdkHome} optionally overrides the global Maven JDK for this
+ * configuration; blank inherits it.
  *
  * <p>{@code type} says <em>what</em> is launched — {@code java} (the {@code mainClass}, resolved through
  * jdtls) or a script type handled by {@code run/ScriptRunCommand}, whose {@code target} is the script path,
@@ -39,7 +40,8 @@ public record RunConfiguration(
         String vmArgs,
         String workingDir,
         String env,
-        String beforeLaunch) {
+        String beforeLaunch,
+        String jdkHome) {
 
     /** Prefix of the synthetic per-configuration run commands, so stale ones can be found and dropped. */
     public static final String COMMAND_PREFIX = "run.config.";
@@ -64,11 +66,12 @@ public record RunConfiguration(
         workingDir = workingDir == null ? "" : workingDir;
         env = env == null ? "" : env;
         beforeLaunch = beforeLaunch == null ? "" : beforeLaunch;
+        jdkHome = jdkHome == null ? "" : jdkHome;
     }
 
     /**
-     * Convenience constructor for a plain Java main-class configuration with no environment variables and no
-     * before-launch step.
+     * Convenience constructor for a plain Java main-class configuration with no environment variables,
+     * before-launch step, or JDK override.
      *
      * <p>Six arguments, deliberately: the pre-{@code kind} shapes took seven and eight, so an unconverted
      * call site fails to compile rather than quietly re-binding {@code "run"} to {@code mainClass} and
@@ -77,6 +80,21 @@ public record RunConfiguration(
     public RunConfiguration(
             String name, String mainClass, String projectName, String args, String vmArgs, String workingDir) {
         this(name, "java", "", mainClass, projectName, args, vmArgs, workingDir, "", "");
+    }
+
+    /** Back-compatible full constructor for callers and persisted shapes predating the JDK override. */
+    public RunConfiguration(
+            String name,
+            String type,
+            String target,
+            String mainClass,
+            String projectName,
+            String args,
+            String vmArgs,
+            String workingDir,
+            String env,
+            String beforeLaunch) {
+        this(name, type, target, mainClass, projectName, args, vmArgs, workingDir, env, beforeLaunch, "");
     }
 
     /** The id of the synthetic command that runs this configuration ({@code run.config.<slug>}). */

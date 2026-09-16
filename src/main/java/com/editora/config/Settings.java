@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 102;
+    public static final int SCHEMA_VERSION = 103;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -274,6 +274,9 @@ public class Settings {
     /** Override command for launching Maven; blank = auto (prefer the project's ./mvnw wrapper, else
      *  resolve "mvn" on PATH). */
     private String mavenCommand = "";
+
+    /** JDK home used by Maven project runs/debugs and Maven invocations; blank = system/default Java. */
+    private String mavenJdkHome = "";
 
     /** Where "Load full catalog…" in the New Maven Project wizard fetches archetypes from. */
     private String mavenArchetypeCatalogUrl = "https://repo.maven.apache.org/maven2/archetype-catalog.xml";
@@ -1654,6 +1657,14 @@ public class Settings {
 
     public void setMavenCommand(String mavenCommand) {
         this.mavenCommand = mavenCommand == null ? "" : mavenCommand;
+    }
+
+    public String getMavenJdkHome() {
+        return mavenJdkHome == null ? "" : mavenJdkHome;
+    }
+
+    public void setMavenJdkHome(String mavenJdkHome) {
+        this.mavenJdkHome = mavenJdkHome == null ? "" : mavenJdkHome;
     }
 
     public String getMavenArchetypeCatalogUrl() {

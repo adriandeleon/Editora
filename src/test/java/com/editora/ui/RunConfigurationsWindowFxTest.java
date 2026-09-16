@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.Arrays;
 
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.ListView;
 import javafx.stage.Stage;
 
@@ -56,6 +57,10 @@ class RunConfigurationsWindowFxTest {
         assertEquals(tr("run.config.title"), FxTestSupport.callOnFx(stage::getTitle));
         assertEquals(
                 second, FxTestSupport.callOnFx(() -> list.getSelectionModel().getSelectedItem()));
+        @SuppressWarnings("unchecked")
+        ComboBox<JdkChoice> jdk = (ComboBox<JdkChoice>) stage.getScene().lookup("#run-config-jdk");
+        assertFalse(FxTestSupport.callOnFx(jdk.getItems()::isEmpty));
+        assertEquals("", FxTestSupport.callOnFx(() -> jdk.getValue().home()));
         FxTestSupport.runOnFx(stage::close);
     }
 

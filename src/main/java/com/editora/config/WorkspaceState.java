@@ -30,9 +30,10 @@ public class WorkspaceState {
      * unknown field is ignored on load and dropped on the next write, and running or debugging is now the
      * caller's choice rather than something the entry declares.
      *
-     * <p>v10 → v11 added {@code projectMapFlow}; right-to-left is the default canvas layout.
+     * <p>v10 → v11 added {@code projectMapFlow}; right-to-left is the default canvas layout. v11 → v12
+     * added the optional per-run-configuration Maven JDK override.
      */
-    public static final int SCHEMA_VERSION = 11;
+    public static final int SCHEMA_VERSION = 12;
 
     private int schemaVersion = SCHEMA_VERSION;
 

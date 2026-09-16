@@ -294,7 +294,8 @@ Editora is built with the help of AI coding tools.
   (`mvn compile dependency:build-classpath`, running from the reactor root with `-pl <module> -am` in a
   multi-module build) and Gradle delegates to `run` (or `bootRun` for Spring Boot).
 - **Run configurations** — save a named configuration per project (main class, module, program & VM
-  arguments, environment variables, working directory, and a before-launch build step) and re-run or debug it
+  arguments, environment variables, working directory, before-launch build step, and an optional JDK
+  override) and re-run or debug it
   from the palette; edit the whole list in the dedicated **Run Configurations** window. A configuration does not choose
   between running and debugging — the toolbar's two buttons do, and every entry gets both a *Run: &lt;name&gt;*
   and a *Debug: &lt;name&gt;* command you can bind a key to. In a Gradle project the main class the build declares
@@ -435,6 +436,9 @@ Editora is built with the help of AI coding tools.
   - **Maven** (`pom.xml`) — the standard lifecycle phases, the pom's declared profiles (checkable, composing
     with a run via `-P`), and each plugin's explicitly-bound goals (`spotless:check`, `jacoco:report`, …),
     plus a "Run custom…" box. Runs prefer the project's own `./mvnw` wrapper, falling back to `mvn` on PATH.
+    The Build Tools settings page also selects the default JDK used for Maven runs and debugging; Editora
+    discovers standard platform installs and local version-manager JDKs (SDKMAN, asdf, mise, Jabba, and
+    JetBrains), while each project's Run Configuration can override that default.
   - **npm** (`package.json`) — one entry per `scripts` name (run portably as `<pm> run <name>`) plus common
     tasks (`install`, `ci`). Uses the detected package manager — npm/yarn/pnpm/bun, from the `packageManager`
     field or the lockfile.

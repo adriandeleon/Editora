@@ -10,6 +10,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.run.JavaLaunchInfo;
 import com.editora.run.JavaMainClass;
 import com.editora.run.JavaRunCommand;
+import com.editora.run.JdkToolchain;
 import com.editora.run.ProgramArgs;
 import com.editora.run.RunConfigRouting;
 import com.editora.run.RunConfigWorkingDirectory;
@@ -95,6 +96,11 @@ final class RunCoordinator {
         /** Resolves the Maven module's launch classpath off-thread ({@code mvn compile
          *  dependency:build-classpath} + {@code target/classes}); delivers null/empty on failure. FX thread. */
         void resolveMavenClasspath(Path root, Consumer<List<String>> cb);
+
+        /** Same resolution under a selected JDK. The default preserves test/alternate hosts. */
+        default void resolveMavenClasspath(Path root, String jdkHome, Consumer<List<String>> cb) {
+            resolveMavenClasspath(root, cb);
+        }
 
         /** Runs the Gradle Run task via the build tool (streams to Output) — the no-jdtls Gradle
          *  fallback. Runs {@code bootRun} for a Spring Boot project, else {@code run}; {@code root} locates the
@@ -264,7 +270,11 @@ final class RunCoordinator {
     /** {@link #withBeforeLaunch(CoordinatorHost, RunConfiguration, Path, Runnable)} at this coordinator's own
      *  working directory. */
     private void withBeforeLaunch(RunConfiguration cfg, Runnable then) {
-        withBeforeLaunch(host, cfg, beforeLaunchDir(cfg), then);
+        Path cwd = beforeLaunchDir(cfg);
+        Path routing = routingFor(host, cfg);
+        Path project = routing == null ? ops.projectRoot() : ops.javaProjectRoot(routing);
+        String jdkHome = effectiveMavenJdk(project, cfg);
+        withBeforeLaunch(host, cfg, cwd, JdkToolchain.environment(jdkHome, processPath()), then);
     }
 
     /**
@@ -284,6 +294,16 @@ final class RunCoordinator {
      * the project root its own way.
      */
     static void withBeforeLaunch(CoordinatorHost host, RunConfiguration cfg, Path cwd, Runnable then) {
+        withBeforeLaunch(host, cfg, cwd, java.util.Map.of(), then);
+    }
+
+    /** As above, with a selected toolchain environment for Maven/JDK-aware build steps. */
+    static void withBeforeLaunch(
+            CoordinatorHost host,
+            RunConfiguration cfg,
+            Path cwd,
+            java.util.Map<String, String> environment,
+            Runnable then) {
         String command = cfg.beforeLaunch();
         if (command == null || command.isBlank()) {
             then.run();
@@ -298,7 +318,7 @@ final class RunCoordinator {
         Thread worker = new Thread(
                 () -> {
                     com.editora.process.ProcessRunner.Result r =
-                            com.editora.process.ProcessRunner.run(cwd, BEFORE_LAUNCH_TIMEOUT, argv);
+                            com.editora.process.ProcessRunner.run(cwd, BEFORE_LAUNCH_TIMEOUT, argv, environment);
                     javafx.application.Platform.runLater(() -> {
                         if (r.ok()) {
                             then.run();
@@ -372,6 +392,9 @@ final class RunCoordinator {
         List<String> vm = ProgramArgs.tokenize(cfg.vmArgs());
         List<String> args = ProgramArgs.tokenize(cfg.args());
         java.util.Map<String, String> env = com.editora.run.EnvVars.parse(cfg.env());
+        String jdkHome = effectiveMavenJdk(root, cfg);
+        java.util.Map<String, String> launchEnv = launchEnvironment(jdkHome, env);
+        String javaOverride = JdkToolchain.javaExecutable(jdkHome);
         String label = shortName(cfg.mainClass());
         if (ops.javaLaunchAvailable()) {
             // Ask jdtls to enumerate its own main classes first and use the entry it returns, exactly as the
@@ -400,18 +423,27 @@ final class RunCoordinator {
                             label,
                             cwd,
                             JavaRunCommand.build(
-                                    info.javaExec(), info.modulePaths(), info.classPaths(), cfg.mainClass(), vm, args),
-                            env);
+                                    javaOverride.isBlank() ? info.javaExec() : javaOverride,
+                                    info.modulePaths(),
+                                    info.classPaths(),
+                                    cfg.mainClass(),
+                                    vm,
+                                    args),
+                            launchEnv);
                 });
             });
         } else if (ops.mavenProjectAt(root)) {
             host.setStatus(tr("status.run.resolvingClasspath"));
-            ops.resolveMavenClasspath(root, cp -> {
+            ops.resolveMavenClasspath(root, jdkHome, cp -> {
                 if (cp == null || cp.isEmpty()) {
                     host.setStatus(tr("status.run.resolveFailed"));
                     return;
                 }
-                streamRun(label, cwd, JavaRunCommand.build("", List.of(), cp, cfg.mainClass(), vm, args), env);
+                streamRun(
+                        label,
+                        cwd,
+                        JavaRunCommand.build(javaOverride, List.of(), cp, cfg.mainClass(), vm, args),
+                        launchEnv);
             });
         } else {
             host.setStatus(tr("status.run.javaUnavailable"));
@@ -562,14 +594,16 @@ final class RunCoordinator {
 
     private void resolveMavenAndRun(EditorBuffer b, Path root, com.editora.run.MainMethodScanner.MainMethod m) {
         host.setStatus(tr("status.run.resolvingClasspath"));
-        ops.resolveMavenClasspath(root, cp -> {
+        String jdkHome = effectiveMavenJdk(root, null);
+        ops.resolveMavenClasspath(root, jdkHome, cp -> {
             if (cp == null || cp.isEmpty()) {
                 host.setStatus(tr("status.run.resolveFailed"));
                 return;
             }
             List<String> args = ProgramArgs.tokenize(ops.programArgs(b.getPath()));
-            List<String> command = JavaRunCommand.build("", List.of(), cp, m.fqn(), List.of(), args);
-            streamRun(shortName(m.fqn()), root, command);
+            List<String> command =
+                    JavaRunCommand.build(JdkToolchain.javaExecutable(jdkHome), List.of(), cp, m.fqn(), List.of(), args);
+            streamRun(shortName(m.fqn()), root, command, JdkToolchain.environment(jdkHome, processPath()));
         });
     }
 
@@ -598,9 +632,43 @@ final class RunCoordinator {
             }
             List<String> args = ProgramArgs.tokenize(programArgsForMain(mc));
             List<String> command = JavaRunCommand.build(
-                    info.javaExec(), info.modulePaths(), info.classPaths(), mc.fqn(), List.of(), args);
-            streamRun(shortName(mc.fqn()), root, command);
+                    javaExecutableFor(root, info.javaExec()),
+                    info.modulePaths(),
+                    info.classPaths(),
+                    mc.fqn(),
+                    List.of(),
+                    args);
+            String jdkHome = effectiveMavenJdk(root, null);
+            streamRun(shortName(mc.fqn()), root, command, JdkToolchain.environment(jdkHome, processPath()));
         });
+    }
+
+    /** Global Maven JDK, with a saved configuration's project override taking precedence. */
+    private String effectiveMavenJdk(Path root, RunConfiguration cfg) {
+        if (root == null || !ops.mavenProjectAt(root)) {
+            return "";
+        }
+        return JdkToolchain.effectiveHome(
+                cfg == null ? "" : cfg.jdkHome(), host.settings().getMavenJdkHome());
+    }
+
+    private String javaExecutableFor(Path root, String resolved) {
+        String configured = JdkToolchain.javaExecutable(effectiveMavenJdk(root, null));
+        return configured.isBlank() ? resolved : configured;
+    }
+
+    private static java.util.Map<String, String> launchEnvironment(
+            String jdkHome, java.util.Map<String, String> configured) {
+        java.util.LinkedHashMap<String, String> env =
+                new java.util.LinkedHashMap<>(JdkToolchain.environment(jdkHome, processPath()));
+        if (configured != null) {
+            env.putAll(configured);
+        }
+        return java.util.Map.copyOf(env);
+    }
+
+    private static String processPath() {
+        return com.editora.process.ProcessRunner.augmentedPath();
     }
 
     private void pickMainClass(List<JavaMainClass> options, Consumer<JavaMainClass> chosen) {

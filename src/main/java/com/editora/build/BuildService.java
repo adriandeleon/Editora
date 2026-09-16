@@ -7,6 +7,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import javafx.application.Platform;
 
@@ -49,6 +50,11 @@ public final class BuildService {
     /** Launches {@code argv} in {@code workingDir} and streams output to {@code listener}. Refuses to start
      *  if a previous run is still alive (stop it first). All listener callbacks run on the FX thread. */
     public void run(Path workingDir, List<String> argv, Listener listener) {
+        run(workingDir, argv, Map.of(), listener);
+    }
+
+    /** As {@link #run(Path, List, Listener)}, with environment overrides such as Maven's selected JDK. */
+    public void run(Path workingDir, List<String> argv, Map<String, String> environment, Listener listener) {
         if (workingDir == null || argv == null || argv.isEmpty() || listener == null || isRunning()) {
             return;
         }
@@ -57,6 +63,9 @@ public final class BuildService {
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(workingDir.toFile());
         ProcessRunner.applyStandardEnv(pb);
+        if (environment != null) {
+            pb.environment().putAll(environment);
+        }
         Process process;
         try {
             process = pb.start();

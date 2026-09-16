@@ -341,8 +341,13 @@ public final class DapManager implements DapClient.Host {
      * unsupported language.
      */
     public void startLaunch(Path file, String language, MainClassPicker picker) {
+        startLaunch(file, language, picker, "");
+    }
+
+    /** As above, with an explicit Java executable for Maven-project toolchain selection. */
+    public void startLaunch(Path file, String language, MainClassPicker picker, String javaExecOverride) {
         if ("java".equals(language)) {
-            startLaunch(file, picker);
+            startLaunch(file, picker, javaExecOverride);
         } else if (DapServerRegistry.isDebuggable(language)) {
             startProgram(file, language);
         } else {
@@ -381,10 +386,15 @@ public final class DapManager implements DapClient.Host {
      * error to the listener) when debugging is unavailable.
      */
     public void startLaunch(Path file, MainClassPicker picker) {
+        startLaunch(file, picker, "");
+    }
+
+    /** Java launch with an optional selected-JDK executable overriding jdtls's resolved executable. */
+    public void startLaunch(Path file, MainClassPicker picker, String javaExecOverride) {
         if (!ready(file)) {
             return;
         }
-        restartAction = () -> startLaunch(file, picker);
+        restartAction = () -> startLaunch(file, picker, javaExecOverride);
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
@@ -406,7 +416,7 @@ public final class DapManager implements DapClient.Host {
                     fail(epoch, "No main class could be determined for this file.");
                     return;
                 }
-                compileAndLaunch(file, fqn, epoch);
+                compileAndLaunch(file, fqn, javaExecOverride, epoch);
                 return;
             }
             MainClassOption match = options.stream()
@@ -414,13 +424,13 @@ public final class DapManager implements DapClient.Host {
                     .findFirst()
                     .orElse(null);
             if (match != null) {
-                resolveAndLaunch(file, match, epoch);
+                resolveAndLaunch(file, match, javaExecOverride, epoch);
             } else if (options.size() == 1) {
-                resolveAndLaunch(file, options.get(0), epoch);
+                resolveAndLaunch(file, options.get(0), javaExecOverride, epoch);
             } else {
                 picker.pick(options, chosen -> {
                     if (chosen != null) {
-                        resolveAndLaunch(file, chosen, epoch);
+                        resolveAndLaunch(file, chosen, javaExecOverride, epoch);
                     } else {
                         if (isCurrent(epoch)) {
                             setState(State.INACTIVE);
@@ -461,9 +471,9 @@ public final class DapManager implements DapClient.Host {
         return true;
     }
 
-    private void resolveAndLaunch(Path file, MainClassOption opt, long epoch) {
+    private void resolveAndLaunch(Path file, MainClassOption opt, String javaExecOverride, long epoch) {
         resolveAndLaunch(
-                file, opt, file.getParent() == null ? null : file.getParent().toString(), epoch);
+                file, opt, file.getParent() == null ? null : file.getParent().toString(), javaExecOverride, epoch);
     }
 
     /**
@@ -472,7 +482,7 @@ public final class DapManager implements DapClient.Host {
      * LSP-managed document in the same project); {@code cwd} is the debuggee's working directory (the project
      * root for a project main class, else the file's own folder).
      */
-    private void resolveAndLaunch(Path file, MainClassOption opt, String cwd, long epoch) {
+    private void resolveAndLaunch(Path file, MainClassOption opt, String cwd, String javaExecOverride, long epoch) {
         String proj = opt.projectName() == null ? "" : opt.projectName();
         resolveLaunch(file, opt, r -> {
             if (!isCurrent(epoch)) {
@@ -489,7 +499,7 @@ public final class DapManager implements DapClient.Host {
                             proj,
                             r.classPaths(),
                             r.modulePaths(),
-                            r.javaExec(),
+                            javaExecOverride == null || javaExecOverride.isBlank() ? r.javaExec() : javaExecOverride,
                             cwd,
                             programArgs,
                             vmArgs,
@@ -579,14 +589,19 @@ public final class DapManager implements DapClient.Host {
      * LSP-managed Java file in the same project).
      */
     public void startLaunchMainClass(Path routingFile, MainClassOption opt, Path cwd) {
+        startLaunchMainClass(routingFile, opt, cwd, "");
+    }
+
+    /** Main-class launch with an optional selected-JDK executable. */
+    public void startLaunchMainClass(Path routingFile, MainClassOption opt, Path cwd, String javaExecOverride) {
         if (!ready(routingFile)) {
             return;
         }
-        restartAction = () -> startLaunchMainClass(routingFile, opt, cwd);
+        restartAction = () -> startLaunchMainClass(routingFile, opt, cwd, javaExecOverride);
         debugFile = routingFile;
         long epoch = beginSession();
         setState(State.STARTING);
-        resolveAndLaunch(routingFile, opt, cwd == null ? null : cwd.toString(), epoch);
+        resolveAndLaunch(routingFile, opt, cwd == null ? null : cwd.toString(), javaExecOverride, epoch);
     }
 
     /**
@@ -596,7 +611,7 @@ public final class DapManager implements DapClient.Host {
      * classpath — self-contained, like the Run feature. jdtls is still used only to start the adapter.
      * Runs off the FX thread (javac is a subprocess).
      */
-    private void compileAndLaunch(Path file, String fqn, long epoch) {
+    private void compileAndLaunch(Path file, String fqn, String javaExecOverride, long epoch) {
         startupTask = io.submit(() -> {
             try {
                 Path out = java.nio.file.Files.createTempDirectory("editora-dap-");
@@ -612,7 +627,9 @@ public final class DapManager implements DapClient.Host {
                     fail(epoch, "Compilation failed:\n" + (r.out() + "\n" + r.err()).strip());
                     return;
                 }
-                String javaExec = firstOrNull(ProcessRunner.resolveExecutable(List.of("java")));
+                String javaExec = javaExecOverride == null || javaExecOverride.isBlank()
+                        ? firstOrNull(ProcessRunner.resolveExecutable(List.of("java")))
+                        : javaExecOverride;
                 String cwd = file.getParent() == null ? null : file.getParent().toString();
                 Platform.runLater(() -> startDebugSessionAndConnect(
                         file,

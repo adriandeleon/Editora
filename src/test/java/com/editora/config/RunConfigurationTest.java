@@ -17,17 +17,29 @@ class RunConfigurationTest {
         assertEquals("java", c.type());
         assertEquals("", c.mainClass());
         assertEquals("", c.beforeLaunch());
+        assertEquals("", c.jdkHome());
     }
 
     @Test
     void jacksonRoundTrip() throws Exception {
         ObjectMapper m = new ObjectMapper();
         RunConfiguration c = new RunConfiguration(
-                "App", "java", "", "com.app.Main", "core", "--x", "-Xmx1g", "/tmp", "FOO=bar", "mvn -q compile");
+                "App",
+                "java",
+                "",
+                "com.app.Main",
+                "core",
+                "--x",
+                "-Xmx1g",
+                "/tmp",
+                "FOO=bar",
+                "mvn -q compile",
+                "/opt/jdk-21");
         RunConfiguration back = m.readValue(m.writeValueAsString(c), RunConfiguration.class);
         assertEquals(c, back);
         assertEquals("FOO=bar", back.env());
         assertEquals("mvn -q compile", back.beforeLaunch());
+        assertEquals("/opt/jdk-21", back.jdkHome());
     }
 
     /**
@@ -53,6 +65,7 @@ class RunConfigurationTest {
         RunConfiguration old =
                 m.readValue("{\"name\":\"A\",\"mainClass\":\"M\",\"workingDir\":\"\"}", RunConfiguration.class);
         assertEquals("", old.env());
+        assertEquals("", old.jdkHome());
     }
 
     /**

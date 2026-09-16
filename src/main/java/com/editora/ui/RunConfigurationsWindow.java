@@ -108,6 +108,9 @@ public final class RunConfigurationsWindow {
         TextField workingDir = field("settings.runConfig.workingDirPrompt");
         TextField env = field("settings.runConfig.envPrompt");
         TextField beforeLaunch = field("settings.runConfig.beforeLaunchPrompt");
+        ComboBox<JdkChoice> jdk = new ComboBox<>();
+        JdkChoice.configure(jdk, tr("settings.runConfig.jdk.global"));
+        jdk.setId("run-config-jdk");
 
         GridPane form = new GridPane();
         form.setHgap(8);
@@ -122,6 +125,7 @@ public final class RunConfigurationsWindow {
         formRow(form, 7, "settings.runConfig.workingDir", workingDir);
         formRow(form, 8, "settings.runConfig.env", env);
         formRow(form, 9, "settings.runConfig.beforeLaunch", beforeLaunch);
+        formRow(form, 10, "settings.runConfig.jdk", jdk);
         form.setDisable(true);
 
         Runnable commit = () -> {
@@ -141,11 +145,13 @@ public final class RunConfigurationsWindow {
                             vmArgs.getText(),
                             workingDir.getText(),
                             env.getText(),
-                            beforeLaunch.getText()));
+                            beforeLaunch.getText(),
+                            jdk.getValue() == null ? "" : jdk.getValue().home()));
             list.refresh();
             persist();
         };
         type.valueProperty().addListener((o, was, now) -> commit.run());
+        jdk.valueProperty().addListener((o, was, now) -> commit.run());
         for (TextField value :
                 List.of(name, target, mainClass, projectName, args, vmArgs, workingDir, env, beforeLaunch)) {
             value.setOnAction(e -> commit.run());
@@ -160,6 +166,7 @@ public final class RunConfigurationsWindow {
             loading = true;
             try {
                 form.setDisable(now == null);
+                jdk.setDisable(now == null || !now.isJava());
                 name.setText(now == null ? "" : now.name());
                 type.setValue(now == null ? "java" : now.type());
                 target.setText(now == null ? "" : now.target());
@@ -170,6 +177,7 @@ public final class RunConfigurationsWindow {
                 workingDir.setText(now == null ? "" : now.workingDir());
                 env.setText(now == null ? "" : now.env());
                 beforeLaunch.setText(now == null ? "" : now.beforeLaunch());
+                JdkChoice.select(jdk, now == null ? "" : now.jdkHome());
             } finally {
                 loading = false;
             }

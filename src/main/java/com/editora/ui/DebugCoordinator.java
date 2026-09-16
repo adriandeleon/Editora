@@ -753,10 +753,12 @@ final class DebugCoordinator {
         debugPanel.setSessionFile(b.getPath().getFileName().toString());
         // The debuggee gets the same per-file program arguments the Run feature uses.
         dapManager.setProgramArgs(ProgramArgs.tokenize(ops.programArgs(b.getPath())));
-        dapManager.setVmArgs(""); // no VM args/env on a plain debug (only saved run configs carry them)
-        dapManager.setEnv(java.util.Map.of());
+        dapManager.setVmArgs(""); // no user VM args/env on a plain debug
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
-        withClosedBreakpoints(() -> dapManager.startLaunch(b.getPath(), language, this::pickMainClass));
+        Path projectRoot = "java".equals(language) ? JavaProjectRoot.find(b.getPath()) : null;
+        String javaExec = configuredJavaExecutable(projectRoot, null);
+        dapManager.setEnv(configuredJdkEnvironment(projectRoot, null));
+        withClosedBreakpoints(() -> dapManager.startLaunch(b.getPath(), language, this::pickMainClass, javaExec));
     }
 
     /**
@@ -819,6 +821,11 @@ final class DebugCoordinator {
             return; // save whatever the user was editing before launching, as before
         }
         Path cwd = cfg.workingDir().isBlank() ? root : Path.of(cfg.workingDir());
+        String jdkHome = configuredJdkHome(root, cfg);
+        String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
+        java.util.LinkedHashMap<String, String> launchEnv = new java.util.LinkedHashMap<>(
+                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
+        launchEnv.putAll(com.editora.run.EnvVars.parse(cfg.env()));
         // The same gate the Run path has always had: a failed build aborts the launch rather than debugging
         // the previous class files, where every breakpoint would sit on a stale line number.
         //
@@ -826,27 +833,32 @@ final class DebugCoordinator {
         // dispatch — because those guards reject a configuration that cannot launch at all (a script type, a
         // blank main class), and spending a multi-minute build on one before saying so is worse than not
         // building.
-        RunCoordinator.withBeforeLaunch(host, cfg, cwd, () -> {
-            // routing may be a background tab whose server start was deferred; open it on jdtls first, or the
-            // resolve below comes back "no language server for file" while jdtls is running perfectly.
-            lsp.ensureManaged(routing);
-            dapManager.resolveMainClasses(routing, options -> {
-                DapManager.MainClassOption match = options.stream()
-                        .filter(o -> cfg.mainClass().equals(o.mainClass()))
-                        .findFirst()
-                        .orElse(null);
-                if (match == null) {
-                    host.setStatus(tr("status.debug.noMainClass"));
-                    return;
-                }
-                ops.openToolWindow();
-                debugPanel.setSessionFile(shortName(match.mainClass()));
-                dapManager.setProgramArgs(ProgramArgs.tokenize(cfg.args()));
-                dapManager.setVmArgs(cfg.vmArgs());
-                dapManager.setEnv(com.editora.run.EnvVars.parse(cfg.env()));
-                withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, match, cwd));
-            });
-        });
+        RunCoordinator.withBeforeLaunch(
+                host,
+                cfg,
+                cwd,
+                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()),
+                () -> {
+                    // routing may be a background tab whose server start was deferred; open it on jdtls first, or the
+                    // resolve below comes back "no language server for file" while jdtls is running perfectly.
+                    lsp.ensureManaged(routing);
+                    dapManager.resolveMainClasses(routing, options -> {
+                        DapManager.MainClassOption match = options.stream()
+                                .filter(o -> cfg.mainClass().equals(o.mainClass()))
+                                .findFirst()
+                                .orElse(null);
+                        if (match == null) {
+                            host.setStatus(tr("status.debug.noMainClass"));
+                            return;
+                        }
+                        ops.openToolWindow();
+                        debugPanel.setSessionFile(shortName(match.mainClass()));
+                        dapManager.setProgramArgs(ProgramArgs.tokenize(cfg.args()));
+                        dapManager.setVmArgs(cfg.vmArgs());
+                        dapManager.setEnv(launchEnv);
+                        withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, match, cwd, javaExec));
+                    });
+                });
     }
 
     private void startMainClassDebug(String targetFqn) {
@@ -881,9 +893,10 @@ final class DebugCoordinator {
                 debugPanel.setSessionFile(shortName(opt.mainClass()));
                 dapManager.setProgramArgs(ProgramArgs.tokenize(programArgsForMain(opt)));
                 dapManager.setVmArgs(""); // the gutter/command debug carries no VM args/env
-                dapManager.setEnv(java.util.Map.of());
+                dapManager.setEnv(configuredJdkEnvironment(root, null));
                 lsp.ensureManaged(routing); // see above
-                withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, opt, root));
+                String javaExec = configuredJavaExecutable(root, null);
+                withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, opt, root, javaExec));
             };
             if (targetFqn != null) {
                 DapManager.MainClassOption match = options.stream()
@@ -913,6 +926,24 @@ final class DebugCoordinator {
         } catch (RuntimeException e) {
             return "";
         }
+    }
+
+    /** The configured Maven JDK for {@code root}; project/run override wins over the global setting. */
+    private String configuredJdkHome(Path root, RunConfiguration cfg) {
+        if (root == null || !java.nio.file.Files.isRegularFile(root.resolve("pom.xml"))) {
+            return "";
+        }
+        return com.editora.run.JdkToolchain.effectiveHome(
+                cfg == null ? "" : cfg.jdkHome(), host.settings().getMavenJdkHome());
+    }
+
+    private String configuredJavaExecutable(Path root, RunConfiguration cfg) {
+        return com.editora.run.JdkToolchain.javaExecutable(configuredJdkHome(root, cfg));
+    }
+
+    private java.util.Map<String, String> configuredJdkEnvironment(Path root, RunConfiguration cfg) {
+        return com.editora.run.JdkToolchain.environment(
+                configuredJdkHome(root, cfg), com.editora.process.ProcessRunner.augmentedPath());
     }
 
     /** The simple class name of a fully-qualified main class (for the session label). */
