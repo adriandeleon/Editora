@@ -64,9 +64,11 @@ previously self-built Monocle backend it replaced (see
 
 ## JDK compatibility lanes
 
-CI compiles and tests the project twice: with the supported JDK 25 baseline and with JDK 27,
-using each JDK's matching `--release`. The JDK 27 lane is a blocking forward-compatibility gate;
-release packaging remains on JDK 25 until the native five-platform matrix has been qualified.
+CI compiles and tests the project twice: with the supported Temurin JDK 25 baseline and with
+Oracle JDK 27, using each JDK's matching `--release`. Oracle supplies the Java 27 GA build while
+Temurin 27 binaries are not yet available. The JDK 27 lane is a blocking forward-compatibility
+gate; release packaging remains on JDK 25 until the native five-platform matrix has been
+qualified.
 
 Formatting is a separate JDK 25 job. Palantir Java Format currently reaches into javac internals
 that changed in JDK 27, so the two build lanes skip Spotless while the dedicated job preserves the
