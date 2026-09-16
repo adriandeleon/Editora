@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   javac-dependent formatter supports 27.
 - Fixed streamed AI responses on Java 27 so the response timeout still bounds header and idle-read
   waits without imposing an absolute deadline on a healthy long-running generation.
+- Updated JSVG, Apache SSHD, SLF4J, JUnit, Spotless, and Palantir Java Format to their
+  current compatible releases.
+- Updated the Maven build plugins and made the documented Maven 3.9 and JDK 25+ build requirements
+  executable through Maven Enforcer.
 - Upgraded the UI runtime from JavaFX 26.0.2 to JavaFX 27. The JDK 25 baseline already satisfies
   JavaFX 27's minimum, and the now-stable extended-window API no longer needs the preview flag.
 - Added editor context-menu and command-palette actions to debug the JUnit test method at the caret through

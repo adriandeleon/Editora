@@ -29,8 +29,8 @@ version comes from a `Resolve version` step — the tag minus `v`, else the pom 
 artifacts alongside the fat jar. **macOS pre-1.0 app-version:** jpackage's `--app-version` (which becomes
 `CFBundleVersion`/`CFBundleShortVersionString`) rejects a version whose first number is zero/negative, so a
 `0.x.y` `pom.xml` version fails jpackage on macOS only (Linux/Windows accept it fine) — the `os-mac` profile
-computes a bundle-metadata-only `jpackage.appVersion` via a `maven-antrun-plugin` execution (Ant
-`loadresource`/`propertyresource`/`tokenfilter replaceregex`, `initialize` phase, `exportAntProperties`)
+computes a bundle-metadata-only `jpackage.appVersion` via a `build-helper-maven-plugin`
+`regex-property` execution in the `initialize` phase
 that bumps a leading `0.` to `1.` (`0.9.0`→`1.9.0`); `os-windows`/`os-linux` just alias it to
 `${project.version}`. Both jpackage invocations — the `jpackage-app-image` execution and
 `aot_build.java`'s later DMG-wrap call — read `${jpackage.appVersion}` for their `--app-version` flag

@@ -51,7 +51,7 @@ chore: reopen master at 0.9.8-SNAPSHOT after v0.9.7
 ### `-SNAPSHOT` and the native installers
 
 jpackage rejects a non-numeric `--app-version`, so the suffix must never reach it. Each OS
-profile's antrun step strips it into **`jpackage.publicVersion`**, and `jpackage.appVersion`
+profile's build-helper step strips it into **`jpackage.publicVersion`**, and `jpackage.appVersion`
 derives from that (macOS additionally bumps a leading `0.` to `1.` — see the comment in
 `pom.xml`). `aot_build.java` writes `publicVersion` into the macOS `Info.plist`. A local
 `-Pdist` build off `master` therefore produces an installer whose *bundle metadata* reads
