@@ -153,8 +153,7 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.noRerun"));
             return;
         }
-        if (service.isRunning()) {
-            host.setStatus(tr("status.run.busy"));
+        if (!beginRunRequest()) {
             return;
         }
         streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv);
@@ -252,8 +251,7 @@ final class RunCoordinator {
 
     /** Runs a saved {@link RunConfiguration}: its main class with its own program/VM args + working dir. */
     void runConfig(RunConfiguration cfg) {
-        if (service.isRunning()) {
-            host.setStatus(tr("status.run.busy"));
+        if (!beginRunRequest()) {
             return;
         }
         // A before-launch step gates everything after it: if the build fails there is nothing worth running,
@@ -456,8 +454,7 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.needJavaFile"));
             return;
         }
-        if (service.isRunning()) {
-            host.setStatus(tr("status.run.busy"));
+        if (!beginRunRequest()) {
             return;
         }
         Path routing = b.getPath();
@@ -712,15 +709,14 @@ final class RunCoordinator {
         if (buffer == null) {
             return;
         }
+        if (!beginRunRequest()) {
+            return;
+        }
         if ((buffer.isDirty() || buffer.getPath() == null) && !ops.saveBuffer(buffer)) {
             return; // user cancelled Save-As, or the save failed — don't run against stale/missing content
         }
         Path path = buffer.getPath();
         if (path == null) {
-            return;
-        }
-        if (service.isRunning()) {
-            host.setStatus(tr("status.run.busy"));
             return;
         }
         List<String> command = new ArrayList<>();
@@ -745,15 +741,14 @@ final class RunCoordinator {
             runMakeTarget(buffer, null); // "Run File" on a Makefile ⇒ the default goal
             return;
         }
+        if (!beginRunRequest()) {
+            return;
+        }
         if ((buffer.isDirty() || buffer.getPath() == null) && !ops.saveBuffer(buffer)) {
             return; // user cancelled Save-As, or the save failed — don't run stale/missing content
         }
         Path path = buffer.getPath();
         if (path == null) {
-            return;
-        }
-        if (service.isRunning()) {
-            host.setStatus(tr("status.run.busy"));
             return;
         }
         boolean java = !buffer.isPython() && !buffer.isShell();
@@ -807,6 +802,20 @@ final class RunCoordinator {
 
     private void launchRun(Path path, List<String> command) {
         streamRun(path.getFileName().toString(), path.getParent(), command);
+    }
+
+    /**
+     * Brings the Run console forward for every valid Run request. A second request while a process is alive
+     * is therefore useful rather than a silent no-op: it returns the user to the process that already owns
+     * the console, then reports that another launch cannot start yet.
+     */
+    private boolean beginRunRequest() {
+        ops.openToolWindow();
+        if (!service.isRunning()) {
+            return true;
+        }
+        host.setStatus(tr("status.run.busy"));
+        return false;
     }
 
     /** Runs {@code command} in {@code workingDir} (the project root for a main class, else a file's folder),

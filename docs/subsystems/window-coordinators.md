@@ -41,3 +41,8 @@ Existing JavaFX tests exercise these workflows through real windows and command 
 that inspect private state must target the owning coordinator. `SourceFileSizeTest` enforces a
 10,000-line upper bound for production Java files; this is a ceiling, not a desired class size.
 Prefer focused responsibilities well below it.
+
+Run requests are also navigation requests: `RunCoordinator` opens and focuses the Run tool window before
+launch validation. If a process is already active, another Run request refocuses that existing console and
+reports the busy state. `ToolWindowManager.open(window, true)` must therefore refocus an already-open docked
+or floating window, not treat the call as a no-op.

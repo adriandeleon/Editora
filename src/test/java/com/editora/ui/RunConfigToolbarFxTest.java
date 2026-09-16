@@ -452,6 +452,19 @@ class RunConfigToolbarFxTest {
                         command);
                 assertFalse(stop.isDisable(), "Stop should be enabled the moment a program starts");
             });
+
+            ToolWindowManager toolWindows = FxTestSupport.field(fx.controller, "toolWindows");
+            ToolWindow runWindow = FxTestSupport.field(fx.controller, "runToolWindow");
+            FxTestSupport.runOnFx(() -> toolWindows.close(runWindow));
+            assertFalse(
+                    FxTestSupport.callOnFx(() -> toolWindows.isOpen(runWindow)),
+                    "precondition: the running console can be hidden");
+
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "runConfigurations"), "onRunSelectedConfig", new Class[] {}));
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> toolWindows.isOpen(runWindow)),
+                    "pressing Run again should bring the existing process console back");
         } finally {
             FxTestSupport.runOnFx(() -> FxTestSupport.call(runCoordinator, "stopRun", new Class[] {}));
         }
