@@ -3,6 +3,7 @@ package com.editora.history;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -37,6 +38,7 @@ public final class HistoryService {
     private final HistoryBlobStore blobs;
     private final Object publicationLock = new Object();
     private int publicationsInFlight;
+    private final Set<String> publicationHashes = new LinkedHashSet<>();
     private Set<String> deferredLiveHashes;
 
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
@@ -102,8 +104,9 @@ public final class HistoryService {
                     // the next index publication supplies a complete live set. Otherwise the deferred GC can
                     // delete the blob between its write and the durable index callback.
                     synchronized (publicationLock) {
+                        publicationHashes.add(sha);
                         if (deferredLiveHashes != null && !deferredLiveHashes.contains(sha)) {
-                            var protectedHashes = new java.util.LinkedHashSet<>(deferredLiveHashes);
+                            var protectedHashes = new LinkedHashSet<>(deferredLiveHashes);
                             protectedHashes.add(sha);
                             deferredLiveHashes = Set.copyOf(protectedHashes);
                         }
@@ -135,6 +138,9 @@ public final class HistoryService {
         } catch (RejectedExecutionException shuttingDown) {
             synchronized (publicationLock) {
                 publicationsInFlight--;
+                if (publicationsInFlight == 0) {
+                    publicationHashes.clear();
+                }
             }
             Platform.runLater(() -> onRecorded.accept(new SnapshotOutcome(null, false)));
         }
@@ -151,6 +157,9 @@ public final class HistoryService {
                     if (publicationsInFlight == 0 && deferredLiveHashes != null) {
                         live = deferredLiveHashes;
                         deferredLiveHashes = null;
+                    }
+                    if (publicationsInFlight == 0) {
+                        publicationHashes.clear();
                     }
                 }
                 if (live != null) {
@@ -195,7 +204,9 @@ public final class HistoryService {
         Set<String> snapshot = live == null ? Set.of() : Set.copyOf(live);
         synchronized (publicationLock) {
             if (publicationsInFlight > 0) {
-                deferredLiveHashes = snapshot;
+                var protectedHashes = new LinkedHashSet<>(snapshot);
+                protectedHashes.addAll(publicationHashes);
+                deferredLiveHashes = Set.copyOf(protectedHashes);
                 return;
             }
         }
