@@ -45,4 +45,6 @@ Prefer focused responsibilities well below it.
 Run requests are also navigation requests: `RunCoordinator` opens and focuses the Run tool window before
 launch validation. If a process is already active, another Run request refocuses that existing console and
 reports the busy state. `ToolWindowManager.open(window, true)` must therefore refocus an already-open docked
-or floating window, not treat the call as a no-op.
+or floating window, not treat the call as a no-op. Run-window availability also includes a live process,
+independent of the active buffer's runnability; run-state changes must refresh that gate so a later buffer or
+settings refresh cannot close a console that was just reopened.

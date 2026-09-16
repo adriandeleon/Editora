@@ -460,11 +460,20 @@ class RunConfigToolbarFxTest {
                     FxTestSupport.callOnFx(() -> toolWindows.isOpen(runWindow)),
                     "precondition: the running console can be hidden");
 
-            FxTestSupport.runOnFx(() -> FxTestSupport.call(
-                    FxTestSupport.field(fx.controller, "runConfigurations"), "onRunSelectedConfig", new Class[] {}));
+            javafx.scene.control.Button run = FxTestSupport.field(fx.controller, "runConfigRunButton");
+            FxTestSupport.runOnFx(run::fire);
             assertTrue(
                     FxTestSupport.callOnFx(() -> toolWindows.isOpen(runWindow)),
                     "pressing Run again should bring the existing process console back");
+
+            // A project Java/NPM run can be active while the current editor is not a compact runnable file.
+            // Tab changes, language detection, and settings updates all revisit this availability gate. It
+            // must preserve the console that the real toolbar button just reopened instead of immediately
+            // closing it again because the editor itself is not runnable.
+            FxTestSupport.runOnFx(() -> FxTestSupport.invoke(fx.controller, "updateRunButton"));
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> toolWindows.isOpen(runWindow)),
+                    "a context refresh must not hide the console while its process is still running");
         } finally {
             FxTestSupport.runOnFx(() -> FxTestSupport.call(runCoordinator, "stopRun", new Class[] {}));
         }

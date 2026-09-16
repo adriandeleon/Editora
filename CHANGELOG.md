@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installed JDK discovery includes standard platform locations plus SDKMAN, asdf, mise, Jabba, and
   JetBrains-managed JDKs.
 - Running a file or saved configuration now always opens and focuses the Run tool window; pressing Run while
-  a program is already active brings its existing console back into focus.
+  a program is already active brings its existing console back into focus and keeps it open across later UI
+  availability refreshes.
 
 ## [0.18.4] - 2026-09-15
 
