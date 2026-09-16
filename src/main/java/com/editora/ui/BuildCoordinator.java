@@ -393,7 +393,11 @@ final class BuildCoordinator {
         panel.started(this, tool.displayName(), label, tool.outputStyle(), this::stop);
         tree.setRunning(true);
         host.setStatus(tr("status.build.started", tool.displayName(), label));
-        service.run(root, runArgv, new BuildService.Listener() {
+        java.util.Map<String, String> environment = tool == BuildTool.MAVEN
+                ? com.editora.run.JdkToolchain.environment(
+                        host.settings().getMavenJdkHome(), com.editora.process.ProcessRunner.augmentedPath())
+                : java.util.Map.of();
+        service.run(root, runArgv, environment, new BuildService.Listener() {
             @Override
             public void onStart(String commandLine) {
                 panel.started(

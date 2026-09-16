@@ -37,6 +37,7 @@ class SettingsResetTest {
         s.setFillColumn(42);
         s.setUpdateCheck(false);
         s.setCsvPreview(false);
+        s.setMavenJdkHome("/opt/jdk-17");
 
         Settings.resetToDefaults(s);
 
@@ -55,6 +56,7 @@ class SettingsResetTest {
         assertEquals(d.getFillColumn(), s.getFillColumn());
         assertEquals(d.isUpdateCheck(), s.isUpdateCheck());
         assertEquals(d.isCsvPreview(), s.isCsvPreview());
+        assertEquals("", s.getMavenJdkHome());
     }
 
     @Test

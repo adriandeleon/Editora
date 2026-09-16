@@ -33,11 +33,18 @@ public final class JavaRuntimes {
         List<java.nio.file.Path> roots = new ArrayList<>();
         String home = System.getProperty("user.home", "");
         roots.add(java.nio.file.Path.of(home, ".sdkman", "candidates", "java"));
+        roots.add(java.nio.file.Path.of(home, ".asdf", "installs", "java"));
+        roots.add(java.nio.file.Path.of(home, ".local", "share", "mise", "installs", "java"));
+        roots.add(java.nio.file.Path.of(home, ".jabba", "jdk"));
         roots.add(java.nio.file.Path.of("/usr/lib/jvm"));
+        roots.add(java.nio.file.Path.of("/usr/java"));
         roots.add(java.nio.file.Path.of("/Library/Java/JavaVirtualMachines"));
+        roots.add(java.nio.file.Path.of("/opt/homebrew/opt"));
+        roots.add(java.nio.file.Path.of("/usr/local/opt"));
         roots.add(java.nio.file.Path.of(home, ".jdks")); // JetBrains toolbox
         roots.add(java.nio.file.Path.of("C:\\Program Files\\Java"));
         roots.add(java.nio.file.Path.of("C:\\Program Files\\Eclipse Adoptium"));
+        roots.add(java.nio.file.Path.of("C:\\Program Files\\Microsoft"));
         return roots;
     }
 
@@ -60,6 +67,12 @@ public final class JavaRuntimes {
                 kids.filter(java.nio.file.Files::isDirectory).forEach(d -> {
                     addJdk(found, d);
                     addJdk(found, d.resolve("Contents").resolve("Home")); // macOS bundle layout
+                    addJdk(
+                            found,
+                            d.resolve("libexec")
+                                    .resolve("openjdk.jdk")
+                                    .resolve("Contents")
+                                    .resolve("Home"));
                 });
             } catch (java.io.IOException ignored) {
                 // an unreadable JDK directory simply isn't a runtime we can offer

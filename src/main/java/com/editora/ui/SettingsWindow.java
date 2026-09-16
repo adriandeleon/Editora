@@ -401,6 +401,7 @@ public class SettingsWindow {
     private Label diagramStatusLabel;
     private final java.util.Map<BuildTool, CheckBox> buildToolChecks = new java.util.EnumMap<>(BuildTool.class);
     private final java.util.Map<BuildTool, TextField> buildToolCommandFields = new java.util.EnumMap<>(BuildTool.class);
+    private final ComboBox<JdkChoice> mavenJdkCombo = new ComboBox<>();
     private final TextField mavenArchetypeCatalogField = new TextField();
     private final java.util.Map<BuildTool, Label> buildToolStatusLabels = new java.util.EnumMap<>(BuildTool.class);
     private CheckBox ripgrepCheck;
@@ -1325,6 +1326,14 @@ public class SettingsWindow {
             });
             buildToolCommandFields.put(bt, commandField);
             if (bt == BuildTool.MAVEN) {
+                JdkChoice.configure(mavenJdkCombo, tr("settings.maven.jdk.system"));
+                mavenJdkCombo.setId("settings-maven-jdk");
+                mavenJdkCombo.valueProperty().addListener((obs, was, now) -> {
+                    if (!loading) {
+                        config.getSettings().setMavenJdkHome(now == null ? "" : now.home());
+                        apply();
+                    }
+                });
                 mavenArchetypeCatalogField.textProperty().addListener((obs, was, now) -> {
                     config.getSettings().setMavenArchetypeCatalogUrl(now);
                     apply();
@@ -3390,6 +3399,11 @@ public class SettingsWindow {
                     kw + " path executable wrapper");
             controlRow(c, Category.BUILD_TOOLS, tr("settings.git.detected"), null, buildToolStatusLabels.get(bt), kw);
             if (bt == BuildTool.MAVEN) {
+                cardRow(
+                        c,
+                        Category.BUILD_TOOLS,
+                        settingRow(tr("settings.maven.jdk"), tr("settings.maven.jdk.hint"), mavenJdkCombo),
+                        kw + " jdk java home sdkman toolchain run debug");
                 mavenArchetypeCatalogField.setPrefWidth(320);
                 cardRow(
                         c,
@@ -6743,6 +6757,7 @@ public class SettingsWindow {
                 buildToolChecks.get(bt).setSelected(bt.enabledIn(settings));
                 buildToolCommandFields.get(bt).setText(bt.commandIn(settings));
                 if (bt == BuildTool.MAVEN) {
+                    JdkChoice.select(mavenJdkCombo, settings.getMavenJdkHome());
                     mavenArchetypeCatalogField.setText(settings.getMavenArchetypeCatalogUrl());
                 }
             }
