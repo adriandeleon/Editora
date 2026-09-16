@@ -211,13 +211,10 @@ class ProjectPanelGitFolderMenuFxTest {
             return created;
         });
 
+        TreeItem<Path> folderItem = awaitChild(panel, folder);
         Tooltip tooltip = FxTestSupport.callOnFx(() -> {
             @SuppressWarnings("unchecked")
             TreeView<Path> tree = FxTestSupport.field(panel, "tree");
-            TreeItem<Path> folderItem = tree.getRoot().getChildren().stream()
-                    .filter(item -> folder.equals(item.getValue()))
-                    .findFirst()
-                    .orElseThrow();
             TreeCell<Path> cell = tree.getCellFactory().call(tree);
             FxTestSupport.call(cell, "updateTreeItem", new Class<?>[] {TreeItem.class}, folderItem);
             FxTestSupport.call(cell, "updateItem", new Class<?>[] {Path.class, boolean.class}, folder, false);
@@ -312,6 +309,24 @@ class ProjectPanelGitFolderMenuFxTest {
                 folder,
                 FxTestSupport.callOnFx(
                         () -> tree.getSelectionModel().getSelectedItem().getValue()));
+    }
+
+    private static TreeItem<Path> awaitChild(ProjectPanel panel, Path path) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            TreeItem<Path> match = FxTestSupport.callOnFx(() -> {
+                @SuppressWarnings("unchecked")
+                TreeView<Path> tree = FxTestSupport.field(panel, "tree");
+                return tree.getRoot().getChildren().stream()
+                        .filter(item -> path.equals(item.getValue()))
+                        .findFirst()
+                        .orElse(null);
+            });
+            if (match != null) {
+                return match;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("child did not load: " + path);
     }
 
     private static void fire(Menu menu, String labelKey) throws Exception {
