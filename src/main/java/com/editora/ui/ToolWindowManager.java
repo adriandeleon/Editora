@@ -876,6 +876,12 @@ public class ToolWindowManager {
 
     /** Opens a closed tool window in the presentation mode in which the user last left it. */
     private void openRemembered(ToolWindow tw, boolean focus, boolean replace) {
+        if (isOpen(tw)) {
+            if (focus) {
+                focus(tw);
+            }
+            return;
+        }
         String mode = presentationMode(tw);
         if (MODE_FLOATING.equals(mode) && vSplit.getScene() != null) {
             openFloating(tw);
@@ -884,6 +890,18 @@ public class ToolWindowManager {
         openOnSide(tw, focus, replace);
         if (MODE_MAXIMIZED.equals(mode)) {
             maximize(tw);
+        }
+    }
+
+    /** Re-focuses an already-open window, including bringing its detached stage back to the front. */
+    private void focus(ToolWindow tw) {
+        javafx.stage.Stage floating = floatingStages.get(tw);
+        if (floating != null) {
+            floating.toFront();
+            floating.requestFocus();
+        }
+        if (tw.getContent() instanceof ToolWindowContent content) {
+            Platform.runLater(content::focusFirstItem);
         }
     }
 

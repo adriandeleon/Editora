@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -39,6 +40,15 @@ class ToolWindowActiveHighlightFxTest {
     }
 
     private record Rig(ToolWindowManager manager, ToolWindow tw, Node content) {}
+
+    private static final class FocusProbe extends Region implements ToolWindowContent {
+        int calls;
+
+        @Override
+        public void focusFirstItem() {
+            calls++;
+        }
+    }
 
     private static Rig rig() throws Exception {
         Path dir = Files.createTempDirectory("editora-tw-active");
@@ -76,5 +86,30 @@ class ToolWindowActiveHighlightFxTest {
         assertFalse(r[0], "merely opening a window does not make its button active");
         assertTrue(r[1], "the button is active while focus is within its panel");
         assertFalse(r[2], "the button clears its active state once focus leaves");
+    }
+
+    @Test
+    void openingAnAlreadyOpenWindowRefocusesItsContent() throws Exception {
+        FocusProbe content = new FocusProbe();
+        ToolWindowManager manager = FxTestSupport.callOnFx(() -> {
+            Path dir = Files.createTempDirectory("editora-tw-refocus");
+            SharedConfig shared = new SharedConfig(dir, false);
+            shared.load();
+            ToolWindowManager m = new ToolWindowManager(
+                    new BorderPane(), new Label("editor"), new ConfigManager(shared), new KeymapManager());
+            ToolWindow tw = new ToolWindow(
+                    "probe", "Probe", ToolWindow.Side.RIGHT, () -> new Label("i"), content, "tool.probe");
+            m.register(tw);
+            m.open(tw);
+            return m;
+        });
+        FxTestSupport.runOnFx(() -> {}); // drain the first deferred focus request
+        assertEquals(1, content.calls);
+
+        FxTestSupport.runOnFx(
+                () -> manager.open(manager.getRegisteredToolWindows().iterator().next()));
+        FxTestSupport.runOnFx(() -> {}); // drain the refocus request
+
+        assertEquals(2, content.calls, "a direct open is also a focus request when the window is visible");
     }
 }
