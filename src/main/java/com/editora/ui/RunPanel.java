@@ -65,6 +65,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
         status.getStyleClass().add("run-status");
         stopButton.setText(tr("run.stop"));
+        stopButton.setMinWidth(Region.USE_PREF_SIZE);
         stopButton.getStyleClass().add("run-stop");
         stopButton.setDisable(true);
         stopButton.setOnAction(e -> {
@@ -73,6 +74,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
             }
         });
         clearButton.setText(tr("run.clear"));
+        clearButton.setMinWidth(Region.USE_PREF_SIZE);
         clearButton.setOnAction(e -> clearConsole());
 
         HBox header = new HBox(8, status, spacer(), clearButton, stopButton);

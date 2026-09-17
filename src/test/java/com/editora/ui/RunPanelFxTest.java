@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
 
 import org.fxmisc.richtext.CodeArea;
@@ -73,5 +74,26 @@ class RunPanelFxTest {
 
         FxTestSupport.runOnFx(p::idle);
         assertTrue(stopDisabled(p), "Stop disabled when idle");
+    }
+
+    @Test
+    void longCommandCannotCollapseActionButtonsToEllipses() throws Exception {
+        RunPanel p = panel();
+        Button clear = FxTestSupport.field(p, "clearButton");
+        Button stop = FxTestSupport.field(p, "stopButton");
+
+        FxTestSupport.runOnFx(() -> {
+            p.started("java -cp " + "dependency.jar:".repeat(300) + " App");
+            new Scene(p, 640, 240);
+            p.applyCss();
+            p.layout();
+        });
+
+        assertTrue(
+                FxTestSupport.callOnFx(clear::getWidth) + 0.5 >= FxTestSupport.callOnFx(() -> clear.prefWidth(-1)),
+                "Clear must retain enough width to render its full label");
+        assertTrue(
+                FxTestSupport.callOnFx(stop::getWidth) + 0.5 >= FxTestSupport.callOnFx(() -> stop.prefWidth(-1)),
+                "Stop must retain enough width to render its full label");
     }
 }

@@ -46,6 +46,7 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
         status.getStyleClass().add("run-status");
         status.setText(tr("externalTool.idle"));
         Button clear = new Button(tr("run.clear"));
+        clear.setMinWidth(Region.USE_PREF_SIZE);
         clear.setOnAction(e -> clearConsole());
 
         HBox header = new HBox(8, status, spacer(), clear);
