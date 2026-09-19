@@ -50,6 +50,13 @@ class MergeViewerPaneFxTest {
             assertEquals("before\nours\nafter\n", result.getText());
 
             FxTestSupport.runOnFx(() -> result.setText("before\r\ncustom\r\nafter\r\n"));
+            assertTrue(pane.hasUnsavedChanges());
+            Button acceptTheirs = button((Parent) pane.node(), "Accept Theirs");
+            FxTestSupport.runOnFx(acceptTheirs::fire);
+            assertEquals(
+                    "before\ncustom\nafter\n",
+                    result.getText(),
+                    "a conflict choice must not erase a manually edited resolution draft");
             Button save = button((Parent) pane.node(), "Save resolution");
             FxTestSupport.runOnFx(save::fire);
             assertEquals("before\r\ncustom\r\nafter\r\n", applied.get());

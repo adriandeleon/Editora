@@ -495,17 +495,20 @@ public class FindReplaceBar extends HBox {
     }
 
     private void replaceCurrent() {
-        CodeArea area = area();
-        if (area == null) {
+        EditorBuffer buffer = activeBuffer.get();
+        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
+        if (area == null || !buffer.isEditable()) {
             return;
         }
         int start = area.getSelection().getStart();
         int end = area.getSelection().getEnd();
-        if (end > start && inScope(start, end)) {
+        recompute();
+        boolean currentMatch = matches.stream().anyMatch(m -> m[0] == start && m[1] == end);
+        if (end > start && inScope(start, end) && currentMatch) {
             String matched = area.getText(start, end);
             String repl;
             try {
-                repl = replacementForSingle(matched);
+                repl = replacementForSingle(area.getText(), start, end, matched);
             } catch (RuntimeException badReference) {
                 status.accept(tr("find.badReplacement", describe(badReference)));
                 return;
@@ -527,14 +530,17 @@ public class FindReplaceBar extends HBox {
      *
      * @throws RuntimeException if the replacement names a group the pattern does not have
      */
-    private String replacementForSingle(String matched) {
+    private String replacementForSingle(String fullText, int start, int end, String matched) {
         String replacement = replaceField.getText();
         String expanded = replacement;
         if (regex.isSelected()) {
             Pattern p =
                     SearchMatcher.compileRegex(findField.getText(), caseSensitive.isSelected(), wholeWord.isSelected());
-            if (p != null && p.matcher(matched).matches()) {
-                expanded = p.matcher(matched).replaceFirst(replacement);
+            java.util.regex.Matcher matcher = p == null ? null : p.matcher(fullText);
+            if (matcher != null && matcher.find(start) && matcher.start() == start && matcher.end() == end) {
+                StringBuffer replacedPrefix = new StringBuffer();
+                matcher.appendReplacement(replacedPrefix, replacement);
+                expanded = replacedPrefix.substring(start);
             }
         }
         return preserveCase.isSelected() ? PreserveCase.apply(matched, expanded) : expanded;
@@ -544,7 +550,7 @@ public class FindReplaceBar extends HBox {
         EditorBuffer buffer = activeBuffer.get();
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
         String query = findField.getText();
-        if (area == null || query.isEmpty()) {
+        if (area == null || query.isEmpty() || !buffer.isEditable()) {
             return;
         }
         if (regex.isSelected()) {

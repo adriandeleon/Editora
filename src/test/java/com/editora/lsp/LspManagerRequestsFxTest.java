@@ -135,6 +135,37 @@ class LspManagerRequestsFxTest {
         local.shutdownAll();
     }
 
+    @Test
+    void queuedPushDiagnosticsCannotReappearAfterDocumentClose() throws Exception {
+        var delivered = new CopyOnWriteArrayList<List<com.editora.editor.LspDiagnostic>>();
+        var sessionRef = new AtomicReference<LanguageServerSession>();
+        LspManager local = new LspManager((path, diagnostics) -> delivered.add(diagnostics), (t, m) -> {});
+        local.setSessionStarterForTest(session -> {
+            sessionRef.set(session);
+            session.attachForTest(new FakeLanguageServer(), new ServerCapabilities());
+        });
+        local.configure(true, Map.of("java", "jdtls"));
+        local.openDocument(file, root, "java", "class A {}");
+        var params = new org.eclipse.lsp4j.PublishDiagnosticsParams(
+                file.toUri().toString(),
+                List.of(new org.eclipse.lsp4j.Diagnostic(new Range(new Position(0, 0), new Position(0, 1)), "old")));
+        params.setVersion(1);
+
+        CountDownLatch closeQueued = new CountDownLatch(1);
+        Platform.runLater(() -> {
+            sessionRef.get().publishDiagnostics(params);
+            local.closeDocument(file);
+            closeQueued.countDown();
+        });
+        assertTrue(closeQueued.await(10, TimeUnit.SECONDS));
+        CountDownLatch fxDrained = new CountDownLatch(1);
+        Platform.runLater(fxDrained::countDown);
+        assertTrue(fxDrained.await(10, TimeUnit.SECONDS));
+
+        assertTrue(delivered.isEmpty(), "a queued callback from the closed document must be discarded");
+        local.shutdownAll();
+    }
+
     // --- definition, incl. the jdt:// library target (#665) ------------------------------------------
 
     @Test
@@ -684,6 +715,44 @@ class LspManagerRequestsFxTest {
         open();
         LspManager.RenamePrep result = await(cb -> manager.prepareRename(file, 2, 5, cb));
         assertTrue(!result.allowed(), "a null prepareRename means rename is not possible here");
+    }
+
+    @Test
+    void failedCodeActionEditDoesNotExecuteItsTrailingCommand() throws Exception {
+        FakeLanguageServer fake = open();
+        manager.setApplyEditHandler((mapped, done) -> done.accept(false));
+        var action = new org.eclipse.lsp4j.CodeAction("edit then command");
+        action.setEdit(new org.eclipse.lsp4j.WorkspaceEdit(Map.of(
+                file.toUri().toString(),
+                List.of(new TextEdit(new Range(new Position(0, 0), new Position(0, 0)), "// edit\n")))));
+        action.setCommand(new org.eclipse.lsp4j.Command("follow up", "java.followUp", List.of()));
+
+        Boolean applied = await(cb -> manager.applyCodeAction(file, action, cb));
+
+        assertFalse(applied);
+        assertTrue(fake.executedCommands.isEmpty(), "a command dependent on a refused edit must not run");
+    }
+
+    @Test
+    void codeActionRefusesAnUnversionedEditForAnUnverifiedClosedFile() throws Exception {
+        open();
+        Path closed = root.resolve("Closed.java");
+        Files.writeString(closed, "class Closed {}\n");
+        var action = new org.eclipse.lsp4j.CodeAction("change closed file");
+        action.setEdit(new org.eclipse.lsp4j.WorkspaceEdit(Map.of(
+                closed.toUri().toString(),
+                List.of(new TextEdit(new Range(new Position(0, 6), new Position(0, 12)), "Changed")))));
+        var applyCalled = new AtomicReference<>(false);
+        manager.setApplyEditHandler((mapped, done) -> {
+            applyCalled.set(true);
+            done.accept(true);
+        });
+
+        Boolean applied = await(cb -> manager.applyCodeAction(file, action, cb));
+
+        assertFalse(applied);
+        assertFalse(applyCalled.get(), "response-time disk content must not be treated as a request snapshot");
+        assertEquals("class Closed {}\n", Files.readString(closed));
     }
 
     // --- the degradation contract --------------------------------------------------------------------

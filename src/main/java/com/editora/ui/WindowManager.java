@@ -451,6 +451,42 @@ public class WindowManager {
         return null;
     }
 
+    /** All open document owners at or below a resource path, across every live window. */
+    List<com.editora.editor.EditorBuffer> buffersAtOrUnder(Path path) {
+        List<com.editora.editor.EditorBuffer> out = new ArrayList<>();
+        for (Holder holder : windows) {
+            out.addAll(holder.controller().buffersAtOrUnderLocal(path));
+        }
+        return List.copyOf(out);
+    }
+
+    void fileRenamedAcrossWindows(MainController initiator, Path from, Path to, boolean initiatorAlreadyClosed) {
+        for (Holder holder : List.copyOf(windows)) {
+            holder.controller()
+                    .remapProjectFileLocal(from, to, holder.controller() == initiator && initiatorAlreadyClosed);
+        }
+    }
+
+    void fileDeletedAcrossWindows(Path path) {
+        for (Holder holder : List.copyOf(windows)) {
+            holder.controller().removeProjectFileLocal(path);
+        }
+    }
+
+    void invalidatePendingGitWrites(MainController initiator, Path root, List<String> pathspecs) {
+        for (Holder holder : List.copyOf(windows)) {
+            if (holder.controller() != initiator) {
+                holder.controller().invalidatePendingGitWritesLocal(root, pathspecs);
+            }
+        }
+    }
+
+    void reloadAllFromDiskSilentlyAcrossWindows() {
+        for (Holder holder : List.copyOf(windows)) {
+            holder.controller().reloadAllFromDiskSilently();
+        }
+    }
+
     /** Directory holding per-window session files for untitled no-project windows ({@code windows/<uuid>.json}). */
     private Path windowsDir() {
         return shared.getConfigDir().resolve("windows");
@@ -572,14 +608,33 @@ public class WindowManager {
      * @return false if the user cancelled at some window's save prompt (the quit is off).
      */
     boolean confirmCloseAllWindows() {
-        for (Holder h : new ArrayList<>(windows)) {
-            h.stage().toFront(); // make it obvious which window is asking about unsaved changes
-            h.stage().requestFocus();
-            if (!h.controller().confirmCloseAllBuffers()) {
-                return false; // cancelled — the app keeps running and nothing was disposed
+        List<Holder> closing = new ArrayList<>(windows);
+        java.util.IdentityHashMap<MainController, CloseCoordinator.ApprovalState> approvals =
+                new java.util.IdentityHashMap<>();
+        for (Holder holder : closing) {
+            approvals.put(holder.controller(), new CloseCoordinator.ApprovalState());
+        }
+        // A prompt runs a nested FX event loop. While a later window is asking, an earlier window can receive
+        // another edit/callback, so repeat until one complete cross-window pass required no prompts.
+        while (true) {
+            boolean prompted = false;
+            for (Holder h : closing) {
+                h.stage().toFront(); // make it obvious which window is asking about unsaved changes
+                h.stage().requestFocus();
+                CloseCoordinator.Sweep sweep = h.controller().closes.confirmSweep(approvals.get(h.controller()));
+                if (!sweep.allowed()) {
+                    return false; // cancelled — the app keeps running and nothing was disposed
+                }
+                prompted |= sweep.prompted();
+            }
+            if (!prompted) {
+                break;
             }
         }
-        for (Holder h : new ArrayList<>(windows)) {
+        for (Holder h : closing) {
+            h.controller().persistSessionForClose();
+        }
+        for (Holder h : closing) {
             try {
                 h.controller().disposePlugins();
             } catch (RuntimeException | Error t) {

@@ -71,6 +71,13 @@ public final class StatusParser {
                         files.add(new FileEntry(unquotePath(path), f[1].charAt(0), f[1].charAt(1), unquotePath(orig)));
                     }
                 }
+                case 'u' -> {
+                    // u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>
+                    String[] f = line.split(" ", 11);
+                    if (f.length == 11 && f[1].length() == 2) {
+                        files.add(new FileEntry(unquotePath(f[10]), f[1].charAt(0), f[1].charAt(1), null));
+                    }
+                }
                 case '?' -> {
                     if (line.length() > 2) {
                         files.add(new FileEntry(unquotePath(line.substring(2)), '?', '?', null));

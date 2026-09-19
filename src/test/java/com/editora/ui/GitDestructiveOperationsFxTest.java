@@ -76,7 +76,7 @@ class GitDestructiveOperationsFxTest {
 
             FxTestSupport.runOnFx(() -> coordinator.checkoutBranch("other"));
             async.await(switched, "successful branch checkout");
-            async.awaitFx();
+            awaitBufferContent(clean, "other branch has longer clean text\n");
 
             assertEquals("other", git(repo, "branch", "--show-current").out().strip());
             assertEquals("other branch has longer clean text\n", FxTestSupport.callOnFx(clean::getContent));
@@ -122,8 +122,8 @@ class GitDestructiveOperationsFxTest {
     @Test
     void mixedDiscardPreservesTheIndexAndHandlesLiteralPathNames(@TempDir Path dir) throws Exception {
         Path repo = initRepo(dir);
-        List<String> tracked = new ArrayList<>(List.of("-dash.txt", "space name.txt"));
-        List<String> untracked = new ArrayList<>(List.of("-new.txt", "new space.txt"));
+        List<String> tracked = new ArrayList<>(List.of("-dash.txt", "space name.txt", "wild[card].txt"));
+        List<String> untracked = new ArrayList<>(List.of("-new.txt", "new space.txt", "new[card].txt"));
         if (supportsNewlineFileName(repo)) {
             tracked.add("line\nbreak.txt");
             untracked.add("new\nline.txt");
@@ -272,6 +272,45 @@ class GitDestructiveOperationsFxTest {
             assertTrue(FxTestSupport.callOnFx(buffer::isDirty), "the uncommitted editor copy remains recoverable");
             assertFalse(FxTestSupport.callOnFx(() -> workflows.hasPendingSave(buffer)));
         }
+    }
+
+    @Test
+    void gitLogMutationReloadsCleanBuffersOnlyAfterTheCommandCompletes(@TempDir Path dir) throws Exception {
+        Path repo = initRepo(dir);
+        Path file = Files.writeString(repo.resolve("history.txt"), "main contents\n");
+        commitAll(repo, "main");
+        git(repo, "checkout", "-q", "-b", "other");
+        Files.writeString(file, "other contents\n");
+        commitAll(repo, "other");
+        String other = git(repo, "rev-parse", "HEAD").out().strip();
+        git(repo, "checkout", "-q", "main");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorBuffer buffer = open(fx.controller, file);
+            applyRepo(fx, repo, "main");
+            GitWindowCoordinator windows = FxTestSupport.field(fx.controller, "gitWindows");
+            String completedMessage = "history reset complete";
+            CountDownLatch completed = watchStatus(fx, completedMessage::equals);
+
+            FxTestSupport.runOnFx(() -> windows.gitMutate(completedMessage, "reset", "--hard", other));
+            async.await(completed, "Git Log reset completion");
+            awaitBufferContent(buffer, "other contents\n");
+
+            assertEquals("other contents\n", Files.readString(file));
+            assertEquals("other contents\n", FxTestSupport.callOnFx(buffer::getContent));
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+        }
+    }
+
+    private static void awaitBufferContent(EditorBuffer buffer, String expected) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            if (expected.equals(FxTestSupport.callOnFx(buffer::getContent))) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        assertEquals(expected, FxTestSupport.callOnFx(buffer::getContent));
     }
 
     private static CountDownLatch holdGitWorkerIfNeeded(

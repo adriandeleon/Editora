@@ -71,8 +71,7 @@ class DiffEditableResultIntegrationFxTest {
             ((javafx.scene.control.Button) FxTestSupport.field(pane, "applyResultButton")).fire();
         });
 
-        EditorBuffer buffer = FxTestSupport.callOnFx(
-                () -> (EditorBuffer) FxTestSupport.call(ops, "openBufferFor", new Class<?>[] {Path.class}, file));
+        EditorBuffer buffer = awaitBuffer(ops, file);
         assertNotNull(buffer, "applying the result should open the target in a background editor buffer");
         assertEquals("draft\n", FxTestSupport.callOnFx(buffer::text));
         assertEquals("working\n", Files.readString(file), "Apply Result must not save implicitly");
@@ -107,6 +106,7 @@ class DiffEditableResultIntegrationFxTest {
         Files.writeString(file, "external\n");
         FxTestSupport.runOnFx(
                 () -> ((javafx.scene.control.Button) FxTestSupport.field(pane, "applyResultButton")).fire());
+        awaitApplySettled(pane);
 
         assertEquals("external\n", Files.readString(file));
         assertTrue(pane.hasDirtyResult(), "a rejected draft must remain available to the user");
@@ -166,8 +166,7 @@ class DiffEditableResultIntegrationFxTest {
         assertTrue(((javafx.scene.control.Button) FxTestSupport.field(pane, "applyAllButton")).isVisible());
 
         FxTestSupport.runOnFx(() -> FxTestSupport.call(pane, "applyBlock", new Class<?>[] {int.class}, 0));
-        EditorBuffer buffer = FxTestSupport.callOnFx(
-                () -> (EditorBuffer) FxTestSupport.call(ops, "openBufferFor", new Class<?>[] {Path.class}, file));
+        EditorBuffer buffer = awaitBuffer(ops, file);
         assertNotNull(buffer, "applying a history hunk should open the working file in a background buffer");
         assertEquals("committed\n", FxTestSupport.callOnFx(buffer::text));
         assertEquals("working\n", Files.readString(file), "history hunk apply must not save implicitly");
@@ -206,6 +205,28 @@ class DiffEditableResultIntegrationFxTest {
     private static int paneCount(Object ops) throws Exception {
         return FxTestSupport.callOnFx(
                 () -> ((List<?>) FxTestSupport.call(ops, "openDiffPanes", new Class<?>[] {})).size());
+    }
+
+    private static EditorBuffer awaitBuffer(Object ops, Path file) throws Exception {
+        for (int i = 0; i < 200; i++) {
+            EditorBuffer buffer = FxTestSupport.callOnFx(
+                    () -> (EditorBuffer) FxTestSupport.call(ops, "openBufferFor", new Class<?>[] {Path.class}, file));
+            if (buffer != null) {
+                return buffer;
+            }
+            Thread.sleep(20);
+        }
+        return null;
+    }
+
+    private static void awaitApplySettled(DiffViewerPane pane) throws Exception {
+        for (int i = 0; i < 200; i++) {
+            if (!FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(pane, "applyPending"))) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("diff apply did not complete");
     }
 
     private static DiffViewerPane awaitPaneAfter(Object ops, int previousPanes) throws Exception {

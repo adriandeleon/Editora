@@ -7,15 +7,21 @@ import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import javafx.animation.AnimationTimer;
 import javafx.application.Platform;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.stage.Window;
 
+import com.editora.diff.DiffEngine;
 import com.editora.editor.EditorBuffer;
+import com.editora.io.AtomicFileWrite;
+import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -103,6 +109,66 @@ class FileWorkflowSaveLifecycleFxTest {
             try (var entries = Files.list(dir)) {
                 assertEquals(1, entries.count(), "the failed staging file must not become a recovery hazard");
             }
+        }
+    }
+
+    @Test
+    void successfulSaveOfOlderSnapshotDoesNotAuthorizeClose(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            Path file = Files.writeString(dir.resolve("successful-close-race.txt"), "A");
+            EditorBuffer buffer = open(fx, file);
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            CountDownLatch promptSeen = new CountDownLatch(1);
+            workflows.setDocumentWriter((target, bytes, commit) -> {
+                Platform.runLater(() -> buffer.replaceWholeDocument("later edit"));
+                return AtomicFileWrite.writeIf(target, bytes, commit);
+            });
+            Tab tab = FxTestSupport.callOnFx(() ->
+                    FxTestSupport.<EditorArea>field(fx.controller, "editorArea").selectedTab());
+
+            FxTestSupport.runOnFx(() -> {
+                buffer.replaceWholeDocument("saved snapshot");
+                Platform.runLater(() -> dismissAlert(tr("dialog.save"), promptSeen));
+                FxTestSupport.call(fx.controller, "closeTab", new Class<?>[] {Tab.class}, tab);
+            });
+            async.await(promptSeen, "the dirty-close Save choice");
+            async.awaitFx();
+
+            assertEquals("saved snapshot", Files.readString(file));
+            assertEquals("later edit", FxTestSupport.callOnFx(buffer::getContent));
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty));
+            assertTrue(FxTestSupport.callOnFx(() -> FxTestSupport.<EditorArea>field(fx.controller, "editorArea")
+                    .tabs()
+                    .contains(tab)));
+        }
+    }
+
+    @Test
+    void failedSaveAsRollsBackIdentityAndKeepsUntitledContentDirty(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+                EditorBuffer created = new EditorBuffer();
+                created.setContent("template content");
+                FxTestSupport.call(
+                        fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, created, true);
+                return created;
+            });
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            ExecutorService worker = FxTestSupport.field(workflows, "autoSaveExecutor");
+            workflows.setDocumentWriter((target, bytes, commit) -> {
+                throw new IOException("injected Save As failure");
+            });
+
+            FxTestSupport.runOnFx(() -> assertTrue(workflows.applySaveAsTarget(buffer, dir.resolve("failed.txt"))));
+            async.awaitWorker(worker);
+            async.awaitFx();
+
+            assertEquals(null, FxTestSupport.callOnFx(buffer::getPath));
+            assertEquals("template content", FxTestSupport.callOnFx(buffer::getContent));
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty));
+            assertFalse(Files.exists(dir.resolve("failed.txt")));
         }
     }
 
@@ -282,6 +348,111 @@ class FileWorkflowSaveLifecycleFxTest {
         }
     }
 
+    @Test
+    void explicitLocalSaveDoesNotOverwriteAnExternalChangeWithoutConsent(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            Path file = Files.writeString(dir.resolve("local-conflict.txt"), "A");
+            EditorBuffer buffer = open(fx, file);
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            Files.writeString(file, "external version\n");
+            FxTestSupport.runOnFx(() -> buffer.replaceWholeDocument("editor version\n"));
+
+            CountDownLatch cancelled = pressNextDialog(async, ButtonBar.ButtonData.CANCEL_CLOSE);
+            FxTestSupport.runOnFx(() -> assertTrue(workflows.save(buffer)));
+            async.awaitWorker(FxTestSupport.field(workflows, "autoSaveExecutor"));
+            async.awaitFx();
+            async.await(cancelled, "local save conflict cancellation");
+
+            assertEquals("external version\n", Files.readString(file));
+            assertEquals("editor version\n", FxTestSupport.callOnFx(buffer::getContent));
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty));
+        }
+    }
+
+    @Test
+    void saveAsDoesNotOverwriteATargetCreatedAfterSelection(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            Path target = dir.resolve("appeared.txt");
+            EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+                EditorBuffer created = new EditorBuffer();
+                created.setContent("editor draft\n");
+                FxTestSupport.call(
+                        fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, created, true);
+                return created;
+            });
+            AtomicBoolean injected = new AtomicBoolean();
+            workflows.beforeDocumentWriteForTest = () -> {
+                if (injected.compareAndSet(false, true)) {
+                    try {
+                        Files.writeString(target, "external arrival\n");
+                    } catch (IOException failure) {
+                        throw new AssertionError(failure);
+                    }
+                }
+            };
+
+            CountDownLatch cancelled = pressNextDialog(async, ButtonBar.ButtonData.CANCEL_CLOSE);
+            FxTestSupport.runOnFx(() -> assertTrue(workflows.applySaveAsTarget(buffer, target)));
+            async.awaitWorker(FxTestSupport.field(workflows, "autoSaveExecutor"));
+            async.awaitFx();
+            async.await(cancelled, "Save As target race cancellation");
+
+            assertEquals("external arrival\n", Files.readString(target));
+            assertEquals(null, FxTestSupport.callOnFx(buffer::getPath));
+            assertEquals("editor draft\n", FxTestSupport.callOnFx(buffer::getContent));
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty));
+        }
+    }
+
+    @Test
+    void closingADirtyDiffDraftRequiresAnExplicitChoice() throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            DiffViewerPane pane = FxTestSupport.callOnFx(() -> {
+                String left = "reference\n";
+                String right = "working\n";
+                DiffViewerPane created = new DiffViewerPane(
+                        "draft diff",
+                        "left",
+                        "right",
+                        "x.txt",
+                        "x.txt",
+                        left,
+                        right,
+                        DiffEngine.compute(left, right, DiffEngine.DiffOptions.DEFAULT),
+                        "Monospaced",
+                        13,
+                        true,
+                        "x.txt");
+                created.setEditable(DiffViewerPane.EditableSide.RIGHT, text -> true, () -> {}, () -> {});
+                created.setOnResultEdited(text -> {});
+                FxTestSupport.call(
+                        fx.controller,
+                        "addContentTab",
+                        new Class<?>[] {com.editora.editor.TabContent.class, boolean.class},
+                        created,
+                        true);
+                created.toggleResultEditing();
+                ((CodeArea) FxTestSupport.field(created, "resultArea")).replaceText("unapplied draft\n");
+                return created;
+            });
+            Tab tab = FxTestSupport.callOnFx(() ->
+                    FxTestSupport.<EditorArea>field(fx.controller, "editorArea").selectedTab());
+
+            CountDownLatch cancelled = pressNextDialog(async, ButtonBar.ButtonData.CANCEL_CLOSE);
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "closeTab", new Class<?>[] {Tab.class}, tab));
+            async.await(cancelled, "dirty diff close cancellation");
+
+            assertTrue(pane.hasDirtyResult());
+            assertTrue(FxTestSupport.callOnFx(() -> FxTestSupport.<EditorArea>field(fx.controller, "editorArea")
+                    .tabs()
+                    .contains(tab)));
+        }
+    }
+
     private static EditorBuffer open(FxWindowFixture fx, Path file) throws Exception {
         return FxTestSupport.callOnFx(() -> {
             EditorBuffer buffer = new EditorBuffer();
@@ -311,5 +482,33 @@ class FileWorkflowSaveLifecycleFxTest {
                         ((Button) pane.lookupButton(type)).fire();
                     });
         }
+    }
+
+    private static CountDownLatch pressNextDialog(AsyncTestScope async, ButtonBar.ButtonData buttonData)
+            throws Exception {
+        CountDownLatch pressed = new CountDownLatch(1);
+        AnimationTimer timer = new AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                for (Window window : Window.getWindows().stream().toList()) {
+                    if (window.getScene() == null || !(window.getScene().getRoot() instanceof DialogPane pane)) {
+                        continue;
+                    }
+                    pane.getButtonTypes().stream()
+                            .filter(type -> type.getButtonData() == buttonData)
+                            .findFirst()
+                            .ifPresent(type -> {
+                                pressed.countDown();
+                                ((Button) pane.lookupButton(type)).fire();
+                            });
+                }
+                if (pressed.getCount() == 0) {
+                    stop();
+                }
+            }
+        };
+        FxTestSupport.runOnFx(timer::start);
+        async.onClose(() -> FxTestSupport.runOnFx(timer::stop));
+        return pressed;
     }
 }

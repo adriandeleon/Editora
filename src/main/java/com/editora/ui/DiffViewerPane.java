@@ -103,8 +103,9 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private EditableSide editableSide = EditableSide.NONE;
-    /** Receives the editable side's full new text after a hunk is applied (controller writes it back). */
-    private java.util.function.Predicate<String> onApply = t -> false;
+    /** Receives the editable side's full new text and reports after the controller has applied it. */
+    private java.util.function.BiConsumer<String, java.util.function.Consumer<Boolean>> onApply =
+            (text, done) -> done.accept(false);
 
     private final BorderPane root = new BorderPane();
     private final Label summary = new Label();
@@ -139,6 +140,7 @@ public final class DiffViewerPane implements TabContent {
     private boolean sidesSwapped;
     private java.util.function.Consumer<String> onResultEdited = t -> {};
     private boolean resultEditingEnabled;
+    private boolean applyPending;
     private int unappliedUndoDepth;
 
     private boolean unified; // false = side-by-side (default)
@@ -189,6 +191,9 @@ public final class DiffViewerPane implements TabContent {
     private final PauseTransition resultDiffDelay = new PauseTransition(Duration.millis(250));
     private boolean resultEditing;
     private boolean resultDirty;
+    /** False when either displayed side is a binary/summary surrogate rather than exact source text. */
+    private boolean mutationAllowed = true;
+
     private boolean updatingResult;
     private String resultBaselineText;
     private boolean syncing; // re-entrancy guard for scroll sync
@@ -391,11 +396,19 @@ public final class DiffViewerPane implements TabContent {
 
     public void setEditable(
             EditableSide side, java.util.function.Predicate<String> onApply, Runnable onUndo, Runnable onSave) {
+        setEditableAsync(side, (text, done) -> done.accept(onApply != null && onApply.test(text)), onUndo, onSave);
+    }
+
+    public void setEditableAsync(
+            EditableSide side,
+            java.util.function.BiConsumer<String, java.util.function.Consumer<Boolean>> onApply,
+            Runnable onUndo,
+            Runnable onSave) {
         this.editableSide = side == null ? EditableSide.NONE : side;
-        this.onApply = onApply == null ? t -> false : onApply;
+        this.onApply = onApply == null ? (text, done) -> done.accept(false) : onApply;
         this.onUndo = onUndo == null ? () -> {} : onUndo;
         this.onSave = onSave == null ? () -> {} : onSave;
-        boolean editable = this.editableSide != EditableSide.NONE;
+        boolean editable = canMutate();
         updateApplyAllButton();
         for (Button b : new Button[] {applyAllButton, undoButton, saveButton}) {
             b.setVisible(editable);
@@ -403,7 +416,7 @@ public final class DiffViewerPane implements TabContent {
         }
         editResultButton.setVisible(editable && resultEditingEnabled);
         editResultButton.setManaged(editable && resultEditingEnabled);
-        if (!editable) {
+        if (!editable && !hasDirtyResult()) {
             closeResultEditor();
         }
         updateEofButton();
@@ -420,6 +433,41 @@ public final class DiffViewerPane implements TabContent {
         } else {
             showSideBySide();
         }
+    }
+
+    /** Enables document/index mutation only while both fetched sides are exact source text. */
+    public void setMutationAllowed(boolean allowed) {
+        if (mutationAllowed == allowed) {
+            return;
+        }
+        mutationAllowed = allowed;
+        boolean editable = canMutate();
+        for (Button b : new Button[] {applyAllButton, undoButton, saveButton}) {
+            b.setVisible(editable);
+            b.setManaged(editable);
+        }
+        editResultButton.setVisible(editable && resultEditingEnabled);
+        editResultButton.setManaged(editable && resultEditingEnabled);
+        if (!editable && !hasDirtyResult()) {
+            closeResultEditor();
+        }
+        sideBySideNode = null;
+        leftPaneBox = null;
+        unifiedNode = null;
+        leftArea = null;
+        rightArea = null;
+        unifiedArea = null;
+        if (unified) {
+            showUnified();
+        } else {
+            showSideBySide();
+        }
+    }
+
+    private boolean canMutate() {
+        return mutationAllowed
+                && editableSide != EditableSide.NONE
+                && model.quality() != com.editora.diff.DiffModels.Quality.METADATA_ONLY;
     }
 
     /** Re-fetches both sides and re-renders if they changed (no-op when content is identical). */
@@ -978,13 +1026,13 @@ public final class DiffViewerPane implements TabContent {
     }
 
     public void applyAllChanges() {
-        if (editableSide != EditableSide.NONE) {
+        if (canMutate() && !resultEditing) {
             applyAll(); // no-op on a read-only diff (no editable side / onApply)
         }
     }
 
     public void toggleResultEditing() {
-        if (resultEditingEnabled && editableSide != EditableSide.NONE) {
+        if (resultEditingEnabled && canMutate()) {
             editResultButton.fire();
         }
     }
@@ -1139,19 +1187,26 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private void applyResult() {
-        if (!resultEditing || !resultDirty || resultArea == null) {
+        if (!resultEditing || !resultDirty || resultArea == null || applyPending || !canMutate()) {
             return;
         }
         String text = resultArea.getText();
-        if (onApply.test(text)) {
-            resultBaselineText = text;
-            resultDirty = false;
-            unappliedUndoDepth++;
+        applyPending = true;
+        updateResultControls();
+        updateEditButtons();
+        onApply.accept(text, applied -> {
+            applyPending = false;
+            if (Boolean.TRUE.equals(applied)) {
+                resultBaselineText = text;
+                String current = resultArea == null ? text : resultArea.getText();
+                resultDirty = !java.util.Objects.equals(current, text);
+                unappliedUndoDepth++;
+                resultDiffDelay.stop();
+                onResultEdited.accept(current);
+            }
             updateResultControls();
             updateEditButtons();
-            resultDiffDelay.stop();
-            onResultEdited.accept(text);
-        }
+        });
     }
 
     private void resetResult() {
@@ -1164,8 +1219,8 @@ public final class DiffViewerPane implements TabContent {
 
     private void updateResultControls() {
         boolean active = resultEditing;
-        applyResultButton.setDisable(!active || !resultDirty);
-        resetResultButton.setDisable(!active || !resultDirty);
+        applyResultButton.setDisable(!active || !resultDirty || applyPending);
+        resetResultButton.setDisable(!active || !resultDirty || applyPending);
         applyAllButton.setDisable(active);
         applyEofButton.setDisable(active);
         stageHunkButton.setDisable(active);
@@ -1284,7 +1339,7 @@ public final class DiffViewerPane implements TabContent {
         // the chevron direction still indicates which side receives the change. Putting LEFT actions in
         // the left pane's gutter stranded them at the window's outer edge, far away from the comparison.
         installGutter(leftArea, leftNos, sideSourceRows, false);
-        installGutter(rightArea, rightNos, sideSourceRows, editableSide != EditableSide.NONE && !resultEditing);
+        installGutter(rightArea, rightNos, sideSourceRows, canMutate() && !resultEditing);
         installContextMenu(leftArea, sideSourceRows);
         installContextMenu(rightArea, sideSourceRows);
         installScrollFocus(leftArea);
@@ -1546,7 +1601,10 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private void performGitAction(GitHunkAction action, int row, boolean lineOnly) {
-        if (row < 0 || model.quality() == com.editora.diff.DiffModels.Quality.METADATA_ONLY) {
+        if (row < 0
+                || resultEditing
+                || !mutationAllowed
+                || model.quality() == com.editora.diff.DiffModels.Quality.METADATA_ONLY) {
             return;
         }
         int start = lineOnly ? row : model.changeBlockStarts().get(changeBlockIndexContaining(row));
@@ -2020,6 +2078,9 @@ public final class DiffViewerPane implements TabContent {
     /** Whole-hunk apply: replaces the editable side's contiguous change block at {@code start} with the
      *  other side's content. */
     private void applyBlock(int start) {
+        if (!canMutate() || resultEditing) {
+            return;
+        }
         deliverApply(computeApplied(start, blockEndFrom(start)));
     }
 
@@ -2036,6 +2097,9 @@ public final class DiffViewerPane implements TabContent {
     /** Per-line apply: replaces the editable side's row {@code i} with the other side's content (insert /
      *  delete / swap), then hands the editable side's new full text to {@link #onApply}. */
     private void applyRow(int i) {
+        if (!canMutate() || resultEditing) {
+            return;
+        }
         deliverApply(computeApplied(i, i + 1));
     }
 
@@ -2060,16 +2124,24 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private void deliverApply(String text) {
-        if (onApply.test(text)) {
-            unappliedUndoDepth++;
-            updateEditButtons();
+        if (!canMutate() || resultEditing || applyPending) {
+            return;
         }
+        applyPending = true;
+        updateEditButtons();
+        onApply.accept(text, applied -> {
+            applyPending = false;
+            if (Boolean.TRUE.equals(applied)) {
+                unappliedUndoDepth++;
+            }
+            updateEditButtons();
+        });
     }
 
     private void updateEditButtons() {
         undoButton.setDisable(unappliedUndoDepth <= 0);
         saveButton.setDisable(unappliedUndoDepth <= 0);
-        applyAllButton.setDisable(resultEditing);
+        applyAllButton.setDisable(resultEditing || applyPending);
     }
 
     /** The editable side's full text after taking the other side's content for rows in {@code [start,end)}
@@ -2270,5 +2342,26 @@ public final class DiffViewerPane implements TabContent {
     @Override
     public Node icon() {
         return Icons.diff();
+    }
+
+    @Override
+    public boolean hasUnsavedChanges() {
+        return hasDirtyResult();
+    }
+
+    @Override
+    public Object unsavedStateToken() {
+        return hasDirtyResult() && resultArea != null ? resultArea.getText() : null;
+    }
+
+    @Override
+    public boolean saveBeforeClose() {
+        applyResult();
+        return !hasDirtyResult();
+    }
+
+    @Override
+    public String closeSaveActionKey() {
+        return "diff.applyResult";
     }
 }

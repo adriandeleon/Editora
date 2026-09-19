@@ -9,7 +9,6 @@ import java.util.IdentityHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import javafx.application.Platform;
@@ -96,6 +95,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The editor area — the single entry point for reading and mutating open tabs. See {@link EditorArea}. */
     private EditorArea editorArea;
+
+    /** Exact-state close prompts for buffers and editable non-buffer tabs. */
+    CloseCoordinator closes;
 
     /** The window's menu bar — a browsable map over the command registry (#763). */
     private MainMenuBar menuBar;
@@ -447,10 +449,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.stage = stage;
         // Wrap the FXML-injected tab strip before anything reads tabs; every later access goes through this.
         this.editorArea = new EditorArea(tabPane);
+        this.closes = new CloseCoordinator(
+                stage, editorArea, pinned, MainController::bufferOf, fileWorkflows, sessions::persistSession);
         stage.setOnCloseRequest(e -> {
             // Save/prompt this window's dirty buffers + persist its session; cancel the close if the
             // user backs out. (No separate "Quit?" prompt — each window closes independently now.)
-            if (!confirmCloseAllBuffers()) {
+            if (!closes.confirmCloseAll()) {
                 e.consume();
                 return;
             }
@@ -1233,7 +1237,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * user cancelled (the window stays open). The caller ({@link WindowManager}) closes the stage.
      */
     public boolean closeWindowProgrammatically() {
-        if (!confirmCloseAllBuffers()) {
+        if (!closes.confirmCloseAll()) {
             return false;
         }
         disposeWindow();
@@ -1583,12 +1587,26 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Syncs editor/session state after the Project tree renames a file on disk (old → target). */
     private void onProjectFileRenamed(Path old, Path target) {
+        onProjectFileRenamed(old, target, false);
+    }
+
+    private void onProjectFileRenamed(Path old, Path target, boolean oldLspAlreadyClosed) {
+        if (windowManager != null) {
+            windowManager.fileRenamedAcrossWindows(this, old, target, oldLspAlreadyClosed);
+        } else {
+            remapProjectFileLocal(old, target, oldLspAlreadyClosed);
+        }
+    }
+
+    void remapProjectFileLocal(Path old, Path target, boolean oldLspAlreadyClosed) {
         fileWorkflows.invalidatePendingWrite(old);
         com.editora.config.PathKeys.invalidateCanonicalCache(); // stale resolutions must not survive a move (#680)
         Tab tab = tabForPath(old);
         if (tab != null) {
             EditorBuffer buffer = bufferOf(tab);
             buffer.setPath(target);
+            editorSettings.applyEditorConfig(buffer);
+            lspCoordinator.documentPathChanged(buffer, old, oldLspAlreadyClosed);
             updateTabMeta(tab, buffer);
             if (buffer == activeBuffer()) {
                 breadcrumb.setActiveFile(target);
@@ -1609,6 +1627,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                     Path moved = target.resolve(oldNorm.relativize(pn));
                     fileWorkflows.invalidatePendingWrite(p);
                     b.setPath(moved);
+                    editorSettings.applyEditorConfig(b);
+                    lspCoordinator.documentPathChanged(b, p, oldLspAlreadyClosed);
                     updateTabMeta(t, b);
                     migrateFileState(p, moved);
                     if (b == activeBuffer()) {
@@ -1650,10 +1670,20 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Syncs editor/session state after the Project tree deletes a file on disk. */
     private void onProjectFileDeleted(Path path) {
+        if (windowManager != null) {
+            windowManager.fileDeletedAcrossWindows(path);
+        } else {
+            removeProjectFileLocal(path);
+        }
+    }
+
+    void removeProjectFileLocal(Path path) {
         com.editora.config.PathKeys.invalidateCanonicalCache(); // (#680)
-        Tab tab = tabForPath(path);
-        if (tab != null) {
-            editorArea.remove(tab); // file is gone; close without a save prompt
+        for (EditorBuffer buffer : buffersAtOrUnderLocal(path)) {
+            Tab tab = tabFor(buffer);
+            if (tab != null) {
+                editorArea.remove(tab); // resource preflight protected dirty owners before the file vanished
+            }
         }
         WorkspaceState ws = config.getWorkspaceState();
         String key = path.toString();
@@ -2013,7 +2043,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 path -> bufferOf(tabForPath(path)),
                 path -> editorArea.select(tabForPath(path)),
                 fileWorkflows::hasPendingSave,
-                this::confirmCloseIfDirty,
+                closes::confirmCloseIfDirty,
                 fileWorkflows::invalidatePendingWrite,
                 (path, completion) -> historyCoordinator.captureBeforeDeleteDurably(path, completion),
                 this::setStatus));
@@ -5017,6 +5047,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void bufferPathChanged(EditorBuffer buffer, Path oldPath, boolean oldAlreadyClosed) {
+                    lspCoordinator.documentPathChanged(buffer, oldPath, oldAlreadyClosed);
+                }
+
+                @Override
                 public void promoteTab(Tab tab) {
                     MainController.this.promoteTab(tab);
                 }
@@ -5626,8 +5661,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void invalidatePendingWritesInOtherWindows(Path root, List<String> pathspecs) {
+            if (windowManager != null) {
+                windowManager.invalidatePendingGitWrites(MainController.this, root, pathspecs);
+            }
+        }
+
+        @Override
         public void reloadAllFromDiskSilently() {
-            MainController.this.reloadAllFromDiskSilently();
+            if (windowManager != null) {
+                windowManager.reloadAllFromDiskSilentlyAcrossWindows();
+            } else {
+                MainController.this.reloadAllFromDiskSilently();
+            }
         }
 
         @Override
@@ -5693,6 +5739,19 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public EditorBuffer openBackgroundBuffer(Path target) {
                     return MainController.this.openBackgroundBuffer(target);
+                }
+
+                @Override
+                public void openBackgroundBufferAsync(Path target, java.util.function.Consumer<EditorBuffer> done) {
+                    MainController.this.openBackgroundBufferAsync(target, done);
+                }
+
+                @Override
+                public void discardBackgroundBuffer(EditorBuffer buffer) {
+                    Tab tab = tabFor(buffer);
+                    if (tab != null && !buffer.isDirty()) {
+                        editorArea.remove(tab);
+                    }
                 }
 
                 @Override
@@ -6669,6 +6728,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public List<EditorBuffer> buffersAtOrUnder(Path path) {
+                    return windowManager == null ? buffersAtOrUnderLocal(path) : windowManager.buffersAtOrUnder(path);
+                }
+
+                @Override
                 public EditorBuffer openBackgroundBuffer(Path file) {
                     return MainController.this.openBackgroundBuffer(file);
                 }
@@ -6680,7 +6744,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void fileRenamed(Path from, Path to) {
-                    onProjectFileRenamed(from, to); // remap buffer/tab + migrate per-file session state
+                    onProjectFileRenamed(from, to, true); // old URI was closed by the workspace transaction
                     if (projectPanel != null) {
                         projectPanel.refreshTree();
                     }
@@ -7305,6 +7369,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         return null;
     }
 
+    /** Open buffers in this window whose path is exactly {@code target} or a descendant of it. */
+    List<EditorBuffer> buffersAtOrUnderLocal(Path target) {
+        return OpenBufferLifecycle.atOrUnder(editorArea, MainController::bufferOf, target);
+    }
+
     /** Opens {@code target} (assumed not already open — callers check {@link #openBufferFor} first) as a
      *  new, unfocused background tab. Used when something other than the user opens a file the editor
      *  doesn't have a tab for yet (a diff's compare-with-local target, an AI agent's newly-written file). */
@@ -7334,6 +7403,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Platform.runLater(() -> {
                     if (load.binary()) {
                         done.accept(null);
+                        return;
+                    }
+                    EditorBuffer openedWhileLoading = openBufferFor(target);
+                    if (openedWhileLoading != null) {
+                        done.accept(openedWhileLoading);
                         return;
                     }
                     EditorBuffer buffer = new EditorBuffer();
@@ -7397,25 +7471,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /** After a branch switch/pull, silently reload any open buffer whose file changed on disk. */
-    private void reloadAllFromDiskSilently() {
-        java.util.List<Path> reloaded = new java.util.ArrayList<>();
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer buffer = bufferOf(tab);
-            if (buffer == null || buffer.getPath() == null || buffer.isDirty()) {
-                continue; // never clobber unsaved edits
-            }
-            Path file = buffer.getPath();
-            if (Files.exists(file)
-                    && buffer.diskChangedFrom(fileWorkflows.lastModifiedMillis(file), fileWorkflows.fileSize(file))) {
-                fileWorkflows.reloadFromDisk(tab, buffer);
-                reloaded.add(file);
-            }
-        }
-        // A branch switch / pull changed these on disk — tell the language servers too (#677). The open
-        // buffers' didChange covers their content, but the servers' project models (dependencies, indexes)
-        // key off watched-file events. The project watcher only covers expanded dirs, so this path matters.
-        lspCoordinator.watchedFilesReloaded(reloaded);
+    /** Invalidates this window's pending saves selected by a repository working-tree mutation. */
+    void invalidatePendingGitWritesLocal(Path root, List<String> pathspecs) {
+        OpenBufferLifecycle.invalidateGitWrites(editorArea, MainController::bufferOf, fileWorkflows, root, pathspecs);
+    }
+
+    /** After a branch switch/pull, asynchronously reload clean open buffers whose files changed on disk. */
+    void reloadAllFromDiskSilently() {
+        OpenBufferLifecycle.reloadChanged(editorArea, MainController::bufferOf, fileWorkflows, lspCoordinator);
     }
 
     private void setupToolbar() {
@@ -8059,7 +8122,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         tab.setGraphic(header);
         tab.setClosable(content.closeable());
         tab.setOnCloseRequest(e -> {
-            if (!confirmClose(tab)) {
+            if (!closes.confirmClose(tab)) {
                 e.consume();
             }
         });
@@ -8522,24 +8585,31 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Closes a single tab, confirming first if it is pinned and/or has unsaved changes. */
     private void closeTab(Tab tab) {
-        if (tab != null && confirmClose(tab)) {
+        if (tab != null && closes.confirmClose(tab)) {
             editorArea.remove(tab);
         }
     }
 
     /**
      * Closes each tab in {@code targets} (a snapshot), prompting for dirty buffers and stopping if
-     * the user cancels — mirroring {@link #confirmCloseAllBuffers()}.
+     * the user cancels — mirroring the window-close coordinator.
      */
     private void closeTabs(List<Tab> targets) {
         for (Tab tab : targets) {
             EditorBuffer buffer = bufferOf(tab);
+            if (buffer == null) {
+                if (!closes.confirmClose(tab)) {
+                    return;
+                }
+                editorArea.remove(tab);
+                continue;
+            }
             if (buffer != null && !buffer.isDirty() && !fileWorkflows.hasPendingSave(buffer)) {
                 editorArea.remove(tab);
                 continue;
             }
             editorArea.select(tab);
-            if (buffer != null && !confirmCloseIfDirty(buffer)) {
+            if (!closes.confirmCloseIfDirty(buffer)) {
                 return; // user cancelled — stop the batch
             }
             editorArea.remove(tab);
@@ -8751,6 +8821,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                         return;
                     }
                     buffer.setPath(target); // re-detects language/grammar
+                    editorSettings.applyEditorConfig(buffer);
+                    lspCoordinator.documentPathChanged(buffer, old, false);
                     previews.ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
                     htmlPreview.ensureControl(buffer); // a rename to/from .html flips the browser globe
                     logViewer.ensureControl(buffer); // a rename to/from .log flips the log control
@@ -8925,58 +8997,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         tab.setContextMenu(menu);
     }
 
-    /**
-     * @return true if {@code tab} may close — confirming first if it is pinned, then running the
-     *         unsaved-changes check. Used by every single-tab close (the X, the command, the menu).
-     */
-    private boolean confirmClose(Tab tab) {
-        EditorBuffer buffer = bufferOf(tab);
-        if (buffer == null) {
-            return true;
-        }
-        if (pinned.contains(tab) && !confirmClosePinned(buffer)) {
-            return false;
-        }
-        return confirmCloseIfDirty(buffer);
-    }
-
-    /** @return true if the user confirms closing a pinned tab. */
-    private boolean confirmClosePinned(EditorBuffer buffer) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.initOwner(stage);
-        alert.setTitle(tr("dialog.pinnedTab.title"));
-        alert.setHeaderText(tr("dialog.pinnedTab.header", buffer.getTitle()));
-        alert.setContentText(null);
-        ButtonType close = new ButtonType(tr("dialog.close"));
-        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(close, cancel);
-        Optional<ButtonType> result = alert.showAndWait();
-        return result.isPresent() && result.get() == close;
-    }
-
-    /** @return true if the tab is allowed to close (saved, discarded, or wasn't dirty). */
+    /** Reflection seam retained for lifecycle tests and project deletion. */
     private boolean confirmCloseIfDirty(EditorBuffer buffer) {
-        if (!buffer.isDirty() && !fileWorkflows.hasPendingSave(buffer)) {
-            return true;
-        }
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.initOwner(stage);
-        alert.setTitle(tr("dialog.unsaved.title"));
-        alert.setHeaderText(tr("dialog.unsaved.header", buffer.getTitle()));
-        alert.setContentText(null);
-        ButtonType save = new ButtonType(tr("dialog.save"));
-        ButtonType discard = new ButtonType(tr("dialog.discard"));
-        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(save, discard, cancel);
-        styleUnsavedChangesButtons(alert, save, discard);
-        Optional<ButtonType> result = alert.showAndWait();
-        if (result.isEmpty() || result.get() == cancel) {
-            return false;
-        }
-        if (result.get() == save) {
-            return fileWorkflows.saveSynchronously(buffer);
-        }
-        return true; // discard
+        return closes.confirmCloseIfDirty(buffer);
     }
 
     static void styleUnsavedChangesButtons(Alert alert, ButtonType save, ButtonType discard) {
@@ -9074,49 +9097,21 @@ public class MainController implements com.editora.mcp.McpBridge {
      * disposes each window's services); the null case is the unit-test/standalone controller.
      */
     private void onQuit() {
-        if (!confirmQuit()) {
+        if (!closes.confirmQuit()) {
             return;
         }
-        boolean ok = windowManager != null ? windowManager.confirmCloseAllWindows() : confirmCloseAllBuffers();
+        boolean ok = windowManager != null ? windowManager.confirmCloseAllWindows() : closes.confirmCloseAll();
         if (ok) {
             Platform.exit();
         }
-    }
-
-    /** @return true if the user confirms quitting the app. */
-    private boolean confirmQuit() {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.initOwner(stage);
-        alert.setTitle(tr("dialog.quit.title"));
-        alert.setHeaderText(tr("dialog.quit.header"));
-        alert.setContentText(null);
-        ButtonType quit = new ButtonType(tr("dialog.quit.button"));
-        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(quit, cancel);
-        styleQuitButtonAsDanger(alert, quit);
-        Optional<ButtonType> result = alert.showAndWait();
-        return result.isPresent() && result.get() == quit;
     }
 
     static void styleQuitButtonAsDanger(Alert alert, ButtonType quit) {
         alert.getDialogPane().lookupButton(quit).getStyleClass().add("danger");
     }
 
-    /** Walks every tab and prompts to save/discard each dirty buffer, then persists this window's session.
-     *  False = the user cancelled. Package-visible: the quit path drives it for every window. */
-    boolean confirmCloseAllBuffers() {
-        for (Tab tab : new ArrayList<>(editorArea.tabs())) {
-            EditorBuffer buffer = bufferOf(tab);
-            if (buffer == null || !buffer.isDirty() && !fileWorkflows.hasPendingSave(buffer)) {
-                continue;
-            }
-            editorArea.select(tab);
-            if (!confirmCloseIfDirty(buffer)) {
-                return false;
-            }
-        }
+    void persistSessionForClose() {
         sessions.persistSession();
-        return true;
     }
 
     /** Records the open files (in tab order) and their carets so the next launch can restore them. */

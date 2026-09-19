@@ -129,6 +129,42 @@ class FindReplaceBarFxTest {
     }
 
     @Test
+    void replaceCurrentEvaluatesLookbehindAgainstTheWholeDocument() throws Exception {
+        Harness h = harness("prefix foo");
+        FxTestSupport.runOnFx(() -> {
+            h.query("(?<=prefix )foo", "bar");
+            h.toggle("regex", true);
+            h.area().selectRange(7, 10);
+            h.bar.replaceCurrentMatch();
+        });
+        assertEquals("prefix bar", h.content());
+    }
+
+    @Test
+    void replaceCurrentDoesNotReplaceAnArbitrarySelection() throws Exception {
+        Harness h = harness("foo bar");
+        FxTestSupport.runOnFx(() -> {
+            h.query("foo", "changed");
+            h.area().selectRange(4, 7);
+            h.bar.replaceCurrentMatch();
+        });
+        assertEquals("foo bar", h.content());
+    }
+
+    @Test
+    void replacementCommandsRespectReadOnlyBuffers() throws Exception {
+        Harness h = harness("foo foo");
+        FxTestSupport.runOnFx(() -> {
+            h.query("foo", "bar");
+            h.buffer.setViewMode(true);
+            h.area().selectRange(0, 3);
+            h.bar.replaceCurrentMatch();
+            h.bar.replaceAllMatches();
+        });
+        assertEquals("foo foo", h.content());
+    }
+
+    @Test
     void wholeWordDoesNotShiftUserGroupNumbers() throws Exception {
         // whole-word wraps the query as \b(?:…)\b — a *non*-capturing group, so $1 is still the user's
         Harness h = harness("say foo_bar now");

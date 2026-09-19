@@ -55,6 +55,10 @@ import static com.editora.i18n.Messages.tr;
  */
 final class LspCoordinator {
 
+    private long navigationRequestGeneration;
+    private long hoverRequestGeneration;
+    private long signatureRequestGeneration;
+
     /** Window hooks beyond {@link CoordinatorHost} that the LSP flows need. */
     interface Ops {
         /** Opens {@code file} (if needed) and moves the caret to a 0-based LSP line/column. */
@@ -81,6 +85,12 @@ final class LspCoordinator {
 
         /** The open buffer for {@code file} (canonical-tab match), or {@code null} when no tab holds it. */
         EditorBuffer bufferForPath(Path file);
+
+        /** Every live buffer at {@code path}, or below it for a directory, across application windows. */
+        default java.util.List<EditorBuffer> buffersAtOrUnder(Path path) {
+            EditorBuffer exact = bufferForPath(path);
+            return exact == null ? java.util.List.of() : java.util.List.of(exact);
+        }
 
         /** Opens {@code file} in a background (non-selected) tab and returns its buffer — how a multi-file
          *  quick fix touches a file with no open tab (#670). Null when it can't be opened. */
@@ -532,8 +542,13 @@ final class LspCoordinator {
             return;
         }
         CodeArea area = b.getFocusedArea();
+        long version = b.docVersion();
+        long generation = ++navigationRequestGeneration;
         lspManager.changeDocument(path, b.text()); // sync latest text before the request
         java.util.function.Consumer<List<com.editora.lsp.LspManager.HierarchyNode>> onRoots = roots -> {
+            if (!navigationRequestCurrent(b, path, version, generation)) {
+                return;
+            }
             if (roots.isEmpty()) {
                 host.setStatus(tr("status.lsp.noHierarchy"));
                 return;
@@ -1423,9 +1438,12 @@ final class LspCoordinator {
     }
 
     /** Notifies the server of a save (didSave) for a managed file + refreshes pull-model diagnostics. */
-    void notifyDocumentSaved(EditorBuffer buffer) {
+    void notifyDocumentSaved(EditorBuffer buffer, String savedText) {
         if (buffer != null && buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
-            lspManager.saveDocument(buffer.getPath());
+            // Flush the current open-document state first. savedText may be an older snapshot when the user
+            // continued typing during I/O; includeText still describes the bytes that actually reached disk.
+            lspManager.changeDocument(buffer.getPath(), buffer.getContent());
+            lspManager.saveDocument(buffer.getPath(), savedText);
             lspManager.pullDiagnostics(buffer.getPath()); // no-op for push-only servers
         }
     }
@@ -1788,8 +1806,14 @@ final class LspCoordinator {
             return;
         }
         CodeArea area = b.getFocusedArea();
-        lspManager.changeDocument(b.getPath(), b.text());
-        lspManager.definition(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+        Path originPath = b.getPath();
+        long originVersion = b.docVersion();
+        long requestGeneration = ++navigationRequestGeneration;
+        lspManager.changeDocument(originPath, b.text());
+        lspManager.definition(originPath, area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+            if (!navigationRequestCurrent(b, originPath, originVersion, requestGeneration)) {
+                return;
+            }
             if (targets.isEmpty()) {
                 host.setStatus(tr("status.lsp.noDefinition"));
                 return;
@@ -1798,14 +1822,18 @@ final class LspCoordinator {
             if (t.file() == null) {
                 // A jdt:// class-file target has no file to read a snippet out of, so peek degrades to
                 // the thing it is a lighter version of rather than reporting a failure.
-                openLibraryDefinition(b.getPath(), t);
+                openLibraryDefinition(
+                        b.getPath(),
+                        t,
+                        () -> navigationRequestCurrent(b, originPath, originVersion, requestGeneration));
                 return;
             }
-            peekTarget(t);
+            peekTarget(t, b, originPath, originVersion, requestGeneration);
         });
     }
 
-    private void peekTarget(LspManager.Target t) {
+    private void peekTarget(
+            LspManager.Target t, EditorBuffer origin, Path originPath, long originVersion, long requestGeneration) {
         EditorBuffer open = ops.bufferForPath(t.file());
         if (open != null) {
             // Already open: its text is authoritative (it may hold unsaved edits) and free to read here.
@@ -1817,10 +1845,18 @@ final class LspCoordinator {
             try {
                 text = java.nio.file.Files.readString(t.file());
             } catch (java.io.IOException | RuntimeException ex) {
-                javafx.application.Platform.runLater(() -> host.setStatus(tr("status.lsp.peekUnreadable")));
+                javafx.application.Platform.runLater(() -> {
+                    if (navigationRequestCurrent(origin, originPath, originVersion, requestGeneration)) {
+                        host.setStatus(tr("status.lsp.peekUnreadable"));
+                    }
+                });
                 return;
             }
-            javafx.application.Platform.runLater(() -> showPeek(t, text));
+            javafx.application.Platform.runLater(() -> {
+                if (navigationRequestCurrent(origin, originPath, originVersion, requestGeneration)) {
+                    showPeek(t, text);
+                }
+            });
         });
     }
 
@@ -1862,8 +1898,14 @@ final class LspCoordinator {
             return;
         }
         CodeArea area = b.getFocusedArea();
+        Path originPath = b.getPath();
+        long originVersion = b.docVersion();
+        long requestGeneration = ++navigationRequestGeneration;
         lspManager.changeDocument(b.getPath(), b.text()); // sync latest text before the request
         lspManager.definition(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+            if (!navigationRequestCurrent(b, originPath, originVersion, requestGeneration)) {
+                return;
+            }
             if (targets.isEmpty()) {
                 host.setStatus(tr("status.lsp.noDefinition"));
             } else {
@@ -1876,7 +1918,10 @@ final class LspCoordinator {
                         javafx.application.Platform.runLater(afterJump);
                     }
                 } else {
-                    openLibraryDefinition(b.getPath(), t); // a jdt:// class-file target (library source) — #665
+                    openLibraryDefinition(
+                            b.getPath(),
+                            t,
+                            () -> navigationRequestCurrent(b, originPath, originVersion, requestGeneration));
                 }
             }
         });
@@ -1912,6 +1957,14 @@ final class LspCoordinator {
     }
 
     private void openLibraryDefinition(Path anchorPath, LspManager.Target t) {
+        openLibraryDefinition(anchorPath, t, () -> true);
+    }
+
+    private void openLibraryDefinition(
+            Path anchorPath, LspManager.Target t, java.util.function.BooleanSupplier stillCurrent) {
+        if (!stillCurrent.getAsBoolean()) {
+            return;
+        }
         String uri = t.classFileUri();
         var ref = libraryBuffers.get(uri);
         EditorBuffer existing = ref == null ? null : ref.get();
@@ -1921,6 +1974,9 @@ final class LspCoordinator {
         }
         host.setStatus(tr("status.lsp.libraryLoading"));
         lspManager.classFileContents(anchorPath, uri, content -> {
+            if (!stillCurrent.getAsBoolean()) {
+                return;
+            }
             if (content == null) {
                 host.setStatus(tr("status.lsp.libraryUnavailable"));
                 return;
@@ -1942,7 +1998,15 @@ final class LspCoordinator {
      */
     private void libraryGotoDefinition(EditorBuffer buffer, LibrarySource lib) {
         CodeArea area = buffer.getFocusedArea();
+        long version = buffer.docVersion();
+        long generation = ++navigationRequestGeneration;
+        java.util.function.BooleanSupplier current = () -> generation == navigationRequestGeneration
+                && buffer == host.activeBuffer()
+                && version == buffer.docVersion();
         lspManager.definitionAt(lib.anchor(), lib.uri(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+            if (!current.getAsBoolean()) {
+                return;
+            }
             if (targets.isEmpty()) {
                 host.setStatus(tr("status.lsp.noDefinition"));
                 return;
@@ -1951,7 +2015,7 @@ final class LspCoordinator {
             if (t.file() != null) {
                 ops.openAndGoto(t.file(), t.line(), t.character());
             } else {
-                openLibraryDefinition(lib.anchor(), t);
+                openLibraryDefinition(lib.anchor(), t, current);
             }
         });
     }
@@ -1972,8 +2036,14 @@ final class LspCoordinator {
             return;
         }
         CodeArea area = b.getFocusedArea();
-        lspManager.changeDocument(b.getPath(), b.text()); // sync latest text before the request
-        lspManager.references(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+        Path path = b.getPath();
+        long version = b.docVersion();
+        long generation = ++navigationRequestGeneration;
+        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        lspManager.references(path, area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+            if (!navigationRequestCurrent(b, path, version, generation)) {
+                return;
+            }
             if (targets.isEmpty()) {
                 host.setStatus(tr("status.lsp.noReferences"));
                 return;
@@ -2068,9 +2138,21 @@ final class LspCoordinator {
             return;
         }
         CodeArea area = b.getFocusedArea();
+        long version = b.docVersion();
+        long generation = ++navigationRequestGeneration;
         lspManager.changeDocument(path, b.text()); // sync latest text before the request
-        request.run(
-                path, area.getCurrentParagraph(), area.getCaretColumn(), targets -> onTargets.accept(path, targets));
+        request.run(path, area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
+            if (navigationRequestCurrent(b, path, version, generation)) {
+                onTargets.accept(path, targets);
+            }
+        });
+    }
+
+    private boolean navigationRequestCurrent(EditorBuffer buffer, Path path, long version, long requestGeneration) {
+        return requestGeneration == navigationRequestGeneration
+                && buffer == host.activeBuffer()
+                && java.util.Objects.equals(path, buffer.getPath())
+                && version == buffer.docVersion();
     }
 
     /** Opens the first target, reporting {@code emptyKey} when there is none. */
@@ -2087,7 +2169,17 @@ final class LspCoordinator {
         if (t.file() != null) {
             ops.openAndGoto(t.file(), t.line(), t.character());
         } else {
-            openLibraryDefinition(anchor, t);
+            EditorBuffer origin = host.activeBuffer();
+            long version = origin == null ? -1 : origin.docVersion();
+            long generation = navigationRequestGeneration;
+            openLibraryDefinition(
+                    anchor,
+                    t,
+                    () -> origin != null
+                            && generation == navigationRequestGeneration
+                            && origin == host.activeBuffer()
+                            && java.util.Objects.equals(anchor, origin.getPath())
+                            && version == origin.docVersion());
         }
     }
 
@@ -2168,8 +2260,17 @@ final class LspCoordinator {
             return;
         }
         CodeArea area = b.getFocusedArea();
+        Path originPath = b.getPath();
+        long originVersion = b.docVersion();
+        long requestGeneration = ++hoverRequestGeneration;
         lspManager.changeDocument(b.getPath(), b.text()); // sync latest text before the request
         lspManager.hover(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), text -> {
+            if (requestGeneration != hoverRequestGeneration
+                    || b != host.activeBuffer()
+                    || !java.util.Objects.equals(originPath, b.getPath())
+                    || originVersion != b.docVersion()) {
+                return;
+            }
             if (text == null || text.isBlank()) {
                 host.setStatus(tr("status.lsp.noHover"));
             } else {
@@ -2394,8 +2495,8 @@ final class LspCoordinator {
 
     /** Applies a (possibly filtered) rename edit and reports the outcome. */
     private void applyRename(com.editora.lsp.WorkspaceEditMapper.Mapped mapped, String name) {
-        boolean ok = applyWorkspaceEdits(mapped);
-        host.setStatus(tr(ok ? "status.lsp.renamed" : "status.lsp.renameFailed", name));
+        applyWorkspaceEditsAsync(
+                mapped, ok -> host.setStatus(tr(ok ? "status.lsp.renamed" : "status.lsp.renameFailed", name)));
     }
 
     /** The document text inside a 0-based LSP range (single-line expected), or "" when out of bounds. */
@@ -2431,6 +2532,19 @@ final class LspCoordinator {
         return wordAt(area.getParagraph(area.getCurrentParagraph()).getText(), area.getCaretColumn());
     }
 
+    /** Atomically retires an old URI and registers the buffer under its current path. */
+    void documentPathChanged(EditorBuffer buffer, Path oldPath, boolean oldAlreadyClosed) {
+        if (oldPath != null) {
+            if (!oldAlreadyClosed && lspManager.isManaged(oldPath)) {
+                lspManager.closeDocument(oldPath);
+            }
+            clearDiagnostics(oldPath);
+        }
+        if (buffer != null && !buffer.isDisposed() && buffer.getPath() != null) {
+            syncBufferWhenShown(buffer);
+        }
+    }
+
     /**
      * Production workspace-edit path. Unopened files are decoded through the host's background loader and
      * create/move/delete operations run on a virtual thread; only buffer validation, RichTextFX edits and UI
@@ -2438,6 +2552,10 @@ final class LspCoordinator {
      */
     void applyWorkspaceEditsAsync(
             com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
+        if (!resourceTargetsSafe(mapped)) {
+            done.accept(false);
+            return;
+        }
         invalidateResourceWrites(mapped);
         java.util.List<EditorBuffer> buffers =
                 new java.util.ArrayList<>(mapped.edits().size());
@@ -2534,6 +2652,9 @@ final class LspCoordinator {
     /** Package-private so {@code LspWorkspaceEditFxTest} can drive it: this is the only LSP path that
      *  writes and MOVES files on disk, so its all-or-nothing refusals need direct tests. */
     boolean applyWorkspaceEdits(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
+        if (!resourceTargetsSafe(mapped)) {
+            return false;
+        }
         invalidateResourceWrites(mapped);
         WorkspaceTransactionStatus transaction = new WorkspaceTransactionStatus();
         var files = mapped.edits();
@@ -2548,7 +2669,7 @@ final class LspCoordinator {
             if (buf == null) {
                 buf = ops.openBackgroundBuffer(fe.file());
             }
-            if (buf == null || !buf.isEditable()) {
+            if (buf == null || !buf.isEditable() || buf.isNarrowed()) {
                 rollbackCreates(creates, transaction);
                 reportIncompleteRollback(transaction);
                 return false;
@@ -2647,6 +2768,7 @@ final class LspCoordinator {
                     || buffer.isDisposed()
                     || ops.bufferForPath(edit.file()) != buffer
                     || !buffer.isEditable()
+                    || buffer.isNarrowed()
                     || (edit.version() != null
                             && !java.util.Objects.equals(edit.version(), lspManager.documentVersion(edit.file())))
                     || (edit.expectedText() != null && !edit.expectedText().equals(buffer.getContent()))) {
@@ -2685,6 +2807,33 @@ final class LspCoordinator {
             commitDeletes(deletes);
         });
         done.accept(true);
+    }
+
+    /** Protects dirty delete victims and every live owner of an overwritten destination. */
+    private boolean resourceTargetsSafe(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
+        for (var deletion : mapped.deletes()) {
+            if (ops.buffersAtOrUnder(deletion.file()).stream().anyMatch(EditorBuffer::isDirty)) {
+                return false;
+            }
+        }
+        for (var creation : mapped.creates()) {
+            if (creation.overwrite() && !ops.buffersAtOrUnder(creation.file()).isEmpty()) {
+                return false;
+            }
+        }
+        java.util.Set<String> sources = mapped.renames().stream()
+                .map(rename -> com.editora.config.PathKeys.key(rename.from()))
+                .collect(java.util.stream.Collectors.toSet());
+        for (var rename : mapped.renames()) {
+            if (com.editora.config.PathKeys.sameNormalized(rename.from(), rename.to())) {
+                continue;
+            }
+            if (!sources.contains(com.editora.config.PathKeys.key(rename.to()))
+                    && !ops.buffersAtOrUnder(rename.to()).isEmpty()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean resourceStateCurrent(
@@ -3169,6 +3318,8 @@ final class LspCoordinator {
         }
         Path path = b.getPath();
         CodeArea area = b.getFocusedArea();
+        long originVersion = b.docVersion();
+        long requestGeneration = ++signatureRequestGeneration;
         boolean retrigger = signaturePopup != null; // the popup is already up for this call
         lspManager.changeDocument(path, b.text()); // sync latest text before the request
         lspManager.signatureHelp(
@@ -3178,7 +3329,10 @@ final class LspCoordinator {
                 triggerChar == null ? null : String.valueOf(triggerChar),
                 retrigger,
                 help -> {
-                    if (b != host.activeBuffer()) {
+                    if (requestGeneration != signatureRequestGeneration
+                            || b != host.activeBuffer()
+                            || !java.util.Objects.equals(path, b.getPath())
+                            || originVersion != b.docVersion()) {
                         return;
                     }
                     var active = com.editora.lsp.SignatureFormat.resolve(help);

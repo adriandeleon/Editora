@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("fx")
@@ -48,6 +49,68 @@ class GitPatchApplyFxTest {
         assertEquals("ONE\ntwo\nthree\n", git(repo, "show", ":f.txt"));
         assertEquals("ONE\ntwo\nTHREE\n", Files.readString(file));
         service.shutdown();
+    }
+
+    @Test
+    void cachedHunkRefusesAnIndexThatChangedAfterTheDiffSnapshot() throws Exception {
+        Path repo = Files.createTempDirectory("editora-stale-hunk");
+        Path file = repo.resolve("f.txt");
+        Files.writeString(file, "same\nold\nsame\nold\n");
+        git(repo, "init", "-q");
+        git(repo, "add", "f.txt");
+        git(repo, "-c", "user.email=t@e.st", "-c", "user.name=Test", "commit", "-q", "-m", "init");
+        String patch =
+                PatchWriter.unifiedDiff("a/f.txt", "b/f.txt", "same\nold\nsame\nold\n", "same\nNEW\nsame\nold\n");
+        GitService service = new GitService();
+        try {
+            CountDownLatch identityDone = new CountDownLatch(1);
+            AtomicReference<GitService.BlobResult> identity = new AtomicReference<>();
+            service.showBlob(repo, ":f.txt", value -> {
+                identity.set(value);
+                identityDone.countDown();
+            });
+            assertTrue(identityDone.await(10, TimeUnit.SECONDS));
+
+            Files.writeString(file, "prefix\nsame\nold\nsame\nold\n");
+            git(repo, "add", "f.txt");
+            String indexBeforeApply = git(repo, "show", ":f.txt");
+            CountDownLatch applyDone = new CountDownLatch(1);
+            AtomicReference<ProcessRunner.Result> result = new AtomicReference<>();
+            service.applyCachedPatch(repo, "f.txt", identity.get(), patch, value -> {
+                result.set(value);
+                applyDone.countDown();
+            });
+
+            assertTrue(applyDone.await(10, TimeUnit.SECONDS));
+            assertFalse(result.get().ok());
+            assertEquals(indexBeforeApply, git(repo, "show", ":f.txt"));
+        } finally {
+            service.shutdown();
+        }
+    }
+
+    @Test
+    void cachedHunkCanCreateTheFirstIndexForAnUntrackedFile() throws Exception {
+        Path repo = Files.createTempDirectory("editora-empty-index-hunk");
+        git(repo, "init", "-q");
+        Files.writeString(repo.resolve("new.txt"), "new contents\n");
+        String patch = PatchWriter.unifiedDiff("a/new.txt", "b/new.txt", "", "new contents\n");
+        GitService service = new GitService();
+        try {
+            CountDownLatch done = new CountDownLatch(1);
+            AtomicReference<ProcessRunner.Result> result = new AtomicReference<>();
+            service.applyCachedPatch(
+                    repo, "new.txt", new GitService.BlobResult(false, new byte[0], false), patch, value -> {
+                        result.set(value);
+                        done.countDown();
+                    });
+
+            assertTrue(done.await(10, TimeUnit.SECONDS));
+            assertTrue(result.get().ok(), result.get().message());
+            assertEquals("new contents\n", git(repo, "show", ":new.txt"));
+        } finally {
+            service.shutdown();
+        }
     }
 
     private static String git(Path dir, String... args) throws Exception {

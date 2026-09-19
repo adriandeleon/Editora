@@ -142,6 +142,11 @@ Welcome page is a real tab (and future diff/image/help views can be too). **Ever
 `EditorBuffer` or `null` for a non-buffer tab — a raw cast `ClassCastException`s on the
 Welcome tab. Tab-switch consumers (status bar, Structure, git, …) must be null-safe.
 
+Editable non-buffer tabs implement `hasUnsavedChanges()`, `unsavedStateToken()`, and
+`saveBeforeClose()`. Close All and application quit revalidate these tokens, plus each buffer's path,
+version, dirty state, and pending writes, until one complete pass runs without another prompt. A successful
+save of an older snapshot therefore never authorizes disposal of newer text typed during the save.
+
 ## Package map
 
 | Package | Responsibility |

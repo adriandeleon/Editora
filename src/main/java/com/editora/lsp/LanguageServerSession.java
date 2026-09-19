@@ -704,7 +704,6 @@ final class LanguageServerSession implements LanguageClient {
         if (changeSyncDisabled()) {
             return; // server negotiated TextDocumentSyncKind.None — it doesn't track content changes
         }
-        int version = versions.merge(uri, 1, Integer::sum);
         // Collapse: a queued didChange for this uri is superseded by this one (only the latest content
         // matters) — otherwise every typing pause before initialize pins another copy of the document.
         // The full-vs-incremental decision happens INSIDE the queued action (#678): capabilities are only
@@ -714,6 +713,7 @@ final class LanguageServerSession implements LanguageClient {
             if (events.isEmpty()) {
                 return; // content identical to what the server already holds — nothing to sync
             }
+            int version = versions.merge(uri, 1, Integer::sum);
             server.getTextDocumentService()
                     .didChange(
                             new DidChangeTextDocumentParams(new VersionedTextDocumentIdentifier(uri, version), events));
@@ -770,9 +770,31 @@ final class LanguageServerSession implements LanguageClient {
         return capabilities != null && changeSyncKind(capabilities) == TextDocumentSyncKind.None;
     }
 
+    void didSave(String uri, String savedText) {
+        whenReady(() -> {
+            String text = saveIncludesText() ? savedText : null;
+            server.getTextDocumentService()
+                    .didSave(new DidSaveTextDocumentParams(new TextDocumentIdentifier(uri), text));
+        });
+    }
+
+    /** Backward-compatible protocol-test helper for servers that do not request save text. */
     void didSave(String uri) {
-        whenReady(() -> server.getTextDocumentService()
-                .didSave(new DidSaveTextDocumentParams(new TextDocumentIdentifier(uri))));
+        didSave(uri, null);
+    }
+
+    private boolean saveIncludesText() {
+        if (capabilities == null || capabilities.getTextDocumentSync() == null) {
+            return false;
+        }
+        var sync = capabilities.getTextDocumentSync();
+        if (!sync.isRight() || sync.getRight() == null || sync.getRight().getSave() == null) {
+            return false;
+        }
+        var save = sync.getRight().getSave();
+        return save.isRight()
+                && save.getRight() != null
+                && Boolean.TRUE.equals(save.getRight().getIncludeText());
     }
 
     void didClose(String uri) {

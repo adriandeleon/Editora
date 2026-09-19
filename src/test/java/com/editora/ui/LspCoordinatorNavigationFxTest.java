@@ -209,6 +209,23 @@ class LspCoordinatorNavigationFxTest {
         assertFalse(host.statuses.isEmpty(), "the user must be told there is no definition");
     }
 
+    @Test
+    void aDefinitionReplyIsDroppedWhenTheDocumentChangedMeanwhile() throws Exception {
+        EditorBuffer b = managedBuffer();
+        Path target = root.resolve("B.java");
+        Files.writeString(target, "class B {}");
+        server().definitionResponse = List.of(location(target.toUri().toString(), 3, 9));
+
+        FxTestSupport.runOnFx(() -> {
+            coordinator.gotoDefinition();
+            b.replaceWholeDocument("class A { /* edited while definition was pending */ }\n");
+        });
+        FxTestSupport.runOnFx(() -> {});
+        FxTestSupport.runOnFx(() -> {});
+
+        assertTrue(ops.gotoFiles.isEmpty(), "a target computed for an older document must not be opened");
+    }
+
     /** An unmanaged buffer reports unavailability instead of silently doing nothing. */
     @Test
     void goToDefinitionOnAnUnmanagedBufferReports() throws Exception {

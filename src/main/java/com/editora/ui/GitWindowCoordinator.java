@@ -5,7 +5,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import javafx.application.Platform;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.stage.Stage;
@@ -288,7 +287,6 @@ final class GitWindowCoordinator {
                         "reset",
                         "--" + mode,
                         hash);
-                Platform.runLater(host.fileWorkflows()::checkExternalChanges);
             }
 
             @Override
@@ -312,7 +310,6 @@ final class GitWindowCoordinator {
                     String name = input.strip();
                     if (!name.isEmpty()) {
                         gitMutate(tr("status.createdBranch", name), "checkout", "-b", name, hash);
-                        Platform.runLater(host::reloadAllFromDiskSilently);
                     }
                 });
             }
@@ -391,23 +388,7 @@ final class GitWindowCoordinator {
 
     /** A history mutation (checkout/reset/revert/cherry-pick/branch): run, report, refresh + reload log. */
     void gitMutate(String successMessage, String... args) {
-        if (host.git().reportIfNoRepo()) {
-            return;
-        }
-        host.git()
-                .service()
-                .run(
-                        host.git().repoRoot(),
-                        r -> {
-                            if (r.ok()) {
-                                host.setStatus(successMessage);
-                            } else {
-                                host.git().gitError(tr("status.git.opFailed"), r.message());
-                            }
-                            host.git().afterMutation();
-                            loadGitLog(gitLogFilter); // HEAD/refs moved → refresh the log
-                        },
-                        args);
+        host.git().mutateWorkingTree(successMessage, () -> loadGitLog(gitLogFilter), args);
     }
 
     /** Project-tree Git ▸ Show File History for {@code file}: loads that file's Git log + opens the window. */

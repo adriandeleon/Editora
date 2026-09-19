@@ -56,11 +56,21 @@ final class DiffCoordinator {
 
     private record BuiltDiff(DiffViewerPane pane, DiffModel model) {}
 
-    /** A re-fetchable side of a diff: delivers the current text (a git blob or the working copy) to a
-     *  callback. Re-invoked on refresh so the diff tracks on-disk / git changes. */
+    /** Exact source text or a render-only surrogate such as a binary description. */
+    record DiffContent(String text, boolean applicable) {
+        static DiffContent text(String text) {
+            return new DiffContent(text == null ? "" : text, true);
+        }
+
+        static DiffContent presentation(String text) {
+            return new DiffContent(text == null ? "" : text, false);
+        }
+    }
+
+    /** A re-fetchable side of a diff. Re-invoked on refresh so the view tracks disk/Git changes. */
     @FunctionalInterface
     interface DiffSide {
-        void fetch(Consumer<String> onText);
+        void fetch(Consumer<DiffContent> onText);
     }
 
     /** Window hooks beyond {@link CoordinatorHost} that the diff flows need. */
@@ -76,6 +86,14 @@ final class DiffCoordinator {
 
         /** Opens {@code target} in a <em>background</em> buffer (no tab switch) and returns it, or null on error. */
         EditorBuffer openBackgroundBuffer(Path target);
+
+        /** Loads a closed apply target away from the FX thread, then returns its attached buffer on FX. */
+        default void openBackgroundBufferAsync(Path target, Consumer<EditorBuffer> done) {
+            done.accept(openBackgroundBuffer(target));
+        }
+
+        /** Removes a background buffer opened solely for an apply that was rejected as stale. */
+        default void discardBackgroundBuffer(EditorBuffer buffer) {}
 
         /** Saves {@code buffer}; {@code true} on success. */
         boolean saveBuffer(EditorBuffer buffer);
@@ -200,144 +218,150 @@ final class DiffCoordinator {
             Path target,
             Consumer<DiffViewerPane> configure,
             Consumer<BuiltDiff> onReady) {
-        leftSide.fetch(leftText ->
-                rightSide.fetch(rightText -> diffService.compute(leftText, rightText, lastDiffOptions, model -> {
-                    if (model == null) {
-                        host.setStatus(tr("status.diff.tooLarge"));
-                        onReady.accept(null);
-                        return;
-                    }
-                    DiffViewerPane pane = new DiffViewerPane(
-                            title,
-                            headerLeft,
-                            headerRight,
-                            leftName,
-                            rightName,
-                            leftText,
-                            rightText,
-                            model,
-                            host.settings().getFontFamily(),
-                            host.settings().getFontSize(),
-                            host.settings().isShowLineNumbers(),
-                            target == null ? null : target.toString());
-                    ops.prepareDiffPane(pane);
-                    pane.setOnExportPatch(this::exportPatch);
-                    pane.setOptions(lastDiffOptions);
-                    AtomicLong generation = new AtomicLong();
-                    String[] current = {leftText, rightText};
-                    boolean[] swapped = {false};
-                    DiffEngine.DiffOptions[] currentOptions = {lastDiffOptions};
-                    pane.setOnSwapRequested((newLeft, newRight) -> {
-                        long requested = generation.incrementAndGet();
-                        diffService.compute(newLeft, newRight, currentOptions[0], next -> {
-                            if (requested != generation.get()) {
-                                pane.cancelSwap();
-                                return;
-                            }
-                            if (next == null) {
-                                pane.cancelSwap();
-                                host.setStatus(tr("status.diff.tooLarge"));
-                                return;
-                            }
-                            current[0] = newLeft;
-                            current[1] = newRight;
-                            swapped[0] = !swapped[0];
-                            pane.swapSides(next);
-                        });
+        leftSide.fetch(leftContent -> rightSide.fetch(rightContent -> {
+            String leftText = leftContent.text();
+            String rightText = rightContent.text();
+            diffService.compute(leftText, rightText, lastDiffOptions, model -> {
+                if (model == null) {
+                    host.setStatus(tr("status.diff.tooLarge"));
+                    onReady.accept(null);
+                    return;
+                }
+                DiffViewerPane pane = new DiffViewerPane(
+                        title,
+                        headerLeft,
+                        headerRight,
+                        leftName,
+                        rightName,
+                        leftText,
+                        rightText,
+                        model,
+                        host.settings().getFontFamily(),
+                        host.settings().getFontSize(),
+                        host.settings().isShowLineNumbers(),
+                        target == null ? null : target.toString());
+                pane.setMutationAllowed(leftContent.applicable() && rightContent.applicable());
+                ops.prepareDiffPane(pane);
+                pane.setOnExportPatch(this::exportPatch);
+                pane.setOptions(lastDiffOptions);
+                AtomicLong generation = new AtomicLong();
+                String[] current = {leftText, rightText};
+                boolean[] swapped = {false};
+                DiffEngine.DiffOptions[] currentOptions = {lastDiffOptions};
+                pane.setOnSwapRequested((newLeft, newRight) -> {
+                    long requested = generation.incrementAndGet();
+                    diffService.compute(newLeft, newRight, currentOptions[0], next -> {
+                        if (requested != generation.get()) {
+                            pane.cancelSwap();
+                            return;
+                        }
+                        if (next == null) {
+                            pane.cancelSwap();
+                            host.setStatus(tr("status.diff.tooLarge"));
+                            return;
+                        }
+                        current[0] = newLeft;
+                        current[1] = newRight;
+                        swapped[0] = !swapped[0];
+                        pane.swapSides(next);
                     });
-                    pane.setOnOptionsChanged(opts -> {
-                        lastDiffOptions = opts;
-                        currentOptions[0] = opts;
-                        long requested = generation.incrementAndGet();
-                        String left = pane.editableSide() == DiffViewerPane.EditableSide.LEFT && pane.hasResultEditor()
-                                ? pane.resultText()
-                                : current[0];
-                        String right =
-                                pane.editableSide() == DiffViewerPane.EditableSide.RIGHT && pane.hasResultEditor()
-                                        ? pane.resultText()
-                                        : current[1];
-                        diffService.compute(left, right, opts, next -> {
-                            if (requested == generation.get()) {
-                                if (pane.hasResultEditor()) {
-                                    pane.updateDraftContent(left, right, next);
-                                } else {
-                                    pane.updateContent(left, right, next);
-                                }
+                });
+                pane.setOnOptionsChanged(opts -> {
+                    lastDiffOptions = opts;
+                    currentOptions[0] = opts;
+                    long requested = generation.incrementAndGet();
+                    String left = pane.editableSide() == DiffViewerPane.EditableSide.LEFT && pane.hasResultEditor()
+                            ? pane.resultText()
+                            : current[0];
+                    String right = pane.editableSide() == DiffViewerPane.EditableSide.RIGHT && pane.hasResultEditor()
+                            ? pane.resultText()
+                            : current[1];
+                    diffService.compute(left, right, opts, next -> {
+                        if (requested == generation.get()) {
+                            if (pane.hasResultEditor()) {
+                                pane.updateDraftContent(left, right, next);
+                            } else {
+                                pane.updateContent(left, right, next);
                             }
-                        });
+                        }
                     });
-                    // "Apply change" arrows write the hunk into the local/editable file (via an undoable
-                    // editor buffer), with Undo + Save acting on that buffer.
-                    if (editableSide != DiffViewerPane.EditableSide.NONE && target != null) {
-                        pane.setEditable(
-                                editableSide,
-                                newText -> {
-                                    if (!pane.matchesEditableText(worktreeText(target))) {
+                });
+                // "Apply change" arrows write the hunk into the local/editable file (via an undoable
+                // editor buffer), with Undo + Save acting on that buffer.
+                if (editableSide != DiffViewerPane.EditableSide.NONE && target != null) {
+                    pane.setEditableAsync(
+                            editableSide,
+                            (newText, done) -> {
+                                String expected =
+                                        current[pane.editableSide() == DiffViewerPane.EditableSide.RIGHT ? 1 : 0];
+                                applyToLocalIfUnchangedAsync(target, expected, newText, applied -> {
+                                    if (!applied) {
                                         host.setStatus(tr("status.diff.localStale"));
                                         pane.refresh();
-                                        return false;
+                                    } else {
+                                        current[pane.editableSide() == DiffViewerPane.EditableSide.RIGHT ? 1 : 0] =
+                                                newText;
                                     }
-                                    if (!applyToLocal(target, newText)) {
-                                        return false;
-                                    }
-                                    current[pane.editableSide() == DiffViewerPane.EditableSide.RIGHT ? 1 : 0] = newText;
-                                    return true;
-                                },
-                                () -> undoLocal(target),
-                                () -> saveLocal(target));
-                        pane.setOnResultEdited(draft -> {
-                            long requested = generation.incrementAndGet();
-                            String left = pane.editableSide() == DiffViewerPane.EditableSide.LEFT ? draft : current[0];
-                            String right =
-                                    pane.editableSide() == DiffViewerPane.EditableSide.RIGHT ? draft : current[1];
-                            diffService.compute(left, right, currentOptions[0], next -> {
-                                if (requested == generation.get()
-                                        && pane.hasResultEditor()
-                                        && java.util.Objects.equals(draft, pane.resultText())) {
-                                    pane.updateDraftContent(left, right, next);
-                                }
-                            });
-                        });
-                    }
-                    if (target != null) {
-                        pane.setGitHunkActions(
-                                Set.of(DiffViewerPane.GitHunkAction.OPEN),
-                                request -> ops.openAt(target, request.targetLine()));
-                    }
-                    // Refresh: re-fetch both sides; re-render only if the content actually changed
-                    // (so a focus-regain with no change keeps the view + scroll position).
-                    pane.setRefresher(() -> {
+                                    done.accept(applied);
+                                });
+                            },
+                            () -> undoLocal(target),
+                            () -> saveLocal(target));
+                    pane.setOnResultEdited(draft -> {
                         long requested = generation.incrementAndGet();
-                        leftSide.fetch(l -> rightSide.fetch(r -> {
-                            if (requested != generation.get()) {
-                                return;
+                        String left = pane.editableSide() == DiffViewerPane.EditableSide.LEFT ? draft : current[0];
+                        String right = pane.editableSide() == DiffViewerPane.EditableSide.RIGHT ? draft : current[1];
+                        diffService.compute(left, right, currentOptions[0], next -> {
+                            if (requested == generation.get()
+                                    && pane.hasResultEditor()
+                                    && java.util.Objects.equals(draft, pane.resultText())) {
+                                pane.updateDraftContent(left, right, next);
                             }
-                            String displayLeft = swapped[0] ? r : l;
-                            String displayRight = swapped[0] ? l : r;
-                            String editable = pane.editableSide() == DiffViewerPane.EditableSide.RIGHT
-                                    ? displayRight
-                                    : displayLeft;
-                            if (pane.hasDirtyResult()) {
-                                if (!pane.matchesEditableText(editable)) {
-                                    host.setStatus(tr("status.diff.localStale"));
-                                }
-                                return;
-                            }
-                            if (pane.matches(displayLeft, displayRight)) {
-                                return;
-                            }
-                            diffService.compute(displayLeft, displayRight, currentOptions[0], m -> {
-                                if (requested == generation.get()) {
-                                    current[0] = displayLeft;
-                                    current[1] = displayRight;
-                                    pane.updateContent(displayLeft, displayRight, m);
-                                }
-                            });
-                        }));
+                        });
                     });
-                    configure.accept(pane);
-                    onReady.accept(new BuiltDiff(pane, model));
-                })));
+                }
+                if (target != null) {
+                    pane.setGitHunkActions(
+                            Set.of(DiffViewerPane.GitHunkAction.OPEN),
+                            request -> ops.openAt(target, request.targetLine()));
+                }
+                // Refresh: re-fetch both sides; re-render only if the content actually changed
+                // (so a focus-regain with no change keeps the view + scroll position).
+                pane.setRefresher(() -> {
+                    long requested = generation.incrementAndGet();
+                    leftSide.fetch(lContent -> rightSide.fetch(rContent -> {
+                        if (requested != generation.get()) {
+                            return;
+                        }
+                        String l = lContent.text();
+                        String r = rContent.text();
+                        String displayLeft = swapped[0] ? r : l;
+                        String displayRight = swapped[0] ? l : r;
+                        pane.setMutationAllowed(lContent.applicable() && rContent.applicable());
+                        String editable =
+                                pane.editableSide() == DiffViewerPane.EditableSide.RIGHT ? displayRight : displayLeft;
+                        if (pane.hasDirtyResult()) {
+                            if (!pane.matchesEditableText(editable)) {
+                                host.setStatus(tr("status.diff.localStale"));
+                            }
+                            return;
+                        }
+                        if (pane.matches(displayLeft, displayRight)) {
+                            return;
+                        }
+                        diffService.compute(displayLeft, displayRight, currentOptions[0], m -> {
+                            if (requested == generation.get()) {
+                                current[0] = displayLeft;
+                                current[1] = displayRight;
+                                pane.updateContent(displayLeft, displayRight, m);
+                            }
+                        });
+                    }));
+                });
+                configure.accept(pane);
+                onReady.accept(new BuiltDiff(pane, model));
+            });
+        }));
     }
 
     /** Re-fetches every open diff tab's sides (run on window focus-regain + after a git mutation), so a
@@ -363,11 +387,62 @@ final class DiffCoordinator {
      *  buffer accepted the edit. Used by diff apply actions and Local File History restoration. */
     boolean applyToLocal(Path target, String newText) {
         EditorBuffer b = bufferForApply(target);
-        if (b == null) {
+        if (b == null || !b.isEditable() || b.isDisposed() || b.isTruncatedLoad()) {
             host.setStatus(tr("status.diff.applyFailed", target.getFileName()));
             return false;
         }
         b.replaceWholeDocument(newText); // widens first: newText is whole-document text
+        host.setStatus(tr("status.diff.applied"));
+        refreshOpenDiffs();
+        return true;
+    }
+
+    /** Opens/snapshots the target on FX and mutates only the exact source version shown by the diff. */
+    private boolean applyToLocalIfUnchanged(Path target, String expectedText, String newText) {
+        EditorBuffer existing = ops.openBufferFor(target);
+        EditorBuffer buffer = existing != null ? existing : ops.openBackgroundBuffer(target);
+        if (buffer == null
+                || !buffer.isEditable()
+                || buffer.isDisposed()
+                || buffer.isTruncatedLoad()
+                || !java.util.Objects.equals(expectedText, buffer.getContent())) {
+            if (existing == null && buffer != null) {
+                ops.discardBackgroundBuffer(buffer);
+            }
+            return false;
+        }
+        buffer.replaceWholeDocument(newText);
+        host.setStatus(tr("status.diff.applied"));
+        refreshOpenDiffs();
+        return true;
+    }
+
+    /** Async form used by diff actions so opening and decoding a closed target never blocks JavaFX. */
+    private void applyToLocalIfUnchangedAsync(
+            Path target, String expectedText, String newText, Consumer<Boolean> done) {
+        EditorBuffer existing = ops.openBufferFor(target);
+        if (existing != null) {
+            done.accept(applyToBufferIfUnchanged(existing, expectedText, newText));
+            return;
+        }
+        ops.openBackgroundBufferAsync(target, buffer -> {
+            boolean applied = applyToBufferIfUnchanged(buffer, expectedText, newText);
+            if (!applied && buffer != null) {
+                ops.discardBackgroundBuffer(buffer);
+            }
+            done.accept(applied);
+        });
+    }
+
+    private boolean applyToBufferIfUnchanged(EditorBuffer buffer, String expectedText, String newText) {
+        if (buffer == null
+                || !buffer.isEditable()
+                || buffer.isDisposed()
+                || buffer.isTruncatedLoad()
+                || !java.util.Objects.equals(expectedText, buffer.getContent())) {
+            return false;
+        }
+        buffer.replaceWholeDocument(newText);
         host.setStatus(tr("status.diff.applied"));
         refreshOpenDiffs();
         return true;
@@ -441,7 +516,7 @@ final class DiffCoordinator {
                 name,
                 name,
                 blobSide(root, "HEAD:" + rel, path),
-                cb -> cb.accept(worktreeText(path)),
+                fileSide(path),
                 DiffViewerPane.EditableSide.RIGHT,
                 path);
     }
@@ -569,8 +644,8 @@ final class DiffCoordinator {
                             rightName,
                             leftName,
                             rightName,
-                            cb -> cb.accept(worktreeText(basePath)),
-                            cb -> cb.accept(worktreeText(chosen)),
+                            fileSide(basePath),
+                            fileSide(chosen),
                             DiffViewerPane.EditableSide.LEFT,
                             basePath);
                 },
@@ -601,8 +676,8 @@ final class DiffCoordinator {
                 tr("diff.side.working"),
                 name,
                 name,
-                cb -> cb.accept(clipboardText),
-                cb -> cb.accept(worktreeText(path)),
+                cb -> cb.accept(DiffContent.text(clipboardText)),
+                fileSide(path),
                 DiffViewerPane.EditableSide.RIGHT,
                 path);
     }
@@ -622,8 +697,8 @@ final class DiffCoordinator {
                 tr("diff.side.working"),
                 name,
                 name,
-                cb -> cb.accept(""),
-                cb -> cb.accept(worktreeText(path)),
+                cb -> cb.accept(DiffContent.text("")),
+                fileSide(path),
                 DiffViewerPane.EditableSide.RIGHT,
                 path);
     }
@@ -728,10 +803,10 @@ final class DiffCoordinator {
                     Path leftFile = leftRoot.resolve(entry.label());
                     Path rightFile = rightRoot.resolve(entry.label());
                     DiffSide leftSide = entry.kind() == DirectoryDiff.Kind.RIGHT_ONLY
-                            ? callback -> callback.accept("")
+                            ? callback -> callback.accept(DiffContent.text(""))
                             : fileSide(leftFile);
                     DiffSide rightSide = entry.kind() == DirectoryDiff.Kind.LEFT_ONLY
-                            ? callback -> callback.accept("")
+                            ? callback -> callback.accept(DiffContent.text(""))
                             : fileSide(rightFile);
                     Path openTarget = entry.kind() == DirectoryDiff.Kind.LEFT_ONLY ? leftFile : rightFile;
                     buildDiffPane(
@@ -780,10 +855,17 @@ final class DiffCoordinator {
 
     /** Reads a standalone diff side away from the FX thread; callbacks return to the FX thread. */
     private DiffSide fileSide(Path path) {
-        return callback -> fileReadExecutor.submit(() -> {
-            String text = worktreeText(path);
-            javafx.application.Platform.runLater(() -> callback.accept(text));
-        });
+        return callback -> {
+            EditorBuffer open = ops.openBufferFor(path);
+            if (open != null) {
+                callback.accept(DiffContent.text(open.text()));
+                return;
+            }
+            fileReadExecutor.submit(() -> {
+                DiffContent content = diskContent(path);
+                javafx.application.Platform.runLater(() -> callback.accept(content));
+            });
+        };
     }
 
     /** Diff the active file against a commit chosen from its history. */
@@ -912,7 +994,7 @@ final class DiffCoordinator {
                 name,
                 name,
                 blobSide(root, ref + ":" + rel, path),
-                cb -> cb.accept(worktreeText(path)),
+                fileSide(path),
                 DiffViewerPane.EditableSide.RIGHT,
                 path);
     }
@@ -954,10 +1036,10 @@ final class DiffCoordinator {
                     String repoPath = prefix + entry.label();
                     Path workingFile = root.resolve(repoPath);
                     DiffSide leftSide = entry.kind() == DirectoryDiff.Kind.RIGHT_ONLY
-                            ? callback -> callback.accept("")
+                            ? callback -> callback.accept(DiffContent.text(""))
                             : blobSide(root, ref + ":" + repoPath, workingFile);
                     DiffSide rightSide = entry.kind() == DirectoryDiff.Kind.LEFT_ONLY
-                            ? callback -> callback.accept("")
+                            ? callback -> callback.accept(DiffContent.text(""))
                             : fileSide(workingFile);
                     buildDiffPane(
                             tr("diff.title.vsBranch", entry.label(), displayRef),
@@ -993,6 +1075,8 @@ final class DiffCoordinator {
         }
         Path abs = root.resolve(repoRel);
         String name = abs.getFileName().toString();
+        java.util.concurrent.atomic.AtomicReference<GitService.BlobResult> expectedIndex =
+                new java.util.concurrent.atomic.AtomicReference<>();
         if (staged) {
             // index↔HEAD: neither side is the working file, so no "apply" (read-only diff).
             openDiff(
@@ -1002,10 +1086,10 @@ final class DiffCoordinator {
                     name,
                     name,
                     blobSide(root, "HEAD:" + repoRel, abs),
-                    blobSide(root, ":" + repoRel, abs),
+                    indexBlobSide(root, repoRel, abs, expectedIndex),
                     DiffViewerPane.EditableSide.NONE,
                     null,
-                    pane -> configureGitHunks(pane, root, repoRel, abs, true));
+                    pane -> configureGitHunks(pane, root, repoRel, abs, true, expectedIndex));
         } else {
             openDiff(
                     tr("diff.title.unstaged", name),
@@ -1013,11 +1097,11 @@ final class DiffCoordinator {
                     tr("diff.side.working"),
                     name,
                     name,
-                    blobSide(root, ":" + repoRel, abs),
-                    cb -> cb.accept(worktreeText(abs)),
+                    indexBlobSide(root, repoRel, abs, expectedIndex),
+                    fileSide(abs),
                     DiffViewerPane.EditableSide.RIGHT,
                     abs,
-                    pane -> configureGitHunks(pane, root, repoRel, abs, false));
+                    pane -> configureGitHunks(pane, root, repoRel, abs, false, expectedIndex));
         }
     }
 
@@ -1042,12 +1126,17 @@ final class DiffCoordinator {
             GitReviewTarget target = targets.get(i);
             Path file = root.resolve(target.path());
             String leftPath = target.leftPath();
+            java.util.concurrent.atomic.AtomicReference<GitService.BlobResult> expectedIndex =
+                    new java.util.concurrent.atomic.AtomicReference<>();
             DiffSide left = staged
                     ? blobSide(root, "HEAD:" + leftPath, file)
-                    : leftPath == null ? callback -> callback.accept("") : blobSide(root, ":" + leftPath, file);
-            DiffSide right = staged
-                    ? blobSide(root, ":" + target.path(), file)
-                    : callback -> callback.accept(worktreeText(file));
+                    : leftPath == null
+                            ? callback -> {
+                                expectedIndex.set(new GitService.BlobResult(false, new byte[0]));
+                                callback.accept(DiffContent.text(""));
+                            }
+                            : indexBlobSide(root, leftPath, file, expectedIndex);
+            DiffSide right = staged ? indexBlobSide(root, target.path(), file, expectedIndex) : fileSide(file);
             String fileTitle = file.getFileName() == null
                     ? target.path()
                     : file.getFileName().toString();
@@ -1061,7 +1150,7 @@ final class DiffCoordinator {
                     right,
                     staged ? DiffViewerPane.EditableSide.NONE : DiffViewerPane.EditableSide.RIGHT,
                     staged ? null : file,
-                    pane -> configureGitHunks(pane, root, target.path(), file, staged),
+                    pane -> configureGitHunks(pane, root, target.path(), file, staged, expectedIndex),
                     result -> {
                         built.set(index, result);
                         if (remaining.decrementAndGet() == 0) {
@@ -1118,7 +1207,13 @@ final class DiffCoordinator {
                 : path;
     }
 
-    private void configureGitHunks(DiffViewerPane pane, Path root, String repoRel, Path file, boolean staged) {
+    private void configureGitHunks(
+            DiffViewerPane pane,
+            Path root,
+            String repoRel,
+            Path file,
+            boolean staged,
+            java.util.concurrent.atomic.AtomicReference<GitService.BlobResult> expectedIndexBlob) {
         Set<DiffViewerPane.GitHunkAction> actions = staged
                 ? Set.of(DiffViewerPane.GitHunkAction.UNSTAGE, DiffViewerPane.GitHunkAction.OPEN)
                 : Set.of(
@@ -1129,17 +1224,22 @@ final class DiffCoordinator {
             switch (request.action()) {
                 case OPEN -> ops.openAt(file, request.targetLine());
                 case REVERT -> {
-                    if (!pane.matchesEditableText(worktreeText(file))) {
-                        host.setStatus(tr("status.diff.localStale"));
-                        pane.refresh();
-                    } else {
-                        applyToLocal(file, request.afterText());
-                    }
+                    applyToLocalIfUnchangedAsync(file, request.beforeText(), request.afterText(), applied -> {
+                        if (!applied) {
+                            host.setStatus(tr("status.diff.localStale"));
+                            pane.refresh();
+                        }
+                    });
                 }
                 case STAGE, UNSTAGE -> {
+                    GitService.BlobResult expectedBlob = expectedIndexBlob.get();
+                    if (expectedBlob == null) {
+                        host.setStatus(tr("status.diff.hunkStale", "index snapshot is still loading"));
+                        return;
+                    }
                     String patch = PatchWriter.unifiedDiff(
                             "a/" + repoRel, "b/" + repoRel, request.beforeText(), request.afterText());
-                    git.service().applyPatch(root, patch, true, result -> {
+                    git.service().applyCachedPatch(root, repoRel, expectedBlob, patch, result -> {
                         if (result.ok()) {
                             host.setStatus(tr(
                                     request.action() == DiffViewerPane.GitHunkAction.STAGE
@@ -1211,33 +1311,29 @@ final class DiffCoordinator {
                 name,
                 name,
                 blobSide(root, hash + ":" + repoRel, target),
-                cb -> cb.accept(worktreeText(target)),
+                fileSide(target),
                 DiffViewerPane.EditableSide.RIGHT,
                 target);
     }
 
     /** The current working-tree text of {@code abs}: an open buffer's (incl. unsaved edits) if open,
      *  else the file on disk ("" when unreadable / deleted). */
-    private String worktreeText(Path abs) {
-        EditorBuffer b = ops.openBufferFor(abs);
-        if (b != null) {
-            return b.text();
-        }
+    private DiffContent diskContent(Path abs) {
         try {
             if (!Files.exists(abs)) {
-                return "";
+                return DiffContent.text("");
             }
             // Decode the closed working file the same way the editor would (BOM / .editorconfig charset),
             // not force-UTF-8 — else a non-UTF-8 file's working side would disagree with the (now
             // charset-correct) blob side.
             byte[] bytes = Files.readAllBytes(abs);
             if (BinaryDiff.isProbablyBinary(bytes)) {
-                return BinaryDiff.describe(bytes);
+                return DiffContent.presentation(BinaryDiff.describe(bytes));
             }
-            return EditorConfigCharset.decode(
-                    bytes, EditorConfigCharset.resolveName(bytes, ops.editorConfigCharset(abs)));
+            return DiffContent.text(EditorConfigCharset.decode(
+                    bytes, EditorConfigCharset.resolveName(bytes, ops.editorConfigCharset(abs))));
         } catch (IOException e) {
-            return "";
+            return DiffContent.presentation("");
         }
     }
 
@@ -1248,17 +1344,32 @@ final class DiffCoordinator {
      * spurious whole-file change, instead of UTF-8 mojibake.
      */
     private DiffSide blobSide(Path root, String spec, Path file) {
+        return blobSide(root, spec, file, ignored -> {});
+    }
+
+    /** Index side whose exact raw blob becomes the compare-and-swap preimage for hunk actions. */
+    private DiffSide indexBlobSide(
+            Path root,
+            String path,
+            Path file,
+            java.util.concurrent.atomic.AtomicReference<GitService.BlobResult> snapshot) {
+        return blobSide(root, ":" + path, file, snapshot::set);
+    }
+
+    private DiffSide blobSide(Path root, String spec, Path file, Consumer<GitService.BlobResult> onSnapshot) {
         String ecCharset = ops.editorConfigCharset(file);
         return onText -> git.service().showBlob(root, spec, result -> {
             if (result.truncated()) {
                 host.setStatus(tr("status.git.blobTooLarge"));
                 return;
             }
+            onSnapshot.accept(result);
             byte[] bytes = result.found() ? result.bytes() : new byte[0];
             onText.accept(
                     BinaryDiff.isProbablyBinary(bytes)
-                            ? BinaryDiff.describe(bytes)
-                            : EditorConfigCharset.decode(bytes, EditorConfigCharset.resolveName(bytes, ecCharset)));
+                            ? DiffContent.presentation(BinaryDiff.describe(bytes))
+                            : DiffContent.text(EditorConfigCharset.decode(
+                                    bytes, EditorConfigCharset.resolveName(bytes, ecCharset))));
         });
     }
 
@@ -1364,6 +1475,10 @@ final class DiffCoordinator {
 
     private void openMergePane(
             EditorBuffer buffer, String sourceText, DiffText format, ConflictParser.ConflictFile conflictFile) {
+        if (!buffer.isEditable() || buffer.isDisposed() || buffer.isTruncatedLoad()) {
+            host.setStatus(tr("status.diff.applyFailed", buffer.getTitle()));
+            return;
+        }
         String name = buffer.getPath() == null
                 ? buffer.getTitle()
                 : buffer.getPath().getFileName().toString();
@@ -1377,10 +1492,11 @@ final class DiffCoordinator {
                 resolvedText -> {
                     if (!buffer.text().equals(sourceText)) {
                         host.setStatus(tr("status.merge.stale"));
-                        return;
+                        return false;
                     }
                     buffer.replaceWholeDocument(resolvedText);
                     host.setStatus(tr("status.merge.applied"));
+                    return true;
                 });
         ops.addDiffTab(pane);
     }
