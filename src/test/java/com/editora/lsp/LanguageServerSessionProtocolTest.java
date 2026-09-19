@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.SaveOptions;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.SignatureHelpTriggerKind;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
@@ -217,6 +218,21 @@ class LanguageServerSessionProtocolTest {
     }
 
     @Test
+    void didSaveIncludesTheCommittedSnapshotOnlyWhenTheServerRequestsIt() {
+        var capabilities = caps();
+        var sync = new TextDocumentSyncOptions();
+        sync.setChange(TextDocumentSyncKind.Full);
+        sync.setSave(new SaveOptions(true));
+        capabilities.setTextDocumentSync(sync);
+        var s = session(capabilities);
+        s.didOpen(URI, "java", "before");
+
+        s.didSave(URI, "committed snapshot");
+
+        assertEquals("committed snapshot", FakeLanguageServer.last(fake.saved).getText());
+    }
+
+    @Test
     void reopenDuringInitializationKeepsShadowAndWireOrderAligned() {
         var spec = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), List.of());
         var s = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {});
@@ -286,9 +302,11 @@ class LanguageServerSessionProtocolTest {
     void anIdenticalResyncSendsNothing() {
         var s = session(incrementalSyncCaps());
         s.didOpen(URI, "java", "same");
+        int before = s.documentVersion(URI);
         s.didChange(URI, "same");
 
         assertTrue(fake.changed.isEmpty(), "no change event should be sent for identical content");
+        assertEquals(before, s.documentVersion(URI), "a skipped notification must not consume a protocol version");
     }
 
     /** A server declaring sync kind None gets no didChange traffic at all. */

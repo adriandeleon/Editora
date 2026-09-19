@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   availability refreshes.
 - Run, build, and external-tool console action buttons now retain their full labels when a long command line
   fills the status header instead of collapsing to ellipses.
+- Save, Save As, close, reload, and Git working-tree operations now revalidate exact document and disk
+  preimages, protect pending writes across windows, and preserve newer edits or external changes instead of
+  silently overwriting them.
+- LSP document renames, resource edits, saves, diagnostics, and navigation now retain URI/version/session
+  identity through asynchronous delivery; stale or unverifiable edits are refused, and negotiated save text
+  reflects the bytes that reached disk.
+- Diff and merge Result drafts participate in tab/window close protection. Binary or degraded comparisons
+  stay read-only, stale local/index hunks are rejected, and manual merge edits cannot be erased by a later
+  resolution choice.
+- Git paths are handled literally, conflicted porcelain-v2 entries remain visible, history mutations use the
+  protected working-tree path, and stale refreshes cannot repaint a different active file.
+- Regex replacement now evaluates the actual match context and all programmatic replace/diff paths honor a
+  buffer's read-only state. Patch output also preserves missing-final-newline markers for both changed sides.
 
 ## [0.18.4] - 2026-09-15
 

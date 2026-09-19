@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
@@ -42,7 +43,7 @@ public final class MergeViewerPane implements TabContent {
 
     private final String title;
     private final ConflictFile file;
-    private final Consumer<String> onSave;
+    private final Predicate<String> onSave;
     private final List<Choice> choices;
     private final String lineSeparator;
     private final boolean finalNewline;
@@ -51,6 +52,10 @@ public final class MergeViewerPane implements TabContent {
     private final Label status = new Label();
     private final TextArea resultArea = new TextArea();
     private final String fontStyle;
+    private boolean updatingResult;
+    private boolean manuallyEdited;
+    private boolean draftDirty;
+    private String generatedResult = "";
 
     public MergeViewerPane(
             String title,
@@ -60,9 +65,25 @@ public final class MergeViewerPane implements TabContent {
             String lineSeparator,
             boolean finalNewline,
             Consumer<String> onSave) {
+        this(title, file, fontFamily, fontSize, lineSeparator, finalNewline, text -> {
+            if (onSave != null) {
+                onSave.accept(text);
+            }
+            return true;
+        });
+    }
+
+    MergeViewerPane(
+            String title,
+            ConflictFile file,
+            String fontFamily,
+            int fontSize,
+            String lineSeparator,
+            boolean finalNewline,
+            Predicate<String> onSave) {
         this.title = title;
         this.file = file;
-        this.onSave = onSave == null ? text -> {} : onSave;
+        this.onSave = onSave == null ? text -> false : onSave;
         this.lineSeparator = lineSeparator == null || lineSeparator.isEmpty() ? "\n" : lineSeparator;
         this.finalNewline = finalNewline;
         this.fontStyle = "-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;";
@@ -72,6 +93,7 @@ public final class MergeViewerPane implements TabContent {
         root.setTop(buildToolbar());
         root.setCenter(buildBody());
         refreshResult();
+        draftDirty = false;
         refreshStatus();
     }
 
@@ -79,7 +101,7 @@ public final class MergeViewerPane implements TabContent {
         status.getStyleClass().add("merge-status");
         Button save = new Button(tr("merge.save"));
         save.getStyleClass().addAll("merge-save", "success");
-        save.setOnAction(e -> onSave.accept(resultTextForSave()));
+        save.setOnAction(e -> saveResult());
         HBox bar = new HBox(8, status, spacer(), save);
         bar.getStyleClass().add("merge-toolbar");
         bar.setAlignment(Pos.CENTER_LEFT);
@@ -114,6 +136,12 @@ public final class MergeViewerPane implements TabContent {
         resultArea.setStyle(fontStyle);
         resultArea.getStyleClass().add("merge-result");
         resultArea.setAccessibleText(tr("merge.resultDescription"));
+        resultArea.textProperty().addListener((ignored, oldText, newText) -> {
+            if (!updatingResult) {
+                manuallyEdited = !java.util.Objects.equals(newText, generatedResult);
+                draftDirty = true;
+            }
+        });
         VBox result = new VBox(4, resultLabel, resultArea);
         result.getStyleClass().add("merge-result-box");
         result.setPadding(new Insets(6, 8, 8, 8));
@@ -185,9 +213,14 @@ public final class MergeViewerPane implements TabContent {
     }
 
     private void choose(int index, Choice choice, Label chosen, String text) {
+        if (manuallyEdited) {
+            status.setText(tr("merge.manualEditsBlockChoices"));
+            return;
+        }
         choices.set(index, choice);
         chosen.setText(text);
         refreshResult();
+        draftDirty = true;
         refreshStatus();
     }
 
@@ -197,7 +230,22 @@ public final class MergeViewerPane implements TabContent {
         if (finalNewline && !lines.isEmpty()) {
             text += lineSeparator;
         }
-        resultArea.setText(text);
+        generatedResult = text;
+        updatingResult = true;
+        try {
+            resultArea.setText(text);
+        } finally {
+            updatingResult = false;
+        }
+        manuallyEdited = false;
+    }
+
+    private boolean saveResult() {
+        if (!onSave.test(resultTextForSave())) {
+            return false;
+        }
+        draftDirty = false;
+        return true;
     }
 
     private String resultTextForSave() {
@@ -231,5 +279,25 @@ public final class MergeViewerPane implements TabContent {
     @Override
     public Node icon() {
         return Icons.merge();
+    }
+
+    @Override
+    public boolean hasUnsavedChanges() {
+        return draftDirty;
+    }
+
+    @Override
+    public Object unsavedStateToken() {
+        return draftDirty ? resultArea.getText() : null;
+    }
+
+    @Override
+    public boolean saveBeforeClose() {
+        return saveResult();
+    }
+
+    @Override
+    public String closeSaveActionKey() {
+        return "merge.save";
     }
 }

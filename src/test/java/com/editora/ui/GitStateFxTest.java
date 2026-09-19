@@ -1,8 +1,12 @@
 package com.editora.ui;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.editora.git.ChangeType;
 import com.editora.git.GitService;
@@ -12,6 +16,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -111,5 +116,39 @@ class GitStateFxTest {
                 "the clone URL+destination form is shown as an in-scene overlay");
 
         FxTestSupport.runOnFx(() -> FxTestSupport.invoke(overlayHost, "hide")); // clean up for later tests
+    }
+
+    @Test
+    void invalidatingARefreshAfterComputationStillDropsItsQueuedFxDelivery(@TempDir Path repo) throws Exception {
+        Process init =
+                new ProcessBuilder("git", "init", "-q").directory(repo.toFile()).start();
+        assertEquals(0, init.waitFor());
+        Path file = Files.writeString(repo.resolve("file.txt"), "text\n");
+        GitService service = new GitService();
+        try {
+            AtomicInteger callbacks = new AtomicInteger();
+            java.util.concurrent.CountDownLatch fxBlocked = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch releaseFx = new java.util.concurrent.CountDownLatch(1);
+            javafx.application.Platform.runLater(() -> {
+                fxBlocked.countDown();
+                try {
+                    releaseFx.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            assertTrue(fxBlocked.await(10, TimeUnit.SECONDS));
+            service.refresh(file, file, ignored -> callbacks.incrementAndGet());
+            ExecutorService worker = FxTestSupport.field(service, "exec");
+            worker.submit(() -> {}).get(10, TimeUnit.SECONDS); // result is now queued for the FX thread
+
+            service.invalidateRefreshes();
+            releaseFx.countDown();
+            FxTestSupport.runOnFx(() -> {});
+
+            assertEquals(0, callbacks.get());
+        } finally {
+            service.shutdown();
+        }
     }
 }

@@ -614,8 +614,8 @@ final class GitHubCoordinator {
                 tr("diff.side.prHead"),
                 leftName,
                 rightName,
-                cb -> cb.accept(leftText),
-                cb -> cb.accept(rightText),
+                cb -> cb.accept(DiffCoordinator.DiffContent.text(leftText)),
+                cb -> cb.accept(DiffCoordinator.DiffContent.text(rightText)),
                 DiffViewerPane.EditableSide.NONE,
                 null);
     }

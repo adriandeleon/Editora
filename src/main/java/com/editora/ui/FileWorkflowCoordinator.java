@@ -49,17 +49,23 @@ final class FileWorkflowCoordinator {
             EditorBuffer buffer,
             Path target,
             String content,
+            String savedText,
             byte[] bytes,
             long documentVersion,
             EditorBuffer.DiskSnapshot diskSnapshot,
             long sequence,
-            DocumentWriteSequencer.Ticket ticket) {}
+            DocumentWriteSequencer.Ticket ticket,
+            boolean saveAs) {}
+
+    private record SaveAsOrigin(Path path) {}
+
+    private record SavePayload(String text, byte[] bytes) {}
 
     private record DiskWrite(long modifiedMillis, long size) {}
 
     private record CommittedSave(long sequence, Path target, String content, byte[] bytes, DiskWrite disk) {}
 
-    private record RemoteWritePlan(boolean proceed, byte[] expectedBytes) {}
+    private record RemoteWritePlan(boolean proceed, byte[] expectedBytes, boolean expectedAbsent) {}
 
     private enum RemoteSaveChoice {
         RELOAD,
@@ -119,6 +125,8 @@ final class FileWorkflowCoordinator {
 
         void updateTabMeta(Tab tab, EditorBuffer buffer);
 
+        void bufferPathChanged(EditorBuffer buffer, Path oldPath, boolean oldAlreadyClosed);
+
         void promoteTab(Tab tab);
 
         void finishAsyncOpen(Tab tab, EditorBuffer buffer, PreparedLoad load);
@@ -152,6 +160,8 @@ final class FileWorkflowCoordinator {
     private final Map<String, CommittedSave> committedSaves = new ConcurrentHashMap<>();
     /** FX-confined count used by close decisions: a clean buffer with an unresolved save is not safe to close. */
     private final Map<EditorBuffer, Integer> pendingSaves = new IdentityHashMap<>();
+    /** Original committed identity retained across one or more superseding Save As attempts. */
+    private final Map<EditorBuffer, SaveAsOrigin> saveAsOrigins = new IdentityHashMap<>();
 
     private final Set<SaveRequest> activeSaveRequests = ConcurrentHashMap.newKeySet();
     private final AtomicLong saveSequence = new AtomicLong();
@@ -570,10 +580,7 @@ final class FileWorkflowCoordinator {
 
     /** Applies a prepared document atomically on the FX thread, with all expensive-mode flags already active. */
     String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load) {
-        buffer.setDiskSnapshot(
-                load.mtime(),
-                load.size(),
-                com.editora.vfs.Vfs.isRemote(load.file()) ? fingerprint(load.sourceBytes()) : null);
+        buffer.setDiskSnapshot(load.mtime(), load.size(), fingerprint(load.sourceBytes()));
         buffer.setTruncatedLoad(load.truncated());
         host.editorSettings().applyResolvedEditorConfig(buffer, load.editorConfig());
         buffer.setDetectedCharset(load.charset());
@@ -704,13 +711,36 @@ final class FileWorkflowCoordinator {
 
     /** Reloads a buffer's content from disk, preserving the caret position as best it can. */
     void reloadFromDisk(Tab tab, EditorBuffer buffer) {
+        reloadFromDisk(tab, buffer, ignored -> {});
+    }
+
+    /** Reloads asynchronously and reports on the FX thread whether the prepared snapshot was applied. */
+    void reloadFromDisk(Tab tab, EditorBuffer buffer, java.util.function.Consumer<Boolean> onComplete) {
         Path file = buffer.getPath();
         invalidatePendingWrite(file);
-        try {
-            applyPreparedReload(tab, buffer, prepareLoad(file, false));
-        } catch (IOException e) {
-            host.setStatus(tr("status.failedReload", file.getFileName(), e.getMessage()));
-        }
+        fileLoadExecutor.execute(() -> {
+            try {
+                PreparedLoad load = prepareLoad(file, false);
+                Platform.runLater(() -> {
+                    boolean applied = false;
+                    try {
+                        if (!buffer.isDisposed()
+                                && buffer.getPath() != null
+                                && com.editora.config.PathKeys.sameNormalized(buffer.getPath(), file)) {
+                            applyPreparedReload(tab, buffer, load);
+                            applied = true;
+                        }
+                    } finally {
+                        onComplete.accept(applied);
+                    }
+                });
+            } catch (IOException e) {
+                Platform.runLater(() -> {
+                    host.setStatus(tr("status.failedReload", file.getFileName(), e.getMessage()));
+                    onComplete.accept(false);
+                });
+            }
+        });
     }
 
     /** Applies bytes prepared off-thread after the user explicitly chooses the external copy. FX thread. */
@@ -957,7 +987,7 @@ final class FileWorkflowCoordinator {
                 if (request.ticket().isCurrent() && !buffer.isDisposed()) {
                     host.setStatus(tr("status.admin.saved", com.editora.config.PathDisplay.of(target)));
                     host.git().refresh();
-                    host.lspCoordinator().notifyDocumentSaved(buffer);
+                    host.lspCoordinator().notifyDocumentSaved(buffer, request.content());
                     Tab tab = host.tabForBuffer(buffer);
                     if (tab != null) {
                         host.updateTabMeta(tab, buffer);
@@ -1016,8 +1046,11 @@ final class FileWorkflowCoordinator {
     }
 
     private boolean applySaveAsTarget(EditorBuffer buffer, Path file, boolean synchronous) {
+        Path previousPath = buffer.getPath();
+        saveAsOrigins.putIfAbsent(buffer, new SaveAsOrigin(previousPath));
         invalidatePendingWrites(buffer);
         buffer.setPath(file);
+        host.bufferPathChanged(buffer, previousPath, false);
         // The buffer's EditorConfig properties + charset were resolved against the OLD path. Without
         // re-resolving, a Save-As into another tree writes with the previous project's charset/EOL/trim rules
         // (and keeps doing so on every later save), while an untitled buffer saved INTO a project with an
@@ -1026,7 +1059,7 @@ final class FileWorkflowCoordinator {
         host.previews().ensurePreviewControls(buffer); // a new untitled saved as .md/.mmd now gets the preview toggle
         host.htmlPreview().ensureControl(buffer); // a save-as to .html now gets the "open in browser" globe
         host.logViewer().ensureControl(buffer); // a save-as to .log now gets the log control + level overlay
-        boolean ok = synchronous ? writeBufferSynchronously(buffer, file) : writeBuffer(buffer, file);
+        boolean ok = synchronous ? writeBufferSynchronously(buffer, file, true) : writeBuffer(buffer, file, true);
         Tab tab = host.tabFor(buffer);
         if (tab != null) {
             host.updateTabMeta(tab, buffer);
@@ -1110,10 +1143,10 @@ final class FileWorkflowCoordinator {
      * when EditorConfig is off.
      */
     byte[] saveBytes(EditorBuffer buffer) {
-        return saveBytes(buffer, buffer.getContent());
+        return savePayload(buffer, buffer.getContent()).bytes();
     }
 
-    private byte[] saveBytes(EditorBuffer buffer, String content) {
+    private SavePayload savePayload(EditorBuffer buffer, String content) {
         com.editora.editorconfig.EditorConfigProperties p =
                 host.editorSettings().editorConfigEnabled()
                         ? buffer.getEditorConfigProps()
@@ -1129,7 +1162,7 @@ final class FileWorkflowCoordinator {
                     tr("status.charsetFallback", com.editora.editorconfig.EditorConfigCharset.displayName(charset)));
             charset = com.editora.editorconfig.EditorConfigCharset.UTF_8;
         }
-        return com.editora.editorconfig.EditorConfigCharset.encode(text, charset);
+        return new SavePayload(text, com.editora.editorconfig.EditorConfigCharset.encode(text, charset));
     }
 
     private static String fingerprint(byte[] bytes) {
@@ -1145,7 +1178,11 @@ final class FileWorkflowCoordinator {
     }
 
     boolean writeBuffer(EditorBuffer buffer, Path file) {
-        SaveRequest request = captureSave(buffer, file);
+        return writeBuffer(buffer, file, false);
+    }
+
+    private boolean writeBuffer(EditorBuffer buffer, Path file, boolean saveAs) {
+        SaveRequest request = captureSave(buffer, file, saveAs);
         try {
             autoSaveExecutor.submit(() -> writeAsync(request, false));
             return true;
@@ -1156,7 +1193,11 @@ final class FileWorkflowCoordinator {
     }
 
     boolean writeBufferSynchronously(EditorBuffer buffer, Path file) {
-        SaveRequest request = captureSave(buffer, file);
+        return writeBufferSynchronously(buffer, file, false);
+    }
+
+    private boolean writeBufferSynchronously(EditorBuffer buffer, Path file, boolean saveAs) {
+        SaveRequest request = captureSave(buffer, file, saveAs);
         CompletableFuture<Boolean> completed = new CompletableFuture<>();
         try {
             autoSaveExecutor.submit(() -> writeAsync(request, false, completed));
@@ -1207,34 +1248,50 @@ final class FileWorkflowCoordinator {
     }
 
     private SaveRequest captureSave(EditorBuffer buffer, Path file) {
+        return captureSave(buffer, file, false);
+    }
+
+    private SaveRequest captureSave(EditorBuffer buffer, Path file, boolean saveAs) {
         String content = buffer.getContent();
+        SavePayload payload = savePayload(buffer, content);
         pendingSaves.merge(buffer, 1, Integer::sum);
         SaveRequest request = new SaveRequest(
                 buffer,
                 file,
                 content,
-                saveBytes(buffer, content),
+                payload.text(),
+                payload.bytes(),
                 buffer.docVersion(),
                 buffer.diskSnapshot(),
                 saveSequence.incrementAndGet(),
-                host.config().shared().documentWrites().begin(file));
+                host.config().shared().documentWrites().begin(file),
+                saveAs);
         activeSaveRequests.add(request);
         return request;
     }
 
-    private DiskWrite writeToDisk(SaveRequest request, byte[] expectedRemoteBytes) throws IOException {
+    private DiskWrite writeToDisk(SaveRequest request, RemoteWritePlan plan) throws IOException {
         Runnable hook = beforeDocumentWriteForTest;
         if (hook != null) {
             hook.run();
         }
-        boolean written = expectedRemoteBytes != null
-                ? com.editora.io.AtomicFileWrite.replaceIfUnchanged(
-                        request.target(), expectedRemoteBytes, request.bytes(), request.ticket()::isCurrent)
-                : documentWriter.write(request.target(), request.bytes(), request.ticket()::isCurrent);
+        BooleanSupplier commit = () -> request.ticket().isCurrent()
+                && (plan.expectedAbsent()
+                        ? Files.notExists(request.target())
+                        : plan.expectedBytes() == null || diskBytesEqual(request.target(), plan.expectedBytes()));
+        boolean written = documentWriter.write(request.target(), request.bytes(), commit);
         if (!written) {
             return null;
         }
         return new DiskWrite(lastModifiedMillis(request.target()), fileSize(request.target()));
+    }
+
+    private static boolean diskBytesEqual(Path target, byte[] expected) {
+        try {
+            return java.util.Arrays.equals(expected, Files.readAllBytes(target));
+        } catch (IOException missingOrUnreadable) {
+            return false;
+        }
     }
 
     /**
@@ -1242,7 +1299,8 @@ final class FileWorkflowCoordinator {
      * The returned preimage is checked again at the atomic replacement boundary, closing the gap between
      * conflict detection and commit.
      */
-    private RemoteWritePlan prepareRemoteWrite(SaveRequest request) throws IOException {
+    private RemoteWritePlan prepareRemoteWrite(SaveRequest request, boolean autoSave, boolean raced)
+            throws IOException {
         PreparedLoad current = prepareLoad(request.target(), false);
         byte[] currentBytes = current.sourceBytes();
         CommittedSave ownCommit = committedSaves.get(com.editora.config.PathKeys.key(request.target()));
@@ -1251,14 +1309,20 @@ final class FileWorkflowCoordinator {
                 && activeSaveRequests.stream()
                         .anyMatch(active ->
                                 active.buffer() == request.buffer() && active.sequence() == ownCommit.sequence());
-        boolean changed = ownCommitAwaitingFx
-                ? !java.util.Arrays.equals(ownCommit.bytes(), currentBytes)
-                : request.diskSnapshot().differsFrom(current.mtime(), current.size(), fingerprint(currentBytes));
+        boolean changed = raced
+                || (!request.saveAs()
+                        && (ownCommitAwaitingFx
+                                ? !java.util.Arrays.equals(ownCommit.bytes(), currentBytes)
+                                : request.diskSnapshot()
+                                        .differsFrom(current.mtime(), current.size(), fingerprint(currentBytes))));
         if (!changed) {
-            return new RemoteWritePlan(true, currentBytes);
+            return new RemoteWritePlan(true, currentBytes, false);
+        }
+        if (autoSave) {
+            return new RemoteWritePlan(false, currentBytes, false);
         }
         RemoteSaveChoice choice = promptRemoteSaveConflict(request, current);
-        return new RemoteWritePlan(choice == RemoteSaveChoice.OVERWRITE, currentBytes);
+        return new RemoteWritePlan(choice == RemoteSaveChoice.OVERWRITE, currentBytes, false);
     }
 
     private RemoteSaveChoice promptRemoteSaveConflict(SaveRequest request, PreparedLoad current) throws IOException {
@@ -1342,31 +1406,22 @@ final class FileWorkflowCoordinator {
     private void writeAsync(SaveRequest request, boolean autoSave, CompletableFuture<Boolean> completed) {
         try {
             var outcome = request.ticket().runIfCurrent(() -> {
-                boolean remote = com.editora.vfs.Vfs.isRemote(request.target());
-                if (autoSave && !remote) {
-                    long modified = lastModifiedMillis(request.target());
-                    long size = fileSize(request.target());
-                    boolean ownCommit = hasOwnCommitMetadata(request.target(), modified, size);
-                    if (ownCommit
-                            ? !matchesOwnCommit(request.target(), modified, size)
-                            : request.diskSnapshot().differsFrom(modified, size)) {
-                        return null;
-                    }
-                }
+                boolean raced = false;
                 while (request.ticket().isCurrent()) {
-                    RemoteWritePlan plan = remote ? prepareRemoteWrite(request) : new RemoteWritePlan(true, null);
+                    boolean existing = Files.exists(request.target());
+                    RemoteWritePlan plan = existing
+                            ? prepareRemoteWrite(request, autoSave, raced)
+                            : new RemoteWritePlan(true, null, true);
                     if (!plan.proceed()) {
                         return null;
                     }
-                    DiskWrite disk = writeToDisk(request, plan.expectedBytes());
-                    if (disk != null
-                            || !remote
-                            || plan.expectedBytes() == null
-                            || !request.ticket().isCurrent()) {
+                    DiskWrite disk = writeToDisk(request, plan);
+                    if (disk != null || !request.ticket().isCurrent()) {
                         return disk;
                     }
-                    // The remote content changed after preflight but before replacement. Read the new
-                    // preimage and ask again instead of overwriting a change the user never saw.
+                    // The target appeared or changed after preflight. Read the new preimage and ask before
+                    // overwriting it, including Save As targets that were absent when the dialog closed.
+                    raced = true;
                 }
                 return null;
             });
@@ -1378,6 +1433,8 @@ final class FileWorkflowCoordinator {
                 try {
                     if (disk != null) {
                         completeSave(request, disk, autoSave, request.ticket().isCurrent());
+                    } else {
+                        rollbackFailedSaveAs(request);
                     }
                     completeFuture(completed, disk != null);
                 } finally {
@@ -1390,6 +1447,7 @@ final class FileWorkflowCoordinator {
                     if (request.ticket().isCurrent()) {
                         host.setStatus(tr(autoSave ? "status.autoSaveFailed" : "status.failedSave", e.getMessage()));
                     }
+                    rollbackFailedSaveAs(request);
                     completeFuture(completed, false);
                 } finally {
                     finishRequest(request);
@@ -1405,18 +1463,53 @@ final class FileWorkflowCoordinator {
                         request.content(),
                         autoSave ? HistoryRevision.REASON_AUTOSAVE : HistoryRevision.REASON_SAVE);
         acknowledgeLatestCommit(request.buffer());
+        if (request.saveAs()
+                && request.buffer().getPath() != null
+                && com.editora.config.PathKeys.sameNormalized(request.buffer().getPath(), request.target())) {
+            saveAsOrigins.remove(request.buffer());
+        }
         if (showFeedback && !request.buffer().isDisposed()) {
             host.setStatus(
                     autoSave
                             ? tr("status.autoSaved", request.target().getFileName())
                             : tr("status.saved", com.editora.config.PathDisplay.of(request.target())));
             host.git().refresh();
+            host.lspCoordinator().notifyDocumentSaved(request.buffer(), request.savedText());
             if (!autoSave) {
                 host.refreshBuildTools();
-                host.lspCoordinator().syncBuffer(request.buffer());
-                host.lspCoordinator().notifyDocumentSaved(request.buffer());
                 host.indexCoordinator().onBufferSaved(request.buffer());
             }
+        }
+    }
+
+    private void rollbackFailedSaveAs(SaveRequest request) {
+        if (!request.saveAs()
+                || !request.ticket().isCurrent()
+                || request.buffer().isDisposed()) {
+            return;
+        }
+        EditorBuffer buffer = request.buffer();
+        Path current = buffer.getPath();
+        if (current == null || !com.editora.config.PathKeys.sameNormalized(current, request.target())) {
+            return;
+        }
+        SaveAsOrigin origin = saveAsOrigins.remove(buffer);
+        if (origin == null) {
+            return;
+        }
+        buffer.setPath(origin.path());
+        host.bufferPathChanged(buffer, current, false);
+        host.editorSettings().applyEditorConfig(buffer);
+        if (origin.path() == null) {
+            buffer.markUnsaved();
+        }
+        Tab tab = host.tabFor(buffer);
+        if (tab != null) {
+            host.updateTabMeta(tab, buffer);
+        }
+        if (buffer == host.activeBuffer()) {
+            host.breadcrumb().setActiveFile(origin.path());
+            host.updateProjectFolderView();
         }
     }
 
@@ -1466,9 +1559,7 @@ final class FileWorkflowCoordinator {
         }
         buffer.acknowledgeSavedContent(committed.content());
         buffer.setDiskSnapshot(
-                committed.disk().modifiedMillis(),
-                committed.disk().size(),
-                com.editora.vfs.Vfs.isRemote(committed.target()) ? fingerprint(committed.bytes()) : null);
+                committed.disk().modifiedMillis(), committed.disk().size(), fingerprint(committed.bytes()));
     }
 
     boolean hasPendingSave(EditorBuffer buffer) {

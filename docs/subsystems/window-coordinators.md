@@ -19,6 +19,7 @@ Do not pass the controller itself or add inheritance to share its fields.
 | `WindowChromeCoordinator` | Chrome visibility, focus modes and overlays |
 | `WindowMcpBridge` | Window-facing MCP operations; the controller retains the public facade |
 | `FileWorkflowCoordinator` | Loading, saving, autosave and elevated saves |
+| `CloseCoordinator` | Exact-state tab/window close prompts and cross-prompt revalidation |
 | `WindowSessionCoordinator` | Session restoration/persistence and command-line startup |
 | `TestNavigationCoordinator` | Test/stack navigation and test/main-method gutter gates |
 | `InstallPromptCoordinator` | Language-support install prompts and server picker |
@@ -26,6 +27,8 @@ Do not pass the controller itself or add inheritance to share its fields.
 The existing service coordinators continue to use `CoordinatorHost` and the shared `Services`
 adapter. Feature-specific hosts can refer to those owners when they need their capabilities. Keep
 callbacks narrow and resolve active buffers, settings and the owning window at invocation time.
+`OpenBufferLifecycle` supplies the shared path lookup, pending-Git-write invalidation, and asynchronous
+post-Git disk reconciliation used across windows.
 
 Commands still run through `CommandRegistry`. Preserve their identifiers and registration order,
 since order affects the palette. FXML entry points and public window APIs remain forwarding methods

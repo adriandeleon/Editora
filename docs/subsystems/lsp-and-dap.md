@@ -196,6 +196,15 @@ Workspace edits retain protocol versions and request-time text snapshots. Create
 operations are staged with overwrite backups and rolled back as a batch on failure or stale text. Production
 application decodes unopened files through the host's background loader and runs filesystem staging and
 cleanup on virtual threads; only RichTextFX mutation and tab/session bookkeeping run on the FX thread.
+Unversioned edits for closed files are refused when no genuine request-time preimage exists. Resource
+preflight includes dirty deletion targets, overwritten destinations, narrowed buffers, and buffers in other
+windows. Path changes retire the old URI before registering the new one.
+
+Save completion first synchronizes the current open document, then sends `didSave` with the exact transformed
+text written to disk when the server negotiated `includeText`; explicit and automatic saves share this path.
+Pull and push diagnostics carry request generation, document version, and originating session checks through
+FX delivery. Hover, signature, hierarchy, and navigation responses similarly validate the originating buffer,
+path, version, and latest-request generation before changing UI state.
 
 ---
 

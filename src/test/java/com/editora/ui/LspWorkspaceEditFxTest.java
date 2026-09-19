@@ -113,6 +113,19 @@ class LspWorkspaceEditFxTest {
             return open.get(file == null ? null : file.toAbsolutePath().normalize());
         }
 
+        @Override
+        public List<EditorBuffer> buffersAtOrUnder(Path path) {
+            if (path == null) {
+                return List.of();
+            }
+            Path target = path.toAbsolutePath().normalize();
+            return open.entrySet().stream()
+                    .filter(entry -> entry.getKey().startsWith(target))
+                    .map(Map.Entry::getValue)
+                    .distinct()
+                    .toList();
+        }
+
         /** These fakes never open a background tab, so a file with no open buffer is unopenable — which is
          *  exactly the condition the all-or-nothing refusal is about. */
         @Override
@@ -404,6 +417,24 @@ class LspWorkspaceEditFxTest {
         assertEquals("class OldName {}\n", Files.readString(occupied), "the source content moved over it");
     }
 
+    @Test
+    void anOverwritingRenameRefusesToOrphanAnOpenDestinationBuffer() throws Exception {
+        EditorBuffer source = openBuffer("OldName.java", "class OldName {}\n");
+        EditorBuffer destination = openBuffer("Taken.java", "class Taken { int keepMe; }\n");
+        Path from = source.getPath();
+        Path to = destination.getPath();
+        var options = new RenameFileOptions();
+        options.setOverwrite(true);
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(), List.of(new WorkspaceEditMapper.FileRename(from, to, true)), List.of(), List.of());
+
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)));
+        assertEquals("class OldName {}\n", Files.readString(from));
+        assertEquals("class Taken { int keepMe; }\n", Files.readString(to));
+        assertEquals("class Taken { int keepMe; }\n", FxTestSupport.callOnFx(destination::getContent));
+        assertTrue(ops.renamed.isEmpty());
+    }
+
     /** A rename into a directory that does not exist yet must create it rather than fail. */
     @Test
     void aRenameIntoANewPackageDirectoryCreatesIt() throws Exception {
@@ -461,6 +492,37 @@ class LspWorkspaceEditFxTest {
         assertFalse(Files.exists(old));
         assertEquals(List.of(created), ops.created);
         assertEquals(List.of(old), ops.deleted);
+    }
+
+    @Test
+    void deletingADirtyOpenFileIsRefusedBeforeTheFilesystemTransaction() throws Exception {
+        EditorBuffer dirty = openBuffer("Dirty.java", "class Dirty {}\n");
+        FxTestSupport.runOnFx(() -> dirty.replaceWholeDocument("class Dirty { int unsaved; }\n"));
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileDelete(dirty.getPath(), false, false)));
+
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)));
+        assertEquals("class Dirty {}\n", Files.readString(dirty.getPath()));
+        assertEquals("class Dirty { int unsaved; }\n", FxTestSupport.callOnFx(dirty::getContent));
+        assertTrue(ops.deleted.isEmpty());
+    }
+
+    @Test
+    void textEditsRefuseANarrowedBufferInsteadOfUsingRegionRelativeCoordinates() throws Exception {
+        EditorBuffer buffer = openBuffer("Narrow.java", "before\ntarget\nafter\n");
+        assertTrue(FxTestSupport.callOnFx(() -> buffer.narrowTo(7, 13)));
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        buffer.getPath(), List.of(new LspTextEdit(1, 0, 1, 6, "changed")), null, null)),
+                List.of(),
+                List.of(),
+                List.of());
+
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)));
+        assertEquals("before\ntarget\nafter\n", FxTestSupport.callOnFx(buffer::getContent));
     }
 
     @Test

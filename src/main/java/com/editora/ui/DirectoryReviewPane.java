@@ -82,7 +82,9 @@ final class DirectoryReviewPane implements TabContent {
     private final Map<Entry, DiffViewerPane> cache = new LinkedHashMap<>(16, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<DirectoryReviewPane.Entry, DiffViewerPane> eldest) {
-            return size() > MAX_CACHED_PANES;
+            // A cached Result draft is still user-owned even when another file is selected. Keep it until
+            // it is applied/reset so cache pressure cannot silently discard review work.
+            return size() > MAX_CACHED_PANES && !eldest.getValue().hasUnsavedChanges();
         }
     };
     private long loadGeneration;
@@ -224,6 +226,31 @@ final class DirectoryReviewPane implements TabContent {
     @Override
     public Node icon() {
         return Icons.diff();
+    }
+
+    @Override
+    public boolean hasUnsavedChanges() {
+        return panes().stream().anyMatch(DiffViewerPane::hasUnsavedChanges);
+    }
+
+    @Override
+    public Object unsavedStateToken() {
+        return panes().stream().map(DiffViewerPane::unsavedStateToken).toList();
+    }
+
+    @Override
+    public boolean saveBeforeClose() {
+        for (DiffViewerPane pane : panes()) {
+            if (pane.hasUnsavedChanges() && !pane.saveBeforeClose()) {
+                return false;
+            }
+        }
+        return !hasUnsavedChanges();
+    }
+
+    @Override
+    public String closeSaveActionKey() {
+        return "diff.applyResult";
     }
 
     private static final class FileCell extends ListCell<Entry> {

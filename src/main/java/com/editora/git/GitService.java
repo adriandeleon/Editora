@@ -38,8 +38,13 @@ public final class GitService {
 
     /** Combined refresh payload: the repo root, its status, the active file's gutter change map, and a
      *  per-line hunk-text map (for the change-bar hover tooltip). */
-    public record RepoState(Path root, GitStatus status, Map<Integer, ChangeType> changes, Map<Integer, String> hunks) {
-        public static final RepoState NONE = new RepoState(null, GitStatus.NOT_A_REPO, Map.of(), Map.of());
+    public record RepoState(
+            Path root, Path diffFile, GitStatus status, Map<Integer, ChangeType> changes, Map<Integer, String> hunks) {
+        public static final RepoState NONE = new RepoState(null, null, GitStatus.NOT_A_REPO, Map.of(), Map.of());
+
+        public RepoState(Path root, GitStatus status, Map<Integer, ChangeType> changes, Map<Integer, String> hunks) {
+            this(root, null, status, changes, hunks);
+        }
 
         public boolean isRepo() {
             return root != null && status.isRepo();
@@ -156,9 +161,18 @@ public final class GitService {
         exec.submit(() -> {
             RepoState state = computeRefresh(contextPath, diffFile);
             if (gen == refreshGen.get()) {
-                Platform.runLater(() -> onResult.accept(state));
+                Platform.runLater(() -> {
+                    if (gen == refreshGen.get()) {
+                        onResult.accept(state);
+                    }
+                });
             }
         });
+    }
+
+    /** Invalidates a computed/queued UI refresh when the owning window context is cleared. */
+    public void invalidateRefreshes() {
+        refreshGen.incrementAndGet();
     }
 
     /**
@@ -187,7 +201,7 @@ public final class GitService {
         }
         GitStatus status = StatusParser.parse(st.out());
         GitDiff diff = diffFile != null ? diffHead(root, diffFile) : GitDiff.EMPTY;
-        return new RepoState(root, status, diff.changes(), diff.hunks());
+        return new RepoState(root, diffFile, status, diff.changes(), diff.hunks());
     }
 
     private GitDiff diffHead(Path root, Path file) {
@@ -785,6 +799,21 @@ public final class GitService {
         run(root, NETWORK, onResult, args);
     }
 
+    /** Runs a working-tree mutation on the service's serial command executor. */
+    public void runWorktreeMutation(Path root, Consumer<ProcessRunner.Result> onResult, String... args) {
+        runWorktreeMutation(root, QUICK, java.util.Collections.singletonList(args), onResult);
+    }
+
+    /** Runs several related working-tree commands as one serial executor job. */
+    public void runWorktreeMutation(Path root, List<String[]> commands, Consumer<ProcessRunner.Result> onResult) {
+        runWorktreeMutation(root, QUICK, commands, onResult);
+    }
+
+    /** Network form used by pull; fetch and push do not need the working-tree boundary. */
+    public void runNetworkWorktreeMutation(Path root, Consumer<ProcessRunner.Result> onResult, String... args) {
+        runWorktreeMutation(root, NETWORK, java.util.Collections.singletonList(args), onResult);
+    }
+
     /**
      * Applies a generated patch after first checking it against the current worktree/index. The check and
      * mutation share the service's serial executor, so a stale diff fails cleanly instead of applying to a
@@ -802,6 +831,158 @@ public final class GitService {
             ProcessRunner.Result result = gitWithInput(root, patch, check);
             if (result.ok()) {
                 result = gitWithInput(root, patch, base);
+            }
+            ProcessRunner.Result posted = result;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /**
+     * Applies a cached patch to a private index, then publishes that complete index only if the real index
+     * bytes and the selected path's blob still match the displayed snapshot. The standard index.lock makes
+     * this a compare-and-swap with external Git processes rather than a check followed by a race window.
+     */
+    public void applyCachedPatch(
+            Path root, String path, BlobResult expectedBlob, String patch, Consumer<ProcessRunner.Result> onResult) {
+        exec.submit(() -> {
+            ProcessRunner.Result result = applyCachedPatchNow(root, path, expectedBlob, patch);
+            Platform.runLater(() -> onResult.accept(result));
+        });
+    }
+
+    private ProcessRunner.Result applyCachedPatchNow(Path root, String path, BlobResult expectedBlob, String patch) {
+        if (root == null || expectedBlob == null) {
+            return new ProcessRunner.Result(1, "", "The index changed after this diff was created");
+        }
+        ProcessRunner.Result indexPathResult = git(root, QUICK, "rev-parse", "--git-path", "index");
+        if (!indexPathResult.ok() || indexPathResult.out().isBlank()) {
+            return indexPathResult;
+        }
+        Path index = Path.of(indexPathResult.out().strip());
+        if (!index.isAbsolute()) {
+            index = root.resolve(index).normalize();
+        }
+        Path parent = index.getParent();
+        if (parent == null) {
+            return new ProcessRunner.Result(1, "", "Git index has no parent directory");
+        }
+        Path temporary = null;
+        Path lock = index.resolveSibling(index.getFileName() + ".lock");
+        try {
+            // Hold Git's conventional lock before reading either the preimage or the path identity. Git
+            // writers cannot change the index between our comparison and publication while this exists.
+            Files.write(lock, new byte[0], java.nio.file.StandardOpenOption.CREATE_NEW);
+            boolean originalExists = Files.exists(index);
+            byte[] original = originalExists ? Files.readAllBytes(index) : new byte[0];
+            BlobResult currentBlob = indexBlobNow(root, path);
+            if (expectedBlob.found() != currentBlob.found()
+                    || !java.util.Arrays.equals(expectedBlob.bytes(), currentBlob.bytes())
+                    || !expectedBlob.found() && !"MISSING".equals(indexBlobIdNow(root, path))) {
+                return new ProcessRunner.Result(1, "", "The index changed after this diff was created");
+            }
+            temporary = parent.resolve(".editora-index-" + java.util.UUID.randomUUID() + ".tmp");
+            Map<String, String> env = Map.of(
+                    "GIT_OPTIONAL_LOCKS",
+                    "0",
+                    "GIT_INDEX_FILE",
+                    temporary.toAbsolutePath().toString());
+            if (originalExists) {
+                Files.write(temporary, original, java.nio.file.StandardOpenOption.CREATE_NEW);
+            } else {
+                ProcessRunner.Result emptyIndex = ProcessRunner.run(root, QUICK, gitArgv("read-tree", "--empty"), env);
+                if (!emptyIndex.ok()) {
+                    return emptyIndex;
+                }
+            }
+            List<String> check = List.of("apply", "--cached", "--check");
+            ProcessRunner.Result result = gitWithInput(root, patch, check, env);
+            if (!result.ok()) {
+                return result;
+            }
+            result = gitWithInput(root, patch, List.of("apply", "--cached"), env);
+            if (!result.ok()) {
+                return result;
+            }
+            byte[] updated = Files.readAllBytes(temporary);
+            Files.write(
+                    lock,
+                    updated,
+                    java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+                    java.nio.file.StandardOpenOption.WRITE);
+            if (originalExists != Files.exists(index)
+                    || originalExists && !java.util.Arrays.equals(original, Files.readAllBytes(index))) {
+                return new ProcessRunner.Result(1, "", "The index changed while applying this hunk");
+            }
+            try {
+                Files.move(
+                        lock,
+                        index,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+                Files.move(lock, index, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            return result;
+        } catch (java.nio.file.FileAlreadyExistsException busy) {
+            return new ProcessRunner.Result(1, "", "The Git index is busy");
+        } catch (java.io.IOException failure) {
+            return new ProcessRunner.Result(1, "", failure.getMessage());
+        } finally {
+            try {
+                Files.deleteIfExists(lock);
+                if (temporary != null) {
+                    Files.deleteIfExists(temporary);
+                    Files.deleteIfExists(temporary.resolveSibling(temporary.getFileName() + ".lock"));
+                }
+            } catch (java.io.IOException ignored) {
+                // Best-effort cleanup; a retained lock causes Git to refuse rather than corrupt the index.
+            }
+        }
+    }
+
+    private BlobResult indexBlobNow(Path root, String path) {
+        List<String> command = gitArgv("show", ":" + (path == null ? "" : path));
+        ProcessRunner.BytesResult result =
+                ProcessRunner.runBytes(root, QUICK, command, Map.of("GIT_OPTIONAL_LOCKS", "0"));
+        return result.ok() && !result.outTruncated()
+                ? new BlobResult(true, result.out())
+                : new BlobResult(false, new byte[0], result.outTruncated());
+    }
+
+    private String indexBlobIdNow(Path root, String path) {
+        ProcessRunner.Result result =
+                git(root, QUICK, "--literal-pathspecs", "ls-files", "-s", "--", path == null ? "" : path);
+        if (!result.ok() || result.out().isBlank()) {
+            return "MISSING";
+        }
+        for (String line : result.out().split("\\R")) {
+            int first = line.indexOf(' ');
+            int second = first < 0 ? -1 : line.indexOf(' ', first + 1);
+            int tab = second < 0 ? -1 : line.indexOf('\t', second + 1);
+            if (first > 0
+                    && second > first
+                    && tab > second
+                    && line.substring(second + 1, tab).equals("0")) {
+                return line.substring(first + 1, second);
+            }
+        }
+        return "CONFLICT";
+    }
+
+    private void runWorktreeMutation(
+            Path root, Duration timeout, List<String[]> commands, Consumer<ProcessRunner.Result> onResult) {
+        exec.submit(() -> {
+            ProcessRunner.Result result;
+            if (!gitAvailable() || root == null) {
+                result = new ProcessRunner.Result(-1, "", "Git is not installed");
+            } else {
+                result = new ProcessRunner.Result(0, "", "");
+                for (String[] command : commands) {
+                    ProcessRunner.Result current = gitLogged(root, timeout, command);
+                    if (result.ok()) {
+                        result = current;
+                    }
+                }
             }
             ProcessRunner.Result posted = result;
             Platform.runLater(() -> onResult.accept(posted));
@@ -857,11 +1038,15 @@ public final class GitService {
     }
 
     private ProcessRunner.Result gitWithInput(Path dir, String stdin, List<String> args) {
+        return gitWithInput(dir, stdin, args, Map.of("GIT_OPTIONAL_LOCKS", "0"));
+    }
+
+    private ProcessRunner.Result gitWithInput(
+            Path dir, String stdin, List<String> args, Map<String, String> environment) {
         long startNanos = System.nanoTime();
         List<String> argv = new ArrayList<>(GIT_CMD);
         argv.addAll(args);
-        ProcessRunner.Result result =
-                ProcessRunner.run(dir, QUICK, argv, Map.of("GIT_OPTIONAL_LOCKS", "0"), stdin == null ? "" : stdin);
+        ProcessRunner.Result result = ProcessRunner.run(dir, QUICK, argv, environment, stdin == null ? "" : stdin);
         commandLog.record(new CommandLog.Entry(
                 argv, result.exit(), result.out(), result.err(), (System.nanoTime() - startNanos) / 1_000_000L));
         return result;

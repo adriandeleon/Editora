@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -234,6 +235,71 @@ class DiffViewerBehaviorFxTest {
     }
 
     @Test
+    void renderOnlyDiffCannotApplyRowsOrOpenAResultEditor() throws Exception {
+        DiffViewerPane pane = pane("old\n", "new\n");
+        AtomicReference<String> applied = new AtomicReference<>();
+        FxTestSupport.runOnFx(() -> {
+            pane.setEditable(DiffViewerPane.EditableSide.RIGHT, applied::set, () -> {}, () -> {});
+            pane.setOnResultEdited(text -> {});
+            pane.setMutationAllowed(false);
+            FxTestSupport.call(pane, "applyRow", new Class<?>[] {int.class}, 0);
+            pane.toggleResultEditing();
+        });
+
+        assertEquals(null, applied.get());
+        assertFalse(pane.hasResultEditor());
+        assertFalse(((javafx.scene.control.ToggleButton) FxTestSupport.field(pane, "editResultButton")).isVisible());
+    }
+
+    @Test
+    void losingMutationCapabilityPreservesAnExistingResultDraft() throws Exception {
+        DiffViewerPane pane = pane("old\n", "new\n");
+        AtomicReference<String> applied = new AtomicReference<>();
+        FxTestSupport.runOnFx(() -> {
+            pane.setEditable(DiffViewerPane.EditableSide.RIGHT, applied::set, () -> {}, () -> {});
+            pane.setOnResultEdited(text -> {});
+            pane.toggleResultEditing();
+            ((CodeArea) FxTestSupport.field(pane, "resultArea")).replaceText("private draft\n");
+            pane.setMutationAllowed(false);
+            pane.saveBeforeClose();
+        });
+
+        assertTrue(pane.hasDirtyResult(), "a refresh to render-only content must not discard the draft");
+        assertEquals(null, applied.get(), "render-only content cannot receive the preserved draft");
+    }
+
+    @Test
+    void multiFileReviewContainersAggregateDirtyChildDrafts() throws Exception {
+        DiffViewerPane patchChild = pane("old\n", "new\n");
+        DiffViewerPane directoryChild = pane("left\n", "right\n");
+        AtomicReference<PatchReviewPane> patchReview = new AtomicReference<>();
+        AtomicReference<DirectoryReviewPane> directoryReview = new AtomicReference<>();
+        FxTestSupport.runOnFx(() -> {
+            makeDirtyResult(patchChild);
+            makeDirtyResult(directoryChild);
+            patchReview.set(
+                    new PatchReviewPane("Patch review", List.of(new PatchReviewPane.Entry("f.txt", 1, 1, patchChild))));
+            DirectoryReviewPane.Entry entry =
+                    new DirectoryReviewPane.Entry("f.txt", com.editora.diff.DirectoryDiff.Kind.MODIFIED, 4, 5);
+            directoryReview.set(new DirectoryReviewPane(
+                    "Directory review",
+                    List.of(entry),
+                    "one file",
+                    (ignored, ready) -> ready.accept(new DirectoryReviewPane.Loaded(directoryChild, 1, 1))));
+        });
+
+        assertTrue(patchReview.get().hasUnsavedChanges());
+        assertTrue(directoryReview.get().hasUnsavedChanges());
+    }
+
+    private static void makeDirtyResult(DiffViewerPane pane) {
+        pane.setEditable(DiffViewerPane.EditableSide.RIGHT, text -> true, () -> {}, () -> {});
+        pane.setOnResultEdited(text -> {});
+        pane.toggleResultEditing();
+        ((CodeArea) FxTestSupport.field(pane, "resultArea")).replaceText("draft\n");
+    }
+
+    @Test
     void swapMovesContentLabelsAndEditableSideTogether() throws Exception {
         String reference = "one\nreference\n";
         String working = "one\nworking\n";
@@ -279,6 +345,31 @@ class DiffViewerBehaviorFxTest {
         assertTrue(((javafx.scene.control.Button) FxTestSupport.field(pane, "swapButton")).isDisable());
         assertEquals(0, swaps.get());
         assertEquals(DiffViewerPane.EditableSide.RIGHT, pane.editableSide());
+    }
+
+    @Test
+    void resultEditorBlocksPaletteGitMutations() throws Exception {
+        DiffViewerPane pane = pane("base A\nsame\nbase B\n", "work A\nsame\nwork B\n");
+        AtomicInteger mutations = new AtomicInteger();
+        FxTestSupport.runOnFx(() -> {
+            pane.setEditable(DiffViewerPane.EditableSide.RIGHT, text -> true, () -> {}, () -> {});
+            pane.setOnResultEdited(text -> {});
+            pane.setGitHunkActions(
+                    java.util.Set.of(
+                            DiffViewerPane.GitHunkAction.STAGE,
+                            DiffViewerPane.GitHunkAction.UNSTAGE,
+                            DiffViewerPane.GitHunkAction.REVERT),
+                    request -> mutations.incrementAndGet());
+            pane.toggleResultEditing();
+            ((CodeArea) FxTestSupport.field(pane, "resultArea")).replaceText("draft A\nsame\ndraft B\n");
+            pane.stageCurrentHunk();
+            pane.unstageCurrentHunk();
+            pane.revertCurrentHunk();
+            pane.applyAllChanges();
+        });
+
+        assertTrue(pane.hasDirtyResult());
+        assertEquals(0, mutations.get());
     }
 
     @Test

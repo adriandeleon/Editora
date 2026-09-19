@@ -31,4 +31,27 @@ public interface TabContent {
     default boolean closeable() {
         return true;
     }
+
+    /** Whether this tab owns user edits that have not yet been applied to their durable editor buffer. */
+    default boolean hasUnsavedChanges() {
+        return false;
+    }
+
+    /** Immutable identity for the current draft, used to detect edits made during later close prompts. */
+    default Object unsavedStateToken() {
+        return hasUnsavedChanges() ? Boolean.TRUE : null;
+    }
+
+    /**
+     * Applies/preserves the tab's pending edits before close. Returns true only when it is now safe to
+     * close. The main tab lifecycle calls this after the user chooses the affirmative action.
+     */
+    default boolean saveBeforeClose() {
+        return !hasUnsavedChanges();
+    }
+
+    /** Message-catalog key for the affirmative close action (Save for buffers, Apply for drafts). */
+    default String closeSaveActionKey() {
+        return "dialog.save";
+    }
 }

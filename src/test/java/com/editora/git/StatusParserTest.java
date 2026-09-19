@@ -72,6 +72,20 @@ class StatusParserTest {
     }
 
     @Test
+    void unmergedEntryIsRetainedAsBothStagedAndUnstaged() {
+        String out = "# branch.head main\n"
+                + "u UU N... 100644 100644 100644 100644 aaaaaaa bbbbbbb ccccccc conflicted.txt\n";
+
+        GitStatus status = StatusParser.parse(out);
+
+        assertEquals(1, status.files().size());
+        FileEntry entry = status.files().get(0);
+        assertEquals("conflicted.txt", entry.path());
+        assertTrue(entry.staged());
+        assertTrue(entry.unstaged());
+    }
+
+    @Test
     void renameEntryCapturesOriginalPath() {
         // 2 R. <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path>\t<origPath>
         String out =

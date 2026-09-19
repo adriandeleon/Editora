@@ -153,6 +153,24 @@ class LspCoordinatorSyncFxTest {
         assertTrue(FxTestSupport.callOnFx(b::isLspActive));
     }
 
+    @Test
+    void changingABufferPathClosesTheOldUriAndOpensTheNewOne() throws Exception {
+        EditorBuffer buffer = javaBuffer("Old.java");
+        Path oldPath = buffer.getPath();
+        Path newPath = root.resolve("New.java");
+        sync(buffer);
+        Files.move(oldPath, newPath);
+
+        FxTestSupport.runOnFx(() -> {
+            buffer.setPath(newPath);
+            coordinator.documentPathChanged(buffer, oldPath, false);
+        });
+
+        assertFalse(manager.isManaged(oldPath));
+        assertTrue(manager.isManaged(newPath));
+        assertTrue(FxTestSupport.callOnFx(buffer::isLspActive));
+    }
+
     // --- each term of the eligibility gate ------------------------------------------------------------
 
     @Test

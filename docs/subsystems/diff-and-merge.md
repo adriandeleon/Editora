@@ -79,7 +79,9 @@ a separate exact-text draft rather than one of the aligned display areas, whose 
 not valid source text. Edits are idle-debounced and recomputed through `DiffService`; generation checks reject
 stale computations. Apply Result first validates the original local baseline, then replaces the editor buffer
 once through the normal undoable path without saving. A dirty draft blocks competing hunk mutations and is
-never discarded by closing its toolbar toggle.
+never discarded by closing its toolbar toggle. Dirty drafts also participate in the shared `TabContent` close
+contract, including drafts nested in patch and directory reviews. Binary and bounded metadata comparisons do
+not expose mutation paths, and a comparison that degrades while a Result draft is dirty retains that draft.
 
 ## Standalone viewer
 
@@ -98,9 +100,11 @@ displayed baseline, and then use the normal undoable `EditorBuffer` replacement 
 Undo and Save enable only after an accepted operation. Line apply is deliberately secondary to hunk apply.
 
 Git-panel diffs add Stage/Unstage/Revert for the current hunk and line. The view derives the desired full
-index or worktree text, `PatchWriter` produces a scoped patch, and `GitService.applyPatch` runs `git apply
---check` immediately before `git apply` on the service executor. A stale index fails without mutation. Copy
-hunk and open-changed-line are available from the context menu and command palette.
+index or worktree text, and `PatchWriter` produces a scoped patch. Working-tree application validates the
+displayed preimage. Index application holds Git's conventional index lock, applies to a private index, and
+atomically publishes only when both the complete index bytes and displayed path blob still match. A stale
+comparison therefore fails without mutation, including when repeated blocks would let a patch apply at a
+different location. Copy hunk and open-changed-line are available from the context menu and command palette.
 
 ## Three-way merge
 
@@ -116,7 +120,8 @@ ancestor region. If all three Git stages are not available, `ConflictParser` rem
 that already contain standard merge/diff3 markers.
 
 `MergeViewerPane` shows Base/Ours/Theirs for each conflict and a lower editable Result. Acceptance actions
-recompute the Result, while the user may edit it directly before applying. The apply path restores the
+recompute the Result until the user edits it manually; later acceptance actions are then refused so they
+cannot regenerate and erase custom work. The apply path restores the
 source document's line separator, preserves the edited final-newline state, uses the normal undoable
 whole-document replacement, and refuses to overwrite a buffer that changed after the resolver opened.
 

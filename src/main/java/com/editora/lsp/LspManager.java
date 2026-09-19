@@ -242,11 +242,15 @@ public final class LspManager {
         }
     }
 
-    public void saveDocument(Path file) {
+    public void saveDocument(Path file, String savedText) {
         LanguageServerSession s = sessionFor(file);
         if (s != null) {
-            s.didSave(uri(file));
+            s.didSave(uri(file), savedText);
         }
+    }
+
+    public void saveDocument(Path file) {
+        saveDocument(file, null);
     }
 
     public void closeDocument(Path file) {
@@ -257,9 +261,12 @@ public final class LspManager {
         LanguageServerSession s = sessionByDocUri.remove(uri);
         semanticTokenState.remove(uri); // the next open starts from a full request (#679)
         semanticRequestGeneration.remove(uri);
+        diagnosticRequestGeneration.merge(uri, 1L, Long::sum);
         rawDiagnostics.remove(uri); // open-documents-only retention (#670); the symlink-form key, if any,
         try { //                       is dropped too so a closed file can't pin its diagnostics
-            rawDiagnostics.remove(file.toRealPath().toUri().toString());
+            String realUri = file.toRealPath().toUri().toString();
+            rawDiagnostics.remove(realUri);
+            diagnosticRequestGeneration.merge(realUri, 1L, Long::sum);
         } catch (java.io.IOException | RuntimeException ignored) {
             // file gone/remote — nothing more to drop
         }
@@ -397,8 +404,11 @@ public final class LspManager {
         return Map.copyOf(out);
     }
 
-    /** Maps a returned edit and adds request-time snapshots for servers such as JDT LS that use null
-     *  versions in {@code TextDocumentEdit}. Closed target files are snapshotted when the response arrives. */
+    /**
+     * Maps a returned edit and attaches only genuine request-time preimages. An unversioned closed-file edit
+     * has no verifiable preimage; reading that file after the response would merely bless stale ranges, so
+     * the whole transaction is refused instead.
+     */
     private static WorkspaceEditMapper.Mapped mapWorkspaceEdit(
             org.eclipse.lsp4j.WorkspaceEdit edit, Map<Path, String> expected) {
         WorkspaceEditMapper.Mapped mapped = WorkspaceEditMapper.map(edit);
@@ -406,6 +416,9 @@ public final class LspManager {
             return null;
         }
         Map<Path, String> all = new java.util.LinkedHashMap<>(expected == null ? Map.of() : expected);
+        java.util.Set<String> created = mapped.creates().stream()
+                .map(create -> com.editora.config.PathKeys.key(create.file()))
+                .collect(java.util.stream.Collectors.toSet());
         for (WorkspaceEditMapper.FileEdit fileEdit : mapped.edits()) {
             if (!all.containsKey(fileEdit.file())) {
                 String canonicalExpected = all.get(com.editora.config.PathKeys.canonical(fileEdit.file()));
@@ -413,10 +426,12 @@ public final class LspManager {
                     all.put(fileEdit.file(), canonicalExpected);
                     continue;
                 }
-                try {
-                    all.put(fileEdit.file(), Files.readString(fileEdit.file()));
-                } catch (java.io.IOException | RuntimeException ignored) {
-                    // The coordinator's normal open/editability preflight will reject an unavailable file.
+                if (created.contains(com.editora.config.PathKeys.key(fileEdit.file()))) {
+                    all.put(fileEdit.file(), "");
+                    continue;
+                }
+                if (fileEdit.version() == null) {
+                    return null;
                 }
             }
         }
@@ -483,11 +498,13 @@ public final class LspManager {
             claimedWorkspace =
                     claimUsableJdtlsWorkspaceName(jdtlsWorkspaceBase, LspServerRegistry.workspaceDirName(root));
         }
+        LanguageServerSession[] diagnosticSource = new LanguageServerSession[1];
         LanguageServerSession session = new LanguageServerSession(
                 spec,
                 root,
-                this::onPublishDiagnostics,
+                params -> onPublishDiagnostics(diagnosticSource[0], params),
                 (type, msg) -> Platform.runLater(() -> onStatus.accept(type, msg)));
+        diagnosticSource[0] = session;
         // Drop the session the moment it can no longer serve requests — the process died on its own, or the
         // handshake failed/timed out. Otherwise it stays cached looking alive: isManaged() keeps returning true
         // (so the re-open guard never restarts it), every request fails into an empty result, and LSP is silently
@@ -1829,6 +1846,7 @@ public final class LspManager {
 
     private final Map<String, TokenState> semanticTokenState = new ConcurrentHashMap<>();
     private final Map<String, Long> semanticRequestGeneration = new ConcurrentHashMap<>();
+    private final Map<String, Long> diagnosticRequestGeneration = new ConcurrentHashMap<>();
 
     /**
      * Requests semantic tokens over the line window {@code [startLine..endLine]} (inclusive) and delivers
@@ -2339,6 +2357,10 @@ public final class LspManager {
             Consumer<Boolean> cb,
             boolean editPresent,
             boolean editOk) {
+        if (editPresent && !editOk) {
+            cb.accept(false);
+            return;
+        }
         if (action.getCommand() != null && action.getCommand().getCommand() != null) {
             boolean editApplied = editOk;
             LanguageServerSession session = sessionFor(file);
@@ -2622,7 +2644,10 @@ public final class LspManager {
         if (s == null || s.capabilities() == null || s.capabilities().getDiagnosticProvider() == null) {
             return;
         }
-        s.diagnostic(uri(file)).whenComplete((report, error) -> {
+        String documentUri = uri(file);
+        Integer requestedVersion = s.documentVersion(documentUri);
+        long generation = diagnosticRequestGeneration.merge(documentUri, 1L, Long::sum);
+        s.diagnostic(documentUri).whenComplete((report, error) -> {
             if (error != null) {
                 return;
             }
@@ -2630,7 +2655,13 @@ public final class LspManager {
             if (mapped == null) {
                 return; // unchanged report — keep what's already shown
             }
-            Platform.runLater(() -> onDiagnostics.accept(file, mapped));
+            Platform.runLater(() -> {
+                if (sessionFor(file) == s
+                        && java.util.Objects.equals(diagnosticRequestGeneration.get(documentUri), generation)
+                        && java.util.Objects.equals(s.documentVersion(documentUri), requestedVersion)) {
+                    onDiagnostics.accept(file, mapped);
+                }
+            });
         });
     }
 
@@ -2640,6 +2671,7 @@ public final class LspManager {
         rawDiagnostics.clear();
         semanticTokenState.clear();
         semanticRequestGeneration.clear();
+        diagnosticRequestGeneration.clear();
         pendingApplyExpected.clear();
         for (LanguageServerSession s : sessionsByRoot.values()) {
             s.dispose();
@@ -2666,32 +2698,55 @@ public final class LspManager {
 
     // --- Internals -----------------------------------------------------------------------------
 
-    private void onPublishDiagnostics(org.eclipse.lsp4j.PublishDiagnosticsParams params) {
+    private void onPublishDiagnostics(LanguageServerSession source, org.eclipse.lsp4j.PublishDiagnosticsParams params) {
         Path file = uriToPath(params.getUri());
-        if (file == null) {
+        if (file == null || source == null || source.isDisposed()) {
             return;
         }
-        LanguageServerSession source = sessionByDocUri.get(params.getUri());
-        if (source == null) {
-            source = sessionByDocUri.get(file.toUri().toString());
-        }
-        if (source != null
-                && params.getVersion() != null
-                && !java.util.Objects.equals(params.getVersion(), source.documentVersion(uri(file)))) {
+        String sourceUri = managedDocumentUri(source, file, params.getUri());
+        if (params.getVersion() != null
+                && (sourceUri == null
+                        || !java.util.Objects.equals(params.getVersion(), source.documentVersion(sourceUri)))) {
             return; // ranges from an older server snapshot must never replace current diagnostics
         }
+        long generation = diagnosticRequestGeneration.merge(params.getUri(), 1L, Long::sum);
         // Retain the RAW lsp4j diagnostics for open documents: a code-action request must send the
         // originals as context (their code/source/data are what a quick fix keys off — the mapped neutral
         // LspDiagnostic loses them). Open-documents-only, so a server's project-wide publishes don't
         // accumulate (#670).
-        if (sessionByDocUri.containsKey(params.getUri())
-                || sessionByDocUri.containsKey(file.toUri().toString())) {
-            rawDiagnostics.put(
-                    params.getUri(),
-                    params.getDiagnostics() == null ? List.of() : List.copyOf(params.getDiagnostics()));
-        }
+        Integer acceptedVersion = params.getVersion();
+        List<org.eclipse.lsp4j.Diagnostic> raw =
+                params.getDiagnostics() == null ? List.of() : List.copyOf(params.getDiagnostics());
         List<LspDiagnostic> mapped = DiagnosticMapper.map(params.getDiagnostics());
-        Platform.runLater(() -> onDiagnostics.accept(file, mapped));
+        Platform.runLater(() -> {
+            if (source.isDisposed()
+                    || !sessionsByRoot.containsValue(source)
+                    || !java.util.Objects.equals(diagnosticRequestGeneration.get(params.getUri()), generation)
+                    || sourceUri != null && sessionByDocUri.get(sourceUri) != source
+                    || acceptedVersion != null
+                            && !java.util.Objects.equals(acceptedVersion, source.documentVersion(sourceUri))) {
+                return;
+            }
+            if (sourceUri != null) {
+                rawDiagnostics.put(params.getUri(), raw);
+            }
+            onDiagnostics.accept(file, mapped);
+        });
+    }
+
+    private String managedDocumentUri(LanguageServerSession source, Path file, String reportedUri) {
+        if (sessionByDocUri.get(reportedUri) == source) {
+            return reportedUri;
+        }
+        for (var entry : sessionByDocUri.entrySet()) {
+            if (entry.getValue() == source) {
+                Path openPath = uriToPath(entry.getKey());
+                if (openPath != null && com.editora.config.PathKeys.sameNormalized(openPath, file)) {
+                    return entry.getKey();
+                }
+            }
+        }
+        return null;
     }
 
     private static void addTarget(List<Target> out, String uri, Position start) {

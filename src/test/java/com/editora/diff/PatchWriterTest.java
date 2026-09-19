@@ -43,11 +43,42 @@ class PatchWriterTest {
     }
 
     @Test
+    void marksBothChangedSidesWhenNeitherHasAFinalNewline() {
+        String patch = PatchWriter.unifiedDiff("a/f", "b/f", "first\nold", "first\nnew");
+
+        assertEquals(2, patch.split("\\\\ No newline at end of file", -1).length - 1, patch);
+        PatchParser.FilePatch parsed = PatchParser.parse(patch).get(0);
+        assertTrue(!parsed.oldFinalNewline());
+        assertTrue(!parsed.newFinalNewline());
+    }
+
+    @Test
     void appendsAnEofHunkWhenContentChangeIsFarFromFinalNewlineChange() {
         String middle = "unchanged\n".repeat(12);
         String patch = PatchWriter.unifiedDiff("a/f", "b/f", "old\n" + middle + "last", "new\n" + middle + "last\n");
 
         assertTrue(patch.indexOf("@@") != patch.lastIndexOf("@@"), patch);
         assertTrue(patch.contains("\\ No newline at end of file"), patch);
+    }
+
+    @Test
+    void eofMarkerIsNotAttachedToAnEarlierRepeatedLine() {
+        String middle = "unchanged\n".repeat(12);
+        String patch = PatchWriter.unifiedDiff(
+                "a/f", "b/f", "tail\nold\n" + middle + "tail", "TAIL\nold\n" + middle + "tail\n");
+
+        assertEquals(1, patch.split("\\\\ No newline at end of file", -1).length - 1, patch);
+        PatchParser.FilePatch parsed = PatchParser.parse(patch).get(0);
+        assertTrue(!parsed.oldFinalNewline());
+        assertTrue(parsed.newFinalNewline());
+    }
+
+    @Test
+    void marksAnUnterminatedLineAddedToOrDeletedFromAnEmptyFile() {
+        String added = PatchWriter.unifiedDiff("a/f", "b/f", "", "new");
+        String deleted = PatchWriter.unifiedDiff("a/f", "b/f", "old", "");
+
+        assertTrue(added.contains("+new\n\\ No newline at end of file"), added);
+        assertTrue(deleted.contains("-old\n\\ No newline at end of file"), deleted);
     }
 }

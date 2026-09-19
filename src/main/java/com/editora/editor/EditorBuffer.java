@@ -212,6 +212,8 @@ public class EditorBuffer implements TabContent {
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /** The last saved/loaded content; the buffer is dirty only when the text differs from this. */
     private String cleanText = "";
+    /** True when the current content has no durable identity even if it equals the in-memory baseline. */
+    private boolean forcedDirty;
     /**
      * Emacs narrowing: the document text before/after the accessible region, held aside while the area
      * itself holds only the region. Both null when the buffer is widened (the normal state).
@@ -1016,8 +1018,9 @@ public class EditorBuffer implements TabContent {
         // line, past the line-count heavy-file tier). The cheap getLength() check gates the full-text
         // compare so area.getText() is only built in the rare near-clean state, never while typing.
         area.plainTextChanges()
-                .subscribe(c -> dirty.set(
-                        contentLength() != cleanText.length() || !getContent().equals(cleanText)));
+                .subscribe(c -> dirty.set(forcedDirty
+                        || contentLength() != cleanText.length()
+                        || !getContent().equals(cleanText)));
         // Auto-rename tag: mirror a tag-name edit onto the paired open/close tag (html/xml only —
         // the handler's first checks are two cheap boolean/string compares for every other buffer).
         area.plainTextChanges().subscribe(this::maybeMirrorTagRename);
@@ -9304,6 +9307,7 @@ public class EditorBuffer implements TabContent {
         // Establish the baseline before the change event. Otherwise an async loading shell briefly becomes
         // dirty during replace(), which promotes a disposable preview tab before the method can clear it.
         cleanText = initial;
+        forcedDirty = false;
         if (segmentLongLines) {
             area.replace(0, area.getLength(), segmentedInitialDocument(initial));
         } else {
@@ -9531,12 +9535,20 @@ public class EditorBuffer implements TabContent {
     /** Marks the current content as the saved baseline (after load/save); clears the dirty flag. */
     public void markClean() {
         cleanText = getContent(); // the whole document, so narrowing never fakes a dirty flag
+        forcedDirty = false;
         dirty.set(false);
+    }
+
+    /** Marks content as not durably saved, even when it still equals its in-memory baseline. */
+    public void markUnsaved() {
+        forcedDirty = true;
+        dirty.set(true);
     }
 
     /** Acknowledges exactly the content written by an asynchronous save, preserving later edits as dirty. */
     public void acknowledgeSavedContent(String savedContent) {
         cleanText = savedContent == null ? "" : savedContent;
+        forcedDirty = false;
         dirty.set(contentLength() != cleanText.length() || !getContent().equals(cleanText));
     }
 

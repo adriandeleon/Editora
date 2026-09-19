@@ -125,6 +125,31 @@ final class PatchReviewPane implements TabContent {
         return Icons.diff();
     }
 
+    @Override
+    public boolean hasUnsavedChanges() {
+        return entries.stream().anyMatch(entry -> entry.pane().hasUnsavedChanges());
+    }
+
+    @Override
+    public Object unsavedStateToken() {
+        return entries.stream().map(entry -> entry.pane().unsavedStateToken()).toList();
+    }
+
+    @Override
+    public boolean saveBeforeClose() {
+        for (Entry entry : entries) {
+            if (entry.pane().hasUnsavedChanges() && !entry.pane().saveBeforeClose()) {
+                return false;
+            }
+        }
+        return !hasUnsavedChanges();
+    }
+
+    @Override
+    public String closeSaveActionKey() {
+        return "diff.applyResult";
+    }
+
     private static final class FileCell extends ListCell<Entry> {
         @Override
         protected void updateItem(Entry entry, boolean empty) {
