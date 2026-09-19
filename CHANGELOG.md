@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.5] - 2026-09-19
+
 - Improved continuous Java editing: completion owns Enter/Tab correctly, member triggers are immediate,
   identifier completion starts after a short pause, complete lists filter locally, and obsolete requests
   are cancelled. Completion retains overloads, server filter/range/default metadata, commit characters,
