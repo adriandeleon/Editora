@@ -30,6 +30,11 @@ callbacks narrow and resolve active buffers, settings and the owning window at i
 `OpenBufferLifecycle` supplies the shared path lookup, pending-Git-write invalidation, and asynchronous
 post-Git disk reconciliation used across windows.
 
+Each `FileWorkflowCoordinator` save request captures the identities of preceding unresolved saves from
+the same buffer alongside its disk snapshot. A worker compares the actual bytes with the preceding
+application commit even if its FX acknowledgment has already retired that request. Looking up only live
+requests would mistake that commit for an external edit; differing external bytes must still block autosave.
+
 Commands still run through `CommandRegistry`. Preserve their identifiers and registration order,
 since order affects the palette. FXML entry points and public window APIs remain forwarding methods
 on `MainController`. Background work, stale-result guards, FX-thread callbacks and service shutdown

@@ -26,6 +26,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -233,6 +235,51 @@ class FileWorkflowSaveLifecycleFxTest {
         } finally {
             fx.dispose();
             fx.shared.shutdown();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void capturedAutosaveRetainsPrecedingCommitIdentity(boolean externalChange, @TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            Path file = Files.writeString(dir.resolve("acknowledged-autosave.txt"), "A");
+            EditorBuffer buffer = open(fx, file);
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            ExecutorService worker = FxTestSupport.field(workflows, "autoSaveExecutor");
+            CountDownLatch releaseAutosave = new CountDownLatch(1);
+            async.onClose(releaseAutosave::countDown);
+
+            var gate = FxTestSupport.callOnFx(() -> {
+                buffer.replaceWholeDocument("BBBB");
+                workflows.save(buffer);
+                barrier(worker); // the first commit is still awaiting its FX acknowledgment
+                var paused = worker.submit(() -> {
+                    async.await(releaseAutosave, "the preceding save acknowledgment");
+                    return null;
+                });
+                buffer.replaceWholeDocument("CCCCCC");
+                workflows.autoSaveBuffer(buffer);
+                return paused;
+            });
+            async.awaitFx(); // retire the first request before the queued autosave reads the file
+            assertEquals(4, FxTestSupport.callOnFx(() -> buffer.diskSnapshot().size()));
+            assertTrue(FxTestSupport.callOnFx(() -> workflows.hasPendingSave(buffer)));
+            if (externalChange) {
+                var modified = Files.getLastModifiedTime(file);
+                Files.writeString(file, "XXXX");
+                Files.setLastModifiedTime(file, modified);
+            }
+            releaseAutosave.countDown();
+            async.await(gate);
+            async.awaitWorker(worker);
+            async.awaitFx();
+
+            assertEquals(externalChange ? "XXXX" : "CCCCCC", Files.readString(file));
+            assertEquals(externalChange, FxTestSupport.callOnFx(buffer::isDirty));
+            assertEquals(
+                    externalChange ? 4 : 6,
+                    FxTestSupport.callOnFx(() -> buffer.diskSnapshot().size()));
         }
     }
 
