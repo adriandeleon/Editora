@@ -158,4 +158,21 @@ class CompletionSnippetAcceptFxTest {
         assertEquals("", r.selected());
         assertFalse(r.sessionActive());
     }
+
+    @Test
+    void explicitAsIsDoesNotIndentTheServersAlreadyFormattedSnippetAgain() throws Exception {
+        Completion item = jdtls("block", 0, 4, 6, "foo(\n    ${1:value}\n)")
+                .withProtocol(new Completion.Protocol("fo", null, List.of(), 1));
+        var result = accept("    fo", 6, item);
+        assertEquals("    foo(\n    value\n)", result.text());
+        assertEquals("value", result.selected());
+    }
+
+    @Test
+    void adjustedPlainTextCompletionIndentsContinuationLines() throws Exception {
+        Completion item = Completion.lsp("block", "foo(\nvalue\n)", "")
+                .withProtocol(new Completion.Protocol("fo", null, List.of(), 2));
+        var result = accept("    fo", 6, item);
+        assertEquals("    foo(\n    value\n    )", result.text());
+    }
 }

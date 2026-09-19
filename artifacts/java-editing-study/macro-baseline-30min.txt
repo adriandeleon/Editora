@@ -1,0 +1,112 @@
+SOAK_READY maven 5717.9ms
+SOAK_PROGRESS maven cycles=5 failures=0
+SOAK_PROGRESS maven cycles=40 failures=0
+SOAK_PROGRESS maven cycles=75 failures=0
+SOAK_PROGRESS maven cycles=110 failures=0
+SOAK_PROGRESS maven cycles=145 failures=0
+SOAK_PROGRESS maven cycles=180 failures=0
+SOAK_PROGRESS maven cycles=215 failures=0
+SOAK_PROGRESS maven cycles=250 failures=0
+SOAK_PROGRESS maven cycles=285 failures=0
+SOAK_PROGRESS maven cycles=320 failures=0
+SOAK_PROGRESS maven cycles=355 failures=0
+SOAK_PROGRESS maven cycles=390 failures=0
+SOAK_PROGRESS maven cycles=425 failures=0
+SOAK_PROGRESS maven cycles=460 failures=0
+SOAK_PROGRESS maven cycles=495 failures=0
+SOAK_PROGRESS maven cycles=530 failures=0
+SOAK_PROGRESS maven cycles=565 failures=0
+SOAK_PROGRESS maven cycles=600 failures=0
+SOAK_PROGRESS maven cycles=635 failures=0
+SOAK_PROGRESS maven cycles=665 failures=0
+SOAK_PROGRESS maven cycles=695 failures=0
+SOAK_PROGRESS maven cycles=720 failures=0
+SOAK_FAILURE maven String java.lang.AssertionError: timeout: completion String visible=[]
+SOAK_PROGRESS maven cycles=740 failures=1
+SOAK_FAILURE maven String java.lang.AssertionError: timeout: completion String visible=[]
+SOAK_PROGRESS maven cycles=760 failures=2
+SOAK_FAILURE maven String java.lang.AssertionError: timeout: completion String visible=[]
+SOAK_PROGRESS maven cycles=780 failures=3
+SOAK_FAILURE maven String java.lang.AssertionError: timeout: completion String visible=[]
+SOAK_PROGRESS maven cycles=800 failures=4
+SOAK_PROGRESS maven cycles=830 failures=4
+SOAK_FAILURE maven String java.lang.AssertionError: timeout: completion String visible=[]
+SOAK_READY gradle 3551.6ms
+SOAK_PROGRESS gradle cycles=842 failures=5
+SOAK_PROGRESS gradle cycles=877 failures=5
+SOAK_PROGRESS gradle cycles=912 failures=5
+SOAK_PROGRESS gradle cycles=947 failures=5
+SOAK_PROGRESS gradle cycles=982 failures=5
+SOAK_PROGRESS gradle cycles=1017 failures=5
+SOAK_PROGRESS gradle cycles=1052 failures=5
+SOAK_PROGRESS gradle cycles=1087 failures=5
+SOAK_PROGRESS gradle cycles=1122 failures=5
+SOAK_PROGRESS gradle cycles=1157 failures=5
+SOAK_PROGRESS gradle cycles=1192 failures=5
+SOAK_PROGRESS gradle cycles=1227 failures=5
+SOAK_PROGRESS gradle cycles=1262 failures=5
+SOAK_PROGRESS gradle cycles=1297 failures=5
+SOAK_PROGRESS gradle cycles=1332 failures=5
+SOAK_PROGRESS gradle cycles=1367 failures=5
+SOAK_PROGRESS gradle cycles=1402 failures=5
+SOAK_PROGRESS gradle cycles=1437 failures=5
+SOAK_PROGRESS gradle cycles=1472 failures=5
+SOAK_PROGRESS gradle cycles=1507 failures=5
+SOAK_PROGRESS gradle cycles=1542 failures=5
+SOAK_PROGRESS gradle cycles=1577 failures=5
+SOAK_PROGRESS gradle cycles=1612 failures=5
+SOAK_PROGRESS gradle cycles=1647 failures=5
+SOAK_PROGRESS gradle cycles=1682 failures=5
+SOAK_PROGRESS gradle cycles=1717 failures=5
+SOAK_PROGRESS gradle cycles=1752 failures=5
+SOAK_PROGRESS gradle cycles=1787 failures=5
+SOAK_METRIC gradle.fx.dispatch-delay n=11875 median=0.035 p95=0.290 p99=1.223 max=6.955 ms
+SOAK_METRIC gradle.fx.key-handler n=11875 median=0.934 p95=1.722 p99=2.635 max=27.058 ms
+SOAK_METRIC gradle.fx.pulse-gap n=56498 median=16.000 p95=16.111 p99=17.550 max=75.999 ms
+SOAK_METRIC gradle.large.ArrayList.key-to-popup n=47 median=143.901 p95=162.066 p99=183.045 max=183.045 ms
+SOAK_METRIC gradle.large.String.key-to-popup n=47 median=146.436 p95=166.404 p99=180.043 max=180.043 ms
+SOAK_METRIC gradle.large.backspace.key-to-popup n=47 median=0.199 p95=1.263 p99=1.821 max=1.821 ms
+SOAK_METRIC gradle.large.chain.key-to-popup n=47 median=30.844 p95=122.840 p99=181.319 max=181.319 ms
+SOAK_METRIC gradle.large.println.key-to-popup n=48 median=0.119 p95=10.442 p99=103.308 max=103.308 ms
+SOAK_METRIC gradle.small.ArrayList.key-to-popup n=144 median=112.547 p95=122.836 p99=132.287 max=176.316 ms
+SOAK_METRIC gradle.small.String.key-to-popup n=144 median=111.365 p95=121.708 p99=125.868 max=817.469 ms
+SOAK_METRIC gradle.small.backspace.key-to-popup n=144 median=0.055 p95=1.346 p99=2.569 max=9.529 ms
+SOAK_METRIC gradle.small.chain.key-to-popup n=144 median=0.105 p95=0.235 p99=0.445 max=3.214 ms
+SOAK_METRIC gradle.small.println.key-to-popup n=144 median=0.105 p95=0.196 p99=0.254 max=0.534 ms
+SOAK_METRIC gradle.startup.project-ready n=1 median=3551.581 p95=3551.581 p99=3551.581 max=3551.581 ms
+SOAK_METRIC gradle.trace.edit-to-sync n=1913 median=0.856 p95=101.704 p99=106.070 max=109.084 ms
+SOAK_METRIC gradle.trace.filter-and-fx-dispatch n=3812 median=0.093 p95=0.576 p99=2.625 max=7.580 ms
+SOAK_METRIC gradle.trace.map-and-rank n=1904 median=0.088 p95=0.186 p99=0.230 max=0.704 ms
+SOAK_METRIC gradle.trace.popup-model n=3812 median=0.865 p95=5.859 p99=8.826 max=38.955 ms
+SOAK_METRIC gradle.trace.server n=1913 median=74.765 p95=167.155 p99=184.867 max=1977.845 ms
+SOAK_METRIC gradle.trace.sync n=1913 median=0.083 p95=2.024 p99=2.898 max=4.554 ms
+SOAK_METRIC maven.fx.dispatch-delay n=10394 median=0.038 p95=0.413 p99=3.127 max=276.675 ms
+SOAK_METRIC maven.fx.key-handler n=10394 median=0.970 p95=2.409 p99=6.379 max=28.714 ms
+SOAK_METRIC maven.fx.pulse-gap n=56332 median=16.000 p95=16.118 p99=19.736 max=369.931 ms
+SOAK_METRIC maven.large.ArrayList.key-to-popup n=41 median=157.515 p95=424.485 p99=532.896 max=532.896 ms
+SOAK_METRIC maven.large.String.key-to-popup n=37 median=152.394 p95=549.298 p99=812.329 max=812.329 ms
+SOAK_METRIC maven.large.backspace.key-to-popup n=41 median=0.385 p95=928.957 p99=1199.080 max=1199.080 ms
+SOAK_METRIC maven.large.chain.key-to-popup n=41 median=51.291 p95=1170.081 p99=1754.821 max=1754.821 ms
+SOAK_METRIC maven.large.println.key-to-popup n=42 median=0.866 p95=1294.364 p99=1302.308 max=1302.308 ms
+SOAK_METRIC maven.small.ArrayList.key-to-popup n=126 median=111.512 p95=129.933 p99=152.543 max=173.925 ms
+SOAK_METRIC maven.small.String.key-to-popup n=126 median=106.798 p95=120.009 p99=158.800 max=160.248 ms
+SOAK_METRIC maven.small.backspace.key-to-popup n=126 median=0.085 p95=1.281 p99=1.801 max=2.058 ms
+SOAK_METRIC maven.small.chain.key-to-popup n=126 median=0.112 p95=0.205 p99=0.306 max=0.366 ms
+SOAK_METRIC maven.small.println.key-to-popup n=126 median=0.115 p95=0.231 p99=0.574 max=0.623 ms
+SOAK_METRIC maven.startup.project-ready n=1 median=5717.905 p95=5717.905 p99=5717.905 max=5717.905 ms
+SOAK_METRIC maven.trace.edit-to-sync n=1658 median=0.879 p95=103.085 p99=106.617 max=1367.028 ms
+SOAK_METRIC maven.trace.filter-and-fx-dispatch n=3308 median=0.091 p95=0.523 p99=2.809 max=5.130 ms
+SOAK_METRIC maven.trace.map-and-rank n=1611 median=0.110 p95=0.283 p99=0.561 max=2.477 ms
+SOAK_METRIC maven.trace.popup-model n=3308 median=0.936 p95=7.869 p99=11.870 max=41.849 ms
+SOAK_METRIC maven.trace.server n=1658 median=67.995 p95=249.057 p99=1012.243 max=1533.214 ms
+SOAK_METRIC maven.trace.sync n=1658 median=0.103 p95=2.037 p99=3.303 max=355.060 ms
+SOAK_RANK maven.println n=168 first=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12] last=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12]
+SOAK_RANK maven.String n=163 first=[5, 5, 5, 5, 5, 5, 5, 5, 5, 5] last=[5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+SOAK_RANK maven.ArrayList n=167 first=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] last=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+SOAK_RANK maven.chain n=167 first=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2] last=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+SOAK_RANK maven.backspace n=167 first=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12] last=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12]
+SOAK_RANK gradle.println n=192 first=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12] last=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12]
+SOAK_RANK gradle.String n=191 first=[6, 6, 6, 6, 6, 6, 6, 6, 6, 6] last=[6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+SOAK_RANK gradle.ArrayList n=191 first=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] last=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+SOAK_RANK gradle.chain n=191 first=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2] last=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+SOAK_RANK gradle.backspace n=191 first=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12] last=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12]

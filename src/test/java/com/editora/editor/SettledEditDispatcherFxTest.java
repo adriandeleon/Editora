@@ -83,11 +83,11 @@ class SettledEditDispatcherFxTest {
         runOnFx(() -> {
             EditorBuffer buffer = new EditorBuffer();
             try {
-                assertEquals(7, buffer.settledEditTaskCount());
+                assertEquals(8, buffer.settledEditTaskCount()); // separate LSP and local completion milestones
                 assertTrue(buffer.settledEditSubscriptionActive());
 
                 buffer.setSplit(EditorBuffer.Split.SIDE_BY_SIDE);
-                assertEquals(7, buffer.settledEditTaskCount());
+                assertEquals(8, buffer.settledEditTaskCount());
                 assertTrue(buffer.settledEditSubscriptionActive());
             } finally {
                 buffer.dispose();

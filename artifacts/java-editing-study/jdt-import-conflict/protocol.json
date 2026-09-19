@@ -1,0 +1,153 @@
+{
+  "source": "package demo;\nclass ArrayList {}\nclass Conflict { void run() { new ArrayLi } }\n",
+  "initialize": {
+    "rootUri": "file:///fixture/project",
+    "workspaceFolders": [
+      {
+        "uri": "file:///fixture/project",
+        "name": "conflict"
+      }
+    ],
+    "capabilities": {
+      "textDocument": {
+        "completion": {
+          "completionItem": {
+            "snippetSupport": true,
+            "insertReplaceSupport": true,
+            "resolveSupport": {
+              "properties": [
+                "additionalTextEdits"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "initializationOptions": {
+      "settings": {
+        "java": {
+          "autobuild": {
+            "enabled": false
+          }
+        }
+      }
+    }
+  },
+  "serverInfo": {
+    "name": "JDT Language Server (Standard)",
+    "version": "1.61.0-SNAPSHOT"
+  },
+  "completionRequest": {
+    "textDocument": {
+      "uri": "file:///fixture/project/src/main/java/demo/Conflict.java"
+    },
+    "position": {
+      "line": 2,
+      "character": 41
+    },
+    "context": {
+      "triggerKind": 1
+    }
+  },
+  "completionItem": {
+    "label": "ArrayList()",
+    "kind": 4,
+    "detail": "java.util.ArrayList.ArrayList()",
+    "sortText": "999999163",
+    "filterText": "ArrayList<>()",
+    "insertText": "ArrayList",
+    "insertTextFormat": 2,
+    "insertTextMode": 2,
+    "textEdit": {
+      "newText": "ArrayList<>()",
+      "insert": {
+        "start": {
+          "line": 2,
+          "character": 34
+        },
+        "end": {
+          "line": 2,
+          "character": 41
+        }
+      },
+      "replace": {
+        "start": {
+          "line": 2,
+          "character": 34
+        },
+        "end": {
+          "line": 2,
+          "character": 41
+        }
+      }
+    },
+    "command": {
+      "title": "",
+      "command": "java.completion.onDidSelect",
+      "arguments": [
+        "0",
+        "1"
+      ]
+    },
+    "data": {
+      "pid": "1",
+      "rid": "0"
+    }
+  },
+  "resolved": {
+    "label": "ArrayList()",
+    "kind": 4,
+    "detail": "java.util.ArrayList.ArrayList()",
+    "sortText": "999999163",
+    "filterText": "ArrayList<>()",
+    "insertText": "ArrayList",
+    "insertTextFormat": 2,
+    "insertTextMode": 2,
+    "textEdit": {
+      "newText": "ArrayList<>()",
+      "insert": {
+        "start": {
+          "line": 2,
+          "character": 34
+        },
+        "end": {
+          "line": 2,
+          "character": 41
+        }
+      },
+      "replace": {
+        "start": {
+          "line": 2,
+          "character": 34
+        },
+        "end": {
+          "line": 2,
+          "character": 41
+        }
+      }
+    },
+    "additionalTextEdits": [
+      {
+        "range": {
+          "start": {
+            "line": 0,
+            "character": 13
+          },
+          "end": {
+            "line": 1,
+            "character": 0
+          }
+        },
+        "newText": "\n\nimport java.util.ArrayList;\n\n"
+      }
+    ],
+    "command": {
+      "title": "",
+      "command": "java.completion.onDidSelect",
+      "arguments": [
+        "0",
+        "1"
+      ]
+    }
+  }
+}

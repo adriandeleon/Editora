@@ -26,7 +26,41 @@ public record Completion(
         boolean preselect,
         boolean deprecated,
         Object resolveToken,
-        ReplaceRange replaceRange) {
+        ReplaceRange replaceRange,
+        Protocol protocol) {
+
+    /** Optional protocol semantics; kept independent of lsp4j wire objects. */
+    public record Protocol(
+            String filterText, ReplaceRange replaceRange, java.util.List<String> commitCharacters, int insertTextMode) {
+        public Protocol(String filterText, ReplaceRange replaceRange, java.util.List<String> commitCharacters) {
+            this(filterText, replaceRange, commitCharacters, 0);
+        }
+
+        public Protocol {
+            commitCharacters = commitCharacters == null ? java.util.List.of() : java.util.List.copyOf(commitCharacters);
+        }
+    }
+
+    public Completion withProtocol(Protocol value) {
+        return new Completion(
+                label,
+                insert,
+                kind,
+                detail,
+                snippet,
+                onAccept,
+                iconKind,
+                sortText,
+                preselect,
+                deprecated,
+                resolveToken,
+                replaceRange,
+                value);
+    }
+
+    public String filterText() {
+        return protocol == null || protocol.filterText() == null ? label : protocol.filterText();
+    }
 
     public enum Kind {
         SNIPPET,
@@ -73,7 +107,8 @@ public record Completion(
                 preselect,
                 deprecated,
                 resolveToken,
-                rs);
+                rs,
+                protocol);
     }
 
     /**
@@ -95,13 +130,14 @@ public record Completion(
                 preselect,
                 deprecated,
                 resolveToken,
-                replaceRange);
+                replaceRange,
+                protocol);
     }
 
     /** A plain word completion (dictionary or user word). */
     public static Completion word(String w, String detail) {
         return new Completion(
-                w, w, Kind.WORD, detail, null, null, CompletionIconKind.TEXT, null, false, false, null, null);
+                w, w, Kind.WORD, detail, null, null, CompletionIconKind.TEXT, null, false, false, null, null, null);
     }
 
     /** A snippet completion; accepting it expands the snippet body via a snippet session. */
@@ -118,6 +154,7 @@ public record Completion(
                 null,
                 false,
                 false,
+                null,
                 null,
                 null);
     }
@@ -161,6 +198,7 @@ public record Completion(
                 preselect,
                 deprecated,
                 resolveToken,
+                null,
                 null);
     }
 }

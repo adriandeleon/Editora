@@ -102,6 +102,9 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
 
     // --- canned responses --------------------------------------------------------------------------
     public SignatureHelp signatureHelpResponse;
+    public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completionFuture;
+    public CompletableFuture<SignatureHelp> signatureHelpFuture;
+    public CompletableFuture<Hover> hoverFuture;
     public List<InlayHint> inlayHintResponse = List.of();
     public SemanticTokens semanticTokensResponse;
     public List<TextEdit> formattingResponse = List.of();
@@ -201,7 +204,9 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     @Override
     public CompletableFuture<SignatureHelp> signatureHelp(SignatureHelpParams params) {
         signatureHelps.add(params);
-        return CompletableFuture.completedFuture(signatureHelpResponse);
+        return signatureHelpFuture != null
+                ? signatureHelpFuture
+                : CompletableFuture.completedFuture(signatureHelpResponse);
     }
 
     @Override
@@ -225,13 +230,15 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     @Override
     public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams params) {
         completions.add(params);
-        return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+        return completionFuture != null
+                ? completionFuture
+                : CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
 
     @Override
     public CompletableFuture<Hover> hover(HoverParams params) {
         hovers.add(params);
-        return CompletableFuture.completedFuture(null);
+        return hoverFuture != null ? hoverFuture : CompletableFuture.completedFuture(null);
     }
 
     @Override

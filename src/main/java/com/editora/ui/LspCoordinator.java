@@ -56,11 +56,12 @@ import static com.editora.i18n.Messages.tr;
 final class LspCoordinator {
 
     private long navigationRequestGeneration;
-    private long hoverRequestGeneration;
-    private long signatureRequestGeneration;
 
     /** Window hooks beyond {@link CoordinatorHost} that the LSP flows need. */
     interface Ops {
+        /** Routes popup controls through the same registered commands as the palette/keymap. */
+        default void executeCommand(String id) {}
+
         /** Opens {@code file} (if needed) and moves the caret to a 0-based LSP line/column. */
         void openAndGoto(Path file, int line0, int col0);
 
@@ -313,6 +314,16 @@ final class LspCoordinator {
 
     /** The currently-showing signature-help popup (#674), or null. */
     private Popup signaturePopup;
+
+    private long signatureGeneration;
+    private long hoverGeneration;
+    private Path pendingSignaturePath;
+    private final com.editora.lsp.SignatureSelection signatureSelection = new com.editora.lsp.SignatureSelection();
+    private CodeArea signatureArea;
+    private long signatureRequestVersion = -1;
+    private int signatureRequestCaret = -1;
+    private final javafx.animation.PauseTransition signatureCaretDebounce =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(120));
 
     LspCoordinator(CoordinatorHost host, LspManager lspManager, Ops ops) {
         this(
@@ -1331,26 +1342,28 @@ final class LspCoordinator {
     /** The accept hook for a completion item: resolve it + apply any additional edits (a TypeScript
      *  auto-import's {@code import} line). Returns null when the item can't carry extra edits. */
     private Runnable autoImportAccept(EditorBuffer buffer, org.eclipse.lsp4j.CompletionItem item) {
-        if (!com.editora.lsp.CompletionMapper.mayHaveAdditionalEdits(item)) {
-            return null;
-        }
+        if (!com.editora.lsp.CompletionMapper.mayHaveAdditionalEdits(item) && item.getCommand() == null) return null;
         return () -> {
-            if (buffer.getPath() == null) {
-                return;
-            }
-            // Two different staleness problems, so two guards. (1) The resolve is a round-trip: if the document
-            // moves while it is in flight — the user undoes the accept, or edits above the insert point — the
-            // positions are stale and applying them blind writes an import into the wrong place (or for a symbol
-            // that's gone), so drop the response. (2) Even with the document untouched since, these positions
-            // were computed against the document as it was BEFORE the accept, and the accept's own insertion may
-            // have moved everything below the caret — so applyCompletionAdditionalEdits translates them across
-            // that insertion rather than applying them verbatim (#410).
-            long version = buffer.docVersion();
-            lspManager.resolveCompletion(buffer.getPath(), item, edits -> {
-                if (buffer.docVersion() == version) {
-                    buffer.applyCompletionAdditionalEdits(edits);
+            Path path = buffer.getPath();
+            if (path == null) return;
+            Runnable command = () -> {
+                var c = item.getCommand();
+                if (c != null && c.getCommand() != null && path.equals(buffer.getPath()) && !buffer.isDisposed()) {
+                    buffer.sendLspChange();
+                    lspManager.executeCommand(path, c.getCommand(), c.getArguments(), (result, error) -> {});
                 }
-            });
+            };
+            var eager = com.editora.lsp.CompletionMapper.additionalEdits(item);
+            if (!eager.isEmpty()) {
+                buffer.applyCompletionAdditionalEdits(eager);
+                command.run();
+            } else if (item.getData() != null) {
+                var apply = buffer.trackCompletionAdditionalEdits();
+                lspManager.resolveCompletion(path, item, edits -> {
+                    apply.accept(path.equals(buffer.getPath()) ? edits : List.of());
+                    command.run();
+                });
+            } else command.run();
         };
     }
 
@@ -1452,19 +1465,27 @@ final class LspCoordinator {
      *  opens+activates it if eligible. Called from {@code MainController.addBuffer}. */
     void wireBuffer(EditorBuffer buffer) {
         // Debounced didChange sink + keep the Structure outline live as the document changes.
-        buffer.setSignatureHelpRequester(ch -> signatureHelp(false, ch)); // '(' or ',' typed (#674, #725)
+        buffer.getNode().addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.ESCAPE && buffer == host.activeBuffer()) {
+                hideSignaturePopup();
+                hideHoverPopup();
+            }
+        });
+        buffer.setSignatureHelpRequester(ch -> {
+            if (buffer == host.activeBuffer()) signatureHelp(false, ch);
+        }); // '(' or ',' typed (#674, #725)
         buffer.setOccurrenceRequester(() -> requestOccurrences(buffer)); // caret at rest (#675)
         buffer.setLspChangeListener(text -> {
             if (buffer.getPath() != null) {
                 lspManager.changeDocument(buffer.getPath(), text);
-                requestStructureSymbols(buffer);
-                refreshSignatureHelpIfShowing(); // tracks the active parameter / closes after ')' (#674)
             }
         });
         // Pull-model diagnostics (fired on the same debounce as didChange; no-op for push-only servers).
         buffer.setLspDiagnosticsRequester(() -> {
             if (buffer.getPath() != null) {
                 lspManager.pullDiagnostics(buffer.getPath());
+                requestStructureSymbols(buffer);
+                if (buffer == host.activeBuffer()) refreshSignatureHelpIfShowing();
                 requestFoldingRanges(buffer); // #738 — rides the same debounce, no extra pulse
             }
         });
@@ -1473,17 +1494,13 @@ final class LspCoordinator {
             requestSemanticTokens(buffer);
             requestInlayHints(buffer); // same cadence: didChange debounce + scroll-settle (#681)
         });
-        buffer.setLspCompletionProvider((pos, cb) -> {
+        buffer.setLspCompletionSource((line, column, kind, trigger, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
-                lspManager.completion(
-                        buffer.getPath(),
-                        pos[0],
-                        pos[1],
-                        items -> cb.accept(
-                                com.editora.lsp.CompletionMapper.map(items, item -> autoImportAccept(buffer, item))));
-            } else {
-                cb.accept(java.util.List.of());
+                return lspManager.completion(
+                        buffer.getPath(), line, column, kind, trigger, item -> autoImportAccept(buffer, item), cb);
             }
+            cb.accept(com.editora.completion.CompletionResult.EMPTY);
+            return () -> {};
         });
         // Lazy documentation for the completion doc side-popup: resolve the item's docs on demand.
         buffer.setCompletionDocResolver((token, cb) -> {
@@ -2260,17 +2277,19 @@ final class LspCoordinator {
             return;
         }
         CodeArea area = b.getFocusedArea();
-        Path originPath = b.getPath();
-        long originVersion = b.docVersion();
-        long requestGeneration = ++hoverRequestGeneration;
         lspManager.changeDocument(b.getPath(), b.text()); // sync latest text before the request
-        lspManager.hover(b.getPath(), area.getCurrentParagraph(), area.getCaretColumn(), text -> {
-            if (requestGeneration != hoverRequestGeneration
-                    || b != host.activeBuffer()
-                    || !java.util.Objects.equals(originPath, b.getPath())
-                    || originVersion != b.docVersion()) {
-                return;
-            }
+        long generation = ++hoverGeneration;
+        long version = b.docVersion();
+        int caret = area.getCaretPosition();
+        Path path = b.getPath();
+        lspManager.hover(path, area.getCurrentParagraph(), area.getCaretColumn(), text -> {
+            if (b != host.activeBuffer()
+                    || b.isDisposed()
+                    || area != b.getFocusedArea()
+                    || generation != hoverGeneration
+                    || version != b.docVersion()
+                    || caret != area.getCaretPosition()
+                    || !path.equals(b.getPath())) return;
             if (text == null || text.isBlank()) {
                 host.setStatus(tr("status.lsp.noHover"));
             } else {
@@ -3282,6 +3301,7 @@ final class LspCoordinator {
 
     /** Hides the LSP hover popup if one is showing. */
     private void hideHoverPopup() {
+        hoverGeneration++;
         if (hoverPopup != null) {
             hoverPopup.hide();
             hoverPopup = null;
@@ -3318,24 +3338,39 @@ final class LspCoordinator {
         }
         Path path = b.getPath();
         CodeArea area = b.getFocusedArea();
-        long originVersion = b.docVersion();
-        long requestGeneration = ++signatureRequestGeneration;
         boolean retrigger = signaturePopup != null; // the popup is already up for this call
+        if (!manual
+                && triggerChar == null
+                && signatureArea == area
+                && signatureRequestVersion == b.docVersion()
+                && signatureRequestCaret == area.getCaretPosition()) return;
+        if (signatureArea != null && signatureArea != area) hideSignaturePopup();
         lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        long generation = ++signatureGeneration;
+        long version = b.docVersion();
+        int caret = area.getCaretPosition();
+        signatureArea = area;
+        signatureRequestVersion = version;
+        signatureRequestCaret = caret;
+        pendingSignaturePath = path;
         lspManager.signatureHelp(
                 path,
                 area.getCurrentParagraph(),
                 area.getCaretColumn(),
                 triggerChar == null ? null : String.valueOf(triggerChar),
                 retrigger,
+                signatureSelection.context(),
                 help -> {
-                    if (requestGeneration != signatureRequestGeneration
-                            || b != host.activeBuffer()
-                            || !java.util.Objects.equals(path, b.getPath())
-                            || originVersion != b.docVersion()) {
-                        return;
-                    }
-                    var active = com.editora.lsp.SignatureFormat.resolve(help);
+                    if (b != host.activeBuffer()
+                            || b.isDisposed()
+                            || area != b.getFocusedArea()
+                            || generation != signatureGeneration
+                            || version != b.docVersion()
+                            || caret != area.getCaretPosition()
+                            || !path.equals(b.getPath())) return;
+                    pendingSignaturePath = null;
+                    signatureSelection.update(help);
+                    var active = signatureSelection.active();
                     if (active == null) {
                         hideSignaturePopup(); // outside a call now — the natural close
                         if (manual) {
@@ -3345,6 +3380,13 @@ final class LspCoordinator {
                     }
                     showSignaturePopup(area, active);
                 });
+    }
+
+    void moveSignature(int delta) {
+        if (signaturePopup == null || signatureArea == null) return;
+        signatureSelection.move(delta);
+        var active = signatureSelection.active();
+        if (active != null) showSignaturePopup(signatureArea, active);
     }
 
     // --- Watched files (#677) ------------------------------------------------------------------
@@ -3402,10 +3444,15 @@ final class LspCoordinator {
         lspManager.notifyWatchedFiles(batch);
     }
 
-    /** Refreshes (or closes) a showing signature popup on the typing pause — called from the buffer's
-     *  debounced change listener, so the active parameter tracks the arguments as they're typed. */
+    /** Refreshes on typing pause, including a first response invalidated by continued typing before
+     *  the popup opened. Escape clears the pending context and must never schedule this retry. */
     private void refreshSignatureHelpIfShowing() {
-        if (signaturePopup != null) {
+        EditorBuffer active = host.activeBuffer();
+        if (signaturePopup != null
+                || (pendingSignaturePath != null
+                        && active != null
+                        && !active.isDisposed()
+                        && pendingSignaturePath.equals(active.getPath()))) {
             signatureHelp(false);
         }
     }
@@ -3436,12 +3483,9 @@ final class LspCoordinator {
 
     /**
      * Shows (replacing any previous) the signature popup above/below the caret. Unlike the hover popup it
-     * deliberately survives caret <em>column</em> movement — typing arguments moves the caret constantly —
-     * and closes on Escape, scrolling, clicking elsewhere (autoHide), leaving the line, or a refresh that
-     * finds no signature.
+     * survives multiline argument edits until the server reports no call; caret navigation is debounced.
      */
     private void showSignaturePopup(CodeArea area, com.editora.lsp.SignatureFormat.Active active) {
-        hideSignaturePopup();
         String label = active.label();
         javafx.scene.text.Text pre = new javafx.scene.text.Text(label.substring(0, active.paramStart()));
         javafx.scene.text.Text param =
@@ -3454,7 +3498,15 @@ final class LspCoordinator {
         if (active.total() > 1) {
             Label count = new Label((active.index() + 1) + "/" + active.total());
             count.getStyleClass().add("lsp-signature-count");
-            box.getChildren().add(0, count);
+            javafx.scene.control.Button previous = new javafx.scene.control.Button("‹");
+            javafx.scene.control.Button next = new javafx.scene.control.Button("›");
+            previous.setFocusTraversable(false);
+            next.setFocusTraversable(false);
+            previous.setAccessibleText(tr("command.lsp.previousSignature"));
+            next.setAccessibleText(tr("command.lsp.nextSignature"));
+            previous.setOnAction(e -> ops.executeCommand("lsp.previousSignature"));
+            next.setOnAction(e -> ops.executeCommand("lsp.nextSignature"));
+            box.getChildren().add(0, new javafx.scene.layout.HBox(6, previous, count, next));
         }
         if (!active.documentation().isBlank()) {
             try {
@@ -3474,35 +3526,47 @@ final class LspCoordinator {
                         getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
                         getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
 
+        if (signaturePopup != null) {
+            signaturePopup.getContent().setAll(box);
+            var bounds = area.getCaretBounds().orElse(null);
+            if (bounds != null) {
+                signaturePopup.setAnchorX(bounds.getMinX());
+                signaturePopup.setAnchorY(bounds.getMaxY());
+            }
+            return;
+        }
         Popup popup = new Popup();
         popup.setAutoHide(true);
         popup.setConsumeAutoHidingEvents(false);
         popup.getContent().add(box);
         signaturePopup = popup;
 
-        int shownAtParagraph = area.getCurrentParagraph();
         EventHandler<KeyEvent> esc = ev -> {
             if (ev.getCode() == KeyCode.ESCAPE) {
                 hideSignaturePopup();
                 ev.consume();
             }
         };
-        // Leaving the LINE ends the call context; column moves within it are the normal typing flow.
         ChangeListener<Object> caret = (o, a, bNew) -> {
-            if (area.getCurrentParagraph() != shownAtParagraph) {
-                hideSignaturePopup();
-            }
+            signatureCaretDebounce.setOnFinished(event -> refreshSignatureHelpIfShowing());
+            signatureCaretDebounce.playFromStart();
         };
-        ChangeListener<Object> scroll = (o, a, bNew) -> hideSignaturePopup();
+        javafx.event.EventHandler<javafx.scene.input.ScrollEvent> scroll = event -> hideSignaturePopup();
+        ChangeListener<Boolean> focus = (o, was, now) -> {
+            if (!now) hideSignaturePopup();
+        };
         area.addEventFilter(KeyEvent.KEY_PRESSED, esc);
         area.caretPositionProperty().addListener(caret);
-        area.estimatedScrollYProperty().addListener(scroll);
+        area.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, scroll);
+        area.focusedProperty().addListener(focus);
         popup.setOnHidden(ev -> {
             area.removeEventFilter(KeyEvent.KEY_PRESSED, esc);
             area.caretPositionProperty().removeListener(caret);
-            area.estimatedScrollYProperty().removeListener(scroll);
+            area.removeEventFilter(javafx.scene.input.ScrollEvent.SCROLL, scroll);
+            area.focusedProperty().removeListener(focus);
             if (signaturePopup == popup) {
                 signaturePopup = null;
+                hideSignaturePopup();
             }
         });
 
@@ -3516,6 +3580,12 @@ final class LspCoordinator {
 
     /** Hides the signature-help popup if one is showing. */
     private void hideSignaturePopup() {
+        signatureGeneration++;
+        pendingSignaturePath = null;
+        signatureSelection.clear();
+        signatureArea = null;
+        signatureRequestVersion = -1;
+        signatureCaretDebounce.stop();
         if (signaturePopup != null) {
             signaturePopup.hide();
             signaturePopup = null;

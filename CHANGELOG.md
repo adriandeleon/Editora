@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Improved continuous Java editing: completion owns Enter/Tab correctly, member triggers are immediate,
+  identifier completion starts after a short pause, complete lists filter locally, and obsolete requests
+  are cancelled. Completion retains overloads, server filter/range/default metadata, commit characters,
+  and selection feedback; Java calls reuse existing parentheses and request signature help. Auto-imports
+  survive safe continued typing and preserve selected arguments. Signature/hover/diagnostic responses
+  are guarded against newer editing state, and no-op syncs no longer advance the protocol version.
+  Signature help now supports overload navigation across multiline calls; nested method snippets
+  restore outer arguments, and completion with eager or safely rebased deferred imports undoes/redoes as
+  one action while preserving later typing as separate undo steps, including split views. Incremental
+  synchronization uses optimized newline search to reduce large-file range calculation cost.
+  Java server launches join pending document lifecycle work before completion/resolve,
+  fixing missing or removed imports reproduced in real Maven/Gradle module probes.
+  Finished zero-argument Java calls and method references no longer request invocation signature help;
+  active argument placeholders retain it.
+
 - Added a global Maven JDK selector and per-project run-configuration override. Run, debug, Maven
   classpath resolution, before-launch steps, and Maven task invocations now use the selected toolchain;
   installed JDK discovery includes standard platform locations plus SDKMAN, asdf, mise, Jabba, and

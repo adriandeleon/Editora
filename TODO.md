@@ -11,6 +11,28 @@ A backlog of planned features and improvements. Unordered within each section.
 - [ ] Continue reducing window composition and buffer presentation complexity through cohesive owners;
       the size ceiling is not a target. See [window coordinators](docs/subsystems/window-coordinators.md).
 
+## Java editing follow-up
+
+- [x] Audit and improve the complete typing → sync → completion → insertion → imports path, with
+      real-key FX regressions and an opt-in portable JDT LS Maven-project probe. See
+      [Java editing review](docs/subsystems/java-editing-review.md).
+- [x] Validate sibling-module resolution in disposable Maven/Gradle projects and 75 KB Java source;
+      enable JDT lifecycle joining to prevent stale import edits.
+- [x] Add signature overload switching/multiline lifetime, nested snippet restoration, and grouped
+      undo/redo for completion with eager or adjacent deferred imports.
+- [x] Add a reproducible sustained typing harness on disposable real Maven/Gradle project copies and
+      profile 16 KB–4 MB normal-mode files; reduce synchronization range-scan cost.
+- [ ] Complete a human desktop typing trial and measure painted-frame latency on representative hardware.
+- [x] Rebase disjoint delayed imports into their completion's undo step, retaining intervening typing,
+      split-view history, redo branching, save marks, and bounded overlap fallback.
+- [ ] Evaluate a context-preserving recency policy against the recorded repeated-selection ranks before
+      changing semantic server ordering.
+- [x] Prepare a standalone JSON-RPC reproduction and compiler proof for JDT's same-file import conflict.
+- [ ] Reproduce the intermittent `Str` popup timeouts from the warmed-workspace macro stress baseline
+      with request/state capture; passing follow-up runs do not establish a fix or root cause.
+- [ ] Track JDT LS's conflicting import proposal for a same-file class in broken source; rerun the
+      strict live probe when evaluating server updates.
+
 ## Recently shipped
 - [x] **Global and project settings use JSON instead of TOML** — `settings.json` now shares the same
       Jackson format and tooling as the rest of Editora's persisted state. Existing global TOML is

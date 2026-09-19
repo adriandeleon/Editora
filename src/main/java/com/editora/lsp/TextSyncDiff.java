@@ -55,17 +55,14 @@ final class TextSyncDiff {
         int lineStart = 0;
         Position startPos = null;
         int limit = Math.min(end, text.length());
-        for (int i = 0; i <= limit; i++) {
-            if (startPos == null && i == start) {
+        // String.indexOf uses the JDK's optimized Latin-1/UTF-16 search. Visiting every character
+        // with two branches costs several milliseconds on multi-megabyte documents on the FX path.
+        for (int newline = text.indexOf('\n', 0, limit); newline >= 0; newline = text.indexOf('\n', lineStart, limit)) {
+            if (startPos == null && start <= newline) {
                 startPos = new Position(line, start - lineStart);
             }
-            if (i == limit) {
-                break;
-            }
-            if (text.charAt(i) == '\n') {
-                line++;
-                lineStart = i + 1;
-            }
+            line++;
+            lineStart = newline + 1;
         }
         if (startPos == null) {
             startPos = new Position(line, Math.max(0, start - lineStart));

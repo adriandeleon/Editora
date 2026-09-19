@@ -55,6 +55,8 @@ public final class CompletionPopup {
     /** Index of the top visible row; we manage scrolling so the list only scrolls at the window edges. */
     private int firstVisible;
 
+    private boolean userSelected;
+
     public CompletionPopup() {
         list.getStyleClass().add("completion-list");
         list.setFocusTraversable(false);
@@ -142,6 +144,7 @@ public final class CompletionPopup {
         } else {
             next = Math.max(0, Math.min(n - 1, base + delta)); // paging clamps at the ends
         }
+        userSelected = true;
         list.getSelectionModel().select(next);
         scrollIntoView(next, n);
     }
@@ -176,8 +179,12 @@ public final class CompletionPopup {
             hide();
             return;
         }
-        list.getItems().setAll(items);
-        int sel = Math.max(0, Math.min(selectIndex, items.size() - 1));
+        Completion previous = isShowing() && userSelected ? selected() : null;
+        int preserved = previous == null ? -1 : items.indexOf(previous);
+        int sel = preserved >= 0 ? preserved : Math.max(0, Math.min(selectIndex, items.size() - 1));
+        userSelected = preserved >= 0;
+        if (!list.getItems().equals(items)) list.getItems().setAll(items);
+        else list.refresh(); // the query highlight may have changed even when the candidates did not
         list.getSelectionModel().select(sel);
         firstVisible = 0; // reset the scroll window to the top for the new list
         if (items.size() > VISIBLE_ROWS) {
@@ -217,6 +224,7 @@ public final class CompletionPopup {
         if (popup.isShowing()) {
             popup.hide();
         }
+        userSelected = false;
         list.getItems().clear();
     }
 

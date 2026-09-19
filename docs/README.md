@@ -52,6 +52,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   merge, and accessibility.
 - [subsystems/lsp-and-dap.md](subsystems/lsp-and-dap.md) — Language Server + Debug Adapter
   integration, and the `process/ProcessRegistry` lifecycle that owns spawned servers.
+- [subsystems/java-editing-review.md](subsystems/java-editing-review.md) — Java typing/completion
+  pipeline, IntelliJ comparison, regression coverage, performance evidence and remaining server gaps.
 
 ## Decisions
 

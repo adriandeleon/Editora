@@ -102,3 +102,76 @@ The dev loop (`mvn javafx:run`/`compile`) is unaffected; the check runs only at
   just keep the catalogs complete.
 - Controller-visible behavior → a `@Tag("fx")` test via `FxWindowFixture` if it can't be reduced
   to a pure helper.
+
+## Live Java editing probe
+
+`JdtlsTypingProbeTest` is opt-in and uses the production session, initialization capabilities, and
+completion mapper with a temporary Maven project. It covers basic/member completion, expected-type
+contexts, overrides, method references, incomplete generics/calls, signature help, and resolved imports.
+It prints sync, server, and mapping/ranking timings. It does not require a private fixture or fixed
+Homebrew installation:
+
+```
+mvn test -Dtest=JdtlsTypingProbeTest -Dgroups=probe -Dlsp.java.probe.command=/absolute/path/to/jdtls
+```
+
+Use JDK 25 and a current JDT LS. Project readiness is checked through completion, not a fixed startup
+sleep. The probe waits for its server process to exit before JUnit deletes the temporary workspace.
+It reports known server gaps separately; add `-Dlsp.java.probe.strict=true` to fail on the reproduced
+same-file type/import conflict when evaluating a JDT LS upgrade. See the
+[Java editing review](subsystems/java-editing-review.md) for the exact reproduction and limits.
+For the full client pipeline, add `-Deditora.completion.trace=true` to the editor JVM or to
+`JavaTypingCompletionFxTest`; timings contain stage names and durations, never source text.
+
+`JavaProjectEditingProbeTest` proves sibling-module resolution in generated two-module projects before
+running chained completion in a 75 KB source file and repeated structural/import edits. Project and
+Eclipse workspace must be siblings: putting the workspace inside the project prevents Maven import.
+
+```
+mvn test -Dtest=JavaProjectEditingProbeTest -Dgroups=probe -Dlsp.java.probe.command=/absolute/path/to/jdtls -Dlsp.java.probe.rounds=50
+mvn test -Dtest=JavaProjectEditingProbeTest -Dgroups=probe -Dlsp.java.probe.command=/absolute/path/to/jdtls -Dlsp.java.probe.project=gradle -Dlsp.java.probe.gradleHome=/absolute/path/to/gradle
+```
+
+Both use the production lifecycle-joining default. For a controlled regression comparison with the
+Python `jdtls` launcher, add `-Dlsp.java.probe.join=false`; the old configuration can fail ordinary
+import-preservation assertions. `-Dlsp.java.probe.strict=true` additionally asserts the known same-file
+name-conflict case. These probes print generated fixture source on failure, never user project text.
+
+### Sustained typing and large-file measurements
+
+`scripts/probes/java-typing-study.py` copies real projects to a new output directory and snapshots the
+compiled runtime, so ongoing builds cannot change a running study. It never edits the source project.
+First run `mvn test` on JDK 25 to compile the probes and generate the dependency classpath, then:
+
+```sh
+python3 scripts/probes/java-typing-study.py \
+  --maven-project /path/to/Editora --gradle-project /path/to/RichTextFX \
+  --jdtls /path/to/jdtls --java-home /path/to/jdk25 \
+  --gradle-java-home /path/to/jdk21 --output /tmp/java-typing-study --seconds 1800
+```
+
+The current readiness assertions are specific to these two projects: `EditorBuffer.getArea` and
+`CodeArea.getText` must resolve. Adapt those assertions and the source location for other projects.
+The Gradle wrapper must support the selected Gradle JVM, which is independent of JDT LS's JVM.
+The probe supplies the open project root explicitly; selecting only a child module does not prove
+that the parent build and sibling dependencies loaded.
+
+The study fires JavaFX typed/pressed events, accepts items with arrows/Enter, edits snippet arguments,
+waits for resolved imports, and exercises backspace/chaining. Every fourth round adds 178,890 characters
+of generated fields. Startup is measured separately; `--seconds` is split across the selected projects.
+Stage samples include dispatch, key handler, protocol, mapping/filtering, popup model, and JavaFX pulse
+intervals. These headless pulse intervals are **not** painted desktop frame latency. The selected rank
+is logged across repetitions without changing server relevance. `--typing-mode macro` compares the
+editor's macro replay path with the default physical-event path. Failures include a bounded history
+of requests, cancellations, result sizes and the generated caret paragraph; normal CI does not run
+these long probes.
+
+`JavaEditingCostProbeTest` is an opt-in standalone runner for 16 KB–4 MB source snapshots and sync diffs.
+Use the same JavaFX/classpath arguments as the launcher with `-Dlsp.java.cost.probe=true` and main class
+`com.editora.ui.JavaEditingCostProbeTest`. Run outside JaCoCo for performance measurements. Its key and
+snapshot measurements intentionally separate synchronous component costs; they exclude server time,
+transport and subsequent layout/highlighting pulses.
+
+The [study evidence](../artifacts/java-editing-study/README.md) records methodology and limitations.
+The [standalone import reproduction](../artifacts/java-editing-study/jdt-import-conflict/REPORT.md)
+uses only Python and JDT LS, independently of Editora.

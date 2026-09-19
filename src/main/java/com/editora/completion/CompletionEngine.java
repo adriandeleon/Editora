@@ -101,8 +101,7 @@ public final class CompletionEngine {
 
     /**
      * Orders language-server completions by the server's relevance — preselected first, then by
-     * {@code sortText} (nulls last), then alphabetically by label — matching IntelliJ (which surfaces the
-     * most relevant candidate at the top). Pure/unit-tested; a stable sort, so equal-key items keep the
+     * {@code sortText}, falling back to the label when absent. A stable sort means equal keys keep the
      * server's order. Returns a new list (the input is left untouched).
      */
     public static List<Completion> sortLspByRelevance(List<Completion> items) {
@@ -114,25 +113,61 @@ public final class CompletionEngine {
             if (a.preselect() != b.preselect()) {
                 return a.preselect() ? -1 : 1;
             }
-            String sa = a.sortText();
-            String sb = b.sortText();
-            if (sa == null && sb != null) {
-                return 1;
-            }
-            if (sa != null && sb == null) {
-                return -1;
-            }
-            if (sa != null) {
-                int c = sa.compareTo(sb);
-                if (c != 0) {
-                    return c;
-                }
-            }
-            String la = a.label() == null ? "" : a.label();
-            String lb = b.label() == null ? "" : b.label();
-            return la.compareToIgnoreCase(lb);
+            String sa = a.sortText() == null ? a.label() : a.sortText();
+            String sb = b.sortText() == null ? b.label() : b.sortText();
+            return (sa == null ? "" : sa).compareTo(sb == null ? "" : sb);
         });
         return out;
+    }
+
+    /** Prefix quality first, retaining server relevance within each tier (including fuzzy alternatives). */
+    public static List<Completion> filterLsp(List<Completion> ordered, String prefix) {
+        return filterLsp(ordered, prefix, -1, -1, "");
+    }
+
+    /** Uses each textEdit's start as its filter range when it differs from the identifier boundary. */
+    public static List<Completion> filterLsp(
+            List<Completion> ordered, String prefix, int line, int column, String beforeCaret) {
+        if (prefix == null) prefix = "";
+        List<Completion> exact = new ArrayList<>();
+        List<Completion> folded = new ArrayList<>();
+        List<Completion> fuzzy = new ArrayList<>();
+        for (Completion item : ordered) {
+            String query = filterQuery(item, prefix, line, column, beforeCaret);
+            switch (matchTier(item, query)) {
+                case 0 -> exact.add(item);
+                case 1 -> folded.add(item);
+                case 2 -> fuzzy.add(item);
+                default -> {}
+            }
+        }
+        exact.addAll(folded);
+        exact.addAll(fuzzy);
+        return exact;
+    }
+
+    public static String filterQuery(Completion item, String prefix, int line, int column, String beforeCaret) {
+        var range = item.replaceRange();
+        int from = range == null ? -1 : range.character() - (column - beforeCaret.length());
+        if (range != null
+                && range.line() == line
+                && from >= 0
+                && from <= beforeCaret.length()
+                && range.character() != column - prefix.length()) return beforeCaret.substring(from);
+        return prefix;
+    }
+
+    /** filterText is authoritative when supplied; a decorated label must not exclude a valid candidate. */
+    public static int matchTier(Completion item, String prefix) {
+        String text = item.filterText();
+        if (text == null) return 3;
+        if (text.startsWith(prefix)) return 0;
+        if (text.regionMatches(true, 0, prefix, 0, prefix.length())) return 1;
+        int matched = 0;
+        for (int i = 0; i < text.length() && matched < prefix.length(); i++) {
+            if (Character.toLowerCase(text.charAt(i)) == Character.toLowerCase(prefix.charAt(matched))) matched++;
+        }
+        return matched == prefix.length() ? 2 : 3;
     }
 
     /**

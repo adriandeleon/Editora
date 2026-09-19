@@ -51,6 +51,9 @@ public final class CompletionMapper {
                 continue;
             }
             String label = item.getLabel().strip();
+            if (item.getLabelDetails() != null && item.getLabelDetails().getDetail() != null) {
+                label += item.getLabelDetails().getDetail();
+            }
             String insert = insertText(item, label);
             Runnable onAccept = onAcceptFor == null ? null : onAcceptFor.apply(item);
             out.add(Completion.lsp(
@@ -64,9 +67,78 @@ public final class CompletionMapper {
                             isDeprecated(item),
                             item)
                     .withReplaceRange(replaceRangeOf(item))
-                    .withSnippet(snippetOf(item, label)));
+                    .withSnippet(snippetOf(item, label))
+                    .withProtocol(new Completion.Protocol(
+                            item.getFilterText(),
+                            replacementRangeOf(item),
+                            item.getCommitCharacters(),
+                            item.getInsertTextMode() == null
+                                    ? 0
+                                    : item.getInsertTextMode().getValue())));
         }
         return out;
+    }
+
+    /** Expand list defaults before mapping AND before resolve so the opaque data is preserved. */
+    public static List<CompletionItem> itemsOf(
+            org.eclipse.lsp4j.jsonrpc.messages.Either<List<CompletionItem>, org.eclipse.lsp4j.CompletionList> result) {
+        if (result == null) return List.of();
+        if (result.isLeft()) return result.getLeft() == null ? List.of() : result.getLeft();
+        var list = result.getRight();
+        if (list == null || list.getItems() == null) return List.of();
+        var defaults = list.getItemDefaults();
+        if (defaults == null) return list.getItems();
+        for (var item : list.getItems()) {
+            if (item == null) continue;
+            if (item.getData() == null) item.setData(defaults.getData());
+            if (item.getCommitCharacters() == null) item.setCommitCharacters(defaults.getCommitCharacters());
+            if (item.getInsertTextFormat() == null) item.setInsertTextFormat(defaults.getInsertTextFormat());
+            if (item.getInsertTextMode() == null) item.setInsertTextMode(defaults.getInsertTextMode());
+            if (item.getTextEdit() == null && defaults.getEditRange() != null) {
+                String text = item.getTextEditText();
+                if (text == null) text = item.getInsertText();
+                if (text == null) text = item.getLabel();
+                var range = defaults.getEditRange();
+                if (range.isLeft()) {
+                    item.setTextEdit(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(
+                            new org.eclipse.lsp4j.TextEdit(range.getLeft(), text)));
+                } else {
+                    item.setTextEdit(
+                            org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(new org.eclipse.lsp4j.InsertReplaceEdit(
+                                    text,
+                                    range.getRight().getInsert(),
+                                    range.getRight().getReplace())));
+                }
+            }
+        }
+        return list.getItems();
+    }
+
+    private static Completion.ReplaceRange replacementRangeOf(CompletionItem item) {
+        if (item.getTextEdit() == null
+                || item.getTextEdit().isLeft()
+                || item.getTextEdit().getRight() == null) return null;
+        var range = item.getTextEdit().getRight().getReplace();
+        return range == null
+                ? null
+                : new Completion.ReplaceRange(
+                        range.getStart().getLine(),
+                        range.getStart().getCharacter(),
+                        range.getEnd().getLine(),
+                        range.getEnd().getCharacter());
+    }
+
+    public static List<com.editora.editor.LspTextEdit> additionalEdits(CompletionItem item) {
+        if (item == null || item.getAdditionalTextEdits() == null) return List.of();
+        return item.getAdditionalTextEdits().stream()
+                .filter(e -> e != null && e.getRange() != null)
+                .map(e -> new com.editora.editor.LspTextEdit(
+                        e.getRange().getStart().getLine(),
+                        e.getRange().getStart().getCharacter(),
+                        e.getRange().getEnd().getLine(),
+                        e.getRange().getEnd().getCharacter(),
+                        e.getNewText() == null ? "" : e.getNewText()))
+                .toList();
     }
 
     /** Maps lsp4j's {@code CompletionItemKind} to the editor's display kind — the sole lsp4j-kind touchpoint. */
@@ -138,7 +210,7 @@ public final class CompletionMapper {
     /**
      * The literal text to insert. Prefers the {@code textEdit}/{@code insertText} (the display label is
      * decorated — e.g. "names : List&lt;String&gt;" — and must never be inserted). Snippet-format text has
-     * its placeholders stripped (Editora inserts plain text for LSP items, not a snippet session). Only
+     * its placeholders expanded for matching; the original template is retained for the snippet session. Only
      * when neither is present do we fall back to the label's leading identifier.
      */
     static String insertText(CompletionItem item, String label) {
@@ -201,10 +273,10 @@ public final class CompletionMapper {
         if (s == null || s.isEmpty()) {
             return "";
         }
-        String out = s.replaceAll("\\$\\{\\d+:([^}]*)\\}", "$1") // ${1:default} -> default
-                .replaceAll("\\$\\{\\d+\\}", "") // ${1} -> (removed)
-                .replaceAll("\\$\\d+", ""); // $1 / $0 -> (removed)
-        return out.replace("\\$", "$").replace("\\}", "}").replace("\\\\", "\\");
+        if (hasTabStop(s))
+            return com.editora.snippet.SnippetParser.parse(s, name -> "$" + name)
+                    .text();
+        return s.replace("\\$", "$").replace("\\}", "}").replace("\\\\", "\\");
     }
 
     /** The leading Java-identifier run of {@code label} (e.g. "names : List…" → "names"). */

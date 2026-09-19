@@ -1,0 +1,50 @@
+SOAK_READY maven 7970.1ms
+SOAK_PROGRESS maven cycles=5 failures=0
+SOAK_PROGRESS maven cycles=40 failures=0
+SOAK_PROGRESS maven cycles=75 failures=0
+SOAK_PROGRESS maven cycles=110 failures=0
+SOAK_PROGRESS maven cycles=145 failures=0
+SOAK_PROGRESS maven cycles=180 failures=0
+SOAK_PROGRESS maven cycles=215 failures=0
+SOAK_PROGRESS maven cycles=250 failures=0
+SOAK_PROGRESS maven cycles=285 failures=0
+SOAK_PROGRESS maven cycles=320 failures=0
+SOAK_PROGRESS maven cycles=355 failures=0
+SOAK_PROGRESS maven cycles=390 failures=0
+SOAK_PROGRESS maven cycles=425 failures=0
+SOAK_PROGRESS maven cycles=460 failures=0
+SOAK_PROGRESS maven cycles=495 failures=0
+SOAK_PROGRESS maven cycles=530 failures=0
+SOAK_PROGRESS maven cycles=565 failures=0
+SOAK_PROGRESS maven cycles=600 failures=0
+SOAK_PROGRESS maven cycles=635 failures=0
+SOAK_PROGRESS maven cycles=670 failures=0
+SOAK_PROGRESS maven cycles=705 failures=0
+SOAK_PROGRESS maven cycles=740 failures=0
+SOAK_PROGRESS maven cycles=775 failures=0
+SOAK_PROGRESS maven cycles=810 failures=0
+SOAK_METRIC maven.fx.dispatch-delay n=10391 median=0.047 p95=0.257 p99=1.560 max=17.815 ms
+SOAK_METRIC maven.fx.key-handler n=10391 median=1.010 p95=2.176 p99=6.451 max=41.146 ms
+SOAK_METRIC maven.fx.pulse-gap n=48809 median=15.999 p95=16.132 p99=19.938 max=77.300 ms
+SOAK_METRIC maven.large.ArrayList.key-to-popup n=41 median=209.224 p95=231.364 p99=247.739 max=247.739 ms
+SOAK_METRIC maven.large.String.key-to-popup n=41 median=215.088 p95=231.822 p99=302.938 max=302.938 ms
+SOAK_METRIC maven.large.backspace.key-to-popup n=41 median=1.352 p95=2.500 p99=46.730 max=46.730 ms
+SOAK_METRIC maven.large.chain.key-to-popup n=41 median=96.962 p95=126.023 p99=219.053 max=219.053 ms
+SOAK_METRIC maven.large.println.key-to-popup n=42 median=31.733 p95=54.263 p99=79.057 max=79.057 ms
+SOAK_METRIC maven.small.ArrayList.key-to-popup n=126 median=183.877 p95=199.061 p99=237.395 max=269.536 ms
+SOAK_METRIC maven.small.String.key-to-popup n=126 median=174.584 p95=191.040 p99=253.133 max=12992.093 ms
+SOAK_METRIC maven.small.backspace.key-to-popup n=126 median=0.560 p95=1.715 p99=2.698 max=3.159 ms
+SOAK_METRIC maven.small.chain.key-to-popup n=126 median=1.211 p95=3.046 p99=5.452 max=21.286 ms
+SOAK_METRIC maven.small.println.key-to-popup n=126 median=1.194 p95=2.268 p99=2.548 max=17.135 ms
+SOAK_METRIC maven.startup.project-ready n=1 median=7970.052 p95=7970.052 p99=7970.052 max=7970.052 ms
+SOAK_METRIC maven.trace.edit-to-sync n=1674 median=0.876 p95=102.813 p99=105.958 max=108.440 ms
+SOAK_METRIC maven.trace.filter-and-fx-dispatch n=3124 median=0.107 p95=1.885 p99=3.185 max=5.367 ms
+SOAK_METRIC maven.trace.map-and-rank n=1668 median=0.112 p95=0.273 p99=0.608 max=4.487 ms
+SOAK_METRIC maven.trace.popup-model n=3124 median=0.952 p95=7.485 p99=10.932 max=47.060 ms
+SOAK_METRIC maven.trace.server n=1674 median=74.926 p95=167.263 p99=184.429 max=12852.856 ms
+SOAK_METRIC maven.trace.sync n=1674 median=0.110 p95=1.974 p99=2.914 max=14.518 ms
+SOAK_RANK maven.println n=168 first=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12] last=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12]
+SOAK_RANK maven.String n=167 first=[5, 5, 5, 5, 5, 5, 5, 5, 5, 5] last=[5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+SOAK_RANK maven.ArrayList n=167 first=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1] last=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+SOAK_RANK maven.chain n=167 first=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2] last=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+SOAK_RANK maven.backspace n=167 first=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12] last=[12, 12, 12, 12, 12, 12, 12, 12, 12, 12]

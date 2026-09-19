@@ -815,4 +815,90 @@ class LspManagerRequestsFxTest {
         assertNotNull(onFx.get());
         assertTrue(onFx.get(), "results are applied to the editor, so they must land on the FX thread");
     }
+
+    @Test
+    void completionPreservesIncompleteAndMapsOffFx() throws Exception {
+        var fake = open();
+        var item = new org.eclipse.lsp4j.CompletionItem("String");
+        fake.completionFuture = java.util.concurrent.CompletableFuture.completedFuture(
+                Either.forRight(new org.eclipse.lsp4j.CompletionList(true, List.of(item))));
+        var mappedOnFx = new java.util.concurrent.atomic.AtomicBoolean(true);
+        com.editora.completion.CompletionResult result = await(cb -> manager.completion(
+                file,
+                0,
+                3,
+                3,
+                null,
+                it -> {
+                    mappedOnFx.set(Platform.isFxApplicationThread());
+                    return null;
+                },
+                cb));
+        assertTrue(result.incomplete());
+        assertEquals("String", result.items().getFirst().label());
+        assertFalse(mappedOnFx.get());
+        assertEquals(
+                org.eclipse.lsp4j.CompletionTriggerKind.TriggerForIncompleteCompletions,
+                fake.completions.getFirst().getContext().getTriggerKind());
+    }
+
+    @Test
+    void cancellationReachesWireFutureAndSuppressesCallback() throws Exception {
+        var fake = open();
+        fake.completionFuture = new java.util.concurrent.CompletableFuture<>();
+        var called = new java.util.concurrent.atomic.AtomicBoolean();
+        Runnable cancel = manager.completion(file, 0, 3, 1, null, null, r -> called.set(true));
+        cancel.run();
+        assertTrue(fake.completionFuture.isCancelled());
+        var barrier = new CountDownLatch(1);
+        Platform.runLater(barrier::countDown);
+        assertTrue(barrier.await(5, TimeUnit.SECONDS));
+        assertFalse(called.get());
+    }
+
+    @Test
+    void diagnosticsQueuedBeforeANewerEditAreRejectedOnFxDelivery() throws Exception {
+        var delivered = new CopyOnWriteArrayList<List<com.editora.editor.LspDiagnostic>>();
+        var fake = new FakeLanguageServer();
+        var session = new AtomicReference<LanguageServerSession>();
+        var local = new LspManager((path, diagnostics) -> delivered.add(diagnostics), (t, m) -> {});
+        var hold = new CountDownLatch(1);
+        var entered = new CountDownLatch(1);
+        try {
+            local.setSessionStarterForTest(s -> {
+                session.set(s);
+                s.attachForTest(fake, new ServerCapabilities());
+            });
+            local.configure(true, Map.of("java", "jdtls"));
+            local.openDocument(file, root, "java", "class A {}");
+            Platform.runLater(() -> {
+                entered.countDown();
+                try {
+                    hold.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            var params = new org.eclipse.lsp4j.PublishDiagnosticsParams(
+                    file.toUri().toString(),
+                    List.of(new org.eclipse.lsp4j.Diagnostic(
+                            new Range(new Position(0, 0), new Position(0, 1)), "old")));
+            params.setVersion(1);
+            session.get().publishDiagnostics(params);
+            local.changeDocument(file, "class A { int n; }");
+            hold.countDown();
+            var barrier = new CountDownLatch(1);
+            Platform.runLater(barrier::countDown);
+            assertTrue(barrier.await(5, TimeUnit.SECONDS));
+            assertTrue(delivered.isEmpty());
+            local.codeActions(file, 0, 0, 0, 1, actions -> {});
+            assertTrue(
+                    fake.codeActions.getLast().getContext().getDiagnostics().isEmpty(),
+                    "quick fixes must not receive diagnostics rejected by the display freshness guard");
+        } finally {
+            hold.countDown();
+            local.shutdownAll();
+        }
+    }
 }

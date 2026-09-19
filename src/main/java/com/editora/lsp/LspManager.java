@@ -763,16 +763,62 @@ public final class LspManager {
             return;
         }
         s.completion(uri(file), new Position(line, character)).whenComplete((result, error) -> {
-            List<CompletionItem> items = new ArrayList<>();
-            if (error == null && result != null) {
-                if (result.isLeft()) {
-                    items.addAll(result.getLeft());
-                } else if (result.getRight() != null && result.getRight().getItems() != null) {
-                    items.addAll(result.getRight().getItems());
-                }
-            }
+            List<CompletionItem> items = error == null ? CompletionMapper.itemsOf(result) : List.of();
             Platform.runLater(() -> cb.accept(items));
         });
+    }
+
+    /** Maps and ranks off FX; cancellation is wired to the original JSON-RPC future. */
+    public Runnable completion(
+            Path file,
+            int line,
+            int character,
+            int triggerKind,
+            String triggerCharacter,
+            java.util.function.Function<CompletionItem, Runnable> onAccept,
+            Consumer<com.editora.completion.CompletionResult> cb) {
+        LanguageServerSession session = sessionFor(file);
+        if (session == null) {
+            cb.accept(com.editora.completion.CompletionResult.EMPTY);
+            return () -> {};
+        }
+        var context =
+                new org.eclipse.lsp4j.CompletionContext(org.eclipse.lsp4j.CompletionTriggerKind.forValue(triggerKind));
+        context.setTriggerCharacter(triggerCharacter);
+        long sent = com.editora.completion.CompletionTrace.now();
+        var request = session.completion(uri(file), new Position(line, character), context);
+        if (sent != 0) request.whenComplete((r, e) -> com.editora.completion.CompletionTrace.elapsed("server", sent));
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        request.whenCompleteAsync((result, error) -> {
+            if (cancelled.get()) return;
+            long mapping = com.editora.completion.CompletionTrace.now();
+            var items = error == null ? CompletionMapper.itemsOf(result) : List.<CompletionItem>of();
+            var options = session.capabilities() == null
+                    ? null
+                    : session.capabilities().getCompletionProvider();
+            if (options != null && options.getAllCommitCharacters() != null) {
+                for (var item : items) {
+                    if (item != null && item.getCommitCharacters() == null)
+                        item.setCommitCharacters(options.getAllCommitCharacters());
+                }
+            }
+            var mapped =
+                    com.editora.completion.CompletionEngine.sortLspByRelevance(CompletionMapper.map(items, onAccept));
+            boolean incomplete = error == null
+                    && result != null
+                    && result.isRight()
+                    && result.getRight() != null
+                    && result.getRight().isIncomplete();
+            var batch = new com.editora.completion.CompletionResult(mapped, incomplete);
+            com.editora.completion.CompletionTrace.elapsed("map-and-rank", mapping);
+            Platform.runLater(() -> {
+                if (!cancelled.get() && sessionFor(file) == session) cb.accept(batch);
+            });
+        });
+        return () -> {
+            cancelled.set(true);
+            request.cancel(true);
+        };
     }
 
     /**
@@ -925,12 +971,23 @@ public final class LspManager {
             String triggerChar,
             boolean retrigger,
             Consumer<org.eclipse.lsp4j.SignatureHelp> cb) {
+        signatureHelp(file, line, character, triggerChar, retrigger, null, cb);
+    }
+
+    public void signatureHelp(
+            Path file,
+            int line,
+            int character,
+            String triggerChar,
+            boolean retrigger,
+            org.eclipse.lsp4j.SignatureHelp activeHelp,
+            Consumer<org.eclipse.lsp4j.SignatureHelp> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(null));
             return;
         }
-        s.signatureHelp(uri(file), new Position(line, character), triggerChar, retrigger)
+        s.signatureHelp(uri(file), new Position(line, character), triggerChar, retrigger, activeHelp)
                 .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e == null ? r : null)));
     }
 
