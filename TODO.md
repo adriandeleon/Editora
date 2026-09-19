@@ -34,6 +34,8 @@ A backlog of planned features and improvements. Unordered within each section.
       strict live probe when evaluating server updates.
 
 ## Recently shipped
+- [x] Preserve preceding save identities in queued autosaves across UI acknowledgment, with deterministic
+      coverage for both successful persistence and same-metadata external-change protection.
 - [x] **Global and project settings use JSON instead of TOML** — `settings.json` now shares the same
       Jackson format and tooling as the rest of Editora's persisted state. Existing global TOML is
       migrated atomically on first load; committed project TOML remains readable and converts when

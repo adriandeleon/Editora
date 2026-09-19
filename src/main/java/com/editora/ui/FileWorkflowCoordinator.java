@@ -53,6 +53,7 @@ final class FileWorkflowCoordinator {
             byte[] bytes,
             long documentVersion,
             EditorBuffer.DiskSnapshot diskSnapshot,
+            Set<Long> precedingSaveSequences,
             long sequence,
             DocumentWriteSequencer.Ticket ticket,
             boolean saveAs) {}
@@ -1263,6 +1264,10 @@ final class FileWorkflowCoordinator {
                 payload.bytes(),
                 buffer.docVersion(),
                 buffer.diskSnapshot(),
+                activeSaveRequests.stream()
+                        .filter(active -> active.buffer() == buffer)
+                        .map(SaveRequest::sequence)
+                        .collect(java.util.stream.Collectors.toUnmodifiableSet()),
                 saveSequence.incrementAndGet(),
                 host.config().shared().documentWrites().begin(file),
                 saveAs);
@@ -1304,14 +1309,14 @@ final class FileWorkflowCoordinator {
         PreparedLoad current = prepareLoad(request.target(), false);
         byte[] currentBytes = current.sourceBytes();
         CommittedSave ownCommit = committedSaves.get(com.editora.config.PathKeys.key(request.target()));
-        boolean ownCommitAwaitingFx = ownCommit != null
+        // A preceding request may be acknowledged and retired after this request captured its old
+        // disk snapshot. Preserve that relationship across FX callbacks instead of consulting live requests.
+        boolean followsOwnCommit = ownCommit != null
                 && ownCommit.sequence() < request.sequence()
-                && activeSaveRequests.stream()
-                        .anyMatch(active ->
-                                active.buffer() == request.buffer() && active.sequence() == ownCommit.sequence());
+                && request.precedingSaveSequences().contains(ownCommit.sequence());
         boolean changed = raced
                 || (!request.saveAs()
-                        && (ownCommitAwaitingFx
+                        && (followsOwnCommit
                                 ? !java.util.Arrays.equals(ownCommit.bytes(), currentBytes)
                                 : request.diskSnapshot()
                                         .differsFrom(current.mtime(), current.size(), fingerprint(currentBytes))));
