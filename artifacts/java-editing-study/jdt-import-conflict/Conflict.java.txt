@@ -1,0 +1,6 @@
+package demo;
+
+import java.util.ArrayList;
+
+class ArrayList {}
+class Conflict { void run() { new ArrayList<>() } }

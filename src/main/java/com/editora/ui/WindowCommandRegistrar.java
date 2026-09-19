@@ -1797,6 +1797,12 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "lsp.signatureHelp",
                         () -> host.ifLsp(() -> host.lspCoordinator().signatureHelp(true))));
+        host.registry()
+                .register(Command.of(
+                        "lsp.nextSignature", () -> host.lspCoordinator().moveSignature(1)));
+        host.registry()
+                .register(Command.of(
+                        "lsp.previousSignature", () -> host.lspCoordinator().moveSignature(-1)));
         host.registry().register(Command.of("lsp.rename", () -> host.ifLsp(host.lspCoordinator()::rename)));
         host.registry()
                 .register(Command.of("lsp.callHierarchy", () -> host.ifLsp(host.lspCoordinator()::callHierarchy)));

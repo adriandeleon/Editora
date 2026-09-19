@@ -60,7 +60,7 @@ import com.editora.markdown.MarkdownToc;
 import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetParser;
-import com.editora.snippet.SnippetSession;
+import com.editora.snippet.SnippetSessions;
 import com.editora.snippet.VariableResolver;
 import com.editora.structured.StructuredParser;
 import com.editora.structured.XmlParser;
@@ -192,8 +192,18 @@ public class EditorBuffer implements TabContent {
         }
 
         @Override
-        public void startSnippet(CodeArea a, Snippet snippet, int from, int to) {
-            EditorBuffer.this.startSnippet(a, snippet, from, to);
+        public Runnable beginCompletionUndo() {
+            return CompletionUndoManager.begin(area, area2);
+        }
+
+        @Override
+        public void finishSnippet() {
+            snippetSession.finish();
+        }
+
+        @Override
+        public void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
+            EditorBuffer.this.startSnippet(a, snippet, from, to, reindent);
         }
 
         @Override
@@ -498,7 +508,7 @@ public class EditorBuffer implements TabContent {
     private javafx.scene.control.ContextMenu previewContextMenu;
     private javafx.scene.control.ContextMenu treePreviewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
-    private SnippetSession snippetSession;
+    private final SnippetSessions snippetSession = new SnippetSessions();
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
     private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
     /** Resolves completions for the typed prefix; injected by the controller (default: none). */
@@ -625,6 +635,8 @@ public class EditorBuffer implements TabContent {
     private java.util.function.BiConsumer<javafx.scene.image.Image, String> webImageDropHandler;
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
     private boolean lspActive;
+
+    private final java.util.List<CompletionEditTracker> completionEditTrackers = new java.util.ArrayList<>();
 
     private java.util.function.Consumer<String> lspChangeListener;
     /** {@link #docVersion} of the document text last sent to the server, so a send whose content hasn't changed
@@ -890,6 +902,10 @@ public class EditorBuffer implements TabContent {
         completionActions.triggerCompletion();
     }
 
+    public void setLspCompletionSource(com.editora.completion.CompletionSource source) {
+        completionActions.setLspCompletionSource(source);
+    }
+
     public void setLspCompletionProvider(
             java.util.function.BiConsumer<int[], java.util.function.Consumer<java.util.List<Completion>>> provider) {
         completionActions.setLspCompletionProvider(provider);
@@ -938,10 +954,11 @@ public class EditorBuffer implements TabContent {
                 line -> gutterBlameClick.accept(this, line));
         breakpoints.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
+        completionActions.addCompletionKeys(area); // popup owns Enter/Tab before snippet and indentation filters
+        completionActions.installCommitCharacters(area);
         addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
         addAutoClose(area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
         addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
-        completionActions.addCompletionKeys(area); // registered last → runs first, so popup nav/accept beats Tab/Enter
         completionActions.installCompletionTrigger(area);
         installOccurrenceTrigger(area); // LSP document highlight (#675)
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
@@ -964,6 +981,19 @@ public class EditorBuffer implements TabContent {
             // Drop our reference to the previous version immediately. In-flight background consumers keep
             // their own immutable String; the next settled consumer materializes the new version once.
             documentSnapshots.invalidate();
+            completionActions.documentChanged(c);
+            if (!completionEditTrackers.isEmpty()) {
+                int[] start = lspPosition(area, c.getPosition());
+                int[] before = completionChangeEnd(start, c.getRemoved());
+                int[] after = completionChangeEnd(start, c.getInserted());
+                var change = new LspEditShift.Change(start[0], start[1], before[0], before[1], after[0], after[1]);
+                for (var tracker : completionEditTrackers)
+                    tracker.changed(
+                            c.getPosition(),
+                            c.getRemoved().length(),
+                            c.getInserted().length(),
+                            change);
+            }
         });
         // Mark ring: shift stored offsets across every edit so a mark still points at its text after
         // typing (one cheap pass over <=16 ints per edit; skipped when the ring is empty, the common case).
@@ -1067,8 +1097,18 @@ public class EditorBuffer implements TabContent {
                     }
                 });
         settledEdits.at(
+                Duration.ofMillis(90),
+                () -> lspActive
+                        && completionActions.autocompleteEnabled
+                        && focusedArea != null
+                        && focusedArea.isFocused(),
+                () -> completionActions.updateCompletion(focusedArea, false));
+        settledEdits.at(
                 Duration.ofMillis(280),
-                () -> completionActions.autocompleteEnabled && focusedArea != null && focusedArea.isFocused(),
+                () -> !lspActive
+                        && completionActions.autocompleteEnabled
+                        && focusedArea != null
+                        && focusedArea.isFocused(),
                 () -> completionActions.updateCompletion(focusedArea, false));
         settledEdits.at(
                 Duration.ofMillis(300), () -> todoEnabled || lspActive || semanticActive || inlayHintsActive, () -> {
@@ -3629,7 +3669,7 @@ public class EditorBuffer implements TabContent {
      * one edit; the guard drops the second, avoiding a redundant whole-document {@code getText()} + {@code
      * didChange}. Split views share the document, so {@code area.getText()} is the canonical full text.
      */
-    private void sendLspChange() {
+    public void sendLspChange() {
         if (lspChangeListener == null || docVersion == lastLspSentVersion) {
             return;
         }
@@ -5366,6 +5406,9 @@ public class EditorBuffer implements TabContent {
      * buffer must not be reused.
      */
     public void dispose() {
+        snippetSession.cancel();
+        completionEditTrackers.clear();
+        completionActions.cancelCompletion();
         disposed = true; // reject any LATER dispatch (see below) — the gen bumps only cover in-flight work
         // Drop the undo checkpoints eagerly. They go with the buffer on GC (BufferReleasedOnCloseFxTest
         // pins that the whole buffer becomes collectable when its tab closes), but they are the single
@@ -6623,10 +6666,11 @@ public class EditorBuffer implements TabContent {
         area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
         area2.setEditable(area.isEditable());
         addViewModePaging(area2); // same pager keys in the secondary split view
+        completionActions.addCompletionKeys(area2);
+        completionActions.installCommitCharacters(area2);
         addSnippetKeys(area2);
         addAutoClose(area2);
         addAutoIndent(area2);
-        completionActions.addCompletionKeys(area2);
         completionActions.installCompletionTrigger(area2);
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
         installImageDrop(area2);
@@ -6707,7 +6751,7 @@ public class EditorBuffer implements TabContent {
 
     /** A fixed-size undo manager so undo history can't grow without bound. */
     private static UndoManager<?> boundedUndoManager(CodeArea a) {
-        UndoManagerFactory factory = UndoManagerFactory.fixedSizeHistoryFactory(UNDO_HISTORY);
+        UndoManagerFactory factory = new CompletionUndoFactory(UNDO_HISTORY);
         // Pass UndoMerge.PAUSE as the preventMergeDelay: edits more than that apart start a new undo
         // group (idle break), giving word/line-level undo together with the token break below.
         return a.isPreserveStyle()
@@ -8207,7 +8251,7 @@ public class EditorBuffer implements TabContent {
 
     /** True while a snippet's tab stops are being navigated (Tab cycles fields). */
     public boolean hasActiveSnippet() {
-        return snippetSession != null && snippetSession.isActive();
+        return snippetSession.isActive();
     }
 
     /**
@@ -8223,6 +8267,7 @@ public class EditorBuffer implements TabContent {
         // newlines, control keys, paste) falls through to the normal insert + reactive mirror, which is already
         // one undo unit when there's nothing to mirror.
         a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            if (e.isConsumed()) return;
             if (!hasActiveSnippet() || multiCaretActiveOn(a) || !isEditable()) {
                 return;
             }
@@ -8240,6 +8285,7 @@ public class EditorBuffer implements TabContent {
             }
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.isConsumed()) return;
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
@@ -8407,6 +8453,7 @@ public class EditorBuffer implements TabContent {
      */
     private void addAutoIndent(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.isConsumed()) return;
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
@@ -8845,6 +8892,7 @@ public class EditorBuffer implements TabContent {
      */
     private void addAutoClose(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
+            if (e.isConsumed()) return;
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
@@ -8862,6 +8910,7 @@ public class EditorBuffer implements TabContent {
             }
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.isConsumed()) return;
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
@@ -9001,10 +9050,10 @@ public class EditorBuffer implements TabContent {
 
     /** Parses {@code snippet}, replaces {@code [from,to)} with the expansion, and begins a session. */
     private void startSnippet(CodeArea a, Snippet snippet, int from, int to) {
-        if (snippetSession != null) {
-            snippetSession.cancel();
-            snippetSession = null;
-        }
+        startSnippet(a, snippet, from, to, true);
+    }
+
+    private void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
         String fileName = path == null ? "" : path.getFileName().toString();
         String directory = path == null || path.toAbsolutePath().getParent() == null
                 ? ""
@@ -9019,12 +9068,8 @@ public class EditorBuffer implements TabContent {
         VariableResolver vars =
                 new VariableResolver(fileName, directory, filePath, a.getSelectedText(), clip, line, currentLine);
         ParsedSnippet parsed = SnippetParser.parse(snippet.body(), vars);
-        String indent = completionActions.leadingIndent(currentLine);
-        SnippetSession session = new SnippetSession(a, parsed, from, to, indent);
-        if (session.isActive()) {
-            snippetSession = session;
-            session.setOnEnd(() -> snippetSession = null);
-        }
+        String indent = reindent ? completionActions.leadingIndent(currentLine) : "";
+        snippetSession.start(a, parsed, from, to, indent);
     }
 
     /**
@@ -9036,15 +9081,8 @@ public class EditorBuffer implements TabContent {
         if (parsed == null || !isEditable()) {
             return;
         }
-        if (snippetSession != null) {
-            snippetSession.cancel();
-            snippetSession = null;
-        }
-        SnippetSession session = new SnippetSession(area, parsed, 0, area.getLength(), "");
-        if (session.isActive()) {
-            snippetSession = session;
-            session.setOnEnd(() -> snippetSession = null);
-        }
+        snippetSession.cancel();
+        snippetSession.start(area, parsed, 0, area.getLength(), "");
         area.requestFocus();
     }
 
@@ -9125,6 +9163,42 @@ public class EditorBuffer implements TabContent {
         return markRing.size();
     }
 
+    private static int[] completionChangeEnd(int[] start, String text) {
+        int line = start[0];
+        int col = start[1];
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+                col = 0;
+            } else col++;
+        }
+        return new int[] {line, col};
+    }
+
+    /** Capture the acceptance independently of future completions and track safe typing until resolve lands. */
+    public java.util.function.Consumer<java.util.List<LspTextEdit>> trackCompletionAdditionalEdits() {
+        var shift = completionActions.pendingCompletionShift;
+        int start = shift == null ? area.getCaretPosition() : lspOffset(area, shift.startLine(), shift.startCol());
+        int end = start;
+        String line = area.getParagraph(
+                        area.offsetToPosition(start, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                                .getMajor())
+                .getText();
+        int column = lspPosition(area, start)[1];
+        while (column < line.length() && Character.isJavaIdentifierPart(line.charAt(column++))) end++;
+        var tracker = new CompletionEditTracker(shift, start, end);
+        if (completionEditTrackers.size() >= 8) completionEditTrackers.removeFirst();
+        completionEditTrackers.add(tracker);
+        var undo = CompletionUndoManager.captureAdditionalEdits(area, area2);
+        return edits -> {
+            boolean tracked = completionEditTrackers.remove(tracker);
+            if (tracked && !disposed) {
+                undo.accept(() -> applyLspEdits(tracker.translate(edits), true));
+                completionActions.suppressCompletionAtVersion = docVersion;
+            }
+        };
+    }
+
     /**
      * Applies the {@code additionalTextEdits} a {@code completionItem/resolve} returned for the completion this
      * buffer last accepted (an auto-import line). Unlike {@link #applyLspEdits}, the positions are first
@@ -9156,11 +9230,17 @@ public class EditorBuffer implements TabContent {
      * the caret and would otherwise drag it away from what the user was typing (#834).
      */
     private void applyLspEdits(java.util.List<LspTextEdit> edits, boolean preserveCaret) {
+        if (preserveCaret) snippetSession.withExternalEdits(() -> applyLspEditsNow(edits, true));
+        else applyLspEditsNow(edits, false);
+    }
+
+    private void applyLspEditsNow(java.util.List<LspTextEdit> edits, boolean preserveCaret) {
         if (edits == null || edits.isEmpty() || !isEditable()) {
             return;
         }
         CodeArea a = focusedArea != null ? focusedArea : area;
         int caretBefore = a.getCaretPosition();
+        int anchorBefore = a.getAnchor();
         // Resolve each edit to an absolute [start,end] against the current document, keep valid + non-overlapping,
         // sorted ascending. Applying them as ONE MultiChangeBuilder commit makes the whole set a single undo
         // unit — a multi-line Format Document (or an auto-import's additional edits) was previously one
@@ -9196,7 +9276,7 @@ public class EditorBuffer implements TabContent {
         }
         if (ranges.size() == 1) {
             a.replaceText(ranges.get(0)[0], ranges.get(0)[1], texts.get(0));
-            restoreCaretAfterEdits(a, preserveCaret, caretBefore, ranges, texts);
+            restoreCaretAfterEdits(a, preserveCaret, caretBefore, anchorBefore, ranges, texts);
             return;
         }
         // Apply BOTTOM-TO-TOP. The fork's MultiChangeBuilder applies its replacements *sequentially against
@@ -9211,7 +9291,7 @@ public class EditorBuffer implements TabContent {
             builder.replaceTextAbsolutely(ranges.get(i)[0], ranges.get(i)[1], texts.get(i));
         }
         builder.commit(); // one undo unit for the whole edit set
-        restoreCaretAfterEdits(a, preserveCaret, caretBefore, ranges, texts);
+        restoreCaretAfterEdits(a, preserveCaret, caretBefore, anchorBefore, ranges, texts);
     }
 
     /** Puts the caret back where it was, translated across the edits just applied; see {@code LspEditShift}. */
@@ -9219,13 +9299,15 @@ public class EditorBuffer implements TabContent {
             CodeArea a,
             boolean preserveCaret,
             int caretBefore,
+            int anchorBefore,
             java.util.List<int[]> ranges,
             java.util.List<String> texts) {
         if (!preserveCaret) {
             return;
         }
         int target = LspEditShift.caretAfterEdits(caretBefore, ranges, texts);
-        a.moveTo(Math.max(0, Math.min(target, a.getLength())));
+        int anchor = LspEditShift.caretAfterEdits(anchorBefore, ranges, texts);
+        a.selectRange(Math.max(0, Math.min(anchor, a.getLength())), Math.max(0, Math.min(target, a.getLength())));
         a.requestFollowCaret();
     }
 

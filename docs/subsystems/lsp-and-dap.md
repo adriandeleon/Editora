@@ -155,6 +155,26 @@ plain `normalize()` matching silently dropped every diagnostic.
 
 ### Completion, symbols, and the loading bar
 
+The [Java editing review](java-editing-review.md) maps the keystroke-to-popup pipeline, protocol
+coverage, measured timings, behavioral regressions, and known differences from IDEA.
+`CompletionSource` retains list completeness and a cancellation handle. Mapping/ranking and list
+filtering run off FX; `CompletionSession` tracks compatible prefix edits and rebases acceptance ranges.
+Member triggers run on the next FX turn, Java identifiers use a 90 ms settled milestone, and ordinary
+prose/local completion retains its 280 ms milestone. Complete lists filter locally; incomplete lists
+re-request with the correct trigger context. Additional edits have an independent bounded transform
+history, so continued typing below an import does not silently lose that import. `SnippetSessions`
+restores enclosing arguments after nested method snippets. `CompletionUndoManager` groups acceptance
+with imports; `CompletionUndoFactory` safely commutes disjoint late imports through later history,
+keeping that typing separate. Overlapping or unavailable history retains ordinary undo ordering.
+Signature help retains a manually selected overload
+across multiline refreshes and sends `activeSignatureHelp` with retriggers.
+
+Java launches enable JDT's `java.lsp.joinOnCompletion` through `JDK_JAVA_OPTIONS`, unless the command
+or inherited JVM environment explicitly sets it. Wire ordering alone does not await JDT lifecycle
+jobs; the option prevents completion/resolve from reading an older working copy. The server waits
+internally while FX remains asynchronous. The [review](java-editing-review.md) records the measured
+latency tradeoff and the remaining same-file import conflict.
+
 - **Completion** fires on the server's advertised trigger characters, not just `.` — `triggerCharsOf`
   reads `completionProvider.triggerCharacters` from the cached capabilities (so `<` triggers HTML, `:`
   triggers CSS). [`lsp/CompletionMapper`](../../src/main/java/com/editora/lsp/CompletionMapper.java) is

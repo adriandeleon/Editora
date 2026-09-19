@@ -1,0 +1,16 @@
+COST chars=16422 stage=key n=30 median=0.527 p95=0.835 max=0.968 ms
+COST chars=16422 stage=snapshot n=30 median=0.050 p95=0.086 max=0.131 ms
+COST chars=16422 stage=cached-snapshot n=30 median=0.001 p95=0.001 max=0.001 ms
+COST chars=16422 stage=sync-diff-and-range n=30 median=0.093 p95=0.205 max=0.212 ms
+COST chars=262167 stage=key n=30 median=0.406 p95=0.621 max=0.640 ms
+COST chars=262167 stage=snapshot n=30 median=0.457 p95=0.513 max=0.704 ms
+COST chars=262167 stage=cached-snapshot n=30 median=0.001 p95=0.002 max=0.003 ms
+COST chars=262167 stage=sync-diff-and-range n=30 median=0.372 p95=0.404 max=0.407 ms
+COST chars=1048594 stage=key n=30 median=0.661 p95=1.087 max=1.123 ms
+COST chars=1048594 stage=snapshot n=30 median=2.287 p95=3.129 max=3.331 ms
+COST chars=1048594 stage=cached-snapshot n=30 median=0.002 p95=0.003 max=0.008 ms
+COST chars=1048594 stage=sync-diff-and-range n=30 median=1.533 p95=1.626 max=1.640 ms
+COST chars=4194302 stage=key n=30 median=0.703 p95=0.988 max=1.340 ms
+COST chars=4194302 stage=snapshot n=30 median=10.135 p95=12.783 max=19.585 ms
+COST chars=4194302 stage=cached-snapshot n=30 median=0.004 p95=0.013 max=0.020 ms
+COST chars=4194302 stage=sync-diff-and-range n=30 median=6.197 p95=6.464 max=6.591 ms

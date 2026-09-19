@@ -139,6 +139,31 @@ class TextSyncDiffTest {
     }
 
     @Test
+    void lineSearchPreservesEveryBoundaryInUtf16AndCrLfDocuments() {
+        for (String text : new String[] {"", "a\nb\n", "\n\n\n", "a\r\n😀\r\nlast", "😀".repeat(200)}) {
+            for (int start = 0; start <= text.length(); start++) {
+                for (int end = start; end <= text.length(); end++) {
+                    assertEquals(
+                            new Range(positionByScan(text, start), positionByScan(text, end)),
+                            TextSyncDiff.rangeOf(text, start, end));
+                }
+            }
+        }
+    }
+
+    private static Position positionByScan(String text, int offset) {
+        int line = 0;
+        int column = 0;
+        for (int i = 0; i < offset; i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+                column = 0;
+            } else column++;
+        }
+        return new Position(line, column);
+    }
+
+    @Test
     void changeSyncKindReadsBothCapabilityForms() {
         assertNull(LanguageServerSession.changeSyncKind(null));
         var caps = new org.eclipse.lsp4j.ServerCapabilities();

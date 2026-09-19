@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -137,6 +138,17 @@ class LanguageServerSessionProtocolTest {
         assertEquals(SignatureHelpTriggerKind.TriggerCharacter, p.getContext().getTriggerKind());
         assertEquals("(", p.getContext().getTriggerCharacter());
         assertFalse(p.getContext().isRetrigger());
+    }
+
+    @Test
+    void signatureRetriggerIncludesTheClientSelectedOverload() {
+        var s = session(caps());
+        var active = new org.eclipse.lsp4j.SignatureHelp(
+                List.of(new org.eclipse.lsp4j.SignatureInformation("foo(String)")), 0, 0);
+        s.signatureHelp(URI, new Position(3, 12), null, true, active);
+        assertSame(
+                active,
+                FakeLanguageServer.last(fake.signatureHelps).getContext().getActiveSignatureHelp());
     }
 
     /** The explicit command (no character) stays {@code Invoked} and carries no trigger character. */
@@ -376,5 +388,51 @@ class LanguageServerSessionProtocolTest {
         assertNotNull(p);
         assertEquals(1, p.getChanges().size());
         assertEquals("file:///tmp/Other.java", p.getChanges().get(0).getUri());
+    }
+
+    @Test
+    void duplicateFlushDoesNotAdvanceTheWireVersion() {
+        for (var caps : List.of(caps(), incrementalSyncCaps())) {
+            var session = session(caps);
+            session.didOpen(URI, "java", "System.");
+            session.didChange(URI, "System.");
+            assertEquals(1, session.documentVersion(URI));
+            session.didChange(URI, "System.out.");
+            session.didChange(URI, "System.out.");
+            assertEquals(2, session.documentVersion(URI));
+            assertEquals(1, fake.changed.size());
+        }
+    }
+
+    @Test
+    void completionTriggerContextAndCancellationReachTheTransport() {
+        var session = session(caps());
+        fake.completionFuture = new java.util.concurrent.CompletableFuture<>();
+        var context = new org.eclipse.lsp4j.CompletionContext(org.eclipse.lsp4j.CompletionTriggerKind.TriggerCharacter);
+        context.setTriggerCharacter(".");
+        var request = session.completion(URI, new Position(1, 17), context);
+        assertEquals(context, fake.completions.getFirst().getContext());
+        request.cancel(true);
+        assertTrue(fake.completionFuture.isCancelled());
+    }
+
+    @Test
+    void queuedLifecycleDoesNotReopenAClosedDocumentOrIgnoreNegotiatedNone() {
+        var spec = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), List.of("pom.xml"));
+        var session = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {}, null);
+        session.didOpen(URI, "java", "a");
+        session.didChange(URI, "ab");
+        session.didClose(URI);
+        session.attachForTest(new FakeLanguageServer(), incrementalSyncCaps());
+        assertFalse(session.isOpen(URI));
+        var none = new ServerCapabilities();
+        none.setTextDocumentSync(TextDocumentSyncKind.None);
+        var delayed = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {}, null);
+        delayed.didOpen(URI, "java", "a");
+        delayed.didChange(URI, "ab");
+        var server = new FakeLanguageServer();
+        delayed.attachForTest(server, none);
+        assertTrue(server.changed.isEmpty());
+        assertEquals(1, delayed.documentVersion(URI));
     }
 }

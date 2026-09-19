@@ -215,6 +215,7 @@ final class LanguageServerSession implements LanguageClient {
             ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
             pb.directory(root.toFile());
             ProcessRunner.applyStandardEnv(pb);
+            JavaServerEnvironment.configure(serverId, command, pb.environment());
             process = pb.start();
             if (disposed) {
                 // The session was disposed while we were forking (e.g. the window closed) — kill the just-forked
@@ -389,7 +390,19 @@ final class LanguageServerSession implements LanguageClient {
         // (see MainController.autoImportAccept). detail/documentation stay eager so the popup hint shows.
         completionItem.setResolveSupport(new org.eclipse.lsp4j.CompletionItemResolveSupportCapabilities(
                 java.util.List.of("additionalTextEdits")));
+        completionItem.setPreselectSupport(true);
+        completionItem.setDeprecatedSupport(true);
+        completionItem.setInsertReplaceSupport(true);
+        completionItem.setCommitCharactersSupport(true);
+        completionItem.setLabelDetailsSupport(true);
+        completionItem.setInsertTextModeSupport(new org.eclipse.lsp4j.CompletionItemInsertTextModeSupportCapabilities(
+                List.of(org.eclipse.lsp4j.InsertTextMode.AsIs, org.eclipse.lsp4j.InsertTextMode.AdjustIndentation)));
         td.setCompletion(new CompletionCapabilities(completionItem));
+        td.getCompletion().setContextSupport(true);
+        td.getCompletion().setInsertTextMode(org.eclipse.lsp4j.InsertTextMode.AdjustIndentation);
+        td.getCompletion()
+                .setCompletionList(new org.eclipse.lsp4j.CompletionListCapabilities(
+                        List.of("editRange", "insertTextFormat", "insertTextMode", "data", "commitCharacters")));
         td.setHover(new HoverCapabilities());
         td.setDefinition(new DefinitionCapabilities());
         td.setReferences(new ReferencesCapabilities());
@@ -693,6 +706,7 @@ final class LanguageServerSession implements LanguageClient {
     void didOpen(String uri, String languageId, String text) {
         versions.put(uri, 1);
         whenReady(() -> {
+            versions.put(uri, 1);
             shadows.put(uri, text); // update in the same order as the wire notification
             sendsSinceResync.remove(uri);
             server.getTextDocumentService()
@@ -709,6 +723,7 @@ final class LanguageServerSession implements LanguageClient {
         // The full-vs-incremental decision happens INSIDE the queued action (#678): capabilities are only
         // known post-initialize, and the shadow must be read in send order.
         whenReady("didChange:" + uri, () -> {
+            if (changeSyncDisabled()) return;
             List<TextDocumentContentChangeEvent> events = changeEventsFor(uri, text);
             if (events.isEmpty()) {
                 return; // content identical to what the server already holds — nothing to sync
@@ -730,6 +745,7 @@ final class LanguageServerSession implements LanguageClient {
      */
     private List<TextDocumentContentChangeEvent> changeEventsFor(String uri, String text) {
         String old = shadows.put(uri, text);
+        if (text.equals(old)) return List.of();
         if (old == null || changeSyncKind(capabilities) != TextDocumentSyncKind.Incremental) {
             return List.of(new TextDocumentContentChangeEvent(text));
         }
@@ -800,6 +816,7 @@ final class LanguageServerSession implements LanguageClient {
     void didClose(String uri) {
         versions.remove(uri);
         whenReady(() -> {
+            versions.remove(uri);
             shadows.remove(uri); // remove in wire order; queued changes before this still need their base
             sendsSinceResync.remove(uri);
             server.getTextDocumentService().didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(uri)));
@@ -1042,6 +1059,15 @@ final class LanguageServerSession implements LanguageClient {
      */
     CompletableFuture<org.eclipse.lsp4j.SignatureHelp> signatureHelp(
             String uri, Position pos, String triggerChar, boolean retrigger) {
+        return signatureHelp(uri, pos, triggerChar, retrigger, null);
+    }
+
+    CompletableFuture<org.eclipse.lsp4j.SignatureHelp> signatureHelp(
+            String uri,
+            Position pos,
+            String triggerChar,
+            boolean retrigger,
+            org.eclipse.lsp4j.SignatureHelp activeHelp) {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -1057,6 +1083,7 @@ final class LanguageServerSession implements LanguageClient {
             context.setTriggerCharacter(triggerChar);
         }
         context.setIsRetrigger(retrigger);
+        context.setActiveSignatureHelp(activeHelp);
         params.setContext(context);
         return bounded(server.getTextDocumentService().signatureHelp(params)).exceptionally(t -> null);
     }
@@ -1194,11 +1221,16 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(String uri, Position pos) {
-        if (!ready()) {
-            return CompletableFuture.completedFuture(Either.forLeft(List.of()));
-        }
-        return bounded(
-                server.getTextDocumentService().completion(new CompletionParams(new TextDocumentIdentifier(uri), pos)));
+        return completion(
+                uri, pos, new org.eclipse.lsp4j.CompletionContext(org.eclipse.lsp4j.CompletionTriggerKind.Invoked));
+    }
+
+    CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(
+            String uri, Position pos, org.eclipse.lsp4j.CompletionContext context) {
+        if (!ready()) return CompletableFuture.completedFuture(Either.forLeft(List.of()));
+        var params = new CompletionParams(new TextDocumentIdentifier(uri), pos);
+        params.setContext(context);
+        return bounded(server.getTextDocumentService().completion(params));
     }
 
     /** Whole-document formatting ({@code textDocument/formatting}) → the edits to apply, or empty. */
@@ -1224,7 +1256,11 @@ final class LanguageServerSession implements LanguageClient {
     /** Resolves a completion item ({@code completionItem/resolve}) to fill in its {@code additionalTextEdits}
      *  (e.g. a TypeScript auto-import); returns the item unchanged if the server can't resolve. */
     CompletableFuture<CompletionItem> resolveCompletion(CompletionItem item) {
-        if (!ready() || item == null) {
+        if (!ready()
+                || item == null
+                || capabilities == null
+                || capabilities.getCompletionProvider() == null
+                || !Boolean.TRUE.equals(capabilities.getCompletionProvider().getResolveProvider())) {
             return CompletableFuture.completedFuture(item);
         }
         return bounded(server.getTextDocumentService().resolveCompletionItem(item))

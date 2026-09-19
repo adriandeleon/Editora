@@ -247,7 +247,14 @@ Editora is built with the help of AI coding tools.
   type a call), **occurrence highlighting** (rest the caret on a symbol — reads and writes wash
   differently), **rename symbol** (`F2` in the GUI keymaps — workspace-wide, moves a renamed Java
   class's file too), **call/type hierarchy** (who-calls-this + super/subtypes in a lazily-expanded
-  tool window), LSP-backed completion, auto-imports,
+  tool window), LSP-backed completion with immediate member triggers, local filtering of complete lists,
+  preserved overloads, Enter insertion / Tab replacement, and auto-imports that preserve ongoing typing
+  and selected snippet arguments. Java method completion reuses existing parentheses and opens signature
+  help with overload navigation that stays open across multiline calls. Nested argument snippets resume
+  their outer placeholders; completion and imports undo together even after disjoint continued typing,
+  with later typing kept as separate undo steps.
+  See the [Java editing engineering review](docs/subsystems/java-editing-review.md) for measured
+  behavior, regression coverage, and remaining differences from IntelliJ. Other LSP tools include
   **Code Actions / quick fixes** (`Ctrl-.` in the VS Code/Sublime/IntelliJ keymaps, or the palette /
   right-click menu — apply the server's fixes, organize imports, refactorings), **Java code generation**
   from that same menu (**Generate toString()**, **hashCode()/equals()**, **Constructors**, and

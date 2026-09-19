@@ -6675,6 +6675,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final LspCoordinator lspCoordinator =
             new LspCoordinator(coordinatorHost, lspManager, new LspCoordinator.Ops() {
                 @Override
+                public void executeCommand(String id) {
+                    MainController.this.executeCommand(id);
+                }
+
+                @Override
                 public String homeCollapsed(String absolutePath) {
                     return MainController.homeCollapsed(absolutePath);
                 }

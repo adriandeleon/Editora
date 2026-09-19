@@ -177,4 +177,16 @@ class ClientCapabilitiesTest {
                 b.getTextDocument().getSemanticTokens().getTokenTypes());
         assertTrue(a != b, "a shared instance could be mutated by one session and affect another");
     }
+
+    @Test
+    void completionNegotiatesOnlyTheListSemanticsTheEditorImplements() {
+        var completion = CAPS.getTextDocument().getCompletion();
+        assertTrue(completion.getContextSupport());
+        assertTrue(completion.getCompletionItem().getInsertReplaceSupport());
+        assertTrue(completion.getCompletionItem().getCommitCharactersSupport());
+        assertTrue(completion.getCompletionItem().getPreselectSupport());
+        assertEquals(
+                java.util.List.of("editRange", "insertTextFormat", "insertTextMode", "data", "commitCharacters"),
+                completion.getCompletionList().getItemDefaults());
+    }
 }

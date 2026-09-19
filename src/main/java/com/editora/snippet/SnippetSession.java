@@ -35,6 +35,9 @@ public final class SnippetSession {
     private Subscription sub;
     private boolean applying;
     private boolean ended;
+    private boolean completed;
+    private boolean suspended;
+    private boolean externalEdit;
     private Runnable onEnd = () -> {};
     private ContextMenu choiceMenu;
 
@@ -118,8 +121,33 @@ public final class SnippetSession {
         this.onEnd = onEnd == null ? () -> {} : onEnd;
     }
 
+    boolean completed() {
+        return completed;
+    }
+
     public boolean isActive() {
         return !ended;
+    }
+
+    /** A child expansion may replace text only inside this session's current field and view. */
+    public boolean suspendForChild(CodeArea target, int from, int to) {
+        if (ended || target != area || active < 0) return false;
+        int[] field = fields.get(active).primary();
+        if (from < field[0] || to > field[1] || from > to) return false;
+        suspended = true;
+        hideChoiceMenu();
+        return true;
+    }
+
+    public void resume() {
+        if (ended) return;
+        suspended = false;
+        Field field = fields.get(active);
+        if (field.ranges.size() > 1) mirrorInto(field, true);
+    }
+
+    public void setExternalEdit(boolean value) {
+        externalEdit = value;
     }
 
     /** Advances to the next stop; past the last one, jumps to {@code $0} and ends. */
@@ -149,9 +177,11 @@ public final class SnippetSession {
         if (ended) {
             return;
         }
+        completed = true;
         endSession();
         placeFinalCaret();
         area.requestFollowCaret();
+        onEnd.run();
     }
 
     /**
@@ -178,6 +208,7 @@ public final class SnippetSession {
     public void cancel() {
         if (!ended) {
             endSession();
+            onEnd.run();
         }
     }
 
@@ -188,7 +219,6 @@ public final class SnippetSession {
             sub.unsubscribe();
             sub = null;
         }
-        onEnd.run();
     }
 
     private void selectActive() {
@@ -306,6 +336,23 @@ public final class SnippetSession {
         int inserted = change.getInserted().length();
         int delta = inserted - removed;
 
+        if (externalEdit) {
+            List<int[]> ranges = allRanges();
+            for (int[] range : ranges) {
+                if (pos < range[1] && pos + removed > range[0] || removed == 0 && pos > range[0] && pos < range[1]) {
+                    cancel();
+                    return;
+                }
+            }
+            for (int[] range : ranges) {
+                if (range[0] >= pos + removed) {
+                    range[0] += delta;
+                    range[1] += delta;
+                }
+            }
+            return;
+        }
+
         int[] primary = fields.get(active).primary();
         // An edit outside the active field (the user moved away) ends the snippet.
         if (pos < primary[0] || pos > primary[1] || pos + removed > primary[1]) {
@@ -314,7 +361,7 @@ public final class SnippetSession {
         }
         // Grow/shrink the active field and shift everything after the edit.
         shift(allRanges(), indexOf(primary), pos, delta);
-        mirrorActive();
+        if (!suspended) mirrorActive();
     }
 
     /**
@@ -331,7 +378,7 @@ public final class SnippetSession {
      * same pure {@link #shift} arithmetic (ascending, cumulative delta), each edit growing its own target range.
      */
     public boolean replaceInActiveField(int from, int to, String replacement) {
-        if (ended || active < 0 || replacement == null) {
+        if (ended || suspended || active < 0 || replacement == null) {
             return false;
         }
         Field f = fields.get(active);
@@ -416,7 +463,7 @@ public final class SnippetSession {
 
     /** The deferred half of {@link #mirrorActive}, re-validated because it runs a pulse later. */
     private void mirrorDeferred() {
-        if (ended || active < 0) {
+        if (ended || suspended || active < 0) {
             return;
         }
         Field f = fields.get(active);
@@ -447,6 +494,7 @@ public final class SnippetSession {
         int[] primary = f.primary();
         String value = area.getText(primary[0], primary[1]);
         int caretInField = restoreCaret ? clamp(area.getCaretPosition() - primary[0], 0, primary[1] - primary[0]) : 0;
+        int anchorInField = restoreCaret ? clamp(area.getAnchor() - primary[0], 0, primary[1] - primary[0]) : 0;
         applying = true;
         try {
             if (restoreCaret) {
@@ -483,7 +531,9 @@ public final class SnippetSession {
         }
         if (restoreCaret) {
             int[] pr = f.primary(); // offsets may have shifted if a mirror before it changed length
-            area.moveTo(Math.min(pr[0] + caretInField, area.getLength()));
+            area.selectRange(
+                    Math.min(pr[0] + anchorInField, area.getLength()),
+                    Math.min(pr[0] + caretInField, area.getLength()));
         }
     }
 
