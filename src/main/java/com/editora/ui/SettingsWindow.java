@@ -4781,6 +4781,10 @@ public class SettingsWindow {
         localHint.setWrapText(true);
         localHint.setMaxWidth(440);
         cardRow(mainCard, Category.AGENT, localHint, "ai agent lm studio bionic local opencode model endpoint");
+        Label codexHint = note(tr("settings.agent.codexHint"));
+        codexHint.setWrapText(true);
+        codexHint.setMaxWidth(440);
+        cardRow(mainCard, Category.AGENT, codexHint, "agent codex acp install login setup");
         Label hint = note(tr("settings.agent.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
@@ -4933,20 +4937,34 @@ public class SettingsWindow {
             aiCompletionModelField.setText(settings.getAiCompletionModelFor(provider));
             aiEndpointField.setText(settings.getAiEndpointFor(provider));
             aiApiKeyField.setText(settings.getApiKeyFor(provider));
-            boolean anthropic = provider == com.editora.ai.AiProvider.ANTHROPIC;
-            aiModelField.setPromptText(anthropic ? AiCoordinator.DEFAULT_MODEL : tr("settings.ai.localModelPrompt"));
-            aiCompletionModelField.setPromptText(
-                    anthropic
-                            ? AiCoordinator.DEFAULT_COMPLETION_MODEL
-                            : tr(
-                                    provider == com.editora.ai.AiProvider.LMSTUDIO
-                                            ? "settings.ai.lmstudioCompletionPrompt"
-                                            : "settings.ai.localModelPrompt"));
-            aiApiKeyField.setPromptText(tr(anthropic ? "settings.ai.apiKeyPrompt" : "settings.ai.localApiKeyPrompt"));
-            aiEndpointField.setPromptText(provider.defaultEndpoint());
         } finally {
             loading = previous;
         }
+        updateAiProviderControls();
+    }
+
+    /** Codex owns its login/transport; inline completion remains available for HTTP providers. */
+    private void updateAiProviderControls() {
+        var provider = com.editora.ai.AiProvider.from(aiProviderCombo.getValue());
+        boolean codex = provider == com.editora.ai.AiProvider.CODEX;
+        boolean anthropic = provider == com.editora.ai.AiProvider.ANTHROPIC;
+        aiEndpointField.setDisable(codex);
+        aiApiKeyField.setDisable(codex);
+        aiInlineCheck.setDisable(codex);
+        aiCompletionModelField.setDisable(codex);
+        aiModelField.setPromptText(
+                anthropic
+                        ? AiCoordinator.DEFAULT_MODEL
+                        : tr(codex ? "settings.ai.modelDefault" : "settings.ai.localModelPrompt"));
+        aiCompletionModelField.setPromptText(
+                anthropic
+                        ? AiCoordinator.DEFAULT_COMPLETION_MODEL
+                        : tr(
+                                provider == com.editora.ai.AiProvider.LMSTUDIO
+                                        ? "settings.ai.lmstudioCompletionPrompt"
+                                        : codex ? "settings.ai.modelDefault" : "settings.ai.localModelPrompt"));
+        aiApiKeyField.setPromptText(tr(anthropic ? "settings.ai.apiKeyPrompt" : "settings.ai.localApiKeyPrompt"));
+        aiEndpointField.setPromptText(provider.defaultEndpoint());
     }
 
     private VBox aiPage() {
@@ -5007,6 +5025,10 @@ public class SettingsWindow {
         inlineNote.setWrapText(true);
         inlineNote.setMaxWidth(440);
         cardRow(mainCard, Category.AI, inlineNote, "ai inline ghost completion tab accept cost");
+        Label codexHint = note(tr("settings.ai.codexHint"));
+        codexHint.setWrapText(true);
+        codexHint.setMaxWidth(440);
+        cardRow(mainCard, Category.AI, codexHint, "ai codex login acp agent subscription setup");
         Label hint = note(tr("settings.ai.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);

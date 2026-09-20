@@ -4,12 +4,28 @@ AI actions use `AiCoordinator` → `AiService` → `AiClient`; the agent panel u
 `AgentCoordinator` → `AcpClient` over stdio. Both remain behind the master AI switch,
 but their individual enable flags are independent.
 
+AI Actions supports Anthropic Messages, OpenAI-compatible chat completions, the dedicated
+LM Studio / Bionic provider, and Codex. All palette actions resolve through
+`WindowCommandRegistrar`.
+
 Successful `explanation.md` buffers end with a localized agent/model footer. `AiClient` extracts
 model metadata from OpenAI-compatible chunks (including LM Studio) or Anthropic `message_start`;
 `AiService` forwards it through its FX-thread generation guard. The explanation captures the provider
 and requested model at launch, then prefers the response model. Missing metadata falls back to the
 requested model, or explicitly shows Unknown if both are absent. This identifies the direct AI
 Actions provider; the independently selected ACP chat agent does not generate these explanations.
+
+## Codex
+
+The Codex provider uses `Settings.codexAgentCommand` (default `codex-acp`) and the adapter's
+existing login. Install `npm install -g @agentclientprotocol/codex-acp @openai/codex` and run
+`codex login`; plain `codex` starts a terminal UI and is not an ACP server. The adapter is
+maintained at [agentclientprotocol/codex-acp](https://github.com/agentclientprotocol/codex-acp).
+
+`CodexAiClient` creates an independent ACP process/session for each action in a temporary
+working directory. It selects `read-only` before prompting, refuses client filesystem requests
+and permission approvals, and forwards only assistant message chunks. A blank model uses Codex's
+default; endpoint and API-key settings are ignored. Inline completion is disabled for Codex.
 
 ## LM Studio / Bionic
 
@@ -60,3 +76,10 @@ round trips/migration, endpoint normalization, generated OpenCode configuration,
 credential isolation. UI tests cover switching providers without overwriting hidden fields.
 Live smoke tests need a running local server and an installed OpenCode CLI; use a scratch
 working directory and a harmless prompt rather than sending repository content.
+
+`CodexAiClientTest` covers the ACP handshake, streaming, refused writes and permissions,
+cancellation, timeout, startup and authentication errors. To run the opt-in live Codex probe:
+
+```sh
+mvn test -Dtest=CodexAiProbeTest -Dgroups=probe -Deditora.ai.codex.probe=true
+```

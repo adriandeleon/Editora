@@ -9,7 +9,7 @@ import javafx.application.Platform;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * The UI-facing AI facade (the {@code GitService} idiom): every request runs on one daemon executor,
+ * The UI-facing AI facade (the {@code GitService} idiom): every request runs on a daemon executor,
  * streamed deltas + completion are posted to the FX thread, and a generation guard makes {@link #cancel}
  * (or a newer request) silently drop a stale stream. One in-flight request at a time is the intended
  * use — callers gate their own UI.
@@ -89,6 +89,65 @@ public final class AiService {
                         post(gen, () -> cb.onError(message));
                     }
                 }));
+    }
+
+    /** Codex actions reuse the adapter command and login, but own a fresh text-only session. */
+    public void generateCodex(java.util.List<String> command, String model, String system, String user, Callbacks cb) {
+        long gen = generation.incrementAndGet();
+        exec.submit(() -> new CodexAiClient()
+                .run(
+                        command,
+                        model,
+                        system + "\n\nUse only the supplied text. Return the requested answer without using tools.\n\n"
+                                + user,
+                        CodexAiClient.REQUEST_TIMEOUT,
+                        () -> gen != generation.get(),
+                        new AiClient.Listener() {
+                            @Override
+                            public void onModel(String model) {
+                                post(gen, () -> cb.onModel(model));
+                            }
+
+                            @Override
+                            public void onText(String delta) {
+                                post(gen, () -> cb.onText(delta));
+                            }
+
+                            @Override
+                            public void onDone(String reason) {
+                                post(gen, () -> cb.onDone(reason));
+                            }
+
+                            @Override
+                            public void onError(String message) {
+                                post(gen, () -> cb.onError(message));
+                            }
+                        }));
+    }
+
+    /** Checks Codex startup/authentication/model without spending a generation or interrupting an action. */
+    public void pingCodex(java.util.List<String> command, String model, java.util.function.Consumer<Ping> cb) {
+        exec.submit(() -> new CodexAiClient()
+                .run(
+                        command,
+                        model,
+                        null,
+                        AiClient.PING_TIMEOUT,
+                        () -> Thread.currentThread().isInterrupted(),
+                        new AiClient.Listener() {
+                            @Override
+                            public void onText(String delta) {}
+
+                            @Override
+                            public void onDone(String reason) {
+                                Platform.runLater(() -> cb.accept(new Ping("end_turn".equals(reason), reason)));
+                            }
+
+                            @Override
+                            public void onError(String message) {
+                                Platform.runLater(() -> cb.accept(new Ping(false, message)));
+                            }
+                        }));
     }
 
     /** The result of a connection check: whether the endpoint accepted a minimal request, plus a message

@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Model and mode selectors now also support current ACP `configOptions`, as used by OpenCode.
   Generated `explanation.md` buffers include the provider agent and model reported by the server;
   when response metadata is unavailable, they use the requested model or explicitly show Unknown.
+- AI Actions can use the Codex ACP adapter and an existing Codex login for explain, rewrite and
+  commit-message generation. Separate text-only sessions leave the Agent chat intact; API keys and
+  endpoints are not used by Codex. Settings now explain adapter installation and login requirements.
+  When AI Actions is enabled and connected, the editor's right-click menu also exposes Explain and
+  Rewrite under an **AI Actions** submenu; the submenu disappears when that effective gate is off.
+  Generated `explanation.md` buffers now end with the agent and actual response model.
+- Successful manual AI connection checks now restore selection and commit-action buttons after a
+  failed startup probe. Health checks run independently of active generations.
 
 ## [0.18.5] - 2026-09-19
 

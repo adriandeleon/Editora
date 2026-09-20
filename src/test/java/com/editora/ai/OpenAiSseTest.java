@@ -69,6 +69,9 @@ class OpenAiSseTest {
         assertEquals(AiProvider.ANTHROPIC, AiProvider.from("unknown"));
         assertEquals(AiProvider.OPENAI, AiProvider.from("openai"));
         assertEquals(AiProvider.OPENAI, AiProvider.from("OpenAI"));
+        assertEquals(AiProvider.CODEX, AiProvider.from(" Codex "));
+        assertFalse(AiProvider.CODEX.requiresApiKey());
+        assertEquals("", AiProvider.CODEX.defaultEndpoint());
         assertTrue(AiProvider.ANTHROPIC.requiresApiKey());
         assertFalse(AiProvider.OPENAI.requiresApiKey());
         assertTrue(AiProvider.ANTHROPIC.defaultEndpoint().contains("api.anthropic.com"));

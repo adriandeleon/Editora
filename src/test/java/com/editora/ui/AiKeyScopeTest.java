@@ -17,6 +17,18 @@ class AiKeyScopeTest {
     private static final String ENV = "sk-ant-api03-THE-USERS-REAL-BILLABLE-KEY";
 
     @Test
+    void codexNeverUsesOrOverwritesApiKeys() {
+        var settings = new com.editora.config.Settings();
+        settings.setAiApiKey("anthropic-secret");
+        settings.setAiApiKeyOpenai("local-secret");
+        settings.setApiKeyFor(AiProvider.CODEX, "ignored");
+        assertEquals("", settings.getApiKeyFor(AiProvider.CODEX));
+        assertEquals("anthropic-secret", settings.getAiApiKey());
+        assertEquals("local-secret", settings.getAiApiKeyOpenai());
+        assertEquals("", AiCoordinator.effectiveKey("configured-secret", AiProvider.CODEX, ENV));
+    }
+
+    @Test
     void theAnthropicEnvironmentKeyIsNeverSentToTheOpenAiCompatibleProvider() {
         // The user typed nothing into Settings (the key field is empty on screen) and picked a local model.
         // Sending the environment's Anthropic key here put it in a bearer token bound for a user-supplied

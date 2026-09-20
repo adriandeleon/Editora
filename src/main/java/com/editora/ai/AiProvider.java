@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Which wire dialect the AI features speak: Anthropic's Messages API, or the OpenAI-compatible
+ * Which backend the AI features use: Codex, Anthropic's Messages API, or the OpenAI-compatible
  * chat-completions API that local inference servers expose (LM Studio, Ollama, vLLM, llama.cpp).
  * Pure (java.base only) and unit-tested; persisted in {@code Settings.aiProvider} by {@link #id()}.
  */
@@ -14,7 +14,9 @@ public enum AiProvider {
     /** An OpenAI-compatible server; the default endpoint is LM Studio's local server. */
     OPENAI("http://127.0.0.1:1234/v1/chat/completions"),
     /** LM Studio / Bionic local model server, with its own saved configuration. */
-    LMSTUDIO("http://127.0.0.1:1234/v1/chat/completions");
+    LMSTUDIO("http://127.0.0.1:1234/v1/chat/completions"),
+    /** Codex ACP adapter, authenticated by the user's Codex login. No HTTP endpoint or API key. */
+    CODEX("");
 
     private final String defaultEndpoint;
 
@@ -33,7 +35,7 @@ public enum AiProvider {
     }
 
     public boolean usesOpenAiApi() {
-        return this != ANTHROPIC;
+        return this == OPENAI || this == LMSTUDIO;
     }
 
     public static List<String> ids() {

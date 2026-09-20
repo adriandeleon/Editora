@@ -36,8 +36,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 
 ## Subsystem deep-dives
 
-- [subsystems/ai.md](subsystems/ai.md) — AI action providers, LM Studio / Bionic local inference,
-  OpenCode ACP configuration, and credential boundaries.
+- [subsystems/ai.md](subsystems/ai.md) — AI providers, Codex and LM Studio adapter setup,
+  action/session ownership, local inference, credential boundaries, and connectivity checks.
 
 - [subsystems/window-coordinators.md](subsystems/window-coordinators.md) — window workflow owners,
   buffer completion, lifecycle boundaries and the production source-size ceiling.

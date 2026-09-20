@@ -1313,6 +1313,8 @@ A backlog of planned features and improvements. Unordered within each section.
       `choices[].delta.content`, `finish_reason`→Anthropic stops), provider-aware AiClient headers/body,
       Settings.aiProvider/aiEndpoint (default LM Studio localhost, no key). Palette AI: Set Provider /
       Set Endpoint. *(Next: base/FIM completion models, per-request timeout tuning, model-list picker.)*
+- [x] Codex for AI Actions — reuse the Codex login through its ACP adapter for explain, rewrite and
+      commit messages, with separate text-only sessions and setup guidance.
 - [x] AI actions (direct Anthropic API) — streamed one-shot features over `java.net.http` (no SDK, no new
       dependency): commit-message generation from the staged diff (into the Commit window), explain
       selection (into a Markdown buffer), rewrite selection per instruction (one undoable edit, aborts if

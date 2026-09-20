@@ -404,9 +404,9 @@ public class Settings {
      *  &quot;…&quot;]" header (not shown as if the user typed it) so the agent knows the active buffer
      *  without asking: on by default. */
     private boolean agentIncludeContext = true;
-    /** Direct-API AI actions (commit-message generation, explain/rewrite selection): off by default. */
+    /** AI actions via an API provider or Codex (commit-message generation, explain/rewrite): off by default. */
     private boolean aiSupport = false;
-    /** The Anthropic model id for the AI actions; blank = the built-in default (claude-opus-4-8). */
+    /** AI action model id; blank = provider default (claude-opus-4-8 for Anthropic, Codex default for Codex). */
     private String aiModel = "";
     /** Anthropic API key override; blank = the ANTHROPIC_API_KEY environment variable. Stored in
      *  settings.json as plain text — prefer the environment variable on shared machines. Per-provider:
@@ -422,8 +422,8 @@ public class Settings {
     private boolean aiInlineCompletion = false;
     /** The model for inline completion; blank = the built-in default (claude-haiku-4-5 — latency). */
     private String aiCompletionModel = "";
-    /** The AI provider: {@code "anthropic"} (default), {@code "lmstudio"}, or {@code "openai"} — an OpenAI-compatible
-     *  local server such as LM Studio, Ollama, or vLLM (no API key required). */
+    /** The AI provider: {@code "anthropic"} (default), {@code "openai"} for a compatible HTTP server,
+     *  {@code "lmstudio"} for isolated Bionic settings, or {@code "codex"} for the ACP adapter. */
     private String aiProvider = "";
     /** The AI endpoint URL; blank = the provider's default (Anthropic's API, or LM Studio's local
      *  {@code http://127.0.0.1:1234/v1/chat/completions}). */
@@ -967,10 +967,13 @@ public class Settings {
 
     /**
      * The configured API key for {@code provider} — the Anthropic key ({@link #aiApiKey}) or the
-     * OpenAI-compatible key ({@link #aiApiKeyOpenai}). Kept per-provider so switching provider never sends
+     * OpenAI-compatible key ({@link #aiApiKeyOpenai}); Codex always returns an empty key. Kept per-provider so switching provider never sends
      * one provider's credential to another's (user-supplied) endpoint. {@code provider} null → Anthropic.
      */
     public String getApiKeyFor(com.editora.ai.AiProvider provider) {
+        if (provider == com.editora.ai.AiProvider.CODEX) {
+            return "";
+        }
         if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
             return getAiApiKeyLmstudio();
         }
@@ -979,6 +982,9 @@ public class Settings {
 
     /** Sets the API key for {@code provider} (Anthropic or OpenAI-compatible). {@code provider} null → Anthropic. */
     public void setApiKeyFor(com.editora.ai.AiProvider provider, String key) {
+        if (provider == com.editora.ai.AiProvider.CODEX) {
+            return;
+        }
         if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
             setAiApiKeyLmstudio(key);
         } else if (provider == com.editora.ai.AiProvider.OPENAI) {
