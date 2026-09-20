@@ -48,11 +48,25 @@ class OpenAiSseTest {
     }
 
     @Test
+    void readsReportedModelFromBothStreamingDialects() throws Exception {
+        assertEquals("qwen2.5-coder", AiClient.streamModel(AiProvider.OPENAI, json("{\"model\":\"qwen2.5-coder\"}")));
+        assertEquals(
+                "claude-opus-4-8",
+                AiClient.streamModel(
+                        AiProvider.ANTHROPIC,
+                        json("{\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-4-8\"}}")));
+        assertNull(AiClient.streamModel(AiProvider.OPENAI, json("{}")));
+    }
+
+    @Test
     void providerDefaultsAndKeyRequirement() {
         assertEquals(AiProvider.ANTHROPIC, AiProvider.from(""));
         assertEquals(AiProvider.ANTHROPIC, AiProvider.from("unknown"));
         assertEquals(AiProvider.OPENAI, AiProvider.from("openai"));
         assertEquals(AiProvider.OPENAI, AiProvider.from("OpenAI"));
+        assertEquals(AiProvider.CODEX, AiProvider.from(" Codex "));
+        assertFalse(AiProvider.CODEX.requiresApiKey());
+        assertEquals("", AiProvider.CODEX.defaultEndpoint());
         assertTrue(AiProvider.ANTHROPIC.requiresApiKey());
         assertFalse(AiProvider.OPENAI.requiresApiKey());
         assertTrue(AiProvider.ANTHROPIC.defaultEndpoint().contains("api.anthropic.com"));

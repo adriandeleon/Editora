@@ -1101,10 +1101,11 @@ final class WindowCommandRegistrar {
                         () -> host.editorSettings()
                                 .chooseSetting(
                                         "ai.setProvider",
-                                        () -> List.of("anthropic", "openai"),
+                                        () -> List.of("anthropic", "openai", "codex"),
                                         id -> tr("settings.ai.provider." + id),
                                         id -> {
                                             host.config().getSettings().setAiProvider(id);
+                                            host.aiCoordinator().applySupport();
                                             host.requestSave();
                                             host.editorSettings()
                                                     .applyAutocomplete(); // re-gate inline completion (key requirement

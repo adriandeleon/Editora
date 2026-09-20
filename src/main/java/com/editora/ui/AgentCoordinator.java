@@ -487,7 +487,10 @@ final class AgentCoordinator implements AcpClient.Host {
                 () -> {
                     AcpClient fresh = new AcpClient(command, cwd, this);
                     if (!fresh.start()) {
-                        throw new CompletionException(new IOException(tr("status.agent.startFailed", command.get(0))));
+                        throw new CompletionException(new IOException(
+                                activeAgent() == AcpAgentRegistry.AgentDef.CODEX
+                                        ? tr("status.ai.codexSetup")
+                                        : tr("status.agent.startFailed", command.get(0))));
                     }
                     return fresh;
                 },

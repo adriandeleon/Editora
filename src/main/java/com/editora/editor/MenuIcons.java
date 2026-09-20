@@ -291,6 +291,12 @@ final class MenuIcons {
 
     // ---- AI selection actions ----
 
+    /** Material "auto_awesome" — AI Actions submenu. */
+    static Node ai() {
+        return of(
+                "M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zM11.5 9.5 9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z");
+    }
+
     /** Material "help" (circle + "?") — "Explain Selection". Reuses the {@link #about()} outline. */
     static Node explain() {
         return of("M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 "

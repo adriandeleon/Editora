@@ -36,6 +36,9 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 
 ## Subsystem deep-dives
 
+- [subsystems/ai.md](subsystems/ai.md) — AI providers, Codex adapter setup, action/session ownership,
+  cancellation and connectivity checks.
+
 - [subsystems/window-coordinators.md](subsystems/window-coordinators.md) — window workflow owners,
   buffer completion, lifecycle boundaries and the production source-size ceiling.
 

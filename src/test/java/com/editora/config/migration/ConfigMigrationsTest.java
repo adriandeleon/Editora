@@ -21,6 +21,19 @@ class ConfigMigrationsTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
+    void codexProviderUpgradePreservesExistingAiChoices() throws Exception {
+        ObjectNode previous = mapper.createObjectNode()
+                .put("schemaVersion", 103)
+                .put("aiProvider", "openai")
+                .put("aiModel", "local-model")
+                .put("aiEndpoint", "http://localhost:1234/v1/chat/completions")
+                .put("aiApiKeyOpenai", "local-key")
+                .put("codexAgentCommand", "/custom/codex-acp");
+        ObjectNode expected = previous.deepCopy().put("schemaVersion", ConfigSchema.SETTINGS.currentVersion());
+        assertEquals(expected, ConfigMigrations.upgrade(ConfigSchema.SETTINGS, previous, mapper));
+    }
+
+    @Test
     void versionOfHandlesArrayPresentAndMissing() {
         assertEquals(
                 0,
