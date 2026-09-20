@@ -253,7 +253,7 @@ public final class AcpJson {
     }
 
     /** Parses {@code session/new}'s result: the session id plus its model/mode catalogs. Null-safe
-     *  throughout — a missing/absent {@code models}/{@code modes} object yields an empty catalog. */
+     *  throughout. Modern {@code configOptions} selectors take precedence over legacy catalogs. */
     public static SessionInfo parseSessionInfo(JsonNode result) {
         String sessionId = textOf(result, "sessionId");
         List<ModelInfo> models = new ArrayList<>();
@@ -282,7 +282,66 @@ public final class AcpJson {
                 }
             }
         }
+        JsonNode modelOption = configOption(result, "model");
+        if (modelOption != null) {
+            models.clear();
+            currentModelId = textOf(modelOption, "currentValue");
+            for (JsonNode value : configValues(modelOption)) {
+                models.add(new ModelInfo(
+                        textOrEmpty(value, "value"), textOrEmpty(value, "name"), textOrEmpty(value, "description")));
+            }
+        }
+        JsonNode modeOption = configOption(result, "mode");
+        if (modeOption != null) {
+            modes.clear();
+            currentModeId = textOf(modeOption, "currentValue");
+            for (JsonNode value : configValues(modeOption)) {
+                modes.add(new ModeInfo(
+                        textOrEmpty(value, "value"), textOrEmpty(value, "name"), textOrEmpty(value, "description")));
+            }
+        }
         return new SessionInfo(sessionId, models, currentModelId, modes, currentModeId);
+    }
+
+    /** First supported selector in an ACP semantic category (ids need not equal the category). */
+    public static JsonNode configOption(JsonNode result, String category) {
+        JsonNode options = result == null ? null : result.get("configOptions");
+        if (options != null && options.isArray()) {
+            for (JsonNode option : options) {
+                if ("select".equals(textOf(option, "type"))
+                        && category.equals(textOf(option, "category"))
+                        && option.path("id").isTextual()
+                        && !option.path("id").asText().isBlank()) {
+                    return option;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Flat or grouped select values, in the server's display order. */
+    private static List<JsonNode> configValues(JsonNode option) {
+        List<JsonNode> values = new ArrayList<>();
+        JsonNode options = option == null ? null : option.get("options");
+        if (options != null && options.isArray()) {
+            for (JsonNode value : options) {
+                if (value.path("value").isTextual()) {
+                    values.add(value);
+                } else if (value.has("group")) {
+                    values.addAll(configValues(value));
+                }
+            }
+        }
+        return values;
+    }
+
+    public static ObjectNode setConfigOptionParams(
+            ObjectMapper mapper, String sessionId, String configId, String value) {
+        ObjectNode params = mapper.createObjectNode();
+        params.put("sessionId", sessionId);
+        params.put("configId", configId);
+        params.put("value", value);
+        return params;
     }
 
     private static String toolCallLabel(JsonNode update) {

@@ -40,7 +40,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 103;
+    public static final int SCHEMA_VERSION = 104;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -390,13 +390,14 @@ public class Settings {
     /** The ACP agent command (tokenized, quote-aware); blank = {@code claude-code-acp} on PATH — specifically
      *  CLAUDE's command override (kept under its original name to avoid migrating existing user data). */
     private String agentCommand = "";
-    // Per-client command overrides for the other five ACP agents (blank = that agent's registry default).
+    // Per-client command overrides for the other ACP agents (blank = that agent's registry default).
     // (Claude's override stays the pre-existing agentCommand field above, to avoid migrating existing data.)
     private String geminiAgentCommand = "";
     private String copilotAgentCommand = "";
     private String codexAgentCommand = "";
     private String qwenAgentCommand = "";
     private String opencodeAgentCommand = "";
+    private String lmstudioAgentCommand = "";
     /** The persisted active ACP agent client id (blank = "claude" via AcpAgentRegistry.from). Mirrors aiProvider. */
     private String agentClient = "";
     /** Prefix each agent prompt with a one-line "Context: &lt;path&gt;, cursor at line N[, selected:
@@ -421,12 +422,19 @@ public class Settings {
     private boolean aiInlineCompletion = false;
     /** The model for inline completion; blank = the built-in default (claude-haiku-4-5 — latency). */
     private String aiCompletionModel = "";
-    /** The AI wire dialect: {@code "anthropic"} (default) or {@code "openai"} — an OpenAI-compatible
+    /** The AI provider: {@code "anthropic"} (default), {@code "lmstudio"}, or {@code "openai"} — an OpenAI-compatible
      *  local server such as LM Studio, Ollama, or vLLM (no API key required). */
     private String aiProvider = "";
     /** The AI endpoint URL; blank = the provider's default (Anthropic's API, or LM Studio's local
      *  {@code http://127.0.0.1:1234/v1/chat/completions}). */
     private String aiEndpoint = "";
+    /** LM Studio / Bionic configuration shared by AI actions and the OpenCode ACP preset.
+     * Kept separate so selecting local inference never reuses a cloud endpoint, model, or credential. */
+    private String aiLmStudioEndpoint = "";
+
+    private String aiLmStudioModel = "";
+    private String aiLmStudioCompletionModel = "";
+    private String aiApiKeyLmstudio = "";
     /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
@@ -901,6 +909,14 @@ public class Settings {
         this.opencodeAgentCommand = v;
     }
 
+    public String getLmstudioAgentCommand() {
+        return lmstudioAgentCommand == null ? "" : lmstudioAgentCommand;
+    }
+
+    public void setLmstudioAgentCommand(String value) {
+        lmstudioAgentCommand = value;
+    }
+
     public String getAgentClient() {
         return agentClient == null ? "" : agentClient;
     }
@@ -955,12 +971,17 @@ public class Settings {
      * one provider's credential to another's (user-supplied) endpoint. {@code provider} null → Anthropic.
      */
     public String getApiKeyFor(com.editora.ai.AiProvider provider) {
+        if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
+            return getAiApiKeyLmstudio();
+        }
         return provider == com.editora.ai.AiProvider.OPENAI ? getAiApiKeyOpenai() : getAiApiKey();
     }
 
     /** Sets the API key for {@code provider} (Anthropic or OpenAI-compatible). {@code provider} null → Anthropic. */
     public void setApiKeyFor(com.editora.ai.AiProvider provider, String key) {
-        if (provider == com.editora.ai.AiProvider.OPENAI) {
+        if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
+            setAiApiKeyLmstudio(key);
+        } else if (provider == com.editora.ai.AiProvider.OPENAI) {
             setAiApiKeyOpenai(key);
         } else {
             setAiApiKey(key);
@@ -997,6 +1018,74 @@ public class Settings {
 
     public void setAiEndpoint(String aiEndpoint) {
         this.aiEndpoint = aiEndpoint;
+    }
+
+    public String getAiLmStudioEndpoint() {
+        return aiLmStudioEndpoint == null ? "" : aiLmStudioEndpoint;
+    }
+
+    public void setAiLmStudioEndpoint(String value) {
+        aiLmStudioEndpoint = value;
+    }
+
+    public String getAiLmStudioModel() {
+        return aiLmStudioModel == null ? "" : aiLmStudioModel;
+    }
+
+    public void setAiLmStudioModel(String value) {
+        aiLmStudioModel = value;
+    }
+
+    public String getAiLmStudioCompletionModel() {
+        return aiLmStudioCompletionModel == null ? "" : aiLmStudioCompletionModel;
+    }
+
+    public void setAiLmStudioCompletionModel(String value) {
+        aiLmStudioCompletionModel = value;
+    }
+
+    public String getAiApiKeyLmstudio() {
+        return aiApiKeyLmstudio == null ? "" : aiApiKeyLmstudio;
+    }
+
+    public void setAiApiKeyLmstudio(String value) {
+        aiApiKeyLmstudio = value;
+    }
+
+    public String getAiEndpointFor(com.editora.ai.AiProvider provider) {
+        return provider == com.editora.ai.AiProvider.LMSTUDIO ? getAiLmStudioEndpoint() : getAiEndpoint();
+    }
+
+    public void setAiEndpointFor(com.editora.ai.AiProvider provider, String value) {
+        if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
+            setAiLmStudioEndpoint(value);
+        } else {
+            setAiEndpoint(value);
+        }
+    }
+
+    public String getAiModelFor(com.editora.ai.AiProvider provider) {
+        return provider == com.editora.ai.AiProvider.LMSTUDIO ? getAiLmStudioModel() : getAiModel();
+    }
+
+    public void setAiModelFor(com.editora.ai.AiProvider provider, String value) {
+        if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
+            setAiLmStudioModel(value);
+        } else {
+            setAiModel(value);
+        }
+    }
+
+    public String getAiCompletionModelFor(com.editora.ai.AiProvider provider) {
+        return provider == com.editora.ai.AiProvider.LMSTUDIO ? getAiLmStudioCompletionModel() : getAiCompletionModel();
+    }
+
+    public void setAiCompletionModelFor(com.editora.ai.AiProvider provider, String value) {
+        if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
+            setAiLmStudioCompletionModel(value);
+        } else {
+            setAiCompletionModel(value);
+        }
     }
 
     public String getIjhttpCommand() {

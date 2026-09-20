@@ -1,5 +1,6 @@
 package com.editora.ai;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -11,7 +12,9 @@ public enum AiProvider {
     /** api.anthropic.com — needs an API key. */
     ANTHROPIC("https://api.anthropic.com/v1/messages"),
     /** An OpenAI-compatible server; the default endpoint is LM Studio's local server. */
-    OPENAI("http://127.0.0.1:1234/v1/chat/completions");
+    OPENAI("http://127.0.0.1:1234/v1/chat/completions"),
+    /** LM Studio / Bionic local model server, with its own saved configuration. */
+    LMSTUDIO("http://127.0.0.1:1234/v1/chat/completions");
 
     private final String defaultEndpoint;
 
@@ -29,13 +32,26 @@ public enum AiProvider {
         return this == ANTHROPIC;
     }
 
-    /** The persisted id ({@code "anthropic"}/{@code "openai"}). */
+    public boolean usesOpenAiApi() {
+        return this != ANTHROPIC;
+    }
+
+    public static List<String> ids() {
+        return java.util.Arrays.stream(values()).map(AiProvider::id).toList();
+    }
+
+    /** The stable persisted provider id. */
     public String id() {
         return name().toLowerCase(Locale.ROOT);
     }
 
     /** Parses a persisted id; blank/unknown → {@link #ANTHROPIC} (the pre-provider default). */
     public static AiProvider from(String id) {
-        return id != null && id.strip().equalsIgnoreCase("openai") ? OPENAI : ANTHROPIC;
+        for (AiProvider provider : values()) {
+            if (id != null && provider.id().equalsIgnoreCase(id.strip())) {
+                return provider;
+            }
+        }
+        return ANTHROPIC;
     }
 }

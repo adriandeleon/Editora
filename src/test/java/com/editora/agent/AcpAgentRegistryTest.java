@@ -11,11 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AcpAgentRegistryTest {
 
     @Test
-    void allReturnsSixAgentsInOrder() {
+    void allReturnsSevenAgentsInOrder() {
         List<AcpAgentRegistry.AgentDef> all = AcpAgentRegistry.all();
-        assertEquals(6, all.size());
+        assertEquals(7, all.size());
         assertEquals(
-                List.of("claude", "gemini", "copilot", "codex", "qwen", "opencode"),
+                List.of("claude", "gemini", "copilot", "codex", "qwen", "opencode", "lmstudio"),
                 all.stream().map(AcpAgentRegistry.AgentDef::id).toList());
     }
 
@@ -27,6 +27,7 @@ class AcpAgentRegistryTest {
         assertEquals("codex-acp", AcpAgentRegistry.defaultCommandFor("codex"));
         assertEquals("qwen --acp", AcpAgentRegistry.defaultCommandFor("qwen"));
         assertEquals("opencode acp", AcpAgentRegistry.defaultCommandFor("opencode"));
+        assertEquals("opencode acp", AcpAgentRegistry.defaultCommandFor("lmstudio"));
         assertEquals("", AcpAgentRegistry.defaultCommandFor("unknown"));
     }
 

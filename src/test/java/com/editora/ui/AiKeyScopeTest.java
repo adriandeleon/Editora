@@ -59,6 +59,12 @@ class AiKeyScopeTest {
         assertEquals("sk-openrouter", s.getApiKeyFor(AiProvider.OPENAI));
         assertEquals("sk-ant-REAL", s.getApiKeyFor(AiProvider.ANTHROPIC));
 
+        assertEquals("", s.getApiKeyFor(AiProvider.LMSTUDIO));
+        s.setApiKeyFor(AiProvider.LMSTUDIO, "lm-token");
+        assertEquals("lm-token", s.getApiKeyFor(AiProvider.LMSTUDIO));
+        assertEquals("sk-openrouter", s.getApiKeyFor(AiProvider.OPENAI));
+        assertEquals("", AiCoordinator.effectiveKey("", AiProvider.LMSTUDIO, ENV));
+
         // setApiKeyFor routes to the right backing field.
         s.setApiKeyFor(AiProvider.ANTHROPIC, "sk-ant-2");
         assertEquals("sk-ant-2", s.getAiApiKey());

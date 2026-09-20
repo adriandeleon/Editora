@@ -25,7 +25,8 @@ public final class AcpAgentRegistry {
         COPILOT("copilot", "GitHub Copilot CLI", "copilot --acp"),
         CODEX("codex", "Codex CLI", "codex-acp"),
         QWEN("qwen", "Qwen Code", "qwen --acp"),
-        OPENCODE("opencode", "OpenCode", "opencode acp");
+        OPENCODE("opencode", "OpenCode", "opencode acp"),
+        LMSTUDIO("lmstudio", "LM Studio / Bionic (OpenCode)", "opencode acp");
 
         private final String id;
         private final String displayName;

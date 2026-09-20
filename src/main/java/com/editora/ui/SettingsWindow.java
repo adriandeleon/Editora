@@ -1452,7 +1452,7 @@ public class SettingsWindow {
             scheduleAiStatus();
         });
         aiProviderCombo = new ComboBox<>();
-        aiProviderCombo.getItems().addAll("anthropic", "openai");
+        aiProviderCombo.getItems().addAll(com.editora.ai.AiProvider.ids());
         aiProviderCombo.setConverter(new StringConverter<>() {
             @Override
             public String toString(String id) {
@@ -1469,9 +1469,7 @@ public class SettingsWindow {
                 config.getSettings().setAiProvider(now);
                 // Keys are per-provider: show the newly-selected provider's key (never carry one provider's
                 // credential over to the other, which would send it to that provider's endpoint).
-                loading = true;
-                aiApiKeyField.setText(config.getSettings().getApiKeyFor(com.editora.ai.AiProvider.from(now)));
-                loading = false;
+                syncAiProviderFields();
                 apply();
                 scheduleAiStatus();
             }
@@ -1480,14 +1478,20 @@ public class SettingsWindow {
         aiEndpointField = new TextField();
         aiEndpointField.setPromptText(tr("settings.ai.endpointPrompt"));
         aiEndpointField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setAiEndpoint(now);
+            if (loading) {
+                return;
+            }
+            config.getSettings().setAiEndpointFor(selectedAiProvider(), now);
             apply();
             scheduleAiStatus();
         });
         aiModelField = new TextField();
         aiModelField.setPromptText("claude-opus-4-8");
         aiModelField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setAiModel(now);
+            if (loading) {
+                return;
+            }
+            config.getSettings().setAiModelFor(selectedAiProvider(), now);
             apply();
             scheduleAiStatus();
         });
@@ -1510,7 +1514,10 @@ public class SettingsWindow {
         aiCompletionModelField = new TextField();
         aiCompletionModelField.setPromptText("claude-haiku-4-5");
         aiCompletionModelField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setAiCompletionModel(now);
+            if (loading) {
+                return;
+            }
+            config.getSettings().setAiCompletionModelFor(selectedAiProvider(), now);
             apply();
         });
 
@@ -4770,6 +4777,10 @@ public class SettingsWindow {
                 agentIncludeContextCheck,
                 null,
                 "ai agent acp context cursor line selection file attach prompt");
+        Label localHint = note(tr("settings.agent.lmstudioHint"));
+        localHint.setWrapText(true);
+        localHint.setMaxWidth(440);
+        cardRow(mainCard, Category.AGENT, localHint, "ai agent lm studio bionic local opencode model endpoint");
         Label hint = note(tr("settings.agent.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
@@ -4844,7 +4855,15 @@ public class SettingsWindow {
                         "settings.agent.command.opencode",
                         "agent opencode sst cli acp command executable path",
                         s::setOpencodeAgentCommand,
-                        s::getOpencodeAgentCommand));
+                        s::getOpencodeAgentCommand),
+                new AgentClientUi(
+                        "lmstudio",
+                        "LM Studio / Bionic (OpenCode)",
+                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("lmstudio"),
+                        "settings.agent.command.lmstudio",
+                        "agent lm studio bionic local opencode acp command executable path",
+                        s::setLmstudioAgentCommand,
+                        s::getLmstudioAgentCommand));
     }
 
     /** Re-probes each ACP agent client's PATH availability (mirrors {@link #refreshLspStatus()}). */
@@ -4899,6 +4918,37 @@ public class SettingsWindow {
         aiStatusLabel.setText(ok ? tr("settings.ai.connected") : tr("settings.ai.connectFailed", message));
     }
 
+    private com.editora.ai.AiProvider selectedAiProvider() {
+        return com.editora.ai.AiProvider.from(config.getSettings().getAiProvider());
+    }
+
+    /** Reload together: switching providers must not write the previous provider's fields back. */
+    private void syncAiProviderFields() {
+        boolean previous = loading;
+        loading = true;
+        try {
+            var provider = selectedAiProvider();
+            var settings = config.getSettings();
+            aiModelField.setText(settings.getAiModelFor(provider));
+            aiCompletionModelField.setText(settings.getAiCompletionModelFor(provider));
+            aiEndpointField.setText(settings.getAiEndpointFor(provider));
+            aiApiKeyField.setText(settings.getApiKeyFor(provider));
+            boolean anthropic = provider == com.editora.ai.AiProvider.ANTHROPIC;
+            aiModelField.setPromptText(anthropic ? AiCoordinator.DEFAULT_MODEL : tr("settings.ai.localModelPrompt"));
+            aiCompletionModelField.setPromptText(
+                    anthropic
+                            ? AiCoordinator.DEFAULT_COMPLETION_MODEL
+                            : tr(
+                                    provider == com.editora.ai.AiProvider.LMSTUDIO
+                                            ? "settings.ai.lmstudioCompletionPrompt"
+                                            : "settings.ai.localModelPrompt"));
+            aiApiKeyField.setPromptText(tr(anthropic ? "settings.ai.apiKeyPrompt" : "settings.ai.localApiKeyPrompt"));
+            aiEndpointField.setPromptText(provider.defaultEndpoint());
+        } finally {
+            loading = previous;
+        }
+    }
+
     private VBox aiPage() {
         VBox p = page(tr("settings.cat.ai"));
         Card mainCard = card(p, null);
@@ -4918,7 +4968,7 @@ public class SettingsWindow {
                 mainCard,
                 Category.AI,
                 labeledRow(tr("settings.ai.provider"), aiProviderCombo),
-                "ai provider anthropic openai local lm studio ollama vllm");
+                "ai provider anthropic openai local lm studio bionic ollama vllm");
         cardRow(
                 mainCard,
                 Category.AI,
@@ -6783,13 +6833,10 @@ public class SettingsWindow {
             refreshAgentClientStatus();
             agentIncludeContextCheck.setSelected(settings.isAgentIncludeContext());
             aiCheck.setSelected(settings.isAiSupport());
-            aiModelField.setText(settings.getAiModel());
-            aiApiKeyField.setText(settings.getApiKeyFor(com.editora.ai.AiProvider.from(settings.getAiProvider())));
             aiInlineCheck.setSelected(settings.isAiInlineCompletion());
-            aiCompletionModelField.setText(settings.getAiCompletionModel());
             aiProviderCombo.setValue(
                     com.editora.ai.AiProvider.from(settings.getAiProvider()).id());
-            aiEndpointField.setText(settings.getAiEndpoint());
+            syncAiProviderFields();
             javafx.application.Platform.runLater(this::refreshAiStatus); // check once the fields are populated
             pluginCheck.setSelected(settings.isPluginSupport());
             if (pluginRequireSigCheck != null) {
@@ -7240,16 +7287,11 @@ public class SettingsWindow {
         loading = true;
         try {
             aiCheck.setSelected(config.getSettings().isAiSupport());
-            aiModelField.setText(config.getSettings().getAiModel());
-            aiApiKeyField.setText(config.getSettings()
-                    .getApiKeyFor(
-                            com.editora.ai.AiProvider.from(config.getSettings().getAiProvider())));
             aiInlineCheck.setSelected(config.getSettings().isAiInlineCompletion());
-            aiCompletionModelField.setText(config.getSettings().getAiCompletionModel());
             aiProviderCombo.setValue(
                     com.editora.ai.AiProvider.from(config.getSettings().getAiProvider())
                             .id());
-            aiEndpointField.setText(config.getSettings().getAiEndpoint());
+            syncAiProviderFields();
         } finally {
             loading = prev;
         }

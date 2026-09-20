@@ -13,6 +13,27 @@ public final class AiEndpoints {
 
     private AiEndpoints() {}
 
+    /** Resolve the configured URL. LM Studio accepts its server URL, /v1 base, or full endpoint. */
+    public static String resolve(AiProvider provider, String configured) {
+        String endpoint = configured == null || configured.isBlank() ? provider.defaultEndpoint() : configured.strip();
+        if (provider != AiProvider.LMSTUDIO) {
+            return endpoint;
+        }
+        URI uri = parse(endpoint);
+        if (uri == null || uri.getHost() == null || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+            return endpoint;
+        }
+        String path = uri.getPath();
+        String clean = endpoint.replaceAll("/+$", "");
+        if (path == null || path.isEmpty() || path.equals("/")) {
+            return clean + "/v1/chat/completions";
+        }
+        if (path.endsWith("/v1") || path.endsWith("/v1/")) {
+            return clean + "/chat/completions";
+        }
+        return path.endsWith("/chat/completions/") ? clean : endpoint;
+    }
+
     /**
      * True when a credential attached to {@code endpoint} would cross a network in cleartext: the scheme is
      * not {@code https} and the host is not loopback ({@code localhost}, {@code 127.0.0.0/8}, {@code ::1}).

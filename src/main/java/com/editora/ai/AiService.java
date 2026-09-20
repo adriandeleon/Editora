@@ -18,6 +18,9 @@ public final class AiService {
 
     /** FX-thread callbacks for one streamed generation. */
     public interface Callbacks {
+        /** The model the provider reports for this response, when available. */
+        default void onModel(String model) {}
+
         void onText(String delta);
 
         void onDone(String stopReason);
@@ -66,6 +69,11 @@ public final class AiService {
                 AiRequests.requestFor(mapper, provider, model, system, user, maxTokens, stopSequences),
                 () -> gen != generation.get(),
                 new AiClient.Listener() {
+                    @Override
+                    public void onModel(String model) {
+                        post(gen, () -> cb.onModel(model));
+                    }
+
                     @Override
                     public void onText(String delta) {
                         post(gen, () -> cb.onText(delta));

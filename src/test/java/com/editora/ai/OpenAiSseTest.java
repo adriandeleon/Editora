@@ -48,6 +48,22 @@ class OpenAiSseTest {
     }
 
     @Test
+    void responseModelSupportsBothDialectsAndRejectsInvalidMetadata() throws Exception {
+        for (AiProvider provider : java.util.List.of(AiProvider.OPENAI, AiProvider.LMSTUDIO)) {
+            assertEquals("local/model", AiClient.streamModel(provider, json("{\"model\":\" local/model \"}")));
+            for (String data : java.util.List.of("{}", "{\"model\":null}", "{\"model\":17}", "{\"model\":\" \"}")) {
+                assertNull(AiClient.streamModel(provider, json(data)));
+            }
+        }
+        assertEquals(
+                "claude-reported-model",
+                AiClient.streamModel(
+                        AiProvider.ANTHROPIC,
+                        json("{\"type\":\"message_start\",\"message\":{\"model\":\"claude-reported-model\"}}")));
+        assertNull(AiClient.streamModel(AiProvider.ANTHROPIC, json("{\"model\":\"wrong-level\"}")));
+    }
+
+    @Test
     void providerDefaultsAndKeyRequirement() {
         assertEquals(AiProvider.ANTHROPIC, AiProvider.from(""));
         assertEquals(AiProvider.ANTHROPIC, AiProvider.from("unknown"));

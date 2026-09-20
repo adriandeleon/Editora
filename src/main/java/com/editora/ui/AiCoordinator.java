@@ -172,12 +172,14 @@ final class AiCoordinator {
     }
 
     private String completionModel() {
-        String configured = host.settings().getAiCompletionModel();
+        String configured = host.settings().getAiCompletionModelFor(provider());
         if (configured != null && !configured.isBlank()) {
             return configured.trim();
         }
         // OpenAI-compatible: a blank model is omitted from the request (LM Studio serves the loaded model).
-        return provider() == AiProvider.ANTHROPIC ? DEFAULT_COMPLETION_MODEL : "";
+        return provider() == AiProvider.ANTHROPIC
+                ? DEFAULT_COMPLETION_MODEL
+                : provider() == AiProvider.LMSTUDIO ? model() : "";
     }
 
     /** The configured wire dialect (Anthropic vs an OpenAI-compatible local server). */
@@ -187,8 +189,8 @@ final class AiCoordinator {
 
     /** The configured endpoint, or the provider's default (Anthropic's API / LM Studio's local port). */
     private String endpoint() {
-        String configured = host.settings().getAiEndpoint();
-        return configured == null || configured.isBlank() ? provider().defaultEndpoint() : configured.trim();
+        String configured = host.settings().getAiEndpointFor(provider());
+        return com.editora.ai.AiEndpoints.resolve(provider(), configured);
     }
 
     /** {@code ai.cancel}: drop the in-flight generation. */
@@ -266,14 +268,23 @@ final class AiCoordinator {
             // until generation ends (success or failure), whichever comes first.
             target.setPreviewLoading(true, tr("markdown.preview.generating"));
             start(tr("status.ai.explaining"));
+            AiProvider actionProvider = provider();
+            String[] usedModel = {model()};
             service.generate(
-                    provider(),
+                    actionProvider,
                     endpoint(),
                     apiKey(),
-                    model(),
+                    usedModel[0],
                     AiRequests.explainSystem(),
                     AiRequests.explainUser(b.getLanguage(), selection),
                     new AiService.Callbacks() {
+                        @Override
+                        public void onModel(String model) {
+                            if (model != null && !model.isBlank()) {
+                                usedModel[0] = model.trim();
+                            }
+                        }
+
                         @Override
                         public void onText(String delta) {
                             target.getArea().appendText(delta);
@@ -284,6 +295,7 @@ final class AiCoordinator {
                             busy = false;
                             target.setPreviewLoading(false, null);
                             if (checkStop(stopReason)) {
+                                target.getArea().appendText(explanationProvenance(actionProvider, usedModel[0]));
                                 host.setStatus(tr("status.ai.done"));
                             }
                         }
@@ -295,6 +307,18 @@ final class AiCoordinator {
                         }
                     });
         });
+    }
+
+    static String explanationProvenance(AiProvider provider, String model) {
+        String agent =
+                switch (provider) {
+                    case LMSTUDIO -> "LM Studio / Bionic";
+                    case ANTHROPIC -> "Anthropic";
+                    case OPENAI -> "OpenAI-compatible";
+                };
+        String usedModel = model == null || model.isBlank() ? tr("ai.explanation.unknownModel") : model.trim();
+        return "\n\n---\n\n**" + tr("ai.explanation.agent") + ":** " + agent + "  \n**" + tr("ai.explanation.model")
+                + ":** " + usedModel + "\n";
     }
 
     // --- ai.rewriteSelection --------------------------------------------------------------------------
@@ -428,7 +452,7 @@ final class AiCoordinator {
     }
 
     private String model() {
-        String configured = host.settings().getAiModel();
+        String configured = host.settings().getAiModelFor(provider());
         if (configured != null && !configured.isBlank()) {
             return configured.trim();
         }
