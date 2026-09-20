@@ -94,7 +94,7 @@ class CodexAiClientTest {
                         () -> false,
                         result);
         assertNotNull(result.error);
-        assertTrue(result.error.contains("@agentclientprotocol/codex-acp"));
+        assertEquals(com.editora.i18n.Messages.tr("status.ai.codexSetup"), result.error);
         assertEquals(1, result.completions);
     }
 
