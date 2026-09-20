@@ -23,6 +23,10 @@ import static com.editora.i18n.Messages.tr;
 
 /** Registers window commands in stable palette order and supplies their feature gates. */
 final class WindowCommandRegistrar {
+    private com.editora.ai.AiProvider aiProvider() {
+        return com.editora.ai.AiProvider.from(host.config().getSettings().getAiProvider());
+    }
+
     interface Host {
         WindowChromeCoordinator chrome();
 
@@ -1074,8 +1078,8 @@ final class WindowCommandRegistrar {
                         () -> host.editorSettings()
                                 .promptStringSetting(
                                         "ai.setModel",
-                                        () -> host.config().getSettings().getAiModel(),
-                                        v -> host.config().getSettings().setAiModel(v),
+                                        () -> host.config().getSettings().getAiModelFor(aiProvider()),
+                                        v -> host.config().getSettings().setAiModelFor(aiProvider(), v),
                                         null)));
         host.registry()
                 .register(Command.of(
@@ -1092,8 +1096,8 @@ final class WindowCommandRegistrar {
                         () -> host.editorSettings()
                                 .promptStringSetting(
                                         "ai.setCompletionModel",
-                                        () -> host.config().getSettings().getAiCompletionModel(),
-                                        v -> host.config().getSettings().setAiCompletionModel(v),
+                                        () -> host.config().getSettings().getAiCompletionModelFor(aiProvider()),
+                                        v -> host.config().getSettings().setAiCompletionModelFor(aiProvider(), v),
                                         null)));
         host.registry()
                 .register(Command.of(
@@ -1101,7 +1105,7 @@ final class WindowCommandRegistrar {
                         () -> host.editorSettings()
                                 .chooseSetting(
                                         "ai.setProvider",
-                                        () -> List.of("anthropic", "openai", "codex"),
+                                        com.editora.ai.AiProvider::ids,
                                         id -> tr("settings.ai.provider." + id),
                                         id -> {
                                             host.config().getSettings().setAiProvider(id);
@@ -1124,10 +1128,22 @@ final class WindowCommandRegistrar {
                         () -> host.editorSettings()
                                 .promptStringSetting(
                                         "ai.setEndpoint",
-                                        () -> host.config().getSettings().getAiEndpoint(),
-                                        v -> host.config().getSettings().setAiEndpoint(v),
+                                        () -> host.config().getSettings().getAiEndpointFor(aiProvider()),
+                                        v -> host.config().getSettings().setAiEndpointFor(aiProvider(), v),
                                         null)));
         host.registry().register(Command.of("ai.testConnection", host.aiCoordinator()::testConnection));
+        host.registry()
+                .register(Command.of(
+                        "agent.setLmstudioCommand",
+                        () -> host.editorSettings()
+                                .promptStringSetting(
+                                        "agent.setLmstudioCommand",
+                                        () -> host.config().getSettings().getLmstudioAgentCommand(),
+                                        value -> host.config().getSettings().setLmstudioAgentCommand(value),
+                                        () -> {
+                                            host.agentCoordinator().invalidateDetection();
+                                            host.applyAgentSupport();
+                                        })));
         host.registry().register(Command.of("view.toggleLineHighlight", host.editorSettings()::toggleLineHighlight));
         host.registry().register(Command.of("view.toggleLineNumbers", host.editorSettings()::toggleLineNumbers));
         host.registry().register(Command.of("view.toggleMinimap", host.editorSettings()::toggleMinimap));

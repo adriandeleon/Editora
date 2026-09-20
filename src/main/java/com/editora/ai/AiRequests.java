@@ -95,7 +95,7 @@ public final class AiRequests {
             String user,
             int maxTokens,
             java.util.List<String> stopSequences) {
-        return provider == AiProvider.OPENAI
+        return provider.usesOpenAiApi()
                 ? openAiStreamingRequest(m, model, system, user, maxTokens, stopSequences)
                 : streamingRequest(m, model, system, user, maxTokens, stopSequences);
     }

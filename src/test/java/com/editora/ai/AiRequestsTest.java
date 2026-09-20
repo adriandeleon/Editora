@@ -13,6 +13,21 @@ class AiRequestsTest {
     private final ObjectMapper m = new ObjectMapper();
 
     @Test
+    void lmStudioUsesOpenAiRequestsIncludingPingAndCompletion() {
+        assertEquals(AiProvider.LMSTUDIO, AiProvider.from(" LMSTUDIO "));
+        assertTrue(!AiProvider.LMSTUDIO.requiresApiKey());
+        ObjectNode request = AiRequests.requestFor(
+                m, AiProvider.LMSTUDIO, "local/model", "system", "user", 128, java.util.List.of("\n"));
+        assertEquals("local/model", request.path("model").asText());
+        assertEquals("system", request.path("messages").get(0).path("role").asText());
+        assertTrue(!request.has("system"));
+        assertEquals("\n", request.path("stop").get(0).asText());
+        ObjectNode ping = AiRequests.pingRequest(m, AiProvider.LMSTUDIO, "");
+        assertTrue(!ping.has("model"));
+        assertTrue(!ping.path("stream").asBoolean());
+    }
+
+    @Test
     void streamingRequestShape() {
         ObjectNode r = AiRequests.streamingRequest(m, "claude-opus-4-8", "sys", "user text");
         assertEquals("claude-opus-4-8", r.get("model").asText());

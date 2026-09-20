@@ -44,6 +44,9 @@ public final class AcpClient {
         /** A parsed {@code session/update} notification (reader thread — marshal to FX yourself). */
         void onUpdate(AcpJson.Update update);
 
+        /** The complete model/mode selector state changed (reader thread). */
+        default void onSessionConfig(String sessionId, AcpJson.SessionInfo info) {}
+
         /** The agent process exited (reader thread). */
         void onExit(int code);
 
@@ -60,6 +63,7 @@ public final class AcpClient {
     private final List<String> command;
     private final Path cwd;
     private final Host host;
+    private final Map<String, String> environment;
     private final ObjectMapper mapper = new ObjectMapper();
     private final AtomicLong nextId = new AtomicLong(1);
     private final Map<Long, CompletableFuture<JsonNode>> pending = new ConcurrentHashMap<>();
@@ -70,13 +74,19 @@ public final class AcpClient {
         return t;
     });
 
+    private volatile JsonNode sessionConfig;
     private volatile Process process;
     private final Object writeLock = new Object();
 
     public AcpClient(List<String> command, Path cwd, Host host) {
+        this(command, cwd, host, Map.of());
+    }
+
+    public AcpClient(List<String> command, Path cwd, Host host, Map<String, String> environment) {
         this.command = command;
         this.cwd = cwd;
         this.host = host;
+        this.environment = Map.copyOf(environment);
     }
 
     /** Spawns the agent + reader/stderr threads. Returns false when the command can't launch. */
@@ -90,6 +100,7 @@ public final class AcpClient {
                 pb.directory(cwd.toFile());
             }
             ProcessRunner.applyStandardEnv(pb);
+            pb.environment().putAll(environment);
             process = pb.start();
             ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
             drainStderr(process);
@@ -117,7 +128,7 @@ public final class AcpClient {
     /** {@code session/new} → the new session's id plus its model/mode catalogs. */
     public CompletableFuture<AcpJson.SessionInfo> newSession(Path sessionCwd) {
         return request("session/new", AcpJson.newSessionParams(mapper, sessionCwd.toString()))
-                .thenApply(AcpJson::parseSessionInfo);
+                .thenApply(this::rememberSessionConfig);
     }
 
     /** {@code session/resume} → the reopened session's model/mode catalogs. The response omits the
@@ -126,7 +137,7 @@ public final class AcpClient {
     public CompletableFuture<AcpJson.SessionInfo> resumeSession(String sessionId, Path sessionCwd) {
         return request("session/resume", AcpJson.resumeSessionParams(mapper, sessionId, sessionCwd.toString()))
                 .thenApply(result -> {
-                    AcpJson.SessionInfo parsed = AcpJson.parseSessionInfo(result);
+                    AcpJson.SessionInfo parsed = rememberSessionConfig(result);
                     return new AcpJson.SessionInfo(
                             sessionId,
                             parsed.models(),
@@ -151,14 +162,32 @@ public final class AcpClient {
 
     /** {@code session/set_model} — switches the running session's active model. Result body is ignored. */
     public CompletableFuture<Void> setModel(String sessionId, String modelId) {
+        JsonNode option = AcpJson.configOption(sessionConfig, "model");
+        if (option != null) {
+            return setConfigOption(sessionId, option.path("id").asText(), modelId);
+        }
         return request("session/set_model", AcpJson.setModelParams(mapper, sessionId, modelId))
                 .thenApply(result -> null);
     }
 
     /** {@code session/set_mode} — switches the running session's active mode. Result body is ignored. */
     public CompletableFuture<Void> setMode(String sessionId, String modeId) {
+        JsonNode option = AcpJson.configOption(sessionConfig, "mode");
+        if (option != null) {
+            return setConfigOption(sessionId, option.path("id").asText(), modeId);
+        }
         return request("session/set_mode", AcpJson.setModeParams(mapper, sessionId, modeId))
                 .thenApply(result -> null);
+    }
+
+    private AcpJson.SessionInfo rememberSessionConfig(JsonNode result) {
+        sessionConfig = result;
+        return AcpJson.parseSessionInfo(result);
+    }
+
+    private CompletableFuture<Void> setConfigOption(String sessionId, String configId, String value) {
+        return request("session/set_config_option", AcpJson.setConfigOptionParams(mapper, sessionId, configId, value))
+                .thenAccept(result -> host.onSessionConfig(sessionId, rememberSessionConfig(result)));
     }
 
     private CompletableFuture<JsonNode> request(String method, JsonNode params) {
@@ -259,7 +288,16 @@ public final class AcpClient {
     private void handleNotification(String method, JsonNode params) {
         if ("session/update".equals(method)) {
             try {
-                host.onUpdate(AcpJson.parseUpdate(params));
+                if (params != null
+                        && "config_option_update"
+                                .equals(params.path("update")
+                                        .path("sessionUpdate")
+                                        .asText())) {
+                    host.onSessionConfig(
+                            params.path("sessionId").asText(), rememberSessionConfig(params.path("update")));
+                } else {
+                    host.onUpdate(AcpJson.parseUpdate(params));
+                }
             } catch (RuntimeException e) {
                 LOG.log(Level.FINE, "ACP update handler failed", e);
             }

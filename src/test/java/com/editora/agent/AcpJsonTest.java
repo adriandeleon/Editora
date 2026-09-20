@@ -18,6 +18,45 @@ class AcpJsonTest {
     private final ObjectMapper m = new ObjectMapper();
 
     @Test
+    void sessionConfigOptionsSupersedeLegacyCatalogsAndFlattenGroups() throws Exception {
+        var result = m.readTree("""
+                {"sessionId":"s1","models":{"currentModelId":"old","availableModels":[]},
+                 "modes":{"currentModeId":"old","availableModes":[]},
+                 "configOptions":[
+                   {"id":"llm-selector","category":"model","type":"select","currentValue":"local/model",
+                    "options":[{"group":"local","name":"Local","options":[
+                      {"value":"local/model","name":"Local Model","description":"On this machine"}]}]},
+                   {"id":"second-model","category":"model","type":"select","currentValue":"ignored","options":[]},
+                   {"id":"permission-mode","category":"mode","type":"select","currentValue":"plan",
+                    "options":[{"value":"plan","name":"Plan"},{"value":"build","name":"Build"}]}]}
+                """);
+        var info = AcpJson.parseSessionInfo(result);
+        assertEquals("local/model", info.currentModelId());
+        assertEquals(List.of(new AcpJson.ModelInfo("local/model", "Local Model", "On this machine")), info.models());
+        assertEquals("plan", info.currentModeId());
+        assertEquals(2, info.modes().size());
+        assertEquals(
+                "llm-selector", AcpJson.configOption(result, "model").path("id").asText());
+        var params = AcpJson.setConfigOptionParams(m, "s1", "llm-selector", "local/model");
+        assertEquals("s1", params.path("sessionId").asText());
+        assertEquals("llm-selector", params.path("configId").asText());
+        assertEquals("local/model", params.path("value").asText());
+    }
+
+    @Test
+    void unsupportedConfigOptionsDoNotHideLegacyCatalogs() throws Exception {
+        var result = m.readTree("""
+                {"models":{"currentModelId":"legacy","availableModels":[]},"configOptions":[
+                  {"id":"model","category":"model","type":"boolean","currentValue":true},
+                  {"id":"","category":"model","type":"select","currentValue":"bad"},
+                  {"id":"custom","type":"select","currentValue":"value"}]}
+                """);
+        assertEquals("legacy", AcpJson.parseSessionInfo(result).currentModelId());
+        assertNull(AcpJson.configOption(result, "model"));
+        assertNull(AcpJson.configOption(null, "model"));
+    }
+
+    @Test
     void requestEnvelopeCarriesIdMethodParams() throws Exception {
         ObjectNode n = AcpJson.request(m, 7, "session/prompt", AcpJson.promptParams(m, "s1", "hi"));
         assertEquals("2.0", n.get("jsonrpc").asText());

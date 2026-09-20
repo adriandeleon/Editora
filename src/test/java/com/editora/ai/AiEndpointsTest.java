@@ -10,6 +10,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AiEndpointsTest {
 
     @Test
+    void lmStudioNormalizesServerAndApiBaseUrlsOnly() {
+        String endpoint = "http://localhost:1234/v1/chat/completions";
+        for (String configured :
+                new String[] {"http://localhost:1234", "http://localhost:1234/", " http://localhost:1234/v1/ ", endpoint
+                }) {
+            assertEquals(endpoint, AiEndpoints.resolve(AiProvider.LMSTUDIO, configured));
+        }
+        assertEquals(AiProvider.LMSTUDIO.defaultEndpoint(), AiEndpoints.resolve(AiProvider.LMSTUDIO, ""));
+        assertEquals(
+                "https://host/proxy/v1/chat/completions",
+                AiEndpoints.resolve(AiProvider.LMSTUDIO, "https://host/proxy/v1"));
+        assertEquals("http://localhost:1234/v1", AiEndpoints.resolve(AiProvider.OPENAI, "http://localhost:1234/v1"));
+        assertEquals("bad URL", AiEndpoints.resolve(AiProvider.LMSTUDIO, "bad URL"));
+        assertEquals("http://host/v1?x=y", AiEndpoints.resolve(AiProvider.LMSTUDIO, "http://host/v1?x=y"));
+    }
+
+    @Test
     void httpsIsAlwaysSafe() {
         assertFalse(AiEndpoints.isCleartextRemote("https://api.anthropic.com/v1/messages"));
         assertFalse(AiEndpoints.isCleartextRemote("https://a-remote-host.example/v1"));

@@ -627,13 +627,24 @@ Editora is built with the help of AI coding tools.
 - **AI actions** _(Beta)_ — one-shot AI features using Anthropic, a local OpenAI-compatible server,
   or **Codex (existing login)**:
   generate a **commit message** from the staged diff into the Commit window, **explain the selection** in
-  a new Markdown buffer, or **rewrite the selection** per an instruction as a single undoable edit. Plus
+  a new Markdown buffer with the provider agent and response model in its footer, or **rewrite the
+  selection** per an instruction as a single undoable edit. Plus
   **AI inline completion**: after a typing pause, a muted one-line ghost suggestion at the caret — Tab
   accepts (its own fast model, default `claude-haiku-4-5`). Off by default (Settings → AI Actions); model
   configurable (Anthropic default `claude-opus-4-8`); Anthropic API key from `ANTHROPIC_API_KEY`
   or a Settings override.
-  **Local models**: switch the Provider to *Local (OpenAI-compatible)* to run AI Actions and inline completion against
-  LM Studio, Ollama, or any local OpenAI-compatible server — no API key, configurable endpoint.
+  **Local models**: switch the Provider to *Local (OpenAI-compatible)* to run AI actions and inline completion against
+  LM Studio, Ollama, or any local OpenAI-compatible server — configurable endpoint and optional server token.
+  **LM Studio / Bionic** also has a dedicated provider with its own saved endpoint, model and token.
+  Enable Bionic’s **Settings → Local Model API** (or run `lms server start`), enable Editora’s
+  **AI → Enable AI** and **AI Actions**, then choose **LM Studio / Bionic**. Enter the model’s API
+  identifier; the default endpoint is `http://127.0.0.1:1234/v1/chat/completions` (a server URL or `/v1`
+  base also works). A blank completion model uses the main model. Test with **AI: Test Connection**.
+  For agent chat, install the [OpenCode CLI](https://opencode.ai/docs/cli/), enable **AI Agent**, and
+  select **LM Studio / Bionic (OpenCode)**. Editora launches `opencode acp` with that local model’s
+  configuration; set a model identifier first and start a new session after changing it. AI actions
+  can remain disabled when using only the agent. This runs OpenCode with Bionic’s local models;
+  it does not embed Bionic’s own agent or use its cloud subscription.
   For Codex, install `npm install -g @agentclientprotocol/codex-acp @openai/codex`, run `codex login`,
   and select **Codex (existing login)** under Settings → AI → AI Actions. It shares the adapter
   command configured under AI Agent, uses separate text-only sessions, and needs no API key or

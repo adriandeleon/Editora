@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added a dedicated LM Studio / Bionic provider for AI actions and an AI Agent preset using
+  OpenCode over ACP. The preset shares the local endpoint, model and optional token without
+  writing OpenCode config files; local settings stay separate from existing cloud settings.
+  Model and mode selectors now also support current ACP `configOptions`, as used by OpenCode.
+  Generated `explanation.md` buffers include the provider agent and model reported by the server;
+  when response metadata is unavailable, they use the requested model or explicitly show Unknown.
 - AI Actions can use the Codex ACP adapter and an existing Codex login for explain, rewrite and
   commit-message generation. Separate text-only sessions leave the Agent chat intact; API keys and
   endpoints are not used by Codex. Settings now explain adapter installation and login requirements.

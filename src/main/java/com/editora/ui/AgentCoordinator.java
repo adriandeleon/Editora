@@ -483,9 +483,21 @@ final class AgentCoordinator implements AcpClient.Host {
      *  fresh-session ({@link #ensureSession}) and resume ({@link #resumeSession}) paths. */
     private CompletableFuture<AcpClient> spawnClient(Path cwd) {
         List<String> command = commandTokens();
+        Map<String, String> environment;
+        try {
+            var settings = host.settings();
+            environment = activeAgent() == AcpAgentRegistry.AgentDef.LMSTUDIO
+                    ? com.editora.agent.LmStudioAgent.environment(
+                            settings.getAiLmStudioEndpoint(),
+                            settings.getAiLmStudioModel(),
+                            settings.getAiApiKeyLmstudio())
+                    : Map.of();
+        } catch (IllegalArgumentException e) {
+            return CompletableFuture.failedFuture(e);
+        }
         return CompletableFuture.supplyAsync(
                 () -> {
-                    AcpClient fresh = new AcpClient(command, cwd, this);
+                    AcpClient fresh = new AcpClient(command, cwd, this, environment);
                     if (!fresh.start()) {
                         throw new CompletionException(new IOException(
                                 activeAgent() == AcpAgentRegistry.AgentDef.CODEX
@@ -648,7 +660,8 @@ final class AgentCoordinator implements AcpClient.Host {
                 "copilot", s.getCopilotAgentCommand(),
                 "codex", s.getCodexAgentCommand(),
                 "qwen", s.getQwenAgentCommand(),
-                "opencode", s.getOpencodeAgentCommand());
+                "opencode", s.getOpencodeAgentCommand(),
+                "lmstudio", s.getLmstudioAgentCommand());
     }
 
     /** Probes whether {@code agentId}'s resolved command is on PATH; cached, off-thread, result on the FX
@@ -751,6 +764,20 @@ final class AgentCoordinator implements AcpClient.Host {
     }
 
     // --- AcpClient.Host (reader/request threads — marshal to FX here) --------------------------------
+
+    @Override
+    public void onSessionConfig(String updatedSessionId, AcpJson.SessionInfo info) {
+        Platform.runLater(() -> {
+            if (!java.util.Objects.equals(sessionId, updatedSessionId)) {
+                return;
+            }
+            models = info.models();
+            modes = info.modes();
+            currentModelId = info.currentModelId();
+            currentModeId = info.currentModeId();
+            refreshPanelHeader();
+        });
+    }
 
     @Override
     public void onUpdate(AcpJson.Update update) {

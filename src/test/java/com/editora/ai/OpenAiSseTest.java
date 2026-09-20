@@ -48,14 +48,19 @@ class OpenAiSseTest {
     }
 
     @Test
-    void readsReportedModelFromBothStreamingDialects() throws Exception {
-        assertEquals("qwen2.5-coder", AiClient.streamModel(AiProvider.OPENAI, json("{\"model\":\"qwen2.5-coder\"}")));
+    void responseModelSupportsBothDialectsAndRejectsInvalidMetadata() throws Exception {
+        for (AiProvider provider : java.util.List.of(AiProvider.OPENAI, AiProvider.LMSTUDIO)) {
+            assertEquals("local/model", AiClient.streamModel(provider, json("{\"model\":\" local/model \"}")));
+            for (String data : java.util.List.of("{}", "{\"model\":null}", "{\"model\":17}", "{\"model\":\" \"}")) {
+                assertNull(AiClient.streamModel(provider, json(data)));
+            }
+        }
         assertEquals(
-                "claude-opus-4-8",
+                "claude-reported-model",
                 AiClient.streamModel(
                         AiProvider.ANTHROPIC,
-                        json("{\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-4-8\"}}")));
-        assertNull(AiClient.streamModel(AiProvider.OPENAI, json("{}")));
+                        json("{\"type\":\"message_start\",\"message\":{\"model\":\"claude-reported-model\"}}")));
+        assertNull(AiClient.streamModel(AiProvider.ANTHROPIC, json("{\"model\":\"wrong-level\"}")));
     }
 
     @Test

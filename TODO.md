@@ -1303,6 +1303,11 @@ A backlog of planned features and improvements. Unordered within each section.
       AI: Test Connection): a tiny one-token ping to the configured provider/endpoint/key/model,
       re-checked on page-open and debounced on edits. Surfaces a wrong endpoint / bad key / unknown
       model immediately. Mirrors the Git/Mermaid/LSP found-not-found status idiom.
+- [x] AI explanation attribution — a localized footer records the provider agent and response model,
+      including the model selected by a local server when no model is configured.
+- [x] LM Studio / Bionic integration — dedicated AI actions provider, isolated local configuration,
+      and an OpenCode ACP agent preset using the same endpoint/model/token. All six locales include
+      setup guidance; local tokens remain separate from Anthropic and other OpenAI-compatible keys.
 - [x] Local LLM support (LM Studio / Ollama / vLLM) — an OpenAI-compatible provider for every AI feature
       (actions + inline completion): AiProvider enum + OpenAiSse reader (data-only SSE, `[DONE]`,
       `choices[].delta.content`, `finish_reason`→Anthropic stops), provider-aware AiClient headers/body,

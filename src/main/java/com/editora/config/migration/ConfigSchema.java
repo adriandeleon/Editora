@@ -171,7 +171,7 @@ public enum ConfigSchema {
                     Map.entry(101, (Migration) ConfigMigrations::identity), // v101→102: + Astro LSP
                     Map.entry(102, (Migration) ConfigMigrations::identity), // v102→103: + Maven JDK
                     Map.entry(103, (Migration)
-                            ConfigMigrations::identity))), // v103→104: Codex AI provider; preserve choices
+                            ConfigMigrations::identity))), // v103→104: Codex + LM Studio providers; preserve choices
     // v1 → v2 added the editor-group layout + OpenFile.group. Both default to the old single-group
     // behaviour, so the step is identity.
     // v1→v2 editor-group layout, v2→v3 RunConfiguration type/target, v3→v4 selectedRunConfig — all additive

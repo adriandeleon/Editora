@@ -1,5 +1,6 @@
 package com.editora.ai;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -12,6 +13,8 @@ public enum AiProvider {
     ANTHROPIC("https://api.anthropic.com/v1/messages"),
     /** An OpenAI-compatible server; the default endpoint is LM Studio's local server. */
     OPENAI("http://127.0.0.1:1234/v1/chat/completions"),
+    /** LM Studio / Bionic local model server, with its own saved configuration. */
+    LMSTUDIO("http://127.0.0.1:1234/v1/chat/completions"),
     /** Codex ACP adapter, authenticated by the user's Codex login. No HTTP endpoint or API key. */
     CODEX("");
 
@@ -31,7 +34,15 @@ public enum AiProvider {
         return this == ANTHROPIC;
     }
 
-    /** The persisted id ({@code "anthropic"}/{@code "openai"}/{@code "codex"}). */
+    public boolean usesOpenAiApi() {
+        return this == OPENAI || this == LMSTUDIO;
+    }
+
+    public static List<String> ids() {
+        return java.util.Arrays.stream(values()).map(AiProvider::id).toList();
+    }
+
+    /** The stable persisted provider id. */
     public String id() {
         return name().toLowerCase(Locale.ROOT);
     }

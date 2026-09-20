@@ -98,7 +98,7 @@ public final class AiClient {
             HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(endpoint))
                     .header("content-type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(request)));
-            if (provider == AiProvider.OPENAI) {
+            if (provider.usesOpenAiApi()) {
                 if (apiKey != null && !apiKey.isBlank()) {
                     b.header("Authorization", "Bearer " + apiKey);
                 }
@@ -159,7 +159,7 @@ public final class AiClient {
                     if (event == null) {
                         continue;
                     }
-                    if (provider == AiProvider.OPENAI) {
+                    if (provider.usesOpenAiApi()) {
                         if (OpenAiSse.isDone(event.data())) {
                             listener.onDone(stopReason);
                             return;
@@ -235,7 +235,7 @@ public final class AiClient {
 
     /** Extracts the model reported by an OpenAI chunk or Anthropic {@code message_start} event. */
     static String streamModel(AiProvider provider, JsonNode data) {
-        JsonNode value = provider == AiProvider.OPENAI
+        JsonNode value = provider.usesOpenAiApi()
                 ? data.path("model")
                 : data.path("message").path("model");
         if (!value.isTextual()) {
@@ -288,7 +288,7 @@ public final class AiClient {
                     .timeout(timeout)
                     .header("content-type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(request)));
-            if (provider == AiProvider.OPENAI) {
+            if (provider.usesOpenAiApi()) {
                 if (apiKey != null && !apiKey.isBlank()) {
                     b.header("Authorization", "Bearer " + apiKey);
                 }
