@@ -1452,7 +1452,7 @@ public class SettingsWindow {
             scheduleAiStatus();
         });
         aiProviderCombo = new ComboBox<>();
-        aiProviderCombo.getItems().addAll("anthropic", "openai");
+        aiProviderCombo.getItems().addAll("anthropic", "openai", "codex");
         aiProviderCombo.setConverter(new StringConverter<>() {
             @Override
             public String toString(String id) {
@@ -1472,6 +1472,7 @@ public class SettingsWindow {
                 loading = true;
                 aiApiKeyField.setText(config.getSettings().getApiKeyFor(com.editora.ai.AiProvider.from(now)));
                 loading = false;
+                updateAiProviderControls();
                 apply();
                 scheduleAiStatus();
             }
@@ -4770,6 +4771,10 @@ public class SettingsWindow {
                 agentIncludeContextCheck,
                 null,
                 "ai agent acp context cursor line selection file attach prompt");
+        Label codexHint = note(tr("settings.agent.codexHint"));
+        codexHint.setWrapText(true);
+        codexHint.setMaxWidth(440);
+        cardRow(mainCard, Category.AGENT, codexHint, "agent codex acp install login setup");
         Label hint = note(tr("settings.agent.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
@@ -4899,6 +4904,20 @@ public class SettingsWindow {
         aiStatusLabel.setText(ok ? tr("settings.ai.connected") : tr("settings.ai.connectFailed", message));
     }
 
+    /** Codex owns its login/transport; inline completion remains available for HTTP providers. */
+    private void updateAiProviderControls() {
+        var provider = com.editora.ai.AiProvider.from(aiProviderCombo.getValue());
+        boolean codex = provider == com.editora.ai.AiProvider.CODEX;
+        aiEndpointField.setDisable(codex);
+        aiApiKeyField.setDisable(codex);
+        aiInlineCheck.setDisable(codex);
+        aiCompletionModelField.setDisable(codex);
+        aiModelField.setPromptText(
+                provider == com.editora.ai.AiProvider.ANTHROPIC
+                        ? AiCoordinator.DEFAULT_MODEL
+                        : tr("settings.ai.modelDefault"));
+    }
+
     private VBox aiPage() {
         VBox p = page(tr("settings.cat.ai"));
         Card mainCard = card(p, null);
@@ -4957,6 +4976,10 @@ public class SettingsWindow {
         inlineNote.setWrapText(true);
         inlineNote.setMaxWidth(440);
         cardRow(mainCard, Category.AI, inlineNote, "ai inline ghost completion tab accept cost");
+        Label codexHint = note(tr("settings.ai.codexHint"));
+        codexHint.setWrapText(true);
+        codexHint.setMaxWidth(440);
+        cardRow(mainCard, Category.AI, codexHint, "ai codex login acp agent subscription setup");
         Label hint = note(tr("settings.ai.hint"));
         hint.setWrapText(true);
         hint.setMaxWidth(440);
@@ -6790,6 +6813,7 @@ public class SettingsWindow {
             aiProviderCombo.setValue(
                     com.editora.ai.AiProvider.from(settings.getAiProvider()).id());
             aiEndpointField.setText(settings.getAiEndpoint());
+            updateAiProviderControls();
             javafx.application.Platform.runLater(this::refreshAiStatus); // check once the fields are populated
             pluginCheck.setSelected(settings.isPluginSupport());
             if (pluginRequireSigCheck != null) {
@@ -7250,6 +7274,7 @@ public class SettingsWindow {
                     com.editora.ai.AiProvider.from(config.getSettings().getAiProvider())
                             .id());
             aiEndpointField.setText(config.getSettings().getAiEndpoint());
+            updateAiProviderControls();
         } finally {
             loading = prev;
         }

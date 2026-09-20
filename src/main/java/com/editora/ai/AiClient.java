@@ -34,6 +34,9 @@ public final class AiClient {
 
     /** Receives the streamed response (on the calling thread — the service marshals to FX). */
     public interface Listener {
+        /** The model the provider reports for this response, when available. */
+        default void onModel(String model) {}
+
         void onText(String delta);
 
         /** The turn finished; {@code stopReason} e.g. {@code end_turn}/{@code max_tokens}/{@code refusal}. */
@@ -142,6 +145,7 @@ public final class AiClient {
                     checkMillis,
                     java.util.concurrent.TimeUnit.MILLISECONDS);
             String stopReason = "end_turn";
+            boolean modelReported = false;
             SseParser parser = new SseParser();
             try (BufferedReader r = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
                 String line;
@@ -161,6 +165,13 @@ public final class AiClient {
                             return;
                         }
                         JsonNode chunk = mapper.readTree(event.data());
+                        if (!modelReported) {
+                            String model = streamModel(provider, chunk);
+                            if (model != null) {
+                                listener.onModel(model);
+                                modelReported = true;
+                            }
+                        }
                         String error = OpenAiSse.errorMessage(chunk);
                         if (error != null) {
                             listener.onError(error);
@@ -177,6 +188,13 @@ public final class AiClient {
                         continue;
                     }
                     JsonNode data = mapper.readTree(event.data());
+                    if (!modelReported) {
+                        String model = streamModel(provider, data);
+                        if (model != null) {
+                            listener.onModel(model);
+                            modelReported = true;
+                        }
+                    }
                     String type = data.hasNonNull("type") ? data.get("type").asText() : event.name();
                     switch (type) {
                         case "content_block_delta" -> {
@@ -213,6 +231,18 @@ public final class AiClient {
             // A read we closed on an idle timeout throws a generic IOException — report the real reason.
             listener.onError(idleTimedOut.get() ? "timed out (no data from the endpoint)" : AiErrors.describe(e));
         }
+    }
+
+    /** Extracts the model reported by an OpenAI chunk or Anthropic {@code message_start} event. */
+    static String streamModel(AiProvider provider, JsonNode data) {
+        JsonNode value = provider == AiProvider.OPENAI
+                ? data.path("model")
+                : data.path("message").path("model");
+        if (!value.isTextual()) {
+            return null;
+        }
+        String model = value.asText().trim();
+        return model.isEmpty() ? null : model;
     }
 
     /**

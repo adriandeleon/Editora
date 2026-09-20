@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- AI Actions can use the Codex ACP adapter and an existing Codex login for explain, rewrite and
+  commit-message generation. Separate text-only sessions leave the Agent chat intact; API keys and
+  endpoints are not used by Codex. Settings now explain adapter installation and login requirements.
+  When AI Actions is enabled and connected, the editor's right-click menu also exposes Explain and
+  Rewrite under an **AI Actions** submenu; the submenu disappears when that effective gate is off.
+  Generated `explanation.md` buffers now end with the agent and actual response model.
+- Successful manual AI connection checks now restore selection and commit-action buttons after a
+  failed startup probe. Health checks run independently of active generations.
+
 ## [0.18.5] - 2026-09-19
 
 - Autosave now recognizes a preceding application save even when its UI acknowledgment arrives before

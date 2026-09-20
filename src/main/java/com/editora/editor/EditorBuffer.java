@@ -2196,6 +2196,14 @@ public class EditorBuffer implements TabContent {
                     items.add(new SeparatorMenuItem());
                 }
             }
+            // Use the same effective gate as the floating selection bar: the master + feature settings
+            // are on and the provider's latest connectivity check succeeded. Keep the submenu available
+            // even without a selection so the menu remains a stable map of enabled features; its
+            // selection-scoped actions are disabled until there is text to act on.
+            if (aiActionsEnabled) {
+                items.add(aiActionsMenu());
+                items.add(new SeparatorMenuItem());
+            }
             SpellHit hit = spellHitAt(e.getX(), e.getY());
             if (hit != null) {
                 items.addAll(spellMenuItems(hit));
@@ -2309,6 +2317,20 @@ public class EditorBuffer implements TabContent {
     private Menu markupMenu(String title, List<MenuItem> actions) {
         Menu menu = new Menu(title, MenuIcons.textFormat());
         menu.getItems().addAll(actions);
+        return menu;
+    }
+
+    /** AI selection actions, grouped under one row while the effective enabled-and-connected gate is on. */
+    private Menu aiActionsMenu() {
+        boolean hasSelection = area.getSelection().getLength() > 0;
+        MenuItem explain = new MenuItem(tr("command.ai.explainSelection"), MenuIcons.explain());
+        explain.setDisable(!hasSelection);
+        explain.setOnAction(e -> requestExplainSelection());
+        MenuItem rewrite = new MenuItem(tr("command.ai.rewriteSelection"), MenuIcons.rewrite());
+        rewrite.setDisable(!hasSelection || !isEditable());
+        rewrite.setOnAction(e -> requestRewriteSelection());
+        Menu menu = new Menu(tr("editmenu.aiActions"), MenuIcons.ai());
+        menu.getItems().addAll(explain, rewrite);
         return menu;
     }
 

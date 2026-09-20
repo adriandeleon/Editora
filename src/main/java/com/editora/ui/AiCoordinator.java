@@ -17,7 +17,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * Owns the direct-API AI actions (the {@code CoordinatorHost} feature-coordinator pattern): commit-message
  * generation from the staged diff, explain-selection into a Markdown buffer, and rewrite-selection as an
- * undoable edit — each one streamed call to the Anthropic Messages API via {@link AiService} (no SDK, no
+ * undoable edit — each one streamed through an API provider or Codex via {@link AiService} (no SDK, no
  * agent loop; the embedded ACP agent is the separate {@code AgentCoordinator}). The API key comes from
  * {@code Settings.aiApiKey}, falling back — for the Anthropic provider only — to the
  * {@code ANTHROPIC_API_KEY} environment variable (see {@link #effectiveKey}).
@@ -58,6 +58,8 @@ final class AiCoordinator {
     /** Inline completion streams on its own service so it can never cancel (or be cancelled by) an
      *  explicit action like commit-message generation; each keystroke's request supersedes the last. */
     private final AiService completionService = new AiService();
+
+    private final AiService probeService = new AiService();
 
     private boolean busy;
     /** Cached result of the last connectivity probe (see {@link #applySupport}) — never re-checked per
@@ -107,8 +109,10 @@ final class AiCoordinator {
             return;
         }
         pushAvailability(); // reflect the cached result now
-        String signature = provider() + "|" + endpoint() + "|" + apiKey() + "|" + model();
+        String signature = connectionSignature();
         if (!signature.equals(probeSignature)) {
+            connected = false;
+            pushAvailability();
             probeSignature = signature;
             probeDebounce.playFromStart();
         }
@@ -123,15 +127,13 @@ final class AiCoordinator {
     }
 
     private void probeNow() {
-        checkConnection((ok, message) -> {
-            connected = ok;
-            pushAvailability();
-        });
+        checkConnection((ok, message) -> {});
     }
 
     /** The effective inline-completion gate: master + sub-toggle + a key when the provider needs one. */
     boolean isInlineCompletionEnabled() {
         return isEnabled()
+                && provider() != AiProvider.CODEX
                 && host.settings().isAiInlineCompletion()
                 && (!provider().requiresApiKey() || !apiKey().isEmpty());
     }
@@ -214,11 +216,7 @@ final class AiCoordinator {
                 }
                 StringBuilder out = new StringBuilder();
                 start(tr("status.ai.generatingCommit"));
-                service.generate(
-                        provider(),
-                        endpoint(),
-                        apiKey(),
-                        model(),
+                generate(
                         AiRequests.commitMessageSystem(),
                         AiRequests.commitMessageUser(diff),
                         new AiService.Callbacks() {
@@ -266,14 +264,19 @@ final class AiCoordinator {
             // until generation ends (success or failure), whichever comes first.
             target.setPreviewLoading(true, tr("markdown.preview.generating"));
             start(tr("status.ai.explaining"));
-            service.generate(
-                    provider(),
-                    endpoint(),
-                    apiKey(),
-                    model(),
+            AiProvider actionProvider = provider();
+            String[] usedModel = {model()};
+            generate(
                     AiRequests.explainSystem(),
                     AiRequests.explainUser(b.getLanguage(), selection),
                     new AiService.Callbacks() {
+                        @Override
+                        public void onModel(String model) {
+                            if (model != null && !model.isBlank()) {
+                                usedModel[0] = model.trim();
+                            }
+                        }
+
                         @Override
                         public void onText(String delta) {
                             target.getArea().appendText(delta);
@@ -284,6 +287,7 @@ final class AiCoordinator {
                             busy = false;
                             target.setPreviewLoading(false, null);
                             if (checkStop(stopReason)) {
+                                target.getArea().appendText(explanationProvenance(actionProvider, usedModel[0]));
                                 host.setStatus(tr("status.ai.done"));
                             }
                         }
@@ -295,6 +299,18 @@ final class AiCoordinator {
                         }
                     });
         });
+    }
+
+    static String explanationProvenance(AiProvider provider, String model) {
+        String agent =
+                switch (provider) {
+                    case CODEX -> "Codex";
+                    case ANTHROPIC -> "Anthropic";
+                    case OPENAI -> "OpenAI-compatible";
+                };
+        String usedModel = model == null || model.isBlank() ? tr("ai.explanation.unknownModel") : model.trim();
+        return "\n\n---\n\n**" + tr("ai.explanation.agent") + ":** " + agent + "  \n**" + tr("ai.explanation.model")
+                + ":** " + usedModel + "\n";
     }
 
     // --- ai.rewriteSelection --------------------------------------------------------------------------
@@ -321,11 +337,7 @@ final class AiCoordinator {
                 int end = sel.getEnd();
                 StringBuilder out = new StringBuilder();
                 start(tr("status.ai.rewriting"));
-                service.generate(
-                        provider(),
-                        endpoint(),
-                        apiKey(),
-                        model(),
+                generate(
                         AiRequests.rewriteSystem(),
                         AiRequests.rewriteUser(b.getLanguage(), instruction.strip(), selection),
                         new AiService.Callbacks() {
@@ -359,6 +371,25 @@ final class AiCoordinator {
                         });
             });
         });
+    }
+
+    private void generate(String system, String user, AiService.Callbacks callbacks) {
+        if (provider() == AiProvider.CODEX) {
+            service.generateCodex(codexCommand(), model(), system, user, callbacks);
+        } else {
+            service.generate(provider(), endpoint(), apiKey(), model(), system, user, callbacks);
+        }
+    }
+
+    private java.util.List<String> codexCommand() {
+        return com.editora.agent.AcpAgentRegistry.commandFor(
+                "codex", java.util.Map.of("codex", host.settings().getCodexAgentCommand()));
+    }
+
+    private String connectionSignature() {
+        return provider() == AiProvider.CODEX
+                ? "codex|" + codexCommand() + "|" + model()
+                : provider() + "|" + endpoint() + "|" + apiKey() + "|" + model();
     }
 
     // --- helpers --------------------------------------------------------------------------------------
@@ -418,6 +449,9 @@ final class AiCoordinator {
      * idle pause, unprompted. It also let a blank-field user past the "no key configured" gate.
      */
     static String effectiveKey(String configured, AiProvider provider, String anthropicEnvKey) {
+        if (provider == AiProvider.CODEX) {
+            return "";
+        }
         if (configured != null && !configured.isBlank()) {
             return configured.trim();
         }
@@ -449,12 +483,21 @@ final class AiCoordinator {
             onResult.accept(false, tr("status.ai.noApiKey"));
             return;
         }
-        service.ping(
-                provider(),
-                endpoint(),
-                apiKey(),
-                model(),
-                ping -> onResult.accept(ping.ok(), ping.ok() ? tr("settings.ai.connected") : ping.message()));
+        String signature = connectionSignature();
+        java.util.function.Consumer<AiService.Ping> result = ping -> {
+            // Both automatic and manual checks refresh action visibility. Stale provider results cannot
+            // re-enable controls after a settings change or feature disable.
+            if (isEnabled() && signature.equals(connectionSignature())) {
+                connected = ping.ok();
+                pushAvailability();
+                onResult.accept(ping.ok(), ping.ok() ? tr("settings.ai.connected") : ping.message());
+            }
+        };
+        if (provider() == AiProvider.CODEX) {
+            probeService.pingCodex(codexCommand(), model(), result);
+        } else {
+            probeService.ping(provider(), endpoint(), apiKey(), model(), result);
+        }
     }
 
     /** {@code ai.testConnection}: run the check and echo the result to the status bar. */
@@ -469,5 +512,6 @@ final class AiCoordinator {
         probeDebounce.stop();
         service.shutdown();
         completionService.shutdown();
+        probeService.shutdown();
     }
 }
