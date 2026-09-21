@@ -36,6 +36,12 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 
 ## Subsystem deep-dives
 
+- [subsystems/agent-platform.md](subsystems/agent-platform.md) — embedded runtime architecture,
+  tools, document transactions, verification, trust boundaries and staged migration.
+- [subsystems/agent-intelligence.md](subsystems/agent-intelligence.md) — semantic LSP tools and freshness,
+  ranked context, scoped instructions/skills, managed MCP, durable sessions and Phase 3 priorities.
+- [subsystems/agent-evaluation.md](subsystems/agent-evaluation.md) — opt-in real-model coding benchmark,
+  independent outcome checks, metadata-only metrics and evidence-driven refinements.
 - [subsystems/ai.md](subsystems/ai.md) — AI providers, Codex and LM Studio adapter setup,
   action/session ownership, local inference, credential boundaries, and connectivity checks.
 

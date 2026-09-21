@@ -33,6 +33,35 @@ A backlog of planned features and improvements. Unordered within each section.
 - [ ] Track JDT LS's conflicting import proposal for a same-file class in broken source; rerun the
       strict live probe when evaluating server updates.
 
+## Agent platform follow-up
+
+- [x] Add a built-in model-independent runtime, tool registry/policy, revision-checked document batches,
+      context bounds, cancellation and verification with deterministic/FX coverage. See
+      [agent platform](docs/subsystems/agent-platform.md).
+- [x] Adversarially harden protocol pairing, cross-round call ids, validation provenance, staged-save and
+      process cancellation, session generations, context reserves and FX metadata snapshots.
+- [ ] Migrate ACP filesystem requests and inbound MCP mutations to the same revision/policy boundary;
+      harden ACP startup/session generation ownership and permission cancellation.
+- [x] Add capability-aware semantic LSP discovery, revision-safe refactoring previews, diagnostic freshness,
+      progressive ranked context, hierarchical instructions, skill provenance and deterministic acceptance tests.
+- [x] Add managed stdio MCP lifecycle/settings and native session checkpoints/resume with authority reset,
+      bounded compaction memory and explicit provider/token-count capabilities. See [Phase 2](docs/subsystems/agent-intelligence.md).
+- [ ] Add safe resource rename/move/delete transactions, resolved code actions, deeper semantic/Git/test
+      relevance, progressive MCP catalogs and HTTP/auth profiles.
+- [ ] Add session retention controls, structured long-session memory, concrete provider tokenizers and
+      negotiated reasoning/caching/structured-output options.
+- [ ] Introduce OS-isolated validation workspaces, stronger filesystem-race protection, richer validation
+      evidence and reviewed environment profiles before offering unattended arbitrary execution.
+- [ ] Evaluate read-only exploration subagents after tool cancellation/lifecycle contracts extend to
+      shared LSP/Git work. Keep concurrent document-writing agents disabled until isolated leases exist.
+- [ ] Exercise the three end-to-end coding acceptance scenarios against real providers and perform a
+      human desktop UX trial; deterministic tests do not establish live model task success.
+- [x] Add an opt-in real-model benchmark with real Editora code, controlled Java outcome oracles,
+      metadata-only measurements and deterministic regressions for observed discovery/loop/UX failures.
+      See [evaluation methodology](docs/subsystems/agent-evaluation.md).
+- [ ] Expand the live corpus to concurrent saves, real UI/settings changes and multi-layer fixes;
+      establish repeated trials, independent human review and credentialed cloud-provider baselines.
+
 ## Recently shipped
 - [x] Preserve preceding save identities in queued autosaves across UI acknowledgment, with deterministic
       coverage for both successful persistence and same-metadata external-change protection.

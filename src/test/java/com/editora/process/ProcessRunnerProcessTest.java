@@ -1,5 +1,6 @@
 package com.editora.process;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -106,5 +107,30 @@ class ProcessRunnerProcessTest {
         assertFalse(exact.outTruncated());
         assertTrue(over.outTruncated());
         assertEquals(exact.out().length(), over.out().length());
+    }
+
+    @Test
+    void interruptingAnAgentCommandKillsItsProcess(@TempDir Path dir) throws Exception {
+        Path pidFile = dir.resolve("pid");
+        AtomicReference<ProcessRunner.Result> result = new AtomicReference<>();
+        Thread worker = Thread.ofPlatform()
+                .start(() -> result.set(ProcessRunner.runRestricted(
+                        dir, Duration.ofSeconds(20), List.of("sh", "-c", "echo $$ > pid; exec sleep 10"))));
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        while (!Files.isRegularFile(pidFile) && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
+        assertTrue(Files.isRegularFile(pidFile), "child did not publish its pid");
+        long pid = Long.parseLong(Files.readString(pidFile).strip());
+        worker.interrupt();
+        worker.join(5_000);
+        assertFalse(worker.isAlive(), "interrupted process wait did not return");
+        assertEquals(-1, result.get().exit());
+        assertTrue(result.get().err().contains("interrupted"));
+        ProcessHandle handle = ProcessHandle.of(pid).orElse(null);
+        if (handle != null && handle.isAlive()) {
+            handle.onExit().get(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        assertTrue(handle == null || !handle.isAlive(), "agent process survived cancellation");
     }
 }

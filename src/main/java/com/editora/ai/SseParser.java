@@ -24,6 +24,9 @@ public final class SseParser {
             data.setLength(0);
             return e;
         }
+        if (line.length() + data.length() > 1_000_000) {
+            throw new IllegalArgumentException("SSE event exceeds limit");
+        }
         if (line.startsWith(":")) {
             return null; // comment/keep-alive
         }

@@ -37,6 +37,9 @@ public final class AiClient {
         /** The model the provider reports for this response, when available. */
         default void onModel(String model) {}
 
+        /** Parsed provider event for structured adapters (tool calls/usage); never executed here. */
+        default void onEvent(JsonNode event) {}
+
         void onText(String delta);
 
         /** The turn finished; {@code stopReason} e.g. {@code end_turn}/{@code max_tokens}/{@code refusal}. */
@@ -112,9 +115,9 @@ public final class AiClient {
         }
         java.util.concurrent.atomic.AtomicBoolean idleTimedOut = new java.util.concurrent.atomic.AtomicBoolean(false);
         try {
-            HttpResponse<java.io.InputStream> resp = sendUntilHeaders(req, responseTimeout);
+            HttpResponse<java.io.InputStream> resp = sendUntilHeaders(req, responseTimeout, cancelled);
             if (resp.statusCode() != 200) {
-                listener.onError(errorBody(resp));
+                listener.onError(errorBody(resp, responseTimeout, cancelled));
                 return;
             }
             java.io.InputStream body = resp.body();
@@ -129,11 +132,11 @@ public final class AiClient {
             java.util.concurrent.atomic.AtomicLong lastActivity =
                     new java.util.concurrent.atomic.AtomicLong(System.nanoTime());
             long idleNanos = responseTimeout.toNanos();
-            long checkMillis = Math.max(100, Math.min(2000, responseTimeout.toMillis() / 4));
+            long checkMillis = Math.max(25, Math.min(100, responseTimeout.toMillis() / 4));
             java.util.concurrent.ScheduledFuture<?> watchdog = IDLE_WATCHDOG.scheduleAtFixedRate(
                     () -> {
-                        if (System.nanoTime() - lastActivity.get() > idleNanos) {
-                            idleTimedOut.set(true);
+                        if (cancelled.getAsBoolean() || System.nanoTime() - lastActivity.get() > idleNanos) {
+                            idleTimedOut.set(!cancelled.getAsBoolean());
                             try {
                                 body.close(); // unblocks the reader's blocked readLine()
                             } catch (IOException ignored) {
@@ -149,7 +152,7 @@ public final class AiClient {
             SseParser parser = new SseParser();
             try (BufferedReader r = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
                 String line;
-                while ((line = r.readLine()) != null) {
+                while ((line = readSseLine(r)) != null) {
                     lastActivity.set(System.nanoTime());
                     if (cancelled.getAsBoolean()) {
                         listener.onDone("cancelled");
@@ -165,6 +168,7 @@ public final class AiClient {
                             return;
                         }
                         JsonNode chunk = mapper.readTree(event.data());
+                        listener.onEvent(chunk);
                         if (!modelReported) {
                             String model = streamModel(provider, chunk);
                             if (model != null) {
@@ -188,6 +192,7 @@ public final class AiClient {
                         continue;
                     }
                     JsonNode data = mapper.readTree(event.data());
+                    listener.onEvent(data);
                     if (!modelReported) {
                         String model = streamModel(provider, data);
                         if (model != null) {
@@ -224,7 +229,7 @@ public final class AiClient {
                 watchdog.cancel(false);
             }
             listener.onDone(stopReason);
-        } catch (IOException | InterruptedException | TimeoutException e) {
+        } catch (IOException | InterruptedException | TimeoutException | IllegalArgumentException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
@@ -252,12 +257,28 @@ public final class AiClient {
      * its future as soon as the headers and stream are available; body liveness is then owned by the idle
      * watchdog above.
      */
-    private HttpResponse<java.io.InputStream> sendUntilHeaders(HttpRequest request, Duration timeout)
+    private HttpResponse<java.io.InputStream> sendUntilHeaders(
+            HttpRequest request, Duration timeout, BooleanSupplier cancelled)
             throws IOException, InterruptedException, TimeoutException {
         CompletableFuture<HttpResponse<java.io.InputStream>> exchange =
                 http.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream());
         try {
-            return exchange.get(timeout.toNanos(), TimeUnit.NANOSECONDS);
+            long deadline = System.nanoTime() + timeout.toNanos();
+            while (true) {
+                if (cancelled.getAsBoolean()) {
+                    exchange.cancel(true);
+                    throw new InterruptedException("Generation cancelled");
+                }
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) {
+                    throw new TimeoutException("Response headers timed out");
+                }
+                try {
+                    return exchange.get(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(100)), TimeUnit.NANOSECONDS);
+                } catch (TimeoutException waiting) {
+                    // Keep observing cancellation while the endpoint is still preparing its headers.
+                }
+            }
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof IOException io) {
@@ -330,13 +351,43 @@ public final class AiClient {
         }
     }
 
-    private String errorBody(HttpResponse<java.io.InputStream> resp) {
+    private static String readSseLine(BufferedReader reader) throws IOException {
+        StringBuilder line = new StringBuilder();
+        int ch;
+        while ((ch = reader.read()) != -1) {
+            if (ch == '\n') {
+                return line.toString();
+            }
+            if (line.length() >= 1_000_000) {
+                throw new IOException("SSE line exceeds limit");
+            }
+            if (ch != '\r') {
+                line.append((char) ch);
+            }
+        }
+        return line.isEmpty() ? null : line.toString();
+    }
+
+    private String errorBody(HttpResponse<java.io.InputStream> resp, Duration timeout, BooleanSupplier cancelled) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        var watchdog = IDLE_WATCHDOG.scheduleAtFixedRate(
+                () -> {
+                    if (cancelled.getAsBoolean() || System.nanoTime() >= deadline) {
+                        try {
+                            resp.body().close();
+                        } catch (IOException ignored) {
+                        }
+                    }
+                },
+                100,
+                100,
+                TimeUnit.MILLISECONDS);
         try (var in = resp.body()) {
-            JsonNode body = mapper.readTree(in);
-            String msg = body.path("error").path("message").asText("");
-            return "HTTP " + resp.statusCode() + (msg.isEmpty() ? "" : ": " + msg);
+            return errorBodyString(resp.statusCode(), new String(in.readNBytes(16_384), StandardCharsets.UTF_8));
         } catch (Exception e) {
             return "HTTP " + resp.statusCode();
+        } finally {
+            watchdog.cancel(false);
         }
     }
 }

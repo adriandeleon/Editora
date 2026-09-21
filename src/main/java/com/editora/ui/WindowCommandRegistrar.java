@@ -11,6 +11,7 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.config.ConfigManager;
 import com.editora.config.Project;
+import com.editora.config.Settings;
 import com.editora.editops.KillRing;
 import com.editora.editops.Rectangle;
 import com.editora.editor.EditorBuffer;
@@ -1032,6 +1033,29 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("agent.selectMode", host.agentCoordinator()::pickMode));
         host.registry().register(Command.of("agent.selectClient", host.agentCoordinator()::pickAgentClient));
         host.registry().register(Command.of("agent.resumeSession", host.agentCoordinator()::resumeSessionPicker));
+        host.registry().register(Command.of("agent.manageMcp", host.agentCoordinator()::manageMcp));
+        host.registry()
+                .register(Command.of(
+                        "agent.setMaxIterations",
+                        () -> host.editorSettings()
+                                .promptIntSetting(
+                                        "agent.setMaxIterations",
+                                        host.config().getSettings()::getAgentMaxIterations,
+                                        1,
+                                        256,
+                                        host.config().getSettings()::setAgentMaxIterations,
+                                        null)));
+        host.registry()
+                .register(Command.of(
+                        "agent.setContextTokens",
+                        () -> host.editorSettings()
+                                .promptIntSetting(
+                                        "agent.setContextTokens",
+                                        host.config().getSettings()::getAgentContextTokens,
+                                        Settings.AGENT_CONTEXT_MIN,
+                                        262144,
+                                        host.config().getSettings()::setAgentContextTokens,
+                                        null)));
         host.registry()
                 .register(Command.of(
                         "view.toggleAgent",

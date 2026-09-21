@@ -65,6 +65,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         }
         java.util.concurrent.CompletableFuture<T> f = new java.util.concurrent.CompletableFuture<>();
         javafx.application.Platform.runLater(() -> {
+            if (f.isDone()) {
+                return;
+            }
             try {
                 f.complete(task.get());
             } catch (Throwable t) {
@@ -73,8 +76,13 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         });
         try {
             return f.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(interrupted);
         } catch (Exception e) {
             throw new RuntimeException(e);
+        } finally {
+            f.cancel(false); // prevents a queued FX action from starting after timeout/interruption
         }
     }
 
@@ -146,6 +154,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         java.util.concurrent.CompletableFuture<com.editora.search.SearchService.Outcome> fut =
                 new java.util.concurrent.CompletableFuture<>();
         javafx.application.Platform.runLater(() -> {
+            if (fut.isDone()) {
+                return;
+            }
             java.util.Map<Path, String> open = new java.util.HashMap<>();
             for (Tab tab : host.editorArea().tabs()) {
                 EditorBuffer b = host.bufferOf(tab);
@@ -163,8 +174,13 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         com.editora.search.SearchService.Outcome outcome;
         try {
             outcome = fut.get(20, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(interrupted);
         } catch (Exception e) {
             throw new RuntimeException(e);
+        } finally {
+            fut.cancel(false);
         }
         java.util.List<SearchMatch> out = new java.util.ArrayList<>();
         for (com.editora.search.FileResult fr : outcome.files()) {
@@ -287,6 +303,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         java.util.concurrent.CompletableFuture<java.util.List<com.editora.lsp.SymbolNode>> fut =
                 new java.util.concurrent.CompletableFuture<>();
         javafx.application.Platform.runLater(() -> {
+            if (fut.isDone()) {
+                return;
+            }
             Path target = path != null
                     ? Path.of(path)
                     : (host.activeBuffer() == null ? null : host.activeBuffer().getPath());
@@ -301,8 +320,13 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         });
         try {
             return mapMcpSymbols(fut.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(interrupted);
         } catch (Exception e) {
             throw new RuntimeException(e);
+        } finally {
+            fut.cancel(false);
         }
     }
 
@@ -321,6 +345,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         java.util.concurrent.CompletableFuture<com.editora.git.GitService.RepoState> fut =
                 new java.util.concurrent.CompletableFuture<>();
         javafx.application.Platform.runLater(() -> {
+            if (fut.isDone()) {
+                return;
+            }
             Path context = host.git().isEnabled() ? host.git().contextPath() : null;
             if (context == null) {
                 fut.complete(com.editora.git.GitService.RepoState.NONE);
@@ -331,8 +358,13 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         com.editora.git.GitService.RepoState state;
         try {
             state = fut.get(15, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(interrupted);
         } catch (Exception e) {
             throw new RuntimeException(e);
+        } finally {
+            fut.cancel(false);
         }
         if (!state.isRepo()) {
             return new GitState(false, null, null, null, 0, 0, java.util.List.of());
@@ -367,12 +399,21 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     public java.util.List<TodoItem> todoScan() {
         java.util.concurrent.CompletableFuture<com.editora.todo.TodoService.Outcome> fut =
                 new java.util.concurrent.CompletableFuture<>();
-        javafx.application.Platform.runLater(() -> host.todoCoordinator().scanForMcp(fut::complete));
+        javafx.application.Platform.runLater(() -> {
+            if (!fut.isDone()) {
+                host.todoCoordinator().scanForMcp(fut::complete);
+            }
+        });
         com.editora.todo.TodoService.Outcome outcome;
         try {
             outcome = fut.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(interrupted);
         } catch (Exception e) {
             throw new RuntimeException(e);
+        } finally {
+            fut.cancel(false);
         }
         java.util.List<TodoItem> out = new java.util.ArrayList<>();
         for (com.editora.todo.TodoService.FileTodos ft : outcome.files()) {

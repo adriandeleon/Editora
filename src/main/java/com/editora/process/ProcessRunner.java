@@ -104,8 +104,29 @@ public final class ProcessRunner {
         return runRaw(workingDir, timeout, command, extraEnv, null);
     }
 
+    /** Agent commands get a small explicit environment; credentials and provider tokens are not inherited. */
+    public static Result runRestricted(Path workingDir, Duration timeout, List<String> command) {
+        BytesResult raw = runRaw(workingDir, timeout, command, Map.of(), null, true);
+        return new Result(
+                raw.exit(),
+                new String(raw.out(), StandardCharsets.UTF_8),
+                raw.err(),
+                raw.outTruncated(),
+                raw.errTruncated());
+    }
+
     private static BytesResult runRaw(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
+        return runRaw(workingDir, timeout, command, extraEnv, stdin, false);
+    }
+
+    private static BytesResult runRaw(
+            Path workingDir,
+            Duration timeout,
+            List<String> command,
+            Map<String, String> extraEnv,
+            String stdin,
+            boolean restricted) {
         // Resolve a bare command name to an absolute path against the augmented PATH: on Unix
         // ProcessBuilder searches the JVM's (stripped, GUI-launched) PATH for the executable, not the
         // child env we set below — so without this, mmdc/npx still wouldn't be found.
@@ -115,9 +136,15 @@ public final class ProcessRunner {
         }
         applyStandardEnv(pb);
         pb.environment().putAll(extraEnv);
+        if (restricted) {
+            retainAgentEnvironment(pb.environment());
+        }
         Process process;
         try {
             process = pb.start();
+            if (restricted) {
+                ProcessRegistry.track(process);
+            }
         } catch (IOException e) {
             return new BytesResult(-1, new byte[0], e.getMessage() == null ? "failed to start" : e.getMessage());
         }
@@ -163,7 +190,11 @@ public final class ProcessRunner {
 
         try {
             if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
-                ProcessRegistry.killTree(process); // children first — a wrapper script's real work is a child
+                if (restricted) {
+                    ProcessRegistry.forceKillTree(process);
+                } else {
+                    ProcessRegistry.killTree(process); // children first — a wrapper script's real work is a child
+                }
                 return new BytesResult(
                         -1, outBuf.toByteArray(), "command timed out", outTruncated.get(), errTruncated.get());
             }
@@ -179,11 +210,31 @@ public final class ProcessRunner {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            ProcessRegistry.killTree(process);
+            if (restricted) {
+                ProcessRegistry.forceKillTree(process);
+            } else {
+                ProcessRegistry.killTree(process);
+            }
             return new BytesResult(-1, new byte[0], "interrupted");
         }
         return new BytesResult(
                 process.exitValue(), outBuf.toByteArray(), text(errBuf), outTruncated.get(), errTruncated.get());
+    }
+
+    public static void retainAgentEnvironment(Map<String, String> environment) {
+        var allowed = java.util.Set.of(
+                "PATH",
+                "HOME",
+                "USERPROFILE",
+                "SYSTEMROOT",
+                "WINDIR",
+                "TEMP",
+                "TMP",
+                "TMPDIR",
+                "JAVA_HOME",
+                "LANG",
+                "LC_ALL");
+        environment.keySet().removeIf(name -> !allowed.contains(name.toUpperCase(Locale.ROOT)));
     }
 
     /**

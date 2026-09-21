@@ -154,6 +154,16 @@ public final class ProcessRegistry {
         }
     }
 
+    /** Immediate force-kill for a cancelled/expired agent command; no grace window may outlive its turn. */
+    public static void forceKillTree(Process p) {
+        if (p == null) {
+            return;
+        }
+        destroyTree(p, true);
+        releaseDeadPending();
+        untrack(p);
+    }
+
     /** SIGTERM (force=false) or SIGKILL (force=true) the whole tree, children before the root so a wrapper
      *  script can't reparent-orphan its real child. Snapshots descendants before touching the root. */
     private static void destroyTree(Process p, boolean force) {

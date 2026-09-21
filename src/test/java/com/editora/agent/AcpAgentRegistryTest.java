@@ -11,11 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AcpAgentRegistryTest {
 
     @Test
-    void allReturnsSevenAgentsInOrder() {
+    void allReturnsAgentsInOrder() {
         List<AcpAgentRegistry.AgentDef> all = AcpAgentRegistry.all();
-        assertEquals(7, all.size());
+        assertEquals(8, all.size());
         assertEquals(
-                List.of("claude", "gemini", "copilot", "codex", "qwen", "opencode", "lmstudio"),
+                List.of("claude", "gemini", "copilot", "codex", "qwen", "opencode", "lmstudio", "builtin"),
                 all.stream().map(AcpAgentRegistry.AgentDef::id).toList());
     }
 

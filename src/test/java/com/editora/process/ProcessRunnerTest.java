@@ -48,4 +48,27 @@ class ProcessRunnerTest {
         String out = B + "/a" + E + " trailing " + B + "/b" + E;
         assertEquals("/a", ProcessRunner.extractMarked(out, B, E));
     }
+
+    @Test
+    void agentEnvironmentDropsTokensAndSshStateButKeepsPortableLaunchInputs() {
+        var environment = new java.util.HashMap<>(java.util.Map.of(
+                "PATH",
+                "/bin",
+                "SystemRoot",
+                "C:\\Windows",
+                "JAVA_HOME",
+                "/jdk",
+                "HOME",
+                "/home/test",
+                "ANTHROPIC_API_KEY",
+                "fixture-token",
+                "AWS_SECRET_ACCESS_KEY",
+                "fixture-secret",
+                "SSH_AUTH_SOCK",
+                "/fixture/socket",
+                "OPENCODE_CONFIG_CONTENT",
+                "fixture-config"));
+        ProcessRunner.retainAgentEnvironment(environment);
+        assertEquals(java.util.Set.of("PATH", "SystemRoot", "JAVA_HOME", "HOME"), environment.keySet());
+    }
 }

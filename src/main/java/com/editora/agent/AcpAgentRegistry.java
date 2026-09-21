@@ -6,12 +6,12 @@ import java.util.Map;
 import com.editora.run.ProgramArgs;
 
 /**
- * The known ACP agent clients Editora can drive over stdio — id, human display name, and default launch
+ * The known agent choices (ACP clients driven over stdio, plus the built-in runtime) — id, human display name, and default launch
  * command — plus the pure resolution helpers the coordinator and Settings use. The agent-side analog of
  * {@code lsp.LspServerRegistry} (which is language-server-centric): here there are no root markers or
  * language ids, because exactly ONE ACP agent is active at a time (unlike LSP, where every configured
- * server can run concurrently for its own languages). Every agent launches the same way — a tokenized
- * argv spawned via {@code ProcessRunner}, speaking ACP over stdio — so adding one is a single enum row.
+ * server can run concurrently for its own languages). Every external agent launches the same way — a tokenized
+ * argv spawned via {@code ProcessRunner}, speaking ACP over stdio — so adding an external client is a single enum row. BUILTIN has no executable and is routed to Editora's runtime.
  *
  * <p>All methods are static + pure (no process launch, no I/O), so they're directly unit-tested. The
  * command overrides map ({@code id -> user command}) comes from {@code Settings} (per-agent fields).
@@ -26,7 +26,8 @@ public final class AcpAgentRegistry {
         CODEX("codex", "Codex CLI", "codex-acp"),
         QWEN("qwen", "Qwen Code", "qwen --acp"),
         OPENCODE("opencode", "OpenCode", "opencode acp"),
-        LMSTUDIO("lmstudio", "LM Studio / Bionic (OpenCode)", "opencode acp");
+        LMSTUDIO("lmstudio", "LM Studio / Bionic (OpenCode)", "opencode acp"),
+        BUILTIN("builtin", "Editora", "");
 
         private final String id;
         private final String displayName;

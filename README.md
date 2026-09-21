@@ -651,6 +651,20 @@ Editora is built with the help of AI coding tools.
   endpoint. Leave Model blank to use the Codex default. Inline completion requires an API provider.
   When the selected provider is connected, the editor right-click menu includes an **AI Actions**
   submenu for Explain Selection and Rewrite Selection.
+- **Built-in coding agent** _(Beta)_ — select **Editora (built-in)** under AI Agent to use the
+  Anthropic, OpenAI-compatible or LM Studio provider configured under AI Actions. It searches live
+  workspace text, reads files, maintains a plan, applies revision-checked multi-file edits through
+  undoable editor buffers, saves agent revisions, and runs approved validation commands. Stale edits
+  are rejected; tool results are collapsible, Stop propagates to running work, and edits require
+  verification before completion. It discovers live LSP capabilities, follows semantic references,
+  previews safe refactorings, ranks editor context and discovers scoped project instructions/skills.
+  Local sessions resume with fresh permissions and file checks. Configurable stdio MCP servers share
+  the same tool policy. Context/iteration limits are configurable; external commands always require approval. See the
+  [IDE-native intelligence guide](docs/subsystems/agent-intelligence.md) and
+  [architecture and limitations](docs/subsystems/agent-platform.md). An opt-in
+  [coding benchmark](docs/subsystems/agent-evaluation.md) exercises real models against Editora and
+  controlled Java projects, with independent outcome checks. Native tools include bounded filename
+  discovery and explicit read paging; stalled read/permission loops stop with a resumable explanation.
 - **AI Agent** _(Beta)_ — chat with an embedded coding agent over the
   [Agent Client Protocol](https://agentclientprotocol.com) (ACP). The default command is
   `claude-code-acp` (Claude Code's ACP adapter; any ACP agent works via Settings → AI Agent). The

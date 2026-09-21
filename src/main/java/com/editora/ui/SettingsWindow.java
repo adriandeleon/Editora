@@ -368,6 +368,8 @@ public class SettingsWindow {
     private final java.util.Map<String, TextField> agentCommandFields = new java.util.LinkedHashMap<>();
     private final java.util.Map<String, Label> agentStatusLabels = new java.util.LinkedHashMap<>();
     private CheckBox agentIncludeContextCheck;
+    private Spinner<Integer> agentIterationsSpinner;
+    private Spinner<Integer> agentContextSpinner;
     private CheckBox aiCheck;
     private TextField aiModelField;
     private TextField aiApiKeyField;
@@ -1439,6 +1441,9 @@ public class SettingsWindow {
             });
             agentCommandFields.put(a.id(), field);
         }
+        agentIterationsSpinner = historySpinner(1, 256, 64, Settings::setAgentMaxIterations);
+        agentContextSpinner =
+                historySpinner(Settings.AGENT_CONTEXT_MIN, 262144, 32768, Settings::setAgentContextTokens);
         agentIncludeContextCheck = new CheckBox(tr("settings.agent.includeContext"));
         agentIncludeContextCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setAgentIncludeContext(now);
@@ -4777,7 +4782,27 @@ public class SettingsWindow {
                 agentIncludeContextCheck,
                 null,
                 "ai agent acp context cursor line selection file attach prompt");
+        controlRow(
+                mainCard,
+                Category.AGENT,
+                tr("settings.agent.maxIterations"),
+                tr("settings.agent.limitsHint"),
+                agentIterationsSpinner,
+                "agent builtin iterations limits");
+        controlRow(
+                mainCard,
+                Category.AGENT,
+                tr("settings.agent.contextTokens"),
+                tr("settings.agent.limitsHint"),
+                agentContextSpinner,
+                "agent builtin context tokens budget");
         Label localHint = note(tr("settings.agent.lmstudioHint"));
+        Button mcpSettings = new Button(tr("agent.mcp.title"));
+        mcpSettings.setOnAction(event -> {
+            if (agentCoordinator != null) agentCoordinator.manageMcp();
+            else AgentMcpSettings.show(stage, config.getSettings(), this::apply, java.util.List::of);
+        });
+        cardRow(mainCard, Category.AGENT, mcpSettings, "agent mcp servers extensions");
         localHint.setWrapText(true);
         localHint.setMaxWidth(440);
         cardRow(mainCard, Category.AGENT, localHint, "ai agent lm studio bionic local opencode model endpoint");
@@ -6854,6 +6879,8 @@ public class SettingsWindow {
             }
             refreshAgentClientStatus();
             agentIncludeContextCheck.setSelected(settings.isAgentIncludeContext());
+            agentIterationsSpinner.getValueFactory().setValue(settings.getAgentMaxIterations());
+            agentContextSpinner.getValueFactory().setValue(settings.getAgentContextTokens());
             aiCheck.setSelected(settings.isAiSupport());
             aiInlineCheck.setSelected(settings.isAiInlineCompletion());
             aiProviderCombo.setValue(

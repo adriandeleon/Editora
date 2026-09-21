@@ -1440,6 +1440,12 @@ final class LanguageServerSession implements LanguageClient {
         return initialized && server != null && !disposed;
     }
 
+    /** Raw typed service for the agent adapter: unlike UI helpers it must preserve failures. */
+    org.eclipse.lsp4j.services.LanguageServer agentServer() {
+        if (!ready()) throw new IllegalStateException("Language server unavailable or initializing");
+        return server;
+    }
+
     /** Sends {@code shutdown}+{@code exit} (best-effort) and tears down the process + threads. */
     synchronized void dispose() {
         if (disposed) {

@@ -177,6 +177,10 @@ final class FileWorkflowCoordinator {
         this.host = host;
     }
 
+    Path agentConfigDirectory() {
+        return host.config().getConfigDir();
+    }
+
     void setDocumentWriter(DocumentWriter documentWriter) {
         this.documentWriter = java.util.Objects.requireNonNull(documentWriter, "documentWriter");
     }
@@ -1191,6 +1195,31 @@ final class FileWorkflowCoordinator {
             finishRequest(request);
             return false;
         }
+    }
+
+    /** Agent save: asynchronous completion, conflict refusal without dialogs, cancellation up to commit. */
+    CompletableFuture<Boolean> saveForAgent(
+            EditorBuffer buffer, com.editora.agent.runtime.AgentCancellation cancellation) {
+        cancellation.check();
+        SaveRequest request = captureSave(buffer, buffer.getPath(), false);
+        CompletableFuture<Boolean> completed = new CompletableFuture<>();
+        AutoCloseable hook = cancellation.onCancel(request.ticket()::invalidate);
+        completed.whenComplete((value, error) -> {
+            if (completed.isCancelled()) {
+                request.ticket().invalidate();
+            }
+            try {
+                hook.close();
+            } catch (Exception ignored) {
+            }
+        });
+        try {
+            autoSaveExecutor.submit(() -> writeAsync(request, true, completed));
+        } catch (java.util.concurrent.RejectedExecutionException closed) {
+            finishRequest(request);
+            completed.complete(false);
+        }
+        return completed;
     }
 
     boolean writeBufferSynchronously(EditorBuffer buffer, Path file) {

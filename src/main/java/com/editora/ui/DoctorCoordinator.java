@@ -332,7 +332,7 @@ final class DoctorCoordinator {
         }
 
         // AI & agents -----------------------------------------------------------------------------
-        boolean aiOn = s.isAiSupport() && s.isAiEnabled() && !simple;
+        boolean aiOn = (s.isAiSupport() || s.isAgentSupport()) && s.isAiEnabled() && !simple;
         if (!aiOn) {
             specs.add(terminal(DoctorCheck.checking("ai", "ai", tr("settings.cat.aiGeneral"), "")
                     .withSettings("ai")
@@ -344,12 +344,16 @@ final class DoctorCoordinator {
             DoctorCheck agent = DoctorCheck.checking(
                             "agent", "ai", agentName.isBlank() ? agentId : agentName, String.join(" ", agentCmd))
                     .withSettings("ai");
-            specs.add(probe(agent, base -> {
-                String path = DoctorProbes.resolvedPath(agentCmd);
-                return path.isEmpty()
-                        ? base.missing("doctor.tip.missing", agentCmd.isEmpty() ? base.label() : agentCmd.get(0))
-                        : base.ok(path);
-            }));
+            if ("builtin".equals(agentId)) {
+                specs.add(terminal(agent.ok(tr("agent.nativeModelSettings"))));
+            } else {
+                specs.add(probe(agent, base -> {
+                    String path = DoctorProbes.resolvedPath(agentCmd);
+                    return path.isEmpty()
+                            ? base.missing("doctor.tip.missing", agentCmd.isEmpty() ? base.label() : agentCmd.get(0))
+                            : base.ok(path);
+                }));
+            }
         }
 
         // System ----------------------------------------------------------------------------------

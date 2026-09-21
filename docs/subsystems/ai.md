@@ -1,7 +1,7 @@
 # AI providers and agents
 
 AI actions use `AiCoordinator` → `AiService` → `AiClient`; the agent panel uses
-`AgentCoordinator` → `AcpClient` over stdio. Both remain behind the master AI switch,
+`AgentCoordinator` → either the built-in `AgentRuntime` or `AcpClient` over stdio. Both remain behind the master AI switch,
 but their individual enable flags are independent.
 
 AI Actions supports Anthropic Messages, OpenAI-compatible chat completions, the dedicated
@@ -14,6 +14,21 @@ model metadata from OpenAI-compatible chunks (including LM Studio) or Anthropic 
 and requested model at launch, then prefers the response model. Missing metadata falls back to the
 requested model, or explicitly shows Unknown if both are absent. This identifies the direct AI
 Actions provider; the independently selected ACP chat agent does not generate these explanations.
+
+## Built-in agent
+
+Select **Editora (built-in)** under AI Agent to use the provider configured under AI Actions directly
+(Anthropic, OpenAI-compatible, or LM Studio); AI Actions itself can remain disabled. Open a local
+project or file first. The session owns a multi-step tool loop, revision-checked document edits,
+permissions, cancellation, bounded context and verification. Choose Ask/Workspace/Agent in the mode
+picker. All modes still ask before external commands because execution is not sandboxed. Configure
+context/iteration limits in Settings or the palette; start a new session to use changed limits/models.
+Native sessions checkpoint locally and can resume through the existing Resume Session command, with
+permissions reset and file state revalidated. Semantic LSP tools, ranked editor context, scoped
+instructions/skills and managed stdio MCP extend the same runtime. Configure servers through the AI
+Agent settings or `agent.manageMcp`; start a new session to discover changed tools. Codex existing-login
+access continues to use its ACP agent. See the [agent platform contracts](agent-platform.md) and
+[IDE-native intelligence guide](agent-intelligence.md) for setup, tests, security and remaining work.
 
 ## Codex
 

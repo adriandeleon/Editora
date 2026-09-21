@@ -6893,6 +6893,18 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private final AgentCoordinator agentCoordinator = new AgentCoordinator(coordinatorHost, new AgentCoordinator.Ops() {
         @Override
+        public com.editora.mcp.McpBridge nativeReadBridge() {
+            return mcpBridge;
+        }
+
+        @Override
+        public WindowAgentDocuments.Host nativeDocuments() {
+            return new AgentDocumentHost(
+                            coordinatorHost, fileWorkflows, b -> addBuffer(b, false), mcpBridge, diffCoordinator)
+                    .withLsp(lspManager, lspCoordinator::onBufferShown);
+        }
+
+        @Override
         public Path projectRoot() {
             Project active = (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
             return active == null ? null : Path.of(active.root());

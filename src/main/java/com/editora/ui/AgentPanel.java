@@ -263,6 +263,42 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         trimIfNeeded();
     }
 
+    private javafx.scene.control.TitledPane pendingTool;
+    private String pendingToolName;
+
+    /** Native calls have one entry for both progress and their eventual observation. ACP shell lines stay separate. */
+    public void startTool(String tool) {
+        finalizeCurrentMessage();
+        pendingTool = new javafx.scene.control.TitledPane("⚙ " + tool, null);
+        pendingToolName = tool;
+        pendingTool.setExpanded(false);
+        transcriptBox.getChildren().add(pendingTool);
+        trimIfNeeded();
+    }
+
+    /** Construct the expensive text control only when the user expands this bounded observation. */
+    public void appendToolResult(String tool, String result, boolean error, long elapsedMillis) {
+        finalizeCurrentMessage();
+        javafx.scene.control.TitledPane entry = pendingTool != null && tool.equals(pendingToolName)
+                ? pendingTool
+                : new javafx.scene.control.TitledPane();
+        if (entry != pendingTool) transcriptBox.getChildren().add(entry);
+        pendingTool = null;
+        pendingToolName = null;
+        entry.setText((error ? "✗ " : "✓ ") + tool + " · " + elapsedMillis + " ms");
+        entry.setExpanded(false);
+        entry.expandedProperty().addListener((observable, wasExpanded, expanded) -> {
+            if (expanded && entry.getContent() == null) {
+                TextArea content = new TextArea(result);
+                content.setEditable(false);
+                content.setWrapText(true);
+                content.setPrefRowCount(8);
+                entry.setContent(content);
+            }
+        });
+        trimIfNeeded();
+    }
+
     private void applyLineFont(Label label) {
         if (lineFontFamily != null) {
             label.setFont(javafx.scene.text.Font.font(lineFontFamily, lineFontSize));
@@ -357,6 +393,8 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
 
     /** Clears the transcript (a new session). */
     public void clearTranscript() {
+        pendingTool = null;
+        pendingToolName = null;
         transcriptBox.getChildren().clear();
         if (renderPause != null) {
             renderPause.stop();

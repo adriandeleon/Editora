@@ -263,9 +263,11 @@ public final class LspManager {
         semanticRequestGeneration.remove(uri);
         diagnosticRequestGeneration.merge(uri, 1L, Long::sum);
         rawDiagnostics.remove(uri); // open-documents-only retention (#670); the symlink-form key, if any,
+        agentDiagnostics.remove(uri);
         try { //                       is dropped too so a closed file can't pin its diagnostics
             String realUri = file.toRealPath().toUri().toString();
             rawDiagnostics.remove(realUri);
+            agentDiagnostics.remove(realUri);
             diagnosticRequestGeneration.merge(realUri, 1L, Long::sum);
         } catch (java.io.IOException | RuntimeException ignored) {
             // file gone/remote — nothing more to drop
@@ -370,6 +372,45 @@ public final class LspManager {
     public boolean isManaged(Path file) {
         // A remote (SFTP) file is never LSP-managed; bail before uri(), whose toUri() throws for such paths.
         return file != null && com.editora.vfs.Vfs.isLocal(file) && sessionByDocUri.containsKey(uri(file));
+    }
+
+    /** Capture one live session; the endpoint rejects responses from a replaced server. Call on FX. */
+    public LspAgentService agentEndpoint(Path file) {
+        LanguageServerSession session = sessionFor(file);
+        if (session == null) throw new IllegalStateException("LSP unavailable for this file");
+        return new LspAgentService(session, () -> sessionFor(file) == session && !session.isDisposed());
+    }
+
+    public record DiagnosticEvidence(String freshness, long generation, Integer version) {}
+
+    private record AgentDiagnostic(LanguageServerSession session, long generation, Integer version) {}
+
+    private final Map<String, AgentDiagnostic> agentDiagnostics = new ConcurrentHashMap<>();
+
+    /** An unversioned push is UNKNOWN, never proof that the current revision is clean. */
+    public DiagnosticEvidence agentDiagnostics(Path file) {
+        LanguageServerSession session = sessionFor(file);
+        if (session == null) return new DiagnosticEvidence("UNAVAILABLE", 0, null);
+        AgentDiagnostic evidence = agentDiagnostics.get(uri(file));
+        if (evidence == null || evidence.session() != session) return new DiagnosticEvidence("PENDING", 0, null);
+        String freshness = evidence.version() == null
+                ? "UNKNOWN"
+                : java.util.Objects.equals(evidence.version(), session.documentVersion(uri(file)))
+                        ? "CURRENT"
+                        : "STALE";
+        return new DiagnosticEvidence(freshness, evidence.generation(), evidence.version());
+    }
+
+    /** Includes edits that have not yet reached the debounced didChange notification. */
+    public DiagnosticEvidence agentDiagnostics(Path file, String currentText) {
+        var evidence = agentDiagnostics(file);
+        var session = sessionFor(file);
+        if (session != null
+                && "CURRENT".equals(evidence.freshness())
+                && !java.util.Objects.equals(
+                        currentText, session.documentSnapshots().get(uri(file))))
+            return new DiagnosticEvidence("STALE", evidence.generation(), evidence.version());
+        return evidence;
     }
 
     /** Current protocol version for an open document, or null when it is not managed. */
@@ -2717,6 +2758,7 @@ public final class LspManager {
                         && java.util.Objects.equals(diagnosticRequestGeneration.get(documentUri), generation)
                         && java.util.Objects.equals(s.documentVersion(documentUri), requestedVersion)) {
                     onDiagnostics.accept(file, mapped);
+                    agentDiagnostics.put(documentUri, new AgentDiagnostic(s, generation, requestedVersion));
                 }
             });
         });
@@ -2729,6 +2771,7 @@ public final class LspManager {
         semanticTokenState.clear();
         semanticRequestGeneration.clear();
         diagnosticRequestGeneration.clear();
+        agentDiagnostics.clear();
         pendingApplyExpected.clear();
         for (LanguageServerSession s : sessionsByRoot.values()) {
             s.dispose();
@@ -2786,6 +2829,7 @@ public final class LspManager {
             }
             if (sourceUri != null) {
                 rawDiagnostics.put(params.getUri(), raw);
+                agentDiagnostics.put(sourceUri, new AgentDiagnostic(source, generation, acceptedVersion));
             }
             onDiagnostics.accept(file, mapped);
         });

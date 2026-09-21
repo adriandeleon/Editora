@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added an opt-in autonomous coding benchmark with actual HTTP models, production editor documents,
+  optional JDT LS, controlled failure seeds, independent test/oracle checks and metadata-only reports.
+  Live evaluation led to bounded filename discovery, explicit file-read paging, repeated-denial/read
+  recovery guards, clearer tool guidance and saved/subsequent-edit diff labels. Native tool activity
+  now uses one expandable row with lazy details; permission risk explanations cover all six languages.
+  See [agent evaluation](docs/subsystems/agent-evaluation.md); ordinary verification requires no model.
+- Fixed native agent edits to deferred background tabs not attaching to LSP before synchronization.
+  Accepted JDT LS rename responses with an empty unused WorkspaceEdit form while retaining ambiguity
+  and stale-target checks. Preserved structured search results within output budgets and included new files in context ranking.
+  Streaming protocol overhead now has a separate bound from retained model text/tool arguments;
+  output-token exhaustion explains recovery without executing partial calls.
+- Added IDE-native agent intelligence: capability-aware semantic navigation and refactoring previews,
+  revision/generation-aware diagnostics, ranked editor context, hierarchical AGENTS.md and skills with
+  provenance. Native sessions now checkpoint/resume with authority reset and bounded historical memory.
+  Managed stdio MCP servers have settings, tool discovery, health, cancellation and no-replay reconnects.
+  Provider capability and token-count provenance are explicit; settings schema 106 preserves existing
+  choices while adding server configuration. See [IDE-native intelligence](docs/subsystems/agent-intelligence.md).
+- Added an optional built-in coding-agent runtime alongside ACP clients: provider-independent multi-step
+  tool execution, structured permissions, bounded context, cancellation and verification before completion.
+  Native edits use document revisions and the editor's undo/save/LSP paths; tool observations are collapsible.
+  Includes workspace discovery/search, plans, diagnostics, existing MCP symbols/Git status and approved argv
+  validation. Settings schema 105 preserves existing choices and adds native iteration/context controls.
+  See [agent platform contracts](docs/subsystems/agent-platform.md) for scope and security limits.
+- ACP edits to open buffers now use the whole-document API, preserving narrowed-buffer correctness and
+  isolating undo groups. HTTP model streams observe cancellation during header/body waits and bound SSE
+  events and error responses.
+- Hardened the built-in runtime against reused tool ids, orphaned protocol results, mutating-tool failures,
+  irrelevant commands posing as validation, stale validation after later execution, undersized context
+  budgets, full-buffer FX snapshots and late session callbacks. Adversarial tests control provider,
+  permission, verification, file-load, save, process and session-reset races without live services.
+
 - Added a dedicated LM Studio / Bionic provider for AI actions and an AI Agent preset using
   OpenCode over ACP. The preset shares the local endpoint, model and optional token without
   writing OpenCode config files; local settings stay separate from existing cloud settings.

@@ -148,6 +148,22 @@ class DoctorCoordinatorFxTest {
     }
 
     @Test
+    void builtinAgentIsAvailableWithoutAnExternalCli() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setAiEnabled(true);
+        host.settings.setAiSupport(false);
+        host.settings.setAgentSupport(true);
+        host.settings.setAgentClient("builtin");
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, new FakeOps()));
+        var row = FxTestSupport.callOnFx(doctor::buildSpecs).stream()
+                .filter(spec -> spec.placeholder().id().equals("agent"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(DoctorStatus.OK, row.placeholder().status());
+        assertNull(row.probe());
+    }
+
+    @Test
     void probeOverrideResolvesEveryProbingRowSynchronously() throws Exception {
         FakeHost host = new FakeHost();
         FakeOps ops = new FakeOps();

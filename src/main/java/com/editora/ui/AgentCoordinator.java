@@ -54,6 +54,14 @@ final class AgentCoordinator implements AcpClient.Host {
 
     /** The agent-specific window services beyond {@link CoordinatorHost}. */
     interface Ops {
+        default com.editora.mcp.McpBridge nativeReadBridge() {
+            return null;
+        }
+
+        default WindowAgentDocuments.Host nativeDocuments() {
+            throw new UnsupportedOperationException("Native document bridge unavailable");
+        }
+
         /** This window's project root, or null (no project). */
         Path projectRoot();
 
@@ -102,6 +110,14 @@ final class AgentCoordinator implements AcpClient.Host {
     });
 
     private AgentPanel panel;
+    private NativeAgentCoordinator nativeAgent;
+
+    private NativeAgentCoordinator nativeAgent() {
+        if (nativeAgent == null) {
+            nativeAgent = new NativeAgentCoordinator(host, ops, this::panel);
+        }
+        return nativeAgent;
+    }
     /** Non-null while the chat panel is popped out into its own window; the {@link AgentPanel} node moves
      *  between the docked tool window and this stage's scene (a node lives in one scene only). */
     private Stage detachedStage;
@@ -271,6 +287,10 @@ final class AgentCoordinator implements AcpClient.Host {
 
     /** {@code agent.stop}: cancel the in-flight prompt turn (the session survives). */
     void stopTurn() {
+        if (activeAgent() == AcpAgentRegistry.AgentDef.BUILTIN) {
+            nativeAgent().stop();
+            return;
+        }
         ifAgent(() -> {
             AcpClient c = client;
             String sid = sessionId;
@@ -283,6 +303,10 @@ final class AgentCoordinator implements AcpClient.Host {
     /** {@code agent.selectModel}: opens a picker over the session's available models (shared by the
      *  header label click and the palette command). */
     void pickModel() {
+        if (activeAgent() == AcpAgentRegistry.AgentDef.BUILTIN) {
+            host.setStatus(tr("agent.nativeModelSettings"));
+            return;
+        }
         ifAgent(() -> {
             if (models.isEmpty()) {
                 host.setStatus(tr("status.agent.noModels"));
@@ -303,6 +327,10 @@ final class AgentCoordinator implements AcpClient.Host {
     /** {@code agent.selectMode}: opens a picker over the session's available modes (shared by the header
      *  label click and the palette command). */
     void pickMode() {
+        if (activeAgent() == AcpAgentRegistry.AgentDef.BUILTIN) {
+            nativeAgent().pickTrust();
+            return;
+        }
         ifAgent(() -> {
             if (modes.isEmpty()) {
                 host.setStatus(tr("status.agent.noModes"));
@@ -375,6 +403,19 @@ final class AgentCoordinator implements AcpClient.Host {
     void sendPrompt(String text) {
         if (!isEnabled()) {
             host.setStatus(tr("status.agent.disabled"));
+            return;
+        }
+        if (activeAgent() == AcpAgentRegistry.AgentDef.BUILTIN) {
+            Path root = ops.projectRoot();
+            EditorBuffer active = host.activeBuffer();
+            if (root == null && active != null && host.isLocalBuffer(active) && active.getPath() != null) {
+                root = active.getPath().toAbsolutePath().getParent();
+            }
+            if (root == null) {
+                host.setStatus(tr("agent.workspaceRequired"));
+                return;
+            }
+            nativeAgent().send(text, root);
             return;
         }
         panel().appendLine("❯ " + text);
@@ -531,6 +572,10 @@ final class AgentCoordinator implements AcpClient.Host {
     /** {@code agent.resumeSession}: opens a picker over the persisted session history to reopen a past
      *  chat. Palette-gated like {@link #pickModel}/{@link #pickMode}. */
     void resumeSessionPicker() {
+        if (activeAgent() == AcpAgentRegistry.AgentDef.BUILTIN) {
+            nativeAgent().resumePicker();
+            return;
+        }
         ifAgent(() -> {
             if (ops.sessionHistory().isEmpty()) {
                 host.setStatus(tr("status.agent.noHistory"));
@@ -546,6 +591,10 @@ final class AgentCoordinator implements AcpClient.Host {
             picker.setOverlayHost(host.overlayHost());
             picker.show(host.window());
         });
+    }
+
+    void manageMcp() {
+        nativeAgent().manageMcp();
     }
 
     /** Reopens a past chat: tears down the current session, spawns a fresh process, and drives
@@ -782,6 +831,9 @@ final class AgentCoordinator implements AcpClient.Host {
     @Override
     public void onUpdate(AcpJson.Update update) {
         Platform.runLater(() -> {
+            if (activeAgent() == AcpAgentRegistry.AgentDef.BUILTIN) {
+                return;
+            }
             switch (update.kind()) {
                 case AGENT_MESSAGE -> panel().appendChunk(update.text());
                 case TOOL_CALL -> panel().appendToolLine(update.text());
@@ -805,6 +857,9 @@ final class AgentCoordinator implements AcpClient.Host {
     @Override
     public void onExit(int code) {
         Platform.runLater(() -> {
+            if (activeAgent() == AcpAgentRegistry.AgentDef.BUILTIN) {
+                return;
+            }
             client = null;
             sessionId = null;
             if (panel != null) {
@@ -831,7 +886,7 @@ final class AgentCoordinator implements AcpClient.Host {
                     return false;
                 }
                 // Undoable, review-first: the buffer goes dirty and the user saves (one C-z reverts the edit).
-                open.getArea().replaceText(body);
+                open.replaceWholeDocument(body);
                 host.setStatus(tr("status.agent.editedBuffer", open.getTitle()));
                 return true;
             });
@@ -960,6 +1015,9 @@ final class AgentCoordinator implements AcpClient.Host {
     }
 
     private void disposeClient() {
+        if (nativeAgent != null) {
+            nativeAgent.reset();
+        }
         AcpClient c = client;
         client = null;
         sessionId = null;
@@ -985,5 +1043,8 @@ final class AgentCoordinator implements AcpClient.Host {
     void shutdown() {
         disposeClient();
         lifecycleExec.shutdownNow();
+        if (nativeAgent != null) {
+            nativeAgent.shutdown();
+        }
     }
 }

@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 /** User preferences, (de)serialized to {@code settings.json}. Session/state lives in {@link WorkspaceState}. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Settings {
+    public static final int AGENT_CONTEXT_MIN = 32_768;
 
     /**
      * Restores every preference on {@code live} to its default, in place — {@code live} is the one instance
@@ -40,7 +41,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 104;
+    public static final int SCHEMA_VERSION = 106;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -404,6 +405,26 @@ public class Settings {
      *  &quot;…&quot;]" header (not shown as if the user typed it) so the agent knows the active buffer
      *  without asking: on by default. */
     private boolean agentIncludeContext = true;
+    /** Built-in runtime limits, captured when starting a new agent session. */
+    private int agentMaxIterations = 64;
+
+    private int agentContextTokens = 32768;
+    private java.util.List<AgentMcpServer> agentMcpServers = java.util.List.of();
+
+    public java.util.List<AgentMcpServer> getAgentMcpServers() {
+        return agentMcpServers == null ? java.util.List.of() : java.util.List.copyOf(agentMcpServers);
+    }
+
+    public void setAgentMcpServers(java.util.List<AgentMcpServer> servers) {
+        if (servers == null) {
+            agentMcpServers = java.util.List.of();
+            return;
+        }
+        if (servers.size() > 8
+                || servers.stream().map(AgentMcpServer::id).distinct().count() != servers.size())
+            throw new IllegalArgumentException("At most eight distinct MCP servers");
+        agentMcpServers = java.util.List.copyOf(servers);
+    }
     /** AI actions via an API provider or Codex (commit-message generation, explain/rewrite): off by default. */
     private boolean aiSupport = false;
     /** AI action model id; blank = provider default (claude-opus-4-8 for Anthropic, Codex default for Codex). */
@@ -923,6 +944,22 @@ public class Settings {
 
     public void setAgentClient(String agentClient) {
         this.agentClient = agentClient;
+    }
+
+    public int getAgentMaxIterations() {
+        return Math.clamp(agentMaxIterations, 1, 256);
+    }
+
+    public void setAgentMaxIterations(int value) {
+        agentMaxIterations = Math.clamp(value, 1, 256);
+    }
+
+    public int getAgentContextTokens() {
+        return Math.clamp(agentContextTokens, AGENT_CONTEXT_MIN, 262144);
+    }
+
+    public void setAgentContextTokens(int value) {
+        agentContextTokens = Math.clamp(value, AGENT_CONTEXT_MIN, 262144);
     }
 
     public boolean isAgentIncludeContext() {
