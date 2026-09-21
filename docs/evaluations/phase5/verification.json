@@ -1,0 +1,127 @@
+{
+  "kind": "PHASE5_VERIFICATION",
+  "fullVerify": {
+    "command": "mvn -q spotless:apply clean verify",
+    "exitCode": 0,
+    "suites": 770,
+    "tests": 5045,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 34
+  },
+  "targetedTests": {
+    "acceptance": 20,
+    "nativeTools": 16,
+    "productionEditorIsolatedMaven": {
+      "tests": 1,
+      "failed": 0,
+      "elapsedSeconds": 5.657
+    },
+    "independentOracles": {
+      "tests": 4,
+      "failed": 0,
+      "elapsedSeconds": 29.79
+    },
+    "desktopGtk": {
+      "tests": 1,
+      "failed": 0,
+      "elapsedSeconds": 5.648
+    },
+    "pythonDashboard": {
+      "tests": 3,
+      "failed": 0
+    }
+  },
+  "earlyFailures": [
+    {
+      "reason": "Initial compilation captured reassigned response in lambda",
+      "resolution": "Captured final draft local before asynchronous check"
+    },
+    {
+      "reason": "Text declaration scanner missed a valid single-line Java method",
+      "resolution": "Replaced with parse-only JDK AST and comment/string/syntax tests"
+    },
+    {
+      "reason": "JDT rerun supplied wrong property name",
+      "resolution": "Corrected agent.lsp.command; all twelve operations passed"
+    },
+    {
+      "reason": "Review found ordinary successful edits missing acceptance callback, and resume callback could erase evidence",
+      "resolution": "Added existing-buffer integration and native checkpoint regressions; corrected wiring"
+    },
+    {
+      "reason": "A scope-correction assertion was added after formatting during the preceding verify run; final Spotless check rejected its formatting.",
+      "resolution": "Source frozen; rerun spotless:apply clean verify after the correction."
+    }
+  ],
+  "timingSamples": [
+    {
+      "run": "editora-phase5-quality.log",
+      "fakeWorkflowVerificationNanos": 1197195,
+      "javaDeclarationNanos": 15318100
+    },
+    {
+      "run": "editora-phase5-editor-evidence.log",
+      "fakeWorkflowVerificationNanos": 779363,
+      "javaDeclarationNanos": 18565881
+    },
+    {
+      "run": "editora-phase5-actual-evidence.log",
+      "fakeWorkflowVerificationNanos": 642768,
+      "javaDeclarationNanos": 11947999
+    },
+    {
+      "run": "editora-phase5-final-verify.log",
+      "fakeWorkflowVerificationNanos": 393587,
+      "javaDeclarationNanos": 10119591
+    },
+    {
+      "run": "editora-phase5-final-verified.log",
+      "fakeWorkflowVerificationNanos": 361806,
+      "javaDeclarationNanos": 10023811
+    }
+  ],
+  "catalogParity": {
+    "locales": 6,
+    "acceptanceKeys": 16
+  },
+  "diffCheck": {
+    "exitCode": 0
+  },
+  "postMetadataCopyVerify": {
+    "command": "mvn -q spotless:apply clean verify",
+    "exitCode": 0,
+    "suites": 770,
+    "tests": 5044,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 34
+  },
+  "liveHarness": {
+    "preFixCompletedReports": 2,
+    "preFixInterruptedAttempts": 1,
+    "correctedCompletedReports": 2,
+    "correctedHarnessExitCode": 0,
+    "behavioralOraclePasses": 2,
+    "fullTaskPasses": 0,
+    "finalCompletionChecksObserved": 0
+  },
+  "priorFullVerify": {
+    "command": "mvn -q spotless:apply clean verify",
+    "exitCode": 0,
+    "suites": 770,
+    "tests": 5043,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 35
+  },
+  "sourceReview": {
+    "base": "Phase 4 source snapshot",
+    "diffCheckExitCode": 0,
+    "notes": [
+      "Successful native edit and restore callbacks reviewed; regressions cover both.",
+      "Late evidence freshness, validation-time assessment and correction parsing have final deterministic coverage; live batch predates them."
+    ]
+  },
+  "finalSourceFingerprint": "592fbe6e10a60b387c07539db579083bbbd66fc6060a3bc38fc44b1fae95aa41"
+}

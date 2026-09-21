@@ -1,0 +1,974 @@
+{
+  "schemaVersion" : 2,
+  "outputRecoveries" : 1,
+  "validationEvidence" : "INCOMPLETE",
+  "oracleEvidence" : "EVALUATION_ORACLE_FAILED",
+  "kind" : "AUTONOMOUS_CODING_EVALUATION",
+  "scenario" : "editora-stash-overflow",
+  "provider" : "lmstudio",
+  "model" : "google/gemma-4-12b-qat",
+  "contextLimit" : 65536,
+  "tokenEstimate" : "HEURISTIC",
+  "elapsedMs" : 514905,
+  "completionState" : "LIMIT",
+  "oraclePassed" : false,
+  "humanReviewRequired" : false,
+  "approvalsRequested" : 3,
+  "approvalsDenied" : 1,
+  "approvalMode" : "HARNESS_BOUNDED_AUTO_CONSENT",
+  "repeatedCalls" : 20,
+  "verificationFailures" : 0,
+  "idealParallelReadSavingsMs" : 0,
+  "taskSuccess" : "FAIL",
+  "changedFiles" : [ ],
+  "unexpectedFiles" : [ ],
+  "filesRead" : [ "src/main/java/com/editora/git/StashParser.java", "src/test/java/com/editora/git/StashParserOverflowTest.java", "src/test/java/com/editora/git/StashParserTest.java" ],
+  "modelRounds" : [ {
+    "iteration" : 1,
+    "outputBudget" : 8192,
+    "requestBytes" : 1219,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 2924
+  }, {
+    "iteration" : 2,
+    "outputBudget" : 8192,
+    "requestBytes" : 3807,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "find_files" ],
+    "elapsedMs" : 597
+  }, {
+    "iteration" : 3,
+    "outputBudget" : 8192,
+    "requestBytes" : 4105,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 728
+  }, {
+    "iteration" : 4,
+    "outputBudget" : 8192,
+    "requestBytes" : 6042,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "create_file" ],
+    "elapsedMs" : 13877
+  }, {
+    "iteration" : 5,
+    "outputBudget" : 8192,
+    "requestBytes" : 9690,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "validation_profiles" ],
+    "elapsedMs" : 54726
+  }, {
+    "iteration" : 6,
+    "outputBudget" : 8192,
+    "requestBytes" : 10128,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_command" ],
+    "elapsedMs" : 62190
+  }, {
+    "iteration" : 7,
+    "outputBudget" : 8192,
+    "requestBytes" : 10245,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_validation" ],
+    "elapsedMs" : 946
+  }, {
+    "iteration" : 8,
+    "outputBudget" : 8192,
+    "requestBytes" : 10592,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_validation" ],
+    "elapsedMs" : 807
+  }, {
+    "iteration" : 9,
+    "outputBudget" : 8192,
+    "requestBytes" : 10953,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 0,
+    "stop" : "length",
+    "toolsRequested" : [ ],
+    "elapsedMs" : 127305
+  }, {
+    "iteration" : 10,
+    "outputBudget" : 16384,
+    "requestBytes" : 11160,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 5070
+  }, {
+    "iteration" : 11,
+    "outputBudget" : 16384,
+    "requestBytes" : 13748,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 68732
+  }, {
+    "iteration" : 12,
+    "outputBudget" : 16384,
+    "requestBytes" : 15641,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 931
+  }, {
+    "iteration" : 13,
+    "outputBudget" : 16384,
+    "requestBytes" : 19385,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 9928
+  }, {
+    "iteration" : 14,
+    "outputBudget" : 16384,
+    "requestBytes" : 21842,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 10377
+  }, {
+    "iteration" : 15,
+    "outputBudget" : 16384,
+    "requestBytes" : 24299,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 1000
+  }, {
+    "iteration" : 16,
+    "outputBudget" : 16384,
+    "requestBytes" : 28043,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 10549
+  }, {
+    "iteration" : 17,
+    "outputBudget" : 16384,
+    "requestBytes" : 30500,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 9924
+  }, {
+    "iteration" : 18,
+    "outputBudget" : 16384,
+    "requestBytes" : 32957,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 958
+  }, {
+    "iteration" : 19,
+    "outputBudget" : 16384,
+    "requestBytes" : 36701,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 10045
+  }, {
+    "iteration" : 20,
+    "outputBudget" : 16384,
+    "requestBytes" : 39158,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 10448
+  }, {
+    "iteration" : 21,
+    "outputBudget" : 16384,
+    "requestBytes" : 41615,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 10394
+  }, {
+    "iteration" : 22,
+    "outputBudget" : 16384,
+    "requestBytes" : 44072,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 1012
+  }, {
+    "iteration" : 23,
+    "outputBudget" : 16384,
+    "requestBytes" : 47816,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 11645
+  }, {
+    "iteration" : 24,
+    "outputBudget" : 16384,
+    "requestBytes" : 50273,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 9953
+  }, {
+    "iteration" : 25,
+    "outputBudget" : 16384,
+    "requestBytes" : 52730,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 9939
+  }, {
+    "iteration" : 26,
+    "outputBudget" : 16384,
+    "requestBytes" : 55187,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 9990
+  }, {
+    "iteration" : 27,
+    "outputBudget" : 16384,
+    "requestBytes" : 57644,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 10140
+  }, {
+    "iteration" : 28,
+    "outputBudget" : 16384,
+    "requestBytes" : 60101,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 10044
+  }, {
+    "iteration" : 29,
+    "outputBudget" : 16384,
+    "requestBytes" : 62558,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 10082
+  }, {
+    "iteration" : 30,
+    "outputBudget" : 16384,
+    "requestBytes" : 65015,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 1068
+  }, {
+    "iteration" : 31,
+    "outputBudget" : 16384,
+    "requestBytes" : 68759,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 10333
+  }, {
+    "iteration" : 32,
+    "outputBudget" : 16384,
+    "requestBytes" : 69057,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 16346
+  } ],
+  "toolCalls" : [ {
+    "tool" : "read_file",
+    "iteration" : 1,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/git/StashParser.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2529,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "find_files",
+    "iteration" : 2,
+    "effect" : "READ",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 271,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "iteration" : 3,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/git/StashParserTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1876,
+    "elapsedMs" : 6
+  }, {
+    "tool" : "create_file",
+    "iteration" : 4,
+    "effect" : "WORKSPACE_WRITE",
+    "path" : "src/test/java/com/editora/git/StashParserOverflowTest.java",
+    "error" : false,
+    "changed" : true,
+    "resultChars" : 134,
+    "elapsedMs" : 6
+  }, {
+    "tool" : "validation_profiles",
+    "iteration" : 5,
+    "effect" : "READ",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 424,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "run_validation",
+    "iteration" : 7,
+    "effect" : "EXTERNAL",
+    "error" : true,
+    "failure" : "VALIDATION_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "run_validation",
+    "iteration" : 8,
+    "effect" : "EXTERNAL",
+    "error" : true,
+    "failure" : "VALIDATION_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 10,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/git/StashParser.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2529,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 11,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 12,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/git/StashParserOverflowTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 3675,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 13,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 14,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 15,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/git/StashParserOverflowTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 3675,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 16,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 17,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 18,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/git/StashParserOverflowTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 3675,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 19,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 20,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 21,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "iteration" : 22,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/git/StashParserOverflowTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 3675,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 23,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 24,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 25,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 26,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 27,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 1
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 28,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 29,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 30,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/git/StashParserOverflowTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 3675,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 31,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 32,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 0
+  } ],
+  "verification" : [ ],
+  "observations" : [ {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "find_files",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 7
+  }, {
+    "tool" : "create_file",
+    "error" : false,
+    "elapsedMs" : 6
+  }, {
+    "tool" : "validation_profiles",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "run_command",
+    "error" : true,
+    "elapsedMs" : 0,
+    "failure" : "PERMISSION_DENIED"
+  }, {
+    "tool" : "run_validation",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "VALIDATION_FAILURE"
+  }, {
+    "tool" : "run_validation",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "VALIDATION_FAILURE"
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 0,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 0,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 0,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 1,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 0,
+    "failure" : "OTHER_FAILURE"
+  } ],
+  "permissions" : [ {
+    "tool" : "run_command",
+    "allowed" : false,
+    "commandFamily" : "mvn"
+  }, {
+    "tool" : "run_validation",
+    "allowed" : true
+  }, {
+    "tool" : "run_validation",
+    "allowed" : true
+  } ],
+  "requestedCalls" : 31,
+  "iterations" : 32,
+  "calls" : 30,
+  "withinCallBudget" : true,
+  "inputTokens" : 0,
+  "outputTokens" : 0,
+  "usageAvailable" : false,
+  "semanticQueries" : 0,
+  "searches" : 0,
+  "failureCategories" : [ "INCORRECT_RESULT", "ITERATION_EXHAUSTED", "OTHER_FAILURE", "PERMISSION_DENIED", "PERMISSION_FRICTION", "REPEATED_DISCOVERY", "VALIDATION_FAILURE" ],
+  "trial" : 2,
+  "trialCount" : 2,
+  "label" : "phase4-adaptive-gemma",
+  "initialProfile" : {
+    "provider" : "lmstudio",
+    "model" : "google/gemma-4-12b-qat",
+    "server" : "LM_STUDIO_API_V1",
+    "modelContext" : {
+      "value" : 262144,
+      "provenance" : "DISCOVERED"
+    },
+    "loadedContext" : {
+      "value" : 220416,
+      "provenance" : "DISCOVERED"
+    },
+    "context" : {
+      "value" : 220416,
+      "provenance" : "DISCOVERED"
+    },
+    "preferredOutput" : {
+      "value" : 8192,
+      "provenance" : "HEURISTIC"
+    },
+    "maxOutput" : {
+      "value" : 16384,
+      "provenance" : "HEURISTIC"
+    },
+    "tools" : {
+      "value" : "SUPPORTED",
+      "provenance" : "DISCOVERED"
+    },
+    "features" : {
+      "REASONING" : {
+        "value" : "SUPPORTED",
+        "provenance" : "DISCOVERED"
+      }
+    },
+    "discoveryStatus" : "AVAILABLE",
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "google/gemma-4-12b-qat",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    },
+    "recoveryLimit" : 2
+  },
+  "profile" : {
+    "provider" : "lmstudio",
+    "model" : "google/gemma-4-12b-qat",
+    "server" : "LM_STUDIO_API_V1",
+    "modelContext" : {
+      "value" : 262144,
+      "provenance" : "DISCOVERED"
+    },
+    "loadedContext" : {
+      "value" : 220416,
+      "provenance" : "DISCOVERED"
+    },
+    "context" : {
+      "value" : 220416,
+      "provenance" : "DISCOVERED"
+    },
+    "preferredOutput" : {
+      "value" : 8192,
+      "provenance" : "HEURISTIC"
+    },
+    "maxOutput" : {
+      "value" : 16384,
+      "provenance" : "HEURISTIC"
+    },
+    "tools" : {
+      "value" : "SUPPORTED",
+      "provenance" : "DISCOVERED"
+    },
+    "features" : {
+      "REASONING" : {
+        "value" : "SUPPORTED",
+        "provenance" : "DISCOVERED"
+      }
+    },
+    "discoveryStatus" : "AVAILABLE",
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "google/gemma-4-12b-qat",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    },
+    "recoveryLimit" : 2
+  },
+  "profileFingerprint" : "dc40151b0395d6526b9fbe48a7b971afdcdd02e80959ada36b8a317876a14c3d",
+  "samplingRequested" : {
+    "temperature" : "0.0",
+    "seed" : "41",
+    "determinismGuaranteed" : false
+  },
+  "approvalMetrics" : {
+    "requested" : 3,
+    "allowed" : 2,
+    "denied" : 1,
+    "interrupted" : 0,
+    "waitMillis" : 0,
+    "repeatedEquivalent" : 0,
+    "categories" : {
+      "EXTERNAL" : 3
+    }
+  },
+  "serverOrigin" : "http://127.0.0.1:1234",
+  "repositoryRevision" : "396491faf333d022b1621bd26341df1ff431cd2e",
+  "taskRevision" : "cdb870cdd288a73582059efd53053fbfcb7ed7dfb125dc3850deb2bd50803deb",
+  "promptFingerprint" : "415705a9acfc31b159da9e13e6027fafcfb33110a911ef983b1db4c0cf3d552d",
+  "requiredTestChangeSatisfied" : true,
+  "category" : "bug",
+  "agentElapsedMs" : 513117,
+  "systemPromptHash" : "844fab2a80b62b19fd1d97c219d636c8fde523e950eaaf6b3bcccaf145626ab5",
+  "catalogHash" : "3f2f60b1322ec2e22f5f105e2c96994a42e8db2287c77857c03a90c55e665b4c",
+  "serverContextLimit" : 0,
+  "oracleElapsedMs" : 1772,
+  "baselineTestsPassed" : true,
+  "semanticExpected" : false,
+  "lspConfigured" : false,
+  "trust" : "WORKSPACE",
+  "snapshotKind" : "REAL_EDITORA_COMPONENT",
+  "panelUpdateMaxMs" : 0,
+  "fxDispatchMaxMs" : 0,
+  "newLspMetadataFiles" : [ ],
+  "contextRankingBefore" : [ {
+    "path" : "src/main/java/com/editora/git/StashParser.java",
+    "score" : 80,
+    "signals" : [ "ACTIVE" ]
+  } ],
+  "contextRankingAfter" : [ {
+    "path" : "src/test/java/com/editora/git/StashParserOverflowTest.java",
+    "score" : 110,
+    "signals" : [ "UNSAVED", "RECENTLY_EDITED", "AGENT_INSPECTED" ]
+  }, {
+    "path" : "src/main/java/com/editora/git/StashParser.java",
+    "score" : 105,
+    "signals" : [ "ACTIVE", "AGENT_INSPECTED" ]
+  }, {
+    "path" : "src/test/java/com/editora/git/StashParserTest.java",
+    "score" : 35,
+    "signals" : [ "AGENT_INSPECTED", "LEXICAL" ]
+  }, {
+    "path" : "target/surefire-reports/TEST-com.editora.git.StashParserTest.xml",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "target/surefire-reports/com.editora.git.StashParserTest.txt",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "target/test-classes/com/editora/git/StashParserTest.class",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  } ]
+}

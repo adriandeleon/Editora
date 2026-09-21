@@ -1,0 +1,89 @@
+{
+  "kind": "LSP_INTEROPERABILITY_TRIALS",
+  "trials": [
+    {
+      "kind": "REAL_LSP_INTEROPERABILITY",
+      "server": "JDT_LS",
+      "elapsedMs": 3772,
+      "passedOperations": [
+        "cold_initialization_and_agent_only_documents"
+      ],
+      "result": "FAILED_CAPABILITY_READINESS"
+    },
+    {
+      "kind": "REAL_LSP_INTEROPERABILITY",
+      "server": "JDT_LS",
+      "elapsedMs": 8457,
+      "passedOperations": [
+        "cold_initialization_and_agent_only_documents",
+        "symbols",
+        "references",
+        "implementations",
+        "definition",
+        "code_actions",
+        "rename_preview_and_apply"
+      ],
+      "result": "FAILED_IMMEDIATE_UNSAVED_SYMBOL"
+    },
+    {
+      "kind": "REAL_LSP_INTEROPERABILITY",
+      "server": "JDT_LS",
+      "elapsedMs": 10982,
+      "passedOperations": [
+        "cold_initialization_and_agent_only_documents",
+        "symbols",
+        "references",
+        "implementations",
+        "definition",
+        "code_actions",
+        "rename_preview_and_apply",
+        "unsaved_didChange",
+        "format_preview",
+        "unsaved_diagnostics",
+        "repair_during_diagnostics",
+        "restart_preserves_unsaved_buffers"
+      ],
+      "result": "PASSED"
+    },
+    {
+      "kind": "REAL_LSP_INTEROPERABILITY",
+      "server": "JDT_LS",
+      "elapsedMs": 13622,
+      "passedOperations": [
+        "cold_initialization_and_agent_only_documents",
+        "symbols",
+        "references",
+        "implementations",
+        "definition",
+        "code_actions",
+        "rename_preview_and_apply",
+        "unsaved_didChange",
+        "format_preview",
+        "unsaved_diagnostics",
+        "repair_during_diagnostics",
+        "restart_preserves_unsaved_buffers"
+      ],
+      "result": "PASSED"
+    },
+    {
+      "kind": "REAL_LSP_INTEROPERABILITY",
+      "server": "JDT_LS",
+      "elapsedMs": 11286,
+      "passedOperations": [
+        "cold_initialization_and_agent_only_documents",
+        "symbols",
+        "references",
+        "implementations",
+        "definition",
+        "code_actions",
+        "rename_preview_and_apply",
+        "unsaved_didChange",
+        "format_preview",
+        "unsaved_diagnostics",
+        "repair_during_diagnostics",
+        "restart_preserves_unsaved_buffers"
+      ],
+      "result": "PASSED"
+    }
+  ]
+}

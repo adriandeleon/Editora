@@ -1,0 +1,15 @@
+{
+  "kind": "INTERRUPTED_EVALUATION_BATCH",
+  "label": "phase5-contract-qwen",
+  "completedReports": 2,
+  "interruptedScenario": "editora-diff-newline",
+  "interruptedTrial": 2,
+  "notStarted": [
+    {
+      "scenario": "billing-contract-migration",
+      "trial": 2
+    }
+  ],
+  "reason": "Stopped obsolete compiled runtime after review found normal apply_edits missing acceptance callback. Completed failures and partial metadata log retained. Interrupted attempt has no final oracle or task-success measurement.",
+  "at": "2026-09-21T18:08:27.011762+00:00"
+}

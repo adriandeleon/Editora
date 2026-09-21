@@ -74,7 +74,7 @@ stronger than it is.
 routes to `NativeAgentCoordinator`, which captures provider configuration and workspace identity when
 creating a session. It uses AI Actions' provider settings without requiring AI Actions to be enabled.
 The default agent choice is unchanged. Settings schema 105 added conservative context/iteration limits;
-schema 106 adds managed MCP configuration. Both preserve existing choices through identity migrations. Settings controls and palette
+schema 106 adds managed MCP configuration; schema 107 adds per-model profile overrides. All preserve existing choices through identity migrations. Settings controls and palette
 commands (`agent.setMaxIterations`, `agent.setContextTokens`) update the same fields. Limits and model
 changes take effect in new sessions; permissions are session-local and reset to Ask.
 
@@ -115,8 +115,9 @@ flowchart TD
 4. The runtime validates arguments before policy evaluation. Calls execute serially, even when a
    model requests several in one response: this preserves predictable write ordering. Read operations
    are automatic; Ask prompts for document mutations. Workspace/Agent allow normal document edits.
-   Destructive operations and arbitrary execution still require approval in **every** mode because
-   Editora does not provide an OS sandbox. Server annotations cannot lower the external MCP policy.
+   Destructive operations and external execution still require approval in **every** mode. Arbitrary
+   commands are not sandboxed; structured validation offers explicitly selected Linux isolation
+   (see [reliability](agent-reliability.md)). Server annotations cannot lower the external MCP policy.
 5. Tool failures become bounded observations. Unknown tools, malformed arguments, denied permissions,
    stale documents and nonzero commands can be corrected in later iterations. A timed-out mutation
    stops with `NEEDS_INPUT`, since its effects cannot safely be assumed absent. Provider failures stop
@@ -196,7 +197,7 @@ and tool text locally; the intelligence guide describes storage, privacy and aut
 | --- | --- |
 | Repository/tool prompt injection | Lower-trust context, schema validation and centralized policy; text cannot grant permissions. Model instruction-following alone is not a security boundary. |
 | Traversal and ordinary symlink escape | Native resolver confines paths and rejects symlink components, remote filesystems, known credential/internal paths and nonregular text-file targets. |
-| Concurrent malicious filesystem changes | Checks do not constitute a kernel sandbox or eliminate all symlink-swap TOCTOU races. Use a trusted local workspace; stronger OS isolation is future work. |
+| Concurrent malicious filesystem changes | Checks do not constitute a kernel sandbox or eliminate all symlink-swap TOCTOU races. Use a trusted local workspace; structured validation has Linux isolation, but ordinary editor operations retain these limitations. |
 | Newer user edits | Identity/revision preflight on FX; save revision checks; saved-byte verification before/after validation and at final completion. |
 | Credential/environment leakage | Known credential paths unavailable to native file tools; child environment allowlist drops inherited API/cloud/SSH tokens. Arbitrary approved programs can still read credentials using OS access. Secret detection is not comprehensive. |
 | Command injection | Separate argv, no implicit shell, confined cwd, explicit approval in all trust modes. An explicitly approved shell or program remains arbitrary execution, not a sandboxed workspace capability. |
@@ -205,9 +206,9 @@ and tool text locally; the intelligence guide describes storage, privacy and aut
 
 Phase 2 adds turn-boundary session checkpoints, semantic navigation and safe refactoring previews,
 individual LSP cancellation, outbound stdio MCP and capability/token-count provenance. Native remote/SSH,
-provider-specific reasoning/Responses features, concrete tokenizers and OS execution isolation remain
-future work. No concurrent writing subagents are introduced. Read-only exploration subagents should come first, with separate
-context budgets and read-only catalogs; any later writer must acquire document/worktree leases.
+provider-specific reasoning/Responses features, concrete tokenizers and cross-platform execution isolation remain
+future work. Linux structured validation now has explicit isolation. Subagents remain out of scope
+unless measured workloads justify the additional ownership, cancellation and safety complexity.
 
 ## Remaining roadmap
 
@@ -249,3 +250,11 @@ Native-tool tests exercise edit → save → recognized command → verification
 user edits during validation, post-validation execution invalidation, cached diagnostic errors, plans,
 buffer-aware search and policy isolation. Real-process tests cover timeout, bounded output and interruption.
 No normal test needs a live LLM, installed agent, or API key.
+
+Phase 4 adds [adaptive profiles, structured validation and bounded recovery](agent-reliability.md); current
+live evidence and remaining barriers are in the [Phase 4 report](../evaluations/agent-phase4.md).
+
+Phase 5 adds [task contracts and evidence-driven acceptance](agent-acceptance.md) after the existing
+verifier. It separates actual user ingress from retrieved observations, retains requirements outside
+transcript compaction, and renders concrete completion facts from runtime evidence. See the
+[Phase 5 report](../evaluations/agent-phase5.md) for measurements and boundaries.

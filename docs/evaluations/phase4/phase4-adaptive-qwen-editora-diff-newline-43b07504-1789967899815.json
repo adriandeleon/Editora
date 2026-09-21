@@ -1,0 +1,978 @@
+{
+  "schemaVersion" : 2,
+  "outputRecoveries" : 0,
+  "validationEvidence" : "INCOMPLETE",
+  "oracleEvidence" : "EVALUATION_ORACLE_FAILED",
+  "kind" : "AUTONOMOUS_CODING_EVALUATION",
+  "scenario" : "editora-diff-newline",
+  "provider" : "lmstudio",
+  "model" : "qwen/qwen3-coder-next",
+  "contextLimit" : 65536,
+  "tokenEstimate" : "HEURISTIC",
+  "elapsedMs" : 722301,
+  "completionState" : "CANCELLED",
+  "oraclePassed" : false,
+  "humanReviewRequired" : false,
+  "approvalsRequested" : 0,
+  "approvalsDenied" : 0,
+  "approvalMode" : "HARNESS_BOUNDED_AUTO_CONSENT",
+  "repeatedCalls" : 25,
+  "verificationFailures" : 0,
+  "idealParallelReadSavingsMs" : 0,
+  "taskSuccess" : "FAIL",
+  "changedFiles" : [ ],
+  "unexpectedFiles" : [ ],
+  "filesRead" : [ "src/main/java/com/editora/diff/DiffText.java", "src/test/java/com/editora/diff/DiffTextTest.java" ],
+  "modelRounds" : [ {
+    "iteration" : 1,
+    "outputBudget" : 4096,
+    "requestBytes" : 1125,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 142,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 9025,
+    "firstTextDeltaMs" : 4924
+  }, {
+    "iteration" : 2,
+    "outputBudget" : 4096,
+    "requestBytes" : 3879,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 83,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "find_files" ],
+    "elapsedMs" : 9818,
+    "firstTextDeltaMs" : 6473
+  }, {
+    "iteration" : 3,
+    "outputBudget" : 4096,
+    "requestBytes" : 4313,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 4622
+  }, {
+    "iteration" : 4,
+    "outputBudget" : 4096,
+    "requestBytes" : 4257,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 87,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 15417,
+    "firstTextDeltaMs" : 12026
+  }, {
+    "iteration" : 5,
+    "outputBudget" : 4096,
+    "requestBytes" : 5226,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 71,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 14685,
+    "firstTextDeltaMs" : 11394
+  }, {
+    "iteration" : 6,
+    "outputBudget" : 4096,
+    "requestBytes" : 4629,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 13891,
+    "firstTextDeltaMs" : 10883
+  }, {
+    "iteration" : 7,
+    "outputBudget" : 4096,
+    "requestBytes" : 5133,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 39,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 14157,
+    "firstTextDeltaMs" : 11181
+  }, {
+    "iteration" : 8,
+    "outputBudget" : 4096,
+    "requestBytes" : 4661,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 13811,
+    "firstTextDeltaMs" : 10870
+  }, {
+    "iteration" : 9,
+    "outputBudget" : 4096,
+    "requestBytes" : 5145,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 39,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 19349,
+    "firstTextDeltaMs" : 14522
+  }, {
+    "iteration" : 10,
+    "outputBudget" : 4096,
+    "requestBytes" : 4587,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 14492,
+    "firstTextDeltaMs" : 11530
+  }, {
+    "iteration" : 11,
+    "outputBudget" : 4096,
+    "requestBytes" : 5113,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 39,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 14181,
+    "firstTextDeltaMs" : 11199
+  }, {
+    "iteration" : 12,
+    "outputBudget" : 4096,
+    "requestBytes" : 4587,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 13719,
+    "firstTextDeltaMs" : 10803
+  }, {
+    "iteration" : 13,
+    "outputBudget" : 4096,
+    "requestBytes" : 5113,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 39,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 14224,
+    "firstTextDeltaMs" : 11223
+  }, {
+    "iteration" : 14,
+    "outputBudget" : 4096,
+    "requestBytes" : 4587,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 13814,
+    "firstTextDeltaMs" : 10879
+  }, {
+    "iteration" : 15,
+    "outputBudget" : 4096,
+    "requestBytes" : 5113,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 39,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 14214,
+    "firstTextDeltaMs" : 11251
+  }, {
+    "iteration" : 16,
+    "outputBudget" : 4096,
+    "requestBytes" : 4587,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 13772,
+    "firstTextDeltaMs" : 10856
+  }, {
+    "iteration" : 17,
+    "outputBudget" : 4096,
+    "requestBytes" : 5113,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 39,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 14177,
+    "firstTextDeltaMs" : 11249
+  }, {
+    "iteration" : 18,
+    "outputBudget" : 4096,
+    "requestBytes" : 4587,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 16298,
+    "firstTextDeltaMs" : 11826
+  }, {
+    "iteration" : 19,
+    "outputBudget" : 4096,
+    "requestBytes" : 5113,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 39,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 43691,
+    "firstTextDeltaMs" : 40684
+  }, {
+    "iteration" : 20,
+    "outputBudget" : 4096,
+    "requestBytes" : 4587,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 43544,
+    "firstTextDeltaMs" : 39532
+  }, {
+    "iteration" : 21,
+    "outputBudget" : 4096,
+    "requestBytes" : 5113,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 39,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 58455,
+    "firstTextDeltaMs" : 53815
+  }, {
+    "iteration" : 22,
+    "outputBudget" : 4096,
+    "requestBytes" : 4587,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 47929,
+    "firstTextDeltaMs" : 44905
+  }, {
+    "iteration" : 23,
+    "outputBudget" : 4096,
+    "requestBytes" : 5113,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 39,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 44586,
+    "firstTextDeltaMs" : 41638
+  }, {
+    "iteration" : 24,
+    "outputBudget" : 4096,
+    "requestBytes" : 4587,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 40622,
+    "firstTextDeltaMs" : 37723
+  }, {
+    "iteration" : 25,
+    "outputBudget" : 4096,
+    "requestBytes" : 5113,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 39,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 41306,
+    "firstTextDeltaMs" : 38198
+  }, {
+    "iteration" : 26,
+    "outputBudget" : 4096,
+    "requestBytes" : 4587,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 40723,
+    "firstTextDeltaMs" : 37572
+  }, {
+    "iteration" : 27,
+    "outputBudget" : 4096,
+    "requestBytes" : 5113,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 39,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 41130,
+    "firstTextDeltaMs" : 38087
+  }, {
+    "iteration" : 28,
+    "outputBudget" : 4096,
+    "requestBytes" : 4587,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 40816,
+    "firstTextDeltaMs" : 37927
+  }, {
+    "iteration" : 29,
+    "outputBudget" : 4096,
+    "requestBytes" : 5113,
+    "catalogBytes" : 8874,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 33457
+  } ],
+  "toolCalls" : [ {
+    "tool" : "read_file",
+    "iteration" : 1,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "find_files",
+    "iteration" : 2,
+    "effect" : "READ",
+    "path" : "",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 263,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "iteration" : 3,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 8
+  }, {
+    "tool" : "read_file",
+    "iteration" : 4,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 5,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 6,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 7,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 8,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 9,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 10,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 11,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 12,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 13,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 14,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 15,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 16,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 17,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 18,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 19,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 20,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 21,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 22,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 23,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 24,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 25,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 26,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 27,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 28,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  } ],
+  "verification" : [ ],
+  "observations" : [ {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "find_files",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 8
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  } ],
+  "permissions" : [ ],
+  "requestedCalls" : 28,
+  "iterations" : 29,
+  "calls" : 28,
+  "withinCallBudget" : true,
+  "inputTokens" : 0,
+  "outputTokens" : 0,
+  "usageAvailable" : false,
+  "semanticQueries" : 0,
+  "searches" : 0,
+  "failureCategories" : [ "INCORRECT_RESULT", "OTHER_FAILURE", "REPEATED_DISCOVERY", "MISSING_REGRESSION_TESTS" ],
+  "trial" : 2,
+  "trialCount" : 2,
+  "label" : "phase4-adaptive-qwen",
+  "implementationFingerprint" : "cefd5207b2c723c3a0f0c273d7de7a8e5199c51aebc5f8c76138f2631c4b722e",
+  "repositoryDirty" : "true",
+  "unsavedFiles" : [ ],
+  "initialProfile" : {
+    "provider" : "lmstudio",
+    "model" : "qwen/qwen3-coder-next",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "context" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 4096
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 8192
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "qwen/qwen3-coder-next",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profile" : {
+    "provider" : "lmstudio",
+    "model" : "qwen/qwen3-coder-next",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "context" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 4096
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 8192
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "qwen/qwen3-coder-next",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profileFingerprint" : "ddf4404072e264c1ecea7da82d219cce810235b371712ca255405e1c3ff2ab83",
+  "samplingRequested" : {
+    "temperature" : "0.0",
+    "seed" : "41",
+    "seedSent" : true,
+    "determinismGuaranteed" : false
+  },
+  "approvalMetrics" : {
+    "requested" : 0,
+    "allowed" : 0,
+    "denied" : 0,
+    "interrupted" : 0,
+    "waitMillis" : 0,
+    "repeatedEquivalent" : 0,
+    "categories" : { }
+  },
+  "serverOrigin" : "http://127.0.0.1:1234",
+  "repositoryRevision" : "396491faf333d022b1621bd26341df1ff431cd2e",
+  "taskRevision" : "71d02769e2448a39350b5b9a277615427e2a710fe62145feb0cec16671c0ccdc",
+  "promptFingerprint" : "cac9ba1579a6ebb19d7a1cd3d07f73c7c370d33eadfdc1feeeacfe16c26db061",
+  "requiredTestChangeSatisfied" : false,
+  "category" : "bug",
+  "agentElapsedMs" : 720002,
+  "systemPromptHash" : "844fab2a80b62b19fd1d97c219d636c8fde523e950eaaf6b3bcccaf145626ab5",
+  "catalogHash" : "8ec23b748ff2412659a1bf38c20d0aa45ba0e6db416453ef551b0715870add57",
+  "serverContextLimit" : 0,
+  "oracleElapsedMs" : 2263,
+  "baselineTestsPassed" : true,
+  "semanticExpected" : false,
+  "lspConfigured" : true,
+  "trust" : "WORKSPACE",
+  "snapshotKind" : "REAL_EDITORA_COMPONENT",
+  "panelUpdateMaxMs" : 0,
+  "fxDispatchMaxMs" : 0,
+  "newLspMetadataFiles" : [ ".classpath", ".project", ".settings/org.eclipse.core.resources.prefs", ".settings/org.eclipse.jdt.apt.core.prefs", ".settings/org.eclipse.jdt.core.prefs", ".settings/org.eclipse.m2e.core.prefs" ],
+  "contextRankingBefore" : [ {
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "score" : 80,
+    "signals" : [ "ACTIVE" ]
+  } ],
+  "contextRankingAfter" : [ {
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "score" : 105,
+    "signals" : [ "ACTIVE", "AGENT_INSPECTED" ]
+  }, {
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "score" : 35,
+    "signals" : [ "AGENT_INSPECTED", "LEXICAL" ]
+  }, {
+    "path" : "target/surefire-reports/TEST-com.editora.diff.DiffTextTest.xml",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "target/surefire-reports/com.editora.diff.DiffTextTest.txt",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "target/test-classes/com/editora/diff/DiffTextTest.class",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  } ]
+}

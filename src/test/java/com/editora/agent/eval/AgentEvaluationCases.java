@@ -23,7 +23,7 @@ public final class AgentEvaluationCases {
             int callBudget) {}
 
     public static List<Task> tasks() {
-        return List.of(
+        var tasks = new ArrayList<>(List.of(
                 new Task(
                         "editora-save-understanding",
                         "understanding",
@@ -102,11 +102,18 @@ public final class AgentEvaluationCases {
                         false,
                         true,
                         false,
-                        24));
+                        24)));
+        tasks.addAll(AgentReliabilityCases.tasks());
+        tasks.addAll(AgentAcceptanceCases.tasks());
+        return List.copyOf(tasks);
     }
 
     public static boolean testSource(Task task, String path) {
-        String prefix = task.id().startsWith("editora-") ? "src/test/java/com/editora/ai/" : "src/test/java/demo/";
+        String prefix = task.active().startsWith("src/main/java/")
+                ? task.active().substring(0, task.active().lastIndexOf('/') + 1).replace("src/main/", "src/test/")
+                : task.active().startsWith("src/test/java/")
+                        ? task.active().substring(0, task.active().lastIndexOf('/') + 1)
+                        : "src/test/java/demo/";
         return Set.of("bug", "feature", "refactor", "testing").contains(task.category())
                 && path.startsWith(prefix)
                 && path.endsWith(".java")
@@ -120,15 +127,24 @@ public final class AgentEvaluationCases {
     }
 
     public static boolean requiredTestsChanged(Task task, Set<String> changed) {
-        return !Set.of("feature", "testing").contains(task.category())
+        return (!Set.of("feature", "testing").contains(task.category())
+                        && !Set.of(
+                                        "editora-diff-newline",
+                                        "editora-diff-documentation",
+                                        "editora-diff-test-quality",
+                                        "editora-stash-overflow",
+                                        "editora-save-cancellation")
+                                .contains(task.id()))
                 || changed.stream().anyMatch(path -> testSource(task, path));
     }
 
     public static void prepare(Task task, Path source, Path root) throws Exception {
         Files.createDirectories(root);
+        if (AgentReliabilityCases.fullSnapshot(task, source, root)) return;
         if (task.id().equals("editora-save-understanding")) {
             // A real repository snapshot, including current uncommitted source, without user state or build output.
             for (String tree : List.of("src", "docs")) copyTree(source.resolve(tree), root.resolve(tree));
+            AgentReliabilityCases.hideOracles(root);
             for (String file : List.of("pom.xml", "README.md", "AGENTS.md", "TODO.md", ".gitignore"))
                 Files.copy(source.resolve(file), root.resolve(file));
             return;
@@ -144,6 +160,8 @@ public final class AgentEvaluationCases {
                 root,
                 "AGENTS.md",
                 "Use the existing Java conventions. Keep edits focused. Run mvn test for validation. Do not change build configuration to hide test failures.\n");
+        if (AgentReliabilityCases.prepare(task, source, root)) return;
+        if (AgentAcceptanceCases.prepare(task, source, root)) return;
         if (task.id().startsWith("editora-")) {
             for (String name : List.of("AiEndpoints.java", "AiProvider.java"))
                 write(
@@ -259,6 +277,10 @@ public final class AgentEvaluationCases {
             }
         }
         Files.createDirectories(outside);
+        Boolean acceptance = AgentAcceptanceCases.oracle(task, root, outside);
+        if (acceptance != null) return acceptance;
+        Boolean extended = AgentReliabilityCases.oracle(task, root, outside);
+        if (extended != null) return extended;
         String body = task.id().equals("editora-endpoint-bug")
                 ? """
                 import com.editora.ai.*;
@@ -301,13 +323,13 @@ public final class AgentEvaluationCases {
                 == 0;
     }
 
-    private static void write(Path root, String name, String content) throws Exception {
+    static void write(Path root, String name, String content) throws Exception {
         Path p = root.resolve(name);
         Files.createDirectories(p.getParent());
         Files.writeString(p, content);
     }
 
-    private static void copyTree(Path from, Path to) throws Exception {
+    static void copyTree(Path from, Path to) throws Exception {
         try (var paths = Files.walk(from)) {
             for (Path p : paths.toList()) {
                 Path dest = to.resolve(from.relativize(p));

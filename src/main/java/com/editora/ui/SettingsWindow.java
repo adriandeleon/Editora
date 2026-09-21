@@ -4796,6 +4796,9 @@ public class SettingsWindow {
                 tr("settings.agent.limitsHint"),
                 agentContextSpinner,
                 "agent builtin context tokens budget");
+        Button modelProfiles = new Button(tr("agent.profile.title"));
+        modelProfiles.setOnAction(event -> AgentModelSettings.show(stage, config.getSettings(), this::apply));
+        cardRow(mainCard, Category.AGENT, modelProfiles, "agent model profile discovery output context sampling");
         Label localHint = note(tr("settings.agent.lmstudioHint"));
         Button mcpSettings = new Button(tr("agent.mcp.title"));
         mcpSettings.setOnAction(event -> {

@@ -50,8 +50,20 @@ A backlog of planned features and improvements. Unordered within each section.
       relevance, progressive MCP catalogs and HTTP/auth profiles.
 - [ ] Add session retention controls, structured long-session memory, concrete provider tokenizers and
       negotiated reasoning/caching/structured-output options.
-- [ ] Introduce OS-isolated validation workspaces, stronger filesystem-race protection, richer validation
-      evidence and reviewed environment profiles before offering unattended arbitrary execution.
+- [x] Add model profiles/discovery/overrides, bounded output recovery, structured validation evidence,
+      Linux offline build isolation, approval metrics, real JDT LS and long-session deterministic probes.
+      See [production reliability](docs/subsystems/agent-reliability.md).
+- [x] Add user-provenance task contracts, revision-bound evidence, omitted-deliverable guards, grounded
+      completion, acceptance UX and evaluation-only regression-quality probes. See
+      [task acceptance](docs/subsystems/agent-acceptance.md).
+- [x] Add bounded project validation recipes, actionable evidence debt, scoped freshness dependencies,
+      user correction controls and conservative JUnit XML/source identity correlation. See
+      [acceptance recipes](docs/subsystems/agent-acceptance-recipes.md).
+- [ ] Review contract coverage with users, extend stable test identities to unusual JUnit display
+      names and other frameworks, and evaluate multilingual corrections and long real-world sessions.
+      Automatic English guards do not exhaustively capture intent or prove behavior.
+- [ ] Extend isolation to macOS/Windows and Gradle caches; add resource quotas, exact tokenizers,
+      compiler-location extraction and stronger filesystem-race protection before unattended arbitrary execution.
 - [ ] Evaluate read-only exploration subagents after tool cancellation/lifecycle contracts extend to
       shared LSP/Git work. Keep concurrent document-writing agents disabled until isolated leases exist.
 - [ ] Exercise the three end-to-end coding acceptance scenarios against real providers and perform a
@@ -59,8 +71,11 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Add an opt-in real-model benchmark with real Editora code, controlled Java outcome oracles,
       metadata-only measurements and deterministic regressions for observed discovery/loop/UX failures.
       See [evaluation methodology](docs/subsystems/agent-evaluation.md).
-- [ ] Expand the live corpus to concurrent saves, real UI/settings changes and multi-layer fixes;
-      establish repeated trials, independent human review and credentialed cloud-provider baselines.
+- [x] Expand to 15 corpus scenarios covering real diff/Git components, concurrency and UI/settings
+      investigations, an eight-file migration, omitted documentation and regression quality; add
+      repeated trials and a factual dashboard.
+- [ ] Execute full-repository concurrent-save/UI/settings repair tasks across credentialed cloud providers;
+      increase repeated live trials and obtain independent human review. Catalog coverage alone is not success.
 
 ## Recently shipped
 - [x] Preserve preceding save identities in queued autosaves across UI acknowledgment, with deterministic

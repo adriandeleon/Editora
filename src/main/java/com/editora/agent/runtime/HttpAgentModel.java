@@ -22,6 +22,11 @@ public final class HttpAgentModel implements AgentModel {
     private final String key;
     private final String model;
     private volatile Capabilities capabilities;
+    private volatile AgentModelProfile profile;
+    private final int fallbackContext;
+    private com.editora.config.AgentModelProfileConfig configuration;
+    private int preparations;
+    private boolean inferenceAttempted;
     private final AiClient client = new AiClient();
     private final ObjectMapper json = new ObjectMapper();
 
@@ -34,6 +39,50 @@ public final class HttpAgentModel implements AgentModel {
         this.key = key;
         this.model = model;
         this.capabilities = capabilities;
+        this.fallbackContext = capabilities.contextTokens();
+        this.profile = AgentModelProfile.fixed(capabilities);
+    }
+
+    public HttpAgentModel(
+            AiProvider provider,
+            String endpoint,
+            String key,
+            String model,
+            int context,
+            com.editora.config.AgentModelProfileConfig config) {
+        this(provider, endpoint, key, model, new Capabilities(true, true, context, Math.min(4096, context / 2)));
+        this.configuration = config;
+        this.profile = AgentModelDiscovery.resolve(
+                provider.id(), model, context, config, json.createObjectNode(), "UNKNOWN", "NOT_REQUESTED");
+    }
+
+    @Override
+    public AgentModelProfile profile() {
+        return profile;
+    }
+
+    @Override
+    public void prepare(AgentCancellation cancellation) {
+        // Refresh after the first inference: a JIT-loaded model may now expose a smaller server context.
+        if (configuration != null && (preparations == 0 || (preparations == 1 && inferenceAttempted))) {
+            preparations++;
+            profile = AgentModelDiscovery.discover(
+                    provider, endpoint, key, model, fallbackContext, configuration, cancellation);
+            capabilities = new Capabilities(
+                    profile.tools().value() != Support.UNSUPPORTED,
+                    true,
+                    profile.context().value(),
+                    profile.preferredOutput().value(),
+                    capabilities.features());
+        }
+        cancellation.check();
+    }
+
+    @Override
+    public AgentTokens.Counter tokenCounter() {
+        if (configuration == null) return AgentTokens.CONSERVATIVE;
+        // Explicit heuristic, not a tokenizer or a capacity guarantee. Runtime reserves additional headroom.
+        return text -> new AgentTokens.Count((AgentContext.cost(text) + 2L) / 3L, AgentTokens.Provenance.HEURISTIC);
     }
 
     @Override
@@ -49,10 +98,11 @@ public final class HttpAgentModel implements AgentModel {
                 endpoint,
                 key,
                 body(request),
-                Duration.ofSeconds(120),
+                Duration.ofSeconds(240),
                 () -> cancellation.isCancelled() || collector.error != null,
                 collector);
         cancellation.check();
+        inferenceAttempted = true;
         Response response = collector.response();
         var features = new java.util.EnumMap<Feature, Support>(Feature.class);
         features.putAll(capabilities.features());
@@ -73,7 +123,18 @@ public final class HttpAgentModel implements AgentModel {
             body.put("model", model.strip());
         }
         body.put("stream", true);
-        body.put("max_tokens", capabilities.outputTokens());
+        int output = request.outputTokens() > 0 ? request.outputTokens() : capabilities.outputTokens();
+        // Official OpenAI uses the completion budget (including reasoning); compatible servers keep their dialect.
+        boolean officialOpenAi = provider.usesOpenAiApi()
+                && "api.openai.com"
+                        .equalsIgnoreCase(java.net.URI.create(endpoint).getHost());
+        body.put(
+                officialOpenAi ? "max_completion_tokens" : "max_tokens",
+                Math.min(output, profile.maxOutput().value()));
+        if (configuration != null && configuration.temperature() != null)
+            body.put("temperature", configuration.temperature());
+        if (configuration != null && configuration.seed() != null && provider.usesOpenAiApi())
+            body.put("seed", configuration.seed());
         boolean openai = provider.usesOpenAiApi();
         ArrayNode messages = body.putArray("messages");
         if (openai) {
@@ -297,6 +358,8 @@ public final class HttpAgentModel implements AgentModel {
             if (!complete || stop == null) {
                 throw new IOException("Model stream ended before a complete response");
             }
+            if (!calls.isEmpty() && ("length".equals(stop) || "max_tokens".equals(stop)))
+                throw new AgentModel.OutputLimit();
             if (!calls.isEmpty() && !"tool_calls".equals(stop) && !"tool_use".equals(stop)) {
                 throw new IOException(
                         "length".equals(stop) || "max_tokens".equals(stop)

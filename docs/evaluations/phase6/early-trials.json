@@ -1,0 +1,32 @@
+{
+  "kind": "PHASE6_EARLY_LIVE_TRIAL_SUMMARY",
+  "source": "console output and inspected aggregate fields; original target reports were removed by the subsequent clean build",
+  "model": "qwen/qwen3-coder-next",
+  "samplingRequested": {"temperature": 0, "seed": 41},
+  "perTaskLimitMinutes": 5,
+  "trials": [
+    {
+      "scenario": "editora-diff-newline",
+      "state": "CANCELLED",
+      "taskSuccess": "FAIL",
+      "behavioralOraclePassed": false,
+      "modelRounds": 8,
+      "toolCalls": 7,
+      "completionChecks": 0,
+      "reconciliationNanos": 8342741,
+      "observation": "Repeated source/test reads and a validation call occurred before any edit; time cap interrupted model round 8."
+    },
+    {
+      "scenario": "billing-contract-migration",
+      "state": "CANCELLED",
+      "taskSuccess": "FAIL",
+      "behavioralOraclePassed": false,
+      "modelRounds": 5,
+      "toolCalls": 13,
+      "completionChecks": 0,
+      "reconciliationNanos": 5777995,
+      "javaDeclarationNanos": 344644422,
+      "observation": "One production edit was made in round 4; fresh test, validation, caller and inspection evidence remained pending at timeout."
+    }
+  ]
+}

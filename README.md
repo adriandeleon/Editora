@@ -658,9 +658,17 @@ Editora is built with the help of AI coding tools.
   are rejected; tool results are collapsible, Stop propagates to running work, and edits require
   verification before completion. It discovers live LSP capabilities, follows semantic references,
   previews safe refactorings, ranks editor context and discovers scoped project instructions/skills.
+  Task contracts retain user requirements outside transcript compaction. Current evidence checks
+  requested tests and documentation separately from build success, and completion summaries use
+  observed files and test reports. The collapsible acceptance checklist shows remaining work versus
+  missing evidence and lets you prepare a correction or new requirement. After edits, the agent gets
+  a focused evidence refresh plan. Projects can suggest validation through bounded acceptance recipes;
+  automatic interpretation remains heuristic. See [task acceptance](docs/subsystems/agent-acceptance.md)
+  and [acceptance recipes](docs/subsystems/agent-acceptance-recipes.md).
   Local sessions resume with fresh permissions and file checks. Configurable stdio MCP servers share
   the same tool policy. Context/iteration limits are configurable; external commands always require approval. See the
-  [IDE-native intelligence guide](docs/subsystems/agent-intelligence.md) and
+  [IDE-native intelligence guide](docs/subsystems/agent-intelligence.md),
+  [adaptive model profiles and structured validation](docs/subsystems/agent-reliability.md), and
   [architecture and limitations](docs/subsystems/agent-platform.md). An opt-in
   [coding benchmark](docs/subsystems/agent-evaluation.md) exercises real models against Editora and
   controlled Java projects, with independent outcome checks. Native tools include bounded filename

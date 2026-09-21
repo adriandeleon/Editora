@@ -101,6 +101,47 @@ class AgentMcpManagerTest {
     }
 
     @Test
+    void repeatedDisconnectsKeepOneLiveConnectionAndNeverReplay() throws Exception {
+        var connections = new java.util.ArrayList<Connection>();
+        try (var manager = new AgentMcpManager(List.of(new AgentMcpServer("stress", "unused", true)), root, (s, p) -> {
+            var connection = new Connection();
+            connections.add(connection);
+            return connection;
+        })) {
+            var registry = new AgentTools();
+            manager.register(registry, new AgentCancellation());
+            var spec = registry.specs().stream()
+                    .filter(s -> s.origin().equals("mcp:stress"))
+                    .findFirst()
+                    .orElseThrow();
+            for (int round = 0; round < 25; round++) {
+                var old = connections.getLast();
+                old.failCall = true;
+                int before = old.calls;
+                assertThrows(
+                        java.util.concurrent.TimeoutException.class,
+                        () -> registry.get(spec.name())
+                                .handler()
+                                .execute(json.createObjectNode(), new AgentCancellation()));
+                assertEquals(before + 1, old.calls);
+                assertFalse(old.alive);
+                var policy = new AgentPolicy();
+                policy.setTrust(AgentPolicy.Trust.AGENT);
+                assertTrue(policy.requiresApproval(spec));
+                assertFalse(registry.get(spec.name())
+                        .handler()
+                        .execute(json.createObjectNode(), new AgentCancellation())
+                        .error());
+                assertEquals(1, connections.getLast().calls);
+                assertEquals(1, connections.stream().filter(c -> c.alive).count());
+                assertEquals(2, registry.specs().size(), "reconnect must not accumulate duplicate tools");
+            }
+        }
+        assertEquals(26, connections.size());
+        assertTrue(connections.stream().noneMatch(c -> c.alive));
+    }
+
+    @Test
     void malformedCatalogFailsClosedWithoutLeakingAProcessOrTools() throws Exception {
         var connection = new Connection();
         connection.malformed = true;

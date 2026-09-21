@@ -34,11 +34,7 @@ public final class AgentContext {
         if (budget <= 0) {
             throw new IllegalStateException("Context budget leaves no room for a model response");
         }
-        long fixed = counter.count(system).tokens() + 512;
-        for (var tool : tools)
-            fixed += counter.count(tool.name() + tool.description() + tool.inputSchema())
-                            .tokens()
-                    + 128;
+        long fixed = fixedTokens(system, tools, counter);
         while (fixed + historyCost(counter) + counter.count(memoryText()).tokens() > (long) budget) {
             int removable = -1;
             // User turns remain verbatim; evict whole old model exchanges, never orphan a tool result.
@@ -70,7 +66,7 @@ public final class AgentContext {
         String note = compacted == 0
                 ? ""
                 : "\nRuntime: " + compacted
-                        + " older complete exchanges were removed. Reread files before editing; do not assume old results.";
+                        + " older complete exchanges were removed. Retained complete tool results remain usable. Reread an edit target only if its required text/revision is missing or a tool reports it changed; historical summaries do not authorize edits.";
         var messages = new ArrayList<AgentModel.Message>();
         if (!memory.isEmpty()) messages.add(AgentModel.Message.text("observation", memoryText()));
         messages.addAll(exchanges.stream().flatMap(List::stream).toList());
@@ -80,6 +76,33 @@ public final class AgentContext {
     private void remember(String text) {
         if (memory.size() >= 8) memory.removeFirst();
         memory.addLast(text);
+    }
+
+    /** Estimate before compaction so an adaptive profile can reserve more room for recent observations. */
+    public long estimatedTokens(String system, List<AgentTool.Spec> tools, AgentTokens.Counter counter) {
+        return fixedTokens(system, tools, counter)
+                + historyCost(counter)
+                + counter.count(memoryText()).tokens();
+    }
+
+    /** User turns and the newest whole exchange cannot be evicted, even during output-limit recovery. */
+    public long minimumTokens(String system, List<AgentTool.Spec> tools, AgentTokens.Counter counter) {
+        long size = fixedTokens(system, tools, counter);
+        for (int i = 0; i < exchanges.size(); i++) {
+            var exchange = exchanges.get(i);
+            if (i == exchanges.size() - 1 || exchange.stream().anyMatch(m -> "user".equals(m.role())))
+                size += exchangeCost(exchange, counter);
+        }
+        return size;
+    }
+
+    private static long fixedTokens(String system, List<AgentTool.Spec> tools, AgentTokens.Counter counter) {
+        long size = counter.count(system).tokens() + 512;
+        for (var tool : tools)
+            size += counter.count(tool.name() + tool.description() + tool.inputSchema())
+                            .tokens()
+                    + 128;
+        return size;
     }
 
     private String memoryText() {
@@ -125,14 +148,18 @@ public final class AgentContext {
 
     private long historyCost(AgentTokens.Counter counter) {
         long size = 0;
-        for (var exchange : exchanges) {
-            for (var m : exchange) {
-                size += counter.count(m.text()).tokens() + 128;
-                for (var call : m.calls()) {
-                    size += counter.count(call.id() + call.name() + call.arguments())
-                                    .tokens()
-                            + 128;
-                }
+        for (var exchange : exchanges) size += exchangeCost(exchange, counter);
+        return size;
+    }
+
+    private static long exchangeCost(List<AgentModel.Message> exchange, AgentTokens.Counter counter) {
+        long size = 0;
+        for (var m : exchange) {
+            size += counter.count(m.text()).tokens() + 128;
+            for (var call : m.calls()) {
+                size += counter.count(call.id() + call.name() + call.arguments())
+                                .tokens()
+                        + 128;
             }
         }
         return size;

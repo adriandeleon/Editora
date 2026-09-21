@@ -63,6 +63,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private final Label modelLabel = new Label();
     private final Label modeLabel = new Label();
     private final VBox planBox = new VBox(2);
+    private final javafx.scene.control.TitledPane acceptancePane = new javafx.scene.control.TitledPane();
     private final VBox transcriptBox = new VBox(4);
     private final ScrollPane transcriptScroll = new ScrollPane(transcriptBox);
     private final TextArea input = new TextArea();
@@ -175,7 +176,11 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         HBox.setHgrow(input, Priority.ALWAYS);
 
         VBox.setVgrow(transcriptScroll, Priority.ALWAYS);
-        getChildren().addAll(header, planBox, transcriptScroll, inputRow);
+        acceptancePane.setText(tr("agent.acceptance.title"));
+        acceptancePane.setExpanded(false);
+        acceptancePane.setVisible(false);
+        acceptancePane.setManaged(false);
+        getChildren().addAll(header, acceptancePane, planBox, transcriptScroll, inputRow);
         setBusy(false);
         status.setText(tr("agent.idle"));
     }
@@ -285,11 +290,12 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         if (entry != pendingTool) transcriptBox.getChildren().add(entry);
         pendingTool = null;
         pendingToolName = null;
-        entry.setText((error ? "✗ " : "✓ ") + tool + " · " + elapsedMillis + " ms");
+        var view = AgentToolPresentation.result(tool, result);
+        entry.setText((error ? "✗ " : "✓ ") + view.title() + " · " + elapsedMillis + " ms");
         entry.setExpanded(false);
         entry.expandedProperty().addListener((observable, wasExpanded, expanded) -> {
             if (expanded && entry.getContent() == null) {
-                TextArea content = new TextArea(result);
+                TextArea content = new TextArea(view.details());
                 content.setEditable(false);
                 content.setWrapText(true);
                 content.setPrefRowCount(8);
@@ -453,9 +459,92 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         planBox.setVisible(show);
     }
 
+    /** Runtime-owned acceptance view; model plan completion does not change these statuses. */
+    public void setAcceptance(String data) {
+        try {
+            var value = new com.fasterxml.jackson.databind.ObjectMapper().readTree(data);
+            var content = new VBox(3);
+            int count = 0;
+            if (!value.path("interpretationWarnings").isEmpty()) {
+                var warning = new Label(tr("agent.acceptance.uncertain"));
+                warning.setWrapText(true);
+                warning.setTooltip(
+                        new Tooltip(value.path("interpretationWarnings").toString()));
+                content.getChildren().add(warning);
+            }
+            var debt = new java.util.HashMap<String, com.fasterxml.jackson.databind.JsonNode>();
+            for (var item : value.path("evidenceDebt"))
+                debt.put(item.path("requirement").asText(), item);
+            for (var requirement : value.path("requirements")) {
+                String state = requirement.path("state").asText();
+                if (state.equals("SUPERSEDED")) continue;
+                String id = requirement.path("id").asText();
+                var item = debt.get(id);
+                var row = new Label((state.equals("SATISFIED")
+                                ? "✓ "
+                                : item != null && item.path("progress").asText().equals("EVIDENCE_INCOMPLETE")
+                                        ? "→ "
+                                        : "○ ")
+                        + requirement.path("id").asText() + " · "
+                        + tr("agent.acceptance.check."
+                                + requirement.path("check").asText())
+                        + (item == null
+                                ? ""
+                                : " · "
+                                        + tr("agent.acceptance.progress."
+                                                + item.path("progress").asText())));
+                row.setWrapText(true);
+                row.setMaxWidth(Double.MAX_VALUE);
+                row.setTooltip(new Tooltip(requirement.path("text").asText() + "\n"
+                        + (item == null
+                                ? requirement.path("reason").asText()
+                                : item.path("missingEvidence").asText()
+                                        + (item.path("reasonInvalidated")
+                                                        .asText()
+                                                        .isBlank()
+                                                ? ""
+                                                : "\n"
+                                                        + item.path("reasonInvalidated")
+                                                                .asText()))));
+                var line = new HBox(4, row);
+                HBox.setHgrow(row, Priority.ALWAYS);
+                var correct = new Button(tr("agent.acceptance.correct"));
+                correct.setOnAction(e -> prepareAcceptanceFollowup("Correct " + id + ": "));
+                line.getChildren().add(correct);
+                var remove = new Button(tr("agent.acceptance.remove"));
+                remove.setOnAction(e -> prepareAcceptanceFollowup("Remove requirement " + id));
+                line.getChildren().add(remove);
+                content.getChildren().add(line);
+                count++;
+            }
+            if (count > 0) {
+                var add = new Button(tr("agent.acceptance.add"));
+                add.setOnAction(e -> prepareAcceptanceFollowup("Also require: "));
+                content.getChildren().add(add);
+            }
+            var scroll = new ScrollPane(content);
+            scroll.setFitToWidth(true);
+            scroll.setPrefViewportHeight(Math.min(180, count * 30));
+            acceptancePane.setContent(scroll);
+            boolean show = count > 1 || !value.path("interpretationWarnings").isEmpty();
+            acceptancePane.setVisible(show);
+            acceptancePane.setManaged(show);
+        } catch (Exception invalid) {
+            /* A broken view cannot alter runtime acceptance. */
+        }
+    }
+
+    private void prepareAcceptanceFollowup(String prefix) {
+        input.setText(prefix);
+        input.positionCaret(prefix.length());
+        input.requestFocus();
+    }
+
     /** Clears the plan checklist (a new session starts with no plan shown). */
     public void clearPlan() {
         setPlan(List.of());
+        acceptancePane.setVisible(false);
+        acceptancePane.setManaged(false);
     }
 
     /** The checkbox-style glyph for a plan entry's status. Package-private + static: pure, no FX toolkit

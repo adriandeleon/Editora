@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added active acceptance guidance: requirement corrections in the panel, task versus evidence debt,
+  scoped invalidation reasons, targeted JUnit test identity correlation and bounded project validation
+  recipes. The runtime gives the agent concrete refresh steps after meaningful milestones while keeping
+  normal tool approval. See [acceptance recipes](docs/subsystems/agent-acceptance-recipes.md).
+
+- Added native task contracts with actual-user provenance, current evidence links, bounded persistence,
+  acceptance checks independent of green builds, and grounded completion summaries. Requested tests and
+  documentation can keep a task incomplete; plans cannot self-certify success. Java test declarations
+  use parse-only JDK compiler APIs. A collapsible localized checklist exposes acceptance progress.
+  See [acceptance architecture](docs/subsystems/agent-acceptance.md) and
+  [Phase 5 evaluation](docs/evaluations/agent-phase5.md), including heuristic coverage limitations.
+
+- Added per-model native agent profiles with bounded local discovery, explicit provenance, user overrides
+  and adaptive output budgets. Token-limited responses can recover without executing partial tool batches.
+- Added structured Maven/Gradle validation, fresh test-failure evidence, revision checks and explicitly
+  selected Linux offline isolation or reduced-environment host execution. Build execution always needs approval.
+- Added real JDT LS interoperability, repeated-trial metadata, a 13-task coding corpus, independent oracle
+  probes, long-session stress coverage and approval measurements. Validation activity and approval summaries
+  are readable without protocol JSON; settings schema 107 preserves existing choices. See
+  [agent reliability](docs/subsystems/agent-reliability.md) and [measured evaluation](docs/evaluations/agent-phase4.md).
+
 - Added an opt-in autonomous coding benchmark with actual HTTP models, production editor documents,
   optional JDT LS, controlled failure seeds, independent test/oracle checks and metadata-only reports.
   Live evaluation led to bounded filename discovery, explicit file-read paging, repeated-denial/read

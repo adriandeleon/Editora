@@ -1,0 +1,777 @@
+{
+  "schemaVersion" : 2,
+  "outputRecoveries" : 0,
+  "validationEvidence" : "INCOMPLETE",
+  "oracleEvidence" : "EVALUATION_ORACLE_FAILED",
+  "kind" : "AUTONOMOUS_CODING_EVALUATION",
+  "scenario" : "editora-diff-newline",
+  "provider" : "lmstudio",
+  "model" : "qwen/qwen3-coder-next",
+  "contextLimit" : 65536,
+  "tokenEstimate" : "HEURISTIC",
+  "elapsedMs" : 722195,
+  "completionState" : "CANCELLED",
+  "oraclePassed" : false,
+  "humanReviewRequired" : false,
+  "approvalsRequested" : 5,
+  "approvalsDenied" : 1,
+  "approvalMode" : "HARNESS_BOUNDED_AUTO_CONSENT",
+  "repeatedCalls" : 3,
+  "verificationFailures" : 0,
+  "idealParallelReadSavingsMs" : 0,
+  "taskSuccess" : "FAIL",
+  "changedFiles" : [ ],
+  "unexpectedFiles" : [ ],
+  "filesRead" : [ "src/main/java/com/editora/diff/DiffText.java", "src/test/java/com/editora/diff/DiffTextTest.java" ],
+  "modelRounds" : [ {
+    "iteration" : 1,
+    "messageCount" : 2,
+    "historyCompacted" : false,
+    "outputBudget" : 4096,
+    "requestBytes" : 1179,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 145,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 62230,
+    "firstTextDeltaMs" : 58624
+  }, {
+    "iteration" : 2,
+    "messageCount" : 4,
+    "historyCompacted" : false,
+    "outputBudget" : 3720,
+    "requestBytes" : 3936,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 83,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "find_files" ],
+    "elapsedMs" : 9078,
+    "firstTextDeltaMs" : 6074
+  }, {
+    "iteration" : 3,
+    "messageCount" : 6,
+    "historyCompacted" : false,
+    "outputBudget" : 3176,
+    "requestBytes" : 4370,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 4221
+  }, {
+    "iteration" : 4,
+    "messageCount" : 8,
+    "historyCompacted" : false,
+    "outputBudget" : 2082,
+    "requestBytes" : 6456,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 882,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_command" ],
+    "elapsedMs" : 16524,
+    "firstTextDeltaMs" : 5053
+  }, {
+    "iteration" : 5,
+    "messageCount" : 8,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 4423,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_validation" ],
+    "elapsedMs" : 46654
+  }, {
+    "iteration" : 6,
+    "messageCount" : 10,
+    "historyCompacted" : true,
+    "outputBudget" : 2366,
+    "requestBytes" : 4763,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_validation" ],
+    "elapsedMs" : 46030
+  }, {
+    "iteration" : 7,
+    "messageCount" : 10,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 5109,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "validation_profiles" ],
+    "elapsedMs" : 53183
+  }, {
+    "iteration" : 8,
+    "messageCount" : 10,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 3919,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_validation" ],
+    "elapsedMs" : 44179
+  }, {
+    "iteration" : 9,
+    "messageCount" : 10,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 4435,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 46891
+  }, {
+    "iteration" : 10,
+    "messageCount" : 8,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 5961,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 66317
+  }, {
+    "iteration" : 11,
+    "messageCount" : 6,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 6242,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_validation" ],
+    "elapsedMs" : 55170
+  }, {
+    "iteration" : 12,
+    "messageCount" : 6,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 5936,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 46720
+  }, {
+    "iteration" : 13,
+    "messageCount" : 6,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 5407,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 46389
+  }, {
+    "iteration" : 14,
+    "messageCount" : 6,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 6278,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "update_plan" ],
+    "elapsedMs" : 50437
+  }, {
+    "iteration" : 15,
+    "messageCount" : 6,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 5149,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 51941
+  }, {
+    "iteration" : 16,
+    "messageCount" : 8,
+    "historyCompacted" : true,
+    "outputBudget" : 2332,
+    "requestBytes" : 6069,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "update_plan" ],
+    "elapsedMs" : 6941
+  }, {
+    "iteration" : 17,
+    "messageCount" : 8,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 4423,
+    "catalogBytes" : 11013,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 43041
+  }, {
+    "iteration" : 18,
+    "messageCount" : 8,
+    "historyCompacted" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 5549,
+    "catalogBytes" : 11013,
+    "failure" : "CANCELLED",
+    "elapsedMs" : 21627
+  } ],
+  "toolCalls" : [ {
+    "tool" : "read_file",
+    "iteration" : 1,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "find_files",
+    "iteration" : 2,
+    "effect" : "READ",
+    "path" : "",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 263,
+    "elapsedMs" : 3
+  }, {
+    "tool" : "read_file",
+    "iteration" : 3,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 11
+  }, {
+    "tool" : "run_validation",
+    "iteration" : 5,
+    "effect" : "EXTERNAL",
+    "error" : true,
+    "failure" : "VALIDATION_FAILURE",
+    "exceptionType" : "IllegalArgumentException",
+    "elapsedMs" : 1
+  }, {
+    "tool" : "run_validation",
+    "iteration" : 6,
+    "effect" : "EXTERNAL",
+    "error" : true,
+    "failure" : "VALIDATION_FAILURE",
+    "exceptionType" : "IllegalArgumentException",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "validation_profiles",
+    "iteration" : 7,
+    "effect" : "READ",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 541,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "run_validation",
+    "iteration" : 8,
+    "effect" : "EXTERNAL",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1565,
+    "elapsedMs" : 1248
+  }, {
+    "tool" : "read_file",
+    "iteration" : 9,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 10,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "run_validation",
+    "iteration" : 11,
+    "effect" : "EXTERNAL",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1565,
+    "elapsedMs" : 1051
+  }, {
+    "tool" : "read_file",
+    "iteration" : 12,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 13,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "update_plan",
+    "iteration" : 14,
+    "effect" : "READ",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 441,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 15,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : false,
+    "changed" : true,
+    "resultChars" : 122,
+    "elapsedMs" : 28
+  }, {
+    "tool" : "update_plan",
+    "iteration" : 16,
+    "effect" : "READ",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 443,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 17,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  } ],
+  "verification" : [ ],
+  "observations" : [ {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 3
+  }, {
+    "tool" : "find_files",
+    "error" : false,
+    "elapsedMs" : 4
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 11
+  }, {
+    "tool" : "run_command",
+    "error" : true,
+    "elapsedMs" : 0,
+    "failure" : "PERMISSION_DENIED"
+  }, {
+    "tool" : "run_validation",
+    "error" : true,
+    "elapsedMs" : 2,
+    "failure" : "VALIDATION_FAILURE"
+  }, {
+    "tool" : "run_validation",
+    "error" : true,
+    "elapsedMs" : 0,
+    "failure" : "VALIDATION_FAILURE"
+  }, {
+    "tool" : "validation_profiles",
+    "error" : false,
+    "elapsedMs" : 2
+  }, {
+    "tool" : "run_validation",
+    "error" : false,
+    "elapsedMs" : 1248
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "run_validation",
+    "error" : false,
+    "elapsedMs" : 1052
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "update_plan",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "error" : false,
+    "elapsedMs" : 29
+  }, {
+    "tool" : "update_plan",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  } ],
+  "permissions" : [ {
+    "tool" : "run_command",
+    "allowed" : false,
+    "commandFamily" : "OTHER"
+  }, {
+    "tool" : "run_validation",
+    "allowed" : true
+  }, {
+    "tool" : "run_validation",
+    "allowed" : true
+  }, {
+    "tool" : "run_validation",
+    "allowed" : true
+  }, {
+    "tool" : "run_validation",
+    "allowed" : true
+  } ],
+  "requestedCalls" : 17,
+  "iterations" : 18,
+  "calls" : 16,
+  "withinCallBudget" : true,
+  "inputTokens" : 0,
+  "outputTokens" : 0,
+  "usageAvailable" : false,
+  "semanticQueries" : 0,
+  "searches" : 0,
+  "failureCategories" : [ "CANCELLED", "INCORRECT_RESULT", "PERMISSION_DENIED", "PERMISSION_FRICTION", "REPEATED_DISCOVERY", "VALIDATION_FAILURE", "TIME_BUDGET_EXHAUSTED", "MISSING_REGRESSION_TESTS" ],
+  "trial" : 1,
+  "trialCount" : 2,
+  "timeBudgetExceeded" : true,
+  "label" : "phase5-contract-qwen",
+  "implementationFingerprint" : "435e60bb306712e26a3747bb94f345f608a64d9a27aef6df63a8dff61c241fdd",
+  "repositoryDirty" : "true",
+  "unsavedFiles" : [ {
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "revision" : "4d63f417-ba1f-4409-9020-d2b42d138670:2"
+  } ],
+  "acceptance" : {
+    "checks" : 0,
+    "verificationNanos" : 0,
+    "javaDeclarationNanos" : 0,
+    "unstructuredCandidatesHandled" : 0,
+    "reconciliations" : 1,
+    "unsupportedStructuredClaims" : 0,
+    "requirements" : [ {
+      "id" : "R1",
+      "type" : "TEST",
+      "provenance" : "USER_EXPLICIT",
+      "userMessage" : "U1",
+      "text" : "A diff recomposition now always terminates the last line, corrupting files without a final newline. Fix the regression without losing CRLF, CR, blank-line or empty-file behavior. Inspect and update regression tests and validate.",
+      "check" : "TEST_CHANGED_EXECUTED",
+      "state" : "EVIDENCE_PENDING",
+      "reason" : "Current evidence does not establish TEST_CHANGED_EXECUTED; inspect task_contract and task_evidence",
+      "evidence" : [ ]
+    }, {
+      "id" : "R2",
+      "type" : "CODE_CHANGE",
+      "provenance" : "USER_EXPLICIT",
+      "userMessage" : "U1",
+      "text" : "A diff recomposition now always terminates the last line, corrupting files without a final newline. Fix the regression without losing CRLF, CR, blank-line or empty-file behavior. Inspect and update regression tests and validate.",
+      "check" : "CHANGE",
+      "state" : "EVIDENCE_PENDING",
+      "reason" : "Current evidence does not establish CHANGE; inspect task_contract and task_evidence",
+      "evidence" : [ ]
+    }, {
+      "id" : "R3",
+      "type" : "VALIDATION",
+      "provenance" : "USER_IMPLIED",
+      "userMessage" : "U1",
+      "text" : "Validate the requested code change",
+      "check" : "VALIDATED",
+      "state" : "EVIDENCE_PENDING",
+      "reason" : "Current evidence does not establish VALIDATED; inspect task_contract and task_evidence",
+      "evidence" : [ ]
+    }, {
+      "id" : "R4",
+      "type" : "INVESTIGATION",
+      "provenance" : "USER_EXPLICIT",
+      "userMessage" : "U1",
+      "text" : "A diff recomposition now always terminates the last line, corrupting files without a final newline. Fix the regression without losing CRLF, CR, blank-line or empty-file behavior. Inspect and update regression tests and validate.",
+      "check" : "INSPECTED",
+      "state" : "SATISFIED",
+      "reason" : "Current files inspected; causal interpretation remains an inference",
+      "evidence" : [ "E2" ]
+    } ]
+  },
+  "regressionQuality" : {
+    "kind" : "EVALUATION_ONLY_REGRESSION_QUALITY",
+    "state" : "UNVERIFIED",
+    "reason" : "No supported new test identity or no mutation fixture"
+  },
+  "initialProfile" : {
+    "provider" : "lmstudio",
+    "model" : "qwen/qwen3-coder-next",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "UNKNOWN",
+      "value" : 0
+    },
+    "context" : {
+      "provenance" : "HEURISTIC",
+      "value" : 65536
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 4096
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 16384
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "qwen/qwen3-coder-next",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profile" : {
+    "provider" : "lmstudio",
+    "model" : "qwen/qwen3-coder-next",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "context" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 4096
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 8192
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "qwen/qwen3-coder-next",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profileFingerprint" : "12e36fa0cb368343c06d3780376cacee56f0be3b3a1ba1f868db236e2c1ce031",
+  "samplingRequested" : {
+    "temperature" : "0.0",
+    "seed" : "41",
+    "seedSent" : true,
+    "determinismGuaranteed" : false
+  },
+  "approvalMetrics" : {
+    "requested" : 5,
+    "allowed" : 4,
+    "denied" : 1,
+    "interrupted" : 0,
+    "waitMillis" : 0,
+    "repeatedEquivalent" : 0,
+    "categories" : {
+      "EXTERNAL" : 5
+    }
+  },
+  "serverOrigin" : "http://127.0.0.1:1234",
+  "repositoryRevision" : "396491faf333d022b1621bd26341df1ff431cd2e",
+  "taskRevision" : "71d02769e2448a39350b5b9a277615427e2a710fe62145feb0cec16671c0ccdc",
+  "promptFingerprint" : "20da2290adff0f0e4db9204e9d60289a0c6dd350b1eaca8debb37f426e7f8be1",
+  "requiredTestChangeSatisfied" : false,
+  "category" : "bug",
+  "agentElapsedMs" : 720014,
+  "systemPromptHash" : "a377132ae96de7c0e8a6480896a6bc538f8a8d722f661b3ade6c89dab61097fb",
+  "catalogHash" : "1f7fd553582b9215bcf06bf310a58c494ec1c25a0892ed0ddbc57db51b7b03c3",
+  "serverContextLimit" : 0,
+  "oracleElapsedMs" : 1976,
+  "baselineTestsPassed" : true,
+  "semanticExpected" : false,
+  "lspConfigured" : true,
+  "trust" : "WORKSPACE",
+  "snapshotKind" : "REAL_EDITORA_COMPONENT",
+  "panelUpdateMaxMs" : 0,
+  "fxDispatchMaxMs" : 3,
+  "newLspMetadataFiles" : [ ".classpath", ".project", ".settings/org.eclipse.core.resources.prefs", ".settings/org.eclipse.jdt.apt.core.prefs", ".settings/org.eclipse.jdt.core.prefs", ".settings/org.eclipse.m2e.core.prefs" ],
+  "contextRankingBefore" : [ {
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "score" : 80,
+    "signals" : [ "ACTIVE" ]
+  } ],
+  "contextRankingAfter" : [ {
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "score" : 190,
+    "signals" : [ "ACTIVE", "UNSAVED", "RECENTLY_EDITED", "AGENT_INSPECTED" ]
+  }, {
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "score" : 35,
+    "signals" : [ "AGENT_INSPECTED", "LEXICAL" ]
+  }, {
+    "path" : "target/surefire-reports/TEST-com.editora.diff.DiffTextTest.xml",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "target/surefire-reports/com.editora.diff.DiffTextTest.txt",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "target/test-classes/com/editora/diff/DiffTextTest.class",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  } ]
+}

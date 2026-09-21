@@ -59,7 +59,11 @@ public interface AgentModel {
         }
     }
 
-    record Request(String system, List<Message> messages, List<AgentTool.Spec> tools) {
+    record Request(String system, List<Message> messages, List<AgentTool.Spec> tools, int outputTokens) {
+        public Request(String system, List<Message> messages, List<AgentTool.Spec> tools) {
+            this(system, messages, tools, 0);
+        }
+
         public Request {
             messages = List.copyOf(messages);
             tools = List.copyOf(tools);
@@ -74,6 +78,21 @@ public interface AgentModel {
     }
 
     Capabilities capabilities();
+
+    default AgentModelProfile profile() {
+        return AgentModelProfile.fixed(capabilities());
+    }
+
+    default void prepare(AgentCancellation cancellation) {
+        cancellation.check();
+    }
+
+    /** A complete provider envelope reporting truncation. No partial calls are available for execution. */
+    final class OutputLimit extends java.io.IOException {
+        public OutputLimit() {
+            super("Model output limit reached; incomplete tool calls were discarded");
+        }
+    }
 
     default AgentTokens.Counter tokenCounter() {
         return AgentTokens.CONSERVATIVE;

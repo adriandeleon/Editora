@@ -1,0 +1,460 @@
+{
+  "schemaVersion" : 2,
+  "outputRecoveries" : 1,
+  "validationEvidence" : "AGENT_VALIDATED",
+  "oracleEvidence" : "EVALUATION_ORACLE_PASSED",
+  "kind" : "AUTONOMOUS_CODING_EVALUATION",
+  "scenario" : "editora-endpoint-bug",
+  "provider" : "lmstudio",
+  "model" : "google/gemma-4-12b-qat",
+  "contextLimit" : 65536,
+  "tokenEstimate" : "HEURISTIC",
+  "elapsedMs" : 362115,
+  "completionState" : "COMPLETED",
+  "oraclePassed" : true,
+  "humanReviewRequired" : false,
+  "approvalsRequested" : 3,
+  "approvalsDenied" : 0,
+  "approvalMode" : "HARNESS_BOUNDED_AUTO_CONSENT",
+  "repeatedCalls" : 2,
+  "verificationFailures" : 0,
+  "idealParallelReadSavingsMs" : 0,
+  "taskSuccess" : "PASS",
+  "changedFiles" : [ "src/main/java/com/editora/ai/AiEndpoints.java" ],
+  "unexpectedFiles" : [ ],
+  "filesRead" : [ "src/main/java/com/editora/ai/AiEndpoints.java", "src/test/java/com/editora/ai/AiEndpointsTest.java" ],
+  "modelRounds" : [ {
+    "iteration" : 1,
+    "outputBudget" : 8192,
+    "requestBytes" : 1099,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 4173
+  }, {
+    "iteration" : 2,
+    "outputBudget" : 8192,
+    "requestBytes" : 5176,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "find_files" ],
+    "elapsedMs" : 30249
+  }, {
+    "iteration" : 3,
+    "outputBudget" : 8192,
+    "requestBytes" : 5470,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 788
+  }, {
+    "iteration" : 4,
+    "outputBudget" : 8192,
+    "requestBytes" : 9833,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 21137,
+    "outputTokens" : 0,
+    "requestedCalls" : 0,
+    "stop" : "length",
+    "toolsRequested" : [ ],
+    "elapsedMs" : 130000,
+    "firstTextDeltaMs" : 543
+  }, {
+    "iteration" : 5,
+    "outputBudget" : 16384,
+    "requestBytes" : 10040,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_command" ],
+    "elapsedMs" : 43736
+  }, {
+    "iteration" : 6,
+    "outputBudget" : 16384,
+    "requestBytes" : 13166,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 131224
+  }, {
+    "iteration" : 7,
+    "outputBudget" : 16384,
+    "requestBytes" : 13662,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_command" ],
+    "elapsedMs" : 1783
+  }, {
+    "iteration" : 8,
+    "outputBudget" : 16384,
+    "requestBytes" : 13850,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "save_files" ],
+    "elapsedMs" : 390
+  }, {
+    "iteration" : 9,
+    "outputBudget" : 16384,
+    "requestBytes" : 13913,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_command" ],
+    "elapsedMs" : 759
+  }, {
+    "iteration" : 10,
+    "outputBudget" : 16384,
+    "requestBytes" : 16068,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 1070,
+    "outputTokens" : 0,
+    "requestedCalls" : 0,
+    "stop" : "stop",
+    "toolsRequested" : [ ],
+    "elapsedMs" : 4828,
+    "firstTextDeltaMs" : 365
+  }, {
+    "iteration" : 11,
+    "outputBudget" : 16384,
+    "requestBytes" : 19728,
+    "catalogBytes" : 8873,
+    "inputTokens" : 0,
+    "assistantTextChars" : 1040,
+    "outputTokens" : 0,
+    "requestedCalls" : 0,
+    "stop" : "stop",
+    "toolsRequested" : [ ],
+    "elapsedMs" : 10335,
+    "firstTextDeltaMs" : 5910
+  } ],
+  "toolCalls" : [ {
+    "tool" : "read_file",
+    "iteration" : 1,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/ai/AiEndpoints.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 4017,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "find_files",
+    "iteration" : 2,
+    "effect" : "READ",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 267,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "iteration" : 3,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/ai/AiEndpointsTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 4297,
+    "elapsedMs" : 34
+  }, {
+    "tool" : "run_command",
+    "iteration" : 5,
+    "effect" : "EXTERNAL",
+    "error" : true,
+    "changed" : false,
+    "resultChars" : 3057,
+    "failure" : "VALIDATION_FAILURE",
+    "purpose" : "validate",
+    "elapsedMs" : 1166
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 6,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : false,
+    "changed" : true,
+    "resultChars" : 123,
+    "elapsedMs" : 17
+  }, {
+    "tool" : "run_command",
+    "iteration" : 7,
+    "effect" : "EXTERNAL",
+    "error" : true,
+    "changed" : false,
+    "resultChars" : 119,
+    "failure" : "VALIDATION_FAILURE",
+    "purpose" : "validate",
+    "elapsedMs" : 0
+  }, {
+    "tool" : "save_files",
+    "iteration" : 8,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 61,
+    "elapsedMs" : 7
+  }, {
+    "tool" : "run_command",
+    "iteration" : 9,
+    "effect" : "EXTERNAL",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2086,
+    "purpose" : "validate",
+    "elapsedMs" : 1307
+  } ],
+  "verification" : [ {
+    "passed" : true,
+    "elapsedMs" : 2
+  }, {
+    "passed" : true,
+    "elapsedMs" : 2
+  } ],
+  "observations" : [ {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "find_files",
+    "error" : false,
+    "elapsedMs" : 2
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 35
+  }, {
+    "tool" : "run_command",
+    "error" : true,
+    "elapsedMs" : 1167,
+    "failure" : "VALIDATION_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : false,
+    "elapsedMs" : 18
+  }, {
+    "tool" : "run_command",
+    "error" : true,
+    "elapsedMs" : 0,
+    "failure" : "VALIDATION_FAILURE"
+  }, {
+    "tool" : "save_files",
+    "error" : false,
+    "elapsedMs" : 7
+  }, {
+    "tool" : "run_command",
+    "error" : false,
+    "elapsedMs" : 1308
+  } ],
+  "permissions" : [ {
+    "tool" : "run_command",
+    "allowed" : true,
+    "commandFamily" : "mvn"
+  }, {
+    "tool" : "run_command",
+    "allowed" : true,
+    "commandFamily" : "mvn"
+  }, {
+    "tool" : "run_command",
+    "allowed" : true,
+    "commandFamily" : "mvn"
+  } ],
+  "requestedCalls" : 8,
+  "iterations" : 11,
+  "calls" : 8,
+  "withinCallBudget" : true,
+  "inputTokens" : 0,
+  "outputTokens" : 0,
+  "usageAvailable" : false,
+  "semanticQueries" : 0,
+  "searches" : 0,
+  "failureCategories" : [ "VALIDATION_FAILURE" ],
+  "trial" : 2,
+  "trialCount" : 2,
+  "label" : "phase4-adaptive-gemma",
+  "initialProfile" : {
+    "provider" : "lmstudio",
+    "model" : "google/gemma-4-12b-qat",
+    "server" : "LM_STUDIO_API_V1",
+    "modelContext" : {
+      "value" : 262144,
+      "provenance" : "DISCOVERED"
+    },
+    "loadedContext" : {
+      "value" : 220416,
+      "provenance" : "DISCOVERED"
+    },
+    "context" : {
+      "value" : 220416,
+      "provenance" : "DISCOVERED"
+    },
+    "preferredOutput" : {
+      "value" : 8192,
+      "provenance" : "HEURISTIC"
+    },
+    "maxOutput" : {
+      "value" : 16384,
+      "provenance" : "HEURISTIC"
+    },
+    "tools" : {
+      "value" : "SUPPORTED",
+      "provenance" : "DISCOVERED"
+    },
+    "features" : {
+      "REASONING" : {
+        "value" : "SUPPORTED",
+        "provenance" : "DISCOVERED"
+      }
+    },
+    "discoveryStatus" : "AVAILABLE",
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "google/gemma-4-12b-qat",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    },
+    "recoveryLimit" : 2
+  },
+  "profile" : {
+    "provider" : "lmstudio",
+    "model" : "google/gemma-4-12b-qat",
+    "server" : "LM_STUDIO_API_V1",
+    "modelContext" : {
+      "value" : 262144,
+      "provenance" : "DISCOVERED"
+    },
+    "loadedContext" : {
+      "value" : 220416,
+      "provenance" : "DISCOVERED"
+    },
+    "context" : {
+      "value" : 220416,
+      "provenance" : "DISCOVERED"
+    },
+    "preferredOutput" : {
+      "value" : 8192,
+      "provenance" : "HEURISTIC"
+    },
+    "maxOutput" : {
+      "value" : 16384,
+      "provenance" : "HEURISTIC"
+    },
+    "tools" : {
+      "value" : "SUPPORTED",
+      "provenance" : "DISCOVERED"
+    },
+    "features" : {
+      "REASONING" : {
+        "value" : "SUPPORTED",
+        "provenance" : "DISCOVERED"
+      }
+    },
+    "discoveryStatus" : "AVAILABLE",
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "google/gemma-4-12b-qat",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    },
+    "recoveryLimit" : 2
+  },
+  "profileFingerprint" : "dc40151b0395d6526b9fbe48a7b971afdcdd02e80959ada36b8a317876a14c3d",
+  "samplingRequested" : {
+    "temperature" : "0.0",
+    "seed" : "41",
+    "determinismGuaranteed" : false
+  },
+  "approvalMetrics" : {
+    "requested" : 3,
+    "allowed" : 3,
+    "denied" : 0,
+    "interrupted" : 0,
+    "waitMillis" : 0,
+    "repeatedEquivalent" : 2,
+    "categories" : {
+      "EXTERNAL" : 3
+    }
+  },
+  "serverOrigin" : "http://127.0.0.1:1234",
+  "repositoryRevision" : "396491faf333d022b1621bd26341df1ff431cd2e",
+  "taskRevision" : "9afd48a6b122df578c140acc52b47a5f043c1a82c513633bbb99f6462fc6c8da",
+  "promptFingerprint" : "531358d632090efbff844c00a78a972114c8521a43ff067e229a6a221b538e06",
+  "requiredTestChangeSatisfied" : true,
+  "category" : "bug",
+  "agentElapsedMs" : 360856,
+  "systemPromptHash" : "844fab2a80b62b19fd1d97c219d636c8fde523e950eaaf6b3bcccaf145626ab5",
+  "catalogHash" : "3f2f60b1322ec2e22f5f105e2c96994a42e8db2287c77857c03a90c55e665b4c",
+  "serverContextLimit" : 0,
+  "oracleElapsedMs" : 1243,
+  "baselineTestsPassed" : false,
+  "semanticExpected" : true,
+  "lspConfigured" : false,
+  "trust" : "WORKSPACE",
+  "snapshotKind" : "REAL_EDITORA_COMPONENT",
+  "panelUpdateMaxMs" : 0,
+  "fxDispatchMaxMs" : 15,
+  "newLspMetadataFiles" : [ ],
+  "contextRankingBefore" : [ {
+    "path" : "src/main/java/com/editora/ai/AiEndpoints.java",
+    "score" : 80,
+    "signals" : [ "ACTIVE" ]
+  } ],
+  "contextRankingAfter" : [ {
+    "path" : "src/main/java/com/editora/ai/AiEndpoints.java",
+    "score" : 140,
+    "signals" : [ "ACTIVE", "RECENTLY_EDITED", "AGENT_INSPECTED" ]
+  }, {
+    "path" : "src/test/java/com/editora/ai/AiEndpointsTest.java",
+    "score" : 35,
+    "signals" : [ "AGENT_INSPECTED", "LEXICAL" ]
+  }, {
+    "path" : "target/surefire-reports/TEST-com.editora.ai.AiEndpointsTest.xml",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "target/surefire-reports/com.editora.ai.AiEndpointsTest.txt",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "target/test-classes/com/editora/ai/AiEndpointsTest.class",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  } ]
+}

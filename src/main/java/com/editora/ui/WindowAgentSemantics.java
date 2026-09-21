@@ -32,8 +32,13 @@ final class WindowAgentSemantics implements AgentSemantics {
             try {
                 var endpoint = host.lsp().agentEndpoint(source.path());
                 var operations = out.putArray("operations");
-                endpoint.operations().forEach(operations::add);
-                out.put("available", true);
+                var supported = endpoint.operations();
+                supported.forEach(operations::add);
+                out.put("initialized", true).put("available", !supported.isEmpty());
+                if (supported.isEmpty())
+                    out.put(
+                            "reason",
+                            "No semantic capability registered yet; retry capability discovery after initialization");
             } catch (IllegalStateException unavailable) {
                 out.put("available", false).put("reason", unavailable.getMessage());
                 out.putArray("operations");
@@ -82,7 +87,8 @@ final class WindowAgentSemantics implements AgentSemantics {
         ObjectNode out = json.createObjectNode()
                 .put("source", workspace.root().relativize(source.path()).toString())
                 .put("revision", source.revision())
-                .put("freshness", "CURRENT_AT_RESPONSE");
+                .put("freshness", "CLIENT_REVISION_CURRENT_AT_RESPONSE")
+                .put("serverRevision", "UNVERSIONED_RESPONSE");
         if (result.isObject()) result.fields().forEachRemaining(e -> out.set(e.getKey(), e.getValue()));
         else out.set("items", result);
         return out;

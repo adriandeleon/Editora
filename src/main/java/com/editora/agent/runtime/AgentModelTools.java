@@ -15,7 +15,7 @@ public final class AgentModelTools {
         tools.register(new AgentTool(
                 new AgentTool.Spec(
                         "agent_model",
-                        "Inspect model capabilities, configured context/output limits and token-count provenance. UNKNOWN is not supported; byte estimates are heuristic.",
+                        "Inspect model capabilities, configured context/output limits and token-count provenance. UNKNOWN means unconfirmed; byte estimates are heuristic.",
                         schema,
                         null,
                         AgentTool.Effect.READ,
@@ -29,10 +29,13 @@ public final class AgentModelTools {
                             .put("streaming", caps.streaming())
                             .put("contextTokens", caps.contextTokens())
                             .put("outputTokens", caps.outputTokens())
-                            .put("contextLimitSource", "USER_CONFIGURED")
+                            .put(
+                                    "contextLimitSource",
+                                    model.profile().context().provenance().name())
                             .put(
                                     "tokenCountProvenance",
                                     model.tokenCounter().count("").provenance().name());
+                    out.set("profile", model.profile().toJson());
                     var features = out.putObject("features");
                     for (var feature : AgentModel.Feature.values())
                         features.put(feature.name(), caps.support(feature).name());

@@ -40,6 +40,9 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   tools, document transactions, verification, trust boundaries and staged migration.
 - [subsystems/agent-intelligence.md](subsystems/agent-intelligence.md) — semantic LSP tools and freshness,
   ranked context, scoped instructions/skills, managed MCP, durable sessions and Phase 3 priorities.
+- [subsystems/agent-acceptance.md](subsystems/agent-acceptance.md) — user intent, current evidence, acceptance, grounded completion and limits.
+- [subsystems/agent-acceptance-recipes.md](subsystems/agent-acceptance-recipes.md) — evidence debt, refresh guidance, project recipes and test identities.
+- [subsystems/agent-reliability.md](subsystems/agent-reliability.md) — model profiles, bounded recovery, structured validation and isolation.
 - [subsystems/agent-evaluation.md](subsystems/agent-evaluation.md) — opt-in real-model coding benchmark,
   independent outcome checks, metadata-only metrics and evidence-driven refinements.
 - [subsystems/ai.md](subsystems/ai.md) — AI providers, Codex and LM Studio adapter setup,

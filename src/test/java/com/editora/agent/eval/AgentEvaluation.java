@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 public final class AgentEvaluation {
     private final ObjectMapper json = new ObjectMapper();
     private final Path workspace;
+    private final Path localErrors;
     private final long started = System.nanoTime();
     private final List<ObjectNode> calls = new ArrayList<>();
     private final List<ObjectNode> rounds = new ArrayList<>();
@@ -21,17 +22,31 @@ public final class AgentEvaluation {
     private final List<ObjectNode> observations = new ArrayList<>();
     private final Set<String> readFiles = new TreeSet<>();
     private final Set<String> signatures = new HashSet<>();
-    private int approvals, denied, repeated, verificationFailures;
+    private int approvals, denied, repeated, verificationFailures, outputRecoveries;
     private final List<ObjectNode> permissions = new ArrayList<>();
 
     public AgentEvaluation(Path workspace) {
+        this(workspace, null);
+    }
+
+    /** Local fixture diagnostics are never included in aggregate reports or sent to the model. */
+    public AgentEvaluation(Path workspace, Path localErrors) {
         this.workspace = workspace;
+        this.localErrors = localErrors;
     }
 
     public AgentModel model(AgentModel delegate) {
         return new AgentModel() {
             public Capabilities capabilities() {
                 return delegate.capabilities();
+            }
+
+            public AgentModelProfile profile() {
+                return delegate.profile();
+            }
+
+            public void prepare(AgentCancellation c) {
+                delegate.prepare(c);
             }
 
             public AgentTokens.Counter tokenCounter() {
@@ -43,6 +58,10 @@ public final class AgentEvaluation {
                 var first = new AtomicLong(-1);
                 var round = json.createObjectNode()
                         .put("iteration", rounds.size() + 1)
+                        .put("messageCount", request.messages().size())
+                        .put("historyCompacted", request.system().contains("\nRuntime:"))
+                        .put("acceptanceDebtShown", request.system().contains("Remaining acceptance evidence"))
+                        .put("outputBudget", request.outputTokens())
                         .put(
                                 "requestBytes",
                                 request.messages().stream()
@@ -75,7 +94,11 @@ public final class AgentEvaluation {
                     }
                     return result;
                 } catch (Exception failure) {
-                    round.put("failure", classify(failure.getMessage()));
+                    round.put(
+                            "failure",
+                            failure instanceof AgentModel.OutputLimit
+                                    ? "OUTPUT_LIMIT"
+                                    : classify(failure.getMessage()));
                     throw failure;
                 } finally {
                     round.put("elapsedMs", elapsed(start));
@@ -94,12 +117,30 @@ public final class AgentEvaluation {
 
     /** Includes rejected schema/unknown-tool calls, which never enter a handler. No payload is retained. */
     public void event(AgentRuntime.Event event) {
+        if (event.state() == AgentRuntime.State.REASONING && event.detail().startsWith("Output limit"))
+            outputRecoveries++;
         if (event.state() != AgentRuntime.State.TOOL || event.detail().isEmpty()) return;
         var observation = json.createObjectNode()
                 .put("tool", event.tool())
                 .put("error", event.error())
                 .put("elapsedMs", event.elapsedMillis());
-        if (event.error()) observation.put("failure", classify(event.detail()));
+        if (event.error()) {
+            observation.put("failure", classify(event.detail()));
+            if (localErrors != null)
+                try {
+                    java.nio.file.Files.writeString(
+                            localErrors,
+                            json.createObjectNode()
+                                            .put("iteration", rounds.size())
+                                            .put("tool", event.tool())
+                                            .put("observation", AgentContext.bounded(event.detail(), 4000))
+                                    + "\n",
+                            java.nio.file.StandardOpenOption.CREATE,
+                            java.nio.file.StandardOpenOption.APPEND);
+                } catch (java.io.IOException ignored) {
+                    observation.put("localDiagnosticsUnavailable", true);
+                }
+        }
         observations.add(observation);
         System.out.println("AGENT_EVAL_OBSERVATION " + observation);
     }
@@ -159,7 +200,9 @@ public final class AgentEvaluation {
                         entry.put("purpose", a.path("purpose").asText());
                     return result;
                 } catch (Exception failure) {
-                    entry.put("error", true).put("failure", classify(failure.getMessage()));
+                    entry.put("error", true)
+                            .put("failure", classify(failure.getMessage()))
+                            .put("exceptionType", failure.getClass().getSimpleName());
                     throw failure;
                 } finally {
                     entry.put("elapsedMs", elapsed(start));
@@ -200,6 +243,16 @@ public final class AgentEvaluation {
             }
             allowed &= test;
         }
+        if (writesAllowed && spec.name().equals("run_validation")) {
+            var a = json.readTree(args);
+            allowed = "ISOLATED".equals(a.path("isolation").asText())
+                    && Set.of("COMPILE", "TEST", "TARGETED_TEST", "CHECK", "PACKAGE")
+                            .contains(a.path("type").asText())
+                    && workspace
+                            .resolve(a.path("module").asText("."))
+                            .normalize()
+                            .equals(workspace.normalize());
+        }
         if (!allowed) denied++;
         var permission = json.createObjectNode().put("tool", spec.name()).put("allowed", allowed);
         if (spec.name().equals("run_command")) {
@@ -239,7 +292,16 @@ public final class AgentEvaluation {
             boolean humanReview,
             int callBudget) {
         var out = json.createObjectNode()
-                .put("schemaVersion", 1)
+                .put("schemaVersion", 2)
+                .put("outputRecoveries", outputRecoveries)
+                .put(
+                        "validationEvidence",
+                        outcome.state() == AgentRuntime.State.COMPLETED ? "AGENT_VALIDATED" : "INCOMPLETE")
+                .put(
+                        "oracleEvidence",
+                        oraclePassed && !humanReview
+                                ? "EVALUATION_ORACLE_PASSED"
+                                : humanReview ? "HUMAN_REVIEW_REQUIRED" : "EVALUATION_ORACLE_FAILED")
                 .put("kind", "AUTONOMOUS_CODING_EVALUATION")
                 .put("scenario", scenario)
                 .put("provider", provider)
@@ -294,6 +356,49 @@ public final class AgentEvaluation {
         out.put("iterations", rounds.size())
                 .put("calls", calls.size())
                 .put("withinCallBudget", calls.size() <= callBudget);
+        int firstMutation = calls.stream()
+                .filter(c -> c.path("changed").asBoolean())
+                .mapToInt(c -> c.path("iteration").asInt())
+                .min()
+                .orElse(-1);
+        int lastMutation = calls.stream()
+                .filter(c -> c.path("changed").asBoolean())
+                .mapToInt(c -> c.path("iteration").asInt())
+                .max()
+                .orElse(-1);
+        out.put("roundsBeforeFirstMutation", firstMutation < 0 ? rounds.size() : Math.max(0, firstMutation - 1));
+        out.put("roundsAfterLastMutation", lastMutation < 0 ? 0 : Math.max(0, rounds.size() - lastMutation));
+        out.put(
+                "roundsWithAcceptanceDebt",
+                rounds.stream()
+                        .filter(r -> r.path("acceptanceDebtShown").asBoolean())
+                        .count());
+        out.put(
+                "acceptanceEvidenceRoundsAfterLastMutation",
+                lastMutation < 0
+                        ? 0
+                        : calls.stream()
+                                .filter(c -> c.path("iteration").asInt() > lastMutation)
+                                .filter(c -> Set.of(
+                                                "run_validation",
+                                                "semantic_query",
+                                                "search_text",
+                                                "task_contract",
+                                                "task_evidence",
+                                                "review_changes",
+                                                "save_files")
+                                        .contains(c.path("tool").asText()))
+                                .map(c -> c.path("iteration").asInt())
+                                .distinct()
+                                .count());
+        out.put(
+                "validationCallsAfterLastMutation",
+                lastMutation < 0
+                        ? 0
+                        : calls.stream()
+                                .filter(c -> c.path("iteration").asInt() > lastMutation)
+                                .filter(c -> c.path("tool").asText().equals("run_validation"))
+                                .count());
         out.put(
                 "inputTokens",
                 rounds.stream().mapToLong(r -> r.path("inputTokens").asLong()).sum());
@@ -337,6 +442,7 @@ public final class AgentEvaluation {
 
     public static String classify(String detail) {
         String t = Objects.toString(detail, "").toLowerCase(Locale.ROOT);
+        if (t.contains("cancelled") || t.contains("canceled")) return "CANCELLED";
         if (t.contains("model output limit") || t.contains("model stopped: length") || t.contains("max_tokens"))
             return "MODEL_OUTPUT_LIMIT";
         if (t.contains("response exceeds limit")

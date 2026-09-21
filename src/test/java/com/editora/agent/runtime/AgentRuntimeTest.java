@@ -132,6 +132,38 @@ class AgentRuntimeTest {
     }
 
     @Test
+    void repeatedEmptySearchesReceiveGuidanceAndStopAtBound() throws Exception {
+        var rounds = new ArrayList<AgentModel.Response>();
+        for (int round = 0; round < 4; round++) {
+            var requested = new AgentModel.Call[4];
+            for (int i = 0; i < 4; i++)
+                requested[i] =
+                        call("s" + round + "-" + i, "search_text", "{\"query\":\"missing" + round + "x" + i + "\"}");
+            rounds.add(calls(requested));
+        }
+        var model = new FakeModel(rounds.toArray(AgentModel.Response[]::new));
+        var tools = new AgentTools()
+                .register(new AgentTool(
+                        new AgentTool.Spec(
+                                "search_text",
+                                "test",
+                                JSON.readTree("{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}}}"),
+                                null,
+                                AgentTool.Effect.READ,
+                                Duration.ofMillis(250),
+                                true,
+                                "test"),
+                        (a, c) -> AgentTool.Result.ok("{\"matches\":[],\"truncated\":false}")));
+        try (var runtime = runtime(model, tools, (s, a, c) -> fail("read"), c -> fail("No writes"))) {
+            var outcome = runtime.submit("Find the implementation").get(3, TimeUnit.SECONDS);
+            assertEquals(AgentRuntime.State.NEEDS_INPUT, outcome.state());
+            assertTrue(outcome.detail().contains("Sixteen consecutive empty"));
+            assertTrue(model.requests.get(1).messages().stream()
+                    .anyMatch(m -> m.text().contains("repeated literal searches")));
+        }
+    }
+
+    @Test
     void repeatedPermissionDenialsStopWithCompleteProtocolAndAllowContinuation() throws Exception {
         var model = new FakeModel(
                 calls(call("a", "exec", "{}")),

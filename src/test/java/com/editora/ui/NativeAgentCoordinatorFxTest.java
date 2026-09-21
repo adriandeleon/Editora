@@ -40,6 +40,11 @@ class NativeAgentCoordinatorFxTest {
             java.util.List<String> bodies = new java.util.concurrent.CopyOnWriteArrayList<>();
             HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             server.createContext("/", exchange -> {
+                if (exchange.getRequestMethod().equals("GET")) {
+                    exchange.sendResponseHeaders(404, -1);
+                    exchange.close();
+                    return;
+                }
                 bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
                 String content = "turn" + bodies.size();
                 byte[] data = ("data: {\"choices\":[{\"delta\":{\"content\":\"" + content
@@ -96,6 +101,11 @@ class NativeAgentCoordinatorFxTest {
             AtomicInteger requests = new AtomicInteger();
             HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             server.createContext("/", exchange -> {
+                if (exchange.getRequestMethod().equals("GET")) {
+                    exchange.sendResponseHeaders(404, -1);
+                    exchange.close();
+                    return;
+                }
                 exchange.getRequestBody().readAllBytes();
                 int number = requests.incrementAndGet();
                 if (number == 1) {

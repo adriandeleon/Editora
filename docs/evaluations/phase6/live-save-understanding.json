@@ -1,0 +1,796 @@
+{
+  "schemaVersion" : 2,
+  "outputRecoveries" : 0,
+  "validationEvidence" : "INCOMPLETE",
+  "oracleEvidence" : "HUMAN_REVIEW_REQUIRED",
+  "kind" : "AUTONOMOUS_CODING_EVALUATION",
+  "scenario" : "editora-save-understanding",
+  "provider" : "lmstudio",
+  "model" : "qwen/qwen3-coder-next",
+  "contextLimit" : 65536,
+  "tokenEstimate" : "HEURISTIC",
+  "elapsedMs" : 360366,
+  "completionState" : "CANCELLED",
+  "oraclePassed" : true,
+  "humanReviewRequired" : true,
+  "approvalsRequested" : 0,
+  "approvalsDenied" : 0,
+  "approvalMode" : "HARNESS_BOUNDED_AUTO_CONSENT",
+  "repeatedCalls" : 2,
+  "verificationFailures" : 0,
+  "idealParallelReadSavingsMs" : 4341,
+  "taskSuccess" : "FAIL",
+  "changedFiles" : [ ],
+  "unexpectedFiles" : [ ],
+  "filesRead" : [ ],
+  "modelRounds" : [ {
+    "iteration" : 1,
+    "messageCount" : 1,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 4096,
+    "requestBytes" : 247,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 170,
+    "outputTokens" : 0,
+    "requestedCalls" : 4,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "search_text", "search_text", "search_text", "search_text" ],
+    "elapsedMs" : 45537,
+    "firstTextDeltaMs" : 39208
+  }, {
+    "iteration" : 2,
+    "messageCount" : 3,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 1787,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 274,
+    "outputTokens" : 0,
+    "requestedCalls" : 3,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "search_text", "search_text", "search_text" ],
+    "elapsedMs" : 43778,
+    "firstTextDeltaMs" : 38799
+  }, {
+    "iteration" : 3,
+    "messageCount" : 5,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 6821,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 82,
+    "outputTokens" : 0,
+    "requestedCalls" : 3,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "search_text", "search_text", "search_text" ],
+    "elapsedMs" : 50745,
+    "firstTextDeltaMs" : 47019
+  }, {
+    "iteration" : 4,
+    "messageCount" : 6,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 1617,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 3,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "search_text", "search_text", "search_text" ],
+    "elapsedMs" : 42419
+  }, {
+    "iteration" : 5,
+    "messageCount" : 10,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2821,
+    "requestBytes" : 1833,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 3,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "search_text", "search_text", "search_text" ],
+    "elapsedMs" : 4668
+  }, {
+    "iteration" : 6,
+    "messageCount" : 10,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 1232,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 3,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "search_text", "search_text", "search_text" ],
+    "elapsedMs" : 42143
+  }, {
+    "iteration" : 7,
+    "messageCount" : 10,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 1147,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 3,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "search_text", "search_text", "search_text" ],
+    "elapsedMs" : 41933
+  }, {
+    "iteration" : 8,
+    "messageCount" : 10,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 1443,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 3,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "search_text", "search_text", "search_text" ],
+    "elapsedMs" : 41473
+  }, {
+    "iteration" : 9,
+    "messageCount" : 10,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 1502,
+    "catalogBytes" : 11206,
+    "failure" : "CANCELLED",
+    "elapsedMs" : 40451
+  } ],
+  "toolCalls" : [ {
+    "tool" : "search_text",
+    "iteration" : 1,
+    "effect" : "READ",
+    "queryChars" : 10,
+    "containsPatternSyntax" : false,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 5992,
+    "elapsedMs" : 128
+  }, {
+    "tool" : "search_text",
+    "iteration" : 1,
+    "effect" : "READ",
+    "queryChars" : 14,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 290
+  }, {
+    "tool" : "search_text",
+    "iteration" : 1,
+    "effect" : "READ",
+    "queryChars" : 14,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 271
+  }, {
+    "tool" : "search_text",
+    "iteration" : 1,
+    "effect" : "READ",
+    "queryChars" : 8,
+    "containsPatternSyntax" : false,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 5955,
+    "elapsedMs" : 63
+  }, {
+    "tool" : "search_text",
+    "iteration" : 2,
+    "effect" : "READ",
+    "queryChars" : 10,
+    "containsPatternSyntax" : false,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 5992,
+    "elapsedMs" : 67
+  }, {
+    "tool" : "search_text",
+    "iteration" : 2,
+    "effect" : "READ",
+    "queryChars" : 15,
+    "containsPatternSyntax" : false,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 184,
+    "elapsedMs" : 324
+  }, {
+    "tool" : "search_text",
+    "iteration" : 2,
+    "effect" : "READ",
+    "queryChars" : 32,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 318
+  }, {
+    "tool" : "search_text",
+    "iteration" : 3,
+    "effect" : "READ",
+    "queryChars" : 31,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 286
+  }, {
+    "tool" : "search_text",
+    "iteration" : 3,
+    "effect" : "READ",
+    "queryChars" : 27,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 291
+  }, {
+    "tool" : "search_text",
+    "iteration" : 3,
+    "effect" : "READ",
+    "queryChars" : 14,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 299
+  }, {
+    "tool" : "search_text",
+    "iteration" : 4,
+    "effect" : "READ",
+    "queryChars" : 26,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 293
+  }, {
+    "tool" : "search_text",
+    "iteration" : 4,
+    "effect" : "READ",
+    "queryChars" : 31,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 286
+  }, {
+    "tool" : "search_text",
+    "iteration" : 4,
+    "effect" : "READ",
+    "queryChars" : 30,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 287
+  }, {
+    "tool" : "search_text",
+    "iteration" : 5,
+    "effect" : "READ",
+    "queryChars" : 20,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 302
+  }, {
+    "tool" : "search_text",
+    "iteration" : 5,
+    "effect" : "READ",
+    "queryChars" : 31,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 288
+  }, {
+    "tool" : "search_text",
+    "iteration" : 5,
+    "effect" : "READ",
+    "queryChars" : 30,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 296
+  }, {
+    "tool" : "search_text",
+    "iteration" : 6,
+    "effect" : "READ",
+    "queryChars" : 14,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 304
+  }, {
+    "tool" : "search_text",
+    "iteration" : 6,
+    "effect" : "READ",
+    "queryChars" : 18,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 305
+  }, {
+    "tool" : "search_text",
+    "iteration" : 6,
+    "effect" : "READ",
+    "queryChars" : 27,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 291
+  }, {
+    "tool" : "search_text",
+    "iteration" : 7,
+    "effect" : "READ",
+    "queryChars" : 25,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 301
+  }, {
+    "tool" : "search_text",
+    "iteration" : 7,
+    "effect" : "READ",
+    "queryChars" : 20,
+    "containsPatternSyntax" : false,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 334,
+    "elapsedMs" : 301
+  }, {
+    "tool" : "search_text",
+    "iteration" : 7,
+    "effect" : "READ",
+    "queryChars" : 29,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 293
+  }, {
+    "tool" : "search_text",
+    "iteration" : 8,
+    "effect" : "READ",
+    "queryChars" : 47,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 288
+  }, {
+    "tool" : "search_text",
+    "iteration" : 8,
+    "effect" : "READ",
+    "queryChars" : 27,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 290
+  }, {
+    "tool" : "search_text",
+    "iteration" : 8,
+    "effect" : "READ",
+    "queryChars" : 44,
+    "containsPatternSyntax" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 31,
+    "elapsedMs" : 283
+  } ],
+  "verification" : [ ],
+  "observations" : [ {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 130
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 291
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 272
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 64
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 67
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 325
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 319
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 287
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 292
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 300
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 294
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 287
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 287
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 303
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 289
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 297
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 305
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 306
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 292
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 302
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 302
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 294
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 289
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 291
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 284
+  } ],
+  "permissions" : [ ],
+  "requestedCalls" : 25,
+  "iterations" : 9,
+  "calls" : 25,
+  "withinCallBudget" : false,
+  "roundsBeforeFirstMutation" : 9,
+  "roundsAfterLastMutation" : 0,
+  "roundsWithAcceptanceDebt" : 9,
+  "acceptanceEvidenceRoundsAfterLastMutation" : 0,
+  "validationCallsAfterLastMutation" : 0,
+  "inputTokens" : 0,
+  "outputTokens" : 0,
+  "usageAvailable" : false,
+  "semanticQueries" : 0,
+  "searches" : 25,
+  "failureCategories" : [ "CANCELLED", "TIME_BUDGET_EXHAUSTED" ],
+  "trial" : 1,
+  "trialCount" : 1,
+  "timeBudgetExceeded" : true,
+  "label" : "phase6-final",
+  "implementationFingerprint" : "076ecb2097f77b17536d209fb14c735347bd57c8bb39a72dd6844af15af109c6",
+  "repositoryDirty" : "true",
+  "unsavedFiles" : [ ],
+  "acceptance" : {
+    "checks" : 0,
+    "verificationNanos" : 0,
+    "reconciliationNanos" : 8333399,
+    "javaDeclarationNanos" : 0,
+    "unstructuredCandidatesHandled" : 0,
+    "reconciliations" : 9,
+    "unsupportedStructuredClaims" : 0,
+    "taskIncomplete" : 0,
+    "evidenceIncomplete" : 1,
+    "requirements" : [ {
+      "id" : "R1",
+      "type" : "USER_CONSTRAINT",
+      "provenance" : "USER_EXPLICIT",
+      "userMessage" : "U1",
+      "check" : "NO_CHANGES",
+      "state" : "SATISFIED",
+      "reason" : "Supported by current NO_CHANGES evidence",
+      "evidence" : [ "E1" ]
+    }, {
+      "id" : "R2",
+      "type" : "INVESTIGATION",
+      "provenance" : "USER_EXPLICIT",
+      "userMessage" : "U1",
+      "check" : "INSPECTED",
+      "state" : "EVIDENCE_PENDING",
+      "reason" : "Current evidence does not establish INSPECTED; inspect task_contract and task_evidence",
+      "evidence" : [ ]
+    } ]
+  },
+  "regressionQuality" : {
+    "kind" : "EVALUATION_ONLY_REGRESSION_QUALITY",
+    "state" : "UNVERIFIED",
+    "reason" : "No supported new test identity or no mutation fixture"
+  },
+  "initialProfile" : {
+    "provider" : "lmstudio",
+    "model" : "qwen/qwen3-coder-next",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "context" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 4096
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 8192
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "qwen/qwen3-coder-next",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profile" : {
+    "provider" : "lmstudio",
+    "model" : "qwen/qwen3-coder-next",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "context" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 4096
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 8192
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "qwen/qwen3-coder-next",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profileFingerprint" : "ddf4404072e264c1ecea7da82d219cce810235b371712ca255405e1c3ff2ab83",
+  "samplingRequested" : {
+    "temperature" : "0.0",
+    "seed" : "41",
+    "seedSent" : true,
+    "determinismGuaranteed" : false
+  },
+  "approvalMetrics" : {
+    "requested" : 0,
+    "allowed" : 0,
+    "denied" : 0,
+    "interrupted" : 0,
+    "waitMillis" : 0,
+    "repeatedEquivalent" : 0,
+    "categories" : { }
+  },
+  "serverOrigin" : "http://127.0.0.1:1234",
+  "repositoryRevision" : "396491faf333d022b1621bd26341df1ff431cd2e",
+  "taskRevision" : "ab85b664a03fd6f6956283d9a3bd29e81b15ff0a43855d06e49d6a16fc2b48b6",
+  "promptFingerprint" : "9bed95744b84af9d55237922d6ae396623f6baf7b08acfdb9268bb8869845b4a",
+  "requiredTestChangeSatisfied" : true,
+  "category" : "understanding",
+  "agentElapsedMs" : 360027,
+  "systemPromptHash" : "9f732d44ccd7a523d4aacea6ada8a90757fec35484b2731022e77b74b309c214",
+  "catalogHash" : "0429f7733513703d0bfea0b4b21f1236021d1a240bc1bb87b512c0c3e2642093",
+  "serverContextLimit" : 0,
+  "oracleElapsedMs" : 15,
+  "baselineTestsPassed" : true,
+  "semanticExpected" : true,
+  "lspConfigured" : true,
+  "trust" : "ASK",
+  "snapshotKind" : "FULL_EDITORA",
+  "panelUpdateMaxMs" : 1,
+  "fxDispatchMaxMs" : 0,
+  "newLspMetadataFiles" : [ ".classpath", ".project", ".settings/org.eclipse.core.resources.prefs", ".settings/org.eclipse.jdt.apt.core.prefs", ".settings/org.eclipse.jdt.core.prefs", ".settings/org.eclipse.m2e.core.prefs" ],
+  "contextRankingBefore" : [ {
+    "path" : "src/main/java/com/editora/io/DocumentWriteSequencer.java",
+    "score" : 80,
+    "signals" : [ "ACTIVE" ]
+  } ],
+  "contextRankingAfter" : [ {
+    "path" : "src/main/java/com/editora/io/DocumentWriteSequencer.java",
+    "score" : 80,
+    "signals" : [ "ACTIVE" ]
+  }, {
+    "path" : "README.md",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "TODO.md",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "docs/evaluations/agent-phase3-data.json",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "docs/evaluations/phase5/phase5-contract-qwen-billing-contract-migration-43b07504-1790013916039.json",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "docs/evaluations/phase5/phase5-corrected-qwen-billing-contract-migration-43b07504-1790015751411.json",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "docs/evaluations/phase5/phase5-corrected-qwen-editora-diff-newline-43b07504-1790015026372.json",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "docs/subsystems/agent-acceptance-recipes.md",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "docs/subsystems/agent-acceptance.md",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "docs/subsystems/agent-evaluation.md",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "docs/subsystems/agent-intelligence.md",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "docs/subsystems/agent-platform.md",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  } ]
+}

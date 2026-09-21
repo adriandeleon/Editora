@@ -1,0 +1,151 @@
+{
+  "kind": "PHASE4_VERIFICATION",
+  "recordedAtUtc": "2026-09-21T14:17:11.541975+00:00",
+  "repositoryRevision": "396491faf333d022b1621bd26341df1ff431cd2e",
+  "repositoryDirty": true,
+  "fullBuild": {
+    "command": "mvn -q spotless:apply clean verify",
+    "jdk": "25.0.4-tem",
+    "maven": "3.9.16",
+    "exitCode": 0,
+    "reportSuites": 769,
+    "tests": 5023,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 33,
+    "executedTests": 4990,
+    "liveServicesRequired": false
+  },
+  "optInProbes": [
+    {
+      "name": "real JDT LS lifecycle",
+      "result": "PASS",
+      "operations": 12,
+      "elapsedMs": 11286,
+      "evidence": "lsp-trials.json",
+      "scope": "Cold/dynamic readiness, agent-only buffers, semantic queries, rename and formatting proposals, unsaved changes/diagnostics, pending diagnostics repair and restart"
+    },
+    {
+      "name": "Linux validation isolation",
+      "result": "PASS",
+      "scope": "Real offline Maven, private home, host SSH path inaccessible, host loopback listener inaccessible"
+    },
+    {
+      "name": "production editor validation integration",
+      "result": "PASS",
+      "scope": "Document edit, dirty-buffer rejection, save, isolated Maven, fresh test and revision evidence"
+    },
+    {
+      "name": "independent oracle integrity",
+      "result": "PASS",
+      "junitCases": 3,
+      "scope": "Original component bugs and eight-file API fail; repaired fixtures pass; missing fixture classes fail; seeded save-cancellation mutant fails; full product snapshot excludes grading sources and still compiles"
+    },
+    {
+      "name": "long deterministic session",
+      "result": "PASS",
+      "observations": 240,
+      "scope": "Compaction, failed validation then repair, user changes, persistence, continuation and fake provider switching; not live model coherence"
+    },
+    {
+      "name": "MCP reconnect lifecycle",
+      "result": "PASS",
+      "cycles": 25,
+      "scope": "One live connection and no replayed calls"
+    },
+    {
+      "name": "dashboard regression",
+      "result": "PASS",
+      "tests": 1,
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/probes -p test_agent_evaluation_report.py"
+    }
+  ],
+  "desktopReview": {
+    "toolkit": "GTK",
+    "visibleProductionWindows": true,
+    "ownedSceneSnapshots": 7,
+    "agentVisuallyInspected": true,
+    "manualHumanSession": false,
+    "compositorCaptures": false,
+    "humanStudy": false,
+    "syntheticContent": true
+  },
+  "liveEvaluation": {
+    "trials": 12,
+    "taskPassed": 5,
+    "taskFailed": 7,
+    "oraclePassed": 6,
+    "completed": 6,
+    "distinctTasks": 4,
+    "models": 2,
+    "samplingRequested": {
+      "temperature": 0,
+      "seed": 41
+    },
+    "statisticalSignificanceClaimed": false,
+    "tokenUsageAvailable": false,
+    "batches": [
+      {
+        "label": "phase4-adaptive-gemma",
+        "trials": 4,
+        "outerExitCode": 0
+      },
+      {
+        "label": "phase4-adaptive-qwen",
+        "trials": 4,
+        "outerExitCode": 143,
+        "note": "All four reports and zero-error JUnit result completed before outer termination; cause unknown."
+      },
+      {
+        "label": "phase4-retention-qwen",
+        "trials": 4,
+        "outerExitCode": 0
+      }
+    ]
+  },
+  "postBatchOracleRechecks": [
+    {
+      "trialReport": "phase4-adaptive-gemma-editora-endpoint-bug-3e51de5f-1789964652973.json",
+      "result": "PASS",
+      "exitCode": 0,
+      "classpath": "fixture/target/classes only"
+    },
+    {
+      "trialReport": "phase4-adaptive-gemma-editora-endpoint-bug-3e51de5f-1789965734481.json",
+      "result": "PASS",
+      "exitCode": 0,
+      "classpath": "fixture/target/classes only"
+    },
+    {
+      "trialReport": "phase4-retention-qwen-editora-diff-newline-43b07504-1789968789612.json",
+      "result": "PASS",
+      "exitCode": 0,
+      "classpath": "fixture/target/classes only"
+    },
+    {
+      "trialReport": "phase4-retention-qwen-billing-contract-migration-43b07504-1789969176424.json",
+      "result": "PASS",
+      "exitCode": 0,
+      "classpath": "fixture/target/classes only"
+    },
+    {
+      "trialReport": "phase4-retention-qwen-editora-diff-newline-43b07504-1789969469022.json",
+      "result": "PASS",
+      "exitCode": 0,
+      "classpath": "fixture/target/classes only"
+    },
+    {
+      "trialReport": "phase4-retention-qwen-billing-contract-migration-43b07504-1789969687599.json",
+      "result": "PASS",
+      "exitCode": 0,
+      "classpath": "fixture/target/classes only"
+    }
+  ],
+  "limits": [
+    "No credentialed hosted-provider trials",
+    "Four of thirteen corpus tasks exercised live",
+    "No participant usability or permission-fatigue study",
+    "Gradle, macOS and Windows isolation not validated",
+    "Final error-message guidance and hidden-grader exclusions postdate compilation of retained live trials"
+  ]
+}

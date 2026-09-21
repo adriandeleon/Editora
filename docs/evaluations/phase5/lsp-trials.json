@@ -1,0 +1,47 @@
+{
+  "kind": "PHASE5_REAL_JDT_INTEROPERABILITY",
+  "successfulRuns": [
+    {
+      "kind": "REAL_LSP_INTEROPERABILITY",
+      "server": "JDT_LS",
+      "elapsedMs": 9214,
+      "passedOperations": [
+        "cold_initialization_and_agent_only_documents",
+        "symbols",
+        "references",
+        "implementations",
+        "definition",
+        "code_actions",
+        "rename_preview_and_apply",
+        "unsaved_didChange",
+        "format_preview",
+        "unsaved_diagnostics",
+        "repair_during_diagnostics",
+        "restart_preserves_unsaved_buffers"
+      ]
+    },
+    {
+      "kind": "REAL_LSP_INTEROPERABILITY",
+      "server": "JDT_LS",
+      "elapsedMs": 12555,
+      "passedOperations": [
+        "cold_initialization_and_agent_only_documents",
+        "symbols",
+        "references",
+        "implementations",
+        "definition",
+        "code_actions",
+        "rename_preview_and_apply",
+        "unsaved_didChange",
+        "format_preview",
+        "unsaved_diagnostics",
+        "repair_during_diagnostics",
+        "restart_preserves_unsaved_buffers"
+      ]
+    }
+  ],
+  "configurationFailure": {
+    "attempt": "final-focused",
+    "reason": "Invoked agent.lsp.jdtls instead of required agent.lsp.command; fixture rejected missing command before starting JDT LS. Corrected rerun passed."
+  }
+}

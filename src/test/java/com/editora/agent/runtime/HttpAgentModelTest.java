@@ -12,6 +12,64 @@ class HttpAgentModelTest {
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
+    void outputLimitDiscardsEveryCallEvenWhenOneLooksComplete() throws Exception {
+        for (String partial : List.of("{", "{}")) {
+            var collector = new HttpAgentModel.Collector(AiProvider.OPENAI, text -> {});
+            var event = json.createObjectNode();
+            var choice = event.putArray("choices").addObject();
+            var calls = choice.putObject("delta").putArray("tool_calls");
+            calls.addObject()
+                    .put("index", 0)
+                    .put("id", "complete")
+                    .putObject("function")
+                    .put("name", "write")
+                    .put("arguments", "{}");
+            calls.addObject()
+                    .put("index", 1)
+                    .put("id", "partial")
+                    .putObject("function")
+                    .put("name", "write")
+                    .put("arguments", partial);
+            collector.onEvent(event);
+            assertThrows(
+                    java.io.IOException.class,
+                    collector::response,
+                    "EOF immediately before stop cannot authorize tools");
+            collector.onEvent(json.readTree("{\"choices\":[{\"finish_reason\":\"length\"}]}"));
+            assertThrows(AgentModel.OutputLimit.class, collector::response);
+        }
+        var anthropic = new HttpAgentModel.Collector(AiProvider.ANTHROPIC, text -> {});
+        anthropic.onEvent(
+                json.readTree(
+                        "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"a\",\"name\":\"write\",\"input\":{}}}"));
+        anthropic.onEvent(json.readTree("{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}"));
+        anthropic.onEvent(json.readTree("{\"type\":\"message_stop\"}"));
+        assertThrows(AgentModel.OutputLimit.class, anthropic::response);
+    }
+
+    @Test
+    void officialAndCompatibleOutputDialectsDoNotGuessFromModelNames() throws Exception {
+        var cfg = new com.editora.config.AgentModelProfileConfig(
+                "openai", "model", 32768, 4096, 8192, "UNKNOWN", false, 0.0, 42L);
+        var request = new AgentModel.Request("system", List.of(), List.of(), 8192);
+        var official = new HttpAgentModel(
+                        AiProvider.OPENAI, "https://api.openai.com/v1/chat/completions", "", "model", 32768, cfg)
+                .body(request);
+        assertEquals(8192, official.path("max_completion_tokens").asInt());
+        assertFalse(official.has("max_tokens"));
+        assertEquals(42, official.path("seed").asLong());
+        var compatible = new HttpAgentModel(
+                        AiProvider.OPENAI, "http://127.0.0.1:1234/v1/chat/completions", "", "model", 32768, cfg)
+                .body(request);
+        assertEquals(8192, compatible.path("max_tokens").asInt());
+        assertFalse(compatible.has("max_completion_tokens"));
+        var anthropic = new HttpAgentModel(
+                        AiProvider.ANTHROPIC, "https://api.anthropic.com/v1/messages", "", "model", 32768, cfg)
+                .body(request);
+        assertFalse(anthropic.has("seed"));
+    }
+
+    @Test
     void tokenEnvelopeOverheadDoesNotConsumeTheContentBudget() throws Exception {
         var collector = new HttpAgentModel.Collector(AiProvider.LMSTUDIO, text -> {});
         var event = json.createObjectNode().put("model", "local-model-metadata".repeat(30));

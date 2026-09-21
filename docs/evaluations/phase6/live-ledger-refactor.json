@@ -1,0 +1,576 @@
+{
+  "schemaVersion" : 2,
+  "outputRecoveries" : 0,
+  "validationEvidence" : "INCOMPLETE",
+  "oracleEvidence" : "EVALUATION_ORACLE_FAILED",
+  "kind" : "AUTONOMOUS_CODING_EVALUATION",
+  "scenario" : "ledger-refactor",
+  "provider" : "lmstudio",
+  "model" : "qwen/qwen3-coder-next",
+  "contextLimit" : 65536,
+  "tokenEstimate" : "HEURISTIC",
+  "elapsedMs" : 361709,
+  "completionState" : "CANCELLED",
+  "oraclePassed" : false,
+  "humanReviewRequired" : false,
+  "approvalsRequested" : 0,
+  "approvalsDenied" : 0,
+  "approvalMode" : "HARNESS_BOUNDED_AUTO_CONSENT",
+  "repeatedCalls" : 3,
+  "verificationFailures" : 0,
+  "idealParallelReadSavingsMs" : 19,
+  "taskSuccess" : "FAIL",
+  "changedFiles" : [ ],
+  "unexpectedFiles" : [ ],
+  "filesRead" : [ "src/main/java/demo/Invoice.java", "src/main/java/demo/Ledger.java", "src/test/java/demo/LedgerTest.java" ],
+  "modelRounds" : [ {
+    "iteration" : 1,
+    "messageCount" : 2,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 4096,
+    "requestBytes" : 1109,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 169,
+    "outputTokens" : 0,
+    "requestedCalls" : 2,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file", "semantic_capabilities" ],
+    "elapsedMs" : 47309,
+    "firstTextDeltaMs" : 40870
+  }, {
+    "iteration" : 2,
+    "messageCount" : 6,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 3098,
+    "requestBytes" : 3618,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 63,
+    "outputTokens" : 0,
+    "requestedCalls" : 2,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "semantic_query", "search_text" ],
+    "elapsedMs" : 52115,
+    "firstTextDeltaMs" : 44447
+  }, {
+    "iteration" : 3,
+    "messageCount" : 9,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2104,
+    "requestBytes" : 4585,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 60,
+    "outputTokens" : 0,
+    "requestedCalls" : 2,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file", "read_file" ],
+    "elapsedMs" : 8230,
+    "firstTextDeltaMs" : 3067
+  }, {
+    "iteration" : 4,
+    "messageCount" : 9,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 4518,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 267,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "semantic_prepare" ],
+    "elapsedMs" : 53800,
+    "firstTextDeltaMs" : 46163
+  }, {
+    "iteration" : 5,
+    "messageCount" : 10,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 3773,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 162,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 65253,
+    "firstTextDeltaMs" : 44579
+  }, {
+    "iteration" : 6,
+    "messageCount" : 6,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 4000,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 52,
+    "outputTokens" : 0,
+    "requestedCalls" : 3,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file", "read_file", "read_file" ],
+    "elapsedMs" : 50657,
+    "firstTextDeltaMs" : 43277
+  }, {
+    "iteration" : 7,
+    "messageCount" : 8,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 4952,
+    "catalogBytes" : 11206,
+    "inputTokens" : 0,
+    "assistantTextChars" : 77,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 68207,
+    "firstTextDeltaMs" : 46270
+  }, {
+    "iteration" : 8,
+    "messageCount" : 5,
+    "historyCompacted" : true,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 2048,
+    "requestBytes" : 4439,
+    "catalogBytes" : 11206,
+    "failure" : "CANCELLED",
+    "elapsedMs" : 13869
+  } ],
+  "toolCalls" : [ {
+    "tool" : "read_file",
+    "iteration" : 1,
+    "effect" : "READ",
+    "path" : "src/main/java/demo/Ledger.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 495,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "semantic_capabilities",
+    "iteration" : 1,
+    "effect" : "READ",
+    "path" : "src/main/java/demo/Ledger.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 418,
+    "elapsedMs" : 2
+  }, {
+    "tool" : "semantic_query",
+    "iteration" : 2,
+    "effect" : "READ",
+    "path" : "src/main/java/demo/Ledger.java",
+    "operation" : "references",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 214,
+    "elapsedMs" : 20
+  }, {
+    "tool" : "search_text",
+    "iteration" : 2,
+    "effect" : "READ",
+    "path" : "",
+    "queryChars" : 8,
+    "containsPatternSyntax" : false,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 433,
+    "elapsedMs" : 2
+  }, {
+    "tool" : "read_file",
+    "iteration" : 3,
+    "effect" : "READ",
+    "path" : "src/main/java/demo/Invoice.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 403,
+    "elapsedMs" : 17
+  }, {
+    "tool" : "read_file",
+    "iteration" : 3,
+    "effect" : "READ",
+    "path" : "src/test/java/demo/LedgerTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 463,
+    "elapsedMs" : 20
+  }, {
+    "tool" : "semantic_prepare",
+    "iteration" : 4,
+    "effect" : "READ",
+    "path" : "src/main/java/demo/Ledger.java",
+    "operation" : "rename",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 28,
+    "elapsedMs" : 76
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 5,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : true,
+    "failure" : "OTHER_FAILURE",
+    "exceptionType" : "IllegalArgumentException",
+    "elapsedMs" : 2
+  }, {
+    "tool" : "read_file",
+    "iteration" : 6,
+    "effect" : "READ",
+    "path" : "src/main/java/demo/Ledger.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 495,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 6,
+    "effect" : "READ",
+    "path" : "src/main/java/demo/Invoice.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 403,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 6,
+    "effect" : "READ",
+    "path" : "src/test/java/demo/LedgerTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 463,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 7,
+    "effect" : "WORKSPACE_WRITE",
+    "error" : false,
+    "changed" : true,
+    "resultChars" : 327,
+    "elapsedMs" : 383
+  } ],
+  "verification" : [ ],
+  "observations" : [ {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "semantic_capabilities",
+    "error" : false,
+    "elapsedMs" : 3
+  }, {
+    "tool" : "semantic_query",
+    "error" : false,
+    "elapsedMs" : 20
+  }, {
+    "tool" : "search_text",
+    "error" : false,
+    "elapsedMs" : 2
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 18
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 21
+  }, {
+    "tool" : "semantic_prepare",
+    "error" : false,
+    "elapsedMs" : 77
+  }, {
+    "tool" : "apply_edits",
+    "error" : true,
+    "elapsedMs" : 3,
+    "failure" : "OTHER_FAILURE"
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "apply_edits",
+    "error" : false,
+    "elapsedMs" : 383
+  } ],
+  "permissions" : [ ],
+  "requestedCalls" : 12,
+  "iterations" : 8,
+  "calls" : 12,
+  "withinCallBudget" : true,
+  "roundsBeforeFirstMutation" : 6,
+  "roundsAfterLastMutation" : 1,
+  "roundsWithAcceptanceDebt" : 8,
+  "acceptanceEvidenceRoundsAfterLastMutation" : 0,
+  "validationCallsAfterLastMutation" : 0,
+  "inputTokens" : 0,
+  "outputTokens" : 0,
+  "usageAvailable" : false,
+  "semanticQueries" : 3,
+  "searches" : 1,
+  "failureCategories" : [ "CANCELLED", "INCORRECT_RESULT", "OTHER_FAILURE", "REPEATED_DISCOVERY", "TIME_BUDGET_EXHAUSTED" ],
+  "trial" : 1,
+  "trialCount" : 1,
+  "timeBudgetExceeded" : true,
+  "label" : "phase6-final",
+  "implementationFingerprint" : "076ecb2097f77b17536d209fb14c735347bd57c8bb39a72dd6844af15af109c6",
+  "repositoryDirty" : "true",
+  "unsavedFiles" : [ {
+    "path" : "src/main/java/demo/Ledger.java",
+    "revision" : "5350264f-acce-493d-9381-fd26a0eaf796:2"
+  }, {
+    "path" : "src/main/java/demo/Invoice.java",
+    "revision" : "c65f71c9-8c99-45a4-ad3f-f4e04f2a473d:2"
+  }, {
+    "path" : "src/test/java/demo/LedgerTest.java",
+    "revision" : "e1daf0b3-eb57-4b9f-ab5a-cec7ef6ac86a:2"
+  } ],
+  "acceptance" : {
+    "checks" : 0,
+    "verificationNanos" : 0,
+    "reconciliationNanos" : 4276526,
+    "javaDeclarationNanos" : 360491544,
+    "unstructuredCandidatesHandled" : 0,
+    "reconciliations" : 6,
+    "unsupportedStructuredClaims" : 0,
+    "taskIncomplete" : 0,
+    "evidenceIncomplete" : 2,
+    "requirements" : [ {
+      "id" : "R1",
+      "type" : "CODE_CHANGE",
+      "provenance" : "USER_EXPLICIT",
+      "userMessage" : "U1",
+      "check" : "CHANGE",
+      "state" : "SATISFIED",
+      "reason" : "Production diff observed; behavior requires relevant validation",
+      "evidence" : [ "E5", "E6" ]
+    }, {
+      "id" : "R2",
+      "type" : "VALIDATION",
+      "provenance" : "USER_EXPLICIT",
+      "userMessage" : "U1",
+      "check" : "VALIDATED",
+      "state" : "EVIDENCE_PENDING",
+      "reason" : "Current evidence does not establish VALIDATED; inspect task_contract and task_evidence",
+      "evidence" : [ ]
+    }, {
+      "id" : "R3",
+      "type" : "REFACTOR",
+      "provenance" : "USER_EXPLICIT",
+      "userMessage" : "U1",
+      "check" : "OBSERVED_CALLERS_CHANGED",
+      "state" : "EVIDENCE_PENDING",
+      "reason" : "Current evidence does not establish OBSERVED_CALLERS_CHANGED; inspect task_contract and task_evidence",
+      "evidence" : [ ]
+    } ]
+  },
+  "regressionQuality" : {
+    "kind" : "EVALUATION_ONLY_REGRESSION_QUALITY",
+    "state" : "UNVERIFIED",
+    "reason" : "No supported new test identity or no mutation fixture"
+  },
+  "initialProfile" : {
+    "provider" : "lmstudio",
+    "model" : "qwen/qwen3-coder-next",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "context" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 4096
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 8192
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "qwen/qwen3-coder-next",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profile" : {
+    "provider" : "lmstudio",
+    "model" : "qwen/qwen3-coder-next",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "context" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 4096
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 8192
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "qwen/qwen3-coder-next",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profileFingerprint" : "ddf4404072e264c1ecea7da82d219cce810235b371712ca255405e1c3ff2ab83",
+  "samplingRequested" : {
+    "temperature" : "0.0",
+    "seed" : "41",
+    "seedSent" : true,
+    "determinismGuaranteed" : false
+  },
+  "approvalMetrics" : {
+    "requested" : 0,
+    "allowed" : 0,
+    "denied" : 0,
+    "interrupted" : 0,
+    "waitMillis" : 0,
+    "repeatedEquivalent" : 0,
+    "categories" : { }
+  },
+  "serverOrigin" : "http://127.0.0.1:1234",
+  "repositoryRevision" : "396491faf333d022b1621bd26341df1ff431cd2e",
+  "taskRevision" : "e66fa71b4ba62f182167c11b043efe7f5e30fa3f51974cff7f25fefe77453486",
+  "promptFingerprint" : "48e07dbc2ec1d33c6fa6f6eda0f308e91ba19120c2e018dfd3005954671c5945",
+  "requiredTestChangeSatisfied" : true,
+  "category" : "refactor",
+  "agentElapsedMs" : 360001,
+  "systemPromptHash" : "9f732d44ccd7a523d4aacea6ada8a90757fec35484b2731022e77b74b309c214",
+  "catalogHash" : "0429f7733513703d0bfea0b4b21f1236021d1a240bc1bb87b512c0c3e2642093",
+  "serverContextLimit" : 0,
+  "oracleElapsedMs" : 1676,
+  "baselineTestsPassed" : true,
+  "semanticExpected" : true,
+  "lspConfigured" : true,
+  "trust" : "WORKSPACE",
+  "snapshotKind" : "CONTROLLED_JAVA_PROJECT",
+  "panelUpdateMaxMs" : 0,
+  "fxDispatchMaxMs" : 0,
+  "newLspMetadataFiles" : [ ".classpath", ".project", ".settings/org.eclipse.core.resources.prefs", ".settings/org.eclipse.jdt.apt.core.prefs", ".settings/org.eclipse.jdt.core.prefs", ".settings/org.eclipse.m2e.core.prefs" ],
+  "contextRankingBefore" : [ {
+    "path" : "src/main/java/demo/Ledger.java",
+    "score" : 80,
+    "signals" : [ "ACTIVE" ]
+  } ],
+  "contextRankingAfter" : [ {
+    "path" : "src/main/java/demo/Ledger.java",
+    "score" : 200,
+    "signals" : [ "ACTIVE", "UNSAVED", "RECENTLY_EDITED", "AGENT_INSPECTED", "LEXICAL" ]
+  }, {
+    "path" : "src/main/java/demo/Invoice.java",
+    "score" : 120,
+    "signals" : [ "UNSAVED", "RECENTLY_EDITED", "AGENT_INSPECTED", "LEXICAL" ]
+  }, {
+    "path" : "src/test/java/demo/LedgerTest.java",
+    "score" : 120,
+    "signals" : [ "UNSAVED", "RECENTLY_EDITED", "AGENT_INSPECTED", "LEXICAL" ]
+  } ]
+}

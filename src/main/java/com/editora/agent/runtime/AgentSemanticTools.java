@@ -29,6 +29,7 @@ public final class AgentSemanticTools {
     private final AgentSemantics semantics;
     private final Commit commit;
     private final AgentContextRanker.Index discoveries;
+    private AgentAcceptance acceptance;
     private final ObjectMapper json = new ObjectMapper();
     private final Map<String, Proposal> proposals = new LinkedHashMap<>();
 
@@ -48,6 +49,17 @@ public final class AgentSemanticTools {
         this.semantics = semantics;
         this.commit = commit;
         this.discoveries = discoveries;
+    }
+
+    public AgentSemanticTools(
+            AgentWorkspace workspace,
+            AgentDocuments documents,
+            AgentSemantics semantics,
+            Commit commit,
+            AgentContextRanker.Index discoveries,
+            AgentAcceptance acceptance) {
+        this(workspace, documents, semantics, commit, discoveries);
+        this.acceptance = acceptance;
     }
 
     public void register(AgentTools tools) throws Exception {
@@ -90,6 +102,7 @@ public final class AgentSemanticTools {
                             /* Library/external symbols are not workspace context candidates. */
                         }
                     }
+                    if (acceptance != null) acceptance.semantic(operation, result, source, a);
                     return AgentTool.Result.ok(result.toString());
                 });
         add(

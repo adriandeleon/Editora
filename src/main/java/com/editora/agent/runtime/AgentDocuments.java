@@ -47,7 +47,9 @@ public interface AgentDocuments {
         }
         int start = text.indexOf(edit.oldText());
         if (start < 0 || text.indexOf(edit.oldText(), start + 1) >= 0) {
-            throw new IllegalArgumentException("old_text must occur exactly once; reread and use a unique range");
+            throw new IllegalArgumentException("old_text must occur exactly once in " + edit.path()
+                    + "; found " + (start < 0 ? "no match" : "multiple matches")
+                    + ". Reread this file and use a unique literal range.");
         }
         return text.substring(0, start)
                 + edit.newText()

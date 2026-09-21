@@ -87,6 +87,86 @@ class NativeAgentToolsTest {
     }
 
     @Test
+    void explicitTargetedOnlyRequestRejectsBroadValidationBeforeExecution() throws Exception {
+        Files.writeString(root.resolve("pom.xml"), "<project/>");
+        var executions = new AtomicInteger();
+        var natives = new NativeAgentTools(new AgentWorkspace(root), new Documents(), p -> {}, (cwd, argv) -> {
+            executions.incrementAndGet();
+            try {
+                var reports = Files.createDirectories(root.resolve("target/surefire-reports"));
+                Files.writeString(
+                        reports.resolve("TEST-demo.FooTest.xml"),
+                        "<testsuite><testcase classname='demo.FooTest' name='passes'/></testsuite>");
+            } catch (Exception failure) {
+                throw new IllegalStateException(failure);
+            }
+            return new com.editora.process.ProcessRunner.Result(0, "success", "");
+        });
+        natives.acceptance().user("Don't run the full suite; just run FooTest.");
+        var tools = natives.registry();
+        assertTrue(invoke(tools, "run_validation", "{\"type\":\"TEST\",\"isolation\":\"HOST_REDUCED\"}")
+                .error());
+        assertTrue(invoke(tools, "run_command", "{\"argv\":[\"mvn\",\"verify\"],\"purpose\":\"validate\"}")
+                .error());
+        assertEquals(0, executions.get());
+        assertFalse(invoke(
+                        tools,
+                        "run_validation",
+                        "{\"type\":\"TARGETED_TEST\",\"test\":\"FooTest\",\"isolation\":\"HOST_REDUCED\"}")
+                .error());
+        assertEquals(1, executions.get());
+        assertTrue(natives.acceptance().finish("done", new AgentCancellation()).accepted());
+    }
+
+    @Test
+    void structuredValidationNeedsFreshTestsAndCurrentSavedRevisions() throws Exception {
+        Files.writeString(root.resolve("pom.xml"), "<project/>");
+        var file = Files.writeString(root.resolve("Source.java"), "before");
+        var docs = new Documents();
+        docs.snapshots.put(file, new AgentDocuments.Snapshot(file, "v1", "before", false));
+        var run = new AtomicInteger();
+        var natives = new NativeAgentTools(new AgentWorkspace(root), docs, p -> {}, (cwd, argv) -> {
+            int n = run.incrementAndGet();
+            try {
+                if (n > 1) {
+                    var reports = Files.createDirectories(root.resolve("target/surefire-reports"));
+                    Files.writeString(
+                            reports.resolve("TEST-Check" + n + ".xml"),
+                            "<testsuite><testcase name='valid'/>"
+                                    + (n == 2 ? "<testcase name='bad'><failure message='fix this'/></testcase>" : "")
+                                    + "</testsuite>");
+                }
+                if (n == 4)
+                    docs.snapshots.put(file, new AgentDocuments.Snapshot(file, "user-edit", "newer user text", true));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            return new com.editora.process.ProcessRunner.Result(0, "success", "");
+        });
+        var tools = natives.registry();
+        invoke(
+                tools,
+                "apply_edits",
+                "{\"edits\":[{\"path\":\"Source.java\",\"revision\":\"v1\",\"old_text\":\"before\",\"new_text\":\"after\"}]}");
+        String args = "{\"type\":\"TEST\",\"isolation\":\"HOST_REDUCED\"}";
+        assertTrue(invoke(tools, "run_validation", args).error());
+        assertEquals(0, run.get(), "dirty buffers must prevent execution");
+        invoke(tools, "save_files", "{}");
+        assertTrue(
+                invoke(tools, "run_validation", args).error(), "exit zero without fresh reports is not test evidence");
+        assertTrue(invoke(tools, "run_validation", args).error(), "fresh report failure defeats an exit-zero process");
+        assertFalse(natives.verify(new AgentCancellation()).passed());
+        var repaired = invoke(tools, "run_validation", args);
+        assertFalse(repaired.error());
+        var evidence = json.readTree(repaired.text());
+        assertEquals(
+                "new-1", evidence.path("savedRevisions").get(0).path("revision").asText());
+        assertTrue(natives.verify(new AgentCancellation()).passed());
+        assertTrue(invoke(tools, "run_validation", args).error(), "concurrent user edit invalidates validation");
+        assertFalse(natives.verify(new AgentCancellation()).passed());
+    }
+
+    @Test
     void searchOutputRetainsValidJsonWithinTheRuntimeObservationBudget() throws Exception {
         Files.writeString(root.resolve("Many.java"), ("needle " + "x".repeat(300) + "\n").repeat(120));
         var tools = new NativeAgentTools(new AgentWorkspace(root), new Documents(), p -> {}).registry();
@@ -422,6 +502,50 @@ class NativeAgentToolsTest {
         assertFalse(nativeTools.verify(new AgentCancellation()).passed(), "later execution invalidates prior evidence");
         Files.writeString(file, "external mutation");
         assertFalse(nativeTools.verify(new AgentCancellation()).passed());
+    }
+
+    @Test
+    void acceptanceSurvivesNativeEditCheckpointWithoutTreatingAPlanAsEvidence() throws Exception {
+        Files.writeString(root.resolve("pom.xml"), "<project/>");
+        Path file = Files.writeString(root.resolve("Source.java"), "before");
+        var docs = new Documents();
+        docs.snapshots.put(file, new AgentDocuments.Snapshot(file, "v1", "before", false));
+        NativeAgentTools.CommandRunner runner =
+                (cwd, argv) -> new com.editora.process.ProcessRunner.Result(0, "compiled", "");
+        var first = new NativeAgentTools(new AgentWorkspace(root), docs, p -> {}, runner);
+        first.acceptance().user("Fix Source.java and validate.");
+        var tools = first.registry();
+        String id = first.acceptance().contract().requirements().getFirst().id();
+        invoke(
+                tools,
+                "update_plan",
+                "{\"steps\":[{\"text\":\"Done\",\"status\":\"completed\",\"requirements\":[\"" + id + "\"]}]}");
+        assertFalse(first.acceptance().finish("done", new AgentCancellation()).accepted());
+        invoke(
+                tools,
+                "apply_edits",
+                "{\"edits\":[{\"path\":\"Source.java\",\"revision\":\"v1\",\"old_text\":\"before\",\"new_text\":\"after\"}]}");
+        invoke(tools, "save_files", "{}");
+        String validation = "{\"type\":\"COMPILE\",\"isolation\":\"HOST_REDUCED\"}";
+        assertFalse(invoke(tools, "run_validation", validation).error());
+        assertTrue(
+                first.acceptance().contract().complete(),
+                "Structured validation must update the next request's acceptance reminder");
+        assertTrue(first.acceptance().finish("done", new AgentCancellation()).accepted());
+        var second = new NativeAgentTools(new AgentWorkspace(root), docs, p -> {}, runner);
+        second.restoreMemory(first.sessionMemory(), true);
+        assertFalse(second.acceptance().finish("done", new AgentCancellation()).accepted());
+        tools = second.registry();
+        invoke(tools, "read_file", "{\"path\":\"Source.java\"}");
+        assertEquals(
+                1,
+                second.acceptance()
+                        .ledger()
+                        .current(AgentEvidence.Kind.FILE_CHANGED)
+                        .size());
+        assertFalse(second.acceptance().finish("done", new AgentCancellation()).accepted());
+        assertFalse(invoke(tools, "run_validation", validation).error());
+        assertTrue(second.acceptance().finish("done", new AgentCancellation()).accepted());
     }
 
     @Test

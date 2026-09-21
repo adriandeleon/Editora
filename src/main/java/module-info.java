@@ -26,6 +26,8 @@ module com.editora {
     requires java.net.http; // built-in HTTP client for .http request execution
     requires jdk.httpserver; // built-in HttpServer for the HTML Live Preview (com.editora.web), loopback only
     requires java.xml; // JDK DOM parser for pom.xml discovery (com.editora.maven) — no third-party XML dependency
+    requires java.compiler;
+    requires jdk.compiler; // Parse-only Java declaration evidence; never runs project annotation processors.
     // Apache PDFBox: PDF export. An automatic module (Automatic-Module-Name only) — moditect injects a
     // real descriptor for the jlink dist build (pdfbox + pdfbox-io + fontbox + commons-logging).
     requires org.apache.pdfbox;

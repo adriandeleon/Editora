@@ -1,0 +1,693 @@
+{
+  "schemaVersion" : 2,
+  "outputRecoveries" : 0,
+  "validationEvidence" : "INCOMPLETE",
+  "oracleEvidence" : "EVALUATION_ORACLE_FAILED",
+  "kind" : "AUTONOMOUS_CODING_EVALUATION",
+  "scenario" : "editora-diff-newline",
+  "provider" : "lmstudio",
+  "model" : "qwen/qwen3-coder-next",
+  "contextLimit" : 65536,
+  "tokenEstimate" : "HEURISTIC",
+  "elapsedMs" : 722157,
+  "completionState" : "CANCELLED",
+  "oraclePassed" : false,
+  "humanReviewRequired" : false,
+  "approvalsRequested" : 0,
+  "approvalsDenied" : 0,
+  "approvalMode" : "HARNESS_BOUNDED_AUTO_CONSENT",
+  "repeatedCalls" : 14,
+  "verificationFailures" : 0,
+  "idealParallelReadSavingsMs" : 0,
+  "taskSuccess" : "FAIL",
+  "changedFiles" : [ ],
+  "unexpectedFiles" : [ ],
+  "filesRead" : [ "src/main/java/com/editora/diff/DiffText.java", "src/test/java/com/editora/diff/DiffTextTest.java" ],
+  "modelRounds" : [ {
+    "iteration" : 1,
+    "outputBudget" : 4096,
+    "requestBytes" : 1126,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 142,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 43702,
+    "firstTextDeltaMs" : 39886
+  }, {
+    "iteration" : 2,
+    "outputBudget" : 4096,
+    "requestBytes" : 3881,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 83,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "find_files" ],
+    "elapsedMs" : 9914,
+    "firstTextDeltaMs" : 6571
+  }, {
+    "iteration" : 3,
+    "outputBudget" : 4096,
+    "requestBytes" : 4316,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 4554
+  }, {
+    "iteration" : 4,
+    "outputBudget" : 4096,
+    "requestBytes" : 4260,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 87,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 43190,
+    "firstTextDeltaMs" : 39771
+  }, {
+    "iteration" : 5,
+    "outputBudget" : 4096,
+    "requestBytes" : 5228,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 71,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 48602,
+    "firstTextDeltaMs" : 45296
+  }, {
+    "iteration" : 6,
+    "outputBudget" : 4096,
+    "requestBytes" : 4631,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 43776,
+    "firstTextDeltaMs" : 39539
+  }, {
+    "iteration" : 7,
+    "outputBudget" : 4096,
+    "requestBytes" : 5135,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 71,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 47422,
+    "firstTextDeltaMs" : 43327
+  }, {
+    "iteration" : 8,
+    "outputBudget" : 4096,
+    "requestBytes" : 4695,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 45152,
+    "firstTextDeltaMs" : 42085
+  }, {
+    "iteration" : 9,
+    "outputBudget" : 4096,
+    "requestBytes" : 5179,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 71,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 42364,
+    "firstTextDeltaMs" : 39004
+  }, {
+    "iteration" : 10,
+    "outputBudget" : 4096,
+    "requestBytes" : 4653,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 41197,
+    "firstTextDeltaMs" : 38152
+  }, {
+    "iteration" : 11,
+    "outputBudget" : 4096,
+    "requestBytes" : 5179,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 71,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 42202,
+    "firstTextDeltaMs" : 38940
+  }, {
+    "iteration" : 12,
+    "outputBudget" : 4096,
+    "requestBytes" : 4653,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 41545,
+    "firstTextDeltaMs" : 38379
+  }, {
+    "iteration" : 13,
+    "outputBudget" : 4096,
+    "requestBytes" : 5179,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 71,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 46693,
+    "firstTextDeltaMs" : 42965
+  }, {
+    "iteration" : 14,
+    "outputBudget" : 4096,
+    "requestBytes" : 4653,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 44887,
+    "firstTextDeltaMs" : 41627
+  }, {
+    "iteration" : 15,
+    "outputBudget" : 4096,
+    "requestBytes" : 5179,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 71,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 42715,
+    "firstTextDeltaMs" : 39295
+  }, {
+    "iteration" : 16,
+    "outputBudget" : 4096,
+    "requestBytes" : 4653,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 45,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 44477,
+    "firstTextDeltaMs" : 41436
+  }, {
+    "iteration" : 17,
+    "outputBudget" : 4096,
+    "requestBytes" : 5179,
+    "catalogBytes" : 8874,
+    "inputTokens" : 0,
+    "assistantTextChars" : 71,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 48086,
+    "firstTextDeltaMs" : 43759
+  }, {
+    "iteration" : 18,
+    "outputBudget" : 4096,
+    "requestBytes" : 4653,
+    "catalogBytes" : 8874,
+    "failure" : "OTHER_FAILURE",
+    "elapsedMs" : 39441,
+    "firstTextDeltaMs" : 38751
+  } ],
+  "toolCalls" : [ {
+    "tool" : "read_file",
+    "iteration" : 1,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "find_files",
+    "iteration" : 2,
+    "effect" : "READ",
+    "path" : "",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 263,
+    "elapsedMs" : 6
+  }, {
+    "tool" : "read_file",
+    "iteration" : 3,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 11
+  }, {
+    "tool" : "read_file",
+    "iteration" : 4,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 5,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 6,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 7,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 8,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 9,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 10,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 11,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 12,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 13,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 14,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 15,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 16,
+    "effect" : "READ",
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 2502,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "iteration" : 17,
+    "effect" : "READ",
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1972,
+    "elapsedMs" : 0
+  } ],
+  "verification" : [ ],
+  "observations" : [ {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 3
+  }, {
+    "tool" : "find_files",
+    "error" : false,
+    "elapsedMs" : 7
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 13
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 0
+  } ],
+  "permissions" : [ ],
+  "requestedCalls" : 17,
+  "iterations" : 18,
+  "calls" : 17,
+  "withinCallBudget" : true,
+  "inputTokens" : 0,
+  "outputTokens" : 0,
+  "usageAvailable" : false,
+  "semanticQueries" : 0,
+  "searches" : 0,
+  "failureCategories" : [ "INCORRECT_RESULT", "OTHER_FAILURE", "REPEATED_DISCOVERY", "MISSING_REGRESSION_TESTS" ],
+  "trial" : 1,
+  "trialCount" : 2,
+  "label" : "phase4-adaptive-qwen",
+  "implementationFingerprint" : "cefd5207b2c723c3a0f0c273d7de7a8e5199c51aebc5f8c76138f2631c4b722e",
+  "repositoryDirty" : "true",
+  "unsavedFiles" : [ ],
+  "initialProfile" : {
+    "provider" : "lmstudio",
+    "model" : "qwen/qwen3-coder-next",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "UNKNOWN",
+      "value" : 0
+    },
+    "context" : {
+      "provenance" : "HEURISTIC",
+      "value" : 65536
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 4096
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 16384
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "qwen/qwen3-coder-next",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profile" : {
+    "provider" : "lmstudio",
+    "model" : "qwen/qwen3-coder-next",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "context" : {
+      "provenance" : "DISCOVERED",
+      "value" : 16384
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 4096
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 8192
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "qwen/qwen3-coder-next",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profileFingerprint" : "12e36fa0cb368343c06d3780376cacee56f0be3b3a1ba1f868db236e2c1ce031",
+  "samplingRequested" : {
+    "temperature" : "0.0",
+    "seed" : "41",
+    "seedSent" : true,
+    "determinismGuaranteed" : false
+  },
+  "approvalMetrics" : {
+    "requested" : 0,
+    "allowed" : 0,
+    "denied" : 0,
+    "interrupted" : 0,
+    "waitMillis" : 0,
+    "repeatedEquivalent" : 0,
+    "categories" : { }
+  },
+  "serverOrigin" : "http://127.0.0.1:1234",
+  "repositoryRevision" : "396491faf333d022b1621bd26341df1ff431cd2e",
+  "taskRevision" : "71d02769e2448a39350b5b9a277615427e2a710fe62145feb0cec16671c0ccdc",
+  "promptFingerprint" : "33bab587882253860e307af92592f265b7bfcbd7f0625f252afc93457a0bae60",
+  "requiredTestChangeSatisfied" : false,
+  "category" : "bug",
+  "agentElapsedMs" : 720013,
+  "systemPromptHash" : "844fab2a80b62b19fd1d97c219d636c8fde523e950eaaf6b3bcccaf145626ab5",
+  "catalogHash" : "8ec23b748ff2412659a1bf38c20d0aa45ba0e6db416453ef551b0715870add57",
+  "serverContextLimit" : 0,
+  "oracleElapsedMs" : 1833,
+  "baselineTestsPassed" : true,
+  "semanticExpected" : false,
+  "lspConfigured" : true,
+  "trust" : "WORKSPACE",
+  "snapshotKind" : "REAL_EDITORA_COMPONENT",
+  "panelUpdateMaxMs" : 0,
+  "fxDispatchMaxMs" : 0,
+  "newLspMetadataFiles" : [ ".classpath", ".project", ".settings/org.eclipse.core.resources.prefs", ".settings/org.eclipse.jdt.apt.core.prefs", ".settings/org.eclipse.jdt.core.prefs", ".settings/org.eclipse.m2e.core.prefs" ],
+  "contextRankingBefore" : [ {
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "score" : 80,
+    "signals" : [ "ACTIVE" ]
+  } ],
+  "contextRankingAfter" : [ {
+    "path" : "src/main/java/com/editora/diff/DiffText.java",
+    "score" : 105,
+    "signals" : [ "ACTIVE", "AGENT_INSPECTED" ]
+  }, {
+    "path" : "src/test/java/com/editora/diff/DiffTextTest.java",
+    "score" : 35,
+    "signals" : [ "AGENT_INSPECTED", "LEXICAL" ]
+  }, {
+    "path" : "target/surefire-reports/TEST-com.editora.diff.DiffTextTest.xml",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "target/surefire-reports/com.editora.diff.DiffTextTest.txt",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  }, {
+    "path" : "target/test-classes/com/editora/diff/DiffTextTest.class",
+    "score" : 10,
+    "signals" : [ "LEXICAL" ]
+  } ]
+}

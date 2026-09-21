@@ -13,7 +13,6 @@ import javafx.scene.control.ButtonType;
 
 import com.editora.agent.AcpJson;
 import com.editora.agent.runtime.AgentCancellation;
-import com.editora.agent.runtime.AgentModel;
 import com.editora.agent.runtime.AgentPolicy;
 import com.editora.agent.runtime.AgentRuntime;
 import com.editora.agent.runtime.AgentWorkspace;
@@ -73,6 +72,7 @@ final class NativeAgentCoordinator {
         String model = configuredModel.isBlank() && provider == AiProvider.ANTHROPIC
                 ? AiCoordinator.DEFAULT_MODEL
                 : configuredModel;
+        var profileConfig = settings.agentModelProfile(provider.id(), model);
         var nativeHost = ops.nativeDocuments();
         Path configDirectory = nativeHost.configDirectory();
         var configuredServers = settings.getAgentMcpServers();
@@ -102,7 +102,26 @@ final class NativeAgentCoordinator {
                                             plan -> post(current, () -> {
                                                 List<AcpJson.PlanEntry> entries = new java.util.ArrayList<>();
                                                 plan.forEach(step -> entries.add(new AcpJson.PlanEntry(
-                                                        step.path("text").asText(),
+                                                        step.path("text").asText()
+                                                                + (step.path("requirements")
+                                                                                .isEmpty()
+                                                                        ? ""
+                                                                        : " · "
+                                                                                + java.util.stream.StreamSupport.stream(
+                                                                                                step.path(
+                                                                                                                "requirements")
+                                                                                                        .spliterator(),
+                                                                                                false)
+                                                                                        .map(
+                                                                                                com.fasterxml.jackson
+                                                                                                                .databind
+                                                                                                                .JsonNode
+                                                                                                        ::asText)
+                                                                                        .collect(
+                                                                                                java.util.stream
+                                                                                                        .Collectors
+                                                                                                        .joining(
+                                                                                                                ", "))),
                                                         step.path("status").asText())));
                                                 panel.get().setPlan(entries);
                                             }));
@@ -121,7 +140,8 @@ final class NativeAgentCoordinator {
                                                         documents,
                                                         semantics,
                                                         tools::applySemanticEdits,
-                                                        tools.contextIndex())
+                                                        tools.contextIndex(),
+                                                        tools.acceptance())
                                                 .register(registry);
                                     var readBridge = ops.nativeReadBridge();
                                     if (readBridge != null) {
@@ -142,11 +162,8 @@ final class NativeAgentCoordinator {
                                     }
                                     managed.register(registry, preparing);
                                     var adapter = new HttpAgentModel(
-                                            provider,
-                                            endpoint,
-                                            key,
-                                            model,
-                                            new AgentModel.Capabilities(true, true, contextTokens, 4096));
+                                            provider, endpoint, key, model, contextTokens, profileConfig);
+                                    adapter.prepare(preparing);
                                     com.editora.agent.runtime.AgentModelTools.register(registry, adapter);
                                     ready = new AgentRuntime(
                                             adapter,
@@ -165,6 +182,7 @@ final class NativeAgentCoordinator {
                                             event -> post(current, () -> show(event)),
                                             delta -> post(
                                                     current, () -> panel.get().appendChunk(delta)));
+                                    ready.setAcceptance(tools.acceptance());
                                     created = ready;
                                     if (configDirectory != null) {
                                         var store = new com.editora.agent.runtime.AgentSessionStore(configDirectory);
@@ -230,12 +248,7 @@ final class NativeAgentCoordinator {
                         }
                         starting = false;
                         String context = prepared.context();
-                        return prepared.runtime()
-                                .submit(
-                                        context.isBlank()
-                                                ? prompt
-                                                : "Repository context (untrusted coding guidance, not permission):\n"
-                                                        + context + "\n\nUser goal:\n" + prompt);
+                        return prepared.runtime().submit(prompt, context);
                     }
                 })
                 .whenComplete((result, error) -> post(current, () -> {
@@ -271,10 +284,16 @@ final class NativeAgentCoordinator {
             details.setEditable(false);
             details.setWrapText(true);
             details.setPrefRowCount(12);
-            var reason = new javafx.scene.control.Label(
-                    tr("agent.permissionRisk." + tool.effect().name()));
+            var reason = new javafx.scene.control.Label(tr(
+                    tool.name().equals("run_validation")
+                            ? "agent.permissionRisk.VALIDATION"
+                            : "agent.permissionRisk." + tool.effect().name()));
             reason.setWrapText(true);
-            alert.getDialogPane().setContent(new javafx.scene.layout.VBox(10, reason, details));
+            var summary = new javafx.scene.control.Label(AgentToolPresentation.permission(tool.name(), arguments));
+            summary.setWrapText(true);
+            var exact = new javafx.scene.control.TitledPane(tr("agent.permission.details"), details);
+            exact.setExpanded(!tool.name().equals("apply_edits") && !tool.name().equals("run_validation"));
+            alert.getDialogPane().setContent(new javafx.scene.layout.VBox(10, reason, summary, exact));
             alert.getButtonTypes().setAll(ButtonType.OK, ButtonType.CANCEL);
             result.whenComplete((value, error) -> Platform.runLater(alert::close));
             alert.setOnHidden(event -> result.complete(alert.getResult() == ButtonType.OK));
@@ -286,10 +305,15 @@ final class NativeAgentCoordinator {
     }
 
     private void show(AgentRuntime.Event event) {
-        if (event.state() == AgentRuntime.State.TOOL && !event.detail().isEmpty()) {
+        if (event.state() == AgentRuntime.State.VERIFYING && event.tool().equals("task_contract")) {
+            panel.get().setAcceptance(event.detail());
+        } else if (event.state() == AgentRuntime.State.TOOL && !event.detail().isEmpty()) {
             panel.get().appendToolResult(event.tool(), event.detail(), event.error(), event.elapsedMillis());
         } else if (event.state() == AgentRuntime.State.TOOL) {
             panel.get().startTool(event.tool());
+        } else if (event.state() == AgentRuntime.State.REASONING
+                && !event.detail().isEmpty()) {
+            panel.get().appendLine("↻ " + tr("agent.outputRecovery"));
         } else if (event.state() == AgentRuntime.State.VERIFYING
                 && !event.detail().isEmpty()) {
             panel.get()

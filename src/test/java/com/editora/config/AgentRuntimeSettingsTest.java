@@ -33,6 +33,15 @@ class AgentRuntimeSettingsTest {
                 () -> copy.setAgentMcpServers(
                         java.util.List.of(new AgentMcpServer("x", "one", true), new AgentMcpServer("x", "two", true))));
         assertEquals(old, ConfigSchema.SETTINGS.step(105).apply(old));
+        assertEquals(old, ConfigSchema.SETTINGS.step(106).apply(old));
+        assertTrue(copy.getAgentModelProfiles().isEmpty());
+        var profile = new AgentModelProfileConfig("lmstudio", "model", 65536, 8192, 16384, "SUPPORTED", true, 0.2, 42L);
+        copy.setAgentModelProfiles(java.util.List.of(profile));
+        assertEquals(
+                profile,
+                json.readValue(json.writeValueAsString(copy), Settings.class).agentModelProfile("lmstudio", "model"));
+        assertThrows(
+                IllegalArgumentException.class, () -> copy.setAgentModelProfiles(java.util.List.of(profile, profile)));
         copy.setAgentMaxIterations(-1);
         copy.setAgentContextTokens(Integer.MAX_VALUE);
         assertEquals(1, copy.getAgentMaxIterations());

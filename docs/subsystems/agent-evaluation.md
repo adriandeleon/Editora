@@ -1,6 +1,6 @@
 # Autonomous coding evaluation
 
-Phase 3 evaluates the [native agent](agent-platform.md) using real HTTP models, production editor
+The evaluation harness exercises the [native agent](agent-platform.md) using real HTTP models, production editor
 documents, an actual JavaFX window and optionally an installed JDT LS. It is separate from the
 deterministic runtime, protocol, document and LSP tests. Ordinary `mvn verify` never enables live inference.
 
@@ -29,10 +29,14 @@ the same checkout. Real inference may incur costs for a configured remote provid
 | `agent.eval.provider` | `lmstudio`; uses the production `AiProvider` and `HttpAgentModel` adapters. |
 | `agent.eval.endpoint` | Normal provider default; optional explicit endpoint. |
 | `agent.eval.keyEnv` | Environment variable name, default `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. Never put a key in Maven arguments. |
-| `agent.eval.context` | 65536, runtime's conservative context budget; no model tokenizer is assumed. Output allowance is 4096, matching the current native adapter profile. |
+| `agent.eval.context` | 65536, session context cap; adaptive profiles discover loaded limits and reserve output/headroom. Token counting remains heuristic. |
+| `agent.eval.trials` | 1; repeat each selected scenario 1–20 times with a fresh workspace. |
+| `agent.eval.temperature`, `agent.eval.seed` | Optional requested sampling controls; omission keeps unknown server defaults. |
+| `agent.eval.output`, `agent.eval.maxOutput`, `agent.eval.contextOverride` | Per-model overrides; zero means automatic. |
+| `agent.eval.legacyProfile` | false; true explicitly reproduces the fixed 4096-token adapter for comparisons. |
 | `agent.eval.serverContext` | Optional separately observed loaded server context limit, 0 means unknown. |
 | `agent.eval.iterations` | 32; tool-call limit is four times this value. |
-| `agent.eval.minutes` | 12 per task; individual model requests have a three-minute deadline. |
+| `agent.eval.minutes` | 12 per task; individual model requests have a five-minute deadline. |
 | `agent.eval.jdtls` | Optional installed executable. Cold startup and recovery are included. |
 | `agent.eval.trust` | `WORKSPACE`; `ASK` and `AGENT` exercise the same production policy. Read-only tasks always use Ask. |
 | `agent.eval.label` | Run label; use distinct labels for baseline and refinements. |
@@ -53,11 +57,16 @@ outcomes concern observable behavior, never exact assistant text.
 | `ledger-tests` | Controlled Java invoice project | Tests pass, production untouched, and tests kill an independently injected quantity mutant. |
 | `ledger-docs` | Controlled Java invoice project | Only README changes, tests pass; reviewer checks units and quantity semantics. |
 
-The full snapshot includes current uncommitted source, not the user's Git data, editor settings or
-credentials. Controlled projects make expected behavior known; they do not represent the complexity
+The full product snapshot includes current uncommitted source and ordinary tests, but excludes the
+evaluation package and tests importing it so hidden grading code is unavailable to the model. It
+also excludes the user's Git data, editor settings and credentials. Controlled projects make expected behavior known; they do not represent the complexity
 of a large repository. The endpoint scenario uses real code but is explicitly reported as a reduced
-component, not a whole-Editora bug fix. Additional concurrency, UI/settings and multi-layer tasks still
-need independently reviewed specifications.
+component, not a whole-Editora bug fix. The Phase 4 corpus adds `editora-diff-newline` and `editora-stash-overflow` real components with
+independent round-trip/overflow probes; `editora-save-cancellation` seeds a full-repository save-ordering
+bug; `editora-lsp-ui-understanding` and `editora-settings-persistence-understanding` require independent
+human source review; and `billing-contract-migration` requires eight changed source/test files with
+API-removal, caller-behavior and overflow checks. The larger migration remains a controlled project.
+An unexecuted catalog entry is not a successful evaluation.
 
 Preparation and oracles write only disposable fixtures. All **model-directed** reads, edits, saves,
 semantic queries and validation go through production tools and document/version APIs. The oracle
@@ -67,8 +76,9 @@ task. Explanations and documentation remain `REVIEW_REQUIRED`, even when mechani
 
 The harness supplies bounded automatic consent for document edits and specific Maven test argv in
 the fixture root; shell commands and arbitrary options are denied. This is labeled harness consent,
-not a study of human approval behavior. Commands and JDT LS are external programs, without OS
-sandboxing. Only evaluate trusted repository snapshots on the host. Known newly generated JDT LS
+not a study of human approval behavior. Structured `run_validation` consent is restricted to ISOLATED
+operations at the fixture root. Arbitrary legacy commands, fixture setup, independent oracles and JDT LS
+remain host processes; only structured validation uses the new isolation. Evaluate trusted snapshots. Known newly generated JDT LS
 metadata is recorded separately; edits to pre-existing metadata remain unexpected changes. Attribution
 of new metadata is a harness convention, not proof that every such file was written by JDT LS.
 
@@ -79,10 +89,15 @@ It records requested versus executed calls, protocol/permission failures before 
 file paths, semantic operations, command families, response sizes, timings, repeated calls, trust mode,
 completion state, test oracle results and changed-file boundaries. Later reports also retain context
 rankings, prompt/catalog hashes and an upper bound on time saved by ideal parallel reads.
+Phase 6 reports also count rounds before first mutation, rounds after last mutation, rounds where
+acceptance debt was included in the model request, and post-mutation evidence/validation rounds.
+These are model-efficiency measurements, separate from native reconciliation time. See the
+[Phase 6 evaluation](../evaluations/agent-phase6.md).
 
 No prompts, source bodies, argument values, raw tool errors, environment or credentials enter the
-aggregate JSON or evaluation log. The final answer stays only in the isolated scratch directory for
-review. Paths are workspace-relative. `requestBytes` and `catalogBytes` are UTF-8 size estimates,
+aggregate JSON or evaluation log. Final answers, bounded error observations and unsaved fixture
+buffers stay only in the isolated scratch directory for review. Unsaved buffers are not graded as
+disk edits. Paths in aggregate reports are workspace-relative. `requestBytes` and `catalogBytes` are UTF-8 size estimates,
 **not token usage**; actual usage is separately reported when provided by the server. A zero usage
 count with `usageAvailable=false` means unavailable. `firstTextDeltaMs` excludes tool-only deltas and
 is not a universal time-to-first-token measurement.
@@ -141,3 +156,56 @@ round trips matters more here.
 
 See the [recorded Phase 3 results](../evaluations/agent-phase3.md) for live observations, comparison
 limitations and priorities. This benchmark is a diagnostic instrument, not a product leaderboard.
+
+
+## Phase 4 reliability probes and aggregation
+
+Profiles, sampling requests, server origin (without credentials/query), repository commit/dirty flag,
+initial task-content fingerprint, exact prompt/catalog fingerprints and approval metrics accompany
+new reports. A compiled implementation fingerprint identifies uncommitted runtime builds. Initial and post-inference profiles are separate. Grouping uses the initial profile
+fingerprint and run label; JIT changes and task/sampling differences must be inspected before comparisons.
+`python3 scripts/agent-evaluation-report.py target/agent-evaluations` includes every supplied trial,
+reports medians/counts and links each raw result. Preserve reports outside `target` before a clean build.
+No aggregate score or statistical-significance claim is produced.
+
+Additional opt-in checks (ordinary tests skip these):
+
+```sh
+mvn test -Dtest=AgentLspInteropTest -Dagent.lsp.integration=true -Dagent.lsp.command=/absolute/path/to/jdtls
+mvn test -Dtest=AgentValidationTest,AgentValidationInteropTest -Dagent.validation.integration=true
+mvn test -Dtest=AgentEvaluationOracleTest -Dagent.eval.oracles=true
+mvn test -Dtest=AgentDesktopReviewTest -Dagent.desktop.review=true -Dglass.platform=gtk -Djava.awt.headless=false
+```
+
+The real JDT fixture covers agent-only buffers, symbols/references/definitions/implementations,
+code-action discovery, three-file rename preview/apply, formatting preview, unsaved changes,
+diagnostics/repair and restart. The Linux fixture tests real offline Maven execution, inaccessible
+host SSH/home and denied host-loopback access. The oracle self-test proves original broken tasks fail
+and complete repairs pass independently. `AgentReliabilityStressTest` is deterministic: 240 observation
+rounds, compaction, failed verification, stale edits, disk resume and a second fake provider. A separate MCP stress test performs 25 disconnect/reconnect cycles and checks that only one connection
+remains live, with no call replay or duplicate tools. These tests do not measure long-session LLM coherence.
+
+See [adaptive profiles and validation](agent-reliability.md) for contracts and
+[Phase 4 measured results](../evaluations/agent-phase4.md) for live outcomes and limitations.
+
+## Phase 5 acceptance probes
+
+The catalog now has 15 scenarios. `editora-diff-documentation` requests a production fix, regression
+coverage and README changes; `editora-diff-test-quality` also receives an independent old-source
+probe. `AgentAcceptanceCases` copies only owned fixture sources/build descriptors into a separate
+mutation workspace after the agent ends. A new test must fail against that known old implementation
+to receive `TEST_PROVEN_TO_DETECT_OLD_FAILURE`. A passing but vacuous test receives `NOT_PROVEN`.
+This never grants production acceptance authority or edits the agent workspace.
+
+Reports add requirement states, acceptance checks/reconciliation and declaration timings, structured
+claim rejections and handled free-text candidates. The dashboard keeps behavioral oracles, full task
+success and guard satisfaction separate. Suppressed free-text prose is not automatically counted as
+hallucination, and zero submitted structured claims is not evidence of zero hallucinations.
+Deterministic fixtures additionally cover omitted tests/docs, missed observed callers, unavailable
+or stale diagnostics, fabricated identifiers/counts, user corrections, compaction and historical
+resume authority. The production editor fixture tests comment-only coverage rejection followed by a
+new test, actual save, isolated Maven and grounded completion.
+
+Run these independent checks with `-Dagent.eval.oracles=true` and production validation with
+`-Dagent.validation.integration=true`. See [acceptance architecture](agent-acceptance.md) and
+[Phase 5 measurements](../evaluations/agent-phase5.md).

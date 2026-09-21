@@ -41,7 +41,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 106;
+    public static final int SCHEMA_VERSION = 107;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -409,6 +409,34 @@ public class Settings {
     private int agentMaxIterations = 64;
 
     private int agentContextTokens = 32768;
+    private java.util.List<AgentModelProfileConfig> agentModelProfiles = java.util.List.of();
+
+    public java.util.List<AgentModelProfileConfig> getAgentModelProfiles() {
+        return java.util.List.copyOf(agentModelProfiles);
+    }
+
+    public void setAgentModelProfiles(java.util.List<AgentModelProfileConfig> profiles) {
+        if (profiles == null) {
+            agentModelProfiles = java.util.List.of();
+            return;
+        }
+        if (profiles.size() > 64
+                || profiles.stream().anyMatch(java.util.Objects::isNull)
+                || profiles.stream()
+                                .map(p -> p.provider() + "\0" + p.model())
+                                .distinct()
+                                .count()
+                        != profiles.size()) throw new IllegalArgumentException("Invalid or duplicate model profiles");
+        agentModelProfiles = java.util.List.copyOf(profiles);
+    }
+
+    public AgentModelProfileConfig agentModelProfile(String provider, String model) {
+        return agentModelProfiles.stream()
+                .filter(p -> p.provider().equals(provider) && p.model().equals(model))
+                .findFirst()
+                .orElseGet(() -> AgentModelProfileConfig.automatic(provider, model));
+    }
+
     private java.util.List<AgentMcpServer> agentMcpServers = java.util.List.of();
 
     public java.util.List<AgentMcpServer> getAgentMcpServers() {
