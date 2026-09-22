@@ -1,0 +1,86 @@
+{
+  "version" : "phase7-v1",
+  "tasks" : [ {
+    "id" : "ledger-bug",
+    "category" : "bug",
+    "prompt" : "Invoices undercharge when a line has a quantity greater than one. Fix the cause, inspect callers and regression coverage, and validate the change.",
+    "active" : "src/main/java/demo/Invoice.java",
+    "allowed" : [ "src/main/java/demo/Invoice.java", "src/main/java/demo/Ledger.java", "src/test/java/demo/LedgerTest.java" ],
+    "required" : [ "src/main/java/demo/Ledger.java" ],
+    "readOnly" : false,
+    "humanReview" : false,
+    "semanticExpected" : true,
+    "callBudget" : 32
+  }, {
+    "id" : "editora-diff-newline",
+    "category" : "bug",
+    "prompt" : "A diff recomposition now always terminates the last line, corrupting files without a final newline. Fix the regression without losing CRLF, CR, blank-line or empty-file behavior. Inspect and update regression tests and validate.",
+    "active" : "src/main/java/com/editora/diff/DiffText.java",
+    "allowed" : [ "src/main/java/com/editora/diff/DiffText.java", "src/test/java/com/editora/diff/DiffTextTest.java" ],
+    "required" : [ "src/main/java/com/editora/diff/DiffText.java" ],
+    "readOnly" : false,
+    "humanReview" : false,
+    "semanticExpected" : false,
+    "callBudget" : 36
+  }, {
+    "id" : "ledger-refactor",
+    "category" : "refactor",
+    "prompt" : "Rename Ledger.totalFor to invoiceTotal and migrate all callers and tests without changing billing behavior. Use semantic references and a rename preview where available. Validate the resulting project.",
+    "active" : "src/main/java/demo/Ledger.java",
+    "allowed" : [ "src/main/java/demo/Invoice.java", "src/main/java/demo/Ledger.java", "src/test/java/demo/LedgerTest.java" ],
+    "required" : [ "src/main/java/demo/Invoice.java", "src/main/java/demo/Ledger.java", "src/test/java/demo/LedgerTest.java" ],
+    "readOnly" : false,
+    "humanReview" : false,
+    "semanticExpected" : true,
+    "callBudget" : 36
+  }, {
+    "id" : "ledger-tests",
+    "category" : "testing",
+    "prompt" : "Improve regression coverage for quantity multiplication and empty invoices. Existing tests only cover a quantity of one. Add meaningful tests without changing production behavior, then run them.",
+    "active" : "src/test/java/demo/LedgerTest.java",
+    "allowed" : [ "src/test/java/demo/LedgerTest.java" ],
+    "required" : [ ],
+    "readOnly" : false,
+    "humanReview" : false,
+    "semanticExpected" : false,
+    "callBudget" : 28
+  }, {
+    "id" : "editora-diff-documentation",
+    "category" : "bug",
+    "prompt" : "Fix diff recomposition adding an unwanted final newline. Add a regression test, update README.md to document preserved newline behavior, and run relevant tests. A passing build alone is not the whole request.",
+    "active" : "src/main/java/com/editora/diff/DiffText.java",
+    "allowed" : [ "README.md", "src/main/java/com/editora/diff/DiffText.java", "src/test/java/com/editora/diff/DiffTextTest.java" ],
+    "required" : [ "README.md", "src/main/java/com/editora/diff/DiffText.java" ],
+    "readOnly" : false,
+    "humanReview" : false,
+    "semanticExpected" : false,
+    "callBudget" : 48
+  }, {
+    "id" : "editora-save-understanding",
+    "category" : "understanding",
+    "prompt" : "Explain how Editora prevents an older asynchronous save from overwriting a newer save. Trace callers, the write sequencer and atomic commit boundary. Cite relevant files and distinguish queued writes from already-running writes. Do not edit files.",
+    "active" : "src/main/java/com/editora/io/DocumentWriteSequencer.java",
+    "allowed" : [ ],
+    "required" : [ ],
+    "readOnly" : true,
+    "humanReview" : true,
+    "semanticExpected" : true,
+    "callBudget" : 24
+  }, {
+    "id" : "editora-save-cancellation",
+    "category" : "bug",
+    "prompt" : "Closing an older buffer can cancel a newer pending save in another window. Investigate asynchronous save ordering rather than assuming the atomic file replacement is at fault. Fix the cause with a concurrency regression test and validate. Keep the change in the write sequencer and its tests.",
+    "active" : "src/main/java/com/editora/io/DocumentWriteSequencer.java",
+    "allowed" : [ "src/main/java/com/editora/io/DocumentWriteSequencer.java", "src/test/java/com/editora/io/DocumentWriteSequencerTest.java" ],
+    "required" : [ "src/main/java/com/editora/io/DocumentWriteSequencer.java" ],
+    "readOnly" : false,
+    "humanReview" : false,
+    "semanticExpected" : false,
+    "callBudget" : 56
+  } ],
+  "fixtureAndOracleSources" : {
+    "src/test/java/com/editora/agent/eval/AgentEvaluationCases.java" : "f99a0c160bd187d22c49bd832e07bc1280c6e0f4f527227ff8647888f413e677",
+    "src/test/java/com/editora/agent/eval/AgentReliabilityCases.java" : "9d186b41d3e144f5f61582817ba5e5ae0c408d708af2191a8994045dc3b999f4",
+    "src/test/java/com/editora/agent/eval/AgentAcceptanceCases.java" : "744bbb0a7d639baf0fc6fb3c3544d54dc439e57e1fcf110f4e7eaff02c9abe78"
+  }
+}

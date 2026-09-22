@@ -1,0 +1,839 @@
+{
+  "schemaVersion" : 2,
+  "outputRecoveries" : 0,
+  "validationEvidence" : "AGENT_VALIDATED",
+  "oracleEvidence" : "EVALUATION_ORACLE_PASSED",
+  "kind" : "AUTONOMOUS_CODING_EVALUATION",
+  "scenario" : "ledger-bug",
+  "provider" : "lmstudio",
+  "model" : "google/gemma-4-12b-qat",
+  "contextLimit" : 65536,
+  "tokenEstimate" : "HEURISTIC",
+  "elapsedMs" : 57296,
+  "completionState" : "COMPLETED",
+  "oraclePassed" : true,
+  "humanReviewRequired" : false,
+  "approvalsRequested" : 2,
+  "approvalsDenied" : 0,
+  "approvalMode" : "HARNESS_BOUNDED_AUTO_CONSENT",
+  "repeatedCalls" : 1,
+  "verificationFailures" : 0,
+  "idealParallelReadSavingsMs" : 0,
+  "taskSuccess" : "PASS",
+  "changedFiles" : [ "src/main/java/demo/Ledger.java" ],
+  "unexpectedFiles" : [ ],
+  "filesRead" : [ "src/main/java/demo/Invoice.java", "src/main/java/demo/Ledger.java", "src/main/java/demo/Line.java", "src/test/java/demo/LedgerTest.java" ],
+  "modelRounds" : [ {
+    "iteration" : 1,
+    "messageCount" : 3,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 8192,
+    "requestBytes" : 2702,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 5776
+  }, {
+    "iteration" : 2,
+    "messageCount" : 5,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 8192,
+    "requestBytes" : 2996,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "find_files" ],
+    "elapsedMs" : 2382
+  }, {
+    "iteration" : 3,
+    "messageCount" : 7,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 8192,
+    "requestBytes" : 3174,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 2888
+  }, {
+    "iteration" : 4,
+    "messageCount" : 9,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 8192,
+    "requestBytes" : 3730,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "find_files" ],
+    "elapsedMs" : 3486
+  }, {
+    "iteration" : 5,
+    "messageCount" : 11,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 8192,
+    "requestBytes" : 3902,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 3453
+  }, {
+    "iteration" : 6,
+    "messageCount" : 13,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 8192,
+    "requestBytes" : 4340,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "find_files" ],
+    "elapsedMs" : 4200
+  }, {
+    "iteration" : 7,
+    "messageCount" : 15,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 8192,
+    "requestBytes" : 4524,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "read_file" ],
+    "elapsedMs" : 4122
+  }, {
+    "iteration" : 8,
+    "messageCount" : 17,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 8192,
+    "requestBytes" : 5154,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_validation" ],
+    "elapsedMs" : 5902
+  }, {
+    "iteration" : 9,
+    "messageCount" : 19,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 8192,
+    "requestBytes" : 7168,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "apply_edits" ],
+    "elapsedMs" : 8176
+  }, {
+    "iteration" : 10,
+    "messageCount" : 21,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 8192,
+    "requestBytes" : 7485,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "save_files" ],
+    "elapsedMs" : 3154
+  }, {
+    "iteration" : 11,
+    "messageCount" : 23,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : true,
+    "outputBudget" : 8192,
+    "requestBytes" : 7547,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 0,
+    "outputTokens" : 0,
+    "requestedCalls" : 1,
+    "stop" : "tool_calls",
+    "toolsRequested" : [ "run_validation" ],
+    "elapsedMs" : 3311
+  }, {
+    "iteration" : 12,
+    "messageCount" : 25,
+    "historyCompacted" : false,
+    "acceptanceDebtShown" : false,
+    "outputBudget" : 8192,
+    "requestBytes" : 9226,
+    "catalogBytes" : 12161,
+    "inputTokens" : 0,
+    "assistantTextChars" : 742,
+    "outputTokens" : 0,
+    "requestedCalls" : 0,
+    "stop" : "stop",
+    "toolsRequested" : [ ],
+    "elapsedMs" : 5997,
+    "firstTextDeltaMs" : 3213
+  } ],
+  "executionTrajectory" : [ {
+    "iteration" : 1,
+    "execution_phase" : "INVESTIGATION",
+    "completion_ready" : false,
+    "no_progress_rounds" : 0,
+    "recovery_level" : 0,
+    "progress_state" : "PROGRESS",
+    "new_state_observed" : true,
+    "known_file_count" : 1,
+    "round_activity" : [ "INSPECT" ]
+  }, {
+    "iteration" : 2,
+    "execution_phase" : "INVESTIGATION",
+    "completion_ready" : false,
+    "no_progress_rounds" : 0,
+    "recovery_level" : 0,
+    "progress_state" : "PROGRESS",
+    "new_state_observed" : true,
+    "known_file_count" : 2,
+    "round_activity" : [ "DISCOVER" ]
+  }, {
+    "iteration" : 3,
+    "execution_phase" : "IMPLEMENTATION",
+    "completion_ready" : false,
+    "no_progress_rounds" : 0,
+    "recovery_level" : 0,
+    "progress_state" : "PROGRESS",
+    "new_state_observed" : true,
+    "known_file_count" : 2,
+    "round_activity" : [ "INSPECT" ]
+  }, {
+    "iteration" : 4,
+    "execution_phase" : "IMPLEMENTATION",
+    "completion_ready" : false,
+    "no_progress_rounds" : 0,
+    "recovery_level" : 0,
+    "progress_state" : "PROGRESS",
+    "new_state_observed" : true,
+    "known_file_count" : 3,
+    "round_activity" : [ "DISCOVER" ]
+  }, {
+    "iteration" : 5,
+    "execution_phase" : "IMPLEMENTATION",
+    "completion_ready" : false,
+    "no_progress_rounds" : 0,
+    "recovery_level" : 0,
+    "progress_state" : "PROGRESS",
+    "new_state_observed" : true,
+    "known_file_count" : 3,
+    "round_activity" : [ "INSPECT" ]
+  }, {
+    "iteration" : 6,
+    "execution_phase" : "IMPLEMENTATION",
+    "completion_ready" : false,
+    "no_progress_rounds" : 0,
+    "recovery_level" : 0,
+    "progress_state" : "PROGRESS",
+    "new_state_observed" : true,
+    "known_file_count" : 4,
+    "round_activity" : [ "DISCOVER" ]
+  }, {
+    "iteration" : 7,
+    "execution_phase" : "IMPLEMENTATION",
+    "completion_ready" : false,
+    "no_progress_rounds" : 0,
+    "recovery_level" : 0,
+    "progress_state" : "PROGRESS",
+    "new_state_observed" : true,
+    "known_file_count" : 4,
+    "round_activity" : [ "INSPECT" ]
+  }, {
+    "iteration" : 8,
+    "execution_phase" : "INVESTIGATION",
+    "completion_ready" : false,
+    "no_progress_rounds" : 1,
+    "recovery_level" : 0,
+    "progress_state" : "PROGRESS",
+    "new_state_observed" : false,
+    "known_file_count" : 4,
+    "round_activity" : [ "RECOVER" ]
+  }, {
+    "iteration" : 9,
+    "execution_phase" : "VALIDATION",
+    "completion_ready" : false,
+    "no_progress_rounds" : 0,
+    "recovery_level" : 0,
+    "progress_state" : "PROGRESS",
+    "new_state_observed" : true,
+    "known_file_count" : 4,
+    "round_activity" : [ "EDIT" ]
+  }, {
+    "iteration" : 10,
+    "execution_phase" : "VALIDATION",
+    "completion_ready" : false,
+    "no_progress_rounds" : 0,
+    "recovery_level" : 0,
+    "progress_state" : "PROGRESS",
+    "new_state_observed" : true,
+    "known_file_count" : 4,
+    "round_activity" : [ "SAVE" ]
+  }, {
+    "iteration" : 11,
+    "execution_phase" : "COMPLETION",
+    "completion_ready" : true,
+    "no_progress_rounds" : 0,
+    "recovery_level" : 0,
+    "progress_state" : "COMPLETION_READY",
+    "new_state_observed" : true,
+    "known_file_count" : 4,
+    "round_activity" : [ "VALIDATE" ]
+  } ],
+  "toolCalls" : [ {
+    "tool" : "read_file",
+    "iteration" : 1,
+    "effect" : "READ",
+    "path" : "src/main/java/demo/Invoice.java",
+    "repeatedArguments" : false,
+    "line" : 1,
+    "limit" : 100,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 421,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "find_files",
+    "iteration" : 2,
+    "effect" : "READ",
+    "repeatedArguments" : false,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 62,
+    "elapsedMs" : 3
+  }, {
+    "tool" : "read_file",
+    "iteration" : 3,
+    "effect" : "READ",
+    "path" : "src/main/java/demo/Ledger.java",
+    "repeatedArguments" : false,
+    "line" : 1,
+    "limit" : 100,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 476,
+    "elapsedMs" : 25
+  }, {
+    "tool" : "find_files",
+    "iteration" : 4,
+    "effect" : "READ",
+    "repeatedArguments" : false,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 60,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "iteration" : 5,
+    "effect" : "READ",
+    "path" : "src/main/java/demo/Line.java",
+    "repeatedArguments" : false,
+    "line" : 1,
+    "limit" : 100,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 383,
+    "elapsedMs" : 21
+  }, {
+    "tool" : "find_files",
+    "iteration" : 6,
+    "effect" : "READ",
+    "repeatedArguments" : false,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 66,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "iteration" : 7,
+    "effect" : "READ",
+    "path" : "src/test/java/demo/LedgerTest.java",
+    "repeatedArguments" : false,
+    "line" : 1,
+    "limit" : 100,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 581,
+    "elapsedMs" : 10
+  }, {
+    "tool" : "run_validation",
+    "iteration" : 8,
+    "effect" : "EXTERNAL",
+    "repeatedArguments" : false,
+    "error" : true,
+    "changed" : false,
+    "resultChars" : 1666,
+    "failure" : "VALIDATION_FAILURE",
+    "elapsedMs" : 1328
+  }, {
+    "tool" : "apply_edits",
+    "iteration" : 9,
+    "effect" : "WORKSPACE_WRITE",
+    "repeatedArguments" : false,
+    "error" : false,
+    "changed" : true,
+    "resultChars" : 123,
+    "elapsedMs" : 15
+  }, {
+    "tool" : "save_files",
+    "iteration" : 10,
+    "effect" : "WORKSPACE_WRITE",
+    "repeatedArguments" : false,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 61,
+    "elapsedMs" : 16
+  }, {
+    "tool" : "run_validation",
+    "iteration" : 11,
+    "effect" : "EXTERNAL",
+    "repeatedArguments" : true,
+    "error" : false,
+    "changed" : false,
+    "resultChars" : 1619,
+    "elapsedMs" : 1321
+  } ],
+  "verification" : [ {
+    "passed" : true,
+    "elapsedMs" : 15
+  }, {
+    "passed" : true,
+    "elapsedMs" : 1
+  } ],
+  "observations" : [ {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 3
+  }, {
+    "tool" : "find_files",
+    "error" : false,
+    "elapsedMs" : 4
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 26
+  }, {
+    "tool" : "find_files",
+    "error" : false,
+    "elapsedMs" : 1
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 21
+  }, {
+    "tool" : "find_files",
+    "error" : false,
+    "elapsedMs" : 2
+  }, {
+    "tool" : "read_file",
+    "error" : false,
+    "elapsedMs" : 11
+  }, {
+    "tool" : "run_validation",
+    "error" : true,
+    "elapsedMs" : 1329,
+    "failure" : "VALIDATION_FAILURE"
+  }, {
+    "tool" : "apply_edits",
+    "error" : false,
+    "elapsedMs" : 16
+  }, {
+    "tool" : "save_files",
+    "error" : false,
+    "elapsedMs" : 19
+  }, {
+    "tool" : "run_validation",
+    "error" : false,
+    "elapsedMs" : 1322
+  } ],
+  "permissions" : [ {
+    "tool" : "run_validation",
+    "allowed" : true
+  }, {
+    "tool" : "run_validation",
+    "allowed" : true
+  } ],
+  "requestedCalls" : 11,
+  "iterations" : 12,
+  "calls" : 11,
+  "withinCallBudget" : true,
+  "roundsBeforeFirstMutation" : 8,
+  "roundsAfterLastMutation" : 3,
+  "roundsWithAcceptanceDebt" : 11,
+  "acceptanceEvidenceRoundsAfterLastMutation" : 2,
+  "validationCallsAfterLastMutation" : 1,
+  "inputTokens" : 0,
+  "outputTokens" : 0,
+  "usageAvailable" : false,
+  "semanticQueries" : 0,
+  "searches" : 0,
+  "failureCategories" : [ "VALIDATION_FAILURE" ],
+  "trial" : 1,
+  "trialCount" : 1,
+  "timeBudgetExceeded" : false,
+  "label" : "phase7-noop-gemma",
+  "implementationFingerprint" : "3d6e91df444d0ff82e651eb81a1ac7ae4bc3742cb9a5dcf19beb5a70edf1803c",
+  "repositoryDirty" : "true",
+  "corpusVersion" : "phase7-v1",
+  "corpusFingerprint" : "a873133ca6262c260b90769c195ee581ca3f7584af5ee766e6e20c10e890f383",
+  "unsavedFiles" : [ ],
+  "executionMetrics" : {
+    "noProgressEvents" : 0,
+    "nonProgressCalls" : 1,
+    "callsBeforeFirstMutation" : 8,
+    "firstMutationElapsedMs" : 41889,
+    "roundsBeforeFirstMutation" : 8,
+    "roundsAfterLastMutation" : 3,
+    "readsAfterLastMutation" : 0,
+    "validationCallsAfterLastMutation" : 1
+  },
+  "acceptance" : {
+    "checks" : 1,
+    "verificationNanos" : 4222980,
+    "reconciliationNanos" : 21741169,
+    "javaDeclarationNanos" : 0,
+    "unstructuredCandidatesHandled" : 1,
+    "reconciliations" : 12,
+    "unsupportedStructuredClaims" : 0,
+    "taskIncomplete" : 0,
+    "evidenceIncomplete" : 0,
+    "requirements" : [ {
+      "id" : "R1",
+      "type" : "CODE_CHANGE",
+      "provenance" : "USER_EXPLICIT",
+      "userMessage" : "U1",
+      "check" : "CHANGE",
+      "state" : "SATISFIED",
+      "reason" : "Production diff observed; behavior requires relevant validation",
+      "evidence" : [ "E12" ]
+    }, {
+      "id" : "R2",
+      "type" : "VALIDATION",
+      "provenance" : "USER_EXPLICIT",
+      "userMessage" : "U1",
+      "check" : "VALIDATED",
+      "state" : "SATISFIED",
+      "reason" : "Supported by current VALIDATED evidence",
+      "evidence" : [ "E20" ]
+    }, {
+      "id" : "R3",
+      "type" : "INVESTIGATION",
+      "provenance" : "USER_EXPLICIT",
+      "userMessage" : "U1",
+      "check" : "INSPECTED",
+      "state" : "SATISFIED",
+      "reason" : "Current files inspected; causal interpretation remains an inference",
+      "evidence" : [ "E1", "E3", "E4" ]
+    } ],
+    "completion" : {
+      "accepted" : true,
+      "coverage" : "HEURISTIC_NOT_EXHAUSTIVE",
+      "requirements" : [ {
+        "id" : "R1",
+        "type" : "CODE_CHANGE",
+        "provenance" : "USER_EXPLICIT",
+        "userMessage" : "U1",
+        "check" : "CHANGE",
+        "state" : "SATISFIED",
+        "reason" : "Production diff observed; behavior requires relevant validation",
+        "evidence" : [ "E12" ]
+      }, {
+        "id" : "R2",
+        "type" : "VALIDATION",
+        "provenance" : "USER_EXPLICIT",
+        "userMessage" : "U1",
+        "check" : "VALIDATED",
+        "state" : "SATISFIED",
+        "reason" : "Supported by current VALIDATED evidence",
+        "evidence" : [ "E20" ]
+      }, {
+        "id" : "R3",
+        "type" : "INVESTIGATION",
+        "provenance" : "USER_EXPLICIT",
+        "userMessage" : "U1",
+        "check" : "INSPECTED",
+        "state" : "SATISFIED",
+        "reason" : "Current files inspected; causal interpretation remains an inference",
+        "evidence" : [ "E1", "E3", "E4" ]
+      } ],
+      "changes" : [ {
+        "id" : "E12",
+        "kind" : "FILE_CHANGED",
+        "subject" : "src/main/java/demo/Ledger.java",
+        "revision" : "00950a0b-0f50-4ed3-a27d-9145e3bf24f1:2",
+        "generation" : 3,
+        "freshness" : "CURRENT",
+        "strength" : "SUPPORTED",
+        "source" : "document_transaction",
+        "invalidatedBy" : "",
+        "facts" : {
+          "documentation" : "false",
+          "saved" : "true",
+          "test" : "false"
+        }
+      } ],
+      "validation" : [ {
+        "id" : "E19",
+        "kind" : "VALIDATION_RESULT",
+        "subject" : "MAVEN TEST .",
+        "revision" : "",
+        "generation" : 4,
+        "freshness" : "CURRENT",
+        "strength" : "SUPPORTED",
+        "source" : "fresh_junit_reports",
+        "invalidatedBy" : "",
+        "facts" : {
+          "failed" : "0",
+          "passed" : "true",
+          "scope" : "",
+          "tests" : "2",
+          "passedTests" : "2",
+          "skipped" : "0"
+        }
+      } ],
+      "remaining" : [ ],
+      "claims" : [ ],
+      "unsupportedClaims" : 0,
+      "filesChanged" : 1,
+      "inspectedFiles" : [ "src/main/java/demo/Invoice.java", "src/main/java/demo/Line.java", "src/test/java/demo/LedgerTest.java" ],
+      "evidenceDebt" : [ ],
+      "completionState" : "ACCEPTED"
+    }
+  },
+  "regressionQuality" : {
+    "kind" : "EVALUATION_ONLY_REGRESSION_QUALITY",
+    "state" : "UNVERIFIED",
+    "reason" : "No supported new test identity or no mutation fixture"
+  },
+  "initialProfile" : {
+    "provider" : "lmstudio",
+    "model" : "google/gemma-4-12b-qat",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 166144
+    },
+    "context" : {
+      "provenance" : "DISCOVERED",
+      "value" : 166144
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 8192
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 16384
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "DISCOVERED",
+        "value" : "SUPPORTED"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "google/gemma-4-12b-qat",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profile" : {
+    "provider" : "lmstudio",
+    "model" : "google/gemma-4-12b-qat",
+    "server" : "LM_STUDIO_API_V1",
+    "discoveryStatus" : "AVAILABLE",
+    "recoveryLimit" : 2,
+    "modelContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 262144
+    },
+    "loadedContext" : {
+      "provenance" : "DISCOVERED",
+      "value" : 166144
+    },
+    "context" : {
+      "provenance" : "DISCOVERED",
+      "value" : 166144
+    },
+    "preferredOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 8192
+    },
+    "maxOutput" : {
+      "provenance" : "HEURISTIC",
+      "value" : 16384
+    },
+    "tools" : {
+      "provenance" : "DISCOVERED",
+      "value" : "SUPPORTED"
+    },
+    "features" : {
+      "PARALLEL_CALLS" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "REASONING" : {
+        "provenance" : "DISCOVERED",
+        "value" : "SUPPORTED"
+      },
+      "STRUCTURED_OUTPUT" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "USAGE" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "PROMPT_CACHING" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      },
+      "TOKENIZER" : {
+        "provenance" : "UNKNOWN",
+        "value" : "UNKNOWN"
+      }
+    },
+    "configuration" : {
+      "provider" : "lmstudio",
+      "model" : "google/gemma-4-12b-qat",
+      "contextTokens" : 0,
+      "outputTokens" : 0,
+      "maxOutputTokens" : 0,
+      "tools" : "UNKNOWN",
+      "discovery" : true,
+      "temperature" : 0.0,
+      "seed" : 41
+    }
+  },
+  "profileFingerprint" : "d9d1f711a73fb3dc3552bc9c3b77d26da073cce36123545c380c42a74f5e71d1",
+  "samplingRequested" : {
+    "temperature" : "0.0",
+    "seed" : "41",
+    "seedSent" : true,
+    "determinismGuaranteed" : false
+  },
+  "approvalMetrics" : {
+    "requested" : 2,
+    "allowed" : 2,
+    "denied" : 0,
+    "interrupted" : 0,
+    "waitMillis" : 0,
+    "repeatedEquivalent" : 1,
+    "categories" : {
+      "EXTERNAL" : 2
+    }
+  },
+  "serverOrigin" : "http://127.0.0.1:1234",
+  "repositoryRevision" : "3a3f70637f0e2a9919b92cafb842aca31fc38a9f",
+  "taskRevision" : "7589f3e9e126847600975c85131ea507f2d04203331ce660d5f6ee546c648cb0",
+  "promptFingerprint" : "b3acbaf8bbb7d2b0b314f04a254ee1f23f93c98c39493798e7405739c98b9c05",
+  "requiredTestChangeSatisfied" : true,
+  "category" : "bug",
+  "agentElapsedMs" : 55752,
+  "systemPromptHash" : "41ff40cbf7071ce621f8b2b387f2f4d0712197388f1f521a9065ad57fef84f83",
+  "catalogHash" : "dec8bdbd9018b6ca7cc7f7aee494892806f88f81475b195be31332a2cb70eb57",
+  "serverContextLimit" : 0,
+  "oracleElapsedMs" : 1475,
+  "baselineTestsPassed" : false,
+  "semanticExpected" : true,
+  "lspConfigured" : true,
+  "trust" : "WORKSPACE",
+  "snapshotKind" : "CONTROLLED_JAVA_PROJECT",
+  "panelUpdateMaxMs" : 0,
+  "fxDispatchMaxMs" : 13,
+  "newLspMetadataFiles" : [ ".classpath", ".project", ".settings/org.eclipse.core.resources.prefs", ".settings/org.eclipse.jdt.apt.core.prefs", ".settings/org.eclipse.jdt.core.prefs", ".settings/org.eclipse.m2e.core.prefs" ],
+  "contextRankingBefore" : [ {
+    "path" : "src/main/java/demo/Invoice.java",
+    "score" : 80,
+    "signals" : [ "ACTIVE" ]
+  } ],
+  "contextRankingAfter" : [ {
+    "path" : "src/main/java/demo/Invoice.java",
+    "score" : 105,
+    "signals" : [ "ACTIVE", "AGENT_INSPECTED" ]
+  }, {
+    "path" : "src/main/java/demo/Ledger.java",
+    "score" : 70,
+    "signals" : [ "RECENTLY_EDITED", "AGENT_INSPECTED", "LEXICAL" ]
+  }, {
+    "path" : "src/main/java/demo/Line.java",
+    "score" : 35,
+    "signals" : [ "AGENT_INSPECTED", "LEXICAL" ]
+  }, {
+    "path" : "src/test/java/demo/LedgerTest.java",
+    "score" : 35,
+    "signals" : [ "AGENT_INSPECTED", "LEXICAL" ]
+  } ]
+}

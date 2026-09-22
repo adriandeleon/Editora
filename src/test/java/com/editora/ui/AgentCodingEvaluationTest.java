@@ -44,6 +44,13 @@ class AgentCodingEvaluationTest {
                 .map(AgentEvaluationCases.Task::id)
                 .collect(java.util.stream.Collectors.toSet());
         if (!knownTasks.containsAll(selected)) throw new IllegalArgumentException("Unknown evaluation scenario");
+        String corpus = System.getProperty("agent.eval.corpus", "");
+        String corpusFingerprint = "";
+        if (!corpus.isBlank()) {
+            if (!corpus.equals(AgentExecutionCorpus.VERSION) || !AgentExecutionCorpus.TASKS.containsAll(selected))
+                throw new IllegalArgumentException("Unknown corpus or task outside frozen corpus");
+            corpusFingerprint = AgentExecutionCorpus.verify(source);
+        }
         String label = System.getProperty("agent.eval.label", "baseline");
         if (!label.matches("[a-zA-Z0-9_-]{1,40}")) throw new IllegalArgumentException("Invalid evaluation label");
         String implementationFingerprint =
@@ -156,6 +163,7 @@ class AgentCodingEvaluationTest {
                         AgentRuntime.Outcome outcome;
                         boolean timeBudgetExceeded = false;
                         AgentApprovalMetrics.Snapshot approvalMetrics;
+                        com.fasterxml.jackson.databind.node.ObjectNode executionMetrics;
                         long agentStart = System.nanoTime();
                         var renderTimes = new ArrayList<Long>();
                         var dispatchTimes = new ArrayList<Long>();
@@ -169,7 +177,12 @@ class AgentCodingEvaluationTest {
                                 eval.verifier(natives::verify),
                                 NativeAgentTools.SYSTEM,
                                 new AgentRuntime.Limits(
-                                        iterations, iterations * 4, context, 8000, Duration.ofMinutes(5)),
+                                        iterations,
+                                        iterations * 4,
+                                        context,
+                                        8000,
+                                        Duration.ofMinutes(5),
+                                        Duration.ofMinutes(Integer.getInteger("agent.eval.minutes", 12))),
                                 event -> {
                                     eval.event(event);
                                     try {
@@ -195,13 +208,17 @@ class AgentCodingEvaluationTest {
                             runtime.setAcceptance(natives.acceptance());
                             var running = runtime.submit(prompt, retrievedContext);
                             try {
-                                outcome = running.get(Integer.getInteger("agent.eval.minutes", 12), TimeUnit.MINUTES);
+                                outcome = running.get(
+                                        Integer.getInteger("agent.eval.minutes", 12) * 60L + 10, TimeUnit.SECONDS);
+                                timeBudgetExceeded = outcome.state() == AgentRuntime.State.LIMIT
+                                        && outcome.detail().contains("time limit");
                             } catch (java.util.concurrent.TimeoutException timeout) {
                                 timeBudgetExceeded = true;
                                 runtime.cancel();
                                 outcome = running.get(30, TimeUnit.SECONDS);
                             }
                             approvalMetrics = runtime.approvalMetrics();
+                            executionMetrics = runtime.executionMetrics();
                         }
                         long agentElapsed = (System.nanoTime() - agentStart) / 1_000_000;
                         FxTestSupport.drainFx();
@@ -255,8 +272,11 @@ class AgentCodingEvaluationTest {
                                 .put("timeBudgetExceeded", timeBudgetExceeded)
                                 .put("label", label)
                                 .put("implementationFingerprint", implementationFingerprint)
-                                .put("repositoryDirty", repositoryDirty);
+                                .put("repositoryDirty", repositoryDirty)
+                                .put("corpusVersion", corpus)
+                                .put("corpusFingerprint", corpusFingerprint);
                         report.set("unsavedFiles", unsaved);
+                        report.set("executionMetrics", executionMetrics);
                         natives.acceptance().reconcile(new AgentCancellation());
                         report.set("acceptance", natives.acceptance().metrics());
                         var newTests = natives.acceptance().ledger().current(AgentEvidence.Kind.TEST_ADDED).stream()

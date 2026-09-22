@@ -35,6 +35,15 @@ public final class SearchMatcher {
                 : literalMatches(text, query, caseSensitive, wholeWord, limit);
     }
 
+    /** Agent/workspace callers must distinguish a budget abort from authoritative absence. */
+    public static List<int[]> matchesChecked(
+            String text, String query, boolean caseSensitive, boolean regex, boolean wholeWord, int limit) {
+        if (text == null || query == null || query.isEmpty()) return List.of();
+        return regex
+                ? regexMatches(text, query, caseSensitive, wholeWord, DEFAULT_MATCH_BUDGET_NANOS, limit, true)
+                : literalMatches(text, query, caseSensitive, wholeWord, limit);
+    }
+
     /** The regex compile error description, or {@code null} if {@code query} is a valid pattern. */
     public static String regexError(String query) {
         try {
@@ -208,6 +217,17 @@ public final class SearchMatcher {
 
     private static List<int[]> regexMatches(
             String text, String query, boolean caseSensitive, boolean wholeWord, long budgetNanos, int limit) {
+        return regexMatches(text, query, caseSensitive, wholeWord, budgetNanos, limit, false);
+    }
+
+    private static List<int[]> regexMatches(
+            String text,
+            String query,
+            boolean caseSensitive,
+            boolean wholeWord,
+            long budgetNanos,
+            int limit,
+            boolean checked) {
         if (limit <= 0 || Thread.currentThread().isInterrupted()) {
             return List.of();
         }
@@ -232,6 +252,7 @@ public final class SearchMatcher {
                 from = end > start ? end : end + 1; // advance past a zero-width match
             }
         } catch (MatchBudgetExceededException aborted) {
+            if (checked) throw aborted;
             return out; // budget exceeded — partial results beat freezing the UI
         }
         return out;

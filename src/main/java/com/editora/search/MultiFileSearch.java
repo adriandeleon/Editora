@@ -23,6 +23,15 @@ public final class MultiFileSearch {
 
     /** As {@link #matchesInText(String, SearchQuery)}, stopping once {@code limit} matches are collected. */
     public static List<LineMatch> matchesInText(String text, SearchQuery q, int limit) {
+        return scan(text, q, limit, false);
+    }
+
+    /** Reports regex budget exhaustion to callers that need explicit completeness metadata. */
+    public static List<LineMatch> matchesInTextChecked(String text, SearchQuery q, int limit) {
+        return scan(text, q, limit, true);
+    }
+
+    private static List<LineMatch> scan(String text, SearchQuery q, int limit, boolean checked) {
         List<LineMatch> out = new ArrayList<>();
         if (text == null
                 || text.isEmpty()
@@ -44,8 +53,12 @@ public final class MultiFileSearch {
                 int end = i > start && text.charAt(i - 1) == '\r' ? i - 1 : i; // drop a trailing CR
                 String lineText = text.substring(start, end);
                 int remaining = Math.max(0, limit - out.size());
-                for (int[] m : SearchMatcher.matches(
-                        lineText, q.text(), q.caseSensitive(), q.regex(), q.wholeWord(), remaining)) {
+                var matches = checked
+                        ? SearchMatcher.matchesChecked(
+                                lineText, q.text(), q.caseSensitive(), q.regex(), q.wholeWord(), remaining)
+                        : SearchMatcher.matches(
+                                lineText, q.text(), q.caseSensitive(), q.regex(), q.wholeWord(), remaining);
+                for (int[] m : matches) {
                     out.add(new LineMatch(line, m[0] + 1, m[1] - m[0], lineText));
                     if (out.size() >= limit) {
                         return out;

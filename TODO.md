@@ -56,6 +56,11 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Add user-provenance task contracts, revision-bound evidence, omitted-deliverable guards, grounded
       completion, acceptance UX and evaluation-only regression-quality probes. See
       [task acceptance](docs/subsystems/agent-acceptance.md).
+- [x] Add observed execution state, phase guidance, no-progress recovery, explicit regex search and
+      bounded read context. Freeze a task/oracle corpus and record trajectory measurements; broader
+      autonomous reliability is not yet demonstrated. See [execution strategy](docs/subsystems/agent-execution.md).
+- [ ] Evaluate budget-aware structured tool delivery, provider latency/token telemetry and a guarded
+      model-requested finish action against the frozen corpus. See [Phase 7 findings](docs/evaluations/agent-phase7.md).
 - [x] Add bounded project validation recipes, actionable evidence debt, scoped freshness dependencies,
       user correction controls and conservative JUnit XML/source identity correlation. See
       [acceptance recipes](docs/subsystems/agent-acceptance-recipes.md).

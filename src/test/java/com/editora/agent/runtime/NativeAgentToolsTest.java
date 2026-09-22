@@ -717,6 +717,59 @@ class NativeAgentToolsTest {
     }
 
     @Test
+    void explicitRegexModeAndMalformedPatternsHaveDistinctResults() throws Exception {
+        var docs = new Documents();
+        var file = Files.writeString(root.resolve("Source.java"), "class Saved {}");
+        docs.snapshots.put(file, new AgentDocuments.Snapshot(file, "v1", "class Alpha {}\nclass Beta {}", true));
+        var nativeTools = new NativeAgentTools(new AgentWorkspace(root), docs, plan -> {});
+        var tools = nativeTools.registry();
+        assertTrue(json.readTree(invoke(tools, "search_text", "{\"query\":\"Alpha|Beta\",\"mode\":\"LITERAL\"}")
+                        .text())
+                .path("matches")
+                .isEmpty());
+        var regex = invoke(tools, "search_text", "{\"query\":\"Alpha|Beta\",\"mode\":\"REGEX\"}");
+        assertFalse(regex.error());
+        assertEquals(2, json.readTree(regex.text()).path("matches").size());
+        var invalid = invoke(tools, "search_text", "{\"query\":\"(\",\"mode\":\"REGEX\"}");
+        assertTrue(invalid.error());
+        assertTrue(invalid.text().contains("mode=LITERAL"));
+        invoke(tools, "search_text", "{\"query\":\"Missing.*Symbol\",\"mode\":\"REGEX\"}");
+        assertTrue(nativeTools.acceptance().ledger().current(AgentEvidence.Kind.SEARCH_ABSENCE).stream()
+                .noneMatch(e -> e.subject().equals("Missing.*Symbol")));
+    }
+
+    @Test
+    void surroundingReadContextIsBoundedAndKeepsActualLineCoordinates() throws Exception {
+        var docs = new Documents();
+        var file = root.resolve("Source.java");
+        docs.snapshots.put(file, new AgentDocuments.Snapshot(file, "v1", "one\ntwo\nthree\nfour\nfive", false));
+        var tools = new NativeAgentTools(new AgentWorkspace(root), docs, plan -> {}).registry();
+        var read = json.readTree(invoke(
+                        tools,
+                        "read_file",
+                        "{\"path\":\"Source.java\",\"line\":3,\"limit\":1,\"context_before\":1,\"context_after\":1}")
+                .text());
+        assertEquals("two\nthree\nfour", read.path("text").asText());
+        assertEquals(2, read.path("line").asInt());
+        assertEquals(4, read.path("endLine").asInt());
+        assertTrue(invoke(tools, "read_file", "{\"path\":\"Source.java\",\"limit\":200,\"context_after\":1}")
+                .error());
+    }
+
+    @Test
+    void regexBudgetExhaustionIsTruncationRatherThanAbsence() throws Exception {
+        Files.writeString(root.resolve("source.txt"), "a".repeat(30));
+        var natives = new NativeAgentTools(new AgentWorkspace(root), new Documents(), plan -> {});
+        var result = invoke(natives.registry(), "search_text", "{\"query\":\"(.*a){30}\",\"mode\":\"REGEX\"}");
+        assertFalse(result.error());
+        assertTrue(json.readTree(result.text()).path("truncated").asBoolean());
+        assertTrue(natives.acceptance()
+                .ledger()
+                .current(AgentEvidence.Kind.SEARCH_ABSENCE)
+                .isEmpty());
+    }
+
+    @Test
     void policyCannotBeRaisedByModelArgumentsAndSpecsAreDefensive() throws Exception {
         var tools = new NativeAgentTools(new AgentWorkspace(root), new Documents(), plan -> {}).registry();
         var policy = new AgentPolicy();
@@ -733,5 +786,43 @@ class NativeAgentToolsTest {
         var schema = tools.get("read_file").spec().inputSchema();
         ((com.fasterxml.jackson.databind.node.ObjectNode) schema).removeAll();
         assertTrue(tools.get("read_file").spec().inputSchema().has("type"));
+    }
+
+    @Test
+    void emptyValidationModuleGivesRootDirectoryRecoveryWithoutExecution() throws Exception {
+        Files.writeString(root.resolve("pom.xml"), "<project/>");
+        var tools = new NativeAgentTools(new AgentWorkspace(root), new Documents(), p -> {}).registry();
+        var failure = assertThrows(
+                java.io.IOException.class, () -> invoke(tools, "validation_profiles", "{\"module\":\"\"}"));
+        var advice = json.readTree(AgentToolFeedback.failure("validation_profiles", failure.getMessage()));
+        assertEquals("INVALID_VALIDATION_MODULE", advice.path("code").asText());
+        assertTrue(advice.path("nextAction").asText().contains("module=\".\""));
+        assertFalse(invoke(tools, "validation_profiles", "{\"module\":\".\"}").error());
+        assertFalse(invoke(tools, "validation_profiles", "{}").error());
+    }
+
+    @Test
+    void mixedNoOpAndRealEditReportsOnlyActualTextChanges() throws Exception {
+        var docs = new Documents();
+        for (var name : List.of("same.txt", "changed.txt")) {
+            var path = Files.writeString(root.resolve(name), "original");
+            docs.snapshots.put(path, new AgentDocuments.Snapshot(path, "v1", "original", false));
+        }
+        var natives = new NativeAgentTools(new AgentWorkspace(root), docs, p -> {});
+        var result = invoke(
+                natives.registry(),
+                "apply_edits",
+                "{\"edits\":[{\"path\":\"same.txt\",\"revision\":\"v1\",\"old_text\":\"\",\"new_text\":\"original\"},"
+                        + "{\"path\":\"changed.txt\",\"revision\":\"v1\",\"old_text\":\"\",\"new_text\":\"updated\"}]}");
+        assertTrue(result.changed());
+        var output = json.readTree(result.text());
+        assertFalse(output.get(0).path("changed").asBoolean(true));
+        assertTrue(output.get(1).path("changed").asBoolean());
+        assertEquals(
+                1,
+                natives.acceptance()
+                        .ledger()
+                        .current(AgentEvidence.Kind.FILE_CHANGED)
+                        .size());
     }
 }

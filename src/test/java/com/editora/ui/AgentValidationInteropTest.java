@@ -72,6 +72,17 @@ class AgentValidationInteropTest {
                             .accepted(),
                     "A comment-only test edit and green build cannot satisfy new coverage");
             var current = documents.read(root.resolve(task.active()), token);
+            var unchanged = json.createObjectNode();
+            unchanged
+                    .putArray("edits")
+                    .addObject()
+                    .put("path", task.active())
+                    .put("revision", current.revision())
+                    .put("old_text", "")
+                    .put("new_text", current.text());
+            assertFalse(
+                    tools.get("apply_edits").handler().execute(unchanged, token).changed());
+            assertTrue(nativeTools.verify(token).passed(), "A no-op must retain current native validation");
             var added = json.createObjectNode();
             added.putArray("edits")
                     .addObject()

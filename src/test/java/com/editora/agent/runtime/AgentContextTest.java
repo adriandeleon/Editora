@@ -18,7 +18,8 @@ class AgentContextTest {
                     AgentModel.Message.observation(call.id(), "x".repeat(300), false)));
         }
         var request = context.request("system", List.of(), 3000);
-        assertTrue(request.system().contains("removed"));
+        assertEquals("system", request.system());
+        assertTrue(request.messages().stream().anyMatch(m -> m.text().contains("removed")));
         assertTrue(request.messages().stream()
                 .anyMatch(m -> m.role().equals("user") && m.text().equals("preserve this instruction")));
         var protocol = request.messages().stream()
@@ -28,7 +29,7 @@ class AgentContextTest {
             assertEquals(
                     protocol.get(i).calls().getFirst().id(), protocol.get(i + 1).callId());
         }
-        assertEquals("id99", request.messages().getLast().callId());
+        assertEquals("id99", protocol.getLast().callId());
     }
 
     @Test
@@ -76,5 +77,47 @@ class AgentContextTest {
                 () -> context.add(List.of(new AgentModel.Message("assistant", "", List.of(call), null, false))));
         context.add(List.of(AgentModel.Message.text("user", "goal")));
         assertThrows(IllegalStateException.class, () -> context.request("system", List.of(), 0));
+    }
+
+    @Test
+    void transientRuntimeStateIsBudgetedAtRequestTailAndNeverSaved() {
+        var context = new AgentContext();
+        context.add(List.of(AgentModel.Message.text("user", "goal")));
+        for (int i = 0; i < 10; i++) {
+            var call = new AgentModel.Call("id" + i, "read", "{}");
+            context.add(List.of(
+                    new AgentModel.Message("assistant", "", List.of(call), null, false),
+                    AgentModel.Message.observation(call.id(), "x".repeat(400), false)));
+        }
+        String state = "current runtime state " + "y".repeat(500);
+        long extra = AgentTokens.CONSERVATIVE.count(state).tokens() + 128;
+        assertEquals(
+                extra,
+                context.minimumTokens("system", List.of(), AgentTokens.CONSERVATIVE, state)
+                        - context.minimumTokens("system", List.of(), AgentTokens.CONSERVATIVE));
+        assertEquals(
+                extra,
+                context.estimatedTokens("system", List.of(), AgentTokens.CONSERVATIVE, state)
+                        - context.estimatedTokens("system", List.of(), AgentTokens.CONSERVATIVE));
+        var request = context.request("system", List.of(), 3000, AgentTokens.CONSERVATIVE, state);
+        assertEquals(state, request.messages().getLast().text());
+        assertEquals("observation", request.messages().getLast().role());
+        assertEquals(
+                "id9",
+                request.messages().stream()
+                        .filter(m -> m.role().equals("tool"))
+                        .toList()
+                        .getLast()
+                        .callId());
+        assertFalse(request.system().contains(state));
+        assertFalse(context.save().toString().contains(state));
+        assertTrue(context.estimatedTokens("system", List.of(), AgentTokens.CONSERVATIVE, state) <= 3000);
+        var next = context.request("system", List.of(), 3000, AgentTokens.CONSERVATIVE, "updated state");
+        assertEquals("system", next.system());
+        assertEquals("updated state", next.messages().getLast().text());
+        assertTrue(next.messages().stream().noneMatch(m -> m.text().equals(state)));
+        assertThrows(
+                IllegalStateException.class,
+                () -> context.request("system", List.of(), 1000, AgentTokens.CONSERVATIVE, state));
     }
 }

@@ -311,6 +311,16 @@ final class NativeAgentCoordinator {
             panel.get().appendToolResult(event.tool(), event.detail(), event.error(), event.elapsedMillis());
         } else if (event.state() == AgentRuntime.State.TOOL) {
             panel.get().startTool(event.tool());
+        } else if (event.state() == AgentRuntime.State.REASONING && event.tool().equals("execution_control")) {
+            try {
+                panel.get()
+                        .setExecutionPhase(new com.fasterxml.jackson.databind.ObjectMapper()
+                                .readTree(event.detail())
+                                .path("execution_phase")
+                                .asText());
+            } catch (java.io.IOException ignored) {
+                /* Presentation cannot alter execution. */
+            }
         } else if (event.state() == AgentRuntime.State.REASONING
                 && !event.detail().isEmpty()) {
             panel.get().appendLine("↻ " + tr("agent.outputRecovery"));

@@ -84,6 +84,7 @@ class AgentDesktopReviewTest {
                     .put("reasonInvalidated", "Document edit: Rename.java");
             panel.setAcceptance(acceptance.toString());
             panel.setBusy(true);
+            panel.setExecutionPhase("VALIDATION");
             return s;
         });
         try {

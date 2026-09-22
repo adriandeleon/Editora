@@ -33,7 +33,7 @@ public final class NativeAgentTools {
             Discover semantic_capabilities for code navigation or refactoring. Prefer definitions,
             symbols and references to guessing relationships from text. Use list_skills/read_skill when a workflow helps.
             Semantic positions are zero-based UTF-16; file read line numbers are one-based. Convert carefully.
-            Locate filenames with find_files; search_text matches literal source text, not filenames or regular expressions.
+            Locate filenames with find_files; choose search_text mode=LITERAL for exact source text or REGEX for Java patterns.
             Batch independent reads in one response. Read relevant callers and tests before editing.
             For explanations, trace requested callers and boundaries with references or symbol-text search before concluding.
             Cite files actually inspected. Separate observed behavior from inference; do not invent caller names or guarantees.
@@ -148,8 +148,8 @@ public final class NativeAgentTools {
         add(
                 result,
                 "read_file",
-                "Read live text with revision and explicit paging. Lines are 1-based; follow nextLine for more. Default 100, maximum 200 lines and 6000 characters. Partial previews cannot reconstruct a whole file; use exact old_text edits. longLineTruncated requires targeted search or manual inspection.",
-                "{\"path\":{\"type\":\"string\"},\"line\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":1000000},\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":200}}",
+                "Read live text with revision and explicit paging. Lines are 1-based (LSP locations are 0-based). Optional context_before/context_after add surrounding lines; total window stays at most 200. Follow nextLine for more. Default 100, maximum 200 lines and 6000 characters. Partial previews cannot reconstruct a whole file; use exact old_text edits. longLineTruncated requires targeted search or manual inspection.",
+                "{\"path\":{\"type\":\"string\"},\"line\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":1000000},\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":200},\"context_before\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":50},\"context_after\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":50}}",
                 List.of("path"),
                 AgentTool.Effect.READ,
                 (a, c) -> {
@@ -173,7 +173,15 @@ public final class NativeAgentTools {
                                 inspectedHashes.keySet().iterator().next());
                     int line = a.path("line").asInt(1);
                     int limit = a.path("limit").asInt(100);
-                    ObjectNode output = snapshotInfo(snapshot);
+                    int beforeLines = a.path("context_before").asInt(),
+                            afterLines = a.path("context_after").asInt();
+                    if (limit + beforeLines + afterLines > 200)
+                        return AgentTool.Result.failure(
+                                "Read window including context must be at most 200 lines; reduce limit.");
+                    int requestedLine = line;
+                    line = Math.max(1, line - beforeLines);
+                    limit += requestedLine - line + afterLines;
+                    ObjectNode output = snapshotInfo(snapshot).put("requestedLine", requestedLine);
                     var preview = AgentReadWindow.read(snapshot.text(), line, limit);
                     output.put("line", line)
                             .put("text", preview.text())
@@ -200,15 +208,15 @@ public final class NativeAgentTools {
         add(
                 result,
                 "search_text",
-                "Find literal source text (no regex, glob or filename matching; use find_files for filenames) under a directory, using live open-buffer text and Editora's search matcher. Bounded to 2000 files and 100 matches; narrow path to continue.",
-                "{\"query\":{\"type\":\"string\",\"maxLength\":500},\"path\":{\"type\":\"string\"},\"case_sensitive\":{\"type\":\"boolean\"}}",
+                "Search live source text under path. Choose mode LITERAL for exact text or REGEX for Java patterns. Use find_files for filenames, semantic_query for symbols/references. Invalid regex returns an error. Bounded to 2000 files and 100 matches; narrow path when truncated.",
+                "{\"query\":{\"type\":\"string\",\"maxLength\":500},\"path\":{\"type\":\"string\"},\"case_sensitive\":{\"type\":\"boolean\"},\"mode\":{\"type\":\"string\",\"enum\":[\"LITERAL\",\"REGEX\"]}}",
                 List.of("query"),
                 AgentTool.Effect.READ,
                 this::search);
         add(
                 result,
                 "apply_edits",
-                "Apply a batch of undoable file edits. All revisions/unique old_text matches are checked before any edit. Empty old_text replaces a whole document. One entry per file; use document tools, never shell edits.",
+                "Apply a batch of undoable file edits. All revisions/unique old_text matches are checked before any edit. Empty old_text replaces a whole document. Unchanged replacements report changed=false and do not advance the task. One entry per file; use document tools, never shell edits.",
                 "{\"edits\":{\"type\":\"array\",\"minItems\":1,\"maxItems\":16,\"items\":{\"type\":\"object\",\"required\":[\"path\",\"revision\",\"old_text\",\"new_text\"],\"properties\":{\"path\":{\"type\":\"string\"},\"revision\":{\"type\":\"string\"},\"old_text\":{\"type\":\"string\"},\"new_text\":{\"type\":\"string\"}}}}}",
                 List.of("edits"),
                 AgentTool.Effect.WORKSPACE_WRITE,
@@ -253,7 +261,14 @@ public final class NativeAgentTools {
                         throw failure;
                     }
                     var output = json.createArrayNode();
+                    boolean textChanged = false, stateChanged = false;
                     for (var snapshot : applied) {
+                        var original = originals.get(snapshot.path());
+                        boolean different = !original.text().equals(snapshot.text());
+                        textChanged |= different;
+                        output.add(snapshotInfo(snapshot).put("changed", different));
+                        if (!different && original.revision().equals(snapshot.revision())) continue;
+                        stateChanged = true;
                         before.putIfAbsent(
                                 snapshot.path(), originals.get(snapshot.path()).text());
                         changed.put(snapshot.path(), snapshot);
@@ -263,10 +278,9 @@ public final class NativeAgentTools {
                         contextIndex.note(
                                 workspace.root().relativize(snapshot.path()).toString(),
                                 AgentContextRanker.Signal.RECENTLY_EDITED);
-                        output.add(snapshotInfo(snapshot));
                     }
-                    validated = Map.of();
-                    return new AgentTool.Result(output.toString(), false, true);
+                    if (stateChanged) validated = Map.of();
+                    return new AgentTool.Result(output.toString(), false, textChanged);
                 });
         add(
                 result,
@@ -368,8 +382,8 @@ public final class NativeAgentTools {
         add(
                 result,
                 "validation_profiles",
-                "Discover Maven/Gradle build operations for a module directory, offline execution and isolation availability. Repository build scripts are executable code and always require approval.",
-                "{\"module\":{\"type\":\"string\"}}",
+                "Discover Maven/Gradle build operations for a module directory (omit module or use . for workspace root), offline execution and isolation availability. Repository build scripts are executable code and always require approval.",
+                "{\"module\":{\"type\":\"string\",\"description\":\"Build directory, not descriptor file. Omit or use . for workspace root; do not pass an empty string.\",\"default\":\".\",\"examples\":[\".\"]}}",
                 List.of(),
                 AgentTool.Effect.READ,
                 (a, c) -> {
@@ -887,6 +901,13 @@ public final class NativeAgentTools {
         if (query.isBlank()) {
             return AgentTool.Result.failure("A nonempty query is required");
         }
+        boolean regex = args.path("mode").asText("LITERAL").equals("REGEX");
+        if (regex) {
+            String error = com.editora.editor.SearchMatcher.regexError(query);
+            if (error != null)
+                return AgentTool.Result.failure(
+                        "Invalid REGEX: " + error + ". Correct the pattern or choose mode=LITERAL for exact text.");
+        }
         Path scope = workspace.resolve(args.path("path").asText("."));
         Map<Path, String> open = new LinkedHashMap<>();
         for (var state : documents.states(cancellation)) {
@@ -899,7 +920,7 @@ public final class NativeAgentTools {
         var paths = discovery.paths();
         boolean[] truncated = {discovery.truncated()};
         var out = json.createArrayNode();
-        var search = new SearchQuery(query, args.path("case_sensitive").asBoolean(), false, false);
+        var search = new SearchQuery(query, args.path("case_sensitive").asBoolean(), regex, false);
         open.keySet().stream().filter(path -> path.startsWith(scope)).forEach(paths::add);
         int resultChars = 0;
         searchFiles:
@@ -932,7 +953,16 @@ public final class NativeAgentTools {
                     continue;
                 }
             }
-            for (var match : MultiFileSearch.matchesInText(text, search, 100 - out.size())) {
+            java.util.List<com.editora.search.LineMatch> matches;
+            try {
+                matches = MultiFileSearch.matchesInTextChecked(text, search, 100 - out.size());
+            } catch (com.editora.editor.SearchMatcher.MatchBudgetExceededException exhausted) {
+                cancellation.check();
+                truncated[0] = true;
+                break;
+            }
+            cancellation.check();
+            for (var match : matches) {
                 contextIndex.note(workspace.root().relativize(path).toString(), AgentContextRanker.Signal.LEXICAL);
                 var item = json.createObjectNode()
                         .put("path", workspace.root().relativize(path).toString())
@@ -949,12 +979,14 @@ public final class NativeAgentTools {
         }
         ObjectNode result = json.createObjectNode();
         result.set("matches", out);
+        result.put("mode", regex ? "REGEX" : "LITERAL");
         result.put("truncated", truncated[0]);
-        if (out.isEmpty()
+        if (!regex
+                && out.isEmpty()
                 && (query.contains(".*") || query.contains("\\b") || query.contains("(?") || query.contains("|")))
             result.put(
                     "hint",
-                    "search_text treats the query literally. Search one identifier or phrase without regex syntax, or use semantic_query for symbols/references.");
+                    "Mode LITERAL treats patterns literally. Set mode=REGEX for this pattern, or use find_files for filenames / semantic_query for symbols.");
         acceptance.search(query, scope, result);
         return AgentTool.Result.ok(result.toString());
     }

@@ -664,7 +664,9 @@ Editora is built with the help of AI coding tools.
   missing evidence and lets you prepare a correction or new requirement. After edits, the agent gets
   a focused evidence refresh plan. Projects can suggest validation through bounded acceptance recipes;
   automatic interpretation remains heuristic. See [task acceptance](docs/subsystems/agent-acceptance.md)
-  and [acceptance recipes](docs/subsystems/agent-acceptance-recipes.md).
+  and [acceptance recipes](docs/subsystems/agent-acceptance-recipes.md). Native execution guidance retains
+  inspected ranges across compaction, detects stalled tool loops and exposes completion readiness;
+  source search has explicit literal/regex modes. See [execution strategy](docs/subsystems/agent-execution.md).
   Local sessions resume with fresh permissions and file checks. Configurable stdio MCP servers share
   the same tool policy. Context/iteration limits are configurable; external commands always require approval. See the
   [IDE-native intelligence guide](docs/subsystems/agent-intelligence.md),

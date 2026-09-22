@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added native execution phases, compact observed working state, escalating no-progress recovery,
+  verified completion readiness and optional turn deadlines. Search tools distinguish literal and regex
+  intent; bounded read context reduces source paging. Unchanged edits no longer count as mutations
+  or reset progress. A frozen Phase 7 corpus and trajectory reports
+  separate runtime progress from model outcomes. See [execution strategy](docs/subsystems/agent-execution.md).
+
 - Added active acceptance guidance: requirement corrections in the panel, task versus evidence debt,
   scoped invalidation reasons, targeted JUnit test identity correlation and bounded project validation
   recipes. The runtime gives the agent concrete refresh steps after meaningful milestones while keeping

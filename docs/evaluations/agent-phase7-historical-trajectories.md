@@ -1,0 +1,62 @@
+# Agent trajectory measurements
+
+Labels use tool activity and native progress events. COMPLETE includes candidate finals, not necessarily accepted completion. Historical reports lack per-round revision/range freshness; REDUNDANT is only assigned where native progress telemetry exists. UNKNOWN/None indicate missing round alignment in early reports. Validation-before-save is an observed ordering signal, not proof that the workspace was dirty. Different budgets, profiles and task mixes are not a controlled model ranking.
+
+| Trial | Task result | Rounds before first edit / after last edit | Literal pattern queries | Validation before observed save | Trajectory |
+|---|---|---:|---:|---:|---|
+| agent-phase3-data.json#baseline-editora-endpoint-bug-43b07504.json | FAIL | — / — (no edit observed) | 0 | 0 | UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN |
+| agent-phase3-data.json#baseline-instrumented-editora-endpoint-bug-43b07504-1789955705949.json | FAIL | — / — (no edit observed) | 0 | 0 | UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN |
+| agent-phase3-data.json#baseline-ledger-refactor-43b07504.json | FAIL | None / None | 0 | 1 | UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → COMPLETE → COMPLETE |
+| agent-phase3-data.json#gemma-agent-ledger-tests-3e51de5f-1789958713941.json | PASS | 8 / 4 | 0 | 0 | DISCOVER → DISCOVER → INSPECT → INSPECT → INSPECT → INSPECT → RECOVER → INSPECT → EDIT → SAVE → VALIDATE → COMPLETE → COMPLETE |
+| agent-phase3-data.json#gemma-ask-ledger-feature-3e51de5f-1789958608335.json | PASS | 5 / 5 | 0 | 0 | DISCOVER → INSPECT → INSPECT → INSPECT → DISCOVER → EDIT → EDIT → DISCOVER → DISCOVER → EDIT → SAVE → UNKNOWN → VALIDATE → COMPLETE → COMPLETE |
+| agent-phase3-data.json#gemma-ask-ledger-tests-3e51de5f-1789958643270.json | PASS | 4 / 5 | 0 | 0 | INSPECT → DISCOVER → INSPECT → INSPECT → EDIT → SAVE → UNKNOWN → VALIDATE → COMPLETE → COMPLETE |
+| agent-phase3-data.json#gemma-hardened-editora-endpoint-bug-3e51de5f-1789957489345.json | FAIL | — / — (no edit observed) | 0 | 0 | INSPECT → DISCOVER → INSPECT → UNKNOWN |
+| agent-phase3-data.json#gemma-hardened-editora-save-understanding-3e51de5f-1789957399989.json | REVIEW_REQUIRED | — / — (no edit observed) | 0 | 0 | INSPECT → INSPECT → DISCOVER → INSPECT → INSPECT → DISCOVER → INSPECT → DISCOVER → COMPLETE |
+| agent-phase3-data.json#gemma-hardened-ledger-feature-3e51de5f-1789957563767.json | PASS | 4 / 5 | 0 | 0 | DISCOVER → INSPECT → INSPECT → INSPECT → EDIT → EDIT → DISCOVER → DISCOVER → DISCOVER → INSPECT → EDIT → SAVE → UNKNOWN → VALIDATE → COMPLETE → COMPLETE |
+| agent-phase3-data.json#gemma-paged-editora-endpoint-bug-3e51de5f-1789956892595.json | FAIL | — / — (no edit observed) | 0 | 0 | INSPECT → DISCOVER → INSPECT → RECOVER |
+| agent-phase3-data.json#gemma-paged-editora-save-understanding-3e51de5f-1789956797677.json | REVIEW_REQUIRED | — / — (no edit observed) | 0 | 0 | INSPECT → INSPECT → COMPLETE |
+| agent-phase3-data.json#gemma-paged-ledger-bug-3e51de5f-1789956978663.json | FAIL | — / — (no edit observed) | 0 | 0 | INSPECT → DISCOVER → INSPECT → DISCOVER → INSPECT → INSPECT → DISCOVER → DISCOVER → INSPECT → UNKNOWN |
+| agent-phase3-data.json#gemma-paged-ledger-docs-3e51de5f-1789957207079.json | REVIEW_REQUIRED | 10 / 5 | 0 | 0 | INSPECT → DISCOVER → INSPECT → DISCOVER → INSPECT → DISCOVER → INSPECT → DISCOVER → INSPECT → INSPECT → EDIT → COMPLETE → SAVE → VALIDATE → COMPLETE → COMPLETE |
+| agent-phase3-data.json#gemma-paged-ledger-feature-3e51de5f-1789957117133.json | FAIL | 5 / 7 | 0 | 0 | DISCOVER → INSPECT → INSPECT → INSPECT → DISCOVER → EDIT → EDIT → INSPECT → EDIT → SAVE → UNKNOWN → VALIDATE → COMPLETE → INSPECT → REFRESH_EVIDENCE → COMPLETE |
+| agent-phase3-data.json#gemma-paged-ledger-refactor-3e51de5f-1789957028692.json | PASS | 10 / 4 | 0 | 0 | INSPECT → DISCOVER → RECOVER → ORIENT → INSPECT → DISCOVER → DISCOVER → DISCOVER → INSPECT → DISCOVER → EDIT → INSPECT → EDIT → INSPECT → DISCOVER → EDIT → SAVE → VALIDATE → COMPLETE → COMPLETE |
+| agent-phase3-data.json#gemma-paged-ledger-tests-3e51de5f-1789957154881.json | PASS | 7 / 5 | 0 | 1 | DISCOVER → DISCOVER → DISCOVER → INSPECT → DISCOVER → INSPECT → INSPECT → EDIT → RECOVER → SAVE → VALIDATE → COMPLETE → COMPLETE |
+| agent-phase3-data.json#qwen-final-editora-endpoint-bug-43b07504-1789957900740.json | PASS | 5 / 8 | 1 | 1 | INSPECT → DISCOVER → INSPECT → UNKNOWN → PLAN → EDIT → PLAN → RECOVER → SAVE → VALIDATE → PLAN → REFRESH_EVIDENCE → COMPLETE → COMPLETE |
+| agent-phase3-data.json#qwen-final-ledger-refactor-43b07504-1789958093177.json | PASS | 11 / 9 | 0 | 1 | INSPECT → RECOVER → DISCOVER → INSPECT → RECOVER → INSPECT → RECOVER → INSPECT → INSPECT → RECOVER → SAVE → EDIT → INSPECT → RECOVER → SAVE → VALIDATE → DISCOVER → REFRESH_EVIDENCE → REFRESH_EVIDENCE → COMPLETE → COMPLETE |
+| agent-phase3-data.json#qwen-semantic-ledger-refactor-43b07504-1789958510451.json | PASS | 8 / 6 | 0 | 0 | INSPECT → DISCOVER → INSPECT → DISCOVER → INSPECT → ORIENT → INSPECT → ORIENT → EDIT → INSPECT → SAVE → VALIDATE → REFRESH_EVIDENCE → COMPLETE → COMPLETE |
+| agent-phase3-data.json#refined-editora-endpoint-bug-43b07504-1789956158930.json | FAIL | None / None | 0 | 0 | UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → COMPLETE → UNKNOWN → UNKNOWN → UNKNOWN → COMPLETE |
+| agent-phase3-data.json#refined-ledger-refactor-43b07504-1789956311247.json | PASS | None / None | 0 | 0 | UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → UNKNOWN → COMPLETE → COMPLETE |
+| phase4-adaptive-gemma-editora-endpoint-bug-3e51de5f-1789964652973.json | PASS | 7 / 5 | 0 | 1 | INSPECT → UNKNOWN → DISCOVER → INSPECT → INSPECT → UNKNOWN → ORIENT → EDIT → RECOVER → SAVE → VALIDATE → COMPLETE → COMPLETE |
+| phase4-adaptive-gemma-editora-endpoint-bug-3e51de5f-1789965734481.json | PASS | 5 / 5 | 0 | 1 | INSPECT → DISCOVER → INSPECT → UNKNOWN → RECOVER → EDIT → RECOVER → SAVE → VALIDATE → COMPLETE → COMPLETE |
+| phase4-adaptive-gemma-editora-stash-overflow-3e51de5f-1789965370737.json | FAIL | 5 / 2 | 0 | 0 | INSPECT → DISCOVER → INSPECT → UNKNOWN → UNKNOWN → EDIT → RECOVER → RECOVER |
+| phase4-adaptive-gemma-editora-stash-overflow-3e51de5f-1789966251049.json | FAIL | 3 / 28 | 0 | 2 | INSPECT → DISCOVER → INSPECT → EDIT → ORIENT → UNKNOWN → RECOVER → RECOVER → UNKNOWN → INSPECT → RECOVER → INSPECT → RECOVER → RECOVER → INSPECT → RECOVER → RECOVER → INSPECT → RECOVER → RECOVER → RECOVER → INSPECT → RECOVER → RECOVER → RECOVER → RECOVER → RECOVER → RECOVER → RECOVER → INSPECT → RECOVER → RECOVER |
+| phase4-adaptive-qwen-billing-contract-migration-43b07504-1789967175807.json | FAIL | — / — (no edit observed) | 0 | 0 | INSPECT → INSPECT |
+| phase4-adaptive-qwen-billing-contract-migration-43b07504-1789967972456.json | FAIL | — / — (no edit observed) | 0 | 0 | INSPECT → INSPECT |
+| phase4-adaptive-qwen-editora-diff-newline-43b07504-1789967107541.json | FAIL | — / — (no edit observed) | 0 | 0 | INSPECT → DISCOVER → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → RECOVER |
+| phase4-adaptive-qwen-editora-diff-newline-43b07504-1789967899815.json | FAIL | — / — (no edit observed) | 0 | 0 | INSPECT → DISCOVER → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → INSPECT → RECOVER |
+| phase4-retention-qwen-billing-contract-migration-43b07504-1789969176424.json | PASS | 5 / 5 | 0 | 0 | INSPECT → INSPECT → RECOVER → INSPECT → INSPECT → EDIT → SAVE → RECOVER → VALIDATE → COMPLETE → COMPLETE |
+| phase4-retention-qwen-billing-contract-migration-43b07504-1789969687599.json | PASS | 3 / 4 | 0 | 0 | INSPECT → INSPECT → INSPECT → EDIT → SAVE → VALIDATE → COMPLETE → COMPLETE |
+| phase4-retention-qwen-editora-diff-newline-43b07504-1789968789612.json | FAIL | 10 / 6 | 0 | 1 | INSPECT → DISCOVER → INSPECT → UNKNOWN → DISCOVER → RECOVER → VALIDATE → INSPECT → INSPECT → DISCOVER → EDIT → RECOVER → SAVE → VALIDATE → INSPECT → COMPLETE → COMPLETE |
+| phase4-retention-qwen-editora-diff-newline-43b07504-1789969469022.json | PASS | 7 / 5 | 0 | 1 | INSPECT → DISCOVER → INSPECT → UNKNOWN → ORIENT → VALIDATE → INSPECT → EDIT → INSPECT → EDIT → RECOVER → SAVE → VALIDATE → COMPLETE → COMPLETE |
+| phase5-contract-qwen-billing-contract-migration-43b07504-1790013916039.json | FAIL | 5 / 4 | 0 | 0 | INSPECT → INSPECT → INSPECT → RECOVER → INSPECT → EDIT → REFRESH_EVIDENCE → INSPECT → EDIT → SAVE → ORIENT → RECOVER → INSPECT → EDIT → SAVE → RECOVER → INSPECT → RECOVER |
+| phase5-contract-qwen-editora-diff-newline-43b07504-1790013192615.json | FAIL | 14 / 3 | 0 | 0 | INSPECT → DISCOVER → INSPECT → UNKNOWN → RECOVER → RECOVER → ORIENT → VALIDATE → INSPECT → INSPECT → VALIDATE → INSPECT → INSPECT → PLAN → EDIT → PLAN → INSPECT → RECOVER |
+| phase5-corrected-qwen-billing-contract-migration-43b07504-1790015751411.json | FAIL | 10 / 6 | 0 | 0 | INSPECT → DISCOVER → INSPECT → INSPECT → INSPECT → INSPECT → DISCOVER → INSPECT → RECOVER → INSPECT → EDIT → SAVE → RECOVER → RECOVER → VALIDATE → VALIDATE → RECOVER |
+| phase5-corrected-qwen-editora-diff-newline-43b07504-1790015026372.json | FAIL | 8 / 11 | 0 | 1 | INSPECT → DISCOVER → INSPECT → UNKNOWN → RECOVER → VALIDATE → INSPECT → INSPECT → EDIT → RECOVER → SAVE → VALIDATE → VALIDATE → INSPECT → INSPECT → ORIENT → INSPECT → INSPECT → REFRESH_EVIDENCE → RECOVER |
+| live-diff-documentation.json | FAIL | — / — (no edit observed) | 0 | 0 | INSPECT → INSPECT → DISCOVER → DISCOVER → DISCOVER → INSPECT → INSPECT → INSPECT → INSPECT → RECOVER |
+| live-ledger-refactor.json | FAIL | 6 / 1 | 0 | 0 | INSPECT → INSPECT → INSPECT → ORIENT → RECOVER → INSPECT → EDIT → RECOVER |
+| live-ledger-tests-completion-signal.json | PASS | 3 / 4 | 0 | 0 | INSPECT → INSPECT → INSPECT → EDIT → SAVE → VALIDATE → COMPLETE → COMPLETE |
+| live-ledger-tests.json | FAIL | 3 / 5 | 0 | 0 | INSPECT → INSPECT → INSPECT → EDIT → SAVE → VALIDATE → REFRESH_EVIDENCE → REFRESH_EVIDENCE → RECOVER |
+| live-save-understanding.json | FAIL | — / — (no edit observed) | 20 | 0 | DISCOVER → DISCOVER → DISCOVER → DISCOVER → DISCOVER → DISCOVER → DISCOVER → DISCOVER → RECOVER |
+
+## Distributions
+
+Range and median include failures. Historical absence of progress events is not zero no-progress.
+
+- google/gemma-4-12b-qat, historical: 13 trials, 6 full-task passes; rounds min/median/max 3/13/20; seconds min/median/max 31.1/62.2/93.2.
+- google/gemma-4-12b-qat, phase4-adaptive-gemma: 4 trials, 2 full-task passes; rounds min/median/max 8/12.0/32; seconds min/median/max 362.1/584.3/715.9.
+- qwen/qwen3-coder-next, historical: 8 trials, 4 full-task passes; rounds min/median/max 14/20.0/24; seconds min/median/max 109.4/156.0/297.8.
+- qwen/qwen3-coder-next, phase4-adaptive-qwen: 4 trials, 0 full-task passes; rounds min/median/max 2/10.0/29; seconds min/median/max 66.6/396.6/722.3.
+- qwen/qwen3-coder-next, phase4-retention-qwen: 4 trials, 3 full-task passes; rounds min/median/max 8/13.0/17; seconds min/median/max 217.0/338.1/650.8.
+- qwen/qwen3-coder-next, phase5-contract-qwen: 2 trials, 0 full-task passes; rounds min/median/max 18/18.0/18; seconds min/median/max 721.2/721.7/722.2.
+- qwen/qwen3-coder-next, phase5-corrected-qwen: 2 trials, 0 full-task passes; rounds min/median/max 17/18.5/20; seconds min/median/max 722.0/722.5/723.0.
+- qwen/qwen3-coder-next, phase6-completion-signal: 1 trials, 1 full-task passes; rounds min/median/max 8/8/8; seconds min/median/max 309.8/309.8/309.8.
+- qwen/qwen3-coder-next, phase6-final: 4 trials, 0 full-task passes; rounds min/median/max 8/9.0/10; seconds min/median/max 360.4/361.8/363.4.

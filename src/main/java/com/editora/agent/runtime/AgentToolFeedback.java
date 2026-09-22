@@ -34,6 +34,11 @@ final class AgentToolFeedback {
             code = "SEMANTICS_NOT_READY";
             next =
                     "Inspect semantic_capabilities for this file and retry only when the required operation is advertised. Read/search can continue while the server initializes.";
+        } else if ((tool.equals("validation_profiles") || tool.equals("run_validation"))
+                && text.contains("workspace path is required")) {
+            code = "INVALID_VALIDATION_MODULE";
+            next =
+                    "Omit module or use module=\".\" for the workspace root. Otherwise name an existing workspace-relative build directory; do not pass an empty string or descriptor filename.";
         } else if (tool.equals("run_validation") && text.contains("test selector")) {
             code = "INVALID_VALIDATION_SCOPE";
             next =

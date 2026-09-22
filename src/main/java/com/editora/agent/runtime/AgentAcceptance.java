@@ -378,6 +378,7 @@ public final class AgentAcceptance {
             }
         }
         if (scope.equals(workspace.root())
+                && result.path("mode").asText("LITERAL").equals("LITERAL")
                 && !result.path("truncated").asBoolean()
                 && result.path("matches").isArray()
                 && result.path("matches").isEmpty())
@@ -719,6 +720,44 @@ public final class AgentAcceptance {
             ((ObjectNode) r).put("text", AgentContext.bounded(r.path("text").asText(), 250));
         out.set("evidenceDebt", debtJson());
         out.set("projectRecipes", recipes.projectView(new ObjectMapper()));
+        return out;
+    }
+
+    /** Compact authoritative facts for execution guidance; no source bodies or model claims. */
+    public ObjectNode executionFacts() {
+        var out = new ObjectMapper().createObjectNode();
+        var active = contract.requirements().stream()
+                .filter(r -> r.state() != State.SUPERSEDED)
+                .toList();
+        out.put("requirements_satisfied", !active.isEmpty() && contract.complete() && evidenceDebt.isEmpty());
+        out.put("mutation_requested", active.stream().anyMatch(r -> switch (r.check()) {
+            case CHANGE, TEST_ADDED_EXECUTED, TEST_CHANGED_EXECUTED, DOCUMENTATION_CHANGED, OBSERVED_CALLERS_CHANGED ->
+                true;
+            default -> false;
+        }));
+        var pending = out.putArray("pending_requirements");
+        active.stream()
+                .filter(r -> r.state() != State.SATISFIED)
+                .limit(8)
+                .forEach(r -> pending.addObject()
+                        .put("id", r.id())
+                        .put("check", r.check().name())
+                        .put("state", r.state().name()));
+        var files = out.putArray("changed_files");
+        ledger.current(Kind.FILE_CHANGED).stream()
+                .limit(16)
+                .forEach(e -> files.addObject()
+                        .put("path", e.subject())
+                        .put("saved", Boolean.parseBoolean(e.facts().getOrDefault("saved", "false"))));
+        var validation = out.putArray("validation");
+        ledger.current(Kind.VALIDATION_RESULT).stream().limit(2).forEach(e -> validation.add(e.toJson()));
+        var debt = out.putArray("evidence_debt");
+        evidenceDebt.stream()
+                .limit(4)
+                .forEach(d -> debt.addObject()
+                        .put("requirement", d.requirement())
+                        .put("progress", d.progress().name())
+                        .put("need", d.missing()));
         return out;
     }
 

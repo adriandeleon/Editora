@@ -1,0 +1,30 @@
+{
+  "verification": {
+    "tests": 5080,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 34,
+    "suites": 772
+  },
+  "pythonReportTests": 9,
+  "jdtPassedOperations": 12,
+  "jdtElapsedMs": 11674,
+  "enabledIntegrationTests": 7,
+  "productionEditorValidationRepeatedAfterNoOpFix": true,
+  "sourceManifestMethod": "SHA-256 of compact sorted JSON mapping src/main and src/test relative file paths to SHA-256 content hashes",
+  "finalSourceFingerprint": "e1c862cdf916d3eefe1c6a1de78f64aaf270f473256b88b74cc6b1b5c9fea336",
+  "sourceUnchangedDuringFinalTrial": true,
+  "corpusFingerprint": "a873133ca6262c260b90769c195ee581ca3f7584af5ee766e6e20c10e890f383",
+  "commands": [
+    "mvn -q spotless:apply clean verify",
+    "python3 -m unittest discover -s scripts/probes -p test_agent*report.py",
+    "git diff --check"
+  ],
+  "cohortSizes": {
+    "prefix-baseline": 2,
+    "tail-baseline": 2,
+    "corpus": 8,
+    "hardening": 4,
+    "noop-correction": 1
+  }
+}

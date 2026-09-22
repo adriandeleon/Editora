@@ -67,6 +67,9 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 - [subsystems/java-editing-review.md](subsystems/java-editing-review.md) — Java typing/completion
   pipeline, IntelliJ comparison, regression coverage, performance evidence and remaining server gaps.
 
+- [Agent execution strategy](subsystems/agent-execution.md) — phases, progress recovery and completion readiness.
+- [Phase 7 evaluation](evaluations/agent-phase7.md) — frozen corpus, all live trials and remaining reliability limits.
+
 ## Decisions
 
 - [decisions/](decisions/README.md) — architecture decision records: the *why* behind the

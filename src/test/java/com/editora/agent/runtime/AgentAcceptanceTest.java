@@ -296,7 +296,7 @@ class AgentAcceptanceTest {
             assertEquals(
                     "Fix the bug and add a regression test.",
                     a.contract().messages().getFirst().text());
-            assertTrue(requests.getLast().system().contains("TEST_ADDED_EXECUTED"));
+            assertTrue(requests.getLast().messages().getLast().text().contains("TEST_ADDED_EXECUTED"));
         }
     }
 
@@ -728,12 +728,11 @@ class AgentAcceptanceTest {
             assertEquals(AgentRuntime.State.COMPLETED, result.state(), result.detail());
             assertEquals(4, rounds.get());
             assertTrue(
-                    seen.get(1).system().contains("Remaining acceptance evidence"),
+                    seen.get(1).messages().getLast().text().contains("Remaining acceptance evidence"),
                     "The model sees the omitted test immediately after the implementation edit");
             assertTrue(seen.get(2).messages().stream().anyMatch(m -> m.text().contains("Acceptance recovery")));
             assertTrue(seen.get(2).messages().stream().anyMatch(m -> m.text().contains("TASK_INCOMPLETE")));
-            assertTrue(seen.get(3).messages().stream()
-                    .anyMatch(m -> m.text().contains("all recognized requirements now have current evidence")));
+            assertTrue(seen.get(3).messages().getLast().text().contains("COMPLETION_READY"));
             assertTrue(rendered.toString().contains("realRegression"));
             assertFalse(rendered.toString().contains("inventedTest"));
             assertFalse(rendered.toString().contains("37 tests"));
@@ -817,7 +816,8 @@ class AgentAcceptanceTest {
         var context = new AgentContext();
         for (int i = 0; i < 80; i++)
             context.add(List.of(AgentModel.Message.text("observation", "untrusted " + "x".repeat(2000))));
-        assertTrue(context.request("system", List.of(), 4096).system().contains("exchanges were removed"));
+        assertTrue(context.request("system", List.of(), 4096).messages().stream()
+                .anyMatch(m -> m.text().contains("exchanges were removed")));
         assertTrue(a.reminder().contains("TEST_ADDED_EXECUTED"));
         assertTrue(a.save().toString().contains("customer-private-request"));
         assertFalse(a.metrics().toString().contains("customer-private-request"));

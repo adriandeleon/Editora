@@ -26,7 +26,7 @@ class AgentReliabilityStressTest {
         var tools = new AgentTools();
         tools.register(new AgentTool(
                 new AgentTool.Spec(
-                        "observe",
+                        "read_file",
                         "read current revision",
                         json.readTree("{\"type\":\"object\"}"),
                         null,
@@ -34,8 +34,16 @@ class AgentReliabilityStressTest {
                         Duration.ofSeconds(1),
                         true,
                         "test"),
-                (a, c) -> AgentTool.Result.ok("revision=" + revision.get() + " observation=" + reads.incrementAndGet()
-                        + " evidence ".repeat(100))));
+                (a, c) -> {
+                    reads.incrementAndGet();
+                    return AgentTool.Result.ok(json.createObjectNode()
+                            .put("path", "Source.java")
+                            .put("revision", Integer.toString(revision.get()))
+                            .put("line", a.path("line").asInt())
+                            .put("endLine", a.path("line").asInt())
+                            .put("text", " evidence ".repeat(100))
+                            .toString());
+                }));
         tools.register(new AgentTool(
                 new AgentTool.Spec(
                         "edit",
@@ -140,12 +148,12 @@ class AgentReliabilityStressTest {
                 assertTrue(pending.isEmpty());
                 int i = n++;
                 String tool = i < 120
-                        ? "observe"
+                        ? "read_file"
                         : i == 120 || (id.equals("one") ? i == 122 : i == 121) ? "edit" : i == 123 ? "validate" : null;
                 if (tool == null) return new Response("done", List.of(), "stop", 0, 0);
                 String args = tool.equals("edit")
                         ? "{\"revision\":" + (i == 120 ? staleRevision : revision.get()) + "}"
-                        : "{}";
+                        : tool.equals("read_file") ? "{\"line\":" + (i + 1) + "}" : "{}";
                 return new Response("", List.of(new Call(id + "-" + i, tool, args)), "tool_calls", 0, 0);
             }
         };

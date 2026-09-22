@@ -26,7 +26,7 @@ public final class AgentWorkspace {
 
     public Path resolve(String raw) throws IOException {
         if (raw == null || raw.isBlank()) {
-            throw new IOException("A workspace path is required");
+            throw new IOException("A workspace path is required; use . when selecting the workspace root directory");
         }
         Path candidate = root.resolve(raw).toAbsolutePath().normalize();
         if (!candidate.startsWith(root)) {

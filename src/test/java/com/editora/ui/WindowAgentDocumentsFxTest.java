@@ -264,4 +264,46 @@ class WindowAgentDocumentsFxTest {
             assertEquals("", FxTestSupport.callOnFx(host.find(path)::getContent));
         }
     }
+
+    @Test
+    void nativeNoOpEditsCannotResetProgressOrBypassRevisionChecks() throws Exception {
+        try (Host host = new Host()) {
+            var buffer = host.add("same.txt", "unchanged");
+            var initial = host.documents.read(buffer.getPath(), token());
+            var natives =
+                    new com.editora.agent.runtime.NativeAgentTools(new AgentWorkspace(dir), host.documents, p -> {});
+            var tool = natives.registry().get("apply_edits");
+            var json = new com.fasterxml.jackson.databind.ObjectMapper();
+            var args = json.createObjectNode();
+            args.putArray("edits")
+                    .addObject()
+                    .put("path", "same.txt")
+                    .put("revision", initial.revision())
+                    .put("old_text", "")
+                    .put("new_text", "unchanged");
+            var progress = new com.editora.agent.runtime.AgentExecution();
+            progress.beginTurn();
+            for (int i = 0; i < 9; i++) {
+                progress.beginRound();
+                var result = tool.handler().execute(args, token());
+                assertFalse(result.error());
+                assertFalse(result.changed());
+                assertFalse(json.readTree(result.text()).get(0).path("changed").asBoolean(true));
+                progress.observe("apply_edits", args, result);
+                assertFalse(progress.endRound(false).path("new_state_observed").asBoolean());
+            }
+            assertTrue(progress.exhausted());
+            assertEquals(
+                    initial.revision(),
+                    host.documents.read(buffer.getPath(), token()).revision());
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+            assertTrue(natives.acceptance()
+                    .ledger()
+                    .current(com.editora.agent.runtime.AgentEvidence.Kind.FILE_CHANGED)
+                    .isEmpty());
+            FxTestSupport.runOnFx(() -> buffer.replaceWholeDocument("user edit"));
+            assertThrows(IllegalStateException.class, () -> tool.handler().execute(args, token()));
+            assertEquals("user edit", FxTestSupport.callOnFx(buffer::getContent));
+        }
+    }
 }

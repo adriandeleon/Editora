@@ -18,6 +18,7 @@ public final class AgentEvaluation {
     private final long started = System.nanoTime();
     private final List<ObjectNode> calls = new ArrayList<>();
     private final List<ObjectNode> rounds = new ArrayList<>();
+    private final List<ObjectNode> trajectory = new ArrayList<>();
     private final List<ObjectNode> checks = new ArrayList<>();
     private final List<ObjectNode> observations = new ArrayList<>();
     private final Set<String> readFiles = new TreeSet<>();
@@ -59,8 +60,19 @@ public final class AgentEvaluation {
                 var round = json.createObjectNode()
                         .put("iteration", rounds.size() + 1)
                         .put("messageCount", request.messages().size())
-                        .put("historyCompacted", request.system().contains("\nRuntime:"))
-                        .put("acceptanceDebtShown", request.system().contains("Remaining acceptance evidence"))
+                        .put(
+                                "historyCompacted",
+                                request.messages().stream()
+                                        .anyMatch(m -> m.role().equals("observation")
+                                                && m.text().startsWith("Runtime:")))
+                        .put(
+                                "acceptanceDebtShown",
+                                request.system().contains("Remaining acceptance evidence")
+                                        || !request.messages().isEmpty()
+                                                && request.messages()
+                                                        .getLast()
+                                                        .text()
+                                                        .contains("Remaining acceptance evidence"))
                         .put("outputBudget", request.outputTokens())
                         .put(
                                 "requestBytes",
@@ -117,6 +129,24 @@ public final class AgentEvaluation {
 
     /** Includes rejected schema/unknown-tool calls, which never enter a handler. No payload is retained. */
     public void event(AgentRuntime.Event event) {
+        if (event.state() == AgentRuntime.State.REASONING && event.tool().equals("execution_control")) {
+            try {
+                var state = json.readTree(event.detail());
+                var sample = json.createObjectNode().put("iteration", rounds.size());
+                for (String key : List.of(
+                        "execution_phase",
+                        "completion_ready",
+                        "no_progress_rounds",
+                        "recovery_level",
+                        "progress_state",
+                        "new_state_observed",
+                        "known_file_count",
+                        "round_activity")) if (state.has(key)) sample.set(key, state.get(key));
+                trajectory.add(sample);
+            } catch (Exception ignored) {
+                /* No payload fallback in reports. */
+            }
+        }
         if (event.state() == AgentRuntime.State.REASONING && event.detail().startsWith("Output limit"))
             outputRecoveries++;
         if (event.state() != AgentRuntime.State.TOOL || event.detail().isEmpty()) return;
@@ -159,7 +189,8 @@ public final class AgentEvaluation {
                 if (path != null) entry.put("path", path);
                 if (spec.name().equals("search_text")) {
                     String query = a.path("query").asText();
-                    entry.put("queryChars", query.length())
+                    entry.put("searchMode", a.path("mode").asText("LITERAL"))
+                            .put("queryChars", query.length())
                             .put(
                                     "containsPatternSyntax",
                                     query.contains("|")
@@ -188,7 +219,12 @@ public final class AgentEvaluation {
                         .contains(operation)) entry.put("operation", operation);
                 String signature = spec.name()
                         + AgentSessionStore.hash(a.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                if (!signatures.add(signature)) repeated++;
+                boolean repeatedCall = !signatures.add(signature);
+                if (repeatedCall) repeated++;
+                entry.put("repeatedArguments", repeatedCall);
+                if (spec.name().equals("read_file"))
+                    entry.put("line", a.path("line").asInt(1))
+                            .put("limit", a.path("limit").asInt(100));
                 try {
                     var result = tool.handler().execute(a, c);
                     entry.put("error", result.error())
@@ -346,6 +382,7 @@ public final class AgentEvaluation {
         out.set("unexpectedFiles", json.valueToTree(unrelated));
         out.set("filesRead", json.valueToTree(readFiles));
         out.set("modelRounds", json.valueToTree(rounds));
+        out.set("executionTrajectory", json.valueToTree(trajectory));
         out.set("toolCalls", json.valueToTree(calls));
         out.set("verification", json.valueToTree(checks));
         out.set("observations", json.valueToTree(observations));

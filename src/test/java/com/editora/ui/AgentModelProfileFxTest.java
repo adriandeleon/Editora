@@ -48,6 +48,7 @@ class AgentModelProfileFxTest {
                     .filter(t -> t.spec().name().equals("git_status"))
                     .forEach(registry::register);
             var rounds = new AtomicInteger();
+            var finalOutputBudget = new AtomicInteger();
             var profile = AgentModelDiscovery.resolve(
                     "fixture",
                     "model",
@@ -99,7 +100,13 @@ class AgentModelProfileFxTest {
                                     .filter(m -> "tool".equals(m.role())
                                             && m.callId().endsWith(".java"))
                                     .count());
-                    assertTrue(r.outputTokens() >= 1024 && r.outputTokens() < 4096);
+                    finalOutputBudget.set(r.outputTokens());
+                    var delivered = new AgentContext();
+                    delivered.add(r.messages());
+                    assertTrue(
+                            delivered.estimatedTokens(r.system(), r.tools(), tokenCounter()) + r.outputTokens()
+                                    <= 16384,
+                            "Complete request plus response must fit context");
                     return new Response("inspected", List.of(), "stop", 0, 0);
                 }
             };
@@ -122,6 +129,11 @@ class AgentModelProfileFxTest {
                 assertEquals(AgentRuntime.State.COMPLETED, outcome.state(), outcome.detail());
             }
             assertEquals(3, rounds.get());
+            // Runtime guidance and framing also consume context. Preserve every read and a usable reply
+            // instead of requiring a fixed 1024-token output reservation regardless of actual overhead.
+            assertTrue(
+                    finalOutputBudget.get() >= 256 && finalOutputBudget.get() < 4096,
+                    "Automatic output budget: " + finalOutputBudget.get());
         }
     }
 }

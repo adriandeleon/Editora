@@ -459,6 +459,19 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         planBox.setVisible(show);
     }
 
+    /** A compact execution hint; acceptance remains the separate evidence checklist. */
+    public void setExecutionPhase(String phase) {
+        if (busy
+                && java.util.Set.of(
+                                "ORIENTATION",
+                                "INVESTIGATION",
+                                "IMPLEMENTATION",
+                                "VALIDATION",
+                                "ACCEPTANCE",
+                                "COMPLETION")
+                        .contains(phase)) status.setText(tr("agent.execution." + phase));
+    }
+
     /** Runtime-owned acceptance view; model plan completion does not change these statuses. */
     public void setAcceptance(String data) {
         try {

@@ -91,7 +91,7 @@ class AgentRuntimeTest {
     @Test
     void unchangedReadLoopGetsRecoveryObservationThenStopsAndCanResume() throws Exception {
         var script = new ArrayList<AgentModel.Response>();
-        for (int i = 0; i < 6; i++) script.add(calls(call("r" + i, "read", "{}")));
+        for (int i = 0; i < 10; i++) script.add(calls(call("r" + i, "read", "{}")));
         script.add(done("continue with a new query"));
         var model = new FakeModel(script.toArray(AgentModel.Response[]::new));
         var tools = new AgentTools()
@@ -101,8 +101,8 @@ class AgentRuntimeTest {
             assertEquals(
                     AgentRuntime.State.NEEDS_INPUT,
                     runtime.submit("explore").get(3, TimeUnit.SECONDS).state());
-            assertTrue(model.requests.get(3).messages().stream()
-                    .anyMatch(m -> m.text().contains("three identical")));
+            assertTrue(model.requests.get(3).messages().getLast().text().contains("NO_PROGRESS"));
+            assertTrue(model.requests.get(6).messages().getLast().text().contains("Change tool family"));
             assertEquals(
                     AgentRuntime.State.COMPLETED,
                     runtime.submit("new direction").get(3, TimeUnit.SECONDS).state());
@@ -112,14 +112,15 @@ class AgentRuntimeTest {
     @Test
     void sameReadWithChangingEvidenceDoesNotTriggerProgressGuard() throws Exception {
         var responses = new ArrayList<AgentModel.Response>();
-        for (int i = 0; i < 7; i++) responses.add(calls(call("r" + i, "read", "{}")));
+        for (int i = 0; i < 7; i++) responses.add(calls(call("r" + i, "read_file", "{}")));
         responses.add(done("complete"));
         var n = new AtomicInteger();
         var tools = new AgentTools()
                 .register(tool(
-                        "read",
+                        "read_file",
                         AgentTool.Effect.READ,
-                        (a, c) -> AgentTool.Result.ok("revision " + n.incrementAndGet())));
+                        (a, c) -> AgentTool.Result.ok("{\"path\":\"A.java\",\"revision\":\"" + n.incrementAndGet()
+                                + "\",\"text\":\"new\",\"line\":1,\"endLine\":1}")));
         try (var runtime = runtime(
                 new FakeModel(responses.toArray(AgentModel.Response[]::new)),
                 tools,
@@ -134,9 +135,9 @@ class AgentRuntimeTest {
     @Test
     void repeatedEmptySearchesReceiveGuidanceAndStopAtBound() throws Exception {
         var rounds = new ArrayList<AgentModel.Response>();
-        for (int round = 0; round < 4; round++) {
-            var requested = new AgentModel.Call[4];
-            for (int i = 0; i < 4; i++)
+        for (int round = 0; round < 9; round++) {
+            var requested = new AgentModel.Call[2];
+            for (int i = 0; i < 2; i++)
                 requested[i] =
                         call("s" + round + "-" + i, "search_text", "{\"query\":\"missing" + round + "x" + i + "\"}");
             rounds.add(calls(requested));
@@ -157,9 +158,44 @@ class AgentRuntimeTest {
         try (var runtime = runtime(model, tools, (s, a, c) -> fail("read"), c -> fail("No writes"))) {
             var outcome = runtime.submit("Find the implementation").get(3, TimeUnit.SECONDS);
             assertEquals(AgentRuntime.State.NEEDS_INPUT, outcome.state());
-            assertTrue(outcome.detail().contains("Sixteen consecutive empty"));
-            assertTrue(model.requests.get(1).messages().stream()
-                    .anyMatch(m -> m.text().contains("repeated literal searches")));
+            assertTrue(outcome.detail().contains("No meaningful progress"));
+            assertTrue(model.requests.get(2).messages().getLast().text().contains("NO_PROGRESS"));
+        }
+    }
+
+    @Test
+    void turnDeadlineInterruptsModelAndReturnsResumableLimit() throws Exception {
+        var stopped = new CountDownLatch(1);
+        AgentModel model = new AgentModel() {
+            public Capabilities capabilities() {
+                return new Capabilities(true, true, 16384, 512);
+            }
+
+            public Response respond(Request r, AgentCancellation c, Consumer<String> text) throws Exception {
+                try {
+                    while (true) {
+                        c.check();
+                        Thread.sleep(5);
+                    }
+                } finally {
+                    stopped.countDown();
+                }
+            }
+        };
+        try (var runtime = new AgentRuntime(
+                model,
+                new AgentTools(),
+                new AgentPolicy(),
+                (s, a, c) -> false,
+                c -> fail("no edits"),
+                "system",
+                new AgentRuntime.Limits(10, 30, 16384, 8000, Duration.ofSeconds(2), Duration.ofMillis(150)),
+                e -> {},
+                t -> {})) {
+            assertEquals(
+                    AgentRuntime.State.LIMIT,
+                    runtime.submit("inspect").get(3, TimeUnit.SECONDS).state());
+            assertTrue(stopped.await(1, TimeUnit.SECONDS));
         }
     }
 
@@ -198,6 +234,36 @@ class AgentRuntimeTest {
                     runtime.submit("continue with reads")
                             .get(3, TimeUnit.SECONDS)
                             .state());
+        }
+    }
+
+    @Test
+    void strategyChangeAfterNoProgressCanResumeUsefulWork() throws Exception {
+        var script = new ArrayList<AgentModel.Response>();
+        for (int i = 0; i < 6; i++) script.add(calls(call("empty" + i, "search_text", "{}")));
+        script.add(
+                calls(
+                        call(
+                                "replan",
+                                "execution_control",
+                                "{\"action\":\"replan\",\"reason\":\"No search matches; inspect the known file\",\"next_tool\":\"read_file\"}")));
+        script.add(calls(call("read", "read_file", "{}")));
+        script.add(done("Observed the implementation"));
+        var model = new FakeModel(script.toArray(AgentModel.Response[]::new));
+        var tools = new AgentTools()
+                .register(tool("search_text", AgentTool.Effect.READ, (a, c) -> AgentTool.Result.ok("{\"matches\":[]}")))
+                .register(
+                        tool(
+                                "read_file",
+                                AgentTool.Effect.READ,
+                                (a, c) -> AgentTool.Result.ok(
+                                        "{\"path\":\"A.java\",\"revision\":\"1\",\"line\":1,\"endLine\":1,\"text\":\"source\"}")));
+        try (var runtime = runtime(model, tools, (s, a, c) -> fail("read"), c -> fail("no edits"))) {
+            assertEquals(
+                    AgentRuntime.State.COMPLETED,
+                    runtime.submit("inspect").get(3, TimeUnit.SECONDS).state());
+            assertTrue(model.requests.get(6).messages().getLast().text().contains("NO_PROGRESS"));
+            assertTrue(model.requests.get(8).messages().getLast().text().contains("INSPECTED"));
         }
     }
 
@@ -241,7 +307,7 @@ class AgentRuntimeTest {
             assertEquals(3, executed.get());
             var messages = model.requests.get(1).messages();
             assertEquals(
-                    List.of("user", "assistant", "tool", "tool"),
+                    List.of("user", "assistant", "tool", "tool", "observation"),
                     messages.stream().map(AgentModel.Message::role).toList());
             assertEquals("a", messages.get(2).callId());
             assertEquals("b", messages.get(3).callId());
@@ -351,7 +417,8 @@ class AgentRuntimeTest {
             assertEquals(
                     AgentRuntime.State.COMPLETED, runtime.submit("goal").get().state());
             assertEquals(0, writes.get());
-            assertTrue(model.requests.get(1).messages().getLast().error());
+            assertTrue(model.requests.get(1).messages().stream()
+                    .anyMatch(m -> m.role().equals("tool") && m.error()));
         }
     }
 
@@ -378,7 +445,8 @@ class AgentRuntimeTest {
             assertEquals(AgentRuntime.State.COMPLETED, outcome.state());
             assertEquals("verified", outcome.detail());
             assertEquals(3, checks.get());
-            assertTrue(model.requests.get(2).messages().getLast().text().contains("test result"));
+            assertTrue(model.requests.get(2).messages().stream()
+                    .anyMatch(m -> m.text().contains("test result")));
         }
     }
 
@@ -468,12 +536,13 @@ class AgentRuntimeTest {
     @Test
     void iterationExhaustionLeavesEveryExecutedCallPaired() throws Exception {
         AgentModel.Response[] responses = java.util.stream.IntStream.range(0, 10)
-                .mapToObj(i -> calls(call("call-" + i, "read", "{}")))
+                .mapToObj(i -> calls(call("call-" + i, "read_file", "{}")))
                 .toArray(AgentModel.Response[]::new);
         var model = new FakeModel(responses);
         AtomicInteger executed = new AtomicInteger();
-        var tools = new AgentTools().register(tool("read", AgentTool.Effect.READ, (a, c) -> {
-            return AgentTool.Result.ok("revision " + executed.incrementAndGet());
+        var tools = new AgentTools().register(tool("read_file", AgentTool.Effect.READ, (a, c) -> {
+            return AgentTool.Result.ok("{\"path\":\"A.java\",\"revision\":\"" + executed.incrementAndGet()
+                    + "\",\"text\":\"source\",\"line\":1,\"endLine\":1}");
         }));
         try (var runtime = runtime(model, tools, (s, a, c) -> true, c -> fail("no edits"))) {
             assertEquals(AgentRuntime.State.LIMIT, runtime.submit("goal").get().state());
@@ -549,7 +618,11 @@ class AgentRuntimeTest {
                 .register(tool("read", AgentTool.Effect.READ, (a, c) -> AgentTool.Result.ok("x".repeat(100_000))));
         try (var runtime = runtime(model, tools, (s, a, c) -> true, c -> fail("no edits"))) {
             runtime.submit("goal").get();
-            String observation = model.requests.get(1).messages().getLast().text();
+            String observation = model.requests.get(1).messages().stream()
+                    .filter(m -> m.role().equals("tool"))
+                    .findFirst()
+                    .orElseThrow()
+                    .text();
             assertEquals(512, observation.length());
             assertTrue(observation.contains("truncated"));
         }
