@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.util.Collection;
 import java.util.List;
 
 import javafx.scene.control.Tab;
@@ -138,6 +139,18 @@ class BuildOutputPanelFxTest {
         assertEquals("Maven", selected);
     }
 
+    @Test
+    void explicitlySelectingATranscriptTabShowsTheGitTabAfterACommand() throws Exception {
+        String selected = FxTestSupport.callOnFx(() -> {
+            BuildOutputPanel p = new BuildOutputPanel();
+            p.logCommand(GIT, "Git", entry("git", "pull"));
+            p.started(MAVEN, "Maven", "mvn test", OutputStyle.passthrough(), () -> {});
+            p.selectTab(GIT);
+            return p.getSelectionModel().getSelectedItem().getText();
+        });
+        assertEquals("Git", selected);
+    }
+
     /** Git, GitHub and a streaming CI log are three different owners — so three tabs that can't clobber each other. */
     @Test
     void gitGithubAndBuildsCoexistInSeparateTabs() throws Exception {
@@ -152,6 +165,29 @@ class BuildOutputPanelFxTest {
             return tabTitles(p);
         });
         assertEquals(List.of("Git", "GitHub", "Maven"), titles);
+    }
+
+    @Test
+    void gitTranscriptColorsStatusAndDiffOutputAndMarksFilePathsAsLinks() throws Exception {
+        boolean[] flags = FxTestSupport.callOnFx(() -> {
+            BuildOutputPanel p = new BuildOutputPanel();
+            p.logCommand(
+                    GIT,
+                    "Git",
+                    new CommandLog.Entry(
+                            List.of("git", "diff"), 0, "\tmodified:   src/App.java\n+added line\n", "", 7));
+            org.fxmisc.richtext.CodeArea out =
+                    FxTestSupport.field((BuildToolPanel) p.getTabs().get(0).getContent(), "output");
+            Collection<String> status = out.getStyleOfChar(out.getText().indexOf("modified:"));
+            Collection<String> file = out.getStyleOfChar(out.getText().indexOf("src/App.java"));
+            Collection<String> added = out.getStyleOfChar(out.getText().indexOf("+added"));
+            return new boolean[] {
+                status.contains("git-output-modified"), file.contains("console-url"), added.contains("diff-inserted")
+            };
+        });
+        assertTrue(flags[0], "Git status entries use their semantic status color");
+        assertTrue(flags[1], "a Git file path is styled as a clickable link");
+        assertTrue(flags[2], "unified diff additions use the diff insertion color");
     }
 
     /** Reads the RichTextFX console text out of a {@link BuildToolPanel} via its private {@code output} field. */

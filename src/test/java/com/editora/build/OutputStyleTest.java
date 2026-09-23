@@ -50,4 +50,17 @@ class OutputStyleTest {
         assertEquals("log-error", console.styleClassFor("level=error request failed"));
         assertNull(console.styleClassFor("ordinary program output"));
     }
+
+    @Test
+    void gitColorsStableStatusAndDiffMarkers() {
+        OutputStyle git = OutputStyle.git();
+        assertEquals("git-output-modified", git.styleClassFor("\tmodified:   src/App.java"));
+        assertEquals("git-output-added", git.styleClassFor(" create mode 100644 src/New.java"));
+        assertEquals("diff-deleted", git.styleClassFor("-removed line"));
+        assertEquals("git-output-deleted", git.styleClassFor("deleted:    src/Old.java"));
+        assertEquals("diff-inserted", git.styleClassFor("+new line"));
+        assertEquals("diff-header", git.styleClassFor("diff --git a/a.txt b/a.txt"));
+        assertEquals("diff-range", git.styleClassFor("@@ -1 +1 @@"));
+        assertNull(git.styleClassFor("Already up to date."));
+    }
 }

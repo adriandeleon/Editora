@@ -6118,6 +6118,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         // The console's stripe is gated on a build tool being detected; a repo with no build file still has
         // git, so the first logged command is what makes the window reachable there.
         refreshBuildOutputAvailability();
+        // Native Git commands are explicit user actions: show their transcript immediately, including after
+        // pull/merge, rather than leaving the result hidden behind the Output stripe. GitHub's background
+        // queries remain quiet so they do not steal focus from a build or editor task.
+        if (owner == gitConsoleOwner && buildOutputToolWindow != null) {
+            buildOutputPanel.selectTab(owner);
+            toolWindows.open(buildOutputToolWindow);
+        }
     }
 
     /**

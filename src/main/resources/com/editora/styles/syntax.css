@@ -67,6 +67,12 @@
 .text.cmd-echo   { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 .text.cmd-footer { -fx-fill: -color-fg-muted; }
 
+/* Git status entries in the Output transcript.  These parallel the file-tree's semantic status hues. */
+.text.git-output-modified { -fx-fill: -color-accent-fg; }
+.text.git-output-added    { -fx-fill: -color-success-fg; }
+.text.git-output-deleted  { -fx-fill: -color-fg-muted; }
+.text.git-output-renamed  { -fx-fill: -state-violet; }
+
 /* CSV/TSV field separators (source.csv grammar): a muted tint so column boundaries stand out. */
 .text.csv-delimiter { -fx-fill: -color-fg-subtle; }
 
