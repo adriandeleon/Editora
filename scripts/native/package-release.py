@@ -14,7 +14,7 @@ SHELL_LAUNCHER = '''#!/usr/bin/env bash
 set -euo pipefail
 bundle="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export EDITORA_CONFIG_DIR="${EDITORA_NATIVE_CONFIG_DIR:-%s}"
-exec "$bundle/editora-native" -XX:MissingRegistrationReportingMode=Exit -Xmx2g -Xms64m "$@"
+exec "$bundle/editora-native" -XX:MissingRegistrationReportingMode=Exit -Xmx2g -Xms64m %s"$@"
 '''
 WINDOWS_LAUNCHER = '''@echo off
 setlocal
@@ -76,10 +76,17 @@ def package(binary, version, target, output):
                       if target == 'linux-x64' else
                       '${HOME}/Library/Application Support/EditoraNativeExperimental')
             launcher = root / 'run-editora-native'
-            launcher.write_text(SHELL_LAUNCHER % config)
+            # GitHub's virtual Apple GPU crashes in the Metal pipeline on arm64.
+            # Ship the same software pipeline that the archive smoke test uses.
+            prism = '-Dprism.order=sw ' if target == 'macos-arm64' else ''
+            launcher.write_text(SHELL_LAUNCHER % (config, prism))
             launcher.chmod(0o755)
-        (root / 'README.txt').write_text(README %
-            (target, 'run-editora-native.cmd' if windows else './run-editora-native'))
+        readme = README % (target, 'run-editora-native.cmd' if windows else './run-editora-native')
+        if target == 'macos-arm64':
+            readme += ('\nThis Apple Silicon launcher uses JavaFX software rendering because the\n'
+                       'hosted runner\'s virtual Metal GPU crashes at startup. Rendering on\n'
+                       'a physical Apple Silicon Mac has not been qualified.\n')
+        (root / 'README.txt').write_text(readme)
         archive = output / (name + ('.zip' if windows else '.tar.gz'))
         if windows:
             with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as bundle:

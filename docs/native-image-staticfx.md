@@ -158,6 +158,9 @@ macOS requires the matching Xcode tools; Windows the GraalVM-supported MSVC tool
 attempts builds and the application workflow on those runners, but device and long-session behavior
 remain untested here. Use `Application.launch`, as these entry points do,
 for StaticFX's macOS first-thread handoff.
+The hosted Apple Silicon runner's virtual Metal GPU throws an `AppleParavirtDevice` exception during
+startup. The experimental macOS arm64 archive therefore launches with `-Dprism.order=sw`; the smoke
+test checks that exact launcher. Hardware rendering on a physical Apple Silicon Mac remains untested.
 
 Normal builds (unchanged):
 

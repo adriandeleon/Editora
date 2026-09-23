@@ -112,6 +112,9 @@ default and `EDITORA_NATIVE_CONFIG_DIR` overrides the location. These are unsign
 not installers.
 The Windows hosted runner uses StaticFX's headless toolkit for the editor workflow because it has
 no interactive desktop; a Windows device trial is still needed to assess rendering and input.
+The Apple Silicon hosted runner's virtual Metal GPU aborts during startup, so the experimental
+macOS arm64 launcher uses JavaFX software rendering. Its behavior and performance on a physical Mac
+still need device testing.
 
 This is an experimental alternative to the regular installers, **not another platform in the
 supported release matrix**. The [measured Linux experiment](native-image-staticfx.md) found slower

@@ -36,6 +36,10 @@ class PackageReleaseTest(unittest.TestCase):
                         launcher = bundle.extractfile(f'{name}/run-editora-native').read().decode()
                     self.assertIn('EDITORA_CONFIG_DIR', launcher)
                     self.assertIn(f'{name}/editora-native', members)
+                    if target == 'macos-arm64':
+                        self.assertIn('-Dprism.order=sw', launcher)
+                    else:
+                        self.assertNotIn('-Dprism.order=sw', launcher)
                 self.assertIn(f'{name}/{library}', members)
 
     def test_linux_rejects_missing_shared_libraries(self):
