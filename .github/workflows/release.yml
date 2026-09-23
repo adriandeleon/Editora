@@ -170,7 +170,7 @@ jobs:
           # Oracle GraalVM 25.0.1 is the last JDK 25 build for Intel macOS.
           - { target: macos-x64,   os: macos-15-intel, graal: '25',     gc: serial, heap: 6g, workers: 4 }
           # Standard Apple Silicon runners have only 7 GiB RAM / 3 vCPUs.
-          - { target: macos-arm64, os: macos-14,       graal: '25.0.4', gc: serial, heap: 4g, workers: 2 }
+          - { target: macos-arm64, os: macos-14,       graal: '25.0.4', gc: serial, heap: 5g, workers: 2 }
           - { target: windows-x64, os: windows-latest, graal: '25.0.4', gc: serial, heap: 6g, workers: 4 }
     steps:
       - name: Check out repository
