@@ -100,7 +100,8 @@ Under `src/native/resources/META-INF/native-image/com.editora/`:
   `javafx.scene.web.WebView` class lookup from FXML's JavaFX feature check. This last entry does not
   add WebView or promise WebView support. JavaFX control resource bundles and exact XML/DNS
   service-resource lookups support the full window. The conditional HTTP-server provider resource
-  lookup supports the existing MCP automation endpoint. FXML also needs its module-resource lookup and the
+  lookup supports the existing MCP automation endpoint. The `java.logging` locale resources keep JavaFX
+  startup warnings visible under strict missing-registration mode on hosted runners. FXML also needs its module-resource lookup and the
   `Orientation`, `Pos`, and `Priority` enum factories used by the actual markup.
 - `fxml/reachability-metadata.json`: only the constructor, 33 injected fields and named no-argument
   handlers from `main.fxml`, plus the imported JavaFX element constructors and bean methods. Regenerate with `python3 scripts/native/fxml-metadata.py`; `--check`

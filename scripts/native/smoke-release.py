@@ -31,7 +31,7 @@ def smoke(archive, target, output):
                        shell=True, check=True, timeout=30)
         # The .cmd launcher is separately checked above. The GUI probe starts
         # the exact bundled executable so process teardown owns the app PID.
-        application = [str(binary)]
+        application = [str(binary), '-XX:MissingRegistrationReportingMode=Exit', '-Xmx2g', '-Xms64m']
     else:
         subprocess.run([str(launcher), '--version'], check=True, timeout=30)
         application = [str(launcher)]

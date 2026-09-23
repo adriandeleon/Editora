@@ -25,6 +25,10 @@
       "glob": "META-INF/services/javax.xml.parsers.DocumentBuilderFactory"
     },
     {
+      "module": "java.logging",
+      "glob": "sun/util/logging/resources/logging*.properties"
+    },
+    {
       "bundle": "com/sun/javafx/scene/control/skin/resources/controls"
     },
     {
