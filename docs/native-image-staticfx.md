@@ -399,7 +399,8 @@ Unqualified features are left in the source/build, rather than removed to make N
 Native is deliberately not a required job. The release workflow runs independent experimental
 jobs for Linux x64, macOS x64/arm64 and Windows x64, each building on its host OS. Every archive
 is extracted and must pass the actual application workflow before upload. Linux runs it under
-`xvfb-run`; other hosts use their runner desktop. The JVM release requirements remain unchanged.
+`xvfb-run`; macOS uses the runner desktop; Windows uses StaticFX's headless toolkit because the
+hosted runner lacks an interactive desktop. The JVM release requirements remain unchanged.
 The earlier Linux benchmark methodology still applies: stage the probe binary/libraries before
 cleaning for the application build and retain logs, summary JSON and image-size inventory.
 An automated smoke pass is not a human hardware-rendering or long-session trial.

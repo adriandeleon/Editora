@@ -31,7 +31,10 @@ def smoke(archive, target, output):
                        shell=True, check=True, timeout=30)
         # The .cmd launcher is separately checked above. The GUI probe starts
         # the exact bundled executable so process teardown owns the app PID.
-        application = [str(binary), '-XX:MissingRegistrationReportingMode=Exit', '-Xmx2g', '-Xms64m']
+        # GitHub's Windows runner has no interactive desktop. StaticFX's
+        # headless toolkit still runs the real FXML/editor workflow in-process.
+        application = [str(binary), '-XX:MissingRegistrationReportingMode=Exit', '-Xmx2g', '-Xms64m',
+                       '-Dglass.platform=Headless', '-Dprism.order=sw']
     else:
         subprocess.run([str(launcher), '--version'], check=True, timeout=30)
         application = [str(launcher)]

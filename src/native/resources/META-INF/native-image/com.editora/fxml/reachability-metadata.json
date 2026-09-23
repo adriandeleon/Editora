@@ -321,6 +321,34 @@
           "parameterTypes": []
         }
       ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.Node",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.Parent",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.layout.Region",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.layout.Pane",
+      "queryAllDeclaredMethods": true
     }
   ]
 }

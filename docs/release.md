@@ -27,7 +27,8 @@ git push origin vX.Y.Z
 ```
 
 The tag triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml). (Manual
-dispatch is available for a dry run.)
+dispatch is available for a dry run; it validates JReleaser against the plain upcoming version
+because immutable GitHub releases reject `-SNAPSHOT` even in dry-run mode.)
 
 **Step 1 is the only manual version edit.** After the release publishes, the workflow's final
 `bump` job reopens `master` at the next patch `-SNAPSHOT` for you — see below.
@@ -108,6 +109,8 @@ Native Image shared libraries, a launcher and a limitations README. Run `./run-e
 on Linux/macOS or `run-editora-native.cmd [file]` on Windows; the launcher uses separate settings by
 default and `EDITORA_NATIVE_CONFIG_DIR` overrides the location. These are unsigned portable archives,
 not installers.
+The Windows hosted runner uses StaticFX's headless toolkit for the editor workflow because it has
+no interactive desktop; a Windows device trial is still needed to assess rendering and input.
 
 This is an experimental alternative to the regular installers, **not another platform in the
 supported release matrix**. The [measured Linux experiment](native-image-staticfx.md) found slower

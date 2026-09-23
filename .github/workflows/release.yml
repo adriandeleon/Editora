@@ -298,6 +298,10 @@ jobs:
             v="$(grep -m1 '<version>' pom.xml | sed -E 's/.*<version>(.+)<\/version>.*/\1/')"
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
+          # JReleaser rejects immutable snapshot releases even for --dry-run.
+          # Manual dispatch validates using the upcoming plain version; the
+          # artifacts retain their actual -SNAPSHOT build identity.
+          echo "release_version=${v%-SNAPSHOT}" >> "$GITHUB_OUTPUT"
 
       - name: JReleaser
         uses: jreleaser/release-action@v2
@@ -305,7 +309,7 @@ jobs:
           # Real tag pushes publish; manual runs only validate (dry run).
           arguments: ${{ github.event_name == 'workflow_dispatch' && 'release --dry-run' || 'full-release' }}
         env:
-          JRELEASER_PROJECT_VERSION: ${{ steps.ver.outputs.version }}
+          JRELEASER_PROJECT_VERSION: ${{ steps.ver.outputs.release_version }}
           JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload JReleaser logs

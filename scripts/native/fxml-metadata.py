@@ -42,6 +42,12 @@ def generate():
         result['reflection'].append({'condition': {'typeReached': 'javafx.fxml.FXMLLoader'},
                                      'type': name, 'allPublicMethods': True,
                                      'methods': [{'name': '<init>', 'parameterTypes': []}]})
+    # BeanAdapter walks declared methods on the layout superclass chain of the
+    # imported panes, even though those superclasses are not FXML elements.
+    for name in ('javafx.scene.Node', 'javafx.scene.Parent', 'javafx.scene.layout.Region',
+                 'javafx.scene.layout.Pane'):
+        result['reflection'].append({'condition': {'typeReached': 'javafx.fxml.FXMLLoader'},
+                                     'type': name, 'queryAllDeclaredMethods': True})
     return result
 
 
