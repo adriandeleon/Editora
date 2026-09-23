@@ -73,6 +73,13 @@
     },
     {
       "condition": {
+        "typeReached": "com.sun.marlin.OffHeapArray"
+      },
+      "type": "java.lang.invoke.VarHandleSegmentAsIntsAligned",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
         "typeReached": "javafx.fxml.FXMLLoader"
       },
       "type": "javafx.geometry.Orientation",

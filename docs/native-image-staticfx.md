@@ -101,10 +101,13 @@ Under `src/native/resources/META-INF/native-image/com.editora/`:
   add WebView or promise WebView support. JavaFX control resource bundles and exact XML/DNS
   service-resource lookups support the full window. The conditional HTTP-server provider resource
   lookup supports the existing MCP automation endpoint. The `java.logging` locale resources keep JavaFX
-  startup warnings visible under strict missing-registration mode on hosted runners. FXML also needs its module-resource lookup and the
+  startup warnings visible under strict missing-registration mode on hosted runners. JavaFX's
+  software Marlin renderer also needs the JDK's aligned-int segment VarHandle method queries;
+  this is conditional on Marlin's off-heap path. FXML also needs its module-resource lookup and the
   `Orientation`, `Pos`, and `Priority` enum factories used by the actual markup.
 - `fxml/reachability-metadata.json`: only the constructor, 33 injected fields and named no-argument
-  handlers from `main.fxml`, plus the imported JavaFX element constructors and bean methods. Regenerate with `python3 scripts/native/fxml-metadata.py`; `--check`
+  handlers from `main.fxml`, plus imported JavaFX element constructors/bean methods and query-only
+  entries for the layout/control superclasses that FXML's `BeanAdapter` inspects. Regenerate with `python3 scripts/native/fxml-metadata.py`; `--check`
   detects drift and changed signatures. No whole-controller/package registration.
 - `config/reachability-metadata.json`: explicitly named persistence DTOs and Jackson's Java7 support
   constructor, record-base introspection, and the XML factory service-resource lookup. These DTOs use bean/field introspection; registering their public methods, constructors
