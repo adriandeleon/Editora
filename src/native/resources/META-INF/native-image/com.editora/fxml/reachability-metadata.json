@@ -349,6 +349,34 @@
       },
       "type": "javafx.scene.layout.Pane",
       "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.Control",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.Labeled",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.ButtonBase",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.ComboBoxBase",
+      "queryAllDeclaredMethods": true
     }
   ]
 }

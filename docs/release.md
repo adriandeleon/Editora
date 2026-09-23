@@ -119,7 +119,10 @@ tokenization and input tails, unqualified peripheral features and an incompatibi
 dynamic Java plugins. macOS and Windows do not yet have comparative editing benchmarks or long-session
 qualification; Linux arm64 is not attempted. An experimental job failure is visible in Actions but
 does not block the JVM release; that target's archive is omitted when compilation, packaging, or
-smoke testing fails. A manual dispatch also dry-runs the jobs. Revisit the performance and feature
+smoke testing fails. A compiled archive that fails the smoke test remains downloadable from the
+workflow as `native-unqualified-<target>` with a `.candidate` suffix; remove that suffix to
+extract it for device testing. It is never attached to the release. A manual dispatch also
+dry-runs the jobs. Revisit the performance and feature
 gate before making any target a default distribution.
 
 CI uses the BellSoft **Liberica** JDK 25 for full arch coverage (incl. linux aarch64).

@@ -266,6 +266,26 @@ jobs:
           path: ${{ runner.temp }}/editora-native-release-smoke/probe
           if-no-files-found: ignore
 
+      # Keep a failed-smoke build downloadable for device testing without
+      # matching JReleaser's release globs. Rename the .candidate suffix after
+      # download to extract it locally.
+      - name: Stage unqualified native candidate
+        if: failure()
+        shell: bash
+        run: |
+          for file in staging/*; do
+            [ -f "$file" ] || continue
+            cp "$file" "$file.candidate"
+          done
+
+      - name: Upload unqualified native candidate
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-unqualified-${{ matrix.target }}
+          path: staging/*.candidate
+          if-no-files-found: ignore
+
       - name: Upload experimental native build
         uses: actions/upload-artifact@v7
         with:
