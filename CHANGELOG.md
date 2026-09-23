@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Tagged releases now attempt an experimental Linux x64 GraalVM Native Image tarball alongside
+  the usual JVM packages. Its own GUI smoke test gates the artifact, while an experimental
+  build failure does not block the ordinary release. The tarball has a separate settings
+  profile and keeps the measured performance and plugin limitations visible.
+
+- Added an isolated experimental StaticFX/GraalVM native build profile, a real EditorBuffer
+  correctness/stress probe, and JVM/AOT/native measurement tooling. This does not replace the JVM
+  distribution; limitations and measured acceptance status are in `docs/native-image-staticfx.md`.
+
 - Added a dedicated LM Studio / Bionic provider for AI actions and an AI Agent preset using
   OpenCode over ACP. The preset shares the local endpoint, model and optional token without
   writing OpenCode config files; local settings stay separate from existing cloud settings.

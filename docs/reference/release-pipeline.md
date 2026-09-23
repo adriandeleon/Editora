@@ -3,6 +3,16 @@
 The exhaustive CI and native-packaging behavior. Start with [`release.md`](../release.md) for the
 release workflow and use this catalog when changing platform-specific implementation details.
 
+The separate Linux x64 `native-experimental` job uses GraalVM 25 to build `-Pnative` with a 6 GiB
+builder heap/four workers. It runs the actual-application smoke probe under Xvfb with its
+disposable project in the runner's temporary directory, outside the repository's `.editorconfig`, before
+`scripts/native/package-release.sh` bundles the executable and adjacent shared libraries as
+`Editora-<version>-linux-x64-native-experimental.tar.gz`. The JReleaser `*.tar.gz` glob picks it
+up with the established Linux portable tarballs. The job is best-effort; the `release` job waits
+for its outcome but runs whenever the ordinary build matrix succeeds. A native failure leaves no
+experimental asset and does not block the ordinary release. See the measured limitations in
+[`native-image-staticfx.md`](../native-image-staticfx.md).
+
 `.github/workflows/release.yml` runs on a `v*` tag (or manual dispatch for a dry run): a 5-way
 matrix (linux x64/arm64, macOS x64/arm64, windows x64 — **Windows arm64 is omitted: a hosted
 runner now exists (`windows-11-arm`, GA Jan 2026), but OpenJFX 25 publishes no `win-aarch64` native
@@ -47,8 +57,9 @@ Finder "Get Info" / `mdls` / System Settings, plus the in-app `--version`/About 
 semver — never the placeholder. A final job
 hands them to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`) which creates the
 GitHub release with all installers + fat jars + `checksums.txt` + a changelog. JReleaser only *orchestrates the release* — it does not
-build (the `dist` profile is reused as-is) and there is **no `pom.xml`/Maven change**, so the normal
-build is unaffected. Installers are currently **unsigned** (signing/notarization is a follow-up).
+build (the existing `dist` profile is reused as-is). The experimental `native` Maven profile is
+opt-in; the normal build is unaffected. Installers are currently **unsigned** (signing/notarization
+is a follow-up).
 **Linux `.deb` PATH command + menu/icon registration:** jpackage installs everything under
 `/opt/editora/` (launcher at `bin/Editora`, the `.desktop` + the 512×512 `Editora.png` at
 `lib/editora-Editora.desktop`/`lib/Editora.png`) and relies on its **own generated `postinst`** to

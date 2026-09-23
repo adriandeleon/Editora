@@ -1,0 +1,529 @@
+{
+  "host": "Linux-6.12.107+deb13-amd64-x86_64-with-glibc2.41",
+  "cpu": "",
+  "runs": 3,
+  "warmups": 0,
+  "config_sha256": "36884b22977debe6f318e6b549a2f93ddbc0f4f367f2149bddce9691943e8265",
+  "checksum_sequences_equal": true,
+  "failures": [
+    {
+      "mode": "jvm",
+      "workload": "editor",
+      "iteration": 0,
+      "exit_code": -9,
+      "timeout": true,
+      "protocol_error": null,
+      "log": "/tmp/editora-staticfx-evidence/editor-desktop-final/jvm-editor-0.log"
+    },
+    {
+      "mode": "probe-aot",
+      "workload": "editor",
+      "iteration": 0,
+      "exit_code": -9,
+      "timeout": true,
+      "protocol_error": null,
+      "log": "/tmp/editora-staticfx-evidence/editor-desktop-final/probe-aot-editor-0.log"
+    }
+  ],
+  "metrics": {
+    "jvm/editor/0/fx-ready/received-ms": {
+      "n": 2,
+      "median": 304.24138850003146,
+      "p95": 315.15822199980903,
+      "p99": 315.15822199980903
+    },
+    "jvm/editor/0/window-open/heap-used-bytes": {
+      "n": 2,
+      "median": 16158416.0,
+      "p95": 16246008.0,
+      "p99": 16246008.0
+    },
+    "jvm/editor/0/window-open/rss-bytes": {
+      "n": 2,
+      "median": 215797760.0,
+      "p95": 216915968,
+      "p99": 216915968
+    },
+    "jvm/editor/0/window-shown/received-ms": {
+      "n": 2,
+      "median": 469.2479645000276,
+      "p95": 481.53198799991515,
+      "p99": 481.53198799991515
+    },
+    "jvm/editor/102400/after-sized-document-editing/heap-used-bytes": {
+      "n": 2,
+      "median": 272643544.0,
+      "p95": 291923104.0,
+      "p99": 291923104.0
+    },
+    "jvm/editor/102400/after-sized-document-editing/rss-bytes": {
+      "n": 2,
+      "median": 933791744.0,
+      "p95": 976793600,
+      "p99": 976793600
+    },
+    "jvm/editor/102400/after-workload/heap-used-bytes": {
+      "n": 2,
+      "median": 257090232.0,
+      "p95": 265297672.0,
+      "p99": 265297672.0
+    },
+    "jvm/editor/102400/after-workload/rss-bytes": {
+      "n": 2,
+      "median": 1024995328.0,
+      "p95": 1031770112,
+      "p99": 1031770112
+    },
+    "jvm/editor/102400/bulk-paste-with-layout/sample": {
+      "n": 2,
+      "median": 60.784992,
+      "p95": 62.382772,
+      "p99": 62.382772
+    },
+    "jvm/editor/102400/delete-region-with-layout/sample": {
+      "n": 2,
+      "median": 36.657652,
+      "p95": 40.099571,
+      "p99": 40.099571
+    },
+    "jvm/editor/102400/file-editable/received-ms": {
+      "n": 2,
+      "median": 1121.2125375000142,
+      "p95": 1134.5726389999982,
+      "p99": 1134.5726389999982
+    },
+    "jvm/editor/102400/file-open/heap-used-bytes": {
+      "n": 2,
+      "median": 50482464.0,
+      "p95": 55571504.0,
+      "p99": 55571504.0
+    },
+    "jvm/editor/102400/file-open/rss-bytes": {
+      "n": 2,
+      "median": 397101056.0,
+      "p95": 401518592,
+      "p99": 401518592
+    },
+    "jvm/editor/102400/full-tokenization/sample": {
+      "n": 2,
+      "median": 323.72857999999997,
+      "p95": 359.805953,
+      "p99": 359.805953
+    },
+    "jvm/editor/102400/incremental-highlight-settled/sample": {
+      "n": 2,
+      "median": 177.77038349999998,
+      "p95": 181.122379,
+      "p99": 181.122379
+    },
+    "jvm/editor/102400/insert-dispatch-after-100/sample": {
+      "n": 400,
+      "median": 6.985519,
+      "p95": 13.052451,
+      "p99": 18.701466
+    },
+    "jvm/editor/102400/insert-dispatch/sample": {
+      "n": 600,
+      "median": 6.714255,
+      "p95": 14.210891,
+      "p99": 19.794357
+    },
+    "jvm/editor/102400/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 2,
+      "median": 142.34824650000002,
+      "p95": 149.26848,
+      "p99": 149.26848
+    },
+    "jvm/editor/102400/open-file-with-layout/sample": {
+      "n": 2,
+      "median": 509.05732900000004,
+      "p95": 543.911949,
+      "p99": 543.911949
+    },
+    "jvm/editor/102400/redo-dispatch-after-100/sample": {
+      "n": 400,
+      "median": 2.204424,
+      "p95": 3.728949,
+      "p99": 5.526264
+    },
+    "jvm/editor/102400/redo-dispatch/sample": {
+      "n": 600,
+      "median": 2.218885,
+      "p95": 4.01145,
+      "p99": 5.752237
+    },
+    "jvm/editor/102400/scroll-with-layout/sample": {
+      "n": 48,
+      "median": 34.4139735,
+      "p95": 92.167454,
+      "p99": 102.6259
+    },
+    "jvm/editor/102400/search-highlight-dispatch/sample": {
+      "n": 48,
+      "median": 0.0762185,
+      "p95": 5.357853,
+      "p99": 11.132322
+    },
+    "jvm/editor/102400/style-spans-dispatch/sample": {
+      "n": 24,
+      "median": 43.570772500000004,
+      "p95": 52.94233,
+      "p99": 72.302022
+    },
+    "jvm/editor/102400/undo-dispatch-after-100/sample": {
+      "n": 400,
+      "median": 7.245673999999999,
+      "p95": 9.449142,
+      "p99": 10.893803
+    },
+    "jvm/editor/102400/undo-dispatch/sample": {
+      "n": 600,
+      "median": 6.729305,
+      "p95": 9.369037,
+      "p99": 10.68395
+    },
+    "jvm/editor/peak-rss-bytes": {
+      "n": 2,
+      "median": 1025042432.0,
+      "p95": 1031815168,
+      "p99": 1031815168
+    },
+    "native/editor/0/fx-ready/received-ms": {
+      "n": 3,
+      "median": 102.88809400026366,
+      "p95": 121.464412000023,
+      "p99": 121.464412000023
+    },
+    "native/editor/0/window-open/heap-used-bytes": {
+      "n": 3,
+      "median": 17825792.0,
+      "p95": 17825792.0,
+      "p99": 17825792.0
+    },
+    "native/editor/0/window-open/rss-bytes": {
+      "n": 3,
+      "median": 165113856,
+      "p95": 165187584,
+      "p99": 165187584
+    },
+    "native/editor/0/window-shown/received-ms": {
+      "n": 3,
+      "median": 135.99861999955465,
+      "p95": 151.63084999949206,
+      "p99": 151.63084999949206
+    },
+    "native/editor/102400/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 139306376.0,
+      "p95": 259578720.0,
+      "p99": 259578720.0
+    },
+    "native/editor/102400/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 597741568,
+      "p95": 603271168,
+      "p99": 603271168
+    },
+    "native/editor/102400/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 139716304.0,
+      "p95": 164089064.0,
+      "p99": 164089064.0
+    },
+    "native/editor/102400/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 621277184,
+      "p95": 624525312,
+      "p99": 624525312
+    },
+    "native/editor/102400/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 60.875033,
+      "p95": 68.461246,
+      "p99": 68.461246
+    },
+    "native/editor/102400/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 26.704842,
+      "p95": 28.330687,
+      "p99": 28.330687
+    },
+    "native/editor/102400/file-editable/received-ms": {
+      "n": 3,
+      "median": 205.064171000231,
+      "p95": 232.64194700004737,
+      "p99": 232.64194700004737
+    },
+    "native/editor/102400/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 23203936.0,
+      "p95": 24320896.0,
+      "p99": 24320896.0
+    },
+    "native/editor/102400/file-open/rss-bytes": {
+      "n": 3,
+      "median": 246751232,
+      "p95": 250163200,
+      "p99": 250163200
+    },
+    "native/editor/102400/full-tokenization/sample": {
+      "n": 3,
+      "median": 428.836582,
+      "p95": 434.402957,
+      "p99": 434.402957
+    },
+    "native/editor/102400/incremental-highlight-settled/sample": {
+      "n": 3,
+      "median": 167.571258,
+      "p95": 169.262462,
+      "p99": 169.262462
+    },
+    "native/editor/102400/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 6.528819,
+      "p95": 10.75075,
+      "p99": 13.722725
+    },
+    "native/editor/102400/insert-dispatch/sample": {
+      "n": 900,
+      "median": 5.738054,
+      "p95": 10.220734,
+      "p99": 13.722725
+    },
+    "native/editor/102400/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 130.1265,
+      "p95": 152.747185,
+      "p99": 152.747185
+    },
+    "native/editor/102400/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 54.852963,
+      "p95": 66.701261,
+      "p99": 66.701261
+    },
+    "native/editor/102400/redo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 2.5912705000000003,
+      "p95": 5.291689,
+      "p99": 7.250413
+    },
+    "native/editor/102400/redo-dispatch/sample": {
+      "n": 900,
+      "median": 2.523109,
+      "p95": 4.685059,
+      "p99": 6.97268
+    },
+    "native/editor/102400/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 34.35401,
+      "p95": 43.41967,
+      "p99": 63.313957
+    },
+    "native/editor/102400/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.0233815,
+      "p95": 4.759831,
+      "p99": 7.993106
+    },
+    "native/editor/102400/style-spans-dispatch/sample": {
+      "n": 36,
+      "median": 24.337201999999998,
+      "p95": 32.775584,
+      "p99": 33.301136
+    },
+    "native/editor/102400/undo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 7.555904,
+      "p95": 10.053957,
+      "p99": 11.871058
+    },
+    "native/editor/102400/undo-dispatch/sample": {
+      "n": 900,
+      "median": 7.089316999999999,
+      "p95": 9.838008,
+      "p99": 11.871058
+    },
+    "native/editor/peak-rss-bytes": {
+      "n": 3,
+      "median": 621277184,
+      "p95": 624525312,
+      "p99": 624525312
+    },
+    "probe-aot/editor/0/fx-ready/received-ms": {
+      "n": 2,
+      "median": 250.47511699995084,
+      "p95": 266.05616199958604,
+      "p99": 266.05616199958604
+    },
+    "probe-aot/editor/0/window-open/heap-used-bytes": {
+      "n": 2,
+      "median": 26359560.0,
+      "p95": 26359560.0,
+      "p99": 26359560.0
+    },
+    "probe-aot/editor/0/window-open/rss-bytes": {
+      "n": 2,
+      "median": 225040384.0,
+      "p95": 226099200,
+      "p99": 226099200
+    },
+    "probe-aot/editor/0/window-shown/received-ms": {
+      "n": 2,
+      "median": 339.88223249980365,
+      "p95": 363.16678099956334,
+      "p99": 363.16678099956334
+    },
+    "probe-aot/editor/102400/after-sized-document-editing/heap-used-bytes": {
+      "n": 2,
+      "median": 197923768.0,
+      "p95": 262392416.0,
+      "p99": 262392416.0
+    },
+    "probe-aot/editor/102400/after-sized-document-editing/rss-bytes": {
+      "n": 2,
+      "median": 842645504.0,
+      "p95": 866689024,
+      "p99": 866689024
+    },
+    "probe-aot/editor/102400/after-workload/heap-used-bytes": {
+      "n": 2,
+      "median": 153105644.0,
+      "p95": 177635688.0,
+      "p99": 177635688.0
+    },
+    "probe-aot/editor/102400/after-workload/rss-bytes": {
+      "n": 2,
+      "median": 901402624.0,
+      "p95": 913563648,
+      "p99": 913563648
+    },
+    "probe-aot/editor/102400/bulk-paste-with-layout/sample": {
+      "n": 2,
+      "median": 55.803248499999995,
+      "p95": 55.87911,
+      "p99": 55.87911
+    },
+    "probe-aot/editor/102400/delete-region-with-layout/sample": {
+      "n": 2,
+      "median": 35.4542315,
+      "p95": 39.010264,
+      "p99": 39.010264
+    },
+    "probe-aot/editor/102400/file-editable/received-ms": {
+      "n": 2,
+      "median": 693.434178499956,
+      "p95": 708.3257940003023,
+      "p99": 708.3257940003023
+    },
+    "probe-aot/editor/102400/file-open/heap-used-bytes": {
+      "n": 2,
+      "median": 33228360.0,
+      "p95": 38690952.0,
+      "p99": 38690952.0
+    },
+    "probe-aot/editor/102400/file-open/rss-bytes": {
+      "n": 2,
+      "median": 343019520.0,
+      "p95": 357941248,
+      "p99": 357941248
+    },
+    "probe-aot/editor/102400/full-tokenization/sample": {
+      "n": 2,
+      "median": 343.763829,
+      "p95": 371.068916,
+      "p99": 371.068916
+    },
+    "probe-aot/editor/102400/incremental-highlight-settled/sample": {
+      "n": 2,
+      "median": 170.40257450000001,
+      "p95": 177.013863,
+      "p99": 177.013863
+    },
+    "probe-aot/editor/102400/insert-dispatch-after-100/sample": {
+      "n": 400,
+      "median": 6.3351075,
+      "p95": 10.484022,
+      "p99": 12.07112
+    },
+    "probe-aot/editor/102400/insert-dispatch/sample": {
+      "n": 600,
+      "median": 5.8493295,
+      "p95": 10.297184,
+      "p99": 12.287015
+    },
+    "probe-aot/editor/102400/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 2,
+      "median": 122.8926795,
+      "p95": 123.545298,
+      "p99": 123.545298
+    },
+    "probe-aot/editor/102400/open-file-with-layout/sample": {
+      "n": 2,
+      "median": 270.5863855,
+      "p95": 308.307952,
+      "p99": 308.307952
+    },
+    "probe-aot/editor/102400/redo-dispatch-after-100/sample": {
+      "n": 400,
+      "median": 2.2077405,
+      "p95": 3.7356,
+      "p99": 5.581309
+    },
+    "probe-aot/editor/102400/redo-dispatch/sample": {
+      "n": 600,
+      "median": 2.127122,
+      "p95": 3.685758,
+      "p99": 5.581309
+    },
+    "probe-aot/editor/102400/scroll-with-layout/sample": {
+      "n": 48,
+      "median": 32.315305,
+      "p95": 48.531609,
+      "p99": 61.774193
+    },
+    "probe-aot/editor/102400/search-highlight-dispatch/sample": {
+      "n": 48,
+      "median": 0.053998500000000005,
+      "p95": 0.83687,
+      "p99": 7.299492
+    },
+    "probe-aot/editor/102400/style-spans-dispatch/sample": {
+      "n": 24,
+      "median": 34.344831,
+      "p95": 55.277782,
+      "p99": 64.335675
+    },
+    "probe-aot/editor/102400/undo-dispatch-after-100/sample": {
+      "n": 400,
+      "median": 7.072542,
+      "p95": 9.195246,
+      "p99": 10.032242
+    },
+    "probe-aot/editor/102400/undo-dispatch/sample": {
+      "n": 600,
+      "median": 6.611632,
+      "p95": 9.195246,
+      "p99": 9.956182
+    },
+    "probe-aot/editor/peak-rss-bytes": {
+      "n": 2,
+      "median": 905539584.0,
+      "p95": 921837568,
+      "p99": 921837568
+    }
+  },
+  "distribution_bytes": {
+    "native-executable": 207424152,
+    "native-with-emitted-libraries": 212348760,
+    "jlink-app-image": 120238575,
+    "current-aot-app-image": 199668252
+  },
+  "limitations": [
+    "Warm filesystem cache; no forced GC; direct-process Linux RSS excludes children.",
+    "Probe milestones are receipt times, including pipe/scheduler delay.",
+    "Dispatch samples include FX queueing but exclude later layout; layout samples include two pulses.",
+    "Headless pulses are not desktop paint latency. No project/LSP readiness inferred from first-paint.",
+    "Missing modes and failed runs have no performance conclusion. Small-n tails are descriptive only."
+  ]
+}

@@ -716,6 +716,10 @@ file…* for a local `.zip`). Each plugin's full source is in that repo under `p
 
 ## Build & Run
 
+An opt-in [StaticFX / GraalVM experiment](docs/native-image-staticfx.md) adds `-Pnative` and a
+shared editor stress probe. Tagged releases also attempt a clearly named experimental Linux x64
+native tarball. Read its measured limitations before using it.
+
 A Maven wrapper is included, so no local Maven install is required — use `./mvnw`
 (or `mvnw.cmd` on Windows). Plain `mvn` works too if you have Maven installed.
 
@@ -727,7 +731,7 @@ A Maven wrapper is included, so no local Maven install is required — use `./mv
 ./mvnw test
 
 # Build a native app image / installer (DMG on macOS, MSI on Windows, DEB on Linux)
-./mvnw -Pdist package
+./mvnw clean -Pdist package
 
 # Build a runnable fat jar, then launch it
 ./mvnw -Pfatjar package
@@ -820,6 +824,12 @@ and the matching `Editora-<version>-<platform>.jar` with `-Pfatjar` on its own r
 [JReleaser](https://jreleaser.org) assembles the release (config in `jreleaser.yml`). Prefer the
 installer for a normal setup; the fat jar is handy if you already have a JDK 25 and just want
 `java -jar`.
+
+Linux x64 releases also attempt an `Editora-<version>-linux-x64-native-experimental.tar.gz`.
+Extract it and run `./run-editora-native`; its launcher uses separate settings. The native build
+has [measured editing regressions and feature limits](docs/native-image-staticfx.md), so use the
+regular installer for normal work. If its build or smoke test fails, the ordinary release still
+publishes without that experimental asset.
 
 To cut a release: bump `<version>` in `pom.xml`, commit, then push a matching tag:
 

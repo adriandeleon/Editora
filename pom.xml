@@ -1132,6 +1132,102 @@
     </build>
 
     <profiles>
+        <!-- Experimental only: neither the normal JVM nor the dist/AOT path uses these artifacts.
+             Keep the JavaFX static archives at EXACTLY the version of the OpenJFX class files. -->
+        <profile>
+            <id>native</id>
+            <properties>
+                <native.mainClass>com.editora.Launcher</native.mainClass>
+                <native.imageName>editora-native</native.imageName>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>us.hebi.graalvm</groupId>
+                    <artifactId>jfx-static-feature</artifactId>
+                    <version>1.0</version>
+                    <scope>runtime</scope>
+                </dependency>
+                <dependency>
+                    <groupId>us.hebi.graalvm</groupId>
+                    <artifactId>jfx-static-libs</artifactId>
+                    <version>${javafx.version}</version>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <resources>
+                    <resource>
+                        <directory>src/native/resources</directory>
+                    </resource>
+                </resources>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <version>1.0.0</version>
+                        <extensions>true</extensions>
+                        <executions>
+                            <execution>
+                                <id>experimental-native-image</id>
+                                <phase>package</phase>
+                                <goals><goal>compile-no-fork</goal></goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <mainClass>${native.mainClass}</mainClass>
+                            <imageName>${native.imageName}</imageName>
+                            <fallback>false</fallback>
+                            <buildArgs>
+                                <buildArg>--exact-reachability-metadata</buildArg>
+                                <!-- Preserve runtime discovery/initialization of SSHD filesystem providers. -->
+                                <buildArg>--future-defaults=run-time-initialize-file-system-providers</buildArg>
+                                <buildArg>-march=compatibility</buildArg>
+                                <buildArg>--gc=G1</buildArg>
+                                <buildArg>-Djfx.static.gui=false</buildArg>
+                            </buildArgs>
+                            <!-- Explicit reviewed metadata only; do not silently pull a changing catalog. -->
+                            <metadataRepository><enabled>false</enabled></metadataRepository>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- Same standalone workload on HotSpot and Native Image; never part of a normal artifact. -->
+        <profile>
+            <id>editor-probe</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.diffplug.spotless</groupId>
+                        <artifactId>spotless-maven-plugin</artifactId>
+                        <configuration>
+                            <java>
+                                <includes>
+                                    <include>src/main/java/**/*.java</include>
+                                    <include>src/test/java/**/*.java</include>
+                                    <include>src/experiment/java/**/*.java</include>
+                                </includes>
+                            </java>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>3.6.1</version>
+                        <executions>
+                            <execution>
+                                <id>editor-probe-sources</id>
+                                <phase>generate-sources</phase>
+                                <goals><goal>add-source</goal></goals>
+                                <configuration>
+                                    <sources><source>src/experiment/java</source></sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- `apidocs`: generate + doclint-validate the public plugin API (the one surface third-party
              plugin authors consume). Scoped to `com.editora.plugin`; doclint=all + failOnWarnings make it a
              real gate. Run: `./mvnw -Papidocs javadoc:javadoc` → target/reports/apidocs. Not bound to the

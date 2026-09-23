@@ -28,6 +28,9 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 
 ## How-to
 
+- [native-image-staticfx.md](native-image-staticfx.md) — isolated native experiment, metadata,
+  RichTextFX acceptance gate, benchmark commands and measured limitations.
+
 - [extending.md](extending.md) — recipes: add a command, a setting, an LSP server, a DAP
   adapter, a language/grammar, a tool window, a Canvas overlay, a feature coordinator.
 - [plugins.md](plugins.md) — the public plugin API (SPI + declarative manifest), building,

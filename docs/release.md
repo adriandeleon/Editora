@@ -89,8 +89,30 @@ uploaded as artifacts.
 
 A final job hands everything to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`),
 which creates the GitHub release with all installers + fat jars + `checksums.txt` + a changelog.
-JReleaser only *orchestrates the release* — it does not build (the `dist` profile is reused
-as-is), and there is **no `pom.xml`/Maven change**, so the normal build is unaffected.
+JReleaser only *orchestrates the release* — it does not build (the existing `dist` profile is
+reused as-is). The experimental `native` profile is opt-in, so the normal build is unaffected.
+
+### Experimental Linux x64 Native Image
+
+A separate, best-effort `native-experimental` job builds the opt-in `-Pnative` profile on Linux
+x64 with Oracle GraalVM for JDK 25.0.4. The job caps Native Image's Java heap at 6 GiB and uses
+four build workers; the original uncapped experiment peaked at 14 GiB. It checks `--version` on
+the extracted tarball, then uses a virtual display to exercise the **actual app** opening a project
+and file, editing, undo/redo, saving, project search, Git status and local history. The disposable
+project lives outside the checkout so `.editorconfig` cannot change its save oracle. Only after
+those checks pass does it upload `Editora-<version>-linux-x64-native-experimental.tar.gz` for
+JReleaser to attach. The archive includes the executable, all adjacent Native Image shared
+libraries, a launcher and a
+limitations README. `./run-editora-native [file]` uses a separate config directory by default;
+`EDITORA_NATIVE_CONFIG_DIR` overrides it.
+
+This is an experimental alternative to the regular installers, **not another platform in the
+supported release matrix**. The [measured experiment](native-image-staticfx.md) found slower
+tokenization and input tails, unqualified peripheral features and an incompatibility with
+dynamic Java plugins. No macOS, Windows or Linux arm64 Native Image asset is attempted. An
+experimental job failure is visible in Actions but does not block the JVM release; no tarball is
+attached when its compile, smoke test or packaging fails. A manual dispatch also dry-runs this
+job. Revisit the performance and feature gate before making it a default distribution.
 
 CI uses the BellSoft **Liberica** JDK 25 for full arch coverage (incl. linux aarch64).
 
