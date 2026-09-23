@@ -66,7 +66,8 @@ def run(command, env, folder, cycles=30):
     log_path = folder / 'app.log'
     started = time.monotonic()
     with log_path.open('w') as log:
-        proc = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        proc = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                start_new_session=(os.name == 'posix'))
     deadline = started + 120 + cycles
     endpoint = None
     request_id = 0
@@ -178,12 +179,20 @@ def run(command, env, folder, cycles=30):
             passed = False
             failure = f'application exited {proc.returncode}; see {log_path}'
         if proc.poll() is None:
-            os.killpg(proc.pid, signal.SIGTERM)
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
+            if os.name == 'posix':
+                os.killpg(proc.pid, signal.SIGTERM)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait()
+            else:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
     marks = dict((name, int(ms)) for name, ms in re.findall(r'\[perf\]\s+([\w-]+)\s+(\d+)\s+\(', log_path.read_text()))
     return {'ok': passed, 'failure': failure, 'command': command, 'milestones_ms': milestones,
             'rss_bytes': memory, 'startup_marks_ms': marks, 'samples_ms': dict(samples),

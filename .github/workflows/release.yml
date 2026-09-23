@@ -154,39 +154,58 @@ jobs:
           path: staging/*
           if-no-files-found: error
 
-  # Linux x64 is the only Native Image target qualified by the StaticFX experiment.
+  # These portable archives are best-effort on each host platform. A target is
+  # uploaded only after its extracted payload passes the real app workflow.
   # Failure is visible on the run but never suppresses the established JVM release.
   native-experimental:
-    name: Experimental Native Image (Linux x64)
-    runs-on: ubuntu-24.04
+    name: Experimental Native Image (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
     continue-on-error: true
-    timeout-minutes: 45
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64,   os: ubuntu-24.04,   graal: '25.0.4', gc: G1 }
+          # Oracle GraalVM 25.0.1 is the last JDK 25 build for Intel macOS.
+          - { target: macos-x64,   os: macos-15-intel, graal: '25',     gc: serial }
+          - { target: macos-arm64, os: macos-14,       graal: '25.0.4', gc: serial }
+          - { target: windows-x64, os: windows-latest, graal: '25.0.4', gc: serial }
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Set up GraalVM for JDK 25.0.4
+      - name: Set up GraalVM for JDK 25
         uses: graalvm/setup-graalvm@v1
         with:
-          java-version: '25.0.4'
+          java-version: ${{ matrix.graal }}
           distribution: graalvm
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache: maven
 
-      - name: Install Native Image build and GUI test dependencies
+      - name: Set up Python for packaging and smoke test
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Linux Native Image build and GUI test dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential zlib1g-dev \
             libgtk-3-dev libxtst-dev libxxf86vm-dev libgl1-mesa-dev xvfb xauth
 
-      # The experiment peaked at 14 GiB with unrestricted parallelism. Bound the
-      # compiler heap/workers for the 16 GiB hosted runner; preserve every profile
-      # safety flag because -DbuildArgs replaces the full Maven argument list.
+      # The experiment peaked at 14 GiB with unrestricted parallelism. Bound
+      # heap/workers; preserve every profile safety flag because -DbuildArgs
+      # replaces the full Maven argument list. G1 is unavailable on these JDK 25
+      # macOS/Windows builds, so use Serial GC there.
       - name: Build Native Image
         shell: bash
+        env:
+          NATIVE_GC: ${{ matrix.gc }}
         run: |
           ./mvnw -B --no-transfer-progress clean -Pnative -DskipTests \
-            '-DbuildArgs=--exact-reachability-metadata,--future-defaults=run-time-initialize-file-system-providers,-march=compatibility,--gc=G1,-Djfx.static.gui=false,-J-Xmx6g,--parallelism=4' package
+            "-DbuildArgs=--exact-reachability-metadata,--future-defaults=run-time-initialize-file-system-providers,-march=compatibility,--gc=${NATIVE_GC},-Djfx.static.gui=false,-J-Xmx6g,--parallelism=4" package
 
       - name: Resolve version
         id: ver
@@ -199,43 +218,48 @@ jobs:
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
-      - name: Package experimental tarball
+      - name: Package experimental archive
         shell: bash
         env:
           VERSION: ${{ steps.ver.outputs.version }}
-        run: bash scripts/native/package-release.sh target/editora-native "$VERSION" staging
+          TARGET: ${{ matrix.target }}
+        run: |
+          binary=target/editora-native
+          if [ "$RUNNER_OS" = Windows ]; then binary="${binary}.exe"; fi
+          python scripts/native/package-release.py "$binary" "$VERSION" "$TARGET" staging
 
       # Extract and test the exact payload that would be released. Keep its
       # disposable project outside the checkout: repository .editorconfig can
       # alter saved bytes and invalidate the exact-content/history oracle.
-      - name: Smoke test packaged native application
+      - name: Smoke test packaged native application (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         env:
           VERSION: ${{ steps.ver.outputs.version }}
+          TARGET: ${{ matrix.target }}
         run: |
-          name="Editora-${VERSION}-linux-x64-native-experimental"
-          mkdir -p target/native-release-bundle
-          tar -xzf "staging/${name}.tar.gz" -C target/native-release-bundle
-          "target/native-release-bundle/${name}/run-editora-native" --version
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          name = f"Editora-{os.environ['VERSION']}-linux-x64-native-experimental"
-          launcher = str((Path('target/native-release-bundle') / name / 'run-editora-native').resolve())
-          config = {'modes': {'native': {'application': [launcher]}}}
-          Path('target/native-release-smoke-config.json').write_text(json.dumps(config))
-          PY
-          xvfb-run -a python3 scripts/native/app-probe.py \
-            target/native-release-smoke-config.json \
-            --output "$RUNNER_TEMP/editora-native-release-smoke" \
-            --runs 1 --warmups 0 --cycles 3
+          xvfb-run -a python scripts/native/smoke-release.py \
+            "staging/Editora-${VERSION}-${TARGET}-native-experimental.tar.gz" \
+            "$TARGET" "$RUNNER_TEMP/editora-native-release-smoke"
+
+      - name: Smoke test packaged native application (macOS/Windows)
+        if: runner.os != 'Linux'
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          ext=tar.gz
+          if [ "$RUNNER_OS" = Windows ]; then ext=zip; fi
+          python scripts/native/smoke-release.py \
+            "staging/Editora-${VERSION}-${TARGET}-native-experimental.${ext}" \
+            "$TARGET" "$RUNNER_TEMP/editora-native-release-smoke"
 
       - name: Upload experimental native build
         uses: actions/upload-artifact@v7
         with:
-          name: Editora-${{ steps.ver.outputs.version }}-linux-x64-native-experimental
-          path: staging/*.tar.gz
+          name: Editora-${{ steps.ver.outputs.version }}-${{ matrix.target }}-native-experimental
+          path: staging/*
           if-no-files-found: error
 
   release:

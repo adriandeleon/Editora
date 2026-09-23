@@ -58,7 +58,9 @@ semver — never the placeholder. A final job
 hands them to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`) which creates the
 GitHub release with all installers + fat jars + `checksums.txt` + a changelog. JReleaser only *orchestrates the release* — it does not
 build (the existing `dist` profile is reused as-is). The experimental `native` Maven profile is
-opt-in; the normal build is unaffected. Installers are currently **unsigned** (signing/notarization
+opt-in; separate best-effort native jobs attempt Linux x64, macOS x64/arm64 and Windows x64
+portable archives after extracted-archive smoke tests. The normal build is unaffected.
+Installers are currently **unsigned** (signing/notarization
 is a follow-up).
 **Linux `.deb` PATH command + menu/icon registration:** jpackage installs everything under
 `/opt/editora/` (launcher at `bin/Editora`, the `.desktop` + the 512×512 `Editora.png` at

@@ -103,5 +103,6 @@ See also: [dependencies.md](dependencies.md) for the vendored/forked deps, and
 ## Experimental closed-world build
 
 `-Pnative` is an isolated [StaticFX/GraalVM experiment](native-image-staticfx.md), with its own
-metadata and acceptance evidence. It does not alter jlink, jpackage, the AOT trainer or release CI.
+metadata and acceptance evidence. Its separate best-effort release jobs do not alter jlink,
+jpackage, the AOT trainer or the required JVM release matrix.
 Do not combine it with `dist` or `fatjar`; use clean builds when changing profiles.

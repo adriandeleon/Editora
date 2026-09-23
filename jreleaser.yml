@@ -42,7 +42,7 @@ release:
 
 # Attach every artifact gathered from the build matrix (downloaded under ./artifacts): native installers
 # (.dmg/.msi/.deb/.rpm), the portable Linux builds (.AppImage single-file + .tar.gz extract-and-install),
-# the experimental Linux x64 Native Image tarball, and per-platform runnable fat jars. All are named
+# experimental Native Image archives, and per-platform runnable fat jars. All are named
 # per target in CI, so names are unique across OS/arch.
 files:
   globs:
@@ -52,4 +52,5 @@ files:
     - pattern: 'artifacts/**/*.rpm'
     - pattern: 'artifacts/**/*.AppImage'
     - pattern: 'artifacts/**/*.tar.gz'
+    - pattern: 'artifacts/**/Editora-*-native-experimental.zip'
     - pattern: 'artifacts/**/Editora-*.jar'

@@ -7,10 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Tagged releases now attempt an experimental Linux x64 GraalVM Native Image tarball alongside
-  the usual JVM packages. Its own GUI smoke test gates the artifact, while an experimental
-  build failure does not block the ordinary release. The tarball has a separate settings
-  profile and keeps the measured performance and plugin limitations visible.
+- Tagged releases now attempt experimental Linux x64, macOS x64/arm64, and Windows x64 GraalVM
+  Native Image archives alongside the usual JVM packages. Each extracted archive must pass a
+  GUI workflow smoke test before upload; an experimental build failure does not block the
+  ordinary release. The archives use separate settings and remain subject to the measured
+  performance and plugin limitations.
 
 - Added an isolated experimental StaticFX/GraalVM native build profile, a real EditorBuffer
   correctness/stress probe, and JVM/AOT/native measurement tooling. This does not replace the JVM

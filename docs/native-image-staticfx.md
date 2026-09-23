@@ -3,8 +3,9 @@
 This is an opt-in feasibility experiment, **not a replacement for the JVM/AOT distribution**.
 The question is whether the actual Editora editor can retain its behavior and responsiveness as a
 closed-world executable. Opening a window is not the acceptance gate. The normal build, `dist`,
-AOT trainer, editor source, and dependency versions are unchanged. Tagged releases now attempt a
-separately labelled experimental Linux x64 tarball; see [the release guide](release.md).
+AOT trainer, editor source, and dependency versions are unchanged. Tagged releases attempt
+separately labelled experimental Linux x64, macOS x64/arm64, and Windows x64 archives;
+see [the release guide](release.md).
 
 The JDK AOT cache preserves normal HotSpot/JVM behavior, dynamic class loading and JIT optimization.
 StaticFX/GraalVM Native Image instead links a closed-world executable with different compiler,
@@ -130,10 +131,12 @@ needs another trace and strict rerun, not blanket registrations of all applicati
 
 ## Build and run
 
-Tested toolchain: Oracle GraalVM **25.4.4.1.1+1.1**, underlying JDK **25.0.4.1.1**, Linux x86-64,
-GCC 14.2.0, Debian 13. JVM baseline: Temurin **25.0.4+7**. Other platforms are **not qualified** by
-this experiment. StaticFX advertises desktop Linux/macOS x64/arm64 and Windows x64; that is upstream
-coverage, not evidence for Editora on those targets.
+Locally tested toolchain: Oracle GraalVM **25.4.4.1.1+1.1**, underlying JDK **25.0.4.1.1**,
+Linux x86-64, GCC 14.2.0, Debian 13. JVM baseline: Temurin **25.0.4+7**. Only Linux has
+comparative benchmark evidence. Release CI also attempts macOS x64/arm64 and Windows x64 builds
+and requires the same extracted-archive app workflow before uploading each asset; this is a smoke
+gate, not long-session qualification. StaticFX advertises desktop Linux/macOS x64/arm64 and Windows
+x64; that upstream coverage alone is not evidence for Editora on those targets.
 
 Install Maven 3.9.x and the pinned GraalVM (set `JAVA_HOME` and put its `bin` first on `PATH`).
 Verify `java -version`, `native-image --version`, and `mvn -version`. The tested Linux archive was
@@ -146,8 +149,9 @@ sudo apt-get install build-essential zlib1g-dev libgtk-3-dev libxtst-dev libxxf8
 
 Runtime needs GTK3, X11/font/GL libraries; the executable is not a completely static Linux binary.
 Use native host builds, not cross-compilation. Keep all emitted shared libraries alongside the image.
-macOS would require the matching Xcode tools; Windows the GraalVM-supported MSVC toolchain. Those
-builds and desktop behavior remain untested here. Use `Application.launch`, as these entry points do,
+macOS requires the matching Xcode tools; Windows the GraalVM-supported MSVC toolchain. Release CI
+attempts builds and the application workflow on those runners, but device and long-session behavior
+remain untested here. Use `Application.launch`, as these entry points do,
 for StaticFX's macOS first-thread handoff.
 
 Normal builds (unchanged):
@@ -391,13 +395,13 @@ Unqualified features are left in the source/build, rather than removed to make N
 
 ## CI
 
-Native is deliberately not a required job. On a disposable Linux runner with the pinned GraalVM and
-native development packages above, run the JVM `mvn clean verify` gate first, then the two native
-`package` commands and strict probe commands above. Stage the probe binary/libraries before cleaning
-for the application build. Upload logs, agent output for review, summary JSON and image-size inventory
-as artifacts. Use a manual workflow with `continue-on-error: true` on the experimental native job;
-do not change the existing JVM/release requirements. A display-backed lane should install `xvfb` and
-run the desktop probe with `xvfb-run -a`; an Xvfb pass still is not a human hardware-rendering trial.
+Native is deliberately not a required job. The release workflow runs independent experimental
+jobs for Linux x64, macOS x64/arm64 and Windows x64, each building on its host OS. Every archive
+is extracted and must pass the actual application workflow before upload. Linux runs it under
+`xvfb-run`; other hosts use their runner desktop. The JVM release requirements remain unchanged.
+The earlier Linux benchmark methodology still applies: stage the probe binary/libraries before
+cleaning for the application build and retain logs, summary JSON and image-size inventory.
+An automated smoke pass is not a human hardware-rendering or long-session trial.
 
 Build warnings were inspected: build-tools 1.0.0 emits `--no-fallback`, which GraalVM 25.4 deprecates
 because fallback no longer exists; this produces two deprecation notices. Maven also cannot derive
