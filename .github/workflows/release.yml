@@ -263,7 +263,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: native-smoke-diagnostics-${{ matrix.target }}
-          path: ${{ runner.temp }}/editora-native-release-smoke/probe
+          path: |
+            ${{ runner.temp }}/editora-native-release-smoke/probe
+            ${{ runner.temp }}/editora-native-release-smoke/warn-probe
           if-no-files-found: ignore
 
       # Keep a failed-smoke build downloadable for device testing without

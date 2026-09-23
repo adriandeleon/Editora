@@ -49,6 +49,24 @@ def smoke(archive, target, output):
         for log in sorted((output / 'probe').glob('*/app.log')):
             print(f'===== {log} (last 100 lines) =====', file=sys.stderr)
             print('\n'.join(log.read_text(errors='replace').splitlines()[-100:]), file=sys.stderr)
+        if not windows:
+            # A second, diagnostic-only run can expose later missing metadata
+            # without another 10-25 minute hosted Native Image compilation.
+            warn_config = output / 'warn-config.json'
+            warn_config.write_text(json.dumps({'modes': {'native': {'application': [
+                str(binary), '-XX:MissingRegistrationReportingMode=Warn', '-Xmx2g', '-Xms64m']}}}))
+            warn_command = [sys.executable, str(Path(__file__).with_name('app-probe.py')),
+                            str(warn_config), '--output', str(output / 'warn-probe'),
+                            '--runs', '1', '--warmups', '0', '--cycles', '3']
+            try:
+                subprocess.run(warn_command, check=False, timeout=240)
+            except subprocess.TimeoutExpired:
+                print('Warning-mode diagnostic timed out', file=sys.stderr)
+            for log in sorted((output / 'warn-probe').glob('*/app.log')):
+                warnings = [line for line in log.read_text(errors='replace').splitlines()
+                            if 'Missing' in line and 'RegistrationError:' in line]
+                print(f'===== {log} missing registrations =====', file=sys.stderr)
+                print('\n'.join(dict.fromkeys(warnings)), file=sys.stderr)
         raise
 
 

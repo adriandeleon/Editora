@@ -205,6 +205,13 @@
       "condition": {
         "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
       },
+      "type": "java.lang.Iterable",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
       "type": "java.util.AbstractCollection"
     },
     {

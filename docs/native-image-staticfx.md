@@ -112,7 +112,8 @@ Under `src/native/resources/META-INF/native-image/com.editora/`:
 - `config/reachability-metadata.json`: explicitly named persistence DTOs and Jackson's Java7 support
   constructor, record-base introspection, and the XML factory service-resource lookup. These DTOs use bean/field introspection; registering their public methods, constructors
   and fields supports both read and write, unlike a first-launch trace containing only getters.
-  Named JDK scalar/collection supertypes need query metadata during Jackson introspection.
+  Named JDK scalar/collection supertypes, including `Iterable` on the Intel macOS JDK 25 build,
+  need query metadata during Jackson introspection.
   `HistoryStore`/`HistoryRevision` cover the real save workflow's local history persistence.
   `SnippetManager$Dto` covers the Jackson load triggered by ordinary Java completion after an
   edit; the release smoke test caught this background path with strict missing-registration exit.
