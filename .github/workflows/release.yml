@@ -255,6 +255,14 @@ jobs:
             "staging/Editora-${VERSION}-${TARGET}-native-experimental.${ext}" \
             "$TARGET" "$RUNNER_TEMP/editora-native-release-smoke"
 
+      - name: Upload native smoke diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-smoke-diagnostics-${{ matrix.target }}
+          path: ${{ runner.temp }}/editora-native-release-smoke/probe
+          if-no-files-found: ignore
+
       - name: Upload experimental native build
         uses: actions/upload-artifact@v7
         with:

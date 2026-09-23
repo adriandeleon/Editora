@@ -40,7 +40,13 @@ def smoke(archive, target, output):
     command = [sys.executable, str(Path(__file__).with_name('app-probe.py')),
                str(config), '--output', str(output / 'probe'),
                '--runs', '1', '--warmups', '0', '--cycles', '3']
-    subprocess.run(command, check=True, timeout=240)
+    try:
+        subprocess.run(command, check=True, timeout=240)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        for log in sorted((output / 'probe').glob('*/app.log')):
+            print(f'===== {log} (last 100 lines) =====', file=sys.stderr)
+            print('\n'.join(log.read_text(errors='replace').splitlines()[-100:]), file=sys.stderr)
+        raise
 
 
 def main():
