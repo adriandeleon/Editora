@@ -154,7 +154,7 @@ public final class OverlayHost {
         }
         javafx.geometry.Bounds a = anchor.localToScene(anchor.getBoundsInLocal());
         double gap = 4;
-        double left = Math.max(4, a.getMinX());
+        double left = clampLeft(a.getMinX(), contentWidth(content), overlayRoot.getWidth());
         // BOTTOM_LEFT: a bottom margin of M places the card's bottom edge M above the overlay's bottom.
         // We want the card's bottom at the anchor's top minus a small gap, so M = overlayH - anchorTop + gap.
         double bottomMargin = Math.max(4, overlayRoot.getHeight() - a.getMinY() + gap);
@@ -171,10 +171,25 @@ public final class OverlayHost {
         }
         javafx.geometry.Bounds a = anchor.localToScene(anchor.getBoundsInLocal());
         double gap = 4;
-        double left = Math.max(4, a.getMinX());
+        double left = clampLeft(a.getMinX(), contentWidth(content), overlayRoot.getWidth());
         double topMargin = Math.max(4, a.getMaxY() + gap);
         StackPane.setAlignment(content, Pos.TOP_LEFT);
         StackPane.setMargin(content, new Insets(topMargin, 0, 0, left));
+    }
+
+    private static double contentWidth(Node content) {
+        double width = content.getLayoutBounds().getWidth();
+        if (width <= 0 && content instanceof Region region) {
+            width = region.prefWidth(-1);
+        }
+        return width;
+    }
+
+    /** Keep anchored cards inside the overlay when their anchor is near either horizontal edge. */
+    static double clampLeft(double requestedLeft, double cardWidth, double overlayWidth) {
+        double inset = 4;
+        double rightmostLeft = overlayWidth - cardWidth - inset;
+        return Math.max(inset, Math.min(requestedLeft, rightmostLeft));
     }
 
     public void hide() {
