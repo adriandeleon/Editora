@@ -280,6 +280,9 @@ public final class MarkdownRenderer {
 
     private static final int MAX_COL_WEIGHT = 40;
 
+    /** The horizontal padding on each table cell, expressed in average text-character widths. */
+    private static final int TABLE_CELL_PADDING_WEIGHT = 3;
+
     private static Node renderTable(TableBlock tb, RenderContext ctx) {
         GridPane grid = new GridPane();
         grid.getStyleClass().add("md-table");
@@ -325,7 +328,7 @@ public final class MarkdownRenderer {
         double total = 0;
         double[] clamped = new double[cols];
         for (int i = 0; i < cols; i++) {
-            clamped[i] = Math.min(Math.max(colWeights.get(i), MIN_COL_WEIGHT), MAX_COL_WEIGHT);
+            clamped[i] = tableColumnWeight(colWeights.get(i));
             total += clamped[i];
         }
         for (int i = 0; i < cols; i++) {
@@ -335,6 +338,15 @@ public final class MarkdownRenderer {
             grid.getColumnConstraints().add(cc);
         }
         return grid;
+    }
+
+    /**
+     * Converts a cell's content length to a proportional table-column width. The visible content needs
+     * room in addition to the fixed left and right cell padding; omitting that allowance makes concise
+     * columns such as {@code ID}, {@code Priority}, and {@code Smoke} wrap one character at a time.
+     */
+    static int tableColumnWeight(int textLength) {
+        return Math.min(Math.max(textLength + TABLE_CELL_PADDING_WEIGHT, MIN_COL_WEIGHT), MAX_COL_WEIGHT);
     }
 
     /** Total length of the cell's plain text (across inline markup), used to weight column widths. */

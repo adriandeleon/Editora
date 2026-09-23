@@ -9,6 +9,7 @@ import org.commonmark.node.Link;
 import org.commonmark.node.Node;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -20,6 +21,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * expected AST node types. Node→JavaFX rendering needs the FX thread, so it isn't unit-tested here.
  */
 class MarkdownRendererTest {
+
+    @Test
+    void tableColumnWeightReservesSpaceForCellPadding() {
+        assertEquals(8, MarkdownRenderer.tableColumnWeight(5), "ID and Smoke-sized columns");
+        assertEquals(11, MarkdownRenderer.tableColumnWeight(8), "Priority-sized columns");
+        assertEquals(40, MarkdownRenderer.tableColumnWeight(100), "long cells remain bounded");
+    }
 
     @Test
     void htmlCommentsAreRecognizedAsInvisible() {
