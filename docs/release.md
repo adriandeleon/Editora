@@ -98,8 +98,9 @@ reused as-is). The experimental `native` profile is opt-in, so the normal build 
 A separate, best-effort `native-experimental` matrix builds the opt-in `-Pnative` profile on
 Linux x64, macOS x64/arm64, and Windows x64. Each job runs on its own host OS with Oracle
 GraalVM for JDK 25; Intel macOS uses the last available JDK 25 update for that host. Native
-Image's Java heap is capped at 6 GiB with four build workers (the original uncapped Linux
-experiment peaked at 14 GiB). Linux uses G1; the JDK 25 macOS/Windows images use Serial GC.
+Image's Java heap is capped at 6 GiB with four build workers, or 4 GiB/two workers on the
+7 GiB Apple Silicon runner. The original uncapped Linux experiment peaked at 14 GiB. Linux
+uses G1; the JDK 25 macOS/Windows images use Serial GC.
 Each job checks `--version` on the extracted archive, then exercises the **actual app** opening a project
 and file, editing, undo/redo, saving, project search, Git status and local history. The disposable
 project lives outside the checkout so `.editorconfig` cannot change its save oracle. Only after

@@ -166,11 +166,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: linux-x64,   os: ubuntu-24.04,   graal: '25.0.4', gc: G1 }
+          - { target: linux-x64,   os: ubuntu-24.04,   graal: '25.0.4', gc: G1,     heap: 6g, workers: 4 }
           # Oracle GraalVM 25.0.1 is the last JDK 25 build for Intel macOS.
-          - { target: macos-x64,   os: macos-15-intel, graal: '25',     gc: serial }
-          - { target: macos-arm64, os: macos-14,       graal: '25.0.4', gc: serial }
-          - { target: windows-x64, os: windows-latest, graal: '25.0.4', gc: serial }
+          - { target: macos-x64,   os: macos-15-intel, graal: '25',     gc: serial, heap: 6g, workers: 4 }
+          # Standard Apple Silicon runners have only 7 GiB RAM / 3 vCPUs.
+          - { target: macos-arm64, os: macos-14,       graal: '25.0.4', gc: serial, heap: 4g, workers: 2 }
+          - { target: windows-x64, os: windows-latest, graal: '25.0.4', gc: serial, heap: 6g, workers: 4 }
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -203,9 +204,11 @@ jobs:
         shell: bash
         env:
           NATIVE_GC: ${{ matrix.gc }}
+          NATIVE_HEAP: ${{ matrix.heap }}
+          NATIVE_WORKERS: ${{ matrix.workers }}
         run: |
           ./mvnw -B --no-transfer-progress clean -Pnative -DskipTests \
-            "-DbuildArgs=--exact-reachability-metadata,--future-defaults=run-time-initialize-file-system-providers,-march=compatibility,--gc=${NATIVE_GC},-Djfx.static.gui=false,-J-Xmx6g,--parallelism=4" package
+            "-DbuildArgs=--exact-reachability-metadata,--future-defaults=run-time-initialize-file-system-providers,-march=compatibility,--gc=${NATIVE_GC},-Djfx.static.gui=false,-J-Xmx${NATIVE_HEAP},--parallelism=${NATIVE_WORKERS}" package
 
       - name: Resolve version
         id: ver
