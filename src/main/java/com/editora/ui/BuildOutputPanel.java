@@ -82,10 +82,28 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
     public void logCommand(Object owner, String tabTitle, CommandLog.Entry entry) {
         BuildToolPanel console = consoleFor(owner, tabTitle);
         console.setLogMode(true);
+        boolean git = isGitCommand(entry);
+        console.setGitTranscript(git);
+        OutputStyle outputStyle = git ? OutputStyle.git() : OutputStyle.passthrough();
         for (CommandLogFormat.Line line : CommandLogFormat.format(entry)) {
-            console.appendStyled(line.text(), line.styleClass());
+            String style = line.styleClass() == null ? outputStyle.styleClassFor(line.text()) : line.styleClass();
+            console.appendStyled(line.text(), style);
         }
         console.setLogStatus(CommandLogFormat.commandLine(entry.argv()));
+    }
+
+    /** Selects an existing transcript tab without creating one or changing its contents. */
+    public void selectTab(Object owner) {
+        Tab tab = tabs.get(owner);
+        if (tab != null) {
+            getSelectionModel().select(tab);
+        }
+    }
+
+    private static boolean isGitCommand(CommandLog.Entry entry) {
+        return entry.argv() != null
+                && !entry.argv().isEmpty()
+                && "git".equals(entry.argv().get(0));
     }
 
     /** Whether any tab exists yet — the tool window is worth offering only once something has run. */

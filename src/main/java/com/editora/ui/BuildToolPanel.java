@@ -15,6 +15,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.build.OutputStyle;
+import com.editora.git.GitOutputLinks;
 import com.editora.run.ConsoleUrls;
 import com.editora.run.StackTraceLinks;
 import org.fxmisc.flowless.VirtualizedScrollPane;
@@ -45,6 +46,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     private final Button clearButton = new Button();
     private Consumer<StackTraceLinks.Link> onLink;
     private Consumer<String> onUrl;
+    private boolean gitTranscript;
 
     /** This tool's output style (set per run by {@link #started}). */
     private OutputStyle style = OutputStyle.passthrough();
@@ -81,19 +83,27 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         output.getStyleClass().addAll("editor-area", "run-output");
         RunPanel.installLinkClicks(output, () -> onLink);
         output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_CLICKED, e -> {
-            if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY || e.getClickCount() != 1 || onUrl == null) {
+            if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY || e.getClickCount() != 1) {
                 return;
             }
             int offset = output.hit(e.getX(), e.getY()).getInsertionIndex();
             ConsoleUrls.Link link = ConsoleUrls.at(output.getText(), offset);
-            if (link != null) {
+            if (link != null && onUrl != null) {
                 onUrl.accept(link.url());
+                e.consume();
+                return;
+            }
+            GitOutputLinks.Link file = gitTranscript ? GitOutputLinks.at(output.getText(), offset) : null;
+            if (file != null && onLink != null) {
+                onLink.accept(new StackTraceLinks.Link(file.file(), 1));
                 e.consume();
             }
         });
         output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_MOVED, e -> {
             int offset = output.hit(e.getX(), e.getY()).getInsertionIndex();
-            output.setCursor(ConsoleUrls.at(output.getText(), offset) == null ? Cursor.TEXT : Cursor.HAND);
+            boolean linked = ConsoleUrls.at(output.getText(), offset) != null
+                    || (gitTranscript && GitOutputLinks.at(output.getText(), offset) != null);
+            output.setCursor(linked ? Cursor.HAND : Cursor.TEXT);
         });
         output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_EXITED, e -> output.setCursor(null));
         ConsoleNav.installShared(output);
@@ -135,6 +145,11 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         if (logMode) {
             status.setText(tr("console.log.idle"));
         }
+    }
+
+    /** Enables file-path links for the Git transcript without treating GitHub's plain CLI output as paths. */
+    public void setGitTranscript(boolean gitTranscript) {
+        this.gitTranscript = gitTranscript;
     }
 
     /** In log mode, the header line — the command most recently appended. */
@@ -184,18 +199,35 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         output.appendText(line + "\n");
         if (!line.isEmpty()) {
             StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
-            int offset = 0;
-            for (ConsoleUrls.Link link : ConsoleUrls.find(line)) {
-                if (link.start() > offset) {
-                    builder.add(styleClass == null ? List.of() : List.of(styleClass), link.start() - offset);
+            List<GitOutputLinks.Link> fileLinks = gitTranscript ? GitOutputLinks.find(line) : List.of();
+            List<ConsoleUrls.Link> urlLinks = ConsoleUrls.find(line);
+            for (int i = 0; i < line.length(); ) {
+                int end = line.length();
+                boolean linked = false;
+                for (ConsoleUrls.Link link : urlLinks) {
+                    if (link.start() == i) {
+                        end = link.end();
+                        linked = true;
+                        break;
+                    }
                 }
+                for (GitOutputLinks.Link link : fileLinks) {
+                    if (link.start() == i) {
+                        end = Math.min(end, link.end());
+                        linked = true;
+                        break;
+                    }
+                }
+                int next = end;
+                for (ConsoleUrls.Link link : urlLinks) next = Math.min(next, link.start() > i ? link.start() : end);
+                for (GitOutputLinks.Link link : fileLinks) next = Math.min(next, link.start() > i ? link.start() : end);
+                if (next > i && !linked) end = next;
                 builder.add(
-                        styleClass == null ? List.of("console-url") : List.of(styleClass, "console-url"),
-                        link.end() - link.start());
-                offset = link.end();
-            }
-            if (offset < line.length()) {
-                builder.add(styleClass == null ? List.of() : List.of(styleClass), line.length() - offset);
+                        linked
+                                ? styleClass == null ? List.of("console-url") : List.of(styleClass, "console-url")
+                                : styleClass == null ? List.of() : List.of(styleClass),
+                        end - i);
+                i = end;
             }
             StyleSpans<Collection<String>> spans = builder.create();
             output.setStyleSpans(start, spans);

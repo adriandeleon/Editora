@@ -52,6 +52,15 @@ public interface OutputStyle {
         return OutputStyle::ciStyle;
     }
 
+    /**
+     * Git's human-readable status and unified-diff output.  This deliberately recognizes only stable Git
+     * markers: command output is otherwise free-form, and coloring ordinary prose would make the transcript
+     * harder to read rather than more useful.
+     */
+    static OutputStyle git() {
+        return OutputStyle::gitStyle;
+    }
+
     private static String ciStyle(String line) {
         if (line == null) {
             return null;
@@ -95,5 +104,40 @@ public interface OutputStyle {
             case TRACE -> "log-trace";
             case INFO -> null;
         };
+    }
+
+    private static String gitStyle(String line) {
+        if (line == null) {
+            return null;
+        }
+        String trimmed = line.stripLeading();
+        if (trimmed.startsWith("diff --git ")
+                || trimmed.startsWith("index ")
+                || trimmed.startsWith("--- ")
+                || trimmed.startsWith("+++ ")) {
+            return "diff-header";
+        }
+        if (trimmed.startsWith("@@")) {
+            return "diff-range";
+        }
+        if (trimmed.startsWith("+")) {
+            return "diff-inserted";
+        }
+        if (trimmed.startsWith("-")) {
+            return "diff-deleted";
+        }
+        if (trimmed.matches("(?:modified|typechange):\\s+.+")) {
+            return "git-output-modified";
+        }
+        if (trimmed.matches("new file:\\s+.+") || trimmed.matches("create mode \\d+ .+")) {
+            return "git-output-added";
+        }
+        if (trimmed.matches("deleted:\\s+.+") || trimmed.matches("delete mode \\d+ .+")) {
+            return "git-output-deleted";
+        }
+        if (trimmed.matches("renamed(?: from| to)?:\\s+.+")) {
+            return "git-output-renamed";
+        }
+        return console().styleClassFor(line);
     }
 }
