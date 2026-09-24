@@ -1,7 +1,9 @@
 package com.editora.ui;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.TreeSet;
 import java.util.function.Consumer;
 
 import javafx.geometry.Insets;
@@ -15,6 +17,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.build.OutputStyle;
+import com.editora.git.GitOutputHighlights;
 import com.editora.git.GitOutputLinks;
 import com.editora.run.ConsoleUrls;
 import com.editora.run.StackTraceLinks;
@@ -200,34 +203,42 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         if (!line.isEmpty()) {
             StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
             List<GitOutputLinks.Link> fileLinks = gitTranscript ? GitOutputLinks.find(line) : List.of();
+            List<GitOutputHighlights.Span> highlights = gitTranscript ? GitOutputHighlights.find(line) : List.of();
             List<ConsoleUrls.Link> urlLinks = ConsoleUrls.find(line);
-            for (int i = 0; i < line.length(); ) {
-                int end = line.length();
-                boolean linked = false;
-                for (ConsoleUrls.Link link : urlLinks) {
-                    if (link.start() == i) {
-                        end = link.end();
-                        linked = true;
-                        break;
+            TreeSet<Integer> boundaries = new TreeSet<>(List.of(0, line.length()));
+            for (ConsoleUrls.Link link : urlLinks) {
+                boundaries.add(link.start());
+                boundaries.add(link.end());
+            }
+            for (GitOutputLinks.Link link : fileLinks) {
+                boundaries.add(link.start());
+                boundaries.add(link.end());
+            }
+            for (GitOutputHighlights.Span span : highlights) {
+                boundaries.add(span.start());
+                boundaries.add(span.end());
+            }
+            Integer previous = null;
+            for (int end : boundaries) {
+                if (previous != null) {
+                    int begin = previous;
+                    List<String> classes = new ArrayList<>(3);
+                    if (styleClass != null) {
+                        classes.add(styleClass);
                     }
-                }
-                for (GitOutputLinks.Link link : fileLinks) {
-                    if (link.start() == i) {
-                        end = Math.min(end, link.end());
-                        linked = true;
-                        break;
+                    for (GitOutputHighlights.Span span : highlights) {
+                        if (span.start() <= begin && begin < span.end()) {
+                            classes.add(span.styleClass());
+                        }
                     }
+                    boolean linked = fileLinks.stream().anyMatch(link -> link.contains(begin))
+                            || urlLinks.stream().anyMatch(link -> link.start() <= begin && begin < link.end());
+                    if (linked) {
+                        classes.add("console-url");
+                    }
+                    builder.add(classes, end - begin);
                 }
-                int next = end;
-                for (ConsoleUrls.Link link : urlLinks) next = Math.min(next, link.start() > i ? link.start() : end);
-                for (GitOutputLinks.Link link : fileLinks) next = Math.min(next, link.start() > i ? link.start() : end);
-                if (next > i && !linked) end = next;
-                builder.add(
-                        linked
-                                ? styleClass == null ? List.of("console-url") : List.of(styleClass, "console-url")
-                                : styleClass == null ? List.of() : List.of(styleClass),
-                        end - i);
-                i = end;
+                previous = end;
             }
             StyleSpans<Collection<String>> spans = builder.create();
             output.setStyleSpans(start, spans);

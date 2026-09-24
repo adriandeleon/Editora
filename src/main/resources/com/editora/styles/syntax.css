@@ -70,9 +70,14 @@
 /* Git status entries in the Output transcript.  These parallel the file-tree's semantic status hues. */
 .text.git-output-modified { -fx-fill: -color-accent-fg; }
 .text.git-output-added    { -fx-fill: -color-success-fg; }
-.text.git-output-deleted  { -fx-fill: -color-fg-muted; }
+.text.git-output-deleted  { -fx-fill: -color-danger-fg; }
 .text.git-output-renamed  { -fx-fill: -state-violet; }
 .text.git-output-stat     { -fx-fill: -color-accent-fg; }
+.text.git-output-count    { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
+.text.git-output-summary  { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
+.text.git-output-mode     { -fx-font-weight: bold; }
+.text.git-output-neutral  { -fx-fill: -color-fg-muted; }
+.text.git-output-forced   { -fx-fill: -color-warning-fg; }
 
 /* CSV/TSV field separators (source.csv grammar): a muted tint so column boundaries stand out. */
 .text.csv-delimiter { -fx-fill: -color-fg-subtle; }

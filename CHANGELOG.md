@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Git output now colors diffstat additions and deletions separately, emphasizes file and change totals,
+  and highlights create/delete modes and remote update markers while keeping file paths clickable.
+
 - Running a standalone compact source with an unreadable Java launcher now has its own status message,
   leaving the project main-class setup hint intact. Message-catalog tests reject duplicate keys.
 
