@@ -123,6 +123,12 @@ public interface OutputStyle {
         if (trimmed.matches(".+\\s+\\|\\s+(?:\\d+(?:\\s+[+\\-=]*)?|Bin\\b.*)")) {
             return "git-output-stat";
         }
+        if (trimmed.startsWith("+ ") && trimmed.endsWith("(forced update)")) {
+            return "git-output-forced";
+        }
+        if (trimmed.startsWith("* [new branch]") || trimmed.startsWith("* [new tag]")) {
+            return "git-output-added";
+        }
         if (trimmed.startsWith("+")) {
             return "diff-inserted";
         }

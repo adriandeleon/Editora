@@ -190,6 +190,48 @@ class BuildOutputPanelFxTest {
         assertTrue(flags[2], "unified diff additions use the diff insertion color");
     }
 
+    @Test
+    void gitTranscriptColorsDiffstatSummaryAndModesWithoutLosingFileLinks() throws Exception {
+        boolean[] flags = FxTestSupport.callOnFx(() -> {
+            BuildOutputPanel panel = new BuildOutputPanel();
+            panel.logCommand(
+                    GIT,
+                    "Git",
+                    new CommandLog.Entry(
+                            List.of("git", "pull", "--ff-only"),
+                            0,
+                            " src/Added.java | 13 +++++----\n"
+                                    + " 2 files changed, 10 insertions(+), 3 deletions(-)\n"
+                                    + " create mode 100644 src/New.java\n"
+                                    + " delete mode 100644 src/Old.java\n"
+                                    + " + 1234...5678 topic -> origin/topic (forced update)\n",
+                            "",
+                            7));
+            org.fxmisc.richtext.CodeArea out =
+                    FxTestSupport.field((BuildToolPanel) panel.getTabs().get(0).getContent(), "output");
+            String text = out.getText();
+            int graph = text.indexOf("| 13 +++++----");
+            return new boolean[] {
+                out.getStyleOfChar(text.indexOf("src/Added.java")).contains("console-url"),
+                out.getStyleOfChar(graph + 2).contains("git-output-count"),
+                out.getStyleOfChar(graph + 5).contains("diff-inserted"),
+                out.getStyleOfChar(graph + 10).contains("diff-deleted"),
+                out.getStyleOfChar(text.indexOf("2 files changed")).contains("git-output-summary"),
+                out.getStyleOfChar(text.indexOf("10 insertions")).contains("diff-inserted"),
+                out.getStyleOfChar(text.indexOf("3 deletions")).contains("diff-deleted"),
+                out.getStyleOfChar(text.indexOf("create mode")).contains("git-output-added")
+                        && out.getStyleOfChar(text.indexOf("create mode")).contains("git-output-mode"),
+                out.getStyleOfChar(text.indexOf("src/New.java")).contains("console-url"),
+                out.getStyleOfChar(text.indexOf("delete mode")).contains("git-output-deleted")
+                        && out.getStyleOfChar(text.indexOf("delete mode")).contains("git-output-mode"),
+                out.getStyleOfChar(text.indexOf("forced update")).contains("git-output-forced")
+            };
+        });
+        for (int i = 0; i < flags.length; i++) {
+            assertTrue(flags[i], "Git transcript semantic span " + i);
+        }
+    }
+
     /** Reads the RichTextFX console text out of a {@link BuildToolPanel} via its private {@code output} field. */
     private static String consoleText(BuildToolPanel panel) {
         org.fxmisc.richtext.CodeArea output = FxTestSupport.field(panel, "output");
