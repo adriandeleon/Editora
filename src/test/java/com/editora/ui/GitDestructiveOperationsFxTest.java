@@ -155,6 +155,7 @@ class GitDestructiveOperationsFxTest {
             async.await(confirmed, "discard confirmation");
             async.await(completed, "mixed discard completion");
             async.awaitFx();
+            awaitBufferContent(staged, "staged version\n");
 
             assertEquals("staged version\n", Files.readString(repo.resolve(tracked.get(0))));
             assertEquals(
