@@ -151,23 +151,15 @@ public final class HistoryService {
             try {
                 onRecorded.accept(outcome);
             } finally {
-                Set<String> live = null;
                 synchronized (publicationLock) {
                     publicationsInFlight--;
                     if (publicationsInFlight == 0 && deferredLiveHashes != null) {
-                        live = deferredLiveHashes;
+                        Set<String> live = deferredLiveHashes;
                         deferredLiveHashes = null;
+                        queueGc(live);
                     }
                     if (publicationsInFlight == 0) {
                         publicationHashes.clear();
-                    }
-                }
-                if (live != null) {
-                    Set<String> snapshot = live;
-                    try {
-                        exec.submit(() -> blobs.deleteUnreferenced(snapshot));
-                    } catch (RejectedExecutionException shuttingDown) {
-                        // Retaining stale blobs during final shutdown is safer than deleting without an owner.
                     }
                 }
             }
@@ -209,7 +201,12 @@ public final class HistoryService {
                 deferredLiveHashes = Set.copyOf(protectedHashes);
                 return;
             }
+            // Submit before a new publication can increment publicationsInFlight and queue its blob write.
+            queueGc(snapshot);
         }
+    }
+
+    private void queueGc(Set<String> snapshot) {
         try {
             exec.submit(() -> blobs.deleteUnreferenced(snapshot));
         } catch (RejectedExecutionException shuttingDown) {

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Local File History now queues blob cleanup before acknowledging a durable index write, so a
+  later pre-delete snapshot cannot lose its recovery body to an older cleanup pass.
+
 - Tagged releases now attempt experimental Linux x64, macOS x64/arm64, and Windows x64 GraalVM
   Native Image archives alongside the usual JVM packages. Each extracted archive must pass a
   GUI workflow smoke test before upload; an experimental build failure does not block the
