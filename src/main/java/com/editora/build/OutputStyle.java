@@ -120,6 +120,9 @@ public interface OutputStyle {
         if (trimmed.startsWith("@@")) {
             return "diff-range";
         }
+        if (trimmed.matches(".+\\s+\\|\\s+(?:\\d+(?:\\s+[+\\-=]*)?|Bin\\b.*)")) {
+            return "git-output-stat";
+        }
         if (trimmed.startsWith("+")) {
             return "diff-inserted";
         }

@@ -22,6 +22,10 @@ public final class GitOutputLinks {
     private static final Pattern RENAME = Pattern.compile("^\\s*renamed:\\s+(.+?) -> (.+?)\\s*$");
     private static final Pattern RENAME_PART = Pattern.compile("^\\s*renamed (?:from|to):\\s+(.+?)\\s*$");
     private static final Pattern MODE = Pattern.compile("^\\s*(?:create|delete) mode \\d+ (.+?)\\s*$");
+    /** Git's --stat row: a path, a pipe, then a change count/graph (or "Bin ..." for binary files). */
+    private static final Pattern DIFF_STAT =
+            Pattern.compile("^\\s*(.+?)\\s+\\|\\s+(?:\\d+(?:\\s+[+\\-=]*)?|Bin\\b.*)\\s*$");
+
     private static final Pattern DIFF_FILE = Pattern.compile("^(?:---|\\+\\+\\+) [ab]/(.+?)\\s*$");
     private static final Pattern DIFF_PAIR = Pattern.compile("^diff --git a/(.+?) b/(.+?)\\s*$");
 
@@ -63,6 +67,11 @@ public final class GitOutputLinks {
         Matcher diffFile = DIFF_FILE.matcher(line);
         if (diffFile.matches() && !"/dev/null".equals(diffFile.group(1))) {
             add(links, line, diffFile.start(1), diffFile.end(1));
+            return List.copyOf(links);
+        }
+        Matcher diffStat = DIFF_STAT.matcher(line);
+        if (diffStat.matches()) {
+            add(links, line, diffStat.start(1), diffStat.end(1));
         }
         return List.copyOf(links);
     }

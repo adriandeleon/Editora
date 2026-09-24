@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -776,7 +777,7 @@ final class DiffCoordinator {
             return;
         }
         host.setStatus(tr("status.diff.scanningDirectories"));
-        fileReadExecutor.submit(() -> {
+        submitFileRead(() -> {
             try {
                 DirectoryDiff.Result result = DirectoryDiff.compare(leftRoot, rightRoot);
                 List<DirectoryReviewPane.Entry> entries = result.entries().stream()
@@ -861,7 +862,7 @@ final class DiffCoordinator {
                 callback.accept(DiffContent.text(open.text()));
                 return;
             }
-            fileReadExecutor.submit(() -> {
+            submitFileRead(() -> {
                 DiffContent content = diskContent(path);
                 javafx.application.Platform.runLater(() -> callback.accept(content));
             });
@@ -1443,7 +1444,7 @@ final class DiffCoordinator {
                                             String baseText = decodeMergeBlob(base.bytes(), charset);
                                             String oursText = decodeMergeBlob(ours.bytes(), charset);
                                             String theirsText = decodeMergeBlob(theirs.bytes(), charset);
-                                            fileReadExecutor.submit(() -> {
+                                            submitFileRead(() -> {
                                                 ThreeWayMerge.Result result =
                                                         ThreeWayMerge.merge(baseText, oursText, theirsText);
                                                 javafx.application.Platform.runLater(() -> {
@@ -1505,5 +1506,15 @@ final class DiffCoordinator {
     public void shutdown() {
         fileReadExecutor.shutdownNow();
         diffService.shutdown();
+    }
+
+    private void submitFileRead(Runnable task) {
+        try {
+            fileReadExecutor.submit(task);
+        } catch (RejectedExecutionException e) {
+            if (!fileReadExecutor.isShutdown()) {
+                throw e;
+            }
+        }
     }
 }
