@@ -141,6 +141,74 @@ class CompactSourceRunWithoutLspFxTest {
         }
     }
 
+    @Test
+    void missingSelectedJdkReportsBeforeLaunch(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("Hello.java");
+        Files.writeString(file, "void main() {}\n");
+        FxWindowFixture fx = FxWindowFixture.create(
+                dir, false, false, true, List.of(new MainController.OpenTarget(file, 0, 0)), true, c -> {});
+        try {
+            Path missing = dir.resolve("missing-jdk");
+            FxTestSupport.runOnFx(() -> fx.shared.getSettings().setMavenJdkHome(missing.toString()));
+            awaitRunnable(fx);
+            FxTestSupport.runOnFx(() -> {
+                CommandRegistry commands = FxTestSupport.field(fx.controller, "registry");
+                commands.run("file.run");
+            });
+            String executable = com.editora.run.JdkToolchain.javaExecutable(missing.toString());
+            assertStatus(fx, Messages.tr("status.run.javaUnavailable", executable));
+            RunCoordinator run = FxTestSupport.field(fx.controller, "runCoordinator");
+            List<String> command = FxTestSupport.field(run, "lastRunCommand");
+            assertTrue(command == null || command.isEmpty(), "invalid JDK must not start a run");
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    @Test
+    void shebangRejectsSourceReleaseBefore25(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("launcher");
+        Files.writeString(file, "#!/usr/bin/env -S java --source 21\nvoid main() {}\n");
+        FxWindowFixture fx = FxWindowFixture.create(
+                dir, false, false, true, List.of(new MainController.OpenTarget(file, 0, 0)), true, c -> {});
+        try {
+            awaitRunnable(fx);
+            FxTestSupport.runOnFx(() -> {
+                CommandRegistry commands = FxTestSupport.field(fx.controller, "registry");
+                commands.run("file.run");
+            });
+            assertStatus(fx, Messages.tr("status.run.needSource25", 21));
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    private static void awaitRunnable(FxWindowFixture fx) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            boolean runnable = FxTestSupport.callOnFx(() -> {
+                EditorBuffer buffer =
+                        (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+                return buffer != null && buffer.isRunnable();
+            });
+            if (runnable) return;
+            Thread.sleep(20);
+        }
+        throw new AssertionError("compact source did not become runnable");
+    }
+
+    private static void assertStatus(FxWindowFixture fx, String expected) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            boolean matches = FxTestSupport.callOnFx(() -> {
+                StatusBar status = FxTestSupport.field(fx.controller, "statusBar");
+                Label echo = FxTestSupport.field(status, "echo");
+                return expected.equals(echo.getText());
+            });
+            if (matches) return;
+            Thread.sleep(20);
+        }
+        throw new AssertionError("status did not show: " + expected);
+    }
+
     private static boolean isWindows() {
         return System.getProperty("os.name", "")
                 .toLowerCase(java.util.Locale.ROOT)

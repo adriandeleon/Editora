@@ -8,6 +8,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import com.editora.command.CommandRegistry;
+import com.editora.config.SharedConfig;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DebugAdapterLocator;
@@ -43,6 +45,59 @@ class CompactSourceDebugProbeFxTest {
     @Test
     void extensionlessShebangBreakpointAndStepOver(@TempDir Path dir) throws Exception {
         probe(dir, true);
+    }
+
+    @Test
+    void debugCommandRoutesExtensionlessShebangAndRemovesCompilation(@TempDir Path dir) throws Exception {
+        assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
+        Path jdtls = Path.of(System.getProperty("user.home"), ".editora/plugins/lsp/java/bin/jdtls");
+        Path plugin = DebugAdapterLocator.locate("", Path.of(System.getProperty("user.home")))
+                .orElse(null);
+        assumeTrue(Files.isExecutable(jdtls) && plugin != null);
+        Path file = dir.resolve("launcher");
+        Files.writeString(
+                file, "#!/usr/bin/env -S java --source 25\nvoid main() throws Exception { Thread.sleep(10000); }\n");
+        Path configDir = Files.createDirectory(dir.resolve("config"));
+        SharedConfig seed = new SharedConfig(configDir, false);
+        seed.load();
+        seed.getSettings().setLspSupport(true);
+        seed.getSettings().setJavaLspEnabled(true);
+        seed.getSettings().setJavaLspCommand(jdtls.toString());
+        seed.getSettings().setDebugSupport(true);
+        seed.getSettings().setJavaDebugPluginPath(plugin.toString());
+        assertTrue(seed.saveSettings());
+        seed.shutdown();
+
+        FxWindowFixture fx = FxWindowFixture.create(
+                configDir, false, false, false, List.of(new MainController.OpenTarget(file, 0, 0)), true, c -> {});
+        Path compilation = null;
+        try {
+            DebugCoordinator debug = FxTestSupport.field(fx.controller, "debugCoordinator");
+            DapManager dap = FxTestSupport.field(fx.controller, "dapManager");
+            boolean ready = false;
+            for (int i = 0; i < 350; i++) {
+                ready = FxTestSupport.callOnFx(debug::debugEffective);
+                if (ready) break;
+                Thread.sleep(100);
+            }
+            assertTrue(ready, "Java Debug should become available in the window");
+            FxTestSupport.runOnFx(() -> {
+                CommandRegistry commands = FxTestSupport.field(fx.controller, "registry");
+                commands.run("debug.start");
+            });
+            for (int i = 0; i < 350; i++) {
+                compilation = FxTestSupport.field(dap, "compilationDirectory");
+                if (compilation != null) break;
+                Thread.sleep(100);
+            }
+            assertNotNull(compilation, "Debug command should compile the extensionless Java shebang");
+            assertTrue(Files.exists(compilation.resolve("launcher.java")));
+            FxTestSupport.runOnFx(dap::stop);
+            for (int i = 0; i < 100 && Files.exists(compilation); i++) Thread.sleep(50);
+            assertFalse(Files.exists(compilation), "stopping Debug should remove source and class files");
+        } finally {
+            fx.dispose();
+        }
     }
 
     private void probe(Path dir, boolean shebang) throws Exception {

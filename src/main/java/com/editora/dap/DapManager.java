@@ -2,7 +2,11 @@ package com.editora.dap;
 
 import java.io.File;
 import java.net.ServerSocket;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -115,6 +119,8 @@ public final class DapManager implements DapClient.Host {
     private Path debugFile;
     /** Temporary .java copy used to compile an extensionless shebang, scoped to its launch epoch. */
     private volatile SourceAlias sourceAlias;
+
+    private volatile Path compilationDirectory;
 
     private record SourceAlias(long epoch, Path original, Path compiled) {}
 
@@ -650,15 +656,14 @@ public final class DapManager implements DapClient.Host {
     private void compileAndLaunch(Path file, String fqn, String javaExecOverride, long epoch, Integer sourceVersion) {
         Map<String, String> launchEnvironment = env;
         startupTask = io.submit(() -> {
+            Path out = null;
+            boolean retained = false;
             try {
-                Path out = java.nio.file.Files.createTempDirectory("editora-dap-");
-                out.toFile().deleteOnExit();
+                out = Files.createTempDirectory("editora-dap-");
                 Path compileFile = file;
                 if (sourceVersion != null) {
                     compileFile = out.resolve(file.getFileName() + ".java");
-                    java.nio.file.Files.writeString(compileFile, withoutShebang(java.nio.file.Files.readString(file)));
-                    compileFile.toFile().deleteOnExit(); // backup if the app exits before session cleanup
-                    sourceAlias = new SourceAlias(epoch, file, compileFile);
+                    Files.writeString(compileFile, withoutShebang(Files.readString(file)));
                 }
                 String javaExec = javaExecOverride == null || javaExecOverride.isBlank()
                         ? firstOrNull(ProcessRunner.resolveExecutable(List.of("java")))
@@ -672,13 +677,24 @@ public final class DapManager implements DapClient.Host {
                     fail(epoch, "Compilation failed:\n" + (r.out() + "\n" + r.err()).strip());
                     return;
                 }
+                synchronized (sessionLock) {
+                    if (!isCurrent(epoch)) {
+                        return;
+                    }
+                    compilationDirectory = out;
+                    if (sourceVersion != null) {
+                        sourceAlias = new SourceAlias(epoch, file, compileFile);
+                    }
+                    retained = true;
+                }
                 String cwd = file.getParent() == null ? null : file.getParent().toString();
+                Path classes = out;
                 Platform.runLater(() -> startDebugSessionAndConnect(
                         file,
                         LaunchConfig.launch(
                                 fqn,
                                 null,
-                                List.of(out.toString()),
+                                List.of(classes.toString()),
                                 List.of(),
                                 javaExec,
                                 cwd,
@@ -690,6 +706,10 @@ public final class DapManager implements DapClient.Host {
                         epoch));
             } catch (Exception e) {
                 fail(epoch, "Could not compile/launch " + fqn + ": " + msg(e));
+            } finally {
+                if (!retained && out != null) {
+                    removeCompilationDirectory(out);
+                }
             }
         });
     }
@@ -730,18 +750,35 @@ public final class DapManager implements DapClient.Host {
         return alias != null && alias.epoch() == sessionEpoch ? alias : null;
     }
 
-    /** The temporary source contains user code; remove it after the adapter no longer needs it. */
-    private void releaseSourceAlias() {
-        SourceAlias alias = sourceAlias;
+    /** Remove both the temporary source and compiled classes after the adapter releases them. */
+    private void releaseCompilationDirectory() {
+        Path directory = compilationDirectory;
+        compilationDirectory = null;
         sourceAlias = null;
-        if (alias != null) {
-            java.util.concurrent.CompletableFuture.runAsync(() -> {
-                try {
-                    java.nio.file.Files.deleteIfExists(alias.compiled());
-                } catch (java.io.IOException e) {
-                    LOG.log(Level.FINE, "Could not remove temporary debug source", e);
+        if (directory != null) {
+            java.util.concurrent.CompletableFuture.runAsync(() -> removeCompilationDirectory(directory));
+        }
+    }
+
+    static void removeCompilationDirectory(Path directory) {
+        try {
+            Files.walkFileTree(directory, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws java.io.IOException {
+                    Files.deleteIfExists(file);
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path dir, java.io.IOException error)
+                        throws java.io.IOException {
+                    if (error != null) throw error;
+                    Files.deleteIfExists(dir);
+                    return FileVisitResult.CONTINUE;
                 }
             });
+        } catch (java.io.IOException e) {
+            LOG.log(Level.FINE, "Could not remove temporary debug classes", e);
         }
     }
 
@@ -1265,7 +1302,7 @@ public final class DapManager implements DapClient.Host {
         if (c != null) {
             c.dispose();
         }
-        releaseSourceAlias();
+        releaseCompilationDirectory();
         setState(State.INACTIVE);
     }
 
@@ -1476,7 +1513,7 @@ public final class DapManager implements DapClient.Host {
             if (c != null) {
                 c.dispose();
             }
-            releaseSourceAlias();
+            releaseCompilationDirectory();
             setState(State.INACTIVE);
         });
     }

@@ -309,14 +309,18 @@ and dispatches `startLaunch(file, language, picker)`:
 An extensionless Java shebang (`java --source 25+`) cannot be passed directly to `javac` as a source
 filename. Debug writes a temporary `.java` copy with the shebang line blanked, preserving line numbers,
 then compiles it with `--release` under the selected JDK. Breakpoints sent to the adapter target that
-copy; stack frames are mapped back to the user's original path. The temporary source is removed when
-the session ends.
+copy; stack frames are mapped back to the user's original path. The temporary source and compiled
+classes are removed when the session ends or compilation fails, including a cancelled startup.
 
 The opt-in `CompactSourceDebugProbeFxTest` drives the installed JDT LS and Java debug adapter through
 `DapManager`: it verifies that a breakpoint in a loose compact `.java` file and an extensionless
 shebang stops on the original source line, its local variable is readable, and step-over advances both
 the line and value. Run it with
 `./mvnw test -Dtest=CompactSourceDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true`.
+It also starts an extensionless shebang through the window's `debug.start` command and checks that
+stopping the session removes the temporary compilation directory. Pull-request CI installs JDT LS
+and the Java debug adapter, then runs this probe and `JdtlsCompactSourceProbeTest` in the
+`Compact Java integration` job.
 - **python/javascript** → `startProgram`: snapshot breakpoints on the FX thread, then off-thread spawn
   the adapter + connect + `launch`.
 

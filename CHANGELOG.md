@@ -19,16 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Extensionless Java `--source 25+` shebang files can now be debugged with breakpoints, stepping,
   and local variables. Debug compiles a line-preserving temporary `.java` copy, maps breakpoints and
-  stack frames back to the original file, and removes the temporary source after the session.
+  stack frames back to the original file, and removes the temporary source and compiled classes after
+  the session.
 - Added an opt-in live compact-source Debug probe that checks a breakpoint, source location,
-  local-variable values, and stepping through the installed JDT LS and Java debug adapter.
+  local-variable values, stepping, and the window's Debug command through the installed JDT LS and
+  Java debug adapter. Pull-request CI runs it alongside the live JDT LS compact-source probe.
 - Debugging a compact `.java` file now compiles its implicit class with the selected JDK's `javac`,
   launches it with the matching `java`, and passes the selected JDK environment to the debuggee.
   A helper type in the file no longer causes Debug to choose the wrong main class, and sibling
   source files resolve from the file's directory.
 - The Default JDK choice now also runs and debugs standalone Java source files. Run probes that selected
   executable, so an older Java on PATH cannot reject a file launched with JDK 25; Doctor reports the same
-  choice. Extensionless Java shebangs report when their requested source release exceeds the selected JDK.
+  choice. Run reports when the selected Java launcher cannot be probed, and extensionless Java shebangs
+  reject source releases below 25 or newer than the selected JDK.
   Compact-source diagnostics are no longer hidden by message text. Live checks against the bundled JDT LS
   cover Maven and loose files, implicit imports, completion, and genuine compiler errors.
 - Compact Java and Python files can now be run with language services disabled. Interactive Run

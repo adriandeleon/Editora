@@ -73,6 +73,18 @@ class DapManagerTest {
     }
 
     @Test
+    void temporaryCompilationRemovesSourcesAndNestedClasses(@TempDir Path dir) throws IOException {
+        Path compilation = Files.createDirectory(dir.resolve("editora-dap-test"));
+        Files.writeString(compilation.resolve("launcher.java"), "void main() {}\n");
+        Path nested = Files.createDirectories(compilation.resolve("example"));
+        Files.writeString(nested.resolve("Launcher.class"), "compiled");
+
+        DapManager.removeCompilationDirectory(compilation);
+
+        assertTrue(Files.notExists(compilation));
+    }
+
+    @Test
     void selectedJdkCompilesAndRunsCompactSourceWithDebugSymbols(@TempDir Path dir) throws IOException {
         assumeTrue(Runtime.version().feature() >= 25);
         Path file = dir.resolve("Hello.java");

@@ -772,8 +772,17 @@ final class RunCoordinator {
         if (javaSource) {
             // Probe exactly the launcher we will use; a selected JDK may differ from PATH. The
             // extensionless shebang can request a source release newer than the compact-source minimum.
+            Integer sourceRelease = buffer.getShebangJavaSource();
+            if (sourceRelease != null && sourceRelease < 25) {
+                host.setStatus(tr("status.run.needSource25", sourceRelease));
+                return;
+            }
             service.detectJavaMajor(javaExecutable, major -> {
-                int required = Math.max(25, buffer.getShebangJavaSource() == null ? 25 : buffer.getShebangJavaSource());
+                if (major < 0) {
+                    host.setStatus(tr("status.run.javaUnavailable", javaExecutable));
+                    return;
+                }
+                int required = Math.max(25, sourceRelease == null ? 25 : sourceRelease);
                 if (major > 0 && major < required) {
                     host.setStatus(
                             required == 25
