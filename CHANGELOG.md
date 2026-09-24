@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Running a standalone compact source with an unreadable Java launcher now has its own status message,
+  leaving the project main-class setup hint intact. Message-catalog tests reject duplicate keys.
+
 - Local File History now queues blob cleanup before acknowledging a durable index write, so a
   later pre-delete snapshot cannot lose its recovery body to an older cleanup pass.
 

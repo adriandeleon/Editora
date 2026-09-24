@@ -779,7 +779,7 @@ final class RunCoordinator {
             }
             service.detectJavaMajor(javaExecutable, major -> {
                 if (major < 0) {
-                    host.setStatus(tr("status.run.javaUnavailable", javaExecutable));
+                    host.setStatus(tr("status.run.javaVersionUnreadable", javaExecutable));
                     return;
                 }
                 int required = Math.max(25, sourceRelease == null ? 25 : sourceRelease);
