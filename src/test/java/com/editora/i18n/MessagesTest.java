@@ -58,10 +58,11 @@ class MessagesTest {
      * resources. Observed, not hypothesised: it is how a conflicted cherry-pick went green here.
      */
     @Test
-    void noCatalogHasAMalformedLine() {
+    void noCatalogHasAMalformedOrDuplicateKey() {
         for (String lang : ALL_CATALOGS) {
             String suffix = lang.isEmpty() ? "" : "_" + lang;
             List<String> lines = readLines(suffix);
+            Map<String, Integer> firstLine = new TreeMap<>();
             boolean continuation = false;
             for (int i = 0; i < lines.size(); i++) {
                 String line = lines.get(i);
@@ -76,6 +77,9 @@ class MessagesTest {
                         trimmed.startsWith("<<<<<<<") || trimmed.startsWith(">>>>>>>") || trimmed.equals("======="),
                         where + " is an unresolved merge conflict marker: " + trimmed);
                 assertTrue(trimmed.indexOf('=') > 0, where + " is neither a comment nor key=value: " + trimmed);
+                String key = trimmed.substring(0, trimmed.indexOf('='));
+                Integer previous = firstLine.putIfAbsent(key, i + 1);
+                assertTrue(previous == null, where + " duplicates key " + key + " from line " + previous);
             }
         }
     }

@@ -156,7 +156,7 @@ class CompactSourceRunWithoutLspFxTest {
                 commands.run("file.run");
             });
             String executable = com.editora.run.JdkToolchain.javaExecutable(missing.toString());
-            assertStatus(fx, Messages.tr("status.run.javaUnavailable", executable));
+            assertStatus(fx, Messages.tr("status.run.javaVersionUnreadable", executable));
             RunCoordinator run = FxTestSupport.field(fx.controller, "runCoordinator");
             List<String> command = FxTestSupport.field(run, "lastRunCommand");
             assertTrue(command == null || command.isEmpty(), "invalid JDK must not start a run");
