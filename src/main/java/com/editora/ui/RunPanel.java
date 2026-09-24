@@ -212,10 +212,19 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
     /** Appends one line of program output, applying stderr/log-level colors and clickable URL styling. */
     public void appendOutput(String line, boolean stderr) {
+        appendOutput(line, stderr, true);
+    }
+
+    /** Appends a prompt without adding a newline, so the user's response can follow it. */
+    public void appendPartialOutput(String text, boolean stderr) {
+        appendOutput(text, stderr, false);
+    }
+
+    private void appendOutput(String line, boolean stderr, boolean completeLine) {
         int start = output.getLength();
         int caretBefore = output.getCaretPosition();
         boolean follow = caretBefore >= start; // scrolled back? stay put
-        output.appendText(line + "\n");
+        output.appendText(line + (completeLine ? "\n" : ""));
         if (!line.isEmpty()) {
             String styleClass = stderr ? "run-stderr" : lineStyle.styleClassFor(line);
             StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();

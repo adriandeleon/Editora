@@ -76,7 +76,7 @@ Two paths:
 - `enqueue(file, bytes)` — non-blocking and **coalesced per file** (latest bytes win), via `ConfigManager.saveAsync()` → `SharedConfig.enqueueSettings()`. This backs the frequent in-session save (`MainController.requestSave`).
 - `flush()` — blocks until everything queued has landed, via `ConfigManager.save()` → `SharedConfig.flushWrites()`. This is the durable form used by quit (`persistSession`), one-off actions, and `exportConfig()`. `App.start` registers a JVM-shutdown flush.
 
-`settings.json` and `workspace-state.json` are the only files with both an async and a sync writer, and **both funnel through the one writer queue**. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. The other stores (`bookmarks.json`, `notes.json`, …) keep their own direct synchronous `json.writeValue` calls in `SharedConfig` and don't go through the queue.
+`settings.json` and `workspace-state.json` have both async and sync save paths, and **both funnel through the one writer queue**. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. Local History's `history/index.json` also uses that queue: it waits for the exact index snapshot to become durable before confirming a destructive file operation. Its blob GC is queued under the publication lock, before durable callbacks can start a newer snapshot; the history worker also queues GC under its publication lock so an older live set cannot overtake a new blob write. Other stores (`bookmarks.json`, `notes.json`, …) keep direct synchronous writes in `SharedConfig`.
 
 ## Schema versioning and migrations
 
@@ -90,8 +90,8 @@ Every structured config file carries an integer `schemaVersion` field, and its o
 2. The version to **assume when the file has no `schemaVersion` marker** — `1`, the pre-versioning baseline (a bare JSON array is detected as `0` instead, by `ConfigMigrations.versionOf`).
 3. An ordered map of **step `Migration`s** keyed by the version they upgrade *from* (`v → v+1`).
 
-For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (103), with an additive identity step for
-the global Maven JDK at `102 → 103`; `WORKSPACE` uses `11 → 12` for the per-run-configuration JDK
+For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (104), with an additive identity step for
+the Default JDK at `102 → 103` (also used by standalone Java files); `WORKSPACE` uses `11 → 12` for the per-run-configuration JDK
 override; `PROJECTS` registers `1 → 2` as `seedOpenProjectIds`; and `RECENT` registers `0 → 1` as
 `wrapRecentFilesArray`.
 

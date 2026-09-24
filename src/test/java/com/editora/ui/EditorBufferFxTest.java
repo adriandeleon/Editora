@@ -122,6 +122,7 @@ class EditorBufferFxTest {
             return buf;
         });
         assertTrue(FxTestSupport.callOnFx(java::isRunnable), "compact-source main ⇒ runnable");
+        assertTrue(FxTestSupport.callOnFx(java::isCompactSource));
         assertFalse(FxTestSupport.callOnFx(java::isPython));
 
         // Python is runnable (the controller picks python3 as the runner).
@@ -133,6 +134,7 @@ class EditorBufferFxTest {
             return buf;
         });
         assertTrue(FxTestSupport.callOnFx(py::isRunnable));
+        assertFalse(FxTestSupport.callOnFx(py::isCompactSource));
         assertTrue(FxTestSupport.callOnFx(py::isPython));
 
         // A shell script needs BOTH the Run feature and the shell-run gate (the Bash LSP toggle).
@@ -187,6 +189,7 @@ class EditorBufferFxTest {
         });
         assertEquals("java", FxTestSupport.callOnFx(javaBuf::getLanguage), "java --source shebang ⇒ java");
         assertTrue(FxTestSupport.callOnFx(javaBuf::isRunnable), "shebang compact source ⇒ runnable");
+        assertTrue(FxTestSupport.callOnFx(javaBuf::isCompactSource));
         assertEquals(25, FxTestSupport.callOnFx(javaBuf::getShebangJavaSource));
 
         // A real extension always wins over any first-line content.

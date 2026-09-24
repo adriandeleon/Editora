@@ -8,12 +8,15 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeoutException;
 
+import com.editora.process.ProcessRunner;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DapManagerTest {
 
@@ -58,6 +61,54 @@ class DapManagerTest {
     @Test
     void mainClassFromFileNullForNoName() {
         assertNull(DapManager.mainClassFromFile(null));
+    }
+
+    @Test
+    void shebangIsBlankedWithoutMovingDebugLines() {
+        String source = "#!/usr/bin/env -S java --source 25\nvoid main() {\n  int value = 41;\n}\n";
+        String compiled = DapManager.withoutShebang(source);
+        assertEquals(source.length(), compiled.length());
+        assertEquals(source.substring(source.indexOf('\n')), compiled.substring(compiled.indexOf('\n')));
+        assertTrue(compiled.startsWith(" "));
+    }
+
+    @Test
+    void temporaryCompilationRemovesSourcesAndNestedClasses(@TempDir Path dir) throws IOException {
+        Path compilation = Files.createDirectory(dir.resolve("editora-dap-test"));
+        Files.writeString(compilation.resolve("launcher.java"), "void main() {}\n");
+        Path nested = Files.createDirectories(compilation.resolve("example"));
+        Files.writeString(nested.resolve("Launcher.class"), "compiled");
+
+        DapManager.removeCompilationDirectory(compilation);
+
+        assertTrue(Files.notExists(compilation));
+    }
+
+    @Test
+    void selectedJdkCompilesAndRunsCompactSourceWithDebugSymbols(@TempDir Path dir) throws IOException {
+        assumeTrue(Runtime.version().feature() >= 25);
+        Path file = dir.resolve("Hello.java");
+        Files.writeString(file, "class Helper {}\nvoid main() { IO.println(Support.message()); }\n");
+        Files.writeString(
+                dir.resolve("Support.java"), "class Support { static String message() { return \"debug-ready\"; } }\n");
+        Path out = Files.createDirectory(dir.resolve("classes"));
+        String javaExec = Path.of(System.getProperty("java.home"), "bin", isWindows() ? "java.exe" : "java")
+                .toString();
+
+        assertEquals("Hello", DapManager.compactMainClassFromFile(file));
+        ProcessRunner.Result compiled = DapManager.compileStandalone(file, out, javaExec, java.util.Map.of());
+        assertTrue(compiled.ok(), compiled.err());
+        assertTrue(Files.isRegularFile(out.resolve("Hello.class")));
+        ProcessRunner.Result launched = ProcessRunner.run(
+                dir, Duration.ofSeconds(10), java.util.List.of(javaExec, "-cp", out.toString(), "Hello"));
+        assertTrue(launched.ok(), launched.err());
+        assertTrue(launched.out().contains("debug-ready"));
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win");
     }
 
     // --- run-to-cursor temp breakpoint merge ---------------------------------------------------

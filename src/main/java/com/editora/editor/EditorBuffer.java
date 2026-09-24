@@ -561,7 +561,7 @@ public class EditorBuffer implements TabContent {
     private final MarkdownLintStripe mdLintStripe = new MarkdownLintStripe(area);
     /** Files above this size are never scanned for compact-source detection (keeps it off the hot path). */
     private static final int COMPACT_SCAN_LIMIT = 256 * 1024;
-    /** Whether the Run affordance is enabled at all (gated by the LSP feature setting). */
+    /** Whether this buffer can run as a local file (remote buffers cannot). */
     private boolean runFeatureEnabled = true;
     /** Whether shell scripts may show the Run glyph (gated by the Bash LSP server toggle, under the LSP
      *  feature) — separate from Java/Python, which only need {@link #runFeatureEnabled}. */
@@ -3774,6 +3774,11 @@ public class EditorBuffer implements TabContent {
         return runnable;
     }
 
+    /** True when the single-file Run entry is a compact Java source method (rather than a test glyph). */
+    public boolean isCompactSource() {
+        return "java".equals(language) && runLine >= 0;
+    }
+
     /** True specifically for Python (the controller picks {@code python}, vs {@code java}, as the runner). */
     public boolean isPython() {
         return "python".equals(language);
@@ -3789,7 +3794,7 @@ public class EditorBuffer implements TabContent {
         this.onRunnableChanged = callback == null ? () -> {} : callback;
     }
 
-    /** Enables/disables the Run affordance (gated by the LSP feature). When off, the gutter Run glyph,
+    /** Enables/disables the local-file Run affordance. When off, the gutter Run glyph,
      *  the right-click Run item, and the Run tool window all disappear. */
     public void setRunEnabled(boolean enabled) {
         if (enabled != runFeatureEnabled) {

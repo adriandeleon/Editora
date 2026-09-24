@@ -131,7 +131,7 @@ final class LspCoordinator {
         /** Pushes the server's document-symbol outline (or {@code null} to fall back to the heuristic). */
         void setStructureSymbols(EditorBuffer buffer, java.util.List<com.editora.lsp.SymbolNode> symbols);
 
-        /** Refreshes the toolbar Run button (the Run affordance is gated by the LSP feature). */
+        /** Refreshes the toolbar Run button after the shell Run gate changes. */
         void refreshRunButton();
 
         /** Base dir for per-project jdtls Eclipse workspaces ({@code <configDir>/jdtls-workspaces}). */
@@ -596,14 +596,6 @@ final class LspCoordinator {
         // problems for files actually OPEN in Editora — otherwise the Problems window fills with whole-
         // workspace noise from a single open file.
         EditorBuffer buffer = ops.bufferForPath(file);
-        // A jdtls whose compliance predates JDK 25 flags a compact source file's implicit class as a
-        // preview/unsupported feature — pure noise for a file the JDK 25 launcher runs fine. Drop just
-        // those complaints (real errors in the file still surface).
-        if (buffer != null && "java".equals(buffer.getLanguage()) && buffer.isRunnable()) {
-            diagnostics = diagnostics.stream()
-                    .filter(d -> !isCompactSourceNoise(d.message()))
-                    .toList();
-        }
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
         }
@@ -685,18 +677,6 @@ final class LspCoordinator {
         problemsPanel.setProblems(problems);
     }
 
-    /** Whether an LSP diagnostic on a compact source file is implicit-class noise from a server whose
-     *  Java compliance predates JDK 25 (JEP 512 final). Pure — tested. */
-    static boolean isCompactSourceNoise(String message) {
-        if (message == null) {
-            return false;
-        }
-        String m = message.toLowerCase(Locale.ROOT);
-        return m.contains("implicitly declared class") // JDK 23+ JDT wording (incl. preview gating)
-                || m.contains("unnamed class") // the JDK 21/22 preview-era wording
-                || m.contains("instance main method"); // "...Instance Main Methods is a preview feature"
-    }
-
     // --- gating + lifecycle (the configure/detect/per-buffer-sync machine) ----------------------------
 
     /** Whether {@code serverId}'s command was found on this machine (read by the DAP debug gating for java). */
@@ -731,11 +711,9 @@ final class LspCoordinator {
         lspManager.setJdtlsWorkspaceBase(ops.jdtlsWorkspaceBase());
         lspManager.configure(on, commandsForAllServers(s));
         updateProblemsAvailability();
-        // The Run affordance (compact source files) is gated by the LSP feature: toggle every buffer's
-        // Run detection, then refresh the active buffer's Run tool-window availability.
+        // Standalone file Run remains available without LSP. Shell Run still follows the Bash LSP toggle.
         boolean shellRun = on && s.isBashLspEnabled();
         host.forEachBuffer(b -> {
-            b.setRunEnabled(on);
             b.setShellRunEnabled(shellRun); // shell Run glyph gated by the Bash LSP toggle
         });
         ops.refreshRunButton();

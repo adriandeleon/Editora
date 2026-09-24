@@ -675,10 +675,12 @@ public class SharedConfig {
             protectedHashes = new LinkedHashSet<>(durableHistoryHashes);
             protectedHashes.addAll(currentHistoryHashes);
             pendingHistoryHashes.values().forEach(protectedHashes::addAll);
+            // Queue GC while this live-set snapshot is still current. A durable waiter can start the
+            // next publication; running its callback first would let this older GC delete its new blob.
+            historyService.gc(protectedHashes);
         }
         boolean durable = outcome == ConfigWriter.WriteOutcome.WRITTEN;
         finished.forEach((ignored, waiter) -> waiter.accept(durable));
-        historyService.gc(protectedHashes);
     }
 
     /** Migrates bookmarks out of the legacy session files into their per-project buckets, stripping each. */

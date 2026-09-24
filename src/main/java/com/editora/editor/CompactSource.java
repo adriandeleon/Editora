@@ -17,8 +17,12 @@ import java.util.regex.Pattern;
  */
 public final class CompactSource {
 
-    /** A {@code void main(} method header (any modifiers/return-type spacing), used to find the entry point. */
-    private static final Pattern MAIN = Pattern.compile("\\bvoid\\s+main\\s*\\(");
+    /** Candidate signatures; a String[] main takes precedence over a parameterless main. */
+    private static final Pattern MAIN = Pattern.compile("\\bvoid\\s+main\\s*\\(([^)]*)\\)");
+
+    private static final Pattern STRING_ARRAY = Pattern.compile(
+            "(?:final\\s+)?(?:java\\.lang\\.)?String\\s*(?:\\[\\s*\\]\\s*\\w+|\\.\\.\\.\\s*\\w+|\\w+\\s*\\[\\s*\\])");
+    private static final Pattern PRIVATE = Pattern.compile("\\bprivate\\b");
 
     private CompactSource() {}
 
@@ -39,7 +43,7 @@ public final class CompactSource {
     }
 
     /**
-     * The 0-based line of the top-level {@code void main(...)} entry point (for the gutter Run glyph), or
+     * The 0-based line of the launchable top-level {@code void main(...)} entry point (for the gutter Run glyph), or
      * {@code -1} if there isn't one. {@code stripCommentsAndLiterals} preserves length and newline
      * positions, so a match offset in the cleaned text maps to the same offset (and line) in the source.
      */
@@ -49,12 +53,29 @@ public final class CompactSource {
         }
         String clean = stripCommentsAndLiterals(source);
         var m = MAIN.matcher(clean);
+        int noArgsLine = -1;
         while (m.find()) {
-            if (braceDepthAt(clean, m.start()) == 0) {
+            if (braceDepthAt(clean, m.start()) != 0 || hasPrivateModifier(clean, m.start())) {
+                continue;
+            }
+            String parameters = m.group(1).strip();
+            if (STRING_ARRAY.matcher(parameters).matches()) {
                 return lineOf(source, m.start());
             }
+            if (parameters.isEmpty() && noArgsLine < 0) {
+                noArgsLine = lineOf(source, m.start());
+            }
         }
-        return -1;
+        return noArgsLine;
+    }
+
+    /** Only modifiers after the previous top-level declaration delimiter belong to this method. */
+    private static boolean hasPrivateModifier(String clean, int methodStart) {
+        int start = methodStart - 1;
+        while (start >= 0 && clean.charAt(start) != ';' && clean.charAt(start) != '}' && clean.charAt(start) != '{') {
+            start--;
+        }
+        return PRIVATE.matcher(clean.substring(start + 1, methodStart)).find();
     }
 
     /** The 0-based line containing {@code offset} (newlines counted up to it). */

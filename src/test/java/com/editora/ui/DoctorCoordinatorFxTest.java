@@ -46,6 +46,7 @@ class DoctorCoordinatorFxTest {
         final com.editora.diagram.DiagramService diagram = new com.editora.diagram.DiagramService();
         final com.editora.typst.TypstService typst = new com.editora.typst.TypstService();
         String installedServer;
+        boolean lspEnabled = true;
         InstallCatalog.Lang installedLang;
         boolean installedTypstCli;
         String openedSettingsKey;
@@ -72,7 +73,7 @@ class DoctorCoordinatorFxTest {
 
         @Override
         public boolean lspFeatureEnabled() {
-            return true;
+            return lspEnabled;
         }
 
         @Override
@@ -145,6 +146,20 @@ class DoctorCoordinatorFxTest {
         assertTrue(specs.stream()
                 .anyMatch(s ->
                         s.placeholder().id().equals("debug") && s.placeholder().status() == DoctorStatus.DISABLED));
+    }
+
+    @Test
+    void standaloneRunChecksRemainWhenLspIsOff() throws Exception {
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        ops.lspEnabled = false;
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
+
+        List<DoctorService.CheckSpec> specs = FxTestSupport.callOnFx(doctor::buildSpecs);
+        for (String id : List.of("run.java", "run.python", "run.make")) {
+            assertTrue(specs.stream().anyMatch(s -> s.placeholder().id().equals(id)), id);
+        }
+        assertFalse(specs.stream().anyMatch(s -> s.placeholder().id().equals("run.shell")));
     }
 
     @Test

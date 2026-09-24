@@ -6,12 +6,12 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Resolves a configured JDK home into the launcher and environment used by Maven run/debug flows. */
+/** Resolves a configured JDK home into the launcher and environment used by Java run/debug flows. */
 public final class JdkToolchain {
 
     private JdkToolchain() {}
 
-    /** A per-configuration JDK wins; blank means inherit the global Maven JDK. */
+    /** A per-configuration JDK wins; blank means inherit the default JDK. */
     public static String effectiveHome(String configurationHome, String globalHome) {
         String local = clean(configurationHome);
         return local.isEmpty() ? clean(globalHome) : local;
@@ -26,6 +26,17 @@ public final class JdkToolchain {
         Path bin = Path.of(home).resolve("bin");
         Path executable = bin.resolve(isWindows() ? "java.exe" : "java");
         return executable.toString();
+    }
+
+    /** The compiler alongside a selected Java launcher, or {@code javac} when PATH supplies Java. */
+    public static String compilerForJavaExecutable(String javaExecutable) {
+        if (javaExecutable == null || javaExecutable.isBlank()) {
+            return "javac";
+        }
+        Path parent = Path.of(javaExecutable).getParent();
+        return parent == null
+                ? "javac"
+                : parent.resolve(isWindows() ? "javac.exe" : "javac").toString();
     }
 
     /**

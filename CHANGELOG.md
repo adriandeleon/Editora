@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Local File History now queues blob cleanup before acknowledging a durable index write, so a
+  later pre-delete snapshot cannot lose its recovery body to an older cleanup pass.
+
 - Tagged releases now attempt experimental Linux x64, macOS x64/arm64, and Windows x64 GraalVM
   Native Image archives alongside the usual JVM packages. Each extracted archive must pass a
   GUI workflow smoke test before upload; an experimental build failure does not block the
@@ -17,6 +20,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correctness/stress probe, and JVM/AOT/native measurement tooling. This does not replace the JVM
   distribution; limitations and measured acceptance status are in `docs/native-image-staticfx.md`.
 
+- Extensionless Java `--source 25+` shebang files can now be debugged with breakpoints, stepping,
+  and local variables. Debug compiles a line-preserving temporary `.java` copy, maps breakpoints and
+  stack frames back to the original file, and removes the temporary source and compiled classes after
+  the session.
+- Added an opt-in live compact-source Debug probe that checks a breakpoint, source location,
+  local-variable values, stepping, and the window's Debug command through the installed JDT LS and
+  Java debug adapter. Pull-request CI runs it alongside the live JDT LS compact-source probe.
+- Debugging a compact `.java` file now compiles its implicit class with the selected JDK's `javac`,
+  launches it with the matching `java`, and passes the selected JDK environment to the debuggee.
+  A helper type in the file no longer causes Debug to choose the wrong main class, and sibling
+  source files resolve from the file's directory.
+- The Default JDK choice now also runs and debugs standalone Java source files. Run probes that selected
+  executable, so an older Java on PATH cannot reject a file launched with JDK 25; Doctor reports the same
+  choice. Run reports when the selected Java launcher cannot be probed, and extensionless Java shebangs
+  reject source releases below 25 or newer than the selected JDK.
+  Compact-source diagnostics are no longer hidden by message text. Live checks against the bundled JDT LS
+  cover Maven and loose files, implicit imports, completion, and genuine compiler errors.
+- Compact Java and Python files can now be run with language services disabled. Interactive Run
+  prompts appear before the program receives input, and compact Java gutter markers select a
+  launchable `main(String[])` ahead of `main()` while ignoring private or unsupported signatures.
 - Added a dedicated LM Studio / Bionic provider for AI actions and an AI Agent preset using
   OpenCode over ACP. The preset shares the local endpoint, model and optional token without
   writing OpenCode config files; local settings stay separate from existing cloud settings.

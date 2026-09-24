@@ -289,9 +289,13 @@ Editora is built with the help of AI coding tools.
   occurrence.
 - **Run a file from a gutter ▶** — a green play glyph runs a Java 25 compact-source file
   (`java <file>`), a Python script (`python3`), or a shell script (`bash`); output streams into a Run
-  tool window (`M-9`) with clickable stack traces, stdin, and per-file program arguments. Gated by the
-  LSP feature. A clicked **Java** frame in the Run, Test or Build console is resolved by the language
-  server, so a frame inside a dependency or the JDK opens its source instead of reporting "not found"
+  tool window (`M-9`) with clickable stack traces, stdin, and per-file program arguments. Java and Python
+  run locally without LSP; shell Run still follows the Bash LSP toggle. The **Default JDK** in Settings →
+  Build Tools → Java controls standalone Java Run and Debug as well as Maven projects. For compact `.java`
+  files and extensionless Java `--source 25+` shebangs, Debug compiles the implicit class with that
+  JDK's `javac`. With LSP enabled,
+  a clicked **Java** frame can be resolved by the language server, so a frame inside a dependency or the
+  JDK opens its source instead of reporting "not found"
   (filename matching still handles anything the server can't place, and every non-Java trace).
 - **Run & debug a project's `main` class (Maven / Gradle)** — beyond single files, **Run Main Class…** /
   **Debug Main Class…** pick any main class in the active file's Maven or Gradle project; a ▶ also appears

@@ -134,6 +134,12 @@ Java buffers belonging to another root.
 
 ### Diagnostics → overlay, stripe, minimap, Problems
 
+A compact Java file's diagnostics are passed through without a message-based suppression rule. The bundled
+JDT LS supports Java 25, including implicit `java.base` imports; the opt-in
+`JdtlsCompactSourceProbeTest` checks a loose file and a Maven file for completion, no compiler errors,
+and a real unresolved-type error. An older server's compatibility error remains visible rather than
+being mistaken for harmless noise.
+
 A server's diagnostics (pushed via `publishDiagnostics`, or *pulled* via `textDocument/diagnostic` for
 servers with a `diagnosticProvider` such as vscode-html/css/json) are mapped by
 [`lsp/DiagnosticMapper`](../../src/main/java/com/editora/lsp/DiagnosticMapper.java) into flat
@@ -293,9 +299,28 @@ the LSP servers; DAP traffic is on stdin/stdout or the socket).
 `LspManager`+`RunService`). It owns the single active session (one debug session at a time, like Run)
 and dispatches `startLaunch(file, language, picker)`:
 
-- **java** → resolve main class (`vscode.java.resolveMainClass`, with a `javac -g` `compileAndLaunch`
-  fallback for a loose file with no project) → `resolveClasspath` → `resolveJavaExecutable` →
-  `startDebugSession` → connect the socket → `launch`.
+- **java** → resolve main class (`vscode.java.resolveMainClass`) → `resolveClasspath` →
+  `resolveJavaExecutable` → `startDebugSession` → connect the socket → `launch`. A loose file with
+  no project falls back to `javac -g` compilation. A compact `.java` file takes that compile path
+  directly: its implicit class is named for the file, even if the file declares nested types. The
+  compiler, launcher, and debuggee environment all use the selected JDK; compilation runs from the
+  file's directory so neighboring source files can resolve.
+
+An extensionless Java shebang (`java --source 25+`) cannot be passed directly to `javac` as a source
+filename. Debug writes a temporary `.java` copy with the shebang line blanked, preserving line numbers,
+then compiles it with `--release` under the selected JDK. Breakpoints sent to the adapter target that
+copy; stack frames are mapped back to the user's original path. The temporary source and compiled
+classes are removed when the session ends or compilation fails, including a cancelled startup.
+
+The opt-in `CompactSourceDebugProbeFxTest` drives the installed JDT LS and Java debug adapter through
+`DapManager`: it verifies that a breakpoint in a loose compact `.java` file and an extensionless
+shebang stops on the original source line, its local variable is readable, and step-over advances both
+the line and value. Run it with
+`./mvnw test -Dtest=CompactSourceDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true`.
+It also starts an extensionless shebang through the window's `debug.start` command and checks that
+stopping the session removes the temporary compilation directory. Pull-request CI installs JDT LS
+and the Java debug adapter, then runs this probe and `JdtlsCompactSourceProbeTest` in the
+`Compact Java integration` job.
 - **python/javascript** → `startProgram`: snapshot breakpoints on the FX thread, then off-thread spawn
   the adapter + connect + `launch`.
 

@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -29,6 +31,60 @@ class RunServiceBackpressureFxTest {
             for (int i = 0; i < 20_000; i++) {
                 System.out.println("x".repeat(100));
             }
+        }
+    }
+
+    public static final class PromptMain {
+        public static void main(String[] args) throws Exception {
+            System.out.print("Name: ");
+            System.out.flush();
+            String name = new BufferedReader(new InputStreamReader(System.in)).readLine();
+            System.out.println("Hello " + name);
+        }
+    }
+
+    @Test
+    void promptIsDeliveredBeforeTheProgramReceivesInput() throws Exception {
+        RunService service = new RunService();
+        CountDownLatch prompt = new CountDownLatch(1);
+        CountDownLatch exited = new CountDownLatch(1);
+        List<String> output = Collections.synchronizedList(new ArrayList<>());
+        String java = Path.of(System.getProperty("java.home"), "bin", isWindows() ? "java.exe" : "java")
+                .toString();
+        List<String> command = List.of(java, "-cp", System.getProperty("java.class.path"), PromptMain.class.getName());
+        try {
+            FxTestSupport.runOnFx(() -> service.runInDir(Path.of("."), command, new RunService.Listener() {
+                @Override
+                public void onStart(String commandLine) {}
+
+                @Override
+                public void onOutput(String line, boolean stderr) {
+                    output.add(line);
+                }
+
+                @Override
+                public void onPartialOutput(String text, boolean stderr) {
+                    output.add(text);
+                    prompt.countDown();
+                }
+
+                @Override
+                public void onExit(int code) {
+                    exited.countDown();
+                }
+
+                @Override
+                public void onError(String message) {
+                    throw new AssertionError(message);
+                }
+            }));
+            assertTrue(prompt.await(5, TimeUnit.SECONDS), "the prompt must appear before input");
+            assertEquals("Name: ", output.get(0));
+            service.sendInput("Ada");
+            assertTrue(exited.await(5, TimeUnit.SECONDS));
+            assertTrue(output.contains("Hello Ada"));
+        } finally {
+            service.stop();
         }
     }
 

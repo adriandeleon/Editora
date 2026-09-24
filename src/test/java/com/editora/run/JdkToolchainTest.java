@@ -24,6 +24,7 @@ class JdkToolchainTest {
     @Test
     void blankSelectionLeavesLauncherAndEnvironmentAutomatic() {
         assertEquals("", JdkToolchain.javaExecutable(" "));
+        assertEquals("javac", JdkToolchain.compilerForJavaExecutable(" "));
         assertTrue(JdkToolchain.environment(null, "/usr/bin").isEmpty());
     }
 
@@ -38,6 +39,10 @@ class JdkToolchainTest {
                 .orElseThrow();
         assertEquals("/opt/jdk-25/bin" + File.pathSeparator + "/usr/bin", path);
         assertTrue(JdkToolchain.javaExecutable("/opt/jdk-25").contains("bin"));
+        assertEquals(
+                Path.of("/opt/jdk-25", "bin", isWindows() ? "javac.exe" : "javac")
+                        .toString(),
+                JdkToolchain.compilerForJavaExecutable(JdkToolchain.javaExecutable("/opt/jdk-25")));
     }
 
     @Test
