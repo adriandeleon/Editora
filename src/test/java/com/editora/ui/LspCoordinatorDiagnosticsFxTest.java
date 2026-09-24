@@ -234,14 +234,14 @@ class LspCoordinatorDiagnosticsFxTest {
                 "the entry must be keyed canonically so clear/sort can match it");
     }
 
-    // --- compact-source noise ------------------------------------------------------------------------
+    // --- compact-source diagnostics ------------------------------------------------------------------
 
     /**
-     * A compact source file (JEP 512) run by the JDK 25 launcher is flagged by an older jdtls as an
-     * "implicitly declared class" preview feature. That is pure noise; real errors must still surface.
+     * Diagnostics from a compact source file are forwarded unchanged. A broad message filter used to
+     * suppress all implicit-class complaints, including potentially genuine errors.
      */
     @Test
-    void compactSourceImplicitClassNoiseIsFilteredButRealErrorsSurvive() throws Exception {
+    void compactSourceDiagnosticsArePreserved() throws Exception {
         // A compact source file: a top-level `void main(` with no enclosing class.
         EditorBuffer b = openJava("Script.java", "void main() {\n    IO.println(\"hi\");\n}\n");
         assertTrue(FxTestSupport.callOnFx(b::isRunnable), "precondition: recognised as a compact source file");
@@ -261,19 +261,21 @@ class LspCoordinatorDiagnosticsFxTest {
         publish(b.getPath(), mixed);
 
         List<LspDiagnostic> kept = problems().get(ops.canonicalize(b.getPath()));
-        assertEquals(1, kept.size(), "the implicit-class complaint should have been dropped");
-        assertEquals("cannot find symbol: IOO", kept.get(0).message(), "a real error must survive");
+        assertEquals(2, kept.size());
+        assertEquals(
+                "Implicitly declared class is a preview feature", kept.get(0).message());
+        assertEquals("cannot find symbol: IOO", kept.get(1).message());
     }
 
-    /** The filter must not touch an ordinary (non-compact) java file. */
+    /** Ordinary Java diagnostics also pass through unchanged. */
     @Test
-    void theNoiseFilterDoesNotApplyToAnOrdinaryJavaFile() throws Exception {
+    void ordinaryJavaDiagnosticsArePreserved() throws Exception {
         EditorBuffer b = openJava("Normal.java", "class Normal {\n    void x() {}\n}\n");
         assertFalse(FxTestSupport.callOnFx(b::isRunnable), "precondition: not a compact source file");
 
         publish(b.getPath(), one("Implicitly declared class is a preview feature"));
 
-        assertEquals(1, problems().size(), "only compact source files get the noise filter");
+        assertEquals(1, problems().size());
     }
 
     // --- clearing ------------------------------------------------------------------------------------

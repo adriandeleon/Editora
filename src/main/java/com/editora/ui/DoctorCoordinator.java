@@ -305,21 +305,23 @@ final class DoctorCoordinator {
                     .disabled()));
         }
 
-        // Run (rides the LSP feature — the gutter ▶) ----------------------------------------------
+        // Standalone Java/Python/Make runs work without LSP; Bash Run still follows its LSP gate.
+        String selectedJava = com.editora.run.JdkToolchain.javaExecutable(s.getMavenJdkHome());
+        String javaExecutable = selectedJava.isBlank() ? "java" : selectedJava;
+        DoctorCheck java = DoctorCheck.checking("run.java", "run", "Java", javaExecutable);
+        specs.add(probe(java, base -> {
+            String out = DoctorProbes.output(List.of(javaExecutable, "-version"));
+            int major = RunService.javaMajorOf(out);
+            return switch (DoctorRules.javaRunStatus(major)) {
+                case OK -> base.ok(DoctorRules.firstLine(out, ""));
+                case WARN -> base.warn(DoctorRules.firstLine(out, ""), "doctor.tip.javaOld", String.valueOf(major));
+                default -> base.missing("doctor.tip.missing", javaExecutable);
+            };
+        }));
+        specs.add(optionalRunTool("run.python", "Python", List.of("python3"), List.of("python"), "Python"));
+        specs.add(optionalRunTool("run.make", "Make", List.of("make"), null, "Makefile"));
         if (ops.lspFeatureEnabled()) {
-            DoctorCheck java = DoctorCheck.checking("run.java", "run", "Java", "java");
-            specs.add(probe(java, base -> {
-                String out = DoctorProbes.output(List.of("java", "-version"));
-                int major = RunService.javaMajorOf(out);
-                return switch (DoctorRules.javaRunStatus(major)) {
-                    case OK -> base.ok(DoctorRules.firstLine(out, ""));
-                    case WARN -> base.warn(DoctorRules.firstLine(out, ""), "doctor.tip.javaOld", String.valueOf(major));
-                    default -> base.missing("doctor.tip.missing", "java");
-                };
-            }));
-            specs.add(optionalRunTool("run.python", "Python", List.of("python3"), List.of("python"), "Python"));
             specs.add(optionalRunTool("run.shell", "Bash", List.of("bash"), null, "shell"));
-            specs.add(optionalRunTool("run.make", "Make", List.of("make"), null, "Makefile"));
         }
 
         // Build tools (informational; the tool windows self-gate on project markers) --------------

@@ -24,7 +24,7 @@ import static com.editora.i18n.Messages.tr;
  * Run-a-file feature (the gutter ▶ / "Run File" flow + the Run tool-window console), extracted from
  * {@link MainController} via the {@link CoordinatorHost} pattern. Owns the {@link RunService} + the
  * {@link RunPanel}; {@code MainController} keeps the {@code ToolWindow} (built with {@link #panel()}),
- * the run-feature gating (via the LSP feature), and the shared stack-trace link resolver
+ * the local-file run gate, and the shared stack-trace link resolver
  * ({@code openRunLink}, also used by the Debug + External-Tool consoles) — which reuses {@link #lastRunDir()}.
  */
 final class RunCoordinator {
@@ -751,24 +751,34 @@ final class RunCoordinator {
         if (path == null) {
             return;
         }
-        boolean java = !buffer.isPython() && !buffer.isShell();
+        boolean javaSource = !buffer.isPython() && !buffer.isShell();
+        String jdkHome = javaSource ? host.settings().getMavenJdkHome() : "";
+        String selectedJava = JdkToolchain.javaExecutable(jdkHome);
+        String javaExecutable = selectedJava.isBlank() ? "java" : selectedJava;
+        java.util.Map<String, String> launchEnv =
+                javaSource ? JdkToolchain.environment(jdkHome, processPath()) : java.util.Map.of();
+        List<String> command = buildRunCommand(buffer, path, javaExecutable);
         Runnable proceed = () -> {
             String stored = ops.programArgs(path);
             if (promptArgs) {
                 host.promptText(tr("dialog.runArgs.title"), tr("dialog.runArgs.label"), stored, args -> {
                     ops.setProgramArgs(path, args == null ? "" : args.strip());
-                    launchRun(path, buildRunCommand(buffer, path));
+                    launchRun(path, buildRunCommand(buffer, path, javaExecutable), launchEnv);
                 });
             } else {
-                launchRun(path, buildRunCommand(buffer, path));
+                launchRun(path, command, launchEnv);
             }
         };
-        if (java) {
-            // Compact source files need the JDK 25+ source-file launcher; preflight so an older java
-            // on PATH yields a clear message instead of a cryptic launcher error. Cached after once.
-            service.detectJavaMajor(major -> {
-                if (major > 0 && major < 25) {
-                    host.setStatus(tr("status.run.needJdk25", major));
+        if (javaSource) {
+            // Probe exactly the launcher we will use; a selected JDK may differ from PATH. The
+            // extensionless shebang can request a source release newer than the compact-source minimum.
+            service.detectJavaMajor(javaExecutable, major -> {
+                int required = Math.max(25, buffer.getShebangJavaSource() == null ? 25 : buffer.getShebangJavaSource());
+                if (major > 0 && major < required) {
+                    host.setStatus(
+                            required == 25
+                                    ? tr("status.run.needJdk25", major)
+                                    : tr("status.run.needJdkVersion", required, major));
                     return;
                 }
                 proceed.run();
@@ -779,14 +789,14 @@ final class RunCoordinator {
     }
 
     /** The launcher argv for the buffer's language: interpreter + file + the remembered args. */
-    private List<String> buildRunCommand(EditorBuffer buffer, Path path) {
+    private List<String> buildRunCommand(EditorBuffer buffer, Path path, String javaExecutable) {
         List<String> command = new ArrayList<>();
         if (buffer.isPython()) {
             command.add("python3");
         } else if (buffer.isShell()) {
             command.add("bash");
         } else {
-            command.add("java");
+            command.add(javaExecutable);
             Integer javaSource = buffer.getShebangJavaSource();
             if (javaSource != null) {
                 // An extensionless `java --source N` shebang file: the source launcher needs the flag
@@ -800,8 +810,12 @@ final class RunCoordinator {
         return command;
     }
 
+    private void launchRun(Path path, List<String> command, java.util.Map<String, String> env) {
+        streamRun(path.getFileName().toString(), path.getParent(), command, env);
+    }
+
     private void launchRun(Path path, List<String> command) {
-        streamRun(path.getFileName().toString(), path.getParent(), command);
+        launchRun(path, command, java.util.Map.of());
     }
 
     /**
@@ -842,6 +856,11 @@ final class RunCoordinator {
             @Override
             public void onOutput(String line, boolean stderr) {
                 panel.appendOutput(line, stderr);
+            }
+
+            @Override
+            public void onPartialOutput(String text, boolean stderr) {
+                panel.appendPartialOutput(text, stderr);
             }
 
             @Override

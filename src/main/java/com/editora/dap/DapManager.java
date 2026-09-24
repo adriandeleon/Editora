@@ -20,6 +20,7 @@ import javafx.application.Platform;
 
 import com.editora.lsp.LspManager;
 import com.editora.process.ProcessRunner;
+import com.editora.run.JdkToolchain;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -112,6 +113,11 @@ public final class DapManager implements DapClient.Host {
     private State state = State.INACTIVE;
     private int currentThreadId;
     private Path debugFile;
+    /** Temporary .java copy used to compile an extensionless shebang, scoped to its launch epoch. */
+    private volatile SourceAlias sourceAlias;
+
+    private record SourceAlias(long epoch, Path original, Path compiled) {}
+
     private Supplier<List<DapModels.FileBreakpoints>> breakpointsSupplier = List::of;
     private List<String> exceptionFilters = List.of();
     private Runnable restartAction;
@@ -416,7 +422,7 @@ public final class DapManager implements DapClient.Host {
                     fail(epoch, "No main class could be determined for this file.");
                     return;
                 }
-                compileAndLaunch(file, fqn, javaExecOverride, epoch);
+                compileAndLaunch(file, fqn, javaExecOverride, epoch, null);
                 return;
             }
             MainClassOption match = options.stream()
@@ -439,6 +445,36 @@ public final class DapManager implements DapClient.Host {
                 });
             }
         });
+    }
+
+    /** Debug a compact {@code .java} file as the implicit class named after the file. */
+    public void startCompactSource(Path file, String javaExecOverride) {
+        if (file == null || !file.getFileName().toString().endsWith(".java")) {
+            throw new IllegalArgumentException("Compact source debugging needs a .java file");
+        }
+        if (!ready(file)) {
+            return;
+        }
+        restartAction = () -> startCompactSource(file, javaExecOverride);
+        debugFile = file;
+        long epoch = beginSession();
+        setState(State.STARTING);
+        compileAndLaunch(file, compactMainClassFromFile(file), javaExecOverride, epoch, null);
+    }
+
+    /** Debug an extensionless Java script via a line-preserving temporary {@code .java} copy. */
+    public void startCompactShebang(Path file, int sourceVersion, String javaExecOverride) {
+        if (sourceVersion < 25) {
+            throw new IllegalArgumentException("Compact source debugging requires --source 25 or newer");
+        }
+        if (!ready(file)) {
+            return;
+        }
+        restartAction = () -> startCompactShebang(file, sourceVersion, javaExecOverride);
+        debugFile = file;
+        long epoch = beginSession();
+        setState(State.STARTING);
+        compileAndLaunch(file, file.getFileName().toString(), javaExecOverride, epoch, sourceVersion);
     }
 
     /** Attaches to a running JVM at {@code host:port} (the file provides the jdtls session for the adapter). */
@@ -611,25 +647,31 @@ public final class DapManager implements DapClient.Host {
      * classpath — self-contained, like the Run feature. jdtls is still used only to start the adapter.
      * Runs off the FX thread (javac is a subprocess).
      */
-    private void compileAndLaunch(Path file, String fqn, String javaExecOverride, long epoch) {
+    private void compileAndLaunch(Path file, String fqn, String javaExecOverride, long epoch, Integer sourceVersion) {
+        Map<String, String> launchEnvironment = env;
         startupTask = io.submit(() -> {
             try {
                 Path out = java.nio.file.Files.createTempDirectory("editora-dap-");
                 out.toFile().deleteOnExit();
-                // Route through ProcessRunner.run so the compile is bounded by a hard timeout (a hung javac
-                // would otherwise pin the single-threaded `io` executor and block every later DAP start/detect)
-                // and both pipes are drained concurrently (no fill-the-buffer deadlock).
-                ProcessRunner.Result r = ProcessRunner.run(
-                        null,
-                        java.time.Duration.ofSeconds(60),
-                        List.of("javac", "-g", "-d", out.toString(), file.toString()));
-                if (!r.ok()) {
-                    fail(epoch, "Compilation failed:\n" + (r.out() + "\n" + r.err()).strip());
-                    return;
+                Path compileFile = file;
+                if (sourceVersion != null) {
+                    compileFile = out.resolve(file.getFileName() + ".java");
+                    java.nio.file.Files.writeString(compileFile, withoutShebang(java.nio.file.Files.readString(file)));
+                    compileFile.toFile().deleteOnExit(); // backup if the app exits before session cleanup
+                    sourceAlias = new SourceAlias(epoch, file, compileFile);
                 }
                 String javaExec = javaExecOverride == null || javaExecOverride.isBlank()
                         ? firstOrNull(ProcessRunner.resolveExecutable(List.of("java")))
                         : javaExecOverride;
+                // Route through ProcessRunner.run so the compile is bounded by a hard timeout (a hung javac
+                // would otherwise pin the single-threaded `io` executor and block every later DAP start/detect)
+                // and both pipes are drained concurrently (no fill-the-buffer deadlock).
+                ProcessRunner.Result r =
+                        compileStandalone(file, compileFile, out, javaExec, launchEnvironment, sourceVersion);
+                if (!r.ok()) {
+                    fail(epoch, "Compilation failed:\n" + (r.out() + "\n" + r.err()).strip());
+                    return;
+                }
                 String cwd = file.getParent() == null ? null : file.getParent().toString();
                 Platform.runLater(() -> startDebugSessionAndConnect(
                         file,
@@ -642,6 +684,7 @@ public final class DapManager implements DapClient.Host {
                                 cwd,
                                 programArgs,
                                 vmArgs,
+                                launchEnvironment,
                                 false),
                         false,
                         epoch));
@@ -649,6 +692,102 @@ public final class DapManager implements DapClient.Host {
                 fail(epoch, "Could not compile/launch " + fqn + ": " + msg(e));
             }
         });
+    }
+
+    /** Compiles with the JDK that will run the debuggee, retaining local variables for the debugger. */
+    static ProcessRunner.Result compileStandalone(
+            Path file, Path outputDir, String javaExecOverride, Map<String, String> environment) {
+        return compileStandalone(file, file, outputDir, javaExecOverride, environment, null);
+    }
+
+    private static ProcessRunner.Result compileStandalone(
+            Path original,
+            Path source,
+            Path outputDir,
+            String javaExecOverride,
+            Map<String, String> environment,
+            Integer sourceVersion) {
+        List<String> command = new ArrayList<>(List.of(JdkToolchain.compilerForJavaExecutable(javaExecOverride), "-g"));
+        if (sourceVersion != null) {
+            command.add("--release");
+            command.add(sourceVersion.toString());
+        }
+        command.addAll(List.of("-d", outputDir.toString(), source.toString()));
+        return ProcessRunner.run(original.getParent(), java.time.Duration.ofSeconds(60), command, environment);
+    }
+
+    /** Blank the first line without changing later line numbers for breakpoints and stack frames. */
+    static String withoutShebang(String source) {
+        if (source == null || !source.startsWith("#!")) {
+            return source;
+        }
+        int newline = source.indexOf('\n');
+        return newline < 0 ? "" : " ".repeat(newline) + source.substring(newline);
+    }
+
+    private SourceAlias activeSourceAlias() {
+        SourceAlias alias = sourceAlias;
+        return alias != null && alias.epoch() == sessionEpoch ? alias : null;
+    }
+
+    /** The temporary source contains user code; remove it after the adapter no longer needs it. */
+    private void releaseSourceAlias() {
+        SourceAlias alias = sourceAlias;
+        sourceAlias = null;
+        if (alias != null) {
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try {
+                    java.nio.file.Files.deleteIfExists(alias.compiled());
+                } catch (java.io.IOException e) {
+                    LOG.log(Level.FINE, "Could not remove temporary debug source", e);
+                }
+            });
+        }
+    }
+
+    private List<DapModels.FileBreakpoints> adapterBreakpoints(List<DapModels.FileBreakpoints> breakpoints) {
+        return breakpoints.stream().map(this::adapterBreakpoint).toList();
+    }
+
+    private DapModels.FileBreakpoints adapterBreakpoint(DapModels.FileBreakpoints breakpoint) {
+        SourceAlias alias = activeSourceAlias();
+        return alias != null && alias.original().equals(breakpoint.file())
+                ? new DapModels.FileBreakpoints(alias.compiled(), breakpoint.breakpoints())
+                : breakpoint;
+    }
+
+    private List<DapModels.StackFrameInfo> originalFrames(List<DapModels.StackFrameInfo> frames) {
+        if (frames == null || frames.isEmpty()) {
+            return List.of();
+        }
+        SourceAlias alias = activeSourceAlias();
+        if (alias == null) {
+            return frames;
+        }
+        return frames.stream()
+                .map(frame -> isAliasedFrame(alias, frame)
+                        ? new DapModels.StackFrameInfo(
+                                frame.id(), frame.name(), alias.original(), frame.line(), frame.column())
+                        : frame)
+                .toList();
+    }
+
+    private static boolean isAliasedFrame(SourceAlias alias, DapModels.StackFrameInfo frame) {
+        if (alias.compiled().equals(frame.file())) {
+            return true;
+        }
+        // java-debug can omit Source.path for a class compiled from a temporary source file. Its
+        // frame name still identifies the implicit class; leave unrelated library frames untouched.
+        String className = alias.original().getFileName().toString();
+        return frame.file() == null
+                && frame.name() != null
+                && (frame.name().startsWith(className + ".") || frame.name().startsWith(className + "$"));
+    }
+
+    /** A compact source's implicit class is named for its file, even when it declares nested types. */
+    static String compactMainClassFromFile(Path file) {
+        String fileName = file.getFileName().toString();
+        return fileName.substring(0, fileName.length() - ".java".length());
     }
 
     private static String firstOrNull(List<String> l) {
@@ -728,7 +867,7 @@ public final class DapManager implements DapClient.Host {
                 return;
             }
             DapClient c = new DapClient(sessionHost(epoch));
-            c.setBreakpoints(breakpointsSupplier.get()); // snapshot on the FX thread (this callback is on FX)
+            c.setBreakpoints(adapterBreakpoints(breakpointsSupplier.get())); // snapshot on the FX thread
             c.setExceptionFilters(exceptionFilters);
             if (!publishClient(epoch, c)) {
                 c.dispose();
@@ -1006,7 +1145,7 @@ public final class DapManager implements DapClient.Host {
             return;
         }
         tempBreakpointFile = file;
-        c.sendSetBreakpoints(withTempLine(breakpointsSupplier.get(), file, line));
+        c.sendSetBreakpoints(adapterBreakpoint(withTempLine(breakpointsSupplier.get(), file, line)));
         resume();
     }
 
@@ -1090,7 +1229,7 @@ public final class DapManager implements DapClient.Host {
                 real.addAll(fb.breakpoints());
             }
         }
-        c.sendSetBreakpoints(new DapModels.FileBreakpoints(f, real));
+        c.sendSetBreakpoints(adapterBreakpoint(new DapModels.FileBreakpoints(f, real)));
     }
 
     public void stepOver() {
@@ -1126,6 +1265,7 @@ public final class DapManager implements DapClient.Host {
         if (c != null) {
             c.dispose();
         }
+        releaseSourceAlias();
         setState(State.INACTIVE);
     }
 
@@ -1159,7 +1299,7 @@ public final class DapManager implements DapClient.Host {
         c.stackTrace(threadId)
                 .whenComplete((frames, e) -> Platform.runLater(() -> {
                     if (client == c) {
-                        cb.accept(frames == null ? List.of() : frames);
+                        cb.accept(originalFrames(frames));
                     }
                 }));
     }
@@ -1258,7 +1398,7 @@ public final class DapManager implements DapClient.Host {
     /** (Re)sends a file's breakpoints to the live adapter (after the user toggled one while running). */
     public void updateBreakpoints(DapModels.FileBreakpoints fb) {
         if (client != null && state != State.INACTIVE) {
-            client.sendSetBreakpoints(fb);
+            client.sendSetBreakpoints(adapterBreakpoint(fb));
         }
     }
 
@@ -1283,7 +1423,7 @@ public final class DapManager implements DapClient.Host {
                     clearTempBreakpoint(); // a run-to-cursor temp breakpoint is one-shot
                     state = State.SUSPENDED;
                     listener.onState(State.SUSPENDED);
-                    listener.onStopped(threadId, reason, frames == null ? List.of() : frames);
+                    listener.onStopped(threadId, reason, originalFrames(frames));
                 }));
     }
 
@@ -1336,6 +1476,7 @@ public final class DapManager implements DapClient.Host {
             if (c != null) {
                 c.dispose();
             }
+            releaseSourceAlias();
             setState(State.INACTIVE);
         });
     }

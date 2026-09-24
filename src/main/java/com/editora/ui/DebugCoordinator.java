@@ -749,16 +749,34 @@ final class DebugCoordinator {
         if ((b.isDirty() || b.getPath() == null) && !ops.saveBuffer(b)) {
             return;
         }
+        Integer shebangSource = b.getShebangJavaSource();
+        if ("java".equals(language) && b.isCompactSource() && shebangSource != null && shebangSource < 25) {
+            host.setStatus(tr("status.debug.needSource25", shebangSource));
+            return;
+        }
         ops.openToolWindow();
         debugPanel.setSessionFile(b.getPath().getFileName().toString());
         // The debuggee gets the same per-file program arguments the Run feature uses.
         dapManager.setProgramArgs(ProgramArgs.tokenize(ops.programArgs(b.getPath())));
-        dapManager.setVmArgs(""); // no user VM args/env on a plain debug
+        dapManager.setVmArgs(""); // no user VM args on a plain debug
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
         Path projectRoot = "java".equals(language) ? JavaProjectRoot.find(b.getPath()) : null;
-        String javaExec = configuredJavaExecutable(projectRoot, null);
-        dapManager.setEnv(configuredJdkEnvironment(projectRoot, null));
-        withClosedBreakpoints(() -> dapManager.startLaunch(b.getPath(), language, this::pickMainClass, javaExec));
+        boolean compactSource = "java".equals(language) && b.isCompactSource();
+        String jdkHome = !"java".equals(language)
+                ? ""
+                : compactSource ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
+        String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
+        dapManager.setEnv(
+                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
+        withClosedBreakpoints(() -> {
+            if (compactSource && shebangSource != null) {
+                dapManager.startCompactShebang(b.getPath(), shebangSource, javaExec);
+            } else if (compactSource && b.getPath().getFileName().toString().endsWith(".java")) {
+                dapManager.startCompactSource(b.getPath(), javaExec);
+            } else {
+                dapManager.startLaunch(b.getPath(), language, this::pickMainClass, javaExec);
+            }
+        });
     }
 
     /**
@@ -928,9 +946,9 @@ final class DebugCoordinator {
         }
     }
 
-    /** The configured Maven JDK for {@code root}; project/run override wins over the global setting. */
+    /** The default JDK for a loose file or Maven project; a saved configuration may override it. */
     private String configuredJdkHome(Path root, RunConfiguration cfg) {
-        if (root == null || !java.nio.file.Files.isRegularFile(root.resolve("pom.xml"))) {
+        if (root != null && !java.nio.file.Files.isRegularFile(root.resolve("pom.xml"))) {
             return "";
         }
         return com.editora.run.JdkToolchain.effectiveHome(

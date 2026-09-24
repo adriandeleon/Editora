@@ -48,6 +48,11 @@ public final class RunService {
         /** One line of program output ({@code stderr} true for the error stream). */
         void onOutput(String line, boolean stderr);
 
+        /** Output flushed before a newline, such as a prompt waiting for console input. */
+        default void onPartialOutput(String text, boolean stderr) {
+            onOutput(text, stderr);
+        }
+
         /** The process exited with {@code code} (or {@code -1} if killed). */
         void onExit(int code);
 
@@ -63,8 +68,9 @@ public final class RunService {
     private int pendingOutputEvents;
     private boolean outputDrainScheduled;
     private Runnable droppedOutputNotice;
-    /** Cached {@code java -version} major (0 = not probed yet, -1 = probe failed/unparseable). */
-    private volatile int javaMajor;
+    /** Cache by executable: changing the selected JDK must never reuse the old PATH probe. */
+    private final java.util.concurrent.ConcurrentHashMap<String, Integer> javaMajors =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     /** True while a launched process is still alive. */
     public boolean isRunning() {
@@ -97,23 +103,24 @@ public final class RunService {
     }
 
     /**
-     * Probes the {@code java} launcher's major version once (off-thread, cached) and delivers it on the
+     * Probes the selected {@code java} launcher's major version once (off-thread, cached) and delivers it on the
      * FX thread: e.g. {@code 25}, {@code 21}, {@code 8} for a legacy {@code 1.8.0}; {@code -1} when java
      * is missing or the output is unparseable. Used to preflight compact-source runs (need JDK 25+).
      */
-    public void detectJavaMajor(java.util.function.IntConsumer cb) {
-        int cached = javaMajor;
-        if (cached != 0) {
+    public void detectJavaMajor(String javaExecutable, java.util.function.IntConsumer cb) {
+        String executable = javaExecutable == null || javaExecutable.isBlank() ? "java" : javaExecutable;
+        Integer cached = javaMajors.get(executable);
+        if (cached != null) {
             cb.accept(cached);
             return;
         }
         Thread t = new Thread(
                 () -> {
                     ProcessRunner.Result r =
-                            ProcessRunner.run(null, java.time.Duration.ofSeconds(10), List.of("java", "-version"));
+                            ProcessRunner.run(null, java.time.Duration.ofSeconds(10), List.of(executable, "-version"));
                     // `java -version` prints to stderr; some distributions use stdout.
                     int major = javaMajorOf(r == null ? "" : r.err() + "\n" + r.out());
-                    javaMajor = major;
+                    javaMajors.put(executable, major);
                     Platform.runLater(() -> cb.accept(major));
                 },
                 "run-java-probe");
@@ -285,6 +292,22 @@ public final class RunService {
                                     truncated = true;
                                 }
                             }
+                            // A prompt often ends without a newline and then waits for stdin. Wait briefly
+                            // before flushing so a long line arriving in several reads stays one bounded
+                            // event, while an interactive prompt becomes visible before input is sent.
+                            if (!line.isEmpty() && !reader.ready()) {
+                                try {
+                                    Thread.sleep(75);
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                    return;
+                                }
+                                if (!reader.ready()) {
+                                    emitPartial(line, truncated, stderr, gen, listener);
+                                    line.setLength(0);
+                                    truncated = false;
+                                }
+                            }
                         }
                         if (!line.isEmpty() || truncated) {
                             emitLine(line, truncated, stderr, gen, listener);
@@ -310,6 +333,16 @@ public final class RunService {
                 text.length(),
                 true,
                 () -> listener.onOutput(text, stderr),
+                () -> listener.onOutput(OUTPUT_DROPPED, stderr));
+    }
+
+    private void emitPartial(StringBuilder line, boolean truncated, boolean stderr, int gen, Listener listener) {
+        String text = line + (truncated ? " … [line truncated]" : "");
+        enqueueFx(
+                gen,
+                text.length(),
+                true,
+                () -> listener.onPartialOutput(text, stderr),
                 () -> listener.onOutput(OUTPUT_DROPPED, stderr));
     }
 

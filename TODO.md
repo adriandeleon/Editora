@@ -261,7 +261,7 @@ A backlog of planned features and improvements. Unordered within each section.
       Maven server yields no routing decision rather than attaching to plain XML first.
       **`LspCoordinatorDiagnosticsFxTest` (10)** — open-files-only scoping (a server publishes project-wide),
       canonical keying with a **real symlink** (#470 — plain `normalize()` dropped every diagnostic for a
-      symlink-reached file), the compact-source noise filter keeping real errors, retraction on an empty
+      symlink-reached file), compact-source diagnostics preserved, retraction on an empty
       publish, and #469's clear-before-shutdown. **`LspCoordinatorNavigationFxTest` (11)** — the commands
       people actually press: go-to-definition incl. the **client half of #665** (a path-less `jdt://` target
       must take the class-file branch, not try to open a file), find-references (one hit jumps, several open

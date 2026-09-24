@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -83,6 +84,24 @@ class CompactSourceTest {
         String src = "String who = \"x\";\n\nvoid main() {\n  System.out.println(who);\n}\n";
         // Line 0: field, line 1: blank, line 2: void main(...)
         org.junit.jupiter.api.Assertions.assertEquals(2, CompactSource.mainLine(src));
+    }
+
+    @Test
+    void prefersStringArrayMainOverEarlierNoArgumentMain() {
+        String src = "void main() {}\nvoid main(String[] args) {}\n";
+        assertEquals(1, CompactSource.mainLine(src));
+    }
+
+    @Test
+    void acceptsMultilineAndVarargsSignatures() {
+        assertEquals(1, CompactSource.mainLine("int n;\nvoid main(\n    String... args\n) {}"));
+        assertEquals(0, CompactSource.mainLine("void main(final String args[]) {}"));
+    }
+
+    @Test
+    void rejectsInaccessibleAndWrongParameterMains() {
+        assertFalse(CompactSource.isLaunchable("Wrong.java", "private void main() {}\nvoid main(int count) {}"));
+        assertEquals(1, CompactSource.mainLine("private void main(String[] args) {}\nvoid main() {}"));
     }
 
     @Test

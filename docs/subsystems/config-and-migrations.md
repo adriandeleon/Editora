@@ -90,8 +90,8 @@ Every structured config file carries an integer `schemaVersion` field, and its o
 2. The version to **assume when the file has no `schemaVersion` marker** — `1`, the pre-versioning baseline (a bare JSON array is detected as `0` instead, by `ConfigMigrations.versionOf`).
 3. An ordered map of **step `Migration`s** keyed by the version they upgrade *from* (`v → v+1`).
 
-For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (103), with an additive identity step for
-the global Maven JDK at `102 → 103`; `WORKSPACE` uses `11 → 12` for the per-run-configuration JDK
+For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (104), with an additive identity step for
+the Default JDK at `102 → 103` (also used by standalone Java files); `WORKSPACE` uses `11 → 12` for the per-run-configuration JDK
 override; `PROJECTS` registers `1 → 2` as `seedOpenProjectIds`; and `RECENT` registers `0 → 1` as
 `wrapRecentFilesArray`.
 

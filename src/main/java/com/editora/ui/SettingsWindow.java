@@ -454,7 +454,7 @@ public class SettingsWindow {
     private Button notesMoveDown;
     private ToolWindow notesToolWindowRef;
     private Label notesDisabledNote;
-    // The Problems / Run / Debug rows, disabled until the LSP feature is on (Debug also needs Debugging on).
+    // Problems follows LSP; Debug follows Debugging. Standalone Run is always configurable.
     private CheckBox problemsShowCheck;
     private ComboBox<ToolWindow.Side> problemsSideCombo;
     private Button problemsMoveUp;
@@ -466,7 +466,6 @@ public class SettingsWindow {
     private Button runMoveUp;
     private Button runMoveDown;
     private ToolWindow runToolWindowRef;
-    private Label runDisabledNote;
     private CheckBox debugShowCheck;
     private ComboBox<ToolWindow.Side> debugSideCombo;
     private Button debugMoveUp;
@@ -1572,7 +1571,7 @@ public class SettingsWindow {
             config.getSettings().setLspSupport(now);
             apply();
             updateLspRowsEnabled();
-            updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Problems/Run/Debug rows
+            updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Problems row
             refreshLspStatus();
         });
         for (LspServerUi srv : lspServerUis()) {
@@ -3391,6 +3390,12 @@ public class SettingsWindow {
                 testRunnerCheck,
                 tr("settings.testRunner.hint"),
                 "test results runner junit surefire tree pass fail rerun intellij");
+        Card javaCard = card(p, "Java");
+        cardRow(
+                javaCard,
+                Category.BUILD_TOOLS,
+                settingRow(tr("settings.maven.jdk"), tr("settings.maven.jdk.hint"), mavenJdkCombo),
+                "java jdk default compact source file maven sdkman toolchain run debug");
         for (BuildTool bt : BuildTool.enabled()) {
             Card c = card(p, bt.displayName());
             String kw = bt.id() + " build tool project detected enable command override toolbar";
@@ -3406,11 +3411,6 @@ public class SettingsWindow {
                     kw + " path executable wrapper");
             controlRow(c, Category.BUILD_TOOLS, tr("settings.git.detected"), null, buildToolStatusLabels.get(bt), kw);
             if (bt == BuildTool.MAVEN) {
-                cardRow(
-                        c,
-                        Category.BUILD_TOOLS,
-                        settingRow(tr("settings.maven.jdk"), tr("settings.maven.jdk.hint"), mavenJdkCombo),
-                        kw + " jdk java home sdkman toolchain run debug");
                 mavenArchetypeCatalogField.setPrefWidth(320);
                 cardRow(
                         c,
@@ -6047,11 +6047,6 @@ public class SettingsWindow {
                 problemsDisabledNote.setWrapText(true);
                 problemsDisabledNote.getStyleClass().add("settings-row-desc");
                 main.getChildren().add(problemsDisabledNote);
-            } else if ("run".equals(tw.getId())) {
-                runDisabledNote = note(tr("settings.toolWindows.runDisabled"));
-                runDisabledNote.setWrapText(true);
-                runDisabledNote.getStyleClass().add("settings-row-desc");
-                main.getChildren().add(runDisabledNote);
             } else if ("debug".equals(tw.getId())) {
                 debugDisabledNote = note(tr("settings.toolWindows.debugDisabled"));
                 debugDisabledNote.setWrapText(true);
@@ -6980,7 +6975,7 @@ public class SettingsWindow {
     }
 
     /**
-     * Disables the feature-gated tool-window rows when their feature is off: Problems and Run need the LSP
+     * Disables the feature-gated tool-window rows when their feature is off: Problems needs the LSP
      * feature on; Debug needs Debugging (DAP) on (independent of LSP — Python/JS debugging doesn't use LSP,
      * and {@code MainController.applyDebugGating} makes the Debug window available on {@code debugSupport}
      * alone). Like the Commit/Notes rows, the Show checkbox value is left untouched — availability is
@@ -6996,7 +6991,7 @@ public class SettingsWindow {
                 problemsMoveDown,
                 problemsDisabledNote,
                 problemsToolWindowRef);
-        updateTransientRow(lsp, runShowCheck, runSideCombo, runMoveUp, runMoveDown, runDisabledNote, runToolWindowRef);
+        updateTransientRow(true, runShowCheck, runSideCombo, runMoveUp, runMoveDown, null, runToolWindowRef);
         updateTransientRow(
                 config.getSettings().isDebugSupport(),
                 debugShowCheck,
@@ -7254,7 +7249,7 @@ public class SettingsWindow {
         } finally {
             loading = prev;
         }
-        updateLspToolRowsEnabled(); // the Problems/Run/Debug rows are gated by the LSP feature
+        updateLspToolRowsEnabled(); // refresh the Problems and Debug row gates
         refreshLspStatus();
     }
 

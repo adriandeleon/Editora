@@ -7,7 +7,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * A saved launch configuration: a {@code name}, the {@code mainClass} (fully-qualified) + its {@code
  * projectName} (multi-module), program {@code args}, JVM {@code vmArgs}, an optional {@code workingDir}
  * (blank ⇒ the project root), and {@code env} — environment variables as quote-aware {@code KEY=VALUE} pairs
- * (see {@code run/EnvVars}). {@code jdkHome} optionally overrides the global Maven JDK for this
+ * (see {@code run/EnvVars}). {@code jdkHome} optionally overrides the default JDK for this
  * configuration; blank inherits it.
  *
  * <p>{@code type} says <em>what</em> is launched — {@code java} (the {@code mainClass}, resolved through
