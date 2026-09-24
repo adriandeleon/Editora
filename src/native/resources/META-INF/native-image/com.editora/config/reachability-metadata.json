@@ -1,0 +1,286 @@
+{
+  "reflection": [
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.config.Settings",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.config.WorkspaceState",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.config.BookmarkStore",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.config.ProjectManager$Index",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.config.Project",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.config.RecentFiles$Stored",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.config.RunConfiguration",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.todo.TodoPattern",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.snippet.SnippetManager"
+      },
+      "type": "com.editora.snippet.SnippetManager$Dto",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "com.fasterxml.jackson.databind.ext.Java7SupportImpl",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.config.Bookmark",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.config.EditorGroupLayout",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.config.WorkspaceState$OpenFile",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.externaltool.ExternalTool",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.externaltool.ExternalTool$StdinSource",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.SharedConfig"
+      },
+      "type": "com.editora.externaltool.ExternalTool$OutputTarget",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.lang.Record"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.io.Serializable"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.lang.Comparable"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.lang.Double"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.lang.Integer"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.lang.Long"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.lang.Number"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.lang.constant.Constable"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.lang.constant.ConstantDesc"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.lang.Iterable",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.util.AbstractCollection"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.util.Collection"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.util.ImmutableCollections$AbstractImmutableCollection"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.util.ImmutableCollections$AbstractImmutableList"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.util.ImmutableCollections$ListN"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.util.List"
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.util.RandomAccess"
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.HistoryStore"
+      },
+      "type": "com.editora.config.HistoryStore",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.editora.config.HistoryStore"
+      },
+      "type": "com.editora.config.HistoryRevision",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "type": "java.util.ImmutableCollections$List12"
+    }
+  ],
+  "resources": [
+    {
+      "condition": {
+        "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
+      },
+      "glob": "META-INF/services/javax.xml.stream.XMLInputFactory"
+    }
+  ]
+}

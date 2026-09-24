@@ -1,0 +1,1446 @@
+{
+  "host": "Linux-6.12.107+deb13-amd64-x86_64-with-glibc2.41",
+  "cpu": "",
+  "runs": 3,
+  "warmups": 1,
+  "config_sha256": "6fbdc6ef7346e5d3c42e9510453586d2dd550bfe4efb30acb4aba250125ec025",
+  "checksum_sequences_equal": true,
+  "failures": [],
+  "metrics": {
+    "jvm/editor/0/fx-ready/received-ms": {
+      "n": 3,
+      "median": 206.62452900069184,
+      "p95": 208.494394999434,
+      "p99": 208.494394999434
+    },
+    "jvm/editor/0/window-open/heap-used-bytes": {
+      "n": 3,
+      "median": 18572200.0,
+      "p95": 18653896.0,
+      "p99": 18653896.0
+    },
+    "jvm/editor/0/window-open/rss-bytes": {
+      "n": 3,
+      "median": 144691200,
+      "p95": 144928768,
+      "p99": 144928768
+    },
+    "jvm/editor/0/window-shown/received-ms": {
+      "n": 3,
+      "median": 388.73154600059934,
+      "p95": 407.4866969995128,
+      "p99": 407.4866969995128
+    },
+    "jvm/editor/102400/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 358211024.0,
+      "p95": 382561696.0,
+      "p99": 382561696.0
+    },
+    "jvm/editor/102400/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 915255296,
+      "p95": 975130624,
+      "p99": 975130624
+    },
+    "jvm/editor/102400/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 360604400.0,
+      "p95": 394214288.0,
+      "p99": 394214288.0
+    },
+    "jvm/editor/102400/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 947490816,
+      "p95": 980348928,
+      "p99": 980348928
+    },
+    "jvm/editor/102400/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 69.233053,
+      "p95": 71.547282,
+      "p99": 71.547282
+    },
+    "jvm/editor/102400/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 39.71051,
+      "p95": 58.345586,
+      "p99": 58.345586
+    },
+    "jvm/editor/102400/file-editable/received-ms": {
+      "n": 3,
+      "median": 1005.2072559992666,
+      "p95": 1090.1267279996318,
+      "p99": 1090.1267279996318
+    },
+    "jvm/editor/102400/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 51344352.0,
+      "p95": 60341224.0,
+      "p99": 60341224.0
+    },
+    "jvm/editor/102400/file-open/rss-bytes": {
+      "n": 3,
+      "median": 318328832,
+      "p95": 331104256,
+      "p99": 331104256
+    },
+    "jvm/editor/102400/full-tokenization/sample": {
+      "n": 3,
+      "median": 286.831188,
+      "p95": 482.036222,
+      "p99": 482.036222
+    },
+    "jvm/editor/102400/incremental-highlight-settled/sample": {
+      "n": 3,
+      "median": 174.669885,
+      "p95": 184.178201,
+      "p99": 184.178201
+    },
+    "jvm/editor/102400/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 4.0417995,
+      "p95": 10.841165,
+      "p99": 14.648084
+    },
+    "jvm/editor/102400/insert-dispatch/sample": {
+      "n": 900,
+      "median": 4.505204,
+      "p95": 11.526464,
+      "p99": 14.94737
+    },
+    "jvm/editor/102400/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 142.857075,
+      "p95": 156.731722,
+      "p99": 156.731722
+    },
+    "jvm/editor/102400/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 487.043224,
+      "p95": 488.007887,
+      "p99": 488.007887
+    },
+    "jvm/editor/102400/redo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 2.1139565,
+      "p95": 3.382614,
+      "p99": 4.543675
+    },
+    "jvm/editor/102400/redo-dispatch/sample": {
+      "n": 900,
+      "median": 2.0653724999999996,
+      "p95": 3.392492,
+      "p99": 4.406009
+    },
+    "jvm/editor/102400/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 31.763664,
+      "p95": 49.505025,
+      "p99": 76.63689
+    },
+    "jvm/editor/102400/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.06663250000000001,
+      "p95": 1.228978,
+      "p99": 2.202267
+    },
+    "jvm/editor/102400/style-spans-dispatch/sample": {
+      "n": 36,
+      "median": 42.4666445,
+      "p95": 79.194419,
+      "p99": 80.240641
+    },
+    "jvm/editor/102400/undo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 4.4645174999999995,
+      "p95": 6.18159,
+      "p99": 6.810707
+    },
+    "jvm/editor/102400/undo-dispatch/sample": {
+      "n": 900,
+      "median": 4.2189595,
+      "p95": 6.192279,
+      "p99": 7.151326
+    },
+    "jvm/editor/1048576/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 214468384.0,
+      "p95": 357996416.0,
+      "p99": 357996416.0
+    },
+    "jvm/editor/1048576/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 999362560,
+      "p95": 1137594368,
+      "p99": 1137594368
+    },
+    "jvm/editor/1048576/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 389985072.0,
+      "p95": 401487408.0,
+      "p99": 401487408.0
+    },
+    "jvm/editor/1048576/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 1001738240,
+      "p95": 1030483968,
+      "p99": 1030483968
+    },
+    "jvm/editor/1048576/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 41.711694,
+      "p95": 52.100646,
+      "p99": 52.100646
+    },
+    "jvm/editor/1048576/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 26.971613,
+      "p95": 52.687322,
+      "p99": 52.687322
+    },
+    "jvm/editor/1048576/file-editable/received-ms": {
+      "n": 3,
+      "median": 8683.304784000029,
+      "p95": 9647.749569000553,
+      "p99": 9647.749569000553
+    },
+    "jvm/editor/1048576/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 241257656.0,
+      "p95": 406221080.0,
+      "p99": 406221080.0
+    },
+    "jvm/editor/1048576/file-open/rss-bytes": {
+      "n": 3,
+      "median": 948813824,
+      "p95": 981708800,
+      "p99": 981708800
+    },
+    "jvm/editor/1048576/full-tokenization/sample": {
+      "n": 3,
+      "median": 2045.95008,
+      "p95": 2056.890655,
+      "p99": 2056.890655
+    },
+    "jvm/editor/1048576/incremental-highlight-settled/sample": {
+      "n": 3,
+      "median": 186.951858,
+      "p95": 188.861194,
+      "p99": 188.861194
+    },
+    "jvm/editor/1048576/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 1.8435285,
+      "p95": 4.554205,
+      "p99": 7.168664
+    },
+    "jvm/editor/1048576/insert-dispatch/sample": {
+      "n": 900,
+      "median": 1.782837,
+      "p95": 4.365282,
+      "p99": 7.725604
+    },
+    "jvm/editor/1048576/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 114.984062,
+      "p95": 140.889396,
+      "p99": 140.889396
+    },
+    "jvm/editor/1048576/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 76.218893,
+      "p95": 76.495748,
+      "p99": 76.495748
+    },
+    "jvm/editor/1048576/redo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 1.5903545000000001,
+      "p95": 2.798827,
+      "p99": 4.269938
+    },
+    "jvm/editor/1048576/redo-dispatch/sample": {
+      "n": 900,
+      "median": 1.536555,
+      "p95": 2.710135,
+      "p99": 4.269938
+    },
+    "jvm/editor/1048576/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 31.671152,
+      "p95": 31.889925,
+      "p99": 33.327264
+    },
+    "jvm/editor/1048576/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.046579999999999996,
+      "p95": 0.157396,
+      "p99": 0.393219
+    },
+    "jvm/editor/1048576/style-spans-dispatch/sample": {
+      "n": 36,
+      "median": 48.24098,
+      "p95": 72.333303,
+      "p99": 75.750038
+    },
+    "jvm/editor/1048576/undo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 3.4938545000000003,
+      "p95": 6.031218,
+      "p99": 8.766459
+    },
+    "jvm/editor/1048576/undo-dispatch/sample": {
+      "n": 900,
+      "median": 3.0594045000000003,
+      "p95": 5.73949,
+      "p99": 8.575051
+    },
+    "jvm/editor/10485760/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 355333552.0,
+      "p95": 515211984.0,
+      "p99": 515211984.0
+    },
+    "jvm/editor/10485760/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 1071718400,
+      "p95": 1227972608,
+      "p99": 1227972608
+    },
+    "jvm/editor/10485760/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 290876888.0,
+      "p95": 308171976.0,
+      "p99": 308171976.0
+    },
+    "jvm/editor/10485760/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 1099993088,
+      "p95": 1152823296,
+      "p99": 1152823296
+    },
+    "jvm/editor/10485760/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 29.429682,
+      "p95": 33.264917,
+      "p99": 33.264917
+    },
+    "jvm/editor/10485760/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 30.615832,
+      "p95": 31.841177,
+      "p99": 31.841177
+    },
+    "jvm/editor/10485760/file-editable/received-ms": {
+      "n": 3,
+      "median": 22593.01875899928,
+      "p95": 23990.519667000626,
+      "p99": 23990.519667000626
+    },
+    "jvm/editor/10485760/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 281432904.0,
+      "p95": 281542656.0,
+      "p99": 281542656.0
+    },
+    "jvm/editor/10485760/file-open/rss-bytes": {
+      "n": 3,
+      "median": 903389184,
+      "p95": 1019834368,
+      "p99": 1019834368
+    },
+    "jvm/editor/10485760/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 0.6902600000000001,
+      "p95": 2.902177,
+      "p99": 4.487823
+    },
+    "jvm/editor/10485760/insert-dispatch/sample": {
+      "n": 900,
+      "median": 0.668275,
+      "p95": 2.738768,
+      "p99": 4.487823
+    },
+    "jvm/editor/10485760/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 124.391953,
+      "p95": 125.202233,
+      "p99": 125.202233
+    },
+    "jvm/editor/10485760/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 307.928925,
+      "p95": 327.084137,
+      "p99": 327.084137
+    },
+    "jvm/editor/10485760/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 31.7389465,
+      "p95": 31.973767,
+      "p99": 33.551425
+    },
+    "jvm/editor/10485760/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.040111999999999995,
+      "p95": 0.131524,
+      "p99": 0.164061
+    },
+    "jvm/editor/5242880/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 231044144.0,
+      "p95": 489092984.0,
+      "p99": 489092984.0
+    },
+    "jvm/editor/5242880/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 1006682112,
+      "p95": 1074176000,
+      "p99": 1074176000
+    },
+    "jvm/editor/5242880/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 153037760.0,
+      "p95": 188100288.0,
+      "p99": 188100288.0
+    },
+    "jvm/editor/5242880/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 795189248,
+      "p95": 1013059584,
+      "p99": 1013059584
+    },
+    "jvm/editor/5242880/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 34.352922,
+      "p95": 40.103453,
+      "p99": 40.103453
+    },
+    "jvm/editor/5242880/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 27.304523,
+      "p95": 28.993427,
+      "p99": 28.993427
+    },
+    "jvm/editor/5242880/file-editable/received-ms": {
+      "n": 3,
+      "median": 20048.252310999487,
+      "p95": 21216.58797500004,
+      "p99": 21216.58797500004
+    },
+    "jvm/editor/5242880/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 232241456.0,
+      "p95": 257022344.0,
+      "p99": 257022344.0
+    },
+    "jvm/editor/5242880/file-open/rss-bytes": {
+      "n": 3,
+      "median": 1006276608,
+      "p95": 1037586432,
+      "p99": 1037586432
+    },
+    "jvm/editor/5242880/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 0.8014365000000001,
+      "p95": 2.617546,
+      "p99": 3.7051
+    },
+    "jvm/editor/5242880/insert-dispatch/sample": {
+      "n": 900,
+      "median": 0.796485,
+      "p95": 2.501149,
+      "p99": 5.196868
+    },
+    "jvm/editor/5242880/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 118.863759,
+      "p95": 120.669388,
+      "p99": 120.669388
+    },
+    "jvm/editor/5242880/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 169.832334,
+      "p95": 195.569904,
+      "p99": 195.569904
+    },
+    "jvm/editor/5242880/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 31.764208,
+      "p95": 31.933917,
+      "p99": 33.438071
+    },
+    "jvm/editor/5242880/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.034139,
+      "p95": 0.111173,
+      "p99": 0.98452
+    },
+    "jvm/editor/peak-rss-bytes": {
+      "n": 3,
+      "median": 1099993088,
+      "p95": 1241202688,
+      "p99": 1241202688
+    },
+    "native/editor/0/fx-ready/received-ms": {
+      "n": 3,
+      "median": 19.031245999940438,
+      "p95": 23.100864999832993,
+      "p99": 23.100864999832993
+    },
+    "native/editor/0/window-open/heap-used-bytes": {
+      "n": 3,
+      "median": 19433416.0,
+      "p95": 19433424.0,
+      "p99": 19433424.0
+    },
+    "native/editor/0/window-open/rss-bytes": {
+      "n": 3,
+      "median": 101969920,
+      "p95": 102436864,
+      "p99": 102436864
+    },
+    "native/editor/0/window-shown/received-ms": {
+      "n": 3,
+      "median": 56.17364899990207,
+      "p95": 56.27550400004111,
+      "p99": 56.27550400004111
+    },
+    "native/editor/102400/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 268523192.0,
+      "p95": 270891968.0,
+      "p99": 270891968.0
+    },
+    "native/editor/102400/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 597286912,
+      "p95": 604491776,
+      "p99": 604491776
+    },
+    "native/editor/102400/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 365763616.0,
+      "p95": 449606256.0,
+      "p99": 449606256.0
+    },
+    "native/editor/102400/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 602284032,
+      "p95": 610619392,
+      "p99": 610619392
+    },
+    "native/editor/102400/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 76.682006,
+      "p95": 78.659373,
+      "p99": 78.659373
+    },
+    "native/editor/102400/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 27.823157,
+      "p95": 28.653843,
+      "p99": 28.653843
+    },
+    "native/editor/102400/file-editable/received-ms": {
+      "n": 3,
+      "median": 105.61727799995424,
+      "p95": 134.92082099946856,
+      "p99": 134.92082099946856
+    },
+    "native/editor/102400/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 29057960.0,
+      "p95": 32349072.0,
+      "p99": 32349072.0
+    },
+    "native/editor/102400/file-open/rss-bytes": {
+      "n": 3,
+      "median": 169132032,
+      "p95": 173723648,
+      "p99": 173723648
+    },
+    "native/editor/102400/full-tokenization/sample": {
+      "n": 3,
+      "median": 440.308218,
+      "p95": 451.539547,
+      "p99": 451.539547
+    },
+    "native/editor/102400/incremental-highlight-settled/sample": {
+      "n": 3,
+      "median": 160.006676,
+      "p95": 163.357314,
+      "p99": 163.357314
+    },
+    "native/editor/102400/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 6.338642,
+      "p95": 13.794608,
+      "p99": 15.555923
+    },
+    "native/editor/102400/insert-dispatch/sample": {
+      "n": 900,
+      "median": 5.111741,
+      "p95": 13.794608,
+      "p99": 16.595549
+    },
+    "native/editor/102400/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 137.924594,
+      "p95": 141.597335,
+      "p99": 141.597335
+    },
+    "native/editor/102400/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 58.549028,
+      "p95": 72.366802,
+      "p99": 72.366802
+    },
+    "native/editor/102400/redo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 3.3311925000000002,
+      "p95": 10.205808,
+      "p99": 11.911961
+    },
+    "native/editor/102400/redo-dispatch/sample": {
+      "n": 900,
+      "median": 3.1727425,
+      "p95": 10.170787,
+      "p99": 11.885855
+    },
+    "native/editor/102400/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 37.3047675,
+      "p95": 48.457055,
+      "p99": 58.112299
+    },
+    "native/editor/102400/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.0445565,
+      "p95": 6.815211,
+      "p99": 10.969107
+    },
+    "native/editor/102400/style-spans-dispatch/sample": {
+      "n": 36,
+      "median": 24.830917999999997,
+      "p95": 37.505057,
+      "p99": 41.137537
+    },
+    "native/editor/102400/undo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 6.329940499999999,
+      "p95": 14.478103,
+      "p99": 16.734983
+    },
+    "native/editor/102400/undo-dispatch/sample": {
+      "n": 900,
+      "median": 5.8074925,
+      "p95": 14.058915,
+      "p99": 16.379081
+    },
+    "native/editor/1048576/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 280243096.0,
+      "p95": 331785048.0,
+      "p99": 331785048.0
+    },
+    "native/editor/1048576/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 778133504,
+      "p95": 831488000,
+      "p99": 831488000
+    },
+    "native/editor/1048576/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 380892384.0,
+      "p95": 581332992.0,
+      "p99": 581332992.0
+    },
+    "native/editor/1048576/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 741044224,
+      "p95": 839196672,
+      "p99": 839196672
+    },
+    "native/editor/1048576/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 65.10658,
+      "p95": 67.764048,
+      "p99": 67.764048
+    },
+    "native/editor/1048576/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 37.146393,
+      "p95": 48.879478,
+      "p99": 48.879478
+    },
+    "native/editor/1048576/file-editable/received-ms": {
+      "n": 3,
+      "median": 9591.407320999679,
+      "p95": 10079.28896699923,
+      "p99": 10079.28896699923
+    },
+    "native/editor/1048576/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 308729744.0,
+      "p95": 357767856.0,
+      "p99": 357767856.0
+    },
+    "native/editor/1048576/file-open/rss-bytes": {
+      "n": 3,
+      "median": 603475968,
+      "p95": 616984576,
+      "p99": 616984576
+    },
+    "native/editor/1048576/full-tokenization/sample": {
+      "n": 3,
+      "median": 2707.466517,
+      "p95": 2719.480352,
+      "p99": 2719.480352
+    },
+    "native/editor/1048576/incremental-highlight-settled/sample": {
+      "n": 3,
+      "median": 196.887381,
+      "p95": 200.126775,
+      "p99": 200.126775
+    },
+    "native/editor/1048576/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 5.038133500000001,
+      "p95": 9.400643,
+      "p99": 12.790592
+    },
+    "native/editor/1048576/insert-dispatch/sample": {
+      "n": 900,
+      "median": 4.351691000000001,
+      "p95": 9.315529,
+      "p99": 13.692974
+    },
+    "native/editor/1048576/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 135.160946,
+      "p95": 156.273268,
+      "p99": 156.273268
+    },
+    "native/editor/1048576/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 75.528896,
+      "p95": 75.777966,
+      "p99": 75.777966
+    },
+    "native/editor/1048576/redo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 2.502469,
+      "p95": 8.314843,
+      "p99": 10.318051
+    },
+    "native/editor/1048576/redo-dispatch/sample": {
+      "n": 900,
+      "median": 2.4663120000000003,
+      "p95": 8.256233,
+      "p99": 10.007592
+    },
+    "native/editor/1048576/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 33.466946,
+      "p95": 58.094579,
+      "p99": 72.186655
+    },
+    "native/editor/1048576/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.0474815,
+      "p95": 11.421409,
+      "p99": 14.12335
+    },
+    "native/editor/1048576/style-spans-dispatch/sample": {
+      "n": 36,
+      "median": 57.43925,
+      "p95": 74.186737,
+      "p99": 79.662585
+    },
+    "native/editor/1048576/undo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 5.4448039999999995,
+      "p95": 12.788252,
+      "p99": 14.337476
+    },
+    "native/editor/1048576/undo-dispatch/sample": {
+      "n": 900,
+      "median": 5.0022865,
+      "p95": 12.453249,
+      "p99": 14.284715
+    },
+    "native/editor/10485760/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 379103512.0,
+      "p95": 400703640.0,
+      "p99": 400703640.0
+    },
+    "native/editor/10485760/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 769503232,
+      "p95": 972034048,
+      "p99": 972034048
+    },
+    "native/editor/10485760/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 361098688.0,
+      "p95": 516842960.0,
+      "p99": 516842960.0
+    },
+    "native/editor/10485760/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 710037504,
+      "p95": 791957504,
+      "p99": 791957504
+    },
+    "native/editor/10485760/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 37.620788,
+      "p95": 54.74888,
+      "p99": 54.74888
+    },
+    "native/editor/10485760/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 34.163456,
+      "p95": 34.909494,
+      "p99": 34.909494
+    },
+    "native/editor/10485760/file-editable/received-ms": {
+      "n": 3,
+      "median": 29510.921045999567,
+      "p95": 30196.994042999904,
+      "p99": 30196.994042999904
+    },
+    "native/editor/10485760/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 278984864.0,
+      "p95": 456458240.0,
+      "p99": 456458240.0
+    },
+    "native/editor/10485760/file-open/rss-bytes": {
+      "n": 3,
+      "median": 603426816,
+      "p95": 971350016,
+      "p99": 971350016
+    },
+    "native/editor/10485760/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 0.883775,
+      "p95": 6.796929,
+      "p99": 9.63336
+    },
+    "native/editor/10485760/insert-dispatch/sample": {
+      "n": 900,
+      "median": 0.826114,
+      "p95": 6.702336,
+      "p99": 9.63336
+    },
+    "native/editor/10485760/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 145.204786,
+      "p95": 146.232769,
+      "p99": 146.232769
+    },
+    "native/editor/10485760/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 332.434096,
+      "p95": 350.501128,
+      "p99": 350.501128
+    },
+    "native/editor/10485760/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 31.734375,
+      "p95": 31.904286,
+      "p99": 33.882777
+    },
+    "native/editor/10485760/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.0353835,
+      "p95": 0.127657,
+      "p99": 0.694709
+    },
+    "native/editor/5242880/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 303963752.0,
+      "p95": 309596632.0,
+      "p99": 309596632.0
+    },
+    "native/editor/5242880/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 746950656,
+      "p95": 955994112,
+      "p99": 955994112
+    },
+    "native/editor/5242880/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 82934656.0,
+      "p95": 608310040.0,
+      "p99": 608310040.0
+    },
+    "native/editor/5242880/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 495427584,
+      "p95": 957112320,
+      "p99": 957112320
+    },
+    "native/editor/5242880/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 43.180574,
+      "p95": 58.521303,
+      "p99": 58.521303
+    },
+    "native/editor/5242880/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 29.815921,
+      "p95": 31.274038,
+      "p99": 31.274038
+    },
+    "native/editor/5242880/file-editable/received-ms": {
+      "n": 3,
+      "median": 26055.949154999325,
+      "p95": 26818.7710709999,
+      "p99": 26818.7710709999
+    },
+    "native/editor/5242880/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 229347064.0,
+      "p95": 520239104.0,
+      "p99": 520239104.0
+    },
+    "native/editor/5242880/file-open/rss-bytes": {
+      "n": 3,
+      "median": 746881024,
+      "p95": 882192384,
+      "p99": 882192384
+    },
+    "native/editor/5242880/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 1.155869,
+      "p95": 7.59866,
+      "p99": 10.317988
+    },
+    "native/editor/5242880/insert-dispatch/sample": {
+      "n": 900,
+      "median": 1.03881,
+      "p95": 7.043426,
+      "p99": 10.317988
+    },
+    "native/editor/5242880/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 132.768646,
+      "p95": 143.063798,
+      "p99": 143.063798
+    },
+    "native/editor/5242880/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 183.638719,
+      "p95": 184.897846,
+      "p99": 184.897846
+    },
+    "native/editor/5242880/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 31.745267499999997,
+      "p95": 31.833789,
+      "p99": 31.938313
+    },
+    "native/editor/5242880/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.036447,
+      "p95": 0.141526,
+      "p99": 0.252886
+    },
+    "native/editor/peak-rss-bytes": {
+      "n": 3,
+      "median": 800923648,
+      "p95": 983060480,
+      "p99": 983060480
+    },
+    "probe-aot/editor/0/fx-ready/received-ms": {
+      "n": 3,
+      "median": 146.1592900004689,
+      "p95": 151.219717999993,
+      "p99": 151.219717999993
+    },
+    "probe-aot/editor/0/window-open/heap-used-bytes": {
+      "n": 3,
+      "median": 28981000.0,
+      "p95": 29505288.0,
+      "p99": 29505288.0
+    },
+    "probe-aot/editor/0/window-open/rss-bytes": {
+      "n": 3,
+      "median": 151339008,
+      "p95": 151547904,
+      "p99": 151547904
+    },
+    "probe-aot/editor/0/window-shown/received-ms": {
+      "n": 3,
+      "median": 236.87358200004383,
+      "p95": 237.68263000056322,
+      "p99": 237.68263000056322
+    },
+    "probe-aot/editor/102400/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 377108232.0,
+      "p95": 478160920.0,
+      "p99": 478160920.0
+    },
+    "probe-aot/editor/102400/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 954920960,
+      "p95": 982728704,
+      "p99": 982728704
+    },
+    "probe-aot/editor/102400/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 289265464.0,
+      "p95": 392021096.0,
+      "p99": 392021096.0
+    },
+    "probe-aot/editor/102400/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 977088512,
+      "p95": 1014571008,
+      "p99": 1014571008
+    },
+    "probe-aot/editor/102400/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 65.055538,
+      "p95": 65.392542,
+      "p99": 65.392542
+    },
+    "probe-aot/editor/102400/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 29.200469,
+      "p95": 29.327964,
+      "p99": 29.327964
+    },
+    "probe-aot/editor/102400/file-editable/received-ms": {
+      "n": 3,
+      "median": 488.27890000029583,
+      "p95": 506.8430410001383,
+      "p99": 506.8430410001383
+    },
+    "probe-aot/editor/102400/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 36423528.0,
+      "p95": 49393080.0,
+      "p99": 49393080.0
+    },
+    "probe-aot/editor/102400/file-open/rss-bytes": {
+      "n": 3,
+      "median": 252190720,
+      "p95": 254251008,
+      "p99": 254251008
+    },
+    "probe-aot/editor/102400/full-tokenization/sample": {
+      "n": 3,
+      "median": 335.0558,
+      "p95": 393.767944,
+      "p99": 393.767944
+    },
+    "probe-aot/editor/102400/incremental-highlight-settled/sample": {
+      "n": 3,
+      "median": 169.631254,
+      "p95": 182.716142,
+      "p99": 182.716142
+    },
+    "probe-aot/editor/102400/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 2.6869405,
+      "p95": 6.524787,
+      "p99": 8.399757
+    },
+    "probe-aot/editor/102400/insert-dispatch/sample": {
+      "n": 900,
+      "median": 2.6620315,
+      "p95": 6.514773,
+      "p99": 9.124319
+    },
+    "probe-aot/editor/102400/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 124.272794,
+      "p95": 128.788434,
+      "p99": 128.788434
+    },
+    "probe-aot/editor/102400/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 187.427778,
+      "p95": 188.939806,
+      "p99": 188.939806
+    },
+    "probe-aot/editor/102400/redo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 1.9214215000000001,
+      "p95": 3.139382,
+      "p99": 4.114479
+    },
+    "probe-aot/editor/102400/redo-dispatch/sample": {
+      "n": 900,
+      "median": 1.8730795,
+      "p95": 3.076994,
+      "p99": 4.002947
+    },
+    "probe-aot/editor/102400/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 31.740599,
+      "p95": 34.21567,
+      "p99": 45.060505
+    },
+    "probe-aot/editor/102400/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.043531,
+      "p95": 0.18284,
+      "p99": 2.409469
+    },
+    "probe-aot/editor/102400/style-spans-dispatch/sample": {
+      "n": 36,
+      "median": 32.408257,
+      "p95": 52.551705,
+      "p99": 63.514761
+    },
+    "probe-aot/editor/102400/undo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 4.437455,
+      "p95": 6.317134,
+      "p99": 7.122492
+    },
+    "probe-aot/editor/102400/undo-dispatch/sample": {
+      "n": 900,
+      "median": 4.1525865,
+      "p95": 6.359956,
+      "p99": 7.985831
+    },
+    "probe-aot/editor/1048576/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 348809840.0,
+      "p95": 829795784.0,
+      "p99": 829795784.0
+    },
+    "probe-aot/editor/1048576/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 1031876608,
+      "p95": 1368297472,
+      "p99": 1368297472
+    },
+    "probe-aot/editor/1048576/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 419131128.0,
+      "p95": 509088944.0,
+      "p99": 509088944.0
+    },
+    "probe-aot/editor/1048576/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 1032581120,
+      "p95": 1396224000,
+      "p99": 1396224000
+    },
+    "probe-aot/editor/1048576/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 48.772211,
+      "p95": 50.938652,
+      "p99": 50.938652
+    },
+    "probe-aot/editor/1048576/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 25.60907,
+      "p95": 25.935345,
+      "p99": 25.935345
+    },
+    "probe-aot/editor/1048576/file-editable/received-ms": {
+      "n": 3,
+      "median": 7006.403573000171,
+      "p95": 7046.793394000815,
+      "p99": 7046.793394000815
+    },
+    "probe-aot/editor/1048576/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 337037680.0,
+      "p95": 439739544.0,
+      "p99": 439739544.0
+    },
+    "probe-aot/editor/1048576/file-open/rss-bytes": {
+      "n": 3,
+      "median": 980512768,
+      "p95": 1015947264,
+      "p99": 1015947264
+    },
+    "probe-aot/editor/1048576/full-tokenization/sample": {
+      "n": 3,
+      "median": 2034.10261,
+      "p95": 2052.626127,
+      "p99": 2052.626127
+    },
+    "probe-aot/editor/1048576/incremental-highlight-settled/sample": {
+      "n": 3,
+      "median": 186.76847,
+      "p95": 189.646443,
+      "p99": 189.646443
+    },
+    "probe-aot/editor/1048576/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 1.7518615,
+      "p95": 4.385649,
+      "p99": 5.670341
+    },
+    "probe-aot/editor/1048576/insert-dispatch/sample": {
+      "n": 900,
+      "median": 1.6906025,
+      "p95": 4.371907,
+      "p99": 6.40383
+    },
+    "probe-aot/editor/1048576/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 123.729742,
+      "p95": 128.904548,
+      "p99": 128.904548
+    },
+    "probe-aot/editor/1048576/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 61.188521,
+      "p95": 62.003207,
+      "p99": 62.003207
+    },
+    "probe-aot/editor/1048576/redo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 1.6369604999999998,
+      "p95": 2.376955,
+      "p99": 3.388742
+    },
+    "probe-aot/editor/1048576/redo-dispatch/sample": {
+      "n": 900,
+      "median": 1.5931745,
+      "p95": 2.373038,
+      "p99": 3.566325
+    },
+    "probe-aot/editor/1048576/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 31.653237500000003,
+      "p95": 31.849946,
+      "p99": 43.993301
+    },
+    "probe-aot/editor/1048576/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.0411875,
+      "p95": 0.149738,
+      "p99": 2.303434
+    },
+    "probe-aot/editor/1048576/style-spans-dispatch/sample": {
+      "n": 36,
+      "median": 47.254088499999995,
+      "p95": 64.461331,
+      "p99": 64.513011
+    },
+    "probe-aot/editor/1048576/undo-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 3.6173960000000003,
+      "p95": 5.319905,
+      "p99": 8.498631
+    },
+    "probe-aot/editor/1048576/undo-dispatch/sample": {
+      "n": 900,
+      "median": 3.1630849999999997,
+      "p95": 5.160568,
+      "p99": 7.97907
+    },
+    "probe-aot/editor/10485760/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 364330568.0,
+      "p95": 747828952.0,
+      "p99": 747828952.0
+    },
+    "probe-aot/editor/10485760/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 1187209216,
+      "p95": 1227026432,
+      "p99": 1227026432
+    },
+    "probe-aot/editor/10485760/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 307863496.0,
+      "p95": 328353544.0,
+      "p99": 328353544.0
+    },
+    "probe-aot/editor/10485760/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 1116393472,
+      "p95": 1136492544,
+      "p99": 1136492544
+    },
+    "probe-aot/editor/10485760/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 48.858306,
+      "p95": 48.972505,
+      "p99": 48.972505
+    },
+    "probe-aot/editor/10485760/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 27.166297,
+      "p95": 29.786065,
+      "p99": 29.786065
+    },
+    "probe-aot/editor/10485760/file-editable/received-ms": {
+      "n": 3,
+      "median": 21086.730165000517,
+      "p95": 21190.98596999993,
+      "p99": 21190.98596999993
+    },
+    "probe-aot/editor/10485760/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 644998520.0,
+      "p95": 694777704.0,
+      "p99": 694777704.0
+    },
+    "probe-aot/editor/10485760/file-open/rss-bytes": {
+      "n": 3,
+      "median": 1099804672,
+      "p95": 1124245504,
+      "p99": 1124245504
+    },
+    "probe-aot/editor/10485760/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 0.7432435,
+      "p95": 2.691205,
+      "p99": 3.967829
+    },
+    "probe-aot/editor/10485760/insert-dispatch/sample": {
+      "n": 900,
+      "median": 0.7269019999999999,
+      "p95": 2.594937,
+      "p99": 4.223462
+    },
+    "probe-aot/editor/10485760/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 126.268699,
+      "p95": 159.571784,
+      "p99": 159.571784
+    },
+    "probe-aot/editor/10485760/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 294.005882,
+      "p95": 342.587316,
+      "p99": 342.587316
+    },
+    "probe-aot/editor/10485760/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 31.770574,
+      "p95": 31.955858,
+      "p99": 32.049543
+    },
+    "probe-aot/editor/10485760/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.0251575,
+      "p95": 0.10993,
+      "p99": 0.150447
+    },
+    "probe-aot/editor/5242880/after-sized-document-editing/heap-used-bytes": {
+      "n": 3,
+      "median": 269564440.0,
+      "p95": 593347472.0,
+      "p99": 593347472.0
+    },
+    "probe-aot/editor/5242880/after-sized-document-editing/rss-bytes": {
+      "n": 3,
+      "median": 1106145280,
+      "p95": 1130106880,
+      "p99": 1130106880
+    },
+    "probe-aot/editor/5242880/after-workload/heap-used-bytes": {
+      "n": 3,
+      "median": 393096312.0,
+      "p95": 399603560.0,
+      "p99": 399603560.0
+    },
+    "probe-aot/editor/5242880/after-workload/rss-bytes": {
+      "n": 3,
+      "median": 1072427008,
+      "p95": 1118965760,
+      "p99": 1118965760
+    },
+    "probe-aot/editor/5242880/bulk-paste-with-layout/sample": {
+      "n": 3,
+      "median": 37.154301,
+      "p95": 39.545755,
+      "p99": 39.545755
+    },
+    "probe-aot/editor/5242880/delete-region-with-layout/sample": {
+      "n": 3,
+      "median": 30.844663,
+      "p95": 35.680499,
+      "p99": 35.680499
+    },
+    "probe-aot/editor/5242880/file-editable/received-ms": {
+      "n": 3,
+      "median": 18379.91263999993,
+      "p95": 18418.006020000576,
+      "p99": 18418.006020000576
+    },
+    "probe-aot/editor/5242880/file-open/heap-used-bytes": {
+      "n": 3,
+      "median": 580226552.0,
+      "p95": 672394800.0,
+      "p99": 672394800.0
+    },
+    "probe-aot/editor/5242880/file-open/rss-bytes": {
+      "n": 3,
+      "median": 1042243584,
+      "p95": 1400819712,
+      "p99": 1400819712
+    },
+    "probe-aot/editor/5242880/insert-dispatch-after-100/sample": {
+      "n": 600,
+      "median": 0.9143105,
+      "p95": 3.218174,
+      "p99": 6.563419
+    },
+    "probe-aot/editor/5242880/insert-dispatch/sample": {
+      "n": 900,
+      "median": 0.8801815,
+      "p95": 2.925716,
+      "p99": 5.193556
+    },
+    "probe-aot/editor/5242880/multi-caret-300-dispatch-and-undo/sample": {
+      "n": 3,
+      "median": 127.452382,
+      "p95": 131.232644,
+      "p99": 131.232644
+    },
+    "probe-aot/editor/5242880/open-file-with-layout/sample": {
+      "n": 3,
+      "median": 167.726431,
+      "p95": 169.291023,
+      "p99": 169.291023
+    },
+    "probe-aot/editor/5242880/scroll-with-layout/sample": {
+      "n": 72,
+      "median": 31.738985,
+      "p95": 31.982734,
+      "p99": 32.013464
+    },
+    "probe-aot/editor/5242880/search-highlight-dispatch/sample": {
+      "n": 72,
+      "median": 0.034727999999999995,
+      "p95": 0.112728,
+      "p99": 0.231117
+    },
+    "probe-aot/editor/peak-rss-bytes": {
+      "n": 3,
+      "median": 1189904384,
+      "p95": 1488523264,
+      "p99": 1488523264
+    }
+  },
+  "distribution_bytes": {
+    "native-executable": 207424152,
+    "native-with-emitted-libraries": 212348760,
+    "jlink-app-image": 120238575,
+    "current-aot-app-image": 199668252
+  },
+  "limitations": [
+    "Warm filesystem cache; no forced GC; direct-process Linux RSS excludes children.",
+    "Probe milestones are receipt times, including pipe/scheduler delay.",
+    "Dispatch samples include FX queueing but exclude later layout; layout samples include two pulses.",
+    "Headless pulses are not desktop paint latency. No project/LSP readiness inferred from first-paint.",
+    "Missing modes and failed runs have no performance conclusion. Small-n tails are descriptive only."
+  ]
+}

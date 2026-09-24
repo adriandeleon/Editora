@@ -175,3 +175,10 @@ transport and subsequent layout/highlighting pulses.
 The [study evidence](../artifacts/java-editing-study/README.md) records methodology and limitations.
 The [standalone import reproduction](../artifacts/java-editing-study/jdt-import-conflict/REPORT.md)
 uses only Python and JDT LS, independently of Editora.
+
+## Optional cross-runtime editor gate
+
+The [StaticFX experiment](native-image-staticfx.md) adds `-Peditor-probe`, a standalone workload
+using the production `EditorBuffer` on HotSpot and Native Image. It covers generated 100 KiB–10 MiB
+documents, multi-caret undo, syntax/style staleness and viewport geometry. It is not part of the default
+JUnit run; native success does not replace `mvn verify`. See that guide for exact commands and limits.

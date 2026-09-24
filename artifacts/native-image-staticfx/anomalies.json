@@ -1,0 +1,25 @@
+{
+  "desktop_native_partial_run": {
+    "completed": false,
+    "reason": "Stopped after repeated ~1-second input dispatch stalls, with no build running. Not included in successful-run percentiles.",
+    "input_samples": {
+      "n": 300,
+      "median": 513.842549,
+      "p95": 1012.916809,
+      "p99": 1017.405503
+    },
+    "input_samples_over_900_ms": 150,
+    "original_log": "/tmp/editora-staticfx-evidence/editor-desktop-benchmark/native-editor--1.log"
+  },
+  "discarded_measurement_groups": [
+    {
+      "group": "application-benchmark",
+      "reason": "One read raced incomplete MCP endpoint publication; all modes recollected after bounded complete-JSON polling was added."
+    },
+    {
+      "group": "editor-headless-benchmark",
+      "reason": "stderr warning interleaved with printf JSON. stdout/stderr separated, warnings preserved, all modes recollected."
+    }
+  ],
+  "diagnostics": "Earlier metadata-discovery (Warn) and build-contended smoke runs are not benchmark evidence."
+}

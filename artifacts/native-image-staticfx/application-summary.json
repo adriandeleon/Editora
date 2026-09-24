@@ -1,0 +1,412 @@
+{
+  "runs": 5,
+  "warmups": 1,
+  "cycles": 30,
+  "failures": [],
+  "final_files_equal": true,
+  "metrics": {
+    "current-aot/milestones_ms/after-editing-and-save": {
+      "n": 5,
+      "median": 2514.0049990004627,
+      "p95": 2610.151938999479,
+      "p99": 2610.151938999479
+    },
+    "current-aot/milestones_ms/first-file-editable": {
+      "n": 5,
+      "median": 1549.7418109998762,
+      "p95": 1661.6870739999285,
+      "p99": 1661.6870739999285
+    },
+    "current-aot/milestones_ms/painted-file-and-project": {
+      "n": 5,
+      "median": 1490.4819270004737,
+      "p95": 1632.2220519996335,
+      "p99": 1632.2220519996335
+    },
+    "current-aot/milestones_ms/project-search-responsive": {
+      "n": 5,
+      "median": 2532.8060150004603,
+      "p95": 2621.58497099972,
+      "p99": 2621.58497099972
+    },
+    "current-aot/rss_bytes/after-editing-and-save": {
+      "n": 5,
+      "median": 611655680,
+      "p95": 717234176,
+      "p99": 717234176
+    },
+    "current-aot/rss_bytes/first-file-editable": {
+      "n": 5,
+      "median": 569970688,
+      "p95": 582275072,
+      "p99": 582275072
+    },
+    "current-aot/rss_bytes/painted-file-and-project": {
+      "n": 5,
+      "median": 549453824,
+      "p95": 578383872,
+      "p99": 578383872
+    },
+    "current-aot/rss_bytes/project-search-responsive": {
+      "n": 5,
+      "median": 612679680,
+      "p95": 730824704,
+      "p99": 730824704
+    },
+    "current-aot/samples_ms/edit-via-mcp": {
+      "n": 150,
+      "median": 4.9829735003186215,
+      "p95": 10.718657999859715,
+      "p99": 18.393402000583592
+    },
+    "current-aot/samples_ms/project-search-via-mcp": {
+      "n": 5,
+      "median": 18.714998999712407,
+      "p95": 27.069539999502013,
+      "p99": 27.069539999502013
+    },
+    "current-aot/samples_ms/redo-via-mcp": {
+      "n": 150,
+      "median": 4.93145349992119,
+      "p95": 7.874558999901637,
+      "p99": 11.625696000010066
+    },
+    "current-aot/samples_ms/save-settled-via-mcp": {
+      "n": 5,
+      "median": 12.73877400035417,
+      "p95": 18.142457000067225,
+      "p99": 18.142457000067225
+    },
+    "current-aot/samples_ms/undo-via-mcp": {
+      "n": 150,
+      "median": 5.119594500229141,
+      "p95": 9.35145299990836,
+      "p99": 11.08538900007261
+    },
+    "current-aot/startup_marks_ms/config-loaded": {
+      "n": 5,
+      "median": 539,
+      "p95": 577,
+      "p99": 577
+    },
+    "current-aot/startup_marks_ms/controller-init": {
+      "n": 5,
+      "median": 783,
+      "p95": 829,
+      "p99": 829
+    },
+    "current-aot/startup_marks_ms/file-loaded": {
+      "n": 5,
+      "median": 1275,
+      "p95": 1336,
+      "p99": 1336
+    },
+    "current-aot/startup_marks_ms/first-paint": {
+      "n": 5,
+      "median": 1467,
+      "p95": 1564,
+      "p99": 1564
+    },
+    "current-aot/startup_marks_ms/fx-start": {
+      "n": 5,
+      "median": 498,
+      "p95": 536,
+      "p99": 536
+    },
+    "current-aot/startup_marks_ms/fxml-loaded": {
+      "n": 5,
+      "median": 686,
+      "p95": 738,
+      "p99": 738
+    },
+    "current-aot/startup_marks_ms/main": {
+      "n": 5,
+      "median": 370,
+      "p95": 402,
+      "p99": 402
+    },
+    "current-aot/startup_marks_ms/window-built": {
+      "n": 5,
+      "median": 843,
+      "p95": 879,
+      "p99": 879
+    },
+    "current-aot/startup_marks_ms/window-shown": {
+      "n": 5,
+      "median": 971,
+      "p95": 988,
+      "p99": 988
+    },
+    "jvm/milestones_ms/after-editing-and-save": {
+      "n": 5,
+      "median": 3491.7589310007315,
+      "p95": 3602.8733070006638,
+      "p99": 3602.8733070006638
+    },
+    "jvm/milestones_ms/first-file-editable": {
+      "n": 5,
+      "median": 2431.9128920005824,
+      "p95": 2638.1258960000196,
+      "p99": 2638.1258960000196
+    },
+    "jvm/milestones_ms/painted-file-and-project": {
+      "n": 5,
+      "median": 2319.42300800074,
+      "p95": 2607.4019690004206,
+      "p99": 2607.4019690004206
+    },
+    "jvm/milestones_ms/project-search-responsive": {
+      "n": 5,
+      "median": 3538.4205280006427,
+      "p95": 3617.3816649998116,
+      "p99": 3617.3816649998116
+    },
+    "jvm/rss_bytes/after-editing-and-save": {
+      "n": 5,
+      "median": 759402496,
+      "p95": 777179136,
+      "p99": 777179136
+    },
+    "jvm/rss_bytes/first-file-editable": {
+      "n": 5,
+      "median": 704720896,
+      "p95": 727502848,
+      "p99": 727502848
+    },
+    "jvm/rss_bytes/painted-file-and-project": {
+      "n": 5,
+      "median": 685002752,
+      "p95": 714248192,
+      "p99": 714248192
+    },
+    "jvm/rss_bytes/project-search-responsive": {
+      "n": 5,
+      "median": 760594432,
+      "p95": 777973760,
+      "p99": 777973760
+    },
+    "jvm/samples_ms/edit-via-mcp": {
+      "n": 150,
+      "median": 5.222508500082768,
+      "p95": 12.64306899975054,
+      "p99": 15.683444999922358
+    },
+    "jvm/samples_ms/project-search-via-mcp": {
+      "n": 5,
+      "median": 28.09451900066051,
+      "p95": 46.56024299947603,
+      "p99": 46.56024299947603
+    },
+    "jvm/samples_ms/redo-via-mcp": {
+      "n": 150,
+      "median": 5.017611500079511,
+      "p95": 10.451527999975951,
+      "p99": 14.420747999793093
+    },
+    "jvm/samples_ms/save-settled-via-mcp": {
+      "n": 5,
+      "median": 17.09212599962484,
+      "p95": 18.395238999801222,
+      "p99": 18.395238999801222
+    },
+    "jvm/samples_ms/undo-via-mcp": {
+      "n": 150,
+      "median": 5.154389500148682,
+      "p95": 10.73529800032702,
+      "p99": 15.97846899949218
+    },
+    "jvm/startup_marks_ms/config-loaded": {
+      "n": 5,
+      "median": 633,
+      "p95": 653,
+      "p99": 653
+    },
+    "jvm/startup_marks_ms/controller-init": {
+      "n": 5,
+      "median": 1393,
+      "p95": 1444,
+      "p99": 1444
+    },
+    "jvm/startup_marks_ms/file-loaded": {
+      "n": 5,
+      "median": 2083,
+      "p95": 2228,
+      "p99": 2228
+    },
+    "jvm/startup_marks_ms/first-paint": {
+      "n": 5,
+      "median": 2290,
+      "p95": 2512,
+      "p99": 2512
+    },
+    "jvm/startup_marks_ms/fx-start": {
+      "n": 5,
+      "median": 582,
+      "p95": 604,
+      "p99": 604
+    },
+    "jvm/startup_marks_ms/fxml-loaded": {
+      "n": 5,
+      "median": 1136,
+      "p95": 1195,
+      "p99": 1195
+    },
+    "jvm/startup_marks_ms/main": {
+      "n": 5,
+      "median": 391,
+      "p95": 405,
+      "p99": 405
+    },
+    "jvm/startup_marks_ms/window-built": {
+      "n": 5,
+      "median": 1434,
+      "p95": 1498,
+      "p99": 1498
+    },
+    "jvm/startup_marks_ms/window-shown": {
+      "n": 5,
+      "median": 1658,
+      "p95": 1746,
+      "p99": 1746
+    },
+    "native/milestones_ms/after-editing-and-save": {
+      "n": 5,
+      "median": 928.0363999996553,
+      "p95": 979.1189919997123,
+      "p99": 979.1189919997123
+    },
+    "native/milestones_ms/first-file-editable": {
+      "n": 5,
+      "median": 430.6558819998827,
+      "p95": 481.8489519993818,
+      "p99": 481.8489519993818
+    },
+    "native/milestones_ms/painted-file-and-project": {
+      "n": 5,
+      "median": 386.21772899932694,
+      "p95": 450.3760749994399,
+      "p99": 450.3760749994399
+    },
+    "native/milestones_ms/project-search-responsive": {
+      "n": 5,
+      "median": 933.9232939992144,
+      "p95": 985.1689480001369,
+      "p99": 985.1689480001369
+    },
+    "native/rss_bytes/after-editing-and-save": {
+      "n": 5,
+      "median": 575229952,
+      "p95": 581980160,
+      "p99": 581980160
+    },
+    "native/rss_bytes/first-file-editable": {
+      "n": 5,
+      "median": 383234048,
+      "p95": 389070848,
+      "p99": 389070848
+    },
+    "native/rss_bytes/painted-file-and-project": {
+      "n": 5,
+      "median": 381091840,
+      "p95": 385990656,
+      "p99": 385990656
+    },
+    "native/rss_bytes/project-search-responsive": {
+      "n": 5,
+      "median": 579956736,
+      "p95": 581992448,
+      "p99": 581992448
+    },
+    "native/samples_ms/edit-via-mcp": {
+      "n": 150,
+      "median": 1.7047934998117853,
+      "p95": 3.852079999887792,
+      "p99": 6.8957789999331
+    },
+    "native/samples_ms/project-search-via-mcp": {
+      "n": 5,
+      "median": 5.898408000575728,
+      "p95": 7.454705000782269,
+      "p99": 7.454705000782269
+    },
+    "native/samples_ms/redo-via-mcp": {
+      "n": 150,
+      "median": 1.8210870002803858,
+      "p95": 3.7761449993922724,
+      "p99": 7.1250940000027185
+    },
+    "native/samples_ms/save-settled-via-mcp": {
+      "n": 5,
+      "median": 6.326778000584454,
+      "p95": 8.03929199992126,
+      "p99": 8.03929199992126
+    },
+    "native/samples_ms/undo-via-mcp": {
+      "n": 150,
+      "median": 1.7276674998356611,
+      "p95": 3.700706000017817,
+      "p99": 8.745970999370911
+    },
+    "native/startup_marks_ms/config-loaded": {
+      "n": 5,
+      "median": 111,
+      "p95": 125,
+      "p99": 125
+    },
+    "native/startup_marks_ms/controller-init": {
+      "n": 5,
+      "median": 169,
+      "p95": 185,
+      "p99": 185
+    },
+    "native/startup_marks_ms/file-loaded": {
+      "n": 5,
+      "median": 327,
+      "p95": 361,
+      "p99": 361
+    },
+    "native/startup_marks_ms/first-paint": {
+      "n": 5,
+      "median": 369,
+      "p95": 434,
+      "p99": 434
+    },
+    "native/startup_marks_ms/fx-start": {
+      "n": 5,
+      "median": 101,
+      "p95": 116,
+      "p99": 116
+    },
+    "native/startup_marks_ms/fxml-loaded": {
+      "n": 5,
+      "median": 145,
+      "p95": 158,
+      "p99": 158
+    },
+    "native/startup_marks_ms/main": {
+      "n": 5,
+      "median": 17,
+      "p95": 19,
+      "p99": 19
+    },
+    "native/startup_marks_ms/window-built": {
+      "n": 5,
+      "median": 215,
+      "p95": 235,
+      "p99": 235
+    },
+    "native/startup_marks_ms/window-shown": {
+      "n": 5,
+      "median": 251,
+      "p95": 278,
+      "p99": 278
+    }
+  },
+  "limitations": [
+    "MCP requests add HTTP serialization, polling and FX queue delay.",
+    "Project search response is not proof that every background subsystem is ready.",
+    "RSS is the application process, excluding Git/LSP children; no heap metric here.",
+    "MCP enabled, update checks/LSP disabled in a fresh disposable config.",
+    "Short edit/undo/redo cycles are not hours of steady-state use."
+  ]
+}

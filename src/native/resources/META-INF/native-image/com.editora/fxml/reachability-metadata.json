@@ -1,0 +1,382 @@
+{
+  "reflection": [
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "com.editora.ui.MainController",
+      "fields": [
+        {
+          "name": "bottomBox"
+        },
+        {
+          "name": "clearRecentButton"
+        },
+        {
+          "name": "closeTabButton"
+        },
+        {
+          "name": "copyButton"
+        },
+        {
+          "name": "cutButton"
+        },
+        {
+          "name": "findButton"
+        },
+        {
+          "name": "findInFilesButton"
+        },
+        {
+          "name": "newButton"
+        },
+        {
+          "name": "newFromTemplateButton"
+        },
+        {
+          "name": "openButton"
+        },
+        {
+          "name": "openFolderButton"
+        },
+        {
+          "name": "paletteButton"
+        },
+        {
+          "name": "pasteButton"
+        },
+        {
+          "name": "recentButton"
+        },
+        {
+          "name": "redoButton"
+        },
+        {
+          "name": "root"
+        },
+        {
+          "name": "runConfigCombo"
+        },
+        {
+          "name": "runConfigDebugButton"
+        },
+        {
+          "name": "runConfigRunButton"
+        },
+        {
+          "name": "runConfigStopButton"
+        },
+        {
+          "name": "saveAsButton"
+        },
+        {
+          "name": "saveButton"
+        },
+        {
+          "name": "settingsButton"
+        },
+        {
+          "name": "simpleModeButton"
+        },
+        {
+          "name": "splitHorizontalButton"
+        },
+        {
+          "name": "splitVerticalButton"
+        },
+        {
+          "name": "tabPane"
+        },
+        {
+          "name": "toolBar"
+        },
+        {
+          "name": "toolbarRow"
+        },
+        {
+          "name": "toolbarTail"
+        },
+        {
+          "name": "topBox"
+        },
+        {
+          "name": "undoButton"
+        },
+        {
+          "name": "workspace"
+        }
+      ],
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        },
+        {
+          "name": "onClearRecent",
+          "parameterTypes": []
+        },
+        {
+          "name": "onCloseTab",
+          "parameterTypes": []
+        },
+        {
+          "name": "onCopy",
+          "parameterTypes": []
+        },
+        {
+          "name": "onCut",
+          "parameterTypes": []
+        },
+        {
+          "name": "onDebugSelectedConfig",
+          "parameterTypes": []
+        },
+        {
+          "name": "onFind",
+          "parameterTypes": []
+        },
+        {
+          "name": "onFindInFiles",
+          "parameterTypes": []
+        },
+        {
+          "name": "onNew",
+          "parameterTypes": []
+        },
+        {
+          "name": "onNewFromTemplate",
+          "parameterTypes": []
+        },
+        {
+          "name": "onOpen",
+          "parameterTypes": []
+        },
+        {
+          "name": "onOpenFolder",
+          "parameterTypes": []
+        },
+        {
+          "name": "onPalette",
+          "parameterTypes": []
+        },
+        {
+          "name": "onPaste",
+          "parameterTypes": []
+        },
+        {
+          "name": "onRedo",
+          "parameterTypes": []
+        },
+        {
+          "name": "onRunSelectedConfig",
+          "parameterTypes": []
+        },
+        {
+          "name": "onSave",
+          "parameterTypes": []
+        },
+        {
+          "name": "onSaveAs",
+          "parameterTypes": []
+        },
+        {
+          "name": "onSettings",
+          "parameterTypes": []
+        },
+        {
+          "name": "onSplitHorizontal",
+          "parameterTypes": []
+        },
+        {
+          "name": "onSplitVertical",
+          "parameterTypes": []
+        },
+        {
+          "name": "onStopRun",
+          "parameterTypes": []
+        },
+        {
+          "name": "onToggleSimpleMode",
+          "parameterTypes": []
+        },
+        {
+          "name": "onUndo",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.Button",
+      "allPublicMethods": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.ComboBox",
+      "allPublicMethods": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.MenuButton",
+      "allPublicMethods": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.Separator",
+      "allPublicMethods": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.TabPane",
+      "allPublicMethods": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.ToolBar",
+      "allPublicMethods": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.layout.BorderPane",
+      "allPublicMethods": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.layout.HBox",
+      "allPublicMethods": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.layout.VBox",
+      "allPublicMethods": true,
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.Node",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.Parent",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.layout.Region",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.layout.Pane",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.Control",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.Labeled",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.ButtonBase",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.control.ComboBoxBase",
+      "queryAllDeclaredMethods": true
+    }
+  ]
+}

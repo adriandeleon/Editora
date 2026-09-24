@@ -2,6 +2,17 @@
 
 A backlog of planned features and improvements. Unordered within each section.
 
+## Native Image experiment
+
+- [x] Isolate the StaticFX profile and add a shared real-editor stress/benchmark probe.
+- [x] Offer a separately labelled, best-effort Linux x64 Native Image release tarball with a
+      bounded actual-application smoke test and separate user settings.
+- [ ] Investigate the measured native tokenization/input-tail regressions and intermittent desktop probe stalls.
+- [ ] Complete native desktop, peripheral-feature and long-session qualification before considering
+      default distribution; see [the measured experiment](docs/native-image-staticfx.md).
+- [ ] Resolve the dynamic Java-plugin closed-world incompatibility only through a separate design,
+      if a native product is pursued.
+
 ## Controller decomposition
 
 - [x] Extract exports, editing, templates, settings, run configurations, navigation, previews, Git actions,

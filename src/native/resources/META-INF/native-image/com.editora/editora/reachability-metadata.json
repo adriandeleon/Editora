@@ -1,0 +1,124 @@
+{
+  "resources": [
+    {
+      "glob": "com/editora/**"
+    },
+    {
+      "glob": "org/fxmisc/richtext/**"
+    },
+    {
+      "glob": "org/fxmisc/flowless/**"
+    },
+    {
+      "glob": "atlantafx/base/theme/**"
+    },
+    {
+      "condition": {
+        "typeReached": "org.jcodings.util.ArrayReader"
+      },
+      "glob": "tables/**"
+    },
+    {
+      "glob": "META-INF/services/java.net.spi.InetAddressResolverProvider"
+    },
+    {
+      "glob": "META-INF/services/javax.xml.parsers.DocumentBuilderFactory"
+    },
+    {
+      "module": "java.logging",
+      "glob": "sun/util/logging/resources/logging*.properties"
+    },
+    {
+      "bundle": "com/sun/javafx/scene/control/skin/resources/controls"
+    },
+    {
+      "condition": {
+        "typeReached": "com.sun.net.httpserver.HttpServer"
+      },
+      "glob": "META-INF/services/com.sun.net.httpserver.spi.HttpServerProvider"
+    }
+  ],
+  "reflection": [
+    {
+      "condition": {
+        "typeReached": "com.google.gson.Gson"
+      },
+      "type": "com.google.gson.internal.bind.JavaTimeTypeAdapters",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.web.WebView"
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "java.lang.Module",
+      "methods": [
+        {
+          "name": "getResourceAsStream",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "com.sun.marlin.OffHeapArray"
+      },
+      "type": "java.lang.invoke.VarHandleSegmentAsIntsAligned",
+      "queryAllDeclaredMethods": true
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.geometry.Orientation",
+      "methods": [
+        {
+          "name": "valueOf",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.geometry.Pos",
+      "methods": [
+        {
+          "name": "valueOf",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "condition": {
+        "typeReached": "javafx.fxml.FXMLLoader"
+      },
+      "type": "javafx.scene.layout.Priority",
+      "methods": [
+        {
+          "name": "valueOf",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        }
+      ]
+    }
+  ]
+}

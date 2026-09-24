@@ -1,0 +1,66 @@
+{
+  "date": "2026-09-22",
+  "base_commit": "c75201ac52e279fd9ead514b9b0a79d481d24113",
+  "platform": "Linux-6.12.107+deb13-amd64-x86_64-with-glibc2.41",
+  "cpu": "13th Gen Intel(R) Core(TM) i7-13700K",
+  "logical_cpus": 24,
+  "mem_total": "MemTotal:       131597988 kB",
+  "jvm": "Temurin 25.0.4+7",
+  "native_image": "Oracle GraalVM 25.4.4.1.1+1.1 (JDK 25.0.4.1.1)",
+  "javafx": "27",
+  "staticfx_feature": "1.0",
+  "richtextfx": "io.github.adriandeleon:richtextfx:0.11.7-inlay.1",
+  "flowless": "0.7.4",
+  "reactfx": "2.0-M5",
+  "native_flags": [
+    "--exact-reachability-metadata",
+    "--future-defaults=run-time-initialize-file-system-providers",
+    "-march=compatibility",
+    "--gc=G1",
+    "-Djfx.static.gui=false"
+  ],
+  "linker_only_local_override": "-H:NativeLinkerOption=-L/tmp/editora-native-toolchain/sysroot/usr/lib/x86_64-linux-gnu",
+  "normal_verify": {
+    "tests": 4890,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 25,
+    "coverage_gate": "passed"
+  },
+  "current_aot_build": "EDITORA_REQUIRE_AOT=1 mvn clean -Pdist -DskipTests -Djpackage.type=APP_IMAGE package: passed",
+  "source_sha256": {
+    "src/experiment/java/com/editora/experiment/EditorProbe.java": "6148927251cc4f2d8f448b12e00db72de490ce825e53dc2feed2108409d078a7",
+    "src/experiment/java/com/editora/experiment/EditorProbeLauncher.java": "73a05e5210938a271f347451c3c7d5ee3c5614c6e9373b8fa69a7e822789ea21"
+  },
+  "tooling_sha256": {
+    "scripts/native/app-probe.py": "a9fe23ca884f74b9f086800ba416a49053c1b7bca8d5a5f974aac5d65f6dcd5c",
+    "scripts/native/benchmark.py": "dd7253e6a5af1433fbd7d64a9030dee5bce9559f03c3007d6b29f600aadd6f80",
+    "scripts/native/fxml-metadata.py": "019da7005bfe79f7549960e8bfc710c8119ff8a89660a1e24705e0a0f77695a7",
+    "scripts/native/run-probe.py": "07eeba7de88a919626c5692aac128dddf9038f6691fe4cc26d648e05632313bd",
+    "scripts/native/test_benchmark.py": "27333750484d7538e6a020ff61650019b443fa0617c041bf18a100af530fe50a"
+  },
+  "metadata_sha256": {
+    "src/native/resources/META-INF/native-image/com.editora/config/reachability-metadata.json": "85d8389bb94a067681224330cccaa48d4431be9534dfb894db61cd79a550c384",
+    "src/native/resources/META-INF/native-image/com.editora/editora/reachability-metadata.json": "9885fb2c8de1c1b7bd1b55b7d0c33b9d7e0c0ae41e453d3672d215daf891ad09",
+    "src/native/resources/META-INF/native-image/com.editora/fxml/reachability-metadata.json": "f2042748893debedff018f1389eb79531d77ab514161de41208fcb8cc2fe64fc",
+    "src/native/resources/META-INF/native-image/com.editora/lucene/reachability-metadata.json": "004032967a884e4ccc32c33536073096eecb353d813ecbde1f89e60a3430c6d7"
+  },
+  "binaries": {
+    "native-application": {
+      "bytes": 207424152,
+      "sha256": "79b22171a7f0948ce602323f4ae535f885c7975484e6d660aa48d31e74ec306c"
+    },
+    "native-editor-probe": {
+      "bytes": 122882712,
+      "sha256": "53d51f38be7c1a9782d43ffe6eadac721a88df73986c6e8ea5a4546b9ae1cd0c"
+    },
+    "current-aot-cache": {
+      "bytes": 79429632,
+      "sha256": "cb326f827fbc618f93277607cbe4e500b7ec0d58c8a85face7344952dce4cde6"
+    },
+    "secondary-probe-aot-cache": {
+      "bytes": 53403648,
+      "sha256": "820e550ccdb78c9b01b418017f9c4a2764869fa33efd9714320b652a592b393b"
+    }
+  }
+}

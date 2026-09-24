@@ -17,7 +17,7 @@ The `javafx:run`/`compile` dev loop deliberately skips the Spotless check (it ru
 ## Native installer (`-Pdist`)
 
 ```
-mvn -Pdist package
+mvn clean -Pdist package
 ```
 
 Produces `target/dist/Editora.app` on macOS; the OS profiles auto-select DMG/MSI/DEB. There is
@@ -26,7 +26,7 @@ Produces `target/dist/Editora.app` on macOS; the OS profiles auto-select DMG/MSI
 Quick unpackaged bundle (skips the installer):
 
 ```
-mvn -Pdist -DskipTests -Djpackage.type=APP_IMAGE package    # → target/dist/Editora.app
+mvn clean -Pdist -DskipTests -Djpackage.type=APP_IMAGE package    # → target/dist/Editora.app
 ```
 
 ### What the dist profile does
@@ -99,3 +99,10 @@ profiles). Regenerate after editing the SVG.
 
 See also: [dependencies.md](dependencies.md) for the vendored/forked deps, and
 [release.md](release.md) for cutting a release.
+
+## Experimental closed-world build
+
+`-Pnative` is an isolated [StaticFX/GraalVM experiment](native-image-staticfx.md), with its own
+metadata and acceptance evidence. Its separate best-effort release jobs do not alter jlink,
+jpackage, the AOT trainer or the required JVM release matrix.
+Do not combine it with `dist` or `fatjar`; use clean builds when changing profiles.

@@ -1,0 +1,88 @@
+{
+  "reflection": [
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.internal.hppc.CharHashSet"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.internal.hppc.IntArrayList"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.internal.hppc.IntHashSet"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.store.DataOutput"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.util.BitSet"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.util.ByteBlockPool"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.util.CharsRef"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.util.FixedBitSet"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.util.IntsRef"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.util.automaton.RunAutomaton"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.util.automaton.Transition"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.util.fst.FST"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.util.fst.FSTCompiler$Arc[]"
+    },
+    {
+      "condition": {
+        "typeReached": "org.apache.lucene.util.RamUsageEstimator"
+      },
+      "type": "org.apache.lucene.util.fst.GrowableByteArrayDataOutput"
+    }
+  ]
+}

@@ -27,7 +27,8 @@ git push origin vX.Y.Z
 ```
 
 The tag triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml). (Manual
-dispatch is available for a dry run.)
+dispatch is available for a dry run; it validates JReleaser against the plain upcoming version
+because immutable GitHub releases reject `-SNAPSHOT` even in dry-run mode.)
 
 **Step 1 is the only manual version edit.** After the release publishes, the workflow's final
 `bump` job reopens `master` at the next patch `-SNAPSHOT` for you — see below.
@@ -89,8 +90,43 @@ uploaded as artifacts.
 
 A final job hands everything to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`),
 which creates the GitHub release with all installers + fat jars + `checksums.txt` + a changelog.
-JReleaser only *orchestrates the release* — it does not build (the `dist` profile is reused
-as-is), and there is **no `pom.xml`/Maven change**, so the normal build is unaffected.
+JReleaser only *orchestrates the release* — it does not build (the existing `dist` profile is
+reused as-is). The experimental `native` profile is opt-in, so the normal build is unaffected.
+
+### Experimental Native Image archives
+
+A separate, best-effort `native-experimental` matrix builds the opt-in `-Pnative` profile on
+Linux x64, macOS x64/arm64, and Windows x64. Each job runs on its own host OS with Oracle
+GraalVM for JDK 25; Intel macOS uses the last available JDK 25 update for that host. Native
+Image's Java heap is capped at 6 GiB with four build workers, or 5 GiB/two workers on the
+7 GiB Apple Silicon runner. The original uncapped Linux experiment peaked at 14 GiB. Linux
+uses G1; the JDK 25 macOS/Windows images use Serial GC.
+Each job checks `--version` on the extracted archive, then exercises the **actual app** opening a project
+and file, editing, undo/redo, saving, project search, Git status and local history. The disposable
+project lives outside the checkout so `.editorconfig` cannot change its save oracle. Only after
+those checks pass does it upload `Editora-<version>-<target>-native-experimental.tar.gz` (Linux/macOS)
+or `.zip` (Windows) for JReleaser to attach. Each archive includes the executable, any adjacent
+Native Image shared libraries, a launcher and a limitations README. Run `./run-editora-native [file]`
+on Linux/macOS or `run-editora-native.cmd [file]` on Windows; the launcher uses separate settings by
+default and `EDITORA_NATIVE_CONFIG_DIR` overrides the location. These are unsigned portable archives,
+not installers.
+The Windows hosted runner uses StaticFX's headless toolkit for the editor workflow because it has
+no interactive desktop; a Windows device trial is still needed to assess rendering and input.
+The Apple Silicon hosted runner's virtual Metal GPU aborts during startup, so the experimental
+macOS arm64 launcher uses JavaFX software rendering. Its behavior and performance on a physical Mac
+still need device testing.
+
+This is an experimental alternative to the regular installers, **not another platform in the
+supported release matrix**. The [measured Linux experiment](native-image-staticfx.md) found slower
+tokenization and input tails, unqualified peripheral features and an incompatibility with
+dynamic Java plugins. macOS and Windows do not yet have comparative editing benchmarks or long-session
+qualification; Linux arm64 is not attempted. An experimental job failure is visible in Actions but
+does not block the JVM release; that target's archive is omitted when compilation, packaging, or
+smoke testing fails. A compiled archive that fails the smoke test remains downloadable from the
+workflow as `native-unqualified-<target>` with a `.candidate` suffix; remove that suffix to
+extract it for device testing. It is never attached to the release. A manual dispatch also
+dry-runs the jobs. Revisit the performance and feature
+gate before making any target a default distribution.
 
 CI uses the BellSoft **Liberica** JDK 25 for full arch coverage (incl. linux aarch64).
 
