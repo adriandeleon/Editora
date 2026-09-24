@@ -72,6 +72,7 @@
 .text.git-output-added    { -fx-fill: -color-success-fg; }
 .text.git-output-deleted  { -fx-fill: -color-fg-muted; }
 .text.git-output-renamed  { -fx-fill: -state-violet; }
+.text.git-output-stat     { -fx-fill: -color-accent-fg; }
 
 /* CSV/TSV field separators (source.csv grammar): a muted tint so column boundaries stand out. */
 .text.csv-delimiter { -fx-fill: -color-fg-subtle; }

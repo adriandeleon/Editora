@@ -1025,7 +1025,11 @@ public final class GitService {
     /** {@link #git} plus a {@link CommandLog} report — the user-initiated commands only. */
     private ProcessRunner.Result gitLogged(Path dir, Duration timeout, String... args) {
         long startNanos = System.nanoTime();
-        ProcessRunner.Result r = git(dir, timeout, args);
+        // Git's diffstat output abbreviates the beginning of long paths to fit its assumed 80-column
+        // terminal, but ProcessRunner captures output for the Output tab where users can scroll sideways.
+        // Give stat rows enough room to keep the paths intact so the Git transcript can link them.
+        ProcessRunner.Result r =
+                ProcessRunner.run(dir, timeout, gitArgv(args), Map.of("GIT_OPTIONAL_LOCKS", "0", "COLUMNS", "1000"));
         List<String> argv = gitArgv(args);
         commandLog.record(
                 new CommandLog.Entry(argv, r.exit(), r.out(), r.err(), (System.nanoTime() - startNanos) / 1_000_000L));
