@@ -3,7 +3,12 @@ package com.editora.ui;
 import java.util.Collection;
 import java.util.List;
 
+import javafx.scene.Scene;
 import javafx.scene.control.Tab;
+import javafx.scene.layout.StackPane;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Text;
+import javafx.stage.Stage;
 
 import com.editora.build.OutputStyle;
 import com.editora.process.CommandLog;
@@ -230,6 +235,52 @@ class BuildOutputPanelFxTest {
         for (int i = 0; i < flags.length; i++) {
             assertTrue(flags[i], "Git transcript semantic span " + i);
         }
+    }
+
+    @Test
+    void gitDiffstatRendersGreenAndRedUnderEditorTheme() throws Exception {
+        Color[] fills = FxTestSupport.callOnFx(() -> {
+            BuildOutputPanel panel = new BuildOutputPanel();
+            panel.logCommand(
+                    GIT, "Git", new CommandLog.Entry(List.of("git", "pull"), 0, " src/Example.java | 4 ++--\n", "", 7));
+            panel.selectTab(GIT);
+            Stage stage = new Stage();
+            try {
+                Scene scene = new Scene(new StackPane(panel), 900, 300);
+                scene.getStylesheets()
+                        .addAll(
+                                getClass()
+                                        .getResource("/com/editora/styles/app.css")
+                                        .toExternalForm(),
+                                getClass()
+                                        .getResource("/com/editora/styles/syntax.css")
+                                        .toExternalForm(),
+                                getClass()
+                                        .getResource("/com/editora/styles/editor-themes/editora-light.css")
+                                        .toExternalForm());
+                stage.setScene(scene);
+                stage.show();
+                scene.getRoot().applyCss();
+                scene.getRoot().layout();
+                org.fxmisc.richtext.CodeArea out = FxTestSupport.field(
+                        (BuildToolPanel) panel.getTabs().get(0).getContent(), "output");
+                Text added = out.lookupAll(".diff-inserted").stream()
+                        .filter(Text.class::isInstance)
+                        .map(Text.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+                Text removed = out.lookupAll(".diff-deleted").stream()
+                        .filter(Text.class::isInstance)
+                        .map(Text.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+                return new Color[] {(Color) added.getFill(), (Color) removed.getFill()};
+            } finally {
+                stage.hide();
+            }
+        });
+        assertTrue(fills[0].getGreen() > fills[0].getRed() * 1.5, "additions render green: " + fills[0]);
+        assertTrue(fills[1].getRed() > fills[1].getGreen() * 1.5, "deletions render red: " + fills[1]);
     }
 
     /** Reads the RichTextFX console text out of a {@link BuildToolPanel} via its private {@code output} field. */

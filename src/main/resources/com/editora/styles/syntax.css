@@ -4,8 +4,8 @@
    IMPORTANT: each selector is the COMPOUND `.text.<class>` (specificity 0,2,0), not a single
    `.<class>` (0,1,0) and not a descendant `.editor-area .text.<class>`.
      - It must be 0,2,0 to tie the base `.editor-area .text` fill in app.css and win on source order
-       (this file is added after app.css); a single-class rule would lose the cascade and every token
-       would render in the default text color.
+       (this file is added after app.css); a single-class rule would lose the cascade. Editor themes
+       load later and may override this tie, so Git console colors use a third compound class below.
      - It must NOT use a descendant combinator: a combinator forces JavaFX to walk ancestors and
        defeats the per-node CSS style cache, which makes RichTextFX restyle every visible text segment
        on each scroll pulse — catastrophic scroll lag. The compound form matches by style class alone. */
@@ -89,6 +89,27 @@
 .text.diff-changed  { -fx-fill: -color-warning-fg; }
 .text.diff-range    { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 .text.diff-header   { -fx-fill: -color-fg-muted; -fx-font-weight: bold; }
+
+/* Editor themes load after syntax.css and their `.editor-area .text` rule ties the selectors
+   above in specificity. The Git transcript marker raises these selectors to 0,3,0 without an
+   ancestor lookup on RichTextFX text nodes. Keep links last so their accent remains visible. */
+.text.git-output-text.cmd-echo           { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
+.text.git-output-text.cmd-footer         { -fx-fill: -color-fg-muted; }
+.text.git-output-text.log-error          { -fx-fill: -color-danger-fg; }
+.text.git-output-text.git-output-modified { -fx-fill: -color-accent-fg; }
+.text.git-output-text.git-output-added   { -fx-fill: -color-success-fg; }
+.text.git-output-text.git-output-deleted { -fx-fill: -color-danger-fg; }
+.text.git-output-text.git-output-renamed { -fx-fill: -state-violet; }
+.text.git-output-text.git-output-stat    { -fx-fill: -color-accent-fg; }
+.text.git-output-text.git-output-count   { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
+.text.git-output-text.git-output-summary { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
+.text.git-output-text.git-output-neutral { -fx-fill: -color-fg-muted; }
+.text.git-output-text.git-output-forced  { -fx-fill: -color-warning-fg; }
+.text.git-output-text.diff-inserted      { -fx-fill: -color-success-fg; }
+.text.git-output-text.diff-deleted       { -fx-fill: -color-danger-fg; }
+.text.git-output-text.diff-range         { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
+.text.git-output-text.diff-header        { -fx-fill: -color-fg-muted; -fx-font-weight: bold; }
+.text.git-output-text.console-url        { -fx-fill: -color-accent-fg; -fx-underline: true; }
 
 /* Rainbow CSV: per-column colors (cycled every 8) when rainbow highlighting is on — computed in Java
    (CsvRainbow), not the grammar. Eight well-separated hues chosen to read on both light and dark editor

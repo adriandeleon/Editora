@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fixed Git output colors being overridden by the active editor theme; diffstat additions and deletions
+  now render in green and red while file links retain their accent color.
+
 - Git output now colors diffstat additions and deletions separately, emphasizes file and change totals,
   and highlights create/delete modes and remote update markers while keeping file paths clickable.
 

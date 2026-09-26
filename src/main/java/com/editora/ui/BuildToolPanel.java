@@ -222,7 +222,10 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
             for (int end : boundaries) {
                 if (previous != null) {
                     int begin = previous;
-                    List<String> classes = new ArrayList<>(3);
+                    List<String> classes = new ArrayList<>(4);
+                    if (gitTranscript) {
+                        classes.add("git-output-text");
+                    }
                     if (styleClass != null) {
                         classes.add(styleClass);
                     }
