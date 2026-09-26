@@ -305,10 +305,23 @@ class ProjectPanelGitFolderMenuFxTest {
         TreeView<Path> tree = FxTestSupport.field(panel, "tree");
         assertEquals(true, FxTestSupport.callOnFx(treeMode::isSelected));
         assertEquals("", FxTestSupport.callOnFx(filter::getText));
-        assertEquals(
-                folder,
-                FxTestSupport.callOnFx(
-                        () -> tree.getSelectionModel().getSelectedItem().getValue()));
+        awaitSelectedPath(tree, folder);
+    }
+
+    private static void awaitSelectedPath(TreeView<Path> tree, Path expected) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            Path selected = FxTestSupport.callOnFx(() -> {
+                TreeItem<Path> item = tree.getSelectionModel().getSelectedItem();
+                return item == null ? null : item.getValue();
+            });
+            if (expected.equals(selected)) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        TreeItem<Path> selected =
+                FxTestSupport.callOnFx(() -> tree.getSelectionModel().getSelectedItem());
+        assertEquals(expected, selected == null ? null : selected.getValue());
     }
 
     private static TreeItem<Path> awaitChild(ProjectPanel panel, Path path) throws Exception {
