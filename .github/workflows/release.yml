@@ -208,7 +208,7 @@ jobs:
           NATIVE_WORKERS: ${{ matrix.workers }}
         run: |
           ./mvnw -B --no-transfer-progress clean -Pnative -DskipTests \
-            "-DbuildArgs=--exact-reachability-metadata,--future-defaults=run-time-initialize-file-system-providers,-march=compatibility,--gc=${NATIVE_GC},-Djfx.static.gui=false,-J-Xmx${NATIVE_HEAP},--parallelism=${NATIVE_WORKERS}" package
+            "-DbuildArgs=--exact-reachability-metadata,--future-defaults=run-time-initialize-file-system-providers,-march=compatibility,--gc=${NATIVE_GC},-H:+AddAllCharsets,-Djfx.static.gui=false,-J-Xmx${NATIVE_HEAP},--parallelism=${NATIVE_WORKERS}" package
 
       - name: Resolve version
         id: ver

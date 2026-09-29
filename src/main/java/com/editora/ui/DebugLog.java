@@ -68,13 +68,21 @@ public final class DebugLog {
         handler.setLevel(Level.ALL); // capture everything the (already level-gated) loggers emit
         Logger.getLogger("").addHandler(handler);
 
-        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> append(line(
-                        Instant.now(),
-                        "SEVERE",
-                        "uncaught",
-                        "Uncaught exception in thread \"" + thread.getName() + "\"" + focusContext())
-                + System.lineSeparator()
-                + stackTrace(error)));
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+            String record = line(
+                            Instant.now(),
+                            "SEVERE",
+                            "uncaught",
+                            "Uncaught exception in thread \"" + thread.getName() + "\"" + focusContext())
+                    + System.lineSeparator()
+                    + stackTrace(error);
+            append(record);
+            // Native Image smoke runs can fail before start() attaches the session log.
+            // Keep those early failures visible in the captured process stderr.
+            if (Boolean.getBoolean("editora.debug.stderr")) {
+                System.err.println(record);
+            }
+        });
     }
 
     /**
