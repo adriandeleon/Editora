@@ -204,7 +204,7 @@ jobs:
             libgtk-3-dev libxtst-dev libxxf86vm-dev libgl1-mesa-dev xvfb xauth
 
       # The experiment peaked at 14 GiB with unrestricted parallelism. Bound
-      # heap/workers; preserve every profile safety flag because -DbuildArgs
+          # heap/workers; preserve every profile safety flag because -DbuildArgs
       # replaces the full Maven argument list. G1 is unavailable on these JDK 25
       # macOS/Windows builds, so use Serial GC there.
       - name: Build Native Image
@@ -215,7 +215,7 @@ jobs:
           NATIVE_WORKERS: ${{ matrix.workers }}
         run: |
           ./mvnw -B --no-transfer-progress clean -Pnative -DskipTests \
-            "-DbuildArgs=--exact-reachability-metadata,--future-defaults=run-time-initialize-file-system-providers,-march=compatibility,--gc=${NATIVE_GC},-Djfx.static.gui=false,-J-Xmx${NATIVE_HEAP},--parallelism=${NATIVE_WORKERS}" package
+            "-DbuildArgs=--exact-reachability-metadata,--future-defaults=run-time-initialize-file-system-providers,-march=compatibility,--gc=${NATIVE_GC},-H:+AddAllCharsets,-Djfx.static.gui=false,-J-Xmx${NATIVE_HEAP},--parallelism=${NATIVE_WORKERS}" package
 
       - name: Resolve version
         id: ver

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Experimental Windows Native Image builds now include the host charset needed by Java's filesystem
+  provider, so the application can start past the early `Cp1252` lookup.
+
 ## [0.18.6] - 2026-09-28
 
 - Fixed Git output colors being overridden by the active editor theme; diffstat additions and deletions

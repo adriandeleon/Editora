@@ -79,7 +79,10 @@ conditionals are introduced, no compiler exclusions remove features, and the exi
 Always use a **clean build when changing profiles**: Maven does not remove stale optional classes or
 resources from an earlier profile automatically. Do not combine `native` with `dist` or `fatjar`.
 
-The profile requests exact reachability metadata, G1, and `-march=compatibility`. It sets
+The profile requests exact reachability metadata, G1, `-march=compatibility`, and
+`-H:+AddAllCharsets`. The latter keeps the Windows host charset (`Cp1252` on the hosted runner)
+available when Java's filesystem provider starts; without it, the native executable exits before
+the editor opens. It sets
 `jfx.static.gui=false` so probe/failure logs remain observable on Windows too. Runtime benchmark commands
 use `-Xmx2g -Xms64m`; G1 is also the normal JVM collector. There is no PGO training in this experiment.
 
