@@ -34,7 +34,7 @@ def smoke(archive, target, output):
         # GitHub's Windows runner has no interactive desktop. StaticFX's
         # headless toolkit still runs the real FXML/editor workflow in-process.
         application = [str(binary), '-XX:MissingRegistrationReportingMode=Exit', '-Xmx2g', '-Xms64m',
-                       '-Dglass.platform=Headless', '-Dprism.order=sw']
+                       '-Dglass.platform=Headless', '-Dprism.order=sw', '-Deditora.debug.stderr=true']
     else:
         subprocess.run([str(launcher), '--version'], check=True, timeout=30)
         application = [str(launcher)]

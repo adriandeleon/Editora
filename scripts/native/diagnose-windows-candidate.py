@@ -16,7 +16,8 @@ def main(archive):
     if len(binaries) != 1:
         raise ValueError(f'expected one native executable, found {len(binaries)}')
     binary = binaries[0]
-    options = ('-Xmx2g', '-Xms64m', '-Dprism.order=sw', '-Dprism.verbose=true')
+    options = ('-Xmx2g', '-Xms64m', '-Dprism.order=sw', '-Dprism.verbose=true',
+               '-Deditora.debug.stderr=true')
     cases = (
         ('headless-strict', '-XX:MissingRegistrationReportingMode=Exit', '-Dglass.platform=Headless'),
         ('headless-warn', '-XX:MissingRegistrationReportingMode=Warn', '-Dglass.platform=Headless'),
