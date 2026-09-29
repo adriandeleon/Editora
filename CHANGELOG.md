@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.6] - 2026-09-28
+
 - Fixed Git output colors being overridden by the active editor theme; diffstat additions and deletions
   now render in green and red while file links retain their accent color.
 
@@ -18,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Local File History now queues blob cleanup before acknowledging a durable index write, so a
   later pre-delete snapshot cannot lose its recovery body to an older cleanup pass.
+
+- Markdown preview tables now account for cell padding when sizing columns, so compact values stay
+  readable instead of wrapping or collapsing.
+
+- Anchored popups, including the Welcome screen's Git menu, now stay within the window bounds.
 
 - Tagged releases now attempt experimental Linux x64, macOS x64/arm64, and Windows x64 GraalVM
   Native Image archives alongside the usual JVM packages. Each extracted archive must pass a
