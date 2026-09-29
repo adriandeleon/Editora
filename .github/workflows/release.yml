@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.target }}
+    if: ${{ false }} # v0.18.6 Windows Native Image backfill; existing release installers are unchanged.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -166,11 +167,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: linux-x64,   os: ubuntu-24.04,   graal: '25.0.4', gc: G1,     heap: 6g, workers: 4 }
-          # Oracle GraalVM 25.0.1 is the last JDK 25 build for Intel macOS.
-          - { target: macos-x64,   os: macos-15-intel, graal: '25',     gc: serial, heap: 6g, workers: 4 }
-          # Standard Apple Silicon runners have only 7 GiB RAM / 3 vCPUs.
-          - { target: macos-arm64, os: macos-14,       graal: '25.0.4', gc: serial, heap: 5g, workers: 2 }
           - { target: windows-x64, os: windows-latest, graal: '25.0.4', gc: serial, heap: 6g, workers: 4 }
     steps:
       - name: Check out repository
@@ -208,7 +204,7 @@ jobs:
           NATIVE_WORKERS: ${{ matrix.workers }}
         run: |
           ./mvnw -B --no-transfer-progress clean -Pnative -DskipTests \
-            "-DbuildArgs=--exact-reachability-metadata,--future-defaults=run-time-initialize-file-system-providers,-march=compatibility,--gc=${NATIVE_GC},-Djfx.static.gui=false,-J-Xmx${NATIVE_HEAP},--parallelism=${NATIVE_WORKERS}" package
+            "-DbuildArgs=--exact-reachability-metadata,--future-defaults=run-time-initialize-file-system-providers,-march=compatibility,--gc=${NATIVE_GC},-H:+AddAllCharsets,-Djfx.static.gui=false,-J-Xmx${NATIVE_HEAP},--parallelism=${NATIVE_WORKERS}" package
 
       - name: Resolve version
         id: ver
@@ -297,8 +293,8 @@ jobs:
 
   release:
     name: Release
+    if: ${{ false }} # Published v0.18.6 is immutable; this run only produces a workflow artifact.
     needs: [build, native-experimental]
-    if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write

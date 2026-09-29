@@ -1183,6 +1183,8 @@
                                 <buildArg>--future-defaults=run-time-initialize-file-system-providers</buildArg>
                                 <buildArg>-march=compatibility</buildArg>
                                 <buildArg>--gc=G1</buildArg>
+                                <!-- Windows filesystem paths require the host's Cp1252 charset at runtime. -->
+                                <buildArg>-H:+AddAllCharsets</buildArg>
                                 <buildArg>-Djfx.static.gui=false</buildArg>
                             </buildArgs>
                             <!-- Explicit reviewed metadata only; do not silently pull a changing catalog. -->
