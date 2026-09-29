@@ -3,7 +3,12 @@ name: Release
 on:
   push:
     tags: ['v*']
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      native_candidate_run:
+        description: Release run containing an unqualified Windows Native Image candidate
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -11,6 +16,7 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.target }}
+    if: github.event_name != 'workflow_dispatch' || inputs.native_candidate_run == ''
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -159,6 +165,7 @@ jobs:
   # Failure is visible on the run but never suppresses the established JVM release.
   native-experimental:
     name: Experimental Native Image (${{ matrix.target }})
+    if: github.event_name != 'workflow_dispatch' || inputs.native_candidate_run == ''
     runs-on: ${{ matrix.os }}
     continue-on-error: true
     timeout-minutes: 60
@@ -295,10 +302,40 @@ jobs:
           path: staging/*
           if-no-files-found: error
 
+  windows-native-candidate:
+    name: Replay Windows Native Image candidate
+    if: github.event_name == 'workflow_dispatch' && inputs.native_candidate_run != ''
+    runs-on: windows-latest
+    timeout-minutes: 12
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Download unqualified Windows candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN: ${{ inputs.native_candidate_run }}
+        run: gh run download "$CANDIDATE_RUN" -n native-unqualified-windows-x64 -D native-candidate
+      - name: Compare native startup modes
+        shell: bash
+        run: python scripts/native/diagnose-windows-candidate.py native-candidate/*.candidate
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-native-candidate-diagnostics
+          path: native-candidate-diagnostics
+          if-no-files-found: ignore
+
   release:
     name: Release
     needs: [build, native-experimental]
-    if: always() && needs.build.result == 'success'
+    if: always() && needs.build.result == 'success' && inputs.native_candidate_run == ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
