@@ -101,9 +101,9 @@ Under `src/native/resources/META-INF/native-image/com.editora/`:
 - `editora/reachability-metadata.json`: owned app resources, RichTextFX CSS, AtlantaFX themes,
   conditional jcodings `tables/**`; the single Gson JavaTime adapter constructor; a negative
   `javafx.scene.web.WebView` class lookup from FXML's JavaFX feature check. This last entry does not
-  add WebView or promise WebView support. JavaFX control resource bundles and exact XML/DNS
-  service-resource lookups support the full window. The conditional HTTP-server provider resource
-  lookup supports the existing MCP automation endpoint. The `java.logging` locale resources keep JavaFX
+  add WebView or promise WebView support. JavaFX control and Windows theme resource bundles, plus
+  exact XML/DNS service-resource lookups, support the full window. The conditional HTTP-server provider
+  resource lookup supports the existing MCP automation endpoint. The `java.logging` locale resources keep JavaFX
   startup warnings visible under strict missing-registration mode on hosted runners. JavaFX's
   software Marlin renderer also needs the JDK's aligned-int segment VarHandle method queries;
   this is conditional on Marlin's off-heap path. FXML also needs its module-resource lookup and the

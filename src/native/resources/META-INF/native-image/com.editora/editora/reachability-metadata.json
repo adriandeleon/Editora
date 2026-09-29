@@ -32,6 +32,9 @@
       "bundle": "com/sun/javafx/scene/control/skin/resources/controls"
     },
     {
+      "bundle": "com/sun/glass/ui/win/themes"
+    },
+    {
       "condition": {
         "typeReached": "com.sun.net.httpserver.HttpServer"
       },

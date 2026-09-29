@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Experimental Windows Native Image builds now include the host charset needed by Java's filesystem
-  provider, so the application can start past the early `Cp1252` lookup.
+- Experimental Windows Native Image builds now include the host charset and JavaFX Windows theme
+  bundle needed during startup.
 
 ## [0.18.6] - 2026-09-28
 
