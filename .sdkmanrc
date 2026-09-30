@@ -1,0 +1,3 @@
+# Palantir Java Format (Spotless) needs JDK 25 until it supports JDK 27 (JDK-8372948).
+# `sdk env` switches to this JDK here; `sdk env install` fetches it first.
+java=25.0.4-tem
