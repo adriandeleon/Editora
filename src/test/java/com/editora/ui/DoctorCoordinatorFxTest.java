@@ -47,6 +47,7 @@ class DoctorCoordinatorFxTest {
         final com.editora.typst.TypstService typst = new com.editora.typst.TypstService();
         String installedServer;
         boolean lspEnabled = true;
+        boolean debugEnabled = false;
         InstallCatalog.Lang installedLang;
         boolean installedTypstCli;
         String openedSettingsKey;
@@ -78,7 +79,7 @@ class DoctorCoordinatorFxTest {
 
         @Override
         public boolean debugFeatureEnabled() {
-            return false;
+            return debugEnabled;
         }
 
         @Override
@@ -160,6 +161,60 @@ class DoctorCoordinatorFxTest {
             assertTrue(specs.stream().anyMatch(s -> s.placeholder().id().equals(id)), id);
         }
         assertFalse(specs.stream().anyMatch(s -> s.placeholder().id().equals("run.shell")));
+    }
+
+    @Test
+    void gitRowShowsTheConfiguredCommandAndJavaRowLinksToItsJdkSetting() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setGitPath("/opt/git/bin/git");
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, new FakeOps()));
+
+        List<DoctorService.CheckSpec> specs = FxTestSupport.callOnFx(doctor::buildSpecs);
+        // Resolved at spec-build time (FX thread), so the probe never reads Settings off-thread.
+        assertEquals("/opt/git/bin/git", placeholder(specs, "git").command());
+        // Its JDK is the Build Tools page's Maven JDK, so an old/missing Java row can offer Settings….
+        assertEquals("buildTools", placeholder(specs, "run.java").settingsKey());
+    }
+
+    @Test
+    void absentMermaidLinterIsOnlyAWarning() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMermaidSupport(true);
+        FakeOps ops = new FakeOps();
+        ops.mermaid.setPaths("", "/nonexistent/editora-doctor-test/maid");
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
+
+        List<DoctorService.CheckSpec> specs = FxTestSupport.callOnFx(doctor::buildSpecs);
+        DoctorCheck maid = spec(specs, "maid").probe().get(); // launches nothing: the path doesn't exist
+        assertEquals(DoctorStatus.WARN, maid.status());
+        assertEquals("doctor.tip.maidOptional", maid.tipKey());
+    }
+
+    @Test
+    void debugpyIsMissingWhenItsInterpreterWontRunEvenIfABundleIsFound() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setPythonDebugEnabled(true);
+        String python = "/nonexistent/editora-doctor-test/python3";
+        host.settings.setPythonDebugCommand(python);
+        FakeOps ops = new FakeOps();
+        ops.debugEnabled = true;
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
+
+        List<DoctorService.CheckSpec> specs = FxTestSupport.callOnFx(doctor::buildSpecs);
+        DoctorCheck debugpy = spec(specs, "debug.python").probe().get();
+        assertEquals(DoctorStatus.MISSING, debugpy.status());
+        assertEquals(List.of(python), debugpy.tipArgs());
+    }
+
+    private static DoctorService.CheckSpec spec(List<DoctorService.CheckSpec> specs, String id) {
+        return specs.stream()
+                .filter(s -> s.placeholder().id().equals(id))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static DoctorCheck placeholder(List<DoctorService.CheckSpec> specs, String id) {
+        return spec(specs, id).placeholder();
     }
 
     @Test

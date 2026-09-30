@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Doctor reports Python debugging as healthy only when the configured interpreter can import debugpy,
+  the same check the debugger uses, so a found debugpy bundle no longer hides a missing or misconfigured
+  Python. A missing Mermaid linter is now a warning rather than a problem, since diagrams still render
+  without it. Refresh no longer lets the previous run's queued checks start, the Git row shows the
+  configured Git command, and the Java row links to the Build Tools page where its JDK is chosen.
+
 - Experimental Windows Native Image builds now include the host charset and JavaFX Windows theme
   bundle needed during startup.
 

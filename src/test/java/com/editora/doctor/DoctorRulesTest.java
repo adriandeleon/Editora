@@ -45,6 +45,15 @@ class DoctorRulesTest {
     }
 
     @Test
+    void debugpyHealthIsTheInterpreterImportingIt() {
+        assertEquals("", DoctorRules.debugpyBlocker(true, true, "python3"));
+        // A located debugpy bundle is no proof: a broken interpreter is what the debugger trips over.
+        assertEquals("python3", DoctorRules.debugpyBlocker(false, false, "python3"));
+        assertEquals("/opt/py/bin/python", DoctorRules.debugpyBlocker(false, false, "/opt/py/bin/python"));
+        assertEquals("debugpy", DoctorRules.debugpyBlocker(false, true, "python3"));
+    }
+
+    @Test
     void firstLinePrefersStdoutSkipsBlanksAndStrips() {
         assertEquals("git version 2.54.0", DoctorRules.firstLine("git version 2.54.0\nmore", "err"));
         assertEquals("from stderr", DoctorRules.firstLine("", "\n  from stderr  \n"));
