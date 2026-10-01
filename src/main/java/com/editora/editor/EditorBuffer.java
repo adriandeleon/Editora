@@ -5434,6 +5434,7 @@ public class EditorBuffer implements TabContent {
      */
     public void dispose() {
         snippetSession.cancel();
+        cancelWrapRemeasure();
         completionEditTrackers.clear();
         completionActions.cancelCompletion();
         disposed = true; // reject any LATER dispatch (see below) — the gen bumps only cover in-flight work
@@ -7450,12 +7451,76 @@ public class EditorBuffer implements TabContent {
 
     /** Toggles soft word wrap on the editor surface (and the split view); the 80-column ruler stays visible. */
     public void setWordWrap(boolean wrap) {
-        if (wrap != area.isWrapText()) {
+        boolean changed = wrap != area.isWrapText();
+        if (changed) {
             markRulerInputsDirty(); // wrapping changes how the advance is derived (see columnRulerX)
         }
         area.setWrapText(wrap);
         if (area2 != null) {
             area2.setWrapText(wrap);
+        }
+        if (!changed) {
+            return;
+        }
+        cancelWrapRemeasure();
+        if (wrap) {
+            startWrapRemeasure();
+        }
+    }
+
+    /** Per-pulse time budget for {@link #startWrapRemeasure}, so a big document never blocks a frame. */
+    private static final long WRAP_REMEASURE_BUDGET_NANOS = 6_000_000L;
+
+    private javafx.animation.AnimationTimer wrapRemeasure;
+
+    /**
+     * Makes a just-enabled word wrap take effect. Flowless caches the minimum width of every paragraph it has
+     * ever laid out and lays all cells out at the widest cached value, but on a change it only drops the
+     * entries of cells that are currently realized. An unwrapped long line scrolled past earlier therefore
+     * keeps the whole view at its old width: nothing wraps and the horizontal scrollbar stays. There is no
+     * public way to clear that cache, so this realizes every non-empty paragraph once (in budgeted slices,
+     * one per pulse) so the next layout pass re-measures it, after which Flowless drops the cell again.
+     */
+    private void startWrapRemeasure() {
+        List<CodeArea> areas = area2 == null ? List.of(area) : List.of(area, area2);
+        wrapRemeasure = new javafx.animation.AnimationTimer() {
+            private int areaIndex;
+            private int next;
+
+            @Override
+            public void handle(long now) {
+                long deadline = System.nanoTime() + WRAP_REMEASURE_BUDGET_NANOS;
+                while (areaIndex < areas.size()) {
+                    CodeArea target = areas.get(areaIndex);
+                    if (target.getScene() == null) {
+                        areaIndex++; // not showing: no layout pass would release the realized cells
+                        next = 0;
+                        continue;
+                    }
+                    int size = target.getParagraphs().size();
+                    while (next < size && System.nanoTime() < deadline) {
+                        if (target.getParagraphLength(next) > 0) {
+                            target.getParagraphLinesCount(next); // realizes the cell (an empty line is never wide)
+                        }
+                        next++;
+                    }
+                    target.requestLayout();
+                    if (next < size) {
+                        return; // continue after this pulse's layout has re-measured the slice
+                    }
+                    areaIndex++;
+                    next = 0;
+                }
+                cancelWrapRemeasure();
+            }
+        };
+        wrapRemeasure.start();
+    }
+
+    private void cancelWrapRemeasure() {
+        if (wrapRemeasure != null) {
+            wrapRemeasure.stop();
+            wrapRemeasure = null;
         }
     }
 

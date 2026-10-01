@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without it. Refresh no longer lets the previous run's queued checks start, the Git row shows the
   configured Git command, and the Java row links to the Build Tools page where its JDK is chosen.
 
+- Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
+  unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the
+  horizontal scrollbar stayed until you scrolled back over those lines or restarted.
+
+- `View: Toggle Word Wrap` no longer fails with an internal error when the Settings window has not been
+  opened yet in that window; the toggle now completes and reports the new state in the status bar.
+
 - Experimental Windows Native Image builds now include the host charset and JavaFX Windows theme
   bundle needed during startup.
 
