@@ -98,6 +98,8 @@ class MainControllerCommandsFxTest {
         assertToggleRoundTrips("view.toggleLineNumbers", settings::isShowLineNumbers);
         assertToggleRoundTrips("view.toggleMinimap", settings::isShowMinimap);
         assertToggleRoundTrips("view.toggleWhitespace", settings::isShowWhitespace);
+        // Word wrap also syncs the Settings checkbox, which does not exist until Settings is first opened.
+        assertToggleRoundTrips("view.toggleWordWrap", settings::isWordWrap);
     }
 
     @Test

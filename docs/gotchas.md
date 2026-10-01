@@ -131,6 +131,22 @@ destroying only the wrapper orphans the real server. `dispose()` calls
 `ProcessRegistry.killTree(process)` ([`ProcessRegistry.java`](../src/main/java/com/editora/process/ProcessRegistry.java))
 to kill the whole descendant tree (children first, escalating to a force-kill) and untrack it.
 
+## Enabling `setWrapText` does not wrap until stale cell widths are re-measured
+
+**Symptom:** word wrap is switched on, `area.isWrapText()` is true, but every line stays on one row and the
+horizontal scrollbar remains. Scrolling back over earlier long lines (or restarting with wrap on) fixes it;
+resizing the window does not.
+
+**Why/fix:** Flowless's `SizeTracker` memoizes the minimum breadth of every cell it has laid out and lays
+all visible cells out at `max(viewport, widest memoized breadth)`. When a cell's width changes it only
+forgets the entries of cells that are currently realized *and* need layout, so a long line measured
+unwrapped and since scrolled away keeps its old width forever. Neither Flowless nor RichTextFX exposes a
+way to clear that cache. `EditorBuffer.setWordWrap` therefore realizes every non-empty paragraph once after
+enabling wrap (`getParagraphLinesCount(i)`), in time-budgeted slices on an `AnimationTimer` so a large
+document never blocks a frame; each pulse's layout re-measures the slice and drops the cells again. The
+cost is linear in the paragraph count, so on a very large file wrapping appears a moment after the toggle.
+`WordWrapToggleFxTest` pins the behaviour.
+
 ## Never ask `getCharacterBoundsOnScreen` for an *empty* range
 
 **Symptom:** typing (or some repeated action) gets slower the longer the editor is open, and never
