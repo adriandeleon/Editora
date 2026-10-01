@@ -7375,6 +7375,9 @@ public class SettingsWindow {
     }
 
     void syncViewChecks() {
+        if (!built) {
+            return;
+        }
         boolean prev = loading;
         loading = true;
         try {
