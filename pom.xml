@@ -56,7 +56,7 @@
         <!-- Do not bump without reading docs/dependencies.md (sshd-osgi): 2.17+ changed
              SftpFileSystem.getDefaultDir() in a way RemoteFileSystems depends on, and 2.20.0 is wanted
              (CVE-2026-94002, SFTP client memory exhaustion). -->
-        <sshd.version>2.16.0</sshd.version>
+        <sshd.version>2.20.0</sshd.version>
         <slf4j.version>2.0.18</slf4j.version>
         <moditect.version>1.3.0.Final</moditect.version>
         <spotless.version>3.10.2</spotless.version>

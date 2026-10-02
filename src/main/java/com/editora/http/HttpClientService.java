@@ -522,7 +522,15 @@ public final class HttpClientService {
                 if (target.getParent() != null) {
                     Files.createDirectories(target.getParent());
                 }
-                Files.write(target, result.rawBody() == null ? new byte[0] : result.rawBody()); // raw bytes
+                // Raw bytes, and never through a symlink: the containment check above ran a moment ago, and
+                // NOFOLLOW makes a link swapped in since then fail the write instead of redirecting it.
+                Files.write(
+                        target,
+                        result.rawBody() == null ? new byte[0] : result.rawBody(),
+                        java.nio.file.StandardOpenOption.CREATE,
+                        java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+                        java.nio.file.StandardOpenOption.WRITE,
+                        java.nio.file.LinkOption.NOFOLLOW_LINKS);
             } catch (Exception ignore) {
                 // best-effort: a failed redirect write never aborts the response
             }

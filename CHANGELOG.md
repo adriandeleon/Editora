@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Updated Apache MINA SSHD to 2.20.0, which fixes CVE-2026-94002 (a malicious SFTP server could exhaust the
+  editor's memory). The remote connection root is now resolved to an absolute path at connect time, as
+  2.17+ requires.
 - File loading, saving and session fixes:
   - Files that are not valid UTF-8 (Latin-1, Windows-1252, Shift-JIS, …) are no longer corrupted on save.
     They open as Windows-1252 (or ISO-8859-1 when the bytes rule that out) so every byte is preserved, the

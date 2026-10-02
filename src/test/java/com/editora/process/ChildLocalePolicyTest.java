@@ -38,7 +38,7 @@ class ChildLocalePolicyTest {
     private static final Pattern PARSE_STABLE =
             Pattern.compile("ProcessRunner\\s*\\.\\s*(?:run|runBytes|applyStandardEnv)\\s*\\(");
     private static final Pattern USER_LOCALE =
-            Pattern.compile("ProcessRunner\\s*\\.\\s*(?:runInUserLocale|applyUserEnv)\\s*\\(");
+            Pattern.compile("ProcessRunner\\s*\\.\\s*(?:runInUserLocale|runScrubbed|applyUserEnv)\\s*\\(");
     /** Starting a process any other way bypasses both environments (and the augmented PATH). */
     private static final Pattern RAW_SPAWN =
             Pattern.compile("new\\s+ProcessBuilder\\s*\\(|getRuntime\\(\\)\\s*\\.exec\\s*\\(");
@@ -69,7 +69,7 @@ class ChildLocalePolicyTest {
             Map.entry("build/BuildService.java", 1), // Maven/Gradle/npm/cargo/go builds
             Map.entry("build/BuildTool.java", 1), // `gradle tasks` (a JVM in the project dir)
             Map.entry("dap/DapManager.java", 3), // debugpy adapter, js-debug adapter, javac of the user's file
-            Map.entry("diagram/DiagramRenderer.java", 2), // render + export (PlantUML is a JVM)
+            Map.entry("diagram/DiagramRenderer.java", 2), // render + export, scrubbed (PlantUML is a JVM)
             Map.entry("externaltool/ExternalToolService.java", 1), // the user's own filters
             Map.entry("install/InstallService.java", 5), // npm/pip/gem/… installs + tar extraction
             Map.entry("lsp/LanguageServerSession.java", 1), // language servers
@@ -79,7 +79,6 @@ class ChildLocalePolicyTest {
             Map.entry("run/RunService.java", 1), // the user's program
             Map.entry("typst/TypstRenderer.java", 2), // render + export
             Map.entry("ui/PluginCoordinator.java", 1), // a plugin's own command
-            Map.entry("ui/RunCoordinator.java", 1), // a run configuration's before-launch step
             Map.entry("web/HtmlPreviewService.java", 1)); // the browser
 
     /** Build their own {@code ProcessBuilder} and then apply one of the two environments above. */

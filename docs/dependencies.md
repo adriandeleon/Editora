@@ -72,16 +72,14 @@ needed): RichTextFX & friends, tm4e core, **PDFBox** (`pdfbox`/`pdfbox-io`/`font
   commons-logging under jlink) and slf4j-api is forced to `${slf4j.version}` (2.x, a real module).
   The descriptor exports **every** package of the jar; `SshdModuleDescriptorTest` compares the two, so
   a version bump that adds or drops a package fails until the file is re-derived.
-  **Bumping SSHD past 2.16.0 needs a code change first** (and is needed: CVE-2026-94002, a
-  client-side SFTP memory-exhaustion bug, is fixed in 2.20.0). Since 2.17.0 an `SftpFileSystem` no
-  longer caches its default directory at construction — `getDefaultDir()` asks the live SFTP client,
-  and throws once the filesystem is closed. `RemoteFileSystems.remotePath` calls `toAbsolutePath()`
-  on paths of a *disconnected* filesystem to build their durable `sftp://` URI, so with 2.17+ a
-  relative remote path can no longer be stored after a disconnect
-  (`RemoteFileSystemsHostKeyFxTest.reconnectResolvesAnOpenPathsDurableUriToTheNewFilesystem` fails).
-  Make the connection root absolute while the filesystem is still open (or cache the default
-  directory per connection), then bump `sshd.version`; the package set of 2.20.0 is identical to
-  2.16.0's, so the descriptor needs no change.
+  **SSHD is on 2.20.0** (CVE-2026-94002, a client-side SFTP memory-exhaustion bug, is fixed there). One
+  behaviour of 2.17+ matters to Editora: an `SftpFileSystem` no longer caches its default directory at
+  construction — `getDefaultDir()` asks the live SFTP client and throws once the filesystem is closed —
+  so a *relative* remote path cannot be made absolute after a disconnect. `RemoteFileSystems.connect`
+  therefore resolves the connection root to an absolute path while the session is live
+  (`RemoteFileSystemsHostKeyFxTest.reconnectResolvesAnOpenPathsDurableUriToTheNewFilesystem` pins it).
+  The package set of 2.20.0 is identical to 2.16.0's, so the descriptor needed no change; the bump has
+  not yet been exercised by a `-Pdist` jlink build on every platform or by the native-image lane.
 
 If you add a dependency that turns out to be an automatic module, expect to add a moditect entry.
 

@@ -189,7 +189,10 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
                     closeQuietly(prev); // reconnecting the same site: don't leak the previous filesystem
                 }
                 String start = conn.lastPath() != null && !conn.lastPath().isBlank() ? conn.lastPath() : ".";
-                result = new Result(true, fs.getPath(start), null); // "." resolves to the SFTP home dir
+                // Resolved to an absolute path now, while the session is live: "." is the SFTP home directory,
+                // and since MINA SSHD 2.17 a relative path can no longer be made absolute once its
+                // filesystem has been closed (a reconnect closes the previous one).
+                result = new Result(true, fs.getPath(start).toAbsolutePath().normalize(), null);
             } catch (Exception e) {
                 result = new Result(false, null, message(e));
             } finally {
