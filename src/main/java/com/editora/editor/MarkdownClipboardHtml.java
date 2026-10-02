@@ -59,15 +59,85 @@ public final class MarkdownClipboardHtml {
      */
     public static String toHtml(String markdown, boolean mathEnabled) {
         String src = markdown == null ? "" : markdown;
+        java.util.Set<String> mathTags = new java.util.HashSet<>();
         if (mathEnabled) {
-            src = MarkdownHtmlExport.substituteMath(src);
+            src = MarkdownHtmlExport.substituteMath(src, mathTags);
         }
+        // What lands on the clipboard is pasted into mail clients, chat and word processors, which render it
+        // with their own privileges — and the Markdown may be someone else's file. So the fragment carries no
+        // raw HTML from the document (it shows as text, like the preview shows it) and no script-capable URL
+        // ([x](javascript:…) gets an empty href). The one exception is the math <img> tags generated just
+        // above: those are ours, matched exactly, and inline data: PNGs.
         HtmlRenderer renderer = HtmlRenderer.builder()
                 .extensions(MarkdownRenderer.EXTENSIONS)
                 .attributeProviderFactory(ctx -> new InlineStyles())
+                .escapeHtml(true)
+                .sanitizeUrls(true)
+                .nodeRendererFactory(ctx -> new OwnMathOnly(ctx.getWriter(), mathTags))
                 .build();
         String body = renderer.render(MarkdownRenderer.parseToDocument(src));
         return "<div style=\"" + ROOT_STYLE + "\">\n" + body + "</div>";
+    }
+
+    /**
+     * Renders the document's raw HTML nodes escaped, letting through only the exact {@code <img>} tags the
+     * math pre-pass generated ({@code known}). A tag the document merely <em>wrote</em> to look like one is not
+     * in the set unless it is byte-for-byte a tag we would have produced — which is then harmless by
+     * construction (a {@code data:image/png} source and an escaped {@code alt}).
+     */
+    private static final class OwnMathOnly implements org.commonmark.renderer.NodeRenderer {
+        private static final String OPEN = "<img class=\"md-math ";
+
+        private final org.commonmark.renderer.html.HtmlWriter html;
+        private final java.util.Set<String> known;
+
+        OwnMathOnly(org.commonmark.renderer.html.HtmlWriter html, java.util.Set<String> known) {
+            this.html = html;
+            this.known = known;
+        }
+
+        @Override
+        public java.util.Set<Class<? extends Node>> getNodeTypes() {
+            return java.util.Set.of(org.commonmark.node.HtmlInline.class, org.commonmark.node.HtmlBlock.class);
+        }
+
+        @Override
+        public void render(Node node) {
+            if (node instanceof org.commonmark.node.HtmlBlock block) {
+                html.line();
+                html.tag("p");
+                write(block.getLiteral());
+                html.tag("/p");
+                html.line();
+            } else if (node instanceof org.commonmark.node.HtmlInline inline) {
+                write(inline.getLiteral());
+            }
+        }
+
+        /** Writes {@code literal} escaped, except for each exact occurrence of a generated math tag. */
+        private void write(String literal) {
+            if (literal == null) {
+                return;
+            }
+            int from = 0;
+            while (from < literal.length()) {
+                int open = known.isEmpty() ? -1 : literal.indexOf(OPEN, from);
+                int close = open < 0 ? -1 : literal.indexOf('>', open);
+                if (close < 0) {
+                    break;
+                }
+                String tag = literal.substring(open, close + 1);
+                if (known.contains(tag)) {
+                    html.text(literal.substring(from, open));
+                    html.raw(tag);
+                    from = close + 1;
+                } else {
+                    html.text(literal.substring(from, open + 1)); // not ours: the '<' goes out escaped
+                    from = open + 1;
+                }
+            }
+            html.text(literal.substring(from));
+        }
     }
 
     /**
@@ -79,6 +149,7 @@ public final class MarkdownClipboardHtml {
 
         @Override
         public void setAttributes(Node node, String tagName, Map<String, String> attributes) {
+            attributes.remove("rel", "nofollow"); // a side effect of sanitizeUrls; meaningless in a paste
             String style = styleFor(node, tagName);
             if (style == null) {
                 return;

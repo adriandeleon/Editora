@@ -83,7 +83,7 @@ public final class ProcessRunner {
      */
     public static Result run(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
-        return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), false));
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), false, false));
     }
 
     /**
@@ -93,7 +93,7 @@ public final class ProcessRunner {
      */
     public static Result runWithInput(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, byte[] stdin) {
-        return decoded(runRaw(workingDir, timeout, command, extraEnv, stdin, false));
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, stdin, false, false));
     }
 
     /**
@@ -119,11 +119,24 @@ public final class ProcessRunner {
      */
     public static Result runInUserLocale(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
-        return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), true));
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), true, false));
     }
 
     private static byte[] utf8(String stdin) {
         return stdin == null ? null : stdin.getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * As {@link #run(Path, Duration, List, Map)}, for a child that processes <b>untrusted document content</b>
+     * — the preview render CLIs (PlantUML, Graphviz, mmdc, Typst). Secret-looking variables
+     * ({@link SecretEnv}) are removed from the inherited environment first, so a diagram that can read its
+     * environment ({@code %getenv} in PlantUML) or a tool that phones home finds no API keys or tokens there.
+     * {@code extraEnv} is applied afterwards and is never scrubbed. The child inherits the user's locale, like
+     * {@link #runInUserLocale}: these tools are handed the user's paths and their messages are shown, not parsed.
+     */
+    public static Result runScrubbed(
+            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, null, true, true));
     }
 
     private static Result decoded(BytesResult raw) {
@@ -150,7 +163,7 @@ public final class ProcessRunner {
     /** Runs {@code command} and returns its raw stdout bytes (undecoded). No stdin. */
     public static BytesResult runBytes(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
-        return runRaw(workingDir, timeout, command, extraEnv, null, false);
+        return runRaw(workingDir, timeout, command, extraEnv, null, false, false);
     }
 
     private static BytesResult runRaw(
@@ -159,11 +172,15 @@ public final class ProcessRunner {
             List<String> command,
             Map<String, String> extraEnv,
             byte[] stdin,
-            boolean userLocale) {
+            boolean userLocale,
+            boolean scrubSecrets) {
         // Resolve a bare command name to an absolute path against the augmented PATH: on Unix
         // ProcessBuilder searches the JVM's (stripped, GUI-launched) PATH for the executable, not the
         // child env we set below — so without this, mmdc/npx still wouldn't be found.
         ProcessBuilder pb = new ProcessBuilder(resolveExecutable(command));
+        if (scrubSecrets) {
+            SecretEnv.scrub(pb.environment());
+        }
         if (workingDir != null) {
             pb.directory(workingDir.toFile());
         }

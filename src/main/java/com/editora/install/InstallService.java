@@ -395,6 +395,9 @@ public final class InstallService {
         if (!PluginRegistry.isHttps(url)) {
             throw new InstallException("download url must be https: " + url);
         }
+        if (!InstallCatalog.isTrustedDownloadUrl(url)) {
+            throw new InstallException("download host is not one the install catalog uses: " + url);
+        }
         HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                 .timeout(NET_TIMEOUT)
                 .header("User-Agent", "Editora")

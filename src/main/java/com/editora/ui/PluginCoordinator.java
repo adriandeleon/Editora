@@ -421,6 +421,11 @@ final class PluginCoordinator {
             return;
         }
         pluginRegistry.invalidate(); // status labels (Installed/Update) may change
+        if (pluginManager != null) {
+            // Re-scan first: the disclosure below must describe what was just written to disk — a new plugin
+            // has no descriptor yet, and an update's old one lists the previous version's capabilities.
+            pluginManager.discover();
+        }
         // Arming gate: the plugin is now on disk; show exactly what it can do before enabling it.
         if (confirmEnablePlugin(r.id())) {
             config.getPluginStore().setEnabled(r.id(), true);
@@ -437,24 +442,27 @@ final class PluginCoordinator {
         settingsWindow.syncPluginsCheck(); // rebuilds the per-plugin list
     }
 
+    /** The descriptor with this {@code id}, or null — the "can we disclose what it does?" lookup. Pure. */
+    static PluginDescriptor descriptorFor(List<PluginDescriptor> descriptors, String id) {
+        for (PluginDescriptor c : descriptors) {
+            if (c.id().equals(id)) {
+                return c;
+            }
+        }
+        return null;
+    }
+
     /**
      * Shows a capability-disclosure confirm before a plugin is <em>enabled</em> (the real arming point —
      * code loads on next launch): whether it ships executable code, the external commands it declares, and
-     * any keybindings it remaps. Returns whether the user accepted. Falls back to enabling if the descriptor
-     * can't be found.
+     * any keybindings it remaps. Returns whether the user accepted. <b>Fails closed</b>: when the descriptor
+     * can't be found there is nothing to disclose, so the plugin is not enabled (the caller leaves it
+     * installed but disabled, and it can be enabled from Settings once it is listed).
      */
     private boolean confirmEnablePlugin(String id) {
-        PluginDescriptor d = null;
-        if (pluginManager != null) {
-            for (PluginDescriptor c : pluginManager.descriptors()) {
-                if (c.id().equals(id)) {
-                    d = c;
-                    break;
-                }
-            }
-        }
+        PluginDescriptor d = descriptorFor(pluginManager == null ? List.of() : pluginManager.descriptors(), id);
         if (d == null) {
-            return true;
+            return false;
         }
         String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
         String body = tr(

@@ -3229,7 +3229,8 @@ final class LspCoordinator {
         hideHoverPopup();
         Node content;
         try {
-            content = MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(markdown), null);
+            content = MarkdownRenderer.renderDocument(
+                    MarkdownRenderer.parseToDocument(markdown), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
         } catch (RuntimeException e) {
             Label label = new Label(markdown);
             label.setWrapText(true);
@@ -3488,8 +3489,11 @@ final class LspCoordinator {
         }
         if (!active.documentation().isBlank()) {
             try {
-                Node doc =
-                        MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(active.documentation()), null);
+                Node doc = MarkdownRenderer.renderDocument(
+                        MarkdownRenderer.parseToDocument(active.documentation()),
+                        null,
+                        null,
+                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
                 box.getChildren().add(doc);
             } catch (RuntimeException e) {
                 Label docLabel = new Label(active.documentation());

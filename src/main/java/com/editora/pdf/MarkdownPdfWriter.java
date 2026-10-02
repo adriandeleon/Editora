@@ -3,12 +3,8 @@ package com.editora.pdf;
 import java.awt.Color;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
-import java.net.URLConnection;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -635,30 +631,9 @@ public final class MarkdownPdfWriter {
         }
 
         byte[] fetch(String url) {
-            try {
-                if (url == null || url.isBlank()) {
-                    return null;
-                }
-                if (url.startsWith("data:")) {
-                    int comma = url.indexOf(',');
-                    return comma < 0 ? null : Base64.getMimeDecoder().decode(url.substring(comma + 1));
-                }
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    URLConnection con = URI.create(url).toURL().openConnection();
-                    con.setConnectTimeout(5000);
-                    con.setReadTimeout(5000);
-                    con.setRequestProperty("User-Agent", "Editora");
-                    try (InputStream in = con.getInputStream()) {
-                        return in.readAllBytes();
-                    }
-                }
-                Path p = url.startsWith("file:")
-                        ? Path.of(URI.create(url))
-                        : (baseDir == null ? Path.of(url) : baseDir.resolve(url));
-                return Files.isRegularFile(p) ? Files.readAllBytes(p) : null;
-            } catch (Exception e) {
-                return null;
-            }
+            // The preview's guarded fetcher: internal-address block re-checked per redirect hop, UNC refusal,
+            // regular files only, and a byte cap — exporting a document must not reach what previewing refuses.
+            return com.editora.editor.PreviewImageLoader.fetchForExport(url, baseDir);
         }
     }
 

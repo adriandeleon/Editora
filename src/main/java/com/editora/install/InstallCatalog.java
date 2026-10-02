@@ -229,6 +229,42 @@ public final class InstallCatalog {
         return List.of("tar", "-xf", archive.toString(), "-C", dest.toString());
     }
 
+    /**
+     * The hosts an in-app install may start a download from: the catalog's own API/archive endpoints plus the
+     * asset hosts their release metadata points at. An asset URL is <em>picked out of fetched JSON</em> by a
+     * pattern (a release body is free text), so without this a response could steer the download — of an
+     * archive that is then extracted and executed — to any HTTPS host.
+     */
+    private static final java.util.Set<String> DOWNLOAD_HOSTS = java.util.Set.of(
+            "api.github.com",
+            "github.com",
+            "objects.githubusercontent.com",
+            "release-assets.githubusercontent.com",
+            "open-vsx.org",
+            "openvsxorg.blob.core.windows.net",
+            "download.eclipse.org",
+            "repo.eclipse.org",
+            "api.releases.hashicorp.com",
+            "releases.hashicorp.com");
+
+    /** Whether {@code url} is an {@code https} URL on one of the {@link #DOWNLOAD_HOSTS} (default port, no
+     *  credentials). Pure — unit-tested. */
+    public static boolean isTrustedDownloadUrl(String url) {
+        if (url == null) {
+            return false;
+        }
+        try {
+            java.net.URI uri = new java.net.URI(url.strip());
+            return "https".equalsIgnoreCase(uri.getScheme())
+                    && uri.getHost() != null
+                    && uri.getRawUserInfo() == null
+                    && (uri.getPort() == -1 || uri.getPort() == 443)
+                    && DOWNLOAD_HOSTS.contains(uri.getHost().toLowerCase(java.util.Locale.ROOT));
+        } catch (java.net.URISyntaxException e) {
+            return false;
+        }
+    }
+
     /** The first substring of {@code text} matching {@code regex}, or {@code null}. Pure. */
     public static String firstMatch(String text, String regex) {
         if (text == null) {

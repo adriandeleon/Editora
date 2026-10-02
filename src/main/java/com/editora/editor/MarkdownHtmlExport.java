@@ -27,9 +27,16 @@ public final class MarkdownHtmlExport {
         String src =
                 mathEnabled ? substituteMath(markdown == null ? "" : markdown) : (markdown == null ? "" : markdown);
         org.commonmark.node.Node doc = MarkdownRenderer.parseToDocument(src);
+        // Raw HTML is kept — an author who writes <details> or <kbd> in a document expects it in the export —
+        // but link and image destinations are sanitized: [x](javascript:…) / vbscript: / file: become an empty
+        // href instead of a live script URL in a page the reader will open in a browser.
         HtmlRenderer renderer = HtmlRenderer.builder()
                 .extensions(MarkdownRenderer.EXTENSIONS)
                 .extensions(java.util.List.of(HeadingAnchorExtension.create()))
+                .sanitizeUrls(true)
+                // sanitizeUrls also stamps rel="nofollow" on every link; an author's own document has no use
+                // for that, so drop it again.
+                .attributeProviderFactory(ctx -> (node, tag, attrs) -> attrs.remove("rel", "nofollow"))
                 .build();
         String body = renderer.render(doc);
         return page(title, body);
@@ -51,6 +58,12 @@ public final class MarkdownHtmlExport {
      * clipboard fragment ({@link MarkdownClipboardHtml}) rasterizes equations the same way this export does.
      */
     static String substituteMath(String markdown) {
+        return substituteMath(markdown, null);
+    }
+
+    /** As {@link #substituteMath(String)}, also recording every {@code <img>} tag it generated in
+     *  {@code generated} (when non-null) — so a renderer that escapes raw HTML can let exactly these through. */
+    static String substituteMath(String markdown, java.util.Collection<String> generated) {
         String[] lines = markdown.split("\n", -1);
         StringBuilder out = new StringBuilder();
         String fence = null;
@@ -70,7 +83,7 @@ public final class MarkdownHtmlExport {
             if (fenceLine) {
                 out.append(line);
             } else {
-                appendLineWithMath(line, out);
+                appendLineWithMath(line, out, generated);
             }
             if (i < lines.length - 1) {
                 out.append('\n');
@@ -79,12 +92,16 @@ public final class MarkdownHtmlExport {
         return out.toString();
     }
 
-    private static void appendLineWithMath(String line, StringBuilder out) {
+    private static void appendLineWithMath(String line, StringBuilder out, java.util.Collection<String> generated) {
         for (MathSpans.Segment seg : MathSpans.segments(line)) {
             if (seg.span() == null) {
                 out.append(seg.text());
             } else {
-                out.append(mathImg(seg.span().latex(), seg.span().display()));
+                String img = mathImg(seg.span().latex(), seg.span().display());
+                out.append(img);
+                if (generated != null) {
+                    generated.add(img);
+                }
             }
         }
     }

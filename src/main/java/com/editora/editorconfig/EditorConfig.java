@@ -109,8 +109,10 @@ public final class EditorConfig {
     /** Merges every section of {@code parsed} whose glob matches {@code relPath} (later sections override). */
     private static EditorConfigProperties matchProperties(EditorConfigParser.Parsed parsed, String relPath) {
         EditorConfigProperties props = EditorConfigProperties.EMPTY;
+        // One allowance for the whole file: section globs are untrusted, and this runs on the FX thread.
+        EditorConfigGlob.Budget budget = new EditorConfigGlob.Budget();
         for (EditorConfigParser.Section s : parsed.sections()) {
-            if (EditorConfigGlob.matches(s.glob(), relPath)) {
+            if (EditorConfigGlob.matches(s.glob(), relPath, budget)) {
                 props = EditorConfigProperties.merge(props, EditorConfigParser.toProperties(s.properties()));
             }
         }

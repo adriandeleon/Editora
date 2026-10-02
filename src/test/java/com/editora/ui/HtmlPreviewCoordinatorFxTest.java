@@ -183,4 +183,29 @@ class HtmlPreviewCoordinatorFxTest {
         assertEquals(1, host.saveCount, "persisted via the host");
         assertEquals(1, host.syncCount, "re-synced the Settings window checkbox");
     }
+
+    @Test
+    void refusesToServeAnHtmlFileSittingDirectlyInTheHomeDirectory() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setHtmlPreviewSupport(true);
+        HtmlPreviewCoordinator c = new HtmlPreviewCoordinator(host);
+        java.nio.file.Path inHome = java.nio.file.Path.of(System.getProperty("user.home"), "editora-test-page.html");
+        EditorBuffer html = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setPath(inHome); // not created on disk; the folder is what matters
+            return b;
+        });
+        host.buffers.add(html);
+        try {
+            FxTestSupport.runOnFx(c::open);
+            assertTrue(
+                    host.lastStatus != null
+                            && host.lastStatus.contains(inHome.getParent().toString()),
+                    "names the folder it will not serve: " + host.lastStatus);
+            assertTrue(host.lastStatus.startsWith("Not serving"), host.lastStatus);
+            assertEquals(0, host.saveCount, "refused before anything was started or remembered");
+        } finally {
+            c.shutdown();
+        }
+    }
 }

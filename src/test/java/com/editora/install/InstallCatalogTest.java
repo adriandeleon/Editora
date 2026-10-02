@@ -416,4 +416,33 @@ class InstallCatalogTest {
                         + ":-<default>}\"; update this test's extraction to match the script.");
         return m.group(1);
     }
+
+    @Test
+    void downloadsAreConfinedToTheHostsTheCatalogUses() {
+        // every endpoint the catalog itself names…
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(InstallCatalog.JDTLS_TARBALL_URL));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(InstallCatalog.LEMMINX_MAVEN_ZIP_URL));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(InstallCatalog.JS_DEBUG_RELEASES_API));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(InstallCatalog.openVsxLatestUrl("redhat", "java")));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(
+                "https://api.releases.hashicorp.com/v1/releases/terraform-ls/latest"));
+        // …and the asset hosts their release metadata points at
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(
+                "https://github.com/clangd/clangd/releases/download/1/clangd-linux-1.zip"));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(
+                "https://releases.hashicorp.com/terraform-ls/0.38.7/terraform-ls_0.38.7_linux_amd64.zip"));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(
+                "https://open-vsx.org/api/redhat/java/1.0.0/file/redhat.java-1.0.0.vsix"));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl("https://GitHub.com/x/y/releases/download/1/a.tar.gz"));
+        // a URL pattern-matched out of a release body must not steer the download elsewhere
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://attacker.example/clangd-linux-1.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://github.com.attacker.example/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://attacker.example/github.com/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://github.com@attacker.example/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://github.com:8443/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("http://github.com/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://gist.githubusercontent.com/a/raw/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("not a url"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl(null));
+    }
 }

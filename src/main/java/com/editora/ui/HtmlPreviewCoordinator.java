@@ -88,6 +88,12 @@ final class HtmlPreviewCoordinator {
             host.setStatus(tr("status.htmlPreview.unsaved")); // need a file on disk so relative assets resolve
             return;
         }
+        if (com.editora.web.LivePreviewServer.isUnsafeDocRootFor(file)) {
+            // The server exposes the file's whole folder; a home directory or a drive root is not a web root.
+            host.setStatus(
+                    tr("status.htmlPreview.unsafeRoot", file.toAbsolutePath().getParent()));
+            return;
+        }
         host.settings().setHtmlPreviewBrowser(browser.id());
         host.save();
         host.setStatus(tr("status.htmlPreview.opening", browserLabel(browser)));

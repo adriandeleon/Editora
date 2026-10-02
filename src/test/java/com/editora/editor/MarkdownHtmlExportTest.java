@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the Markdown → HTML exporter (non-math path is pure). */
@@ -34,5 +35,28 @@ class MarkdownHtmlExportTest {
     void escapesTitle() {
         String html = MarkdownHtmlExport.toHtml("x", "a<b>&c", false);
         assertTrue(html.contains("<title>a&lt;b&gt;&amp;c</title>"));
+    }
+
+    @Test
+    void scriptCapableLinkAndImageUrlsAreNeutralised() {
+        String html = MarkdownHtmlExport.toHtml(
+                "[click](javascript:alert(document.cookie))\n\n[vb](vbscript:msgbox)\n\n"
+                        + "![pix](javascript:alert(1))\n\n[ok](https://example.com/a) [rel](docs/b.md) [mail](mailto:a@b.c)\n",
+                "Doc",
+                false);
+        assertFalse(html.contains("javascript:"), () -> "no javascript: URL survives: " + html);
+        assertFalse(html.contains("vbscript:"), html);
+        assertTrue(html.contains("<a href=\"\">click</a>"), () -> "the link text stays, the href is emptied: " + html);
+        assertTrue(html.contains("<a href=\"https://example.com/a\">ok</a>"), html);
+        assertTrue(html.contains("<a href=\"docs/b.md\">rel</a>"), "relative links are untouched");
+        assertTrue(html.contains("<a href=\"mailto:a@b.c\">mail</a>"), html);
+        assertFalse(html.contains("nofollow"), "the sanitizer's rel=nofollow is not stamped on an author's links");
+    }
+
+    @Test
+    void authorsRawHtmlIsKeptInTheFileExport() {
+        String html =
+                MarkdownHtmlExport.toHtml("<details><summary>More</summary>\n\nbody\n\n</details>\n", "Doc", false);
+        assertTrue(html.contains("<details><summary>More</summary>"), html);
     }
 }

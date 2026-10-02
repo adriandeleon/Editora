@@ -1043,6 +1043,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         recentFiles = new RecentFiles(config.getConfigDir());
         searchHistory = new com.editora.config.SearchHistory(config.getConfigDir());
         agentSessionHistory = new com.editora.config.AgentSessionHistory(config.getConfigDir());
+        agentCoordinator.protectDirectory(config.getConfigDir()); // the agent never writes the editor's own config
         searchCoordinator.refreshHistory(); // bind the query combo's dropdown to history
         recentButton.setGraphic(Icons.recent());
         recentButton.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
@@ -1351,11 +1352,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
-    /** Opens a URL in the system browser (no-op if HostServices isn't available). */
+    /** Opens a link through the {@link ExternalLinks} allowlist (http/https/mailto) — never a bare showDocument. */
     private void openExternalUrl(String url) {
-        if (hostServices != null && url != null) {
-            hostServices.showDocument(url);
-        }
+        ExternalLinks.open(url, null, null, hostServices, fileWorkflows::openPath, this::setStatus);
     }
 
     /** `view.welcome`: opens the Welcome tab (or selects it if already open). */
@@ -8009,7 +8008,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         debugCoordinator.wireBuffer(buffer);
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
         buffer.setNotesEnabled(notesCoordinator.isEnabled());
-        buffer.setOpenUrlHandler(this::openExternalUrl); // Ctrl/Cmd-click + open-link command
+        buffer.setOpenUrlHandler(u -> ExternalLinks.open(
+                u, buffer.getPath(), windowProjectRoot(), hostServices, fileWorkflows::openPath, this::setStatus));
         buffer.setAiActionHandlers(aiCoordinator::explainSelection, aiCoordinator::rewriteSelection); // AI sel. bar
         buffer.setTableFileExporter(previews::exportMarkdownTableFile); // Markdown table → CSV/Excel/ODS file
         buffer.setInsertTableHandler(previews::markdownInsertTable); // Markdown format-bar "insert table" button

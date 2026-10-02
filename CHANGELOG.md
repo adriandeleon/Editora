@@ -101,6 +101,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     days), uses each file's own encoding when capturing and restoring, and no longer scans its whole
     store on every save. New commands `Local History: Delete History of Current File…` and
     `Local History: Delete History of Project…` remove snapshots permanently.
+- Hardened the places where content you merely opened could reach outside its own folder or the app.
+  Links (Markdown preview and Ctrl/Cmd-click, tool output, plugins, the update page) now go through one
+  check: only `http`, `https` and `mailto` are handed to the system; a relative or `file:` link opens
+  inside the editor when it is a file in the project or the document's folder; anything else is refused
+  with a status message. `.http` body files and `>>` response targets can no longer follow a symlink out of
+  the request's folder. PlantUML previews run with `PLANTUML_SECURITY_PROFILE=SANDBOX` (no local-file or URL
+  `!include`; export the variable yourself to choose another profile), and every preview renderer
+  (PlantUML, Graphviz, Mermaid, Typst) starts without secret-looking environment variables. Agent replies,
+  language-server hovers and completion docs, and pull-request text no longer load remote images — they
+  show the alt text and URL instead. The HTML Live Preview server answers only its own browser tab (Host
+  check plus an unguessable URL prefix) and refuses to serve a home directory or drive root. PDF/DOCX/ODT
+  export fetches images through the same internal-address guard and size cap as the preview; oversized
+  SVG dimensions are clamped. An agent's file reads and writes are confined to the session folder and can
+  never touch Editora's own configuration. A hostile `.editorconfig` section can no longer freeze a window
+  when a file opens. Markdown copied as rich text carries no raw HTML or `javascript:` links, and HTML
+  export neutralises `javascript:` URLs. A plugin whose capabilities cannot be shown is left disabled, and
+  in-app installers download only from the hosts their catalog names.
 
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the

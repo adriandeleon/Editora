@@ -267,9 +267,9 @@ public final class HttpClientService {
         }
         for (HttpFile.Redirect r : request.redirects()) {
             try {
-                Path target = HttpPaths.contained(baseDir, r.path());
+                Path target = HttpPaths.containedForWrite(baseDir, r.path());
                 if (target == null) {
-                    continue; // a ">> ../../x" must not write outside the request file's folder
+                    continue; // a ">> ../../x" (or a symlink) must not write outside the request file's folder
                 }
                 if (!r.force() && Files.exists(target)) {
                     continue;

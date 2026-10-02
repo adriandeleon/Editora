@@ -395,7 +395,9 @@ Editora is built with the help of AI coding tools.
   cached by source hash. Zoom resizes the image; export a diagram to **SVG / PNG / PDF**
   (`diagram.export`). **On by default** — self-gating on detection, so it's inert until the tool is found
   (install via your package manager, e.g. `brew install graphviz plantuml`). Toggle + tool paths under
-  *Settings → Languages & Tools → Diagrams*.
+  *Settings → Languages & Tools → Diagrams*. PlantUML runs with its **`SANDBOX` security profile** (the
+  bundled standard library works; local-file and URL `!include` do not) — start Editora with
+  `PLANTUML_SECURITY_PROFILE` set to choose another.
 - **Typst document preview** — standalone `.typ` files get the same 3-mode preview as Markdown, rendered
   off-thread via the external **`typst`** CLI as a **multi-page** stack (one image per page). The last good
   render stays on screen while you edit (no flicker), and a compile error keeps it visible under a small
@@ -601,7 +603,8 @@ Editora is built with the help of AI coding tools.
 - **HTML live preview** — a floating browser icon on any HTML file opens it in a detected desktop
   browser (Safari, Chrome, Firefox, Edge, or the system default), served over a tiny **loopback** web server
   so its CSS/JS/images load. The page **reloads live as you type** (unsaved edits included). On by default
-  (*Settings → HTML Preview*); no external tool — it uses the JDK's built-in HTTP server.
+  (*Settings → HTML Preview*); no external tool — it uses the JDK's built-in HTTP server, which answers only
+  the tab it opened (a per-session URL prefix) and will not serve a home directory or drive root.
 - **Remote files (SFTP)** _(Beta)_ — connect to a server over SSH/SFTP (*Remote: Connect to SFTP…*) and edit its
   files as if they were local: the remote folder mounts in the Project tool window, and open/edit/save go
   straight over SFTP. Authenticates with your default `~/.ssh` keys, a chosen key file, or a password;

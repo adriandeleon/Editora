@@ -99,4 +99,36 @@ class MarkdownClipboardHtmlTest {
         assertTrue(MarkdownClipboardHtml.toHtml(null, false).startsWith("<div"), "null renders an empty fragment");
         assertTrue(MarkdownClipboardHtml.toHtml("", false).startsWith("<div"), "empty renders an empty fragment");
     }
+
+    // --- what lands on the clipboard is pasted into other applications: no raw HTML, no script URLs ---
+
+    @Test
+    void rawHtmlFromTheDocumentIsEscapedNotPasted() {
+        String out = html("before <img src=x onerror=alert(1)> after\n\n<script>alert(1)</script>\n\n"
+                + "<iframe src=\"https://attacker.example\"></iframe>\n");
+        assertFalse(out.contains("<img"), out);
+        assertFalse(out.contains("<script"), out);
+        assertFalse(out.contains("<iframe"), out);
+        assertTrue(out.contains("&lt;img src=x onerror=alert(1)&gt;"), () -> "shown as text: " + out);
+        assertTrue(out.contains("&lt;script&gt;alert(1)&lt;/script&gt;"), out);
+    }
+
+    @Test
+    void scriptCapableUrlsAreEmptied() {
+        String out = html("[click](javascript:alert(1)) and [ok](https://example.com) ![p](javascript:alert(2))\n");
+        assertFalse(out.contains("javascript:"), out);
+        assertTrue(out.contains("href=\"https://example.com\""), out);
+        assertFalse(out.contains("nofollow"), out);
+    }
+
+    @Test
+    void generatedMathImagesSurviveButLookalikesWrittenInTheDocumentDoNot() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(MathImages.renderPng("x^2", false, 18f, false) != null, "math");
+        String forged = "<img class=\"md-math md-math-inline\" alt=\"x\" src=\"https://attacker.example/t.png\">";
+        String out = MarkdownClipboardHtml.toHtml("inline $x^2$ here\n\n$$a+b$$\n\nforged " + forged + " end\n", true);
+        assertEquals(2, count(out, "src=\"data:image/png;base64,"), () -> "both equations are real <img> tags: " + out);
+        assertFalse(out.contains("src=\"https://attacker.example"), () -> "the forged tag is not live markup: " + out);
+        assertTrue(
+                out.contains("&lt;img class=&quot;md-math md-math-inline&quot;"), () -> "it is shown as text: " + out);
+    }
 }

