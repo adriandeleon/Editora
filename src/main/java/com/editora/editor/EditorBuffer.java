@@ -5312,6 +5312,13 @@ public class EditorBuffer implements TabContent {
         highlightGen++; // discard any in-flight highlight result
         todoGen++; // discard any in-flight TODO scan result
         languageGen++; // discard any in-flight deferred grammar load
+        // RichTextFX's own teardown, last: it stops the caret blink timer — a running timer is a GC root, so a
+        // buffer closed while its editor had focus stayed reachable, with its whole window — and closes the
+        // undo manager and the area's streams. The document text stays readable.
+        area.dispose();
+        if (area2 != null) {
+            area2.dispose();
+        }
     }
 
     /**

@@ -205,7 +205,8 @@ public final class HttpClientPanel extends VBox {
         bodyArea.getStyleClass().addAll("editor-area", "http-body");
         bodyArea.setEditable(false);
         bodyArea.setFocusTraversable(true);
-        bodyArea.setShowCaret(org.fxmisc.richtext.Caret.CaretVisibility.OFF);
+        // No setShowCaret(OFF): a read-only area already hides its caret under the default AUTO, and OFF/ON
+        // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         bodyArea.setWrapText(false);
         installBodyContextMenu(); // RichTextFX has no default menu — add Copy / Select All for the response
         setEditorFont(fontFamily, fontSize);

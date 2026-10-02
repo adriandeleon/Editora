@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fixed a memory leak of about 20 MB per closed window: read-only console areas (Run, build output, HTTP
+  response, diff sides, the Settings preview) were held by a static RichTextFX stream, and an editor that had
+  focus when its window closed kept its caret blink timer running. Buffers now dispose their editor areas.
 - Updated Apache MINA SSHD to 2.20.0, which fixes CVE-2026-94002 (a malicious SFTP server could exhaust the
   editor's memory). The remote connection root is now resolved to an absolute path at connect time, as
   2.17+ requires.

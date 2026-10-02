@@ -6707,7 +6707,8 @@ public class SettingsWindow {
         preview.getStyleClass().addAll("editor-area", "settings-preview");
         preview.setEditable(false);
         preview.setFocusTraversable(false);
-        preview.setShowCaret(org.fxmisc.richtext.Caret.CaretVisibility.OFF);
+        // No setShowCaret(OFF): a read-only area already hides its caret under the default AUTO, and OFF/ON
+        // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         preview.setPrefHeight(170);
         preview.setMinHeight(170);
         preview.setWrapText(false);

@@ -1888,7 +1888,8 @@ public final class DiffViewerPane implements TabContent {
                                 : tr("diff.accessibleUnified"));
         area.setEditable(false);
         area.setFocusTraversable(true);
-        area.setShowCaret(org.fxmisc.richtext.Caret.CaretVisibility.OFF);
+        // No setShowCaret(OFF): a read-only area already hides its caret under the default AUTO, and OFF/ON
+        // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         area.setWrapText(wrapLines);
         area.setStyle(fontStyle);
         return area;
