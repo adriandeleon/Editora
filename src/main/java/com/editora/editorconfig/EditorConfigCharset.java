@@ -1,13 +1,17 @@
 package com.editora.editorconfig;
 
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 /**
  * Maps EditorConfig {@code charset} names to {@link Charset}s and handles byte-order marks, so files can be
  * decoded on read and encoded on write per {@code .editorconfig}. Names: {@code utf-8}, {@code utf-8-bom},
- * {@code latin1}, {@code utf-16le}, {@code utf-16be}. Pure (no I/O); the editor reads/writes the bytes.
+ * {@code latin1}, {@code utf-16le}, {@code utf-16be}, plus the internal {@code windows-1252} fallback. Pure
+ * (no I/O); the editor reads/writes the bytes.
  */
 public final class EditorConfigCharset {
 
@@ -16,6 +20,14 @@ public final class EditorConfigCharset {
     public static final String LATIN1 = "latin1";
     public static final String UTF_16LE = "utf-16le";
     public static final String UTF_16BE = "utf-16be";
+    /**
+     * Not an EditorConfig value: the charset a BOM-less file that is not UTF-8 is assumed to be in when its
+     * bytes allow it (see {@link #decodeLossless}).
+     */
+    public static final String WINDOWS_1252 = "windows-1252";
+
+    /** Null where the runtime does not ship the charset (a trimmed native image); ISO-8859-1 is used then. */
+    private static final Charset CP1252 = Charset.isSupported(WINDOWS_1252) ? Charset.forName(WINDOWS_1252) : null;
 
     private static final byte[] BOM_UTF8 = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
     private static final byte[] BOM_UTF16LE = {(byte) 0xFF, (byte) 0xFE};
@@ -27,6 +39,7 @@ public final class EditorConfigCharset {
     public static Charset charsetFor(String name) {
         return switch (name == null ? "" : name) {
             case LATIN1 -> StandardCharsets.ISO_8859_1;
+            case WINDOWS_1252 -> CP1252 != null ? CP1252 : StandardCharsets.ISO_8859_1;
             case UTF_16LE -> StandardCharsets.UTF_16LE;
             case UTF_16BE -> StandardCharsets.UTF_16BE;
             default -> StandardCharsets.UTF_8; // utf-8 + utf-8-bom
@@ -92,6 +105,76 @@ public final class EditorConfigCharset {
         return new String(bytes, skip, bytes.length - skip, charsetFor(name));
     }
 
+    /**
+     * The result of a lossless decode: the text, the charset it was really decoded with, and whether that
+     * charset is an assumption ({@code declared} could not decode the bytes).
+     *
+     * @param declared the charset the BOM / {@code .editorconfig} / UTF-8 default asked for
+     */
+    public record Decoded(String text, String charset, String declared, boolean assumed) {}
+
+    /**
+     * Decodes {@code bytes} so that encoding the result with the returned charset reproduces them.
+     *
+     * <p>The declared charset ({@link #resolveName}) is tried <b>strictly</b>. {@link #decode} substitutes
+     * U+FFFD for every byte sequence the charset cannot represent, and that substitution is permanent: a
+     * BOM-less Latin-1, Windows-1252 or Shift-JIS file read as UTF-8 came back with each non-ASCII character
+     * replaced, and the next save wrote {@code EF BF BD} over the user's text. When the strict decode fails
+     * the bytes are instead read with a single-byte charset that is reported as {@link Decoded#assumed}.
+     *
+     * <p>Which one depends on what keeps the round trip exact. ISO-8859-1 is the only single-byte charset in
+     * the JDK that maps all 256 byte values, so it is always safe — but it shows 0x80–0x9F as invisible C1
+     * controls, where the far more common windows-1252 file has curly quotes, dashes and {@code €}.
+     * windows-1252 leaves five values undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D; they occur as lead bytes in
+     * Shift-JIS and other multi-byte encodings), and every other value maps to exactly one character. So a
+     * BOM-or-default UTF-8 file with no {@code .editorconfig} charset that contains <em>none</em> of those
+     * five is read as windows-1252, and anything else as ISO-8859-1. The text may display as mojibake for a
+     * file that is really in another encoding, but every byte survives an edit and a save.
+     */
+    public static Decoded decodeLossless(byte[] bytes, String editorConfigCharset) {
+        String declared = resolveName(bytes, editorConfigCharset);
+        try {
+            return new Decoded(decodeStrict(bytes, declared), declared, declared, false);
+        } catch (CharacterCodingException malformed) {
+            boolean utf8Default = editorConfigCharset == null && (UTF_8.equals(declared) || UTF_8_BOM.equals(declared));
+            if (utf8Default && CP1252 != null && definedInWindows1252(bytes)) {
+                return new Decoded(new String(bytes, CP1252), WINDOWS_1252, declared, true);
+            }
+            return new Decoded(new String(bytes, StandardCharsets.ISO_8859_1), LATIN1, declared, true);
+        }
+    }
+
+    /** True when {@code bytes} holds none of the five values windows-1252 leaves undefined. */
+    static boolean definedInWindows1252(byte[] bytes) {
+        for (byte value : bytes) {
+            switch (value & 0xFF) {
+                case 0x81, 0x8D, 0x8F, 0x90, 0x9D -> {
+                    return false;
+                }
+                default -> {}
+            }
+        }
+        return true;
+    }
+
+    /** As {@link #decode}, but malformed or unmappable input is an error instead of U+FFFD. */
+    public static String decodeStrict(byte[] bytes, String name) throws CharacterCodingException {
+        String fast = decode(bytes, name);
+        if (fast.indexOf('\uFFFD') < 0) {
+            return fast; // nothing was substituted, so the intrinsic decode was already exact
+        }
+        // A replacement character is present: either the file really contains U+FFFD or the decoder
+        // substituted it. Only the reporting decoder can tell the two apart.
+        byte[] bom = bomFor(name);
+        int skip = bom.length > 0 && startsWith(bytes, bom) ? bom.length : 0;
+        return charsetFor(name)
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes, skip, bytes.length - skip))
+                .toString();
+    }
+
     /** Encodes {@code text} as {@code name}, prepending the BOM for BOM charsets. */
     public static byte[] encode(String text, String name) {
         byte[] body = text.getBytes(charsetFor(name));
@@ -123,6 +206,7 @@ public final class EditorConfigCharset {
         return switch (name == null ? "" : name) {
             case UTF_8_BOM -> "UTF-8 BOM";
             case LATIN1 -> "ISO-8859-1";
+            case WINDOWS_1252 -> "Windows-1252";
             case UTF_16LE -> "UTF-16 LE";
             case UTF_16BE -> "UTF-16 BE";
             default -> "UTF-8";

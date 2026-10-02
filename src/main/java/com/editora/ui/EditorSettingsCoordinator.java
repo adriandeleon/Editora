@@ -744,6 +744,11 @@ final class EditorSettingsCoordinator {
         }
         chooseSetting(
                 "buffer.convertLineEndings", () -> List.of("LF", "CRLF"), c -> c, buffer::getLineEnding, choice -> {
+                    if (buffer.isLineEndingForced()) {
+                        // end_of_line is applied on every save, so a conversion here could never reach disk.
+                        host.setStatus(tr("status.lineEndingsEditorConfig", buffer.getLineEnding()));
+                        return;
+                    }
                     buffer.convertLineEndings("CRLF".equals(choice));
                     host.statusBar().refresh();
                     host.setStatus(tr("status.lineEndingsSet", choice));
@@ -854,7 +859,7 @@ final class EditorSettingsCoordinator {
         Path path = buffer.getPath();
         if (!editorConfigEnabled() || path == null || !com.editora.vfs.Vfs.isLocal(path)) {
             applyResolvedEditorConfig(buffer, com.editora.editorconfig.EditorConfigProperties.EMPTY);
-            return; // EOL override is left to a manual choice; tab size already comes from global settings
+            return; // the file keeps its own line ending; tab size already comes from global settings
         }
         com.editora.editorconfig.EditorConfigProperties p = com.editora.editorconfig.EditorConfig.resolveFor(path);
         applyResolvedEditorConfig(buffer, p);
@@ -869,9 +874,9 @@ final class EditorSettingsCoordinator {
         if (p.insertSpaces() != null || p.tabWidth() != null || p.indentSize() != null) {
             buffer.setTabSize(p.effectiveTabWidth(host.config().getSettings().getTabSize()));
         }
-        if (p.endOfLine() != null) {
-            buffer.setEolOverride("crlf".equals(p.endOfLine()) ? "CRLF" : "lf".equals(p.endOfLine()) ? "LF" : null);
-        }
+        // Unconditional, so a file that leaves an end_of_line rule behind (Save As, EditorConfig switched off)
+        // goes back to its own line ending. A manual conversion lives on the buffer, not in this override.
+        buffer.setEolOverride(com.editora.editor.LineEndings.labelOf(p.endOfLine()));
         buffer.setRulerColumn(p.maxLineLength()); // null = default 80, OFF = hide
         buffer.setCharsetOverride(p.charset());
     }

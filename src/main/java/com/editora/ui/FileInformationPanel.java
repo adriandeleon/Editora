@@ -334,7 +334,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
 
     private void refreshTextSettings(EditorBuffer buffer) {
         encodingValue.setText(tr("fileinfo.encoding.utf8"));
-        lineEndingsValue.setText(EditorBuffer.detectLineEnding(buffer.getArea().getText()));
+        lineEndingsValue.setText(buffer.getLineEnding());
         modeValue.setText(modeLabel(buffer));
     }
 

@@ -1,6 +1,7 @@
 package com.editora.io;
 
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -11,6 +12,7 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
@@ -35,8 +37,14 @@ import org.apache.sshd.sftp.client.fs.SftpFileSystem;
  *       link is resolved first and the target is written.
  *   <li><b>Permissions.</b> A fresh temp file gets default permissions, so a shell script would silently lose
  *       its executable bit and any group/other access. The existing file's POSIX permissions are copied onto
- *       the temp file before the move.
+ *       the temp file before the move. A <em>new</em> file has nothing to copy, and must not inherit the
+ *       temp file's owner-only mode either: it is staged with the mode any newly created file gets
+ *       (read/write for everyone, narrowed by the process umask).
  * </ul>
+ *
+ * <p>The staged bytes are forced to the device before the move. Without that, a crash shortly after the save
+ * can leave the new name pointing at a file whose data never reached the disk — an empty document where the
+ * previous version used to be.
  *
  * <p>If an existing target cannot be staged safely, the save fails without touching it. A plain in-place
  * write truncates first and could destroy the only recoverable copy if the write then fails. Direct writing
@@ -62,6 +70,9 @@ public final class AtomicFileWrite {
         Path createTempFile(String prefix, String suffix, FileAttribute<?>... attributes) throws IOException;
 
         void write(Path path, byte[] bytes) throws IOException;
+
+        /** Makes {@code path}'s written bytes durable before it is moved into place. No-op by default. */
+        default void force(Path path) throws IOException {}
 
         void writeNew(Path path, byte[] bytes) throws IOException;
 
@@ -102,6 +113,16 @@ public final class AtomicFileWrite {
         @Override
         public void write(Path path, byte[] bytes) throws IOException {
             Files.write(path, bytes);
+        }
+
+        @Override
+        public void force(Path path) throws IOException {
+            if (isRemote(path)) {
+                return; // SFTP has no portable fsync; the server-side rename is the commit point there
+            }
+            try (FileChannel channel = FileChannel.open(path, StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
         }
 
         @Override
@@ -209,13 +230,14 @@ public final class AtomicFileWrite {
         }
         Path tmp;
         try {
-            tmp = files.createTempFile(dir, "." + target.getFileName() + ".", ".editora-tmp");
+            tmp = createStagingFile(files, dir, target);
         } catch (IOException cannotStage) {
             return writeUnstagedNewTarget(target, bytes, commit, files, cannotStage);
         }
         boolean replaced = false;
         try {
             files.write(tmp, bytes);
+            files.force(tmp);
             copyPermissions(target, tmp);
             if (!commit.getAsBoolean()) {
                 return false;
@@ -279,6 +301,7 @@ public final class AtomicFileWrite {
         boolean replaced = false;
         try {
             files.write(tmp, replacementBytes);
+            files.force(tmp);
             copyPermissions(target, tmp);
             if (!commit.getAsBoolean() || !Arrays.equals(expectedBytes, files.readAllBytes(target))) {
                 return false;
@@ -303,6 +326,32 @@ public final class AtomicFileWrite {
         }
     }
 
+    /** What {@code open(2)} is asked for when a program creates a file; the process umask narrows it. */
+    private static final Set<PosixFilePermission> NEW_FILE_PERMISSIONS = PosixFilePermissions.fromString("rw-rw-rw-");
+
+    /**
+     * Creates the temp file a write is staged in. {@code createTempFile} makes it owner-only (0600) — right
+     * for a secret, and fine for a replacement, whose mode is then copied from the file it replaces. A target
+     * that does not exist yet has no mode to copy, so every newly saved file used to keep the 0600 and
+     * ignore the umask: unreadable to the group, to a web server, to a container user. Such a target is
+     * staged with the ordinary new-file mode instead, which the kernel narrows by the umask at creation.
+     */
+    private static Path createStagingFile(FileOperations files, Path dir, Path target) throws IOException {
+        String prefix = "." + target.getFileName() + ".";
+        boolean newTarget = !Files.exists(target, LinkOption.NOFOLLOW_LINKS);
+        if (newTarget
+                && !isRemote(dir)
+                && dir.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            try {
+                return files.createTempFile(
+                        dir, prefix, ".editora-tmp", PosixFilePermissions.asFileAttribute(NEW_FILE_PERMISSIONS));
+            } catch (UnsupportedOperationException noInitialMode) {
+                // This provider cannot set a mode at creation; fall back to its default below.
+            }
+        }
+        return files.createTempFile(dir, prefix, ".editora-tmp");
+    }
+
     /**
      * The real file behind {@code file} when it is a symlink — writing through the link keeps it a link.
      * A broken link, or any resolution failure, falls back to the path as given.
@@ -323,7 +372,7 @@ public final class AtomicFileWrite {
     private static void copyPermissions(Path from, Path to) {
         try {
             if (!Files.exists(from, LinkOption.NOFOLLOW_LINKS)) {
-                return; // a brand-new file: the temp file's defaults are correct
+                return; // a brand-new file: createStagingFile already gave it the ordinary new-file mode
             }
             PosixFileAttributeView view = Files.getFileAttributeView(from, PosixFileAttributeView.class);
             if (view == null) {

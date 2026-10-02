@@ -1247,50 +1247,51 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Releases this window's resources on close: language servers, debug session, and worker threads. */
     void disposeWindow() {
         sessionClosed = true; // no further session writes from this window (see requestSave)
+        // Every step is isolated (WindowDisposal): one shutdown that throws used to skip all the later ones.
+        WindowDisposal.runAll(() -> sessions.flushPendingMarks()); // while the buffers still hold their marks
         for (Tab tab : editorArea.tabs()) {
-            EditorBuffer buffer = bufferOf(tab);
-            if (buffer != null) {
-                fileWorkflows.invalidatePendingWrites(buffer);
-                buffer.dispose();
-            } else {
-                disposeViewerTab(tab); // an image/hex/PDF tab holds a thread + file handle + GPU texture too
-            }
+            WindowDisposal.runAll(() -> {
+                EditorBuffer buffer = bufferOf(tab);
+                if (buffer != null) {
+                    fileWorkflows.invalidatePendingWrites(buffer);
+                    buffer.dispose();
+                } else {
+                    disposeViewerTab(tab); // an image/hex/PDF tab holds a thread + file handle + GPU texture too
+                }
+            });
         }
-        lspManager.shutdownAll(); // don't orphan this window's external language servers
-        dapManager.shutdown(); // end the debug session and release the per-window connect worker
-        git.shutdown();
-        github.shutdown(); // stop the gh worker thread
-        indexCoordinator.dispose(); // stop the symbol-index walker
-        if (historyCoordinator != null) {
-            historyCoordinator.shutdown();
-        }
-        searchCoordinator.shutdown();
-        todoCoordinator.shutdown();
-        previews.markdownLintService.shutdown();
-        mermaid.shutdown();
-        diagram.shutdown();
-        typst.shutdown();
-        doctorCoordinator.shutdown(); // stop any in-flight Doctor probes
-        buildCoordinators.forEach(BuildCoordinator::shutdown);
-        updateService.shutdown(); // stop the update-check worker
-        htmlPreview.shutdown(); // stop the HTML-preview HTTP server + worker
-        logViewer.shutdown(); // stop any log tail-follow poll thread
-        stopMcpIfOwner(); // stop the MCP server if this window owns it
-        agentCoordinator.shutdown(); // kill the ACP agent process tree
-        aiCoordinator.shutdown(); // cancel any in-flight AI generation
-        exports.shutdown();
-        runCoordinator.shutdown();
-        testRunCoordinator.shutdown(); // stop the report poller + elapsed timer
-        if (installCoordinator != null) {
-            installCoordinator.shutdown();
-        }
-        fileWorkflows.shutdown();
-        diffCoordinator.shutdown(); // the diff-service worker thread
-        mavenProjectCoordinator.shutdown(); // archetype:generate process + catalog fetch thread
-        externalToolCoordinator.shutdown(); // the external-tool worker thread
-        httpClient.shutdown(); // the http-client worker thread
-        remoteCoordinator.shutdown(); // SFTP sessions + the SSH client (and un-pin the static Vfs hooks)
-        projectPanel.dispose(); // stop the project tree's filesystem watcher + its daemon thread
+        WindowDisposal.runAll(
+                () -> lspManager.shutdownAll(), // don't orphan this window's external language servers
+                () -> dapManager.shutdown(), // end the debug session and release the per-window connect worker
+                () -> git.shutdown(),
+                () -> github.shutdown(), // stop the gh worker thread
+                () -> indexCoordinator.dispose(), // stop the symbol-index walker
+                historyCoordinator == null ? null : () -> historyCoordinator.shutdown(),
+                () -> searchCoordinator.shutdown(),
+                () -> todoCoordinator.shutdown(),
+                () -> previews.markdownLintService.shutdown(),
+                () -> mermaid.shutdown(),
+                () -> diagram.shutdown(),
+                () -> typst.shutdown(),
+                () -> doctorCoordinator.shutdown(), // stop any in-flight Doctor probes
+                () -> buildCoordinators.forEach(BuildCoordinator::shutdown),
+                () -> updateService.shutdown(), // stop the update-check worker
+                () -> htmlPreview.shutdown(), // stop the HTML-preview HTTP server + worker
+                () -> logViewer.shutdown(), // stop any log tail-follow poll thread
+                () -> stopMcpIfOwner(), // stop the MCP server if this window owns it
+                () -> agentCoordinator.shutdown(), // kill the ACP agent process tree
+                () -> aiCoordinator.shutdown(), // cancel any in-flight AI generation
+                () -> exports.shutdown(),
+                () -> runCoordinator.shutdown(),
+                () -> testRunCoordinator.shutdown(), // stop the report poller + elapsed timer
+                installCoordinator == null ? null : () -> installCoordinator.shutdown(),
+                () -> fileWorkflows.shutdown(),
+                () -> diffCoordinator.shutdown(), // the diff-service worker thread
+                () -> mavenProjectCoordinator.shutdown(), // archetype:generate process + catalog fetch thread
+                () -> externalToolCoordinator.shutdown(), // the external-tool worker thread
+                () -> httpClient.shutdown(), // the http-client worker thread
+                () -> remoteCoordinator.shutdown(), // SFTP sessions + the SSH client (and un-pin the Vfs hooks)
+                () -> projectPanel.dispose()); // stop the project tree's filesystem watcher + its daemon thread
     }
 
     /**
@@ -1892,6 +1893,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             installPrompts.maybeOfferInstall(
                     activeBuffer()); // offer to install this language's LSP/DAP if it's missing
             refreshMenuEnablement(); // buffer-shaped menu items (preview, CSV, .http, Typst) follow the tab
+            requestSave(); // the session's active file — captured by the coalesced save, not only on exit
         });
         editorArea.addTabsListener((ListChangeListener<Tab>) c -> {
             boolean membershipChanged = false;
@@ -1943,6 +1945,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (membershipChanged && projectPanel != null) {
                 projectPanel.refreshOpenFiles();
             }
+            requestSave(); // the session's open-file list survives a crash, not just a clean close
         });
         if (projectPanel != null) {
             EditorBuffer selected = activeBuffer();
@@ -7413,7 +7416,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             try {
                 FileWorkflowCoordinator.PreparedLoad load = fileWorkflows.prepareLoad(target, false);
                 Platform.runLater(() -> {
-                    if (load.binary()) {
+                    if (sessionClosed || load.binary()) { // never attach a buffer to a disposed window
                         done.accept(null);
                         return;
                     }
@@ -8798,67 +8801,54 @@ public class MainController implements com.editora.mcp.McpBridge {
         editorArea.select(tab);
     }
 
-    /** Renames the buffer's file on disk and migrates path-keyed state (folds, recent files). */
+    /** Prompts for a new name for the buffer's file; see {@link #renameFileTo}. */
     private void renameFile(EditorBuffer buffer, Tab tab) {
-        if (buffer == null || buffer.getPath() == null) {
+        if (buffer != null && buffer.getPath() != null) {
+            Path old = buffer.getPath();
+            String name = old.getFileName().toString();
+            promptText(tr("dialog.renameFile.title"), tr("dialog.renameFile.content"), name, typed -> {
+                if (!typed.isBlank()) {
+                    renameFileTo(buffer, old, old.resolveSibling(typed.trim()));
+                }
+            });
+        }
+    }
+
+    /**
+     * Renames the buffer's file on disk, then follows the rename through {@link #onProjectFileRenamed} — the
+     * path the Project tree uses. The tab menu used to re-point only its own buffer, so another window showing
+     * the same file kept the old path (and would recreate it on save), and only the fold state moved with it.
+     */
+    void renameFileTo(EditorBuffer buffer, Path old, Path target) {
+        if (target.equals(old)) {
             return;
         }
-        Path old = buffer.getPath();
-        promptText(
-                tr("dialog.renameFile.title"),
-                tr("dialog.renameFile.content"),
-                old.getFileName().toString(),
-                name -> {
-                    String trimmed = name.trim();
-                    if (trimmed.isEmpty()) {
-                        return;
-                    }
-                    Path target = old.resolveSibling(trimmed);
-                    if (target.equals(old)) {
-                        return;
-                    }
-                    if (Files.exists(target)) {
-                        setStatus(tr("status.renameFailedExists", target.getFileName()));
-                        return;
-                    }
-                    // Capture the per-file storage keys while the old file still exists (the note key is the
-                    // canonical/real path, which can't be recomputed once the file has moved away).
-                    String oldBookmarkKey = old.toString();
-                    String oldNoteKey = noteKey(buffer);
-                    fileWorkflows.invalidatePendingWrite(old);
-                    try {
-                        Files.move(old, target);
-                    } catch (IOException e) {
-                        setStatus(tr("status.renameFailed", e.getMessage()));
-                        return;
-                    }
-                    buffer.setPath(target); // re-detects language/grammar
-                    editorSettings.applyEditorConfig(buffer);
-                    lspCoordinator.documentPathChanged(buffer, old, false);
-                    previews.ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
-                    htmlPreview.ensureControl(buffer); // a rename to/from .html flips the browser globe
-                    logViewer.ensureControl(buffer); // a rename to/from .log flips the log control
-                    // Migrate state keyed by the absolute path string.
-                    var folded = config.getWorkspaceState().getFoldedRegions();
-                    List<Integer> folds = folded.remove(old.toString());
-                    if (folds != null) {
-                        folded.put(target.toString(), folds);
-                    }
-                    if (recentFiles != null) {
-                        recentFiles.remove(old);
-                        recentFiles.add(target);
-                    }
-                    requestSave();
-                    // Carry bookmarks + personal notes over to the new path so an in-app rename never strands them.
-                    bookmarkCoordinator.migrateKey(oldBookmarkKey, target.toString());
-                    notesCoordinator.migrateKey(oldNoteKey, noteKey(buffer));
-                    updateTabMeta(tab, buffer);
-                    statusBar.refresh();
-                    if (buffer == activeBuffer()) {
-                        breadcrumb.setActiveFile(buffer.getPath());
-                    }
-                    setStatus(tr("status.renamedTo", target.getFileName()));
-                });
+        if (Files.exists(target)) {
+            setStatus(tr("status.renameFailedExists", target.getFileName()));
+            return;
+        }
+        // Capture the per-file storage keys while the old file still exists (the note key is the
+        // canonical/real path, which can't be recomputed once the file has moved away).
+        String oldBookmarkKey = old.toString();
+        String oldNoteKey = noteKey(buffer);
+        fileWorkflows.invalidatePendingWrite(old);
+        try {
+            Files.move(old, target);
+        } catch (IOException e) {
+            setStatus(tr("status.renameFailed", e.getMessage()));
+            return;
+        }
+        onProjectFileRenamed(old, target); // every window: path, EditorConfig, LSP, tab, path-keyed session state
+        previews.ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
+        htmlPreview.ensureControl(buffer); // a rename to/from .html flips the browser globe
+        logViewer.ensureControl(buffer); // a rename to/from .log flips the log control
+        if (recentFiles != null) {
+            recentFiles.add(target);
+        }
+        // Carry bookmarks + personal notes over to the new path so an in-app rename never strands them.
+        bookmarkCoordinator.migrateKey(oldBookmarkKey, target.toString());
+        notesCoordinator.migrateKey(oldNoteKey, noteKey(buffer));
+        statusBar.refresh();
     }
 
     /** Builds and attaches the right-click context menu for a tab. */
@@ -9147,6 +9137,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Platform.runLater(() -> {
             configSavePending = false;
             if (!sessionClosed) {
+                sessions.captureSession(); // open files, carets and layout as of this pulse
                 config.saveAsync(); // a window disposed in the meantime must not rewrite its session file
             }
         });

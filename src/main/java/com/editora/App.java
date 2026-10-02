@@ -315,7 +315,13 @@ public class App extends Application {
             System.exit(2);
         }
         java.nio.file.Path configDir = ConfigManager.configDirFor(configDirArg(argList), devFlag(argList));
-        singleInstance = com.editora.ipc.SingleInstance.start(configDir, argList, shouldForwardLaunch(argList));
+        boolean forward = shouldForwardLaunch(argList);
+        // What is sent is not argv: a relative FILE means "relative to where I was run", and the running
+        // editor has a working directory of its own. See forwardArgs.
+        singleInstance = com.editora.ipc.SingleInstance.start(
+                configDir,
+                forward ? forwardArgs(argList, java.nio.file.Path.of("").toAbsolutePath()) : argList,
+                forward);
         if (singleInstance.forwarded()) {
             System.exit(0); // delivered; exiting now is the entire saving (no second window, no second JVM)
         }
@@ -469,6 +475,42 @@ public class App extends Application {
             return false;
         }
         return !fileTargets(args).isEmpty();
+    }
+
+    /**
+     * The arguments to send to a running instance in place of this launch's own: the focus-mode flags, then
+     * every file target as an <b>absolute</b> path with its {@code :line[:column]} suffix re-attached.
+     *
+     * <p>Raw argv used to be forwarded, and the receiving process resolved it against <em>its</em> working
+     * directory — so {@code cd ~/projB && editora README.md} reported "Failed to open", or opened the
+     * same-named file of whatever directory the first editor happened to be started from. The targets are
+     * therefore decided here, by {@link #fileTargets}, in the process whose working directory they were
+     * typed in: that also keeps the "is this token a leaked flag value" test on the right filesystem view.
+     * A token that test rejects is not forwarded at all, nor is the foreign option that introduced it.
+     */
+    static java.util.List<String> forwardArgs(java.util.List<String> args, java.nio.file.Path cwd) {
+        return forwardArgs(args, cwd, java.nio.file.Files::exists);
+    }
+
+    static java.util.List<String> forwardArgs(
+            java.util.List<String> args,
+            java.nio.file.Path cwd,
+            java.util.function.Predicate<java.nio.file.Path> exists) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (zenFlag(args)) {
+            out.add("--zen");
+        }
+        if (expertFlag(args)) {
+            out.add("--expert");
+        }
+        if (simpleFlag(args)) {
+            out.add("--simple");
+        }
+        for (com.editora.ui.MainController.OpenTarget t : fileTargets(args, p -> exists.test(cwd.resolve(p)))) {
+            String position = t.line() <= 0 ? "" : ":" + t.line() + (t.column() > 0 ? ":" + t.column() : "");
+            out.add(cwd.resolve(t.file()).normalize() + position);
+        }
+        return out;
     }
 
     /** True if {@code --zen} is present (a session-only Zen override — the saved session is untouched). */
@@ -760,10 +802,23 @@ public class App extends Application {
         java.util.regex.Matcher m =
                 java.util.regex.Pattern.compile("^(.+?):(\\d+)(?::(\\d+))?$").matcher(arg);
         if (m.matches()) {
-            int line = Integer.parseInt(m.group(2));
-            int col = m.group(3) != null ? Integer.parseInt(m.group(3)) : 0;
+            int line = boundedInt(m.group(2));
+            int col = m.group(3) != null ? boundedInt(m.group(3)) : 0;
             return new com.editora.ui.MainController.OpenTarget(java.nio.file.Path.of(m.group(1)), line, col);
         }
         return new com.editora.ui.MainController.OpenTarget(java.nio.file.Path.of(arg), 0, 0);
+    }
+
+    /**
+     * A run of digits as an int, saturating instead of throwing. The pattern accepts any number of digits, so
+     * {@code editora f:99999999999} used to raise {@code NumberFormatException} out of {@code start()} and
+     * the launch failed; the caret jump clamps to the last line anyway.
+     */
+    private static int boundedInt(String digits) {
+        try {
+            return Integer.parseInt(digits);
+        } catch (NumberFormatException tooLarge) {
+            return Integer.MAX_VALUE;
+        }
     }
 }

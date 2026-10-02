@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- File loading, saving and session fixes:
+  - Files that are not valid UTF-8 (Latin-1, Windows-1252, Shift-JIS, …) are no longer corrupted on save.
+    They open as Windows-1252 (or ISO-8859-1 when the bytes rule that out) so every byte is preserved, the
+    status bar shows the encoding and says it was assumed, and saving writes the same bytes back.
+  - CRLF (and CR) files keep their line endings on save; the status bar shows the file's real line ending,
+    and `Convert Line Endings` now changes what is written to disk. An `.editorconfig` `end_of_line`
+    still takes precedence.
+  - Saving a log while a level or text filter is active writes the whole log, not just the matching lines.
+    Filtering and follow mode no longer mark the tab as modified, and a log that follow mode has trimmed is
+    not saved over its file.
+  - Save is refused for a tab that is still loading (it used to write an empty file), and a restored tab
+    whose file cannot be read is removed instead of left empty.
+  - A save whose target cannot be examined (a dropped network mount) now fails with a message instead of
+    spinning at full CPU; auto-save reports when it is paused because the file changed on disk; the
+    administrator save checks for an external change before overwriting.
+  - Newly created files honour the umask instead of always being owner-only, and saved data is flushed to
+    disk before it replaces the previous version.
+  - `editora FILE` handed to an already-running editor resolves relative paths against the directory it
+    was run from; an oversized `:line` suffix no longer fails the launch.
+  - Open tabs are remembered as they change rather than only on a clean exit, and tabs whose folder is
+    unavailable at startup (an unmounted volume) are kept for the next launch.
+  - Renaming from the tab menu updates the file in every window; bookmark and note positions pending when
+    a window closes are saved; closing a window while files are still loading no longer applies them.
+
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the
   horizontal scrollbar stayed until you scrolled back over those lines or restarted.

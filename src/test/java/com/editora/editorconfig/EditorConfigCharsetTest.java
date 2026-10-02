@@ -112,4 +112,132 @@ class EditorConfigCharsetTest {
     void utf8EncodesEverything() {
         assertTrue(EditorConfigCharset.canEncode("— \u201c\u201d \u20ac \ud83d\ude80 \u65e5\u672c\u8a9e", "utf-8"));
     }
+
+    // --- lossless decode -----------------------------------------------------------------------------
+
+    private static byte[] hex(String hex) {
+        return java.util.HexFormat.of().parseHex(hex);
+    }
+
+    private static void assertRoundTrips(byte[] bytes, String editorConfigCharset) {
+        EditorConfigCharset.Decoded decoded = EditorConfigCharset.decodeLossless(bytes, editorConfigCharset);
+        assertArrayEquals(
+                bytes,
+                EditorConfigCharset.encode(decoded.text(), decoded.charset()),
+                "encoding the decoded text with the reported charset must reproduce the file");
+    }
+
+    @Test
+    void validUtf8IsDecodedAsDeclared() {
+        byte[] bytes = "año café — 日本語\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        EditorConfigCharset.Decoded decoded = EditorConfigCharset.decodeLossless(bytes, null);
+        assertEquals("año café — 日本語\n", decoded.text());
+        assertEquals("utf-8", decoded.charset());
+        assertFalse(decoded.assumed());
+        assertRoundTrips(bytes, null);
+    }
+
+    @Test
+    void bytesThatAreNotUtf8FallBackToALosslessSingleByteDecode() {
+        byte[] latin1 = hex("61f16f20636166e90a"); // "año café\n" in ISO-8859-1
+        EditorConfigCharset.Decoded decoded = EditorConfigCharset.decodeLossless(latin1, null);
+        assertEquals("año café\n", decoded.text());
+        assertEquals("windows-1252", decoded.charset(), "no byte rules windows-1252 out, so it is preferred");
+        assertEquals("utf-8", decoded.declared());
+        assertTrue(decoded.assumed());
+        assertFalse(decoded.text().contains("\uFFFD"), "nothing may be replaced: a replacement is saved back");
+        assertRoundTrips(latin1, null);
+    }
+
+    @Test
+    void everyByteValueSurvivesTheFallback() {
+        // Shift-JIS lead bytes include 0x81 and 0x8F, which windows-1252 leaves undefined — the reason the
+        // fallback is ISO-8859-1.
+        byte[] all = new byte[256];
+        for (int i = 0; i < all.length; i++) {
+            all[i] = (byte) i;
+        }
+        assertRoundTrips(all, null);
+        assertEquals("latin1", EditorConfigCharset.decodeLossless(all, null).charset());
+        byte[] shiftJis = hex("93fa967b8cea81408f430d0a");
+        assertRoundTrips(shiftJis, null);
+        assertEquals(
+                "latin1", EditorConfigCharset.decodeLossless(shiftJis, null).charset());
+    }
+
+    @Test
+    void windows1252PunctuationIsShownAsPunctuationNotControlCharacters() {
+        byte[] bytes = hex("93689420800a"); // “h” €\n in windows-1252
+        EditorConfigCharset.Decoded decoded = EditorConfigCharset.decodeLossless(bytes, null);
+        assertEquals("\u201Ch\u201D \u20AC\n", decoded.text());
+        assertEquals("windows-1252", decoded.charset());
+        assertTrue(decoded.assumed());
+        assertEquals("Windows-1252", EditorConfigCharset.displayName(decoded.charset()));
+        assertRoundTrips(bytes, null);
+    }
+
+    @Test
+    void everyByteWindows1252DefinesRoundTripsThroughIt() {
+        byte[] defined = new byte[251];
+        int n = 0;
+        for (int i = 0; i < 256; i++) {
+            if (i != 0x81 && i != 0x8D && i != 0x8F && i != 0x90 && i != 0x9D) {
+                defined[n++] = (byte) i;
+            }
+        }
+        assertEquals(251, n);
+        assertTrue(EditorConfigCharset.definedInWindows1252(defined));
+        assertEquals(
+                "windows-1252",
+                EditorConfigCharset.decodeLossless(defined, null).charset());
+        assertRoundTrips(defined, null);
+        for (int undefined : new int[] {0x81, 0x8D, 0x8F, 0x90, 0x9D}) {
+            byte[] one = {'a', (byte) undefined, (byte) 0x93};
+            assertFalse(EditorConfigCharset.definedInWindows1252(one));
+            assertEquals("latin1", EditorConfigCharset.decodeLossless(one, null).charset());
+            assertRoundTrips(one, null);
+        }
+    }
+
+    @Test
+    void aLiteralReplacementCharacterInValidUtf8IsNotMistakenForDamage() {
+        byte[] bytes = hex("61efbfbd620a");
+        EditorConfigCharset.Decoded decoded = EditorConfigCharset.decodeLossless(bytes, null);
+        assertEquals("a\uFFFDb\n", decoded.text());
+        assertFalse(decoded.assumed());
+        assertRoundTrips(bytes, null);
+    }
+
+    @Test
+    void anEditorConfigCharsetThatCannotDecodeTheFileIsNotTrusted() {
+        byte[] latin1 = hex("61f16f0a");
+        EditorConfigCharset.Decoded declaredUtf8 = EditorConfigCharset.decodeLossless(latin1, "utf-8");
+        assertTrue(declaredUtf8.assumed());
+        assertEquals("latin1", declaredUtf8.charset(), "the windows-1252 guess is only for an undeclared charset");
+        assertRoundTrips(latin1, "utf-8");
+
+        EditorConfigCharset.Decoded declaredLatin1 = EditorConfigCharset.decodeLossless(latin1, "latin1");
+        assertFalse(declaredLatin1.assumed(), "the declared charset decoded it, so nothing was assumed");
+        assertEquals("año\n", declaredLatin1.text());
+
+        byte[] oddUtf16 = hex("6100f1"); // a dangling byte: not UTF-16
+        assertTrue(EditorConfigCharset.decodeLossless(oddUtf16, "utf-16le").assumed());
+        assertRoundTrips(oddUtf16, "utf-16le");
+    }
+
+    @Test
+    void aBomFollowedByInvalidBytesKeepsTheBomBytesToo() {
+        byte[] bytes = hex("efbbbf61f16f0a"); // UTF-8 BOM, then Latin-1
+        EditorConfigCharset.Decoded decoded = EditorConfigCharset.decodeLossless(bytes, null);
+        assertTrue(decoded.assumed());
+        assertEquals("utf-8-bom", decoded.declared());
+        assertRoundTrips(bytes, null);
+    }
+
+    @Test
+    void strictDecodeReportsMalformedInputInsteadOfReplacingIt() {
+        org.junit.jupiter.api.Assertions.assertThrows(
+                java.nio.charset.CharacterCodingException.class,
+                () -> EditorConfigCharset.decodeStrict(hex("61f16f"), "utf-8"));
+    }
 }

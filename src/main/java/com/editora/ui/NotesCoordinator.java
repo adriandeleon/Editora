@@ -99,7 +99,10 @@ final class NotesCoordinator {
     // Coalesce the per-edit (line-shift) persist off the FX hot path — see schedulePersistNotes. (#551)
     private final javafx.animation.PauseTransition persistDebounce =
             new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
-    private EditorBuffer pendingPersist;
+    /** Every buffer with a debounced persist outstanding. One slot lost the first buffer's line shifts
+     *  whenever a second buffer was edited inside the same debounce window. */
+    private final java.util.Set<EditorBuffer> pendingPersist =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     NotesCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -354,17 +357,18 @@ final class NotesCoordinator {
      * lost to a crash before then. (#551)
      */
     void schedulePersistNotes(EditorBuffer buffer) {
-        pendingPersist = buffer;
+        pendingPersist.add(buffer);
         persistDebounce.playFromStart();
         onChanged.run();
     }
 
-    private void flushPendingPersist() {
-        EditorBuffer b = pendingPersist;
-        pendingPersist = null;
-        if (b != null) {
-            persistNotes(b);
-        }
+    /** Writes every outstanding debounced persist now. Also called when the session is saved and when the
+     *  window closes, so a close inside the debounce window does not drop the shifted positions. */
+    void flushPendingPersist() {
+        persistDebounce.stop();
+        java.util.List<EditorBuffer> pending = java.util.List.copyOf(pendingPersist);
+        pendingPersist.clear();
+        pending.forEach(this::persistNotes);
     }
 
     /** Persists the active buffer's notes (keyed by canonical path), preserving the panel's order. */

@@ -48,7 +48,6 @@ import com.editora.editops.BraceMatcher;
 import com.editora.editops.Commenter;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineIndent;
-import com.editora.logviewer.LogFilter;
 import com.editora.logviewer.LogLevel;
 import com.editora.markdown.MarkdownEdit;
 import com.editora.markdown.MarkdownHeading;
@@ -394,18 +393,8 @@ public class EditorBuffer implements TabContent {
     private boolean lastStructuredOpenApi;
     /** Forces log-viewer mode on a buffer whose extension isn't {@code .log} ("View as Log"). */
     private boolean logViewForced;
-    /** While a log filter is active, the complete unfiltered text (the area shows only matching lines). */
-    private String logFullText;
-
-    private boolean logFiltered;
-    private LogLevel logMinLevel;
-    private java.util.regex.Pattern logRegex;
-    /** Inherited level at the end of {@link #logFullText}, so an appended chunk filters with the right carry. */
-    private LogLevel logCarry;
-    /** While following ({@code tail -f}), each append auto-scrolls to the bottom. */
-    private boolean logFollowing;
-    /** Max characters kept in a following log buffer before the oldest lines are trimmed (bounds memory). */
-    private static final int LOG_FOLLOW_CAP = 12 * 1024 * 1024;
+    /** Filter, follow and trim state of the log viewer; a filtered view is read-only (see {@link LogView}). */
+    private final LogView logView = new LogView(area, this::applyEditable);
     /** Fired from the debounced edit pulse while this is an HTML buffer (drives HTML live-preview reload). */
     private Runnable htmlPreviewDirtyListener;
     /** One document subscription and timer sequence for all differently-timed settled-edit work. */
@@ -823,10 +812,16 @@ public class EditorBuffer implements TabContent {
 
     private Boolean indentInsertSpacesOverride;
     private Integer indentSizeOverride;
-    private String eolOverride; // "LF"/"CRLF" — effective line ending (EditorConfig or a manual choice)
+    private String eolOverride; // "LF"/"CRLF"/"CR" forced by EditorConfig end_of_line; null = none
+    /** The file's own line ending: detected on load or chosen by a conversion. The document holds bare LF. */
+    private String lineEnding = LineEndings.LF;
+
     private Integer rulerColumnOverride; // null = default 80; EditorConfigProperties.OFF = hide
     private String detectedCharset = com.editora.editorconfig.EditorConfigCharset.UTF_8;
     private String charsetOverride; // EditorConfig charset to write; null = keep detected
+    /** The declared charset could not decode the file, so {@link #detectedCharset} is a lossless stand-in. */
+    private boolean charsetAssumed;
+
     private com.editora.editorconfig.EditorConfigProperties editorConfigProps =
             com.editora.editorconfig.EditorConfigProperties.EMPTY;
     /** Whether the user enabled the 80-column ruler. The line is only actually shown when a visible
@@ -1047,7 +1042,9 @@ public class EditorBuffer implements TabContent {
         // keystroke — O(n) allocation per char on a very large single buffer (e.g. minified JS on one
         // line, past the line-count heavy-file tier). The cheap getLength() check gates the full-text
         // compare so area.getText() is only built in the rare near-clean state, never while typing.
+        // A log filter or followed append rewrites the area without being a user edit: dirty is carried over.
         area.plainTextChanges()
+                .filter(c -> !logView.adjusting())
                 .subscribe(c -> dirty.set(forcedDirty
                         || contentLength() != cleanText.length()
                         || !getContent().equals(cleanText)));
@@ -5023,124 +5020,45 @@ public class EditorBuffer implements TabContent {
 
     /** Whether a level/regex filter is currently narrowing the visible lines. */
     public boolean isLogFiltered() {
-        return logFiltered;
+        return logView.filtered();
     }
 
     /** Whether the buffer is auto-scrolling as the file grows ({@code tail -f}). */
     public boolean isLogFollowing() {
-        return logFollowing;
+        return logView.following();
     }
 
     public void setLogFollowing(boolean following) {
-        this.logFollowing = following;
-        if (following) {
-            scrollToLogBottom();
-        }
+        logView.setFollowing(following);
+    }
+
+    /** True once follow mode dropped the oldest lines: the buffer is a tail of its file. Never save it. */
+    public boolean isLogTrimmed() {
+        return logView.trimmed();
     }
 
     /**
-     * Narrows the visible lines to those whose (inherited) level is at least {@code minLevel} and which
-     * match {@code regex}; passing {@code null}/{@code null} clears the filter and restores the full text.
-     * The full text is retained so a later clear (or an appended tail) re-derives correctly.
+     * Narrows the visible lines to those at or above {@code minLevel} that match {@code regex};
+     * {@code null}/{@code null} clears the filter. {@link #getContent()} stays the whole log throughout.
      */
     public void applyLogFilter(LogLevel minLevel, java.util.regex.Pattern regex) {
-        if (minLevel == null && regex == null) {
-            if (logFiltered) {
-                String full = logFullText;
-                logFiltered = false;
-                logFullText = null;
-                logMinLevel = null;
-                logRegex = null;
-                logCarry = null;
-                replaceLogText(full);
-            }
-            return;
-        }
-        String source = logFiltered ? logFullText : area.getText();
-        logFullText = source;
-        logFiltered = true;
-        logMinLevel = minLevel;
-        logRegex = regex;
-        logCarry = LogFilter.endCarry(source, null);
-        replaceLogText(LogFilter.filter(source, minLevel, regex, null));
+        widen(); // the filter is derived from the area, which must therefore be the whole document
+        logView.applyFilter(minLevel, regex);
     }
 
     /** The current level floor of the active filter (null when unfiltered or no floor). */
     public LogLevel getLogMinLevel() {
-        return logMinLevel;
+        return logView.minLevel();
     }
 
-    /**
-     * Appends {@code text} read from the file's tail. While a filter is active the full text is grown and
-     * only the matching subset is shown; otherwise the text is appended directly. Auto-scrolls to the
-     * bottom while following, and trims the oldest lines past {@link #LOG_FOLLOW_CAP} to bound memory.
-     */
+    /** Appends {@code text} read from the file's tail (filtered when a filter is active); never dirties. */
     public void appendLogText(String text) {
-        if (text == null || text.isEmpty()) {
-            return;
-        }
-        if (logFiltered) {
-            String add = LogFilter.filter(text, logMinLevel, logRegex, logCarry);
-            logCarry = LogFilter.endCarry(text, logCarry);
-            logFullText = logFullText + text;
-            if (!add.isEmpty()) {
-                appendToArea(logFullText, add); // grow the full text; show the matches
-            }
-        } else {
-            appendToArea(null, text);
-        }
-        if (logFollowing) {
-            scrollToLogBottom();
-        }
+        logView.append(text);
     }
 
     /** Replaces the whole buffer with {@code fullText} (e.g. on log rotation), keeping any active filter. */
     public void resetLogContent(String fullText) {
-        String full = fullText == null ? "" : fullText;
-        if (logFiltered) {
-            logFullText = full;
-            logCarry = LogFilter.endCarry(full, null);
-            replaceLogText(LogFilter.filter(full, logMinLevel, logRegex, null));
-        } else {
-            replaceLogText(full);
-        }
-        if (logFollowing) {
-            scrollToLogBottom();
-        }
-    }
-
-    /** Programmatically replaces the area text (the buffer is read-only to the user, but code may write). */
-    private void replaceLogText(String text) {
-        area.replaceText(text == null ? "" : text); // the overlay redraws off the resulting plain-change
-        scrollToLogBottom();
-    }
-
-    private void appendToArea(String newFullForTrim, String displayAppend) {
-        area.appendText(displayAppend);
-        trimLogIfOversized();
-        if (newFullForTrim != null && newFullForTrim.length() > LOG_FOLLOW_CAP) {
-            logFullText = newFullForTrim.substring(newFullForTrim.length() - LOG_FOLLOW_CAP);
-        }
-    }
-
-    /** Drops the oldest lines once the displayed text exceeds the follow cap (keeps memory bounded). */
-    private void trimLogIfOversized() {
-        int len = area.getLength();
-        if (len <= LOG_FOLLOW_CAP) {
-            return;
-        }
-        int cut = len - LOG_FOLLOW_CAP;
-        // Round up to the next line start so we never leave a half line at the top.
-        int nl = area.getText().indexOf('\n', cut);
-        int end = nl < 0 ? cut : nl + 1;
-        area.deleteText(0, Math.min(end, len));
-    }
-
-    private void scrollToLogBottom() {
-        int total = area.getParagraphs().size();
-        if (total > 0) {
-            area.showParagraphAtBottom(total - 1);
-        }
+        logView.reset(fullText);
     }
 
     /** Injects the debounced HTML-edit listener (fires the live-preview reload); {@code null} disables it. */
@@ -7881,10 +7799,17 @@ public class EditorBuffer implements TabContent {
         applyHighlighting();
     }
 
-    /** Rewrites the document with the chosen line ending; marks the buffer dirty. */
+    /**
+     * Chooses the line ending the next save writes, and marks the buffer unsaved when that changes it. The
+     * document always holds bare {@code \n} (RichTextFX splits paragraphs on any terminator), so there is
+     * nothing to rewrite in the editor: the choice is applied to the bytes on save.
+     */
     public void convertLineEndings(boolean crlf) {
-        String normalized = area.getText().replace("\r\n", "\n");
-        area.replaceText(crlf ? normalized.replace("\n", "\r\n") : normalized);
+        String target = crlf ? LineEndings.CRLF : LineEndings.LF;
+        if (!target.equals(lineEnding)) {
+            lineEnding = target;
+            markUnsaved();
+        }
     }
 
     /** {@code "CRLF"} if {@code text} contains any Windows line ending, else {@code "LF"}. */
@@ -7892,9 +7817,14 @@ public class EditorBuffer implements TabContent {
         return text != null && text.contains("\r\n") ? "CRLF" : "LF";
     }
 
-    /** The effective line ending: the override (EditorConfig / a manual choice) when set, else detected. */
+    /** The line ending a save writes: the EditorConfig override when set, else the file's own. */
     public String getLineEnding() {
-        return eolOverride != null ? eolOverride : detectLineEnding(area.getText());
+        return eolOverride != null ? eolOverride : lineEnding;
+    }
+
+    /** Whether {@code .editorconfig} fixes the line ending, so a manual conversion cannot take effect. */
+    public boolean isLineEndingForced() {
+        return eolOverride != null;
     }
 
     /** Sets the visual tab width used by the minimap (and tracked for future use). */
@@ -7918,9 +7848,9 @@ public class EditorBuffer implements TabContent {
         this.indentSizeOverride = size;
     }
 
-    /** The effective line ending to write on save ({@code "LF"}/{@code "CRLF"}); null = no override. */
+    /** The EditorConfig line ending to write ({@code "LF"}/{@code "CRLF"}/{@code "CR"}); null = no override. */
     public void setEolOverride(String eol) {
-        this.eolOverride = "CRLF".equals(eol) || "LF".equals(eol) ? eol : null;
+        this.eolOverride = LineEndings.isLabel(eol) ? eol : null;
     }
 
     /** The ruler column (EditorConfig {@code max_line_length}); null = default, OFF = hide; re-measures. */
@@ -7934,16 +7864,26 @@ public class EditorBuffer implements TabContent {
     }
 
     public void setDetectedCharset(String charset) {
+        setDetectedCharset(charset, false);
+    }
+
+    /** {@code assumed}: a lossless stand-in for a file its declared charset could not decode. */
+    public void setDetectedCharset(String charset, boolean assumed) {
         this.detectedCharset = charset == null ? com.editora.editorconfig.EditorConfigCharset.UTF_8 : charset;
+        this.charsetAssumed = assumed;
     }
 
     public void setCharsetOverride(String charset) {
         this.charsetOverride = charset;
     }
 
-    /** The charset to write: the EditorConfig override if set, else the charset detected on open. */
+    /**
+     * The charset to write: the EditorConfig override if set, else the charset detected on open. An assumed
+     * charset wins over the override — re-encoding text that was decoded with a stand-in would rewrite bytes
+     * the override never understood.
+     */
     public String getEffectiveCharset() {
-        return charsetOverride != null ? charsetOverride : detectedCharset;
+        return charsetOverride != null && !charsetAssumed ? charsetOverride : detectedCharset;
     }
 
     public void setEditorConfigProps(com.editora.editorconfig.EditorConfigProperties props) {
@@ -8145,9 +8085,14 @@ public class EditorBuffer implements TabContent {
         applyEditable();
     }
 
-    /** True when the buffer accepts edits — no huge-file, user View mode, or loading shell is active. */
+    /** True while this is a shell whose document has not arrived: its (empty) text is not the file. */
+    public boolean isLoading() {
+        return loading;
+    }
+
+    /** True when the buffer accepts edits — no huge-file, View mode, loading shell or log filter is active. */
     public boolean isEditable() {
-        return !hugeFile && !viewMode && !loading;
+        return !hugeFile && !viewMode && !loading && !logView.filtered();
     }
 
     /** Applies editability to both views from the current flags, and tags the surface for CSS. */
@@ -9476,8 +9421,12 @@ public class EditorBuffer implements TabContent {
      * document text and paragraph model exact while bounding each node's glyph run.
      */
     public void setInitialContent(String content, boolean segmentLongLines) {
-        String initial = content == null ? "" : content;
+        // The area never holds a '\r', so remember the file's line ending here and keep the baseline in the
+        // same normalised form — a CRLF baseline could never equal the document again (edit + undo stayed dirty).
+        lineEnding = LineEndings.dominant(content);
+        String initial = LineEndings.toLf(content);
         widen(); // a fresh document supersedes any narrowing of the old one
+        Runnable refilter = logView.suspendFilter(true);
         // Establish the baseline before the change event. Otherwise an async loading shell briefly becomes
         // dirty during replace(), which promotes a disposable preview tab before the method can clear it.
         cleanText = initial;
@@ -9487,6 +9436,7 @@ public class EditorBuffer implements TabContent {
         } else {
             area.replaceText(initial);
         }
+        refilter.run();
         dirty.set(false);
         recomputeRun(); // detect a runnable file on load (drives the Run glyph)
     }
@@ -9580,6 +9530,9 @@ public class EditorBuffer implements TabContent {
      * the accessible portion.
      */
     public String getContent() {
+        if (logView.filtered()) {
+            return logView.fullText(); // the area shows only the matching lines
+        }
         return narrowPrefix == null ? documentTextSnapshot() : narrowPrefix + documentTextSnapshot() + narrowSuffix;
     }
 
@@ -9609,7 +9562,7 @@ public class EditorBuffer implements TabContent {
      * the history; edits made while narrowed undo normally.
      */
     public boolean narrowTo(int start, int end) {
-        if (largeFile || hugeFile) {
+        if (largeFile || hugeFile || logView.filtered()) {
             return false;
         }
         // Offsets arrive in *area* coordinates (callers read them from the selection), which while
@@ -9670,9 +9623,11 @@ public class EditorBuffer implements TabContent {
      */
     public void replaceWholeDocument(String text) {
         widen();
+        Runnable refilter = logView.suspendFilter(false);
         preventUndoMerge();
         area.replaceText(text == null ? "" : text);
         preventUndoMerge();
+        refilter.run();
     }
 
     /** Keeps a programmatic whole-document mutation separate from adjacent user typing in both views. */
@@ -9693,6 +9648,9 @@ public class EditorBuffer implements TabContent {
 
     /** Length of {@link #getContent()} without building it — the per-keystroke dirty-check gate. */
     private int contentLength() {
+        if (logView.filtered()) {
+            return logView.fullLength();
+        }
         return narrowPrefix == null
                 ? area.getLength()
                 : narrowPrefix.length() + area.getLength() + narrowSuffix.length();
