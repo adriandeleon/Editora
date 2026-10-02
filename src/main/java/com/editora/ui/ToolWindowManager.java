@@ -57,6 +57,10 @@ public class ToolWindowManager {
 
     private final ConfigManager config;
     private final KeymapManager keymap;
+    /** The editor side of the workspace: where focus goes back to when a focused tool window closes. */
+    private final Node editorNode;
+    /** The last focus owner inside {@link #editorNode} (weak: an editor tab may be long closed). */
+    private java.lang.ref.WeakReference<Node> lastEditorFocus = new java.lang.ref.WeakReference<>(null);
 
     private final VBox leftStripe = new VBox();
     private final VBox rightStripe = new VBox();
@@ -131,6 +135,7 @@ public class ToolWindowManager {
     public ToolWindowManager(BorderPane workspace, Node editorArea, ConfigManager config, KeymapManager keymap) {
         this.config = config;
         this.keymap = keymap;
+        this.editorNode = editorArea;
 
         leftStripe.getStyleClass().addAll("tool-stripe", "tool-stripe-vertical", "tool-stripe-left");
         rightStripe.getStyleClass().addAll("tool-stripe", "tool-stripe-vertical", "tool-stripe-right");
@@ -265,6 +270,9 @@ public class ToolWindowManager {
      * so are never active).
      */
     private void updateActivePanel(Node focusOwner) {
+        if (focusOwner != null && isDescendant(focusOwner, editorNode)) {
+            lastEditorFocus = new java.lang.ref.WeakReference<>(focusOwner);
+        }
         activeToolWindow = null;
         for (ToolWindow tw : byId.values()) {
             Region panel = panels.get(tw); // non-null only while the window is open
@@ -319,6 +327,7 @@ public class ToolWindowManager {
         button.setGraphic(tw.createIcon());
         button.getStyleClass().addAll("tool-stripe-button", "flat");
         button.setTooltip(new Tooltip(tooltipFor(tw)));
+        button.accessibleTextProperty().bind(tw.titleProperty()); // the tooltip also carries the chord
         button.setOnAction(e -> toggle(tw));
         // Right-click → Hide the icon (persisted; re-show from Settings → Tool Windows).
         MenuItem hide = new MenuItem(tr("toolwindow.hide"), Icons.closeSmall());
@@ -1511,6 +1520,7 @@ public class ToolWindowManager {
             afterClosed(tw);
             return;
         }
+        boolean hadFocus = holdsFocus(tw);
         // Before the dividers are read below: a maximized divider sits at 0 or 1, and remembering that as
         // this window's size would have it reopen covering the editor.
         restoreMaximized(!isMaximized(tw));
@@ -1524,6 +1534,33 @@ public class ToolWindowManager {
         openOn(side).remove(tw);
         rebuildSide(side);
         afterClosed(tw);
+        if (hadFocus) {
+            focusEditor();
+        }
+    }
+
+    /** Whether keyboard focus is inside {@code tw}'s panel, or on the stripe button that toggles it. */
+    private boolean holdsFocus(ToolWindow tw) {
+        Region panel = panels.get(tw);
+        javafx.scene.Scene scene = panel == null ? null : panel.getScene();
+        Node owner = scene == null ? null : scene.getFocusOwner();
+        return owner != null && (isDescendant(owner, panel) || owner == stripeButtons.get(tw));
+    }
+
+    /**
+     * Hands keyboard focus back to the editor. Closing the tool window that holds focus removes the focus
+     * owner from the scene, which leaves the window with no focus owner at all — the next keystroke went
+     * nowhere until the user clicked. Prefers the editor node that last had focus; failing that, the first
+     * editor surface.
+     */
+    private void focusEditor() {
+        Node target = lastEditorFocus.get();
+        if (target == null || target.getScene() == null || !isDescendant(target, editorNode)) {
+            target = editorNode.lookup(".editor-area");
+        }
+        if (target != null) {
+            target.requestFocus();
+        }
     }
 
     /** The bookkeeping every close shares, whichever place the window was closed from. */

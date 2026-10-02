@@ -37,4 +37,17 @@ class SettingsSearchTest {
     void queryIsTrimmed() {
         assertTrue(SettingsWindow.matches("  minimap  ", "show minimap"));
     }
+
+    @Test
+    void everyWordMustMatchInAnyOrder() {
+        assertTrue(SettingsWindow.matches("size font", "editor font size"));
+        assertTrue(SettingsWindow.matches("font   size", "Font Size"));
+        assertFalse(SettingsWindow.matches("font colour", "editor font size"), "one missing word fails the row");
+    }
+
+    @Test
+    void localizedTextIsMatchedCaseInsensitively() {
+        assertTrue(SettingsWindow.matches("schrift", "font size Schriftgröße Größe der Editorschrift"));
+        assertTrue(SettingsWindow.matches("GRÖSSE schrift", "font size Schriftgrösse"));
+    }
 }

@@ -149,10 +149,23 @@ public class CommandPalette {
                 keymap, PickerKeys.hint("run", "↵"), PickerKeys.hint("docs", keymap.display(docsChord))));
     }
 
+    /** Height of one command row, and how many the list shows before it scrolls. */
+    static final double ROW_HEIGHT = 36;
+
+    static final int VISIBLE_ROWS = 8;
+
+    /** The list height that shows exactly {@link #VISIBLE_ROWS} rows inside {@code insets} of chrome. Pure. */
+    static double listHeight(double insets) {
+        return VISIBLE_ROWS * ROW_HEIGHT + insets;
+    }
+
     private void build() {
         input.setPromptText(tr("palette.prompt"));
         list.setItems(items);
-        list.setPrefHeight(280);
+        // A whole number of rows: a fixed 280px cut the eighth row in half.
+        list.setFixedCellSize(ROW_HEIGHT);
+        list.setPrefHeight(listHeight(0));
+        list.insetsProperty().addListener((o, was, in) -> list.setPrefHeight(listHeight(in.getTop() + in.getBottom())));
         list.setCellFactory(v -> new CommandCell());
 
         input.textProperty().addListener((obs, old, now) -> filter(now));

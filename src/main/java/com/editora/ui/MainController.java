@@ -647,7 +647,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
         this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
-        this.breadcrumb = new FileBreadcrumb(fileWorkflows::openPath);
+        this.breadcrumb = new FileBreadcrumb(fileWorkflows::openPath, this::windowProjectRoot);
         // The breadcrumb is NOT part of the bottom bar stack — see setupToolWindows, which hangs it under
         // the editor area itself.
         bottomBox.getChildren().setAll(statusBar);

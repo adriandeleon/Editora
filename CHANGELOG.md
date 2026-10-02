@@ -158,6 +158,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Menu key and Shift+F10 open the context menu of the selected row in the Project, Bookmarks,
   Notes, TODO, Git Log and Structure tool windows. F2 renames and Delete deletes the selected file in
   the Project tree; Delete removes the selected bookmark or note.
+- Keyboard and screen-reader access: Settings switches now toggle with Space or Enter and are announced
+  by their row title; every button, switch, check box, link and combo shows a focus ring when reached
+  with the keyboard; icon-only buttons (tool windows, Git, diff, test results, preview zoom) have
+  accessible names; closing the focused tool window returns focus to the editor.
+
+- Readability: key legends, line numbers and tinted labels now meet contrast guidelines in Editora Light
+  and Dark; text on accent-coloured badges and the selected Project Map node is readable in dark themes;
+  whitespace markers, diagnostic squiggles and search highlights adapt to the editor theme; Problems and
+  Debug colours follow the theme. Failure messages such as "PDF export failed" are shown as errors in the
+  status bar and stay flagged in the message log.
+
+- Layout: the Find bar's fields use the available width and the bar wraps instead of truncating its
+  labels in a narrow window; Find in Files gives the query its own row; one wide diagram, image or
+  formula no longer stops the Markdown preview from wrapping in Split view; Settings rows with a wide
+  control put it under the description; the command palette no longer cuts its last row in half; long
+  paths in the Commit window keep the file name visible; the breadcrumb starts at the project folder;
+  in Split view the Editor/Split/Preview control sits on the preview instead of over the first line.
+
+- Settings: search matches the titles and descriptions shown in your language, accepts several words in
+  any order, and says when nothing matches; the window always opens fully on the screen its parent is
+  on; Reset to Defaults now also restores the keymap immediately.
 
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the

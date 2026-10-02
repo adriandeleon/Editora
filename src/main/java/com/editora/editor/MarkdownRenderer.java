@@ -212,12 +212,13 @@ public final class MarkdownRenderer {
                 if (disp != null) {
                     StackPane wrap = new StackPane(MathImages.blockNode(disp, DISPLAY_MATH_SIZE));
                     wrap.getStyleClass().add("md-math-block-wrap");
-                    return wrap;
+                    return new ShrinkToFit(wrap); // a long formula shrinks; it must not widen the column
                 }
             }
             // A paragraph that is just an image renders as a block image (not squeezed into a TextFlow).
             if (p.getFirstChild() instanceof org.commonmark.node.Image img && img.getNext() == null) {
-                return imageNode(img, ctx);
+                // Fits a pane narrower than the image instead of widening the whole column.
+                return new ShrinkToFit(imageNode(img, ctx));
             }
             TextFlow tf = inlineFlow(p, ctx);
             tf.getStyleClass().add("md-paragraph");
@@ -238,8 +239,10 @@ public final class MarkdownRenderer {
         }
         if (node instanceof FencedCodeBlock f) {
             if (isMermaidInfo(f.getInfo()) && MermaidImages.isEnabled()) {
-                // Show at natural size, but never wider than the reading column.
-                return MermaidImages.node(stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, MAX_CONTENT_WIDTH));
+                // Show at natural size, but never wider than the reading column — and scaled down further
+                // when the pane itself is narrower (Split view), so the diagram never widens the column.
+                return new ShrinkToFit(MermaidImages.node(
+                        stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, MAX_CONTENT_WIDTH)));
             }
             return highlightedCodeBlock(f.getLiteral(), f.getInfo());
         }

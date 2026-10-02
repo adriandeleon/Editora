@@ -998,12 +998,8 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private Button iconButton(Node icon, String tip, Runnable action) {
-        Button b = new Button();
-        b.setGraphic(icon);
-        b.getStyleClass().addAll("flat", "diff-toolbar-button");
-        b.setFocusTraversable(false);
-        b.setTooltip(descriptiveTooltip(tip));
-        b.setOnAction(e -> action.run());
+        Button b = Icons.toolbarButton(icon, tip, action, "flat", "diff-toolbar-button");
+        b.setTooltip(descriptiveTooltip(tip)); // same text as the accessible name, in the diff's tooltip style
         return b;
     }
 

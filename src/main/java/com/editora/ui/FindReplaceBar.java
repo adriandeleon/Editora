@@ -144,25 +144,68 @@ public class FindReplaceBar extends HBox {
         // but without selecting/scrolling to a match (that would fight the user's typing).
         editDebounce.setOnFinished(e -> recomputeHighlightsOnly());
 
-        getChildren()
-                .addAll(
-                        new Label(tr("find.label")),
-                        findField,
-                        findClear,
-                        countLabel,
-                        prev,
-                        next,
-                        new Label(tr("find.replaceLabel")),
-                        replaceField,
-                        replaceClear,
-                        replace,
-                        replaceAll,
-                        caseSensitive,
-                        regex,
-                        wholeWord,
-                        preserveCase,
-                        inSelection,
-                        close);
+        layoutBar(next, prev, replace, replaceAll, close, findClear, replaceClear);
+    }
+
+    /**
+     * Lays the bar out as three groups — find, replace, options — in a {@link WrapRow}: the two fields
+     * share the spare width (instead of sitting at ~160px beside an empty bar), labels and buttons keep
+     * their full width in every language, and a narrow window wraps the groups onto a second line rather
+     * than ellipsizing them. The option checkboxes stay the state holders; what is shown are compact
+     * toggle buttons bound to them, each named by a tooltip and accessible text.
+     */
+    private void layoutBar(
+            Button next,
+            Button prev,
+            Button replace,
+            Button replaceAll,
+            Button close,
+            Button findClear,
+            Button replaceClear) {
+        Label findLabel = fixed(new Label(tr("find.label")));
+        Label replaceLabel = fixed(new Label(tr("find.replaceLabel")));
+        findLabel.setLabelFor(findField);
+        replaceLabel.setLabelFor(replaceField);
+        fixed(replace);
+        fixed(replaceAll);
+        fixed(countLabel);
+        fixed(findClear);
+        fixed(replaceClear);
+        for (TextField field : List.of(findField, replaceField)) {
+            field.setMinWidth(FIELD_MIN_WIDTH);
+            field.setMaxWidth(Double.MAX_VALUE);
+            HBox.setHgrow(field, javafx.scene.layout.Priority.ALWAYS);
+        }
+        HBox findGroup = group(findLabel, findField, findClear, countLabel, prev, next);
+        HBox replaceGroup = group(replaceLabel, replaceField, replaceClear, replace, replaceAll);
+        HBox options = group(
+                OptionToggle.viewOf(caseSensitive, tr("search.caseTip")),
+                OptionToggle.viewOf(regex, tr("search.regexTip")),
+                OptionToggle.viewOf(wholeWord, tr("find.wholeWord")),
+                OptionToggle.viewOf(preserveCase, tr("find.preserveCase")),
+                OptionToggle.viewOf(inSelection, tr("find.inSelection")));
+        options.setSpacing(2);
+        options.getStyleClass().add("find-options");
+        WrapRow row = new WrapRow(10, 4, WrapRow.setGrow(findGroup), WrapRow.setGrow(replaceGroup), options);
+        HBox.setHgrow(row, javafx.scene.layout.Priority.ALWAYS);
+        javafx.scene.layout.VBox closeBox = new javafx.scene.layout.VBox(close); // stays top-right when wrapped
+        closeBox.setAlignment(Pos.TOP_RIGHT);
+        getChildren().addAll(row, closeBox);
+    }
+
+    /** Narrowest a find/replace field gets before the bar wraps instead. */
+    private static final double FIELD_MIN_WIDTH = 140;
+
+    private static HBox group(Node... nodes) {
+        HBox box = new HBox(6, nodes);
+        box.setAlignment(Pos.CENTER_LEFT);
+        return box;
+    }
+
+    /** Text that must always be readable in full: its minimum width is its preferred width. */
+    private static <T extends javafx.scene.layout.Region> T fixed(T node) {
+        node.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+        return node;
     }
 
     /** A compact icon-only action that remains named for tooltips and assistive technology. */

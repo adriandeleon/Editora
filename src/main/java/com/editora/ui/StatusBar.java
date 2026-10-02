@@ -343,8 +343,13 @@ public final class StatusBar extends HBox {
      *  The echo shows a single line only (a Label renders embedded newlines as line breaks, so a multi-line
      *  message — e.g. a compiler error dump — would grow the whole status bar); the full text goes to the
      *  message log, whose rows wrap and are copyable. */
+    /**
+     * Shows {@code message} with the severity its catalog key implies: a {@code status.*Failed} /
+     * {@code *Error} message is an error whichever of the ~90 call sites reported it through the plain
+     * status channel (see {@link StatusSeverity}); everything else is ordinary echo text.
+     */
     public void setMessage(String message) {
-        setMessage(message, MessageLog.Severity.INFO);
+        setMessage(message, StatusSeverity.of(message));
     }
 
     /**

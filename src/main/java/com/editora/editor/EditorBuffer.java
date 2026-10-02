@@ -5919,14 +5919,14 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Rebuilds {@link #viewHost} for the current modes. The floating control is parented to the editor
-     * pane ({@link #root}) in Editor/Split so it always sits at the right edge of the <em>code</em> area
-     * (at the divider when split); in Preview-only mode there is no code pane, so it overlays the
-     * preview instead.
+     * pane ({@link #root}) in Editor mode, at the right edge of the code area; in Split and Preview it
+     * overlays the preview — on a split's half-width code pane it sat over the first line of text, and
+     * this way it also stays in the tab's top-right corner in all three modes.
      */
     private void rebuildViewHost() {
         detachViewModeControl();
         Node content;
-        if (markdownViewMode == MarkdownViewMode.PREVIEW) {
+        if (markdownViewMode != MarkdownViewMode.EDITOR) {
             StackPane host = previewModeHost();
             if (viewModeControl != null) {
                 StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
@@ -5934,12 +5934,13 @@ public class EditorBuffer implements TabContent {
                 host.getChildren().add(viewModeControl);
             }
             content = host;
-        } else if (markdownViewMode == MarkdownViewMode.SPLIT) {
-            SplitPane pane = new SplitPane(root, previewSplitSide());
-            pane.setOrientation(Orientation.HORIZONTAL);
-            pane.setDividerPositions(0.5);
-            attachControlToCodePane();
-            content = pane;
+            if (markdownViewMode == MarkdownViewMode.SPLIT) {
+                SplitPane pane = new SplitPane(root, host);
+                pane.setOrientation(Orientation.HORIZONTAL);
+                pane.setDividerPositions(0.5);
+                attachControlToCodePane();
+                content = pane;
+            }
         } else if (split != Split.NONE) {
             ensureSecondaryView();
             SplitPane pane = new SplitPane(root, root2);
@@ -5970,20 +5971,6 @@ public class EditorBuffer implements TabContent {
             return structuredPreviewHost();
         }
         return previewHost(); // preview (+ zoom for markdown)
-    }
-
-    /** The SPLIT-mode preview side: the bare node (the mode toggle rides the code pane, not the preview). */
-    private Node previewSplitSide() {
-        if (hasCsvPreview()) {
-            return csvPreviewNode;
-        }
-        if (hasHttpPreview()) {
-            return httpPreviewNode;
-        }
-        if (hasTreePreview()) {
-            return structuredContentHolder();
-        }
-        return previewHost();
     }
 
     private StackPane previewHost() {
@@ -6320,11 +6307,11 @@ public class EditorBuffer implements TabContent {
 
     private HBox zoomControl() {
         if (zoomControl == null) {
-            Button out = zoomButton("−", this::zoomPreviewOut); // − (minus sign)
-            Button in = zoomButton("+", this::zoomPreviewIn);
+            Button out = PreviewButtons.named("−", tr("project.map.preview.zoomOut"), this::zoomPreviewOut);
+            Button in = PreviewButtons.named("+", tr("project.map.preview.zoomIn"), this::zoomPreviewIn);
             // Light/dark preview-theme toggle (independent of the app theme). Glyph shows what a click
             // switches TO: a moon while the preview is light, a sun while it's dark.
-            previewThemeButton = zoomButton("", () -> previewThemeToggle.run());
+            previewThemeButton = PreviewButtons.named("", "", () -> previewThemeToggle.run());
             updateThemeButtonGlyph();
             zoomControl = new HBox(out, in, previewThemeButton);
             zoomControl.getStyleClass().add("md-zoom");
@@ -6372,16 +6359,8 @@ public class EditorBuffer implements TabContent {
         }
         boolean dark = previewEffectiveDark();
         previewThemeButton.setText(dark ? "☀" : "☾"); // ☀ (→ light) when dark; ☾ (→ dark) when light
-        previewThemeButton.setTooltip(new javafx.scene.control.Tooltip(
-                tr(dark ? "markdown.previewTheme.toLight" : "markdown.previewTheme.toDark")));
-    }
-
-    private Button zoomButton(String text, Runnable action) {
-        Button b = new Button(text);
-        b.getStyleClass().addAll("md-zoom-button", "flat");
-        b.setFocusTraversable(false);
-        b.setOnAction(e -> action.run());
-        return b;
+        PreviewButtons.name(
+                previewThemeButton, tr(dark ? "markdown.previewTheme.toLight" : "markdown.previewTheme.toDark"));
     }
 
     /** Zooms the preview text in/out (multiplicative steps, clamped) or resets to 100%. */
@@ -6442,7 +6421,7 @@ public class EditorBuffer implements TabContent {
     /** Overlays the corner control(s) at the top-right of the code pane ({@link #root}), clear of its minimap.
      *  A buffer is Markdown <em>or</em> HTML, so at most one of the two controls is non-null. */
     private void attachControlToCodePane() {
-        placeCornerControl(viewModeControl);
+        placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? viewModeControl : null);
         placeCornerControl(htmlPreviewControl);
         placeCornerControl(logControl);
         placeStickyScroll();

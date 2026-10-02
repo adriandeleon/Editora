@@ -86,10 +86,10 @@ class FindReplaceBarFxTest {
     void navigationAndCloseActionsAreNamedIconButtons() throws Exception {
         Harness h = harness("one two");
         FxTestSupport.runOnFx(() -> {
-            List<Button> iconButtons = h.bar.getChildren().stream()
+            // The bar nests its controls in wrapping groups, so look through the whole subtree.
+            List<Button> iconButtons = h.bar.lookupAll(".find-bar-icon").stream()
                     .filter(Button.class::isInstance)
                     .map(Button.class::cast)
-                    .filter(button -> button.getStyleClass().contains("find-bar-icon"))
                     .toList();
 
             assertEquals(3, iconButtons.size());

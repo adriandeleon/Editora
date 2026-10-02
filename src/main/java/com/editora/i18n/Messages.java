@@ -39,14 +39,26 @@ public final class Messages {
     private static Map<String, String> base = Map.of();
     private static Map<String, String> active = Map.of();
     private static String currentLang = "en";
+    private static volatile int generation;
 
     private Messages() {}
+
+    /** Every catalog key (the English base defines the full set). */
+    public static Set<String> keys() {
+        return java.util.Collections.unmodifiableSet(base.keySet());
+    }
+
+    /** Changes whenever {@link #init} reloads the catalog, so a cache derived from it knows to rebuild. */
+    public static int generation() {
+        return generation;
+    }
 
     /** Loads the English base + the chosen language overlay (falling back to English for an unknown code). */
     public static synchronized void init(String lang) {
         base = load("en");
         currentLang = LANGUAGES.containsKey(lang) ? lang : "en";
         active = "en".equals(currentLang) ? base : load(currentLang);
+        generation++;
     }
 
     private static Map<String, String> load(String lang) {

@@ -157,6 +157,11 @@ public class SettingsWindow {
     /** A searchable settings row: its page, its node (hidden when filtered out), and its keywords. */
     private record SettingRow(Category category, Node node, String keywords, Label section, VBox card) {}
 
+    /** Lazily built search text per row (keywords + shown text); identity-keyed, rows are never removed. */
+    private final java.util.Map<SettingRow, String> searchIndex = new java.util.IdentityHashMap<>();
+
+    private Label searchEmpty; // "no settings match …", shown in place of the page
+
     private final ConfigManager config;
     private final Consumer<Settings> onApply;
     private final Consumer<Boolean> onToggleZen;
@@ -772,12 +777,10 @@ public class SettingsWindow {
         }
     }
 
+    /** Centres on the owner using the size the window actually has, kept on the owner's screen. */
     private void centerOnOwner(Window owner) {
-        if (owner == null) {
-            return;
-        }
-        stage.setX(owner.getX() + (owner.getWidth() - WIDTH) / 2);
-        stage.setY(owner.getY() + (owner.getHeight() - HEIGHT) / 2);
+        javafx.geometry.Dimension2D size = preferredSize(owner);
+        WindowPlacement.centerOnOwner(stage, owner, size.getWidth(), size.getHeight());
     }
 
     private void build(Window owner) {
@@ -801,8 +804,8 @@ public class SettingsWindow {
         sidebar.setMinWidth(216);
         sidebar.setCellFactory(v -> new CategoryCell());
         sidebar.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
-            if (b instanceof Category cat) { // group headers aren't pages
-                contentScroll.setContent(pages.get(cat));
+            if (b instanceof Category) { // group headers aren't pages
+                showContent();
                 // Every page starts at its top. A ScrollPane keeps its vvalue across a content swap, so
                 // opening a short page after scrolling down a long one landed mid-page — and on a page
                 // that fits, silently nowhere at all. Deferred: the new content has not been laid out
@@ -811,6 +814,11 @@ public class SettingsWindow {
                 javafx.application.Platform.runLater(() -> contentScroll.setVvalue(0));
             }
         });
+
+        searchEmpty = new Label();
+        searchEmpty.getStyleClass().add("settings-search-empty");
+        searchEmpty.setWrapText(true);
+        searchEmpty.setVisible(false);
 
         contentScroll = new ScrollPane();
         contentScroll.setFitToWidth(true);
@@ -840,7 +848,7 @@ public class SettingsWindow {
         buttons.getStyleClass().add("settings-footer");
 
         VBox root = new VBox(0, body, buttons);
-        javafx.geometry.Dimension2D size = preferredSize();
+        javafx.geometry.Dimension2D size = preferredSize(owner);
         root.setPrefWidth(size.getWidth());
         root.setPrefHeight(size.getHeight());
 
@@ -864,15 +872,12 @@ public class SettingsWindow {
     }
 
     /**
-     * {@link #WIDTH}×{@link #HEIGHT}, clamped to {@link #MAX_SCREEN_FRACTION} of the primary screen's
-     * <em>visual</em> bounds (which exclude the menu bar / taskbar). Without the clamp the window would
-     * open taller than a laptop display and hide its own Close button.
+     * {@link #WIDTH}×{@link #HEIGHT}, clamped to {@link #MAX_SCREEN_FRACTION} of the <em>visual</em> bounds
+     * (which exclude the menu bar / taskbar) of the screen the owner is on. Without the clamp the window
+     * would open taller than a laptop display and hide its own Close button.
      */
-    private static javafx.geometry.Dimension2D preferredSize() {
-        javafx.geometry.Rectangle2D screen = javafx.stage.Screen.getPrimary().getVisualBounds();
-        return new javafx.geometry.Dimension2D(
-                Math.min(WIDTH, screen.getWidth() * MAX_SCREEN_FRACTION),
-                Math.min(HEIGHT, screen.getHeight() * MAX_SCREEN_FRACTION));
+    private static javafx.geometry.Dimension2D preferredSize(Window owner) {
+        return WindowPlacement.clampSize(WIDTH, HEIGHT, WindowPlacement.screenOf(owner), MAX_SCREEN_FRACTION);
     }
 
     // --- control construction (logic unchanged from the flat window) -----------------------------
@@ -901,7 +906,8 @@ public class SettingsWindow {
             }
             config.getSettings().setUiLanguage(now);
             config.save();
-            Alert restart = new Alert(Alert.AlertType.INFORMATION, tr("dialog.language.restart"), ButtonType.OK);
+            Alert restart = Dialogs.styled(
+                    new Alert(Alert.AlertType.INFORMATION, tr("dialog.language.restart"), ButtonType.OK));
             restart.initOwner(stage);
             restart.setTitle(tr("dialog.language.title"));
             restart.setHeaderText(null);
@@ -1931,11 +1937,11 @@ public class SettingsWindow {
             for (var c : conflicts) {
                 affected.append("\n   ").append(c.chord()).append("  —  ").append(titleOf(c.commandId()));
             }
-            Alert confirm = new Alert(
+            Alert confirm = Dialogs.styled(new Alert(
                     Alert.AlertType.CONFIRMATION,
                     tr("dialog.shortcut.conflict.body", seq, affected.toString()),
                     ButtonType.OK,
-                    ButtonType.CANCEL);
+                    ButtonType.CANCEL));
             confirm.initOwner(stage);
             confirm.setTitle(tr("dialog.shortcut.conflict.title"));
             confirm.setHeaderText(null);
@@ -2235,7 +2241,7 @@ public class SettingsWindow {
     }
 
     private void macroWarn(String message) {
-        Alert a = new Alert(Alert.AlertType.WARNING, message, ButtonType.OK);
+        Alert a = Dialogs.styled(new Alert(Alert.AlertType.WARNING, message, ButtonType.OK));
         a.initOwner(stage);
         a.setHeaderText(null);
         a.showAndWait();
@@ -2303,11 +2309,11 @@ public class SettingsWindow {
         if (sel == null) {
             return;
         }
-        Alert confirm = new Alert(
+        Alert confirm = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION,
                 tr("settings.macro.deleteConfirm", sel.name()),
                 ButtonType.OK,
-                ButtonType.CANCEL);
+                ButtonType.CANCEL));
         confirm.initOwner(stage);
         confirm.setTitle(tr("settings.macro.deleteConfirmTitle"));
         confirm.setHeaderText(null);
@@ -3714,7 +3720,8 @@ public class SettingsWindow {
         try {
             snippetManager.saveUserSnippets(currentSnippetLang, userOnly);
         } catch (java.io.IOException e) {
-            new Alert(Alert.AlertType.ERROR, tr("settings.snippet.saveFailed", e.getMessage()), ButtonType.OK)
+            Dialogs.styled(new Alert(
+                            Alert.AlertType.ERROR, tr("settings.snippet.saveFailed", e.getMessage()), ButtonType.OK))
                     .showAndWait();
         }
     }
@@ -3943,7 +3950,10 @@ public class SettingsWindow {
             try {
                 templateRegistry.deleteUserTemplate(t.id());
             } catch (java.io.IOException ex) {
-                new Alert(Alert.AlertType.ERROR, tr("settings.template.saveFailed", ex.getMessage()), ButtonType.OK)
+                Dialogs.styled(new Alert(
+                                Alert.AlertType.ERROR,
+                                tr("settings.template.saveFailed", ex.getMessage()),
+                                ButtonType.OK))
                         .showAndWait();
                 return;
             }
@@ -4006,7 +4016,8 @@ public class SettingsWindow {
         try {
             templateRegistry.saveUserTemplate(t);
         } catch (java.io.IOException e) {
-            new Alert(Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK)
+            Dialogs.styled(new Alert(
+                            Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK))
                     .showAndWait();
         }
     }
@@ -5221,7 +5232,7 @@ public class SettingsWindow {
                 name,
                 d.manifest().version == null ? "" : d.manifest().version,
                 PluginCoordinator.pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL);
+        Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL));
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.plugins.enableTitle"));
         confirm.setHeaderText(tr("dialog.plugins.enableHeader"));
@@ -5768,7 +5779,8 @@ public class SettingsWindow {
                 continue;
             }
             boolean found = c.isDetected();
-            label.getStyleClass().setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+            // "This file is not in a Maven project" is a neutral fact, not a broken tool: no danger pill.
+            label.getStyleClass().setAll("settings-git-status", buildToolStatusClass(found));
             String detected = c.detectedLabel();
             label.setText(
                     found
@@ -5779,6 +5791,12 @@ public class SettingsWindow {
                                     : tr("settings.buildTools.found", detected))
                             : tr("settings.buildTools.notFound", c.tool().displayName()));
         }
+    }
+
+    /** Pill style for a build tool's detection row: green when detected, the neutral pill when it simply
+     *  does not apply to the active file (red is reserved for something broken). Pure. */
+    static String buildToolStatusClass(boolean detected) {
+        return detected ? "settings-git-found" : "settings-git-neutral";
     }
 
     /** Injected by MainController: probes {@code rg} off-thread, delivering found/not-found on the FX thread. */
@@ -5955,6 +5973,8 @@ public class SettingsWindow {
             moveDown.getStyleClass().addAll("flat", "reorder-button");
             moveUp.setTooltip(new Tooltip(tr("settings.moveEarlier")));
             moveDown.setTooltip(new Tooltip(tr("settings.moveLater")));
+            moveUp.setAccessibleText(tr("settings.moveEarlier") + " — " + tw.getTitle());
+            moveDown.setAccessibleText(tr("settings.moveLater") + " — " + tw.getTitle());
             Runnable refreshThisRow = () -> {
                 boolean shown = showCheck.isSelected();
                 moveUp.setDisable(!shown || !toolWindows.canMove(tw, -1));
@@ -6024,7 +6044,11 @@ public class SettingsWindow {
             VBox main = new VBox(2, title);
             HBox.setHgrow(main, Priority.ALWAYS);
             HBox reorder = new HBox(2, moveUp, moveDown);
-            HBox controls = new HBox(8, switchFor(showCheck), sideCombo, reorder);
+            SettingSwitch show = switchFor(showCheck);
+            show.setAccessibleText(tw.getTitle()); // this row is hand-built, so name its controls here
+            sideCombo.setAccessibleText(tw.getTitle());
+            title.setLabelFor(show);
+            HBox controls = new HBox(8, show, sideCombo, reorder);
             controls.setAlignment(Pos.CENTER_RIGHT);
             controls.setMinWidth(Region.USE_PREF_SIZE);
             HBox rowBox = new HBox(16, main, controls);
@@ -6390,8 +6414,12 @@ public class SettingsWindow {
         cardRow(card, cat, settingRow(title, description, control), keywords);
     }
 
-    /** A card row: title + optional description on the left, the control on the right. */
-    private static Node settingRow(String title, String description, Node control) {
+    /**
+     * A card row: title + optional description on the left, the control on the right (below the text when
+     * the control is too wide to leave the description a readable column — see {@link SettingRowPane}).
+     * The title is the control's label for assistive technology, and names an on/off switch outright.
+     */
+    static Node settingRow(String title, String description, Node control) {
         Label t = new Label(title);
         t.getStyleClass().add("settings-row-title");
         VBox main = new VBox(2, t);
@@ -6401,17 +6429,28 @@ public class SettingsWindow {
             d.setWrapText(true);
             main.getChildren().add(d);
         }
-        HBox.setHgrow(main, Priority.ALWAYS);
-        HBox row = new HBox(16, main);
         if (control != null) {
-            HBox side = new HBox(8, control);
-            side.setAlignment(Pos.CENTER_RIGHT);
-            side.setMinWidth(Region.USE_PREF_SIZE); // the control must never be squeezed by a long description
-            row.getChildren().add(side);
+            List<SettingSwitch> switches = switchesIn(control);
+            t.setLabelFor(switches.isEmpty() ? control : switches.get(0));
+            for (SettingSwitch sw : switches) {
+                sw.setAccessibleText(title);
+                sw.setAccessibleHelp(description);
+            }
         }
-        row.setAlignment(Pos.CENTER_LEFT);
+        SettingRowPane row = new SettingRowPane(main, control);
         row.getStyleClass().add("settings-row");
         return row;
+    }
+
+    /** The on/off switches a row's control holds: the control itself, or switches nested in its box. */
+    private static List<SettingSwitch> switchesIn(Node control) {
+        List<SettingSwitch> found = new ArrayList<>();
+        if (control instanceof SettingSwitch sw) {
+            found.add(sw);
+        } else if (control instanceof javafx.scene.layout.Pane pane) {
+            pane.getChildren().forEach(child -> found.addAll(switchesIn(child)));
+        }
+        return found;
     }
 
     /**
@@ -6419,13 +6458,11 @@ public class SettingsWindow {
      * setting state lives on {@link CheckBox}es (listeners, {@code syncAll}, palette toggles), so rather
      * than rewire any of that, the switch is a <em>view</em>: bidirectionally bound to the checkbox's
      * {@code selectedProperty} (and following its {@code disableProperty}), while the checkbox itself
-     * stays out of the scene graph. Every existing writer keeps working untouched.
+     * stays out of the scene graph. Every existing writer keeps working untouched. {@link SettingSwitch}
+     * is what makes it operable from the keyboard and visible to a screen reader.
      */
-    private static atlantafx.base.controls.ToggleSwitch switchFor(CheckBox check) {
-        var sw = new atlantafx.base.controls.ToggleSwitch();
-        sw.selectedProperty().bindBidirectional(check.selectedProperty());
-        sw.disableProperty().bind(check.disableProperty());
-        return sw;
+    private static SettingSwitch switchFor(CheckBox check) {
+        return SettingSwitch.boundTo(check);
     }
 
     private Region labeled(String label, Node control) {
@@ -6475,14 +6512,76 @@ public class SettingsWindow {
 
     // --- search ----------------------------------------------------------------------------------
 
-    /** Whether {@code keywords} matches the search {@code query} (case-insensitive substring). Pure. */
-    static boolean matches(String query, String keywords) {
+    /**
+     * Whether {@code text} matches the search {@code query}: every whitespace-separated word of the query
+     * must occur in it, in any order, case-insensitively ("size font" finds "Font size"). Pure.
+     */
+    static boolean matches(String query, String text) {
         if (query == null || query.isBlank()) {
             return true;
         }
-        return keywords != null
-                && keywords.toLowerCase(Locale.ROOT)
-                        .contains(query.toLowerCase(Locale.ROOT).strip());
+        if (text == null) {
+            return false;
+        }
+        String haystack = text.toLowerCase(Locale.ROOT);
+        for (String word : query.strip().toLowerCase(Locale.ROOT).split("\\s+")) {
+            if (!haystack.contains(word)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Everything a row can be found by: its (English) keywords plus the text it actually shows — title,
+     * description, checkbox and button captions, field prompts — so a search in the UI language works.
+     */
+    static String searchText(String keywords, Node... shown) {
+        StringBuilder out = new StringBuilder(keywords == null ? "" : keywords);
+        for (Node node : shown) {
+            collectText(node, out);
+        }
+        return out.toString();
+    }
+
+    private static void collectText(Node node, StringBuilder out) {
+        if (node == null) {
+            return;
+        }
+        if (node instanceof javafx.scene.control.Labeled labeled && labeled.getText() != null) {
+            out.append(' ').append(labeled.getText());
+        }
+        if (node instanceof javafx.scene.control.TextInputControl input && input.getPromptText() != null) {
+            out.append(' ').append(input.getPromptText());
+        }
+        if (node instanceof javafx.scene.Parent parent) {
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                collectText(child, out);
+            }
+        }
+    }
+
+    /** A row's search text, built on first use (pages are built once; titles never change afterwards). */
+    private String searchTextOf(SettingRow r) {
+        return searchIndex.computeIfAbsent(r, row -> {
+            // A row is also found by the heading it sits under: its card's title or its section label.
+            Node cardTitle = row.card() != null
+                            && !row.card().getChildren().isEmpty()
+                            && row.card().getChildren().get(0) instanceof Label title
+                    ? title
+                    : null;
+            return searchText(row.keywords(), row.node(), cardTitle, row.section());
+        });
+    }
+
+    /** Shows the selected category's page, or the "no settings match" note while a search has no hits. */
+    private void showContent() {
+        Node content = searchEmpty != null && searchEmpty.isVisible()
+                ? searchEmpty
+                : sidebar.getSelectionModel().getSelectedItem() instanceof Category cat ? pages.get(cat) : null;
+        if (content != null && contentScroll.getContent() != content) {
+            contentScroll.setContent(content);
+        }
     }
 
     /** The sidebar's row model: each group's header followed by its categories, in declaration order. */
@@ -6507,6 +6606,8 @@ public class SettingsWindow {
             rows.forEach(r -> setShown(r.node(), true));
             sectionLabels.forEach(s -> setShown(s, true));
             cards.forEach(c -> setShown(c, true));
+            searchEmpty.setVisible(false);
+            showContent();
             sidebar.refresh();
             return;
         }
@@ -6514,7 +6615,7 @@ public class SettingsWindow {
         Set<Label> visibleSections = new HashSet<>();
         Set<VBox> visibleCards = new HashSet<>();
         for (SettingRow r : rows) {
-            boolean m = matches(query, r.keywords());
+            boolean m = matches(query, searchTextOf(r));
             setShown(r.node(), m);
             if (m) {
                 matched.add(r.category());
@@ -6540,6 +6641,10 @@ public class SettingsWindow {
             }
         }
         sidebar.refresh();
+        // No hit anywhere: say so, instead of a blank page beside a fully greyed-out sidebar.
+        searchEmpty.setText(tr("settings.search.empty", query.strip()));
+        searchEmpty.setVisible(matched.isEmpty());
+        showContent();
         Object selObj = sidebar.getSelectionModel().getSelectedItem();
         Category sel = (selObj instanceof Category c) ? c : null;
         if (!matched.isEmpty() && (sel == null || !matched.contains(sel))) {
@@ -6643,8 +6748,8 @@ public class SettingsWindow {
     // --- reset -----------------------------------------------------------------------------------
 
     private void resetAll() {
-        Alert confirm =
-                new Alert(Alert.AlertType.CONFIRMATION, tr("settings.reset.confirm"), ButtonType.OK, ButtonType.CANCEL);
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION, tr("settings.reset.confirm"), ButtonType.OK, ButtonType.CANCEL));
         confirm.initOwner(stage);
         confirm.setTitle(tr("settings.reset.title"));
         confirm.setHeaderText(null);
@@ -6662,6 +6767,11 @@ public class SettingsWindow {
         javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(s.getTheme()));
         onApply.accept(s);
         load();
+        // load() sets the keymap combo under `loading`, so its listener never fires: without this the
+        // settings file says "default keymap" while every window keeps dispatching the old one.
+        if (onKeymapChanged != null) {
+            onKeymapChanged.run();
+        }
     }
 
     // --- load + sync (unchanged behavior) --------------------------------------------------------
@@ -7518,7 +7628,7 @@ public class SettingsWindow {
             Consumer<String> openUrl,
             String commit,
             com.editora.update.ReleaseInfo update) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.INFORMATION));
         alert.initOwner(owner);
         alert.setTitle(tr("dialog.about.title", com.editora.AppInfo.NAME));
         // The whole dialog is the content: no Alert header band or graphic, so the icon, name, version and
@@ -7526,13 +7636,7 @@ public class SettingsWindow {
         alert.setHeaderText(null);
         alert.setGraphic(null);
         alert.getDialogPane().getStyleClass().add("about-dialog");
-        // A Dialog lives in its own scene, so it does NOT inherit the main window's app.css — the panel's
-        // .about-* rules have to be attached here or they never apply. (The AtlantaFX -color-* tokens do
-        // resolve: those come from the application-wide user-agent stylesheet.)
-        var appCss = SettingsWindow.class.getResource("/com/editora/styles/app.css");
-        if (appCss != null) {
-            alert.getDialogPane().getStylesheets().add(appCss.toExternalForm());
-        }
+        // Dialogs.styled above attaches app.css: without it the panel's .about-* rules never apply.
 
         // For a snapshot build, append the git branch to the version string so a build made from a
         // worktree/feature branch can be told apart from one made off master. Empty for release builds

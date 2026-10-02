@@ -630,17 +630,13 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         b.getStyleClass().addAll("test-chip", colorClass);
         b.setSelected(true);
         b.setFocusTraversable(false);
-        b.setTooltip(new Tooltip(tr(tooltipKey)));
+        Icons.name(b, tr(tooltipKey));
         b.setOnAction(e -> rebuild());
         return b;
     }
 
     private static Button iconButton(Node graphic, String tooltipKey) {
-        Button b = new Button();
-        b.setGraphic(graphic);
-        b.getStyleClass().add("toolbar-restore"); // reuses the flat floating-button look
-        b.setTooltip(new Tooltip(tr(tooltipKey)));
-        return b;
+        return Icons.button(graphic, tr(tooltipKey), null, "toolbar-restore"); // the flat floating-button look
     }
 
     private static Region spacer() {

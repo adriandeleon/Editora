@@ -24,9 +24,8 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  */
 final class SearchHighlightOverlay extends Region {
 
-    private static final Color MATCH = Color.web("#ffd54f", 0.40); // amber wash, all matches
-    private static final Color ACTIVE = Color.web("#ff9800", 0.55); // deeper accent, current match
-    private static final Color ACTIVE_BORDER = Color.web("#ff9800");
+    /** Amber wash for all matches, a deeper one + border for the current match (see OverlayPalette). */
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
@@ -47,6 +46,10 @@ final class SearchHighlightOverlay extends Region {
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+        OverlayPalette.track(area, palette -> {
+            colors = palette; // resolved on a theme change, not per paint
+            scheduleRedraw();
+        });
     }
 
     /** Sets the matches (offset pairs) to highlight and which is the current one (-1 for none). */
@@ -156,10 +159,10 @@ final class SearchHighlightOverlay extends Region {
             if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
                 continue;
             }
-            g.setFill(isActive ? ACTIVE : MATCH);
+            g.setFill(isActive ? colors.searchActive() : colors.searchMatch());
             g.fillRect(b.getMinX(), b.getMinY(), b.getWidth(), b.getHeight());
             if (isActive) {
-                g.setStroke(ACTIVE_BORDER);
+                g.setStroke(colors.searchActiveBorder());
                 g.setLineWidth(1);
                 g.strokeRect(b.getMinX() + 0.5, b.getMinY() + 0.5, b.getWidth() - 1, b.getHeight() - 1);
             }
