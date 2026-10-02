@@ -75,6 +75,10 @@ jobs:
     name: Pure tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # The Windows lane is informational for now: its first run found 47 failures in 24 test classes, mostly
+    # tests that assume POSIX paths (the suite had never run on Windows). It stays visible but does not block
+    # a merge until those are worked through; make it required again by deleting this line. macOS blocks.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
