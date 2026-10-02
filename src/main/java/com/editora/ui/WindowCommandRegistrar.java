@@ -1659,6 +1659,7 @@ final class WindowCommandRegistrar {
         // HTTP Client (.http via ijhttp). Gated by the "Enable HTTP Client" setting (default off).
         host.registry().register(Command.of("http.runRequest", host.httpClient()::runRequestAtCaret));
         host.registry().register(Command.of("http.runFile", host.httpClient()::runFile));
+        host.registry().register(Command.of("http.cancelRequest", host.httpClient()::cancelActiveRequest));
         host.registry().register(Command.of("http.selectEnvironment", host.httpClient()::selectEnvironment));
         host.registry().register(Command.of("http.importCurl", host.httpClient()::importCurl));
         host.registry().register(Command.of("http.copyAsCurl", host.httpClient()::copyActiveAsCurl));

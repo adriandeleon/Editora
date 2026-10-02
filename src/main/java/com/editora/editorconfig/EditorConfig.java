@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -41,23 +43,26 @@ public final class EditorConfig {
         } catch (RuntimeException e) {
             return EditorConfigProperties.EMPTY;
         }
-        List<EditorConfigProperties> nearestFirst = new ArrayList<>();
+        List<List<Map<String, String>>> nearestFirst = new ArrayList<>();
         for (Path dir = abs.getParent(); dir != null; dir = dir.getParent()) {
             EditorConfigParser.Parsed parsed = readParsed(dir.resolve(FILENAME));
             if (parsed == null) {
                 continue;
             }
-            nearestFirst.add(matchProperties(parsed, relativePath(dir, abs)));
+            nearestFirst.add(matchingSections(parsed, relativePath(dir, abs)));
             if (parsed.root()) {
                 break;
             }
         }
-        // Merge farthest → nearest so a nearer directory's values override a farther one's.
-        EditorConfigProperties merged = EditorConfigProperties.EMPTY;
+        // Overlay farthest → nearest (and, within a file, top → bottom) on the RAW values, so a nearer
+        // `key = unset` removes the inherited value instead of being indistinguishable from "not mentioned".
+        Map<String, String> merged = new LinkedHashMap<>();
         for (int i = nearestFirst.size() - 1; i >= 0; i--) {
-            merged = EditorConfigProperties.merge(merged, nearestFirst.get(i));
+            for (Map<String, String> section : nearestFirst.get(i)) {
+                EditorConfigParser.overlay(merged, section);
+            }
         }
-        return merged;
+        return EditorConfigParser.toProperties(merged);
     }
 
     /**
@@ -106,17 +111,17 @@ public final class EditorConfig {
         }
     }
 
-    /** Merges every section of {@code parsed} whose glob matches {@code relPath} (later sections override). */
-    private static EditorConfigProperties matchProperties(EditorConfigParser.Parsed parsed, String relPath) {
-        EditorConfigProperties props = EditorConfigProperties.EMPTY;
+    /** The raw property maps of every section of {@code parsed} whose glob matches {@code relPath}, in order. */
+    private static List<Map<String, String>> matchingSections(EditorConfigParser.Parsed parsed, String relPath) {
+        List<Map<String, String>> out = new ArrayList<>();
         // One allowance for the whole file: section globs are untrusted, and this runs on the FX thread.
         EditorConfigGlob.Budget budget = new EditorConfigGlob.Budget();
         for (EditorConfigParser.Section s : parsed.sections()) {
             if (EditorConfigGlob.matches(s.glob(), relPath, budget)) {
-                props = EditorConfigProperties.merge(props, EditorConfigParser.toProperties(s.properties()));
+                out.add(s.properties());
             }
         }
-        return props;
+        return out;
     }
 
     /** The file path relative to the {@code .editorconfig} directory, {@code /}-separated. */

@@ -1,15 +1,52 @@
 package com.editora.http;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.io.StringWriter;
+
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 
 /**
  * Renders an {@link HttpResult} into a readable response report: a status line, the response headers, a
- * blank line, the body (pretty-printed when it is JSON), and a footer with status/time/size. Pure, so the
- * formatting + JSON pretty-print are unit-tested.
+ * blank line, the body <b>as received</b>, and a footer with status/time/size. Pure, so the formatting + JSON
+ * pretty-print are unit-tested.
+ *
+ * <p>Pretty-printing is for the viewer only ({@link #view}) and works on the token stream, so it changes
+ * whitespace and nothing else: a number keeps its exact text ({@code 10.50}, {@code 1e2}, a 30-digit decimal)
+ * and duplicate keys survive. Anything saved or opened in a tab uses the unmodified body.
  */
 public final class HttpResponseFormat {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final JsonFactory JSON = new JsonFactory();
+
+    /**
+     * What the response viewer shows for a body: the (pretty-printed) {@code text}, cut to the viewer's limit
+     * when {@code clipped} — {@code totalChars} is the uncut length, for the visible "truncated" line — or no
+     * text at all for a {@code binary} payload.
+     */
+    public record BodyView(String text, int totalChars, boolean clipped, boolean binary) {}
+
+    /** Builds the viewer's body for {@code r}, showing at most {@code maxChars} characters. Pure. */
+    public static BodyView view(HttpResult r, int maxChars) {
+        if (r.failed()) {
+            return new BodyView("", 0, false, false);
+        }
+        if (r.binary()) {
+            return new BodyView("", 0, false, true);
+        }
+        String pretty = prettyBody(r.body(), r.contentType());
+        if (pretty.length() <= maxChars) {
+            return new BodyView(pretty, pretty.length(), false, false);
+        }
+        int cut = maxChars;
+        if (cut > 0 && Character.isHighSurrogate(pretty.charAt(cut - 1))) {
+            cut--; // never split a surrogate pair
+        }
+        return new BodyView(pretty.substring(0, cut), pretty.length(), true, false);
+    }
 
     private HttpResponseFormat() {}
 
@@ -43,7 +80,13 @@ public final class HttpResponseFormat {
         for (String[] h : r.headers()) {
             sb.append(h[0]).append(": ").append(h[1]).append('\n');
         }
-        sb.append('\n').append(prettyBody(r.body(), r.contentType()));
+        // The body exactly as the server sent it — a saved report must not carry the viewer's reformatting.
+        sb.append('\n').append(r.binary() ? "(binary body, " + humanSize(r.sizeBytes()) + " — not shown)" : r.body());
+        if (r.truncated()) {
+            sb.append("\n… [truncated: only the first ")
+                    .append(humanSize(r.sizeBytes()))
+                    .append(" were received]");
+        }
         sb.append("\n\n— ")
                 .append(r.status())
                 .append("  ·  ")
@@ -53,7 +96,10 @@ public final class HttpResponseFormat {
         return sb.toString();
     }
 
-    /** Pretty-prints a JSON body (by content type); other bodies are returned unchanged. */
+    /**
+     * Pretty-prints a JSON body (by content type) without changing any value; other bodies, and JSON that
+     * does not parse, are returned unchanged.
+     */
     public static String prettyBody(String body, String contentType) {
         if (body == null) {
             return "";
@@ -62,8 +108,7 @@ public final class HttpResponseFormat {
                 && contentType.toLowerCase(java.util.Locale.ROOT).contains("json")
                 && !body.isBlank()) {
             try {
-                Object tree = MAPPER.readValue(body, Object.class);
-                return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(tree);
+                return reindentJson(body);
             } catch (Exception e) {
                 return body; // not valid JSON after all — show as-is
             }
@@ -71,7 +116,29 @@ public final class HttpResponseFormat {
         return body;
     }
 
-    static String humanSize(long bytes) {
+    /**
+     * Copies the JSON token stream through a pretty-printing generator. Going through a tree (the old
+     * {@code readValue(Object.class)}) parsed every number into a {@code double}/{@code int} and every object
+     * into a map, so {@code 10.50} became {@code 10.5}, {@code 1e2} became {@code 100.0}, long decimals lost
+     * digits and a repeated key vanished — the viewer showed data the server never sent.
+     */
+    private static String reindentJson(String body) throws IOException {
+        StringWriter out = new StringWriter(body.length() + body.length() / 4);
+        try (JsonParser parser = JSON.createParser(body);
+                JsonGenerator gen = JSON.createGenerator(out)) {
+            gen.setPrettyPrinter(new DefaultPrettyPrinter().withRootSeparator("\n"));
+            for (JsonToken t = parser.nextToken(); t != null; t = parser.nextToken()) {
+                if (t == JsonToken.VALUE_NUMBER_INT || t == JsonToken.VALUE_NUMBER_FLOAT) {
+                    gen.writeNumber(parser.getText()); // the number's own text, verbatim
+                } else {
+                    gen.copyCurrentEvent(parser);
+                }
+            }
+        }
+        return out.toString();
+    }
+
+    public static String humanSize(long bytes) {
         if (bytes < 1024) {
             return bytes + " B";
         }

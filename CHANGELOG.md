@@ -217,6 +217,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rerun test / rerun failed: parameterized invocations collapse to their method, Maven reruns no longer
   fail a multi-module build on modules without the selected test, and an up-to-date Gradle test task shows
   its existing results instead of an empty tree.
+- Exports no longer lose or change content while reporting success. Markdown → PDF keeps the source's
+  spacing around inline styles (`**world**!`, `un*real*ly`, `` `Ctrl`+`C` ``), wraps long code-block lines
+  and expands tabs instead of clipping them or printing `?`, hard-breaks words wider than the page (URLs,
+  table cells), and draws CJK, Arabic, Hebrew, Thai and other scripts with an installed system font; any
+  character no font can draw is counted and the status says so. Word/OpenDocument exports keep code blocks,
+  quotes and images inside list items, task checkboxes, raw HTML and footnotes. CSV → Excel/OpenDocument
+  leaves values such as `12D`, `5F` and 19-digit ids as text, and CSV → PDF/Print shows cells verbatim
+  (`__init__`, `2*3*4`, `List<String>`) with the same columns as the grid, including pipe-delimited files.
+
+- HTTP Client: a request body that starts with `<` (XML, HTML, SOAP) is sent as the body instead of being
+  mistaken for a file reference, and a missing body file stops the request with a warning instead of sending
+  it empty. Uploads and downloads are byte-exact (`< file`, `>>`), responses over 50 MB are cut with a visible
+  marker, and a running request can be cancelled (`HTTP: Cancel Running Request` or the Cancel button) so a
+  hung or streaming response no longer blocks later runs. The response view pretty-prints JSON without
+  altering numbers or dropping duplicate keys, marks a truncated view, formats in the background, and Save /
+  Open in tab use the response as received. Comment lines between headers are no longer sent as headers.
+
+- Dropped or pasted images whose names contain spaces or parentheses now insert a working Markdown link.
+  Image and binary (hex) tabs load in the background, and very large images are shown at reduced resolution
+  instead of exhausting memory. Markdown lint no longer flags URLs that are already links or `m[i][j]` in
+  inline code, and its fixer no longer turns a tab-indented code line into a heading or leaves part of a
+  trailing `...`. systemd `OnCalendar` accepts a time zone and `Mon-Fri`, the Dockerfile preview shows the
+  real base image after `FROM --platform=…`, and `.editorconfig` `unset` clears the inherited value.
 
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the

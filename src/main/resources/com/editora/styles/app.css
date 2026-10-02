@@ -3524,6 +3524,8 @@
 }
 .image-viewer-holder { -fx-background-color: -color-bg-default; }
 .image-viewer-error { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.05em; }
+.image-viewer-loading { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.05em; }
+.image-viewer-note { -fx-text-fill: -color-fg-muted; -fx-padding: 0 4 0 10; }
 
 /* PDF viewer — mirrors the image viewer, plus page navigation. */
 .pdf-viewer { -fx-background-color: -color-bg-default; }
@@ -3571,6 +3573,7 @@
     -fx-padding: 1 8 1 8;
 }
 .hex-viewer-error { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.05em; }
+.hex-viewer-loading { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.05em; }
 /* The dump area: monospace, theme background/foreground, no line-number gutter. */
 .hex-viewer-area {
     -fx-font-family: "JetBrains Mono", "Consolas", "Menlo", monospace;

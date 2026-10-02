@@ -63,20 +63,22 @@ class HttpRequestParseTest {
     }
 
     @Test
-    void rendererPrettyPrintsJsonAndAddsStatusFooter() {
+    void rendererKeepsTheBodyAsReceivedAndAddsStatusFooter() {
         HttpResult r = new HttpResult(
                 200,
                 java.util.List.<String[]>of(new String[] {"content-type", "application/json"}),
-                "{\"a\":1}",
+                "{\"a\":1.50}",
                 "application/json",
                 12,
                 7,
                 null);
         String out = HttpResponseFormat.render(r);
         assertTrue(out.startsWith("HTTP 200\n"));
-        assertTrue(out.contains("\"a\" : 1")); // pretty-printed
+        assertTrue(out.contains("\n{\"a\":1.50}\n"), "a saved report carries the body verbatim: " + out);
         assertTrue(out.contains("200"));
         assertTrue(out.contains("12 ms"));
+        // The viewer is what pretty-prints.
+        assertTrue(HttpResponseFormat.view(r, 1000).text().contains("\"a\" : 1.50"));
     }
 
     @Test
@@ -101,6 +103,74 @@ class HttpRequestParseTest {
         assertTrue(
                 p.warning() != null && p.warning().contains("blank line"),
                 "the malformed shape is surfaced, not silently dropped: " + p.warning());
+    }
+
+    // --- bodies that start with '<' (XML / HTML / SOAP) ----------------------------------------------
+
+    @Test
+    void anXmlBodyIsAnInlineBodyNotAFileReference() {
+        Parsed p = HttpFile.parseRequest("""
+                POST https://example.com/soap
+                Content-Type: text/xml
+
+                <?xml version="1.0"?>
+                <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+                  <soap:Body/>
+                </soap:Envelope>""");
+        assertNull(p.bodyRef(), "\"<?xml …\" is not \"< path\"");
+        assertTrue(p.body().startsWith("<?xml version=\"1.0\"?>\n<soap:Envelope"), p.body());
+        assertTrue(p.body().endsWith("</soap:Envelope>"), p.body());
+
+        Parsed html = HttpFile.parseRequest("PUT https://example.com/page\n\n<html><body>hi</body></html>");
+        assertNull(html.bodyRef());
+        assertEquals("<html><body>hi</body></html>", html.body());
+
+        Parsed doctype = HttpFile.parseRequest("PUT https://example.com/page\n\n<!DOCTYPE html>\n<p>x</p>");
+        assertNull(doctype.bodyRef());
+        assertEquals("<!DOCTYPE html>\n<p>x</p>", doctype.body());
+    }
+
+    @Test
+    void aFileReferenceNeedsWhitespaceAfterTheAngleBracket() {
+        assertEquals(
+                "./body.xml",
+                HttpFile.parseRequest("POST https://x.test/\n\n< ./body.xml")
+                        .bodyRef()
+                        .path());
+        assertEquals(
+                "body.json",
+                HttpFile.parseRequest("POST https://x.test/\n\n<\tbody.json")
+                        .bodyRef()
+                        .path());
+        HttpFile.BodyRef substituted =
+                HttpFile.parseRequest("POST https://x.test/\n\n<@ ./body.json").bodyRef();
+        assertTrue(substituted.substitute());
+        assertEquals("./body.json", substituted.path());
+        assertNull(substituted.encoding());
+        HttpFile.BodyRef encoded = HttpFile.parseRequest("POST https://x.test/\n\n<@utf-16 body.json")
+                .bodyRef();
+        assertEquals("utf-16", encoded.encoding());
+        assertEquals("body.json", encoded.path());
+        // "<" alone, or "<@enc" with no path, names no file: inline text.
+        assertNull(HttpFile.parseRequest("POST https://x.test/\n\n<").bodyRef());
+        assertNull(HttpFile.parseRequest("POST https://x.test/\n\n<@latin1").bodyRef());
+    }
+
+    @Test
+    void commentLinesInsideTheHeaderBlockAreNeitherHeadersNorWarnings() {
+        Parsed p = HttpFile.parseRequest("""
+                GET https://example.com/
+                Accept: application/json
+                #Authorization: Bearer old-token
+                # switched to the key below
+                // X-Debug: 1
+                X-Api-Key: abc
+
+                """);
+        assertEquals(2, p.headers().size(), "only the two real headers");
+        assertEquals("Accept", p.headers().get(0)[0]);
+        assertEquals("X-Api-Key", p.headers().get(1)[0]);
+        assertNull(p.warning(), "a comment is not a malformed header");
     }
 
     @Test

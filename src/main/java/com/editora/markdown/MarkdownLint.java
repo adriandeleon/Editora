@@ -283,7 +283,7 @@ public final class MarkdownLint {
                 while (url.find()) {
                     int s = url.start();
                     char before = s > 0 ? line.charAt(s - 1) : ' ';
-                    if (before != '(' && before != '<' && !inInlineCode(line, s)) {
+                    if (before != '(' && before != '<' && !inInlineCode(line, s) && !inLinkTextOrTag(line, s)) {
                         add(
                                 out,
                                 off,
@@ -296,7 +296,8 @@ public final class MarkdownLint {
             // Broken full reference links: [text][label] with no matching definition.
             Matcher ref = FULL_REF.matcher(line);
             while (ref.find()) {
-                if (!defined.contains(normalizeLabel(ref.group(1)))) {
+                // `m[i][j]` in inline code is array indexing, not a reference link.
+                if (!inInlineCode(line, ref.start()) && !defined.contains(normalizeLabel(ref.group(1)))) {
                     add(
                             out,
                             off,
@@ -423,6 +424,24 @@ public final class MarkdownLint {
             }
         }
         return (ticks & 1) == 1;
+    }
+
+    /**
+     * Whether the URL starting at {@code idx} is already part of a link rather than bare: it sits inside
+     * {@code [...]} (link text, as in {@code [https://x.io](https://x.io)}, or a shortcut reference) or inside
+     * an HTML tag (an {@code href="https://…"} / {@code src="https://…"} attribute).
+     */
+    static boolean inLinkTextOrTag(String line, int idx) {
+        int open = line.lastIndexOf('[', idx - 1);
+        if (open >= 0 && line.lastIndexOf(']', idx - 1) < open && line.indexOf(']', idx) >= 0) {
+            return true;
+        }
+        int lt = line.lastIndexOf('<', idx - 1);
+        if (lt < 0 || line.lastIndexOf('>', idx - 1) > lt || line.indexOf('>', idx) < 0 || lt + 1 >= line.length()) {
+            return false;
+        }
+        char tag = line.charAt(lt + 1);
+        return Character.isLetter(tag) || tag == '/';
     }
 
     private static String normalizeLabel(String label) {

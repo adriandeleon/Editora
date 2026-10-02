@@ -67,6 +67,35 @@ public final class EditorConfigParser {
         return (t.startsWith("#") || t.startsWith(";")) ? "" : line;
     }
 
+    /**
+     * Overlays one section's raw values onto the accumulated ones (lower precedence first). The special value
+     * {@code unset} <em>removes</em> whatever was inherited for that key — per the spec it returns the property
+     * to the editor's own default — while an unrecognized key or an invalid value is ignored, leaving the
+     * inherited value in place (a typo must not silently clear a parent's setting).
+     */
+    public static void overlay(Map<String, String> accumulated, Map<String, String> section) {
+        for (Map.Entry<String, String> e : section.entrySet()) {
+            if ("unset".equals(e.getValue())) {
+                accumulated.remove(e.getKey());
+            } else if (isValid(e.getKey(), e.getValue())) {
+                accumulated.put(e.getKey(), e.getValue());
+            }
+        }
+    }
+
+    private static boolean isValid(String key, String value) {
+        return switch (key) {
+            case "indent_style" -> insertSpaces(value) != null;
+            case "indent_size" -> "tab".equals(value) || positiveInt(value) != null;
+            case "tab_width" -> positiveInt(value) != null;
+            case "end_of_line" -> endOfLine(value) != null;
+            case "charset" -> charset(value) != null;
+            case "trim_trailing_whitespace", "insert_final_newline" -> bool(value) != null;
+            case "max_line_length" -> maxLineLength(value) != null;
+            default -> false;
+        };
+    }
+
     /** Converts a section's raw key→value map to typed properties; unrecognized/invalid values are dropped. */
     public static EditorConfigProperties toProperties(Map<String, String> raw) {
         if (raw == null || raw.isEmpty()) {

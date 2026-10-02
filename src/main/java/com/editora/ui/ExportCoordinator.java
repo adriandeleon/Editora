@@ -9,7 +9,7 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.markdown.MarkdownTable;
+import com.editora.markdown.CsvTableDocument;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -73,10 +73,14 @@ final class ExportCoordinator {
         printService.shutdown();
     }
 
-    /** Exports a CSV as a PDF by reusing the Markdown-table → PDF pipeline (the grid's right-click menu). */
+    /**
+     * Exports a CSV as a PDF through the table renderer of the Markdown → PDF pipeline (the grid's right-click
+     * menu). The table is built from the parsed rows, not from Markdown text, so cells are never re-parsed as
+     * markup and the columns are the ones the grid shows (see {@link CsvTableDocument}).
+     */
     void csvExportPdf(String csvText, String baseName) {
-        String md = MarkdownTable.fromCsv(csvText);
-        if (md == null) {
+        org.commonmark.node.Node table = CsvTableDocument.fromCsv(csvText);
+        if (table == null) {
             host.setStatus(tr("status.csv.empty"));
             return;
         }
@@ -85,13 +89,13 @@ final class ExportCoordinator {
             return;
         }
         host.setStatus(tr("status.pdf.exporting"));
-        pdfService.exportMarkdown(md, null, host.settings().getPdfPageSize(), null, f.toPath(), r -> reportPdf(r, f));
+        pdfService.exportDocument(table, host.settings().getPdfPageSize(), f.toPath(), r -> reportPdf(r, f));
     }
 
-    /** Opens the print preview for a CSV by reusing the Markdown-table → print pipeline. */
+    /** Opens the print preview for a CSV through the same directly-built table (see {@link #csvExportPdf}). */
     void csvPrint(String csvText) {
-        String md = MarkdownTable.fromCsv(csvText);
-        if (md == null) {
+        org.commonmark.node.Node table = CsvTableDocument.fromCsv(csvText);
+        if (table == null) {
             host.setStatus(tr("status.csv.empty"));
             return;
         }
@@ -101,7 +105,7 @@ final class ExportCoordinator {
             return;
         }
         host.setStatus(tr("status.print.preparing"));
-        printService.prepareMarkdown(md, null, prepared -> openPrintPreview(job, prepared));
+        printService.prepareDocument(table, null, prepared -> openPrintPreview(job, prepared));
     }
 
     /** Exports the complete Project Map layout—not merely the visible viewport—to a paginated PDF. */
@@ -360,7 +364,11 @@ final class ExportCoordinator {
     /** Reports a PDF export result: status + (on failure) an error dialog. */
     private void reportPdf(com.editora.pdf.PdfExportService.Result r, java.io.File f) {
         if (r.ok()) {
-            host.setStatus(tr("status.pdf.exported", f.toString()));
+            // Characters no installed font could draw were written as "?": say so rather than a bare "Exported".
+            host.setStatus(
+                    r.unrendered() > 0
+                            ? tr("status.pdf.exportedUnrendered", f.toString(), r.unrendered())
+                            : tr("status.pdf.exported", f.toString()));
         } else {
             String msg = String.valueOf(r.message());
             host.setStatus(tr("status.pdf.exportFailed", msg));

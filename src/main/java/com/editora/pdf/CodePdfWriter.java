@@ -35,9 +35,11 @@ public final class CodePdfWriter {
 
     /**
      * Writes {@code text} to {@code out} as a PDF. {@code spans} (highlight) may be null for plain text;
-     * {@code title} is shown in the footer. Tabs expand by {@code tabSize}.
+     * {@code title} is shown in the footer. Tabs expand by {@code tabSize}. Characters JetBrains Mono lacks
+     * (CJK, Arabic, …) are drawn with a system fallback font; returns how many could not be drawn at all and
+     * were replaced by {@code ?}.
      */
-    public static void write(
+    public static int write(
             String text,
             StyleSpans<Collection<String>> spans,
             boolean lineNumbers,
@@ -45,10 +47,45 @@ public final class CodePdfWriter {
             String pageSizeKey,
             Path out)
             throws IOException {
+        return write(text, spans, lineNumbers, tabSize, pageSizeKey, out, SystemFontFiles.get());
+    }
+
+    /** As {@link #write(String, StyleSpans, boolean, int, String, Path)} with explicit fallback font files. */
+    static int write(
+            String text,
+            StyleSpans<Collection<String>> spans,
+            boolean lineNumbers,
+            int tabSize,
+            String pageSizeKey,
+            Path out,
+            List<Path> fallbackFonts)
+            throws IOException {
+        try {
+            return render(text, spans, lineNumbers, tabSize, pageSizeKey, out, fallbackFonts);
+        } catch (IOException | RuntimeException e) {
+            if (fallbackFonts.isEmpty()) {
+                throw e;
+            }
+            // A system font PDFBox turns out unable to embed must not cost the export: retry with the bundled
+            // fonts only (a failure unrelated to fonts just happens again and propagates).
+            return render(text, spans, lineNumbers, tabSize, pageSizeKey, out, List.of());
+        }
+    }
+
+    private static int render(
+            String text,
+            StyleSpans<Collection<String>> spans,
+            boolean lineNumbers,
+            int tabSize,
+            String pageSizeKey,
+            Path out,
+            List<Path> fallbackFonts)
+            throws IOException {
         PDRectangle pageSize = pageRectangle(pageSizeKey);
         List<List<PdfText.Run>> sourceLines = PdfText.splitIntoLineRuns(text, spans, Math.max(1, tabSize));
 
-        try (PDDocument doc = new PDDocument()) {
+        try (PDDocument doc = new PDDocument();
+                PdfGlyphs glyphs = new PdfGlyphs(doc, fallbackFonts)) {
             PDType0Font regular = font(doc, "JetBrainsMono-Regular");
             PDType0Font bold = font(doc, "JetBrainsMono-Bold");
             PDType0Font italic = font(doc, "JetBrainsMono-Italic");
@@ -78,13 +115,14 @@ public final class CodePdfWriter {
                     if (lineNumbers && first) {
                         drawLineNumber(page.cs, regular, lineNo, MARGIN + digits * charWidth, page.y);
                     }
-                    drawRuns(page.cs, vline, codeX, page.y, regular, bold, italic, boldItalic);
+                    drawRuns(page.cs, glyphs, vline, codeX, page.y, charWidth, regular, bold, italic, boldItalic);
                     page.y -= LINE_HEIGHT;
                     first = false;
                 }
             }
             page.finish(regular);
             doc.save(out.toFile());
+            return glyphs.missing();
         }
     }
 
@@ -100,50 +138,24 @@ public final class CodePdfWriter {
         cs.endText();
     }
 
+    /** Draws one visual line's runs on the monospace grid (see {@link PdfGlyphs#showOnGrid}). */
     private static void drawRuns(
             PDPageContentStream cs,
+            PdfGlyphs glyphs,
             List<PdfText.Run> runs,
             float x,
             float y,
+            float charWidth,
             PDType0Font regular,
             PDType0Font bold,
             PDType0Font italic,
             PDType0Font boldItalic)
             throws IOException {
-        if (runs.isEmpty()) {
-            return;
-        }
-        cs.beginText();
-        cs.newLineAtOffset(x, y);
+        int col = 0;
         for (PdfText.Run r : runs) {
             PDType0Font f = r.bold() ? (r.italic() ? boldItalic : bold) : (r.italic() ? italic : regular);
-            cs.setFont(f, FONT_SIZE);
             cs.setNonStrokingColor(r.color());
-            safeShowText(cs, f, r.text());
-        }
-        cs.endText();
-    }
-
-    /** Shows text, falling back to per-codepoint replacement for glyphs the font lacks (e.g. emoji/CJK). */
-    private static void safeShowText(PDPageContentStream cs, PDType0Font font, String text) throws IOException {
-        try {
-            cs.showText(text);
-        } catch (Exception ex) {
-            // Replace each character the font can't render with a single '?', preserving the one-char-
-            // per-column width that the monospace layout assumes. Probe with encode() (what showText
-            // uses) — getStringWidth() can succeed for a char the embedded subset has no glyph for
-            // (e.g. U+2011) and then throw only here at draw time.
-            StringBuilder sb = new StringBuilder(text.length());
-            text.codePoints().forEach(cp -> {
-                String s = new String(Character.toChars(cp));
-                try {
-                    font.encode(s);
-                    sb.append(s);
-                } catch (Exception e) {
-                    sb.append('?');
-                }
-            });
-            cs.showText(sb.toString());
+            col += glyphs.showOnGrid(cs, f, FONT_SIZE, charWidth, r.text(), x + col * charWidth, y);
         }
     }
 

@@ -41,6 +41,30 @@ class SpreadsheetWriterTest {
     }
 
     @Test
+    void textThatOnlyLooksNumericStaysTextInBothFormats(@TempDir Path dir) throws Exception {
+        List<List<String>> rows = List.of(
+                List.of("part", "size", "order", "price"), List.of("12D", "5F", "1234567890123456789", "10.50"));
+        Path xlsx = dir.resolve("ids.xlsx");
+        XlsxWriter.write(rows, true, xlsx);
+        try (Workbook wb = new XSSFWorkbook(Files.newInputStream(xlsx))) {
+            Sheet sheet = wb.getSheetAt(0);
+            for (int c = 0; c < 3; c++) {
+                assertEquals(CellType.STRING, sheet.getRow(1).getCell(c).getCellType(), "column " + c);
+                assertEquals(rows.get(1).get(c), sheet.getRow(1).getCell(c).getStringCellValue());
+            }
+            assertEquals(CellType.NUMERIC, sheet.getRow(1).getCell(3).getCellType());
+            assertEquals(10.5, sheet.getRow(1).getCell(3).getNumericCellValue());
+        }
+
+        String ods = OdsWriter.contentXml(rows, true);
+        assertTrue(ods.contains("office:value-type=\"string\"><text:p>12D</text:p>"), ods);
+        assertTrue(ods.contains("office:value-type=\"string\"><text:p>5F</text:p>"), ods);
+        assertTrue(ods.contains("office:value-type=\"string\"><text:p>1234567890123456789</text:p>"), ods);
+        assertTrue(ods.contains("office:value-type=\"float\" office:value=\"10.5\"><text:p>10.50</text:p>"), ods);
+        assertTrue(!ods.contains("E18"), "no rounded scientific-notation value: " + ods);
+    }
+
+    @Test
     void odsHasMimetypeStoredFirst(@TempDir Path dir) throws Exception {
         Path out = dir.resolve("out.ods");
         OdsWriter.write(List.of(List.of("h"), List.of("1")), true, out);

@@ -32,6 +32,7 @@ class ExportCoordinatorFxTest {
         private final Settings settings = new Settings();
         private EditorBuffer active;
         private String status;
+        private java.util.function.Consumer<String> onStatus = message -> {};
 
         @Override
         public Settings settings() {
@@ -46,6 +47,42 @@ class ExportCoordinatorFxTest {
         @Override
         public void setStatus(String message) {
             status = message;
+            onStatus.accept(message);
+        }
+    }
+
+    @Test
+    void csvPdfExportKeepsCellsLiteralAndSaysWhatItCouldNotRender() throws Exception {
+        Path output = temp.resolve("table.pdf");
+        Host host = new Host();
+        java.util.concurrent.CountDownLatch finished = new java.util.concurrent.CountDownLatch(1);
+        host.onStatus = message -> {
+            if (!tr("status.pdf.exporting").equals(message)) {
+                finished.countDown();
+            }
+        };
+        ExportCoordinator[] exports = new ExportCoordinator[1];
+        try {
+            FxTestSupport.runOnFx(() -> {
+                exports[0] = new ExportCoordinator(
+                        host, null, null, null, path -> fail("PDF export opens nothing"), chooser -> output.toFile());
+                // U+0378 is an unassigned code point: no font on any machine has a glyph for it.
+                exports[0].csvExportPdf("name|value\n__init__|2*3*4\nmissing|\u0378\u0378\n", "table.csv");
+            });
+            assertTrue(finished.await(30, java.util.concurrent.TimeUnit.SECONDS), "the export should finish");
+            assertEquals(
+                    tr("status.pdf.exportedUnrendered", output.toString(), 2),
+                    host.status,
+                    "an export with '?' substitutions must not just say \"exported\"");
+            String text;
+            try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(output.toFile())) {
+                text = new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
+            }
+            assertTrue(text.contains("name value"), text);
+            assertTrue(text.contains("__init__ 2*3*4"), "cells are not re-parsed as Markdown: " + text);
+            assertTrue(text.contains("missing ??"), text);
+        } finally {
+            FxTestSupport.runOnFx(() -> exports[0].shutdown());
         }
     }
 

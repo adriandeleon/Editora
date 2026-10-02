@@ -23,13 +23,16 @@ import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
+import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.gfm.tables.TableBlock;
 import org.commonmark.ext.gfm.tables.TableCell;
 import org.commonmark.ext.gfm.tables.TableRow;
+import org.commonmark.ext.task.list.items.TaskListItemMarker;
 import org.commonmark.node.BlockQuote;
 import org.commonmark.node.BulletList;
 import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.Heading;
+import org.commonmark.node.HtmlBlock;
 import org.commonmark.node.Image;
 import org.commonmark.node.IndentedCodeBlock;
 import org.commonmark.node.ListItem;
@@ -42,9 +45,14 @@ import org.commonmark.node.ThematicBreak;
  * Renders a Markdown document to a MS Word {@code .docx} via Apache POI's XWPF API, walking the same
  * CommonMark AST ({@link MarkdownRenderer#parseToDocument}) as the PDF/preview renderers. Covers headings,
  * paragraphs (bold/italic/strikethrough/underline/inline-code/links), bullet + ordered lists (one level of
- * nesting, prefix-numbered to avoid the heavy XWPF numbering API), block quotes, fenced/indented code
- * blocks, GFM tables, thematic breaks, and local/{@code data:} images. Mermaid/unknown fenced blocks fall
- * back to a monospace code block; remote/SVG images degrade to alt text.
+ * nesting, prefix-numbered to avoid the heavy XWPF numbering API; task items keep their checkbox), block
+ * quotes, fenced/indented code blocks, GFM tables, thematic breaks, and local/{@code data:} images.
+ * Mermaid/unknown fenced blocks fall back to a monospace code block; remote/SVG images degrade to alt text.
+ *
+ * <p>Nothing with text in it is skipped: a list item's non-paragraph children (a code block, a quote, a
+ * table) go through the same block renderer, raw HTML is written as its source (as the preview shows it), a
+ * block type this writer does not know becomes a plain paragraph, and footnote definitions are written at the
+ * end of the document.
  */
 public final class DocxWriter {
 
@@ -59,6 +67,9 @@ public final class DocxWriter {
         try (XWPFDocument doc = new XWPFDocument()) {
             for (Node n = ast.getFirstChild(); n != null; n = n.getNext()) {
                 block(doc, n, baseDir, mmdc, 0);
+            }
+            for (FootnoteDefinition def : InlineRun.footnotes(ast)) {
+                footnote(doc, def, baseDir, mmdc);
             }
             try (OutputStream os = Files.newOutputStream(out)) {
                 doc.write(os);
@@ -94,9 +105,9 @@ public final class DocxWriter {
                 addRuns(par, InlineRun.flatten(p), baseDir, false, 0);
             }
         } else if (n instanceof BulletList bl) {
-            list(doc, bl, baseDir, indentLevel, false, 0);
+            list(doc, bl, baseDir, mmdc, indentLevel, false, 0);
         } else if (n instanceof OrderedList ol) {
-            list(doc, ol, baseDir, indentLevel, true, ol.getMarkerStartNumber());
+            list(doc, ol, baseDir, mmdc, indentLevel, true, ol.getMarkerStartNumber());
         } else if (n instanceof BlockQuote bq) {
             for (Node c = bq.getFirstChild(); c != null; c = c.getNext()) {
                 int before = doc.getParagraphs().size();
@@ -110,19 +121,64 @@ public final class DocxWriter {
                     && embedBytes(doc.createParagraph(), OfficeImages.renderMermaid(mmdc, f.getLiteral()), null)) {
                 return; // rendered the ```mermaid block as a diagram image
             }
-            codeBlock(doc, f.getLiteral());
+            codeBlock(doc, f.getLiteral(), indentLevel);
         } else if (n instanceof IndentedCodeBlock ic) {
-            codeBlock(doc, ic.getLiteral());
+            codeBlock(doc, ic.getLiteral(), indentLevel);
         } else if (n instanceof ThematicBreak) {
             XWPFParagraph p = doc.createParagraph();
             p.setBorderBottom(Borders.SINGLE);
         } else if (n instanceof TableBlock t) {
             table(doc, t, baseDir);
+        } else if (n instanceof HtmlBlock hb) {
+            // An HTML comment is invisible; other raw HTML is shown as its source, like the preview.
+            if (!MarkdownRenderer.isHtmlComment(hb.getLiteral())) {
+                codeBlock(doc, hb.getLiteral(), indentLevel);
+            }
+        } else if (n instanceof FootnoteDefinition) {
+            // written at the end of the document by write()
+        } else {
+            // A block type with no dedicated rendering: keep its text rather than dropping it.
+            List<InlineRun> runs = InlineRun.flatten(n);
+            if (runs.stream().anyMatch(r -> !r.text().isBlank())) {
+                XWPFParagraph par = doc.createParagraph();
+                if (indentLevel > 0) {
+                    par.setIndentationLeft(indentLevel * 360);
+                }
+                addRuns(par, runs, baseDir, false, 0);
+            }
+        }
+    }
+
+    /** A footnote definition: its {@code [label]} marker leading the first paragraph, then any further blocks. */
+    private static void footnote(XWPFDocument doc, FootnoteDefinition def, Path baseDir, List<String> mmdc) {
+        String marker = InlineRun.footnoteMarker(def.getLabel()) + " ";
+        boolean first = true;
+        for (Node c = def.getFirstChild(); c != null; c = c.getNext()) {
+            if (first && c instanceof Paragraph p) {
+                XWPFParagraph par = doc.createParagraph();
+                par.createRun().setText(marker);
+                addRuns(par, InlineRun.flatten(p), baseDir, false, 0);
+            } else {
+                if (first) {
+                    doc.createParagraph().createRun().setText(marker);
+                }
+                block(doc, c, baseDir, mmdc, 1);
+            }
+            first = false;
+        }
+        if (first) {
+            doc.createParagraph().createRun().setText(marker); // an empty definition still shows its label
         }
     }
 
     private static void list(
-            XWPFDocument doc, Node listNode, Path baseDir, int indentLevel, boolean ordered, int start) {
+            XWPFDocument doc,
+            Node listNode,
+            Path baseDir,
+            List<String> mmdc,
+            int indentLevel,
+            boolean ordered,
+            int start) {
         int idx = ordered ? Math.max(1, start) : 0;
         for (Node item = listNode.getFirstChild(); item != null; item = item.getNext()) {
             if (!(item instanceof ListItem)) {
@@ -131,11 +187,13 @@ public final class DocxWriter {
             String marker = ordered ? (idx++ + ". ") : "• ";
             boolean first = true;
             for (Node c = item.getFirstChild(); c != null; c = c.getNext()) {
-                if (c instanceof BulletList nestedB) {
-                    list(doc, nestedB, baseDir, indentLevel + 1, false, 0);
+                if (c instanceof TaskListItemMarker task) {
+                    marker += task.isChecked() ? "☑ " : "☐ "; // "- [x] done" keeps its state
+                } else if (c instanceof BulletList nestedB) {
+                    list(doc, nestedB, baseDir, mmdc, indentLevel + 1, false, 0);
                 } else if (c instanceof OrderedList nestedO) {
-                    list(doc, nestedO, baseDir, indentLevel + 1, true, nestedO.getMarkerStartNumber());
-                } else if (c instanceof Paragraph p) {
+                    list(doc, nestedO, baseDir, mmdc, indentLevel + 1, true, nestedO.getMarkerStartNumber());
+                } else if (c instanceof Paragraph p && !isBlockImage(p) && InlineRun.soleDisplayMath(p) == null) {
                     XWPFParagraph par = doc.createParagraph();
                     par.setIndentationLeft((indentLevel + 1) * 360);
                     if (first) {
@@ -144,12 +202,22 @@ public final class DocxWriter {
                     }
                     addRuns(par, InlineRun.flatten(p), baseDir, false, 0);
                     first = false;
+                } else {
+                    // Anything else in the item — a code block, a quote, a table, an image, a rule — used to be
+                    // skipped, so "1. Run:" followed by a fenced command lost the command.
+                    if (first) {
+                        XWPFParagraph par = doc.createParagraph();
+                        par.setIndentationLeft((indentLevel + 1) * 360);
+                        par.createRun().setText(marker);
+                        first = false;
+                    }
+                    block(doc, c, baseDir, mmdc, indentLevel + 1);
                 }
             }
         }
     }
 
-    private static void codeBlock(XWPFDocument doc, String text) {
+    private static void codeBlock(XWPFDocument doc, String text, int indentLevel) {
         String[] lines = text.replace("\r\n", "\n").split("\n", -1);
         // drop a trailing empty line from the fence
         int end = lines.length;
@@ -159,6 +227,9 @@ public final class DocxWriter {
         for (int i = 0; i < end; i++) {
             XWPFParagraph p = doc.createParagraph();
             p.setSpacingAfter(0);
+            if (indentLevel > 0) {
+                p.setIndentationLeft(indentLevel * 360); // stays under its list item / quote
+            }
             XWPFRun r = p.createRun();
             r.setFontFamily(MONO);
             r.setFontSize(10);
