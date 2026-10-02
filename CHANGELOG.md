@@ -179,6 +179,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings: search matches the titles and descriptions shown in your language, accepts several words in
   any order, and says when nothing matches; the window always opens fully on the screen its parent is
   on; Reset to Defaults now also restores the keymap immediately.
+- The symbol index and Search Everywhere no longer walk into `.gitignore`d directories: `target/`,
+  `node_modules/` and `build/` are skipped whole instead of being read, listed and counted against the
+  50,000-file cap; an unreadable directory no longer ends the index early; and an index that does reach the
+  cap says so in the status bar. The same pruned walk now backs Find in Files, the TODO scan and the
+  test-source lookups, and the JVM test-report poll no longer re-walks `.git` and `node_modules` every 750 ms.
+
+- Build output is delivered in bounded batches with a line-length cap, so a chatty build (`mvn -X`) no
+  longer stalls the window or its Stop button, and the exit is reported only after the last output has
+  arrived — Go, Cargo and npm test runs no longer lose their final results.
+
+- Stack-trace links and Test Results activation work without a Java language server: a frame such as
+  `at com.foo.Bar.baz(Bar.java:12)` opens `com/foo/Bar.java` under the project's source roots instead of
+  looking for `Bar.java` in the project root, a failed test whose frame cannot be resolved falls back to
+  the test's own source, and a test in a closed file lands on its method instead of line 1.
+
+- Find in Files: an include such as `*.{js,ts}` is one glob; an exclude of `target` or `node_modules`
+  drops everything beneath it with or without ripgrep and in open buffers; `\w`, `\d` and `\b` mean the
+  same in open buffers and replacements as they do in ripgrep; Replace All uses the query its results were
+  found with and refreshes instead of replacing when the fields were edited since; and a superseded search
+  no longer leaves "Searching…" counting up in the status bar.
+
+- `mvnw`/`gradlew` at the project root are used when the build file is in a module, and the
+  workspace-trust prompt is about the folder that ships the wrapper actually launched.
+
+- `Maven: Update Versions` computes from the open `pom.xml` buffer, so unsaved edits are kept; a read-only
+  buffer is left alone and a closed pom is replaced atomically. New Maven Project always uses your own
+  Maven, never a wrapper found in the target folder. A `pom.xml` with a byte-order mark or a declared
+  non-UTF-8 encoding is no longer reported as malformed.
+
+- A run configuration's before-launch step streams into the console, is stopped by Stop, ends with the
+  window, and cannot be started twice by pressing Run again.
+
+- External tools: output larger than the 10 MB capture limit is no longer applied to the buffer or
+  selection; it goes to the tool console with an explanation.
+
+- Rerun test / rerun failed: parameterized invocations collapse to their method, Maven reruns no longer
+  fail a multi-module build on modules without the selected test, and an up-to-date Gradle test task shows
+  its existing results instead of an empty tree.
 
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the

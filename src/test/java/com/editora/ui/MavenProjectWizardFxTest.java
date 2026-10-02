@@ -96,6 +96,49 @@ class MavenProjectWizardFxTest {
         }
     }
 
+    /**
+     * The wizard launches the user's own Maven. A wrapper that happens to sit in the folder the project is
+     * being created in belongs to some other project: it used to be picked up as {@code ./mvnw}, fail the
+     * "is Maven installed?" probe (checked against the JVM's working directory), and — past the probe —
+     * be executed with no workspace-trust prompt.
+     */
+    @Test
+    void aWrapperInTheTargetFolderIsNeverUsedToGenerate() throws Exception {
+        Path parent = Files.createTempDirectory("editora-maven-wrapper");
+        try {
+            boolean windows = System.getProperty("os.name", "")
+                    .toLowerCase(java.util.Locale.ROOT)
+                    .contains("win");
+            Path wrapper = Files.writeString(parent.resolve(windows ? "mvnw.cmd" : "mvnw"), "#!/bin/sh\nexit 99\n");
+            wrapper.toFile().setExecutable(true);
+            MavenProjectCoordinator c = coordinator();
+            AtomicReference<List<String>> argv = new AtomicReference<>();
+            FxTestSupport.runOnFx(() -> c.setRunnerForTest((dir, command, listener) -> {
+                argv.set(command);
+                listener.onExit(1);
+            }));
+
+            MavenProjectSpec spec = new MavenProjectSpec(
+                    quickstart(), "com.example", "demo", "1.0-SNAPSHOT", "com.example.demo", parent);
+            FxTestSupport.runOnFx(() -> c.generate(spec));
+
+            assertNotNull(argv.get());
+            assertFalse(
+                    argv.get().get(0).contains("mvnw"),
+                    "ran the neighbour's wrapper: " + argv.get().get(0));
+            assertEquals("archetype:generate", argv.get().get(argv.get().indexOf("-B") - 1));
+        } finally {
+            deleteRecursively(parent);
+        }
+    }
+
+    @Test
+    void theWizardsMavenIsTheSettingsOverrideElsePlainMvn() {
+        assertEquals(List.of("mvn"), MavenProjectCoordinator.userMaven(""));
+        assertEquals(List.of("mvn"), MavenProjectCoordinator.userMaven(null));
+        assertEquals(List.of("/opt/maven/bin/mvn", "-o"), MavenProjectCoordinator.userMaven("/opt/maven/bin/mvn -o"));
+    }
+
     @Test
     void aSuccessfulRunRegistersAndOpensTheGeneratedProject() throws Exception {
         Path parent = Files.createTempDirectory("editora-maven-ok");
@@ -199,8 +242,8 @@ class MavenProjectWizardFxTest {
     private static final class DecliningOps implements MavenProjectCoordinator.Ops {
 
         @Override
-        public boolean replaceOpenBuffer(java.nio.file.Path file, String text) {
-            return false; // nothing is open in this fixture, so callers fall back to writing the file
+        public com.editora.editor.EditorBuffer openBuffer(java.nio.file.Path file) {
+            return null; // nothing is open in this fixture, so callers fall back to writing the file
         }
 
         @Override

@@ -253,4 +253,54 @@ class PomParserTest {
                 .collect(Collectors.toSet());
         assertTrue(distPrefixes.contains("exec"));
     }
+
+    // --- encoding: the XML parser, not a UTF-8 pre-decode, decides how the bytes read -----------------
+
+    @Test
+    void aPomSavedWithAUtf8ByteOrderMarkParses(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        byte[] xml = MINIMAL.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] withBom = new byte[xml.length + 3];
+        withBom[0] = (byte) 0xEF;
+        withBom[1] = (byte) 0xBB;
+        withBom[2] = (byte) 0xBF;
+        System.arraycopy(xml, 0, withBom, 3, xml.length);
+        Path pom = java.nio.file.Files.write(dir.resolve("pom.xml"), withBom);
+
+        assertEquals("demo", PomParser.parseFile(pom).artifactId(), "a BOM is not \"content in prolog\"");
+    }
+
+    @Test
+    void aPomDeclaringLatin1IsDecodedAsDeclared(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        String xml = """
+                <?xml version="1.0" encoding="ISO-8859-1"?>
+                <project>
+                  <groupId>com.exämple</groupId>
+                  <artifactId>demo</artifactId>
+                  <version>1.0.0</version>
+                  <name>Café</name>
+                </project>
+                """;
+        Path pom = java.nio.file.Files.write(
+                dir.resolve("pom.xml"), xml.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1));
+
+        PomModel model = PomParser.parseFile(pom); // 0xE4 / 0xE9 are not valid UTF-8: this used to throw
+        assertEquals("demo", model.artifactId());
+        assertEquals("com.exämple", model.groupId(), "decoded with the declared charset, not as UTF-8");
+    }
+
+    @Test
+    void decodedTextCarryingAByteOrderMarkStillParses() throws Exception {
+        assertEquals("demo", PomParser.parse("\uFEFF" + MINIMAL).artifactId());
+    }
+
+    @Test
+    void parsingFromBytesKeepsTheDoctypeBan(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        String xxe = """
+                <?xml version="1.0"?>
+                <!DOCTYPE project [<!ENTITY x SYSTEM "file:///etc/passwd">]>
+                <project><artifactId>&x;</artifactId></project>
+                """;
+        Path pom = java.nio.file.Files.writeString(dir.resolve("pom.xml"), xxe);
+        assertThrows(PomParseException.class, () -> PomParser.parseFile(pom));
+    }
 }

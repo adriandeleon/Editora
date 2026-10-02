@@ -332,7 +332,21 @@ final class BuildCoordinator {
     /** The launch argv prefix: the project wrapper when present, else the Settings override, else the tool's
      *  default command. */
     private List<String> executable(Path root) {
-        return tool.executable(root, isWindows(), tool.commandIn(host.settings()));
+        return tool.executable(root, wrapperBoundary(root), isWindows(), tool.commandIn(host.settings()));
+    }
+
+    /**
+     * How far above {@code root} a build wrapper is looked for: the open project's root when {@code root} is
+     * inside it (a module of a multi-module build keeps its {@code mvnw}/{@code gradlew} at the top), else
+     * {@code root} itself — never a folder the user has not opened.
+     */
+    private Path wrapperBoundary(Path root) {
+        Path project = ops.projectRoot();
+        if (project == null) {
+            return root;
+        }
+        Path normalized = project.toAbsolutePath().normalize();
+        return root.toAbsolutePath().normalize().startsWith(normalized) ? normalized : root;
     }
 
     /**
@@ -353,15 +367,21 @@ final class BuildCoordinator {
         if (root == null) {
             return false;
         }
-        Path wrapper = tool.repoWrapper(root, isWindows());
-        if (wrapper == null || ops.isTrusted(root)) {
+        Path wrapper = tool.repoWrapper(root, wrapperBoundary(root), isWindows());
+        if (wrapper == null) {
             return true;
         }
-        if (!ops.confirmTrust(root, wrapper)) {
+        // Trust is asked about the folder that ships the wrapper actually launched — the module's own, or
+        // the project root above it. Trusting a module must not silently cover a script one level up.
+        Path wrapperDir = wrapper.getParent();
+        if (ops.isTrusted(wrapperDir)) {
+            return true;
+        }
+        if (!ops.confirmTrust(wrapperDir, wrapper)) {
             host.setStatus(tr("status.build.untrusted", tool.displayName()));
             return false;
         }
-        ops.trust(root);
+        ops.trust(wrapperDir);
         return true;
     }
 
@@ -490,12 +510,13 @@ final class BuildCoordinator {
         }
         int gen = detectGeneration;
         String override = tool.commandIn(host.settings());
+        Path boundary = wrapperBoundary(root);
         host.setStatus(tr("status.build.loadingTasks", tool.displayName()));
         Thread t = new Thread(
                 () -> {
                     List<String> tasks;
                     try {
-                        tasks = tool.loadTasks(root, isWindows(), override);
+                        tasks = tool.loadTasks(root, boundary, isWindows(), override);
                     } catch (Exception e) {
                         tasks = List.of();
                     }
@@ -537,7 +558,7 @@ final class BuildCoordinator {
     }
 
     void shutdown() {
-        service.stop();
+        service.shutdown();
     }
 
     /** The per-tool toolbar/tool-window icon. A single UI switch (icons can't live in the pure {@code build}

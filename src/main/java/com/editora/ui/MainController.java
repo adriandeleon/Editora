@@ -1264,6 +1264,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         WindowDisposal.runAll(
                 () -> lspManager.close(), // stop this window's language servers and refuse any late restart
                 () -> dapManager.shutdown(), // end the debug session and release the per-window connect worker
+                debugCoordinator == null ? null : () -> debugCoordinator.shutdown(), // its before-launch build
                 () -> git.shutdown(),
                 () -> github.shutdown(), // stop the gh worker thread
                 () -> indexCoordinator.dispose(), // stop the symbol-index walker
@@ -5943,15 +5944,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public boolean replaceOpenBuffer(java.nio.file.Path file, String text) {
-                    EditorBuffer buffer = bufferOf(tabForPath(file));
-                    if (buffer == null) {
-                        return false;
-                    }
-                    // One replaceText, so the whole update is a single undo step rather than one per
-                    // artifact — and the buffer goes dirty, so it is the user who decides to save it.
-                    buffer.getArea().replaceText(text);
-                    return true;
+                public EditorBuffer openBuffer(java.nio.file.Path file) {
+                    return bufferOf(tabForPath(file));
                 }
 
                 @Override
@@ -6669,14 +6663,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void attachDebugger(String className, String host, int port) {
-                    String hint = com.editora.test.TestSourceLocator.fileHint(className, BuildTool.MAVEN);
-                    Path anchor = hint == null ? null : testNavigation.resolveTestSourceFile(hint);
-                    if (anchor == null) {
-                        EditorBuffer b = activeBuffer();
-                        anchor = b == null ? null : b.getPath();
-                    }
                     setStatus(tr("status.testrunner.debugAttaching", port));
-                    debugCoordinator.attachToPort(anchor, host, port);
+                    testNavigation.resolveTestClassAnchor(className, a -> debugCoordinator.attachToPort(a, host, port));
                 }
             });
 

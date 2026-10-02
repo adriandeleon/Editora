@@ -54,13 +54,14 @@ public enum BuildTool {
         }
 
         @Override
-        public List<String> executable(Path root, boolean isWindows, String override) {
-            return BuildExecutable.resolve(wrapperArgv(root, isWindows, "mvnw", "mvnw.cmd"), override, "mvn");
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
+            return BuildExecutable.resolve(
+                    wrapperArgv(root, projectRoot, isWindows, "mvnw", "mvnw.cmd"), override, "mvn");
         }
 
         @Override
-        public Path repoWrapper(Path root, boolean isWindows) {
-            return wrapperFile(root, isWindows, "mvnw", "mvnw.cmd");
+        public Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
+            return wrapperFile(root, projectRoot, isWindows, "mvnw", "mvnw.cmd");
         }
     },
 
@@ -84,7 +85,7 @@ public enum BuildTool {
         }
 
         @Override
-        public List<String> executable(Path root, boolean isWindows, String override) {
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
             String pm;
             try {
                 pm = npmPackageManager(root, NpmProject.parse(Files.readString(root.resolve("package.json"))));
@@ -115,7 +116,7 @@ public enum BuildTool {
         }
 
         @Override
-        public List<String> executable(Path root, boolean isWindows, String override) {
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
             return BuildExecutable.resolve(List.of(), override, "cargo");
         }
     },
@@ -142,7 +143,7 @@ public enum BuildTool {
         }
 
         @Override
-        public List<String> executable(Path root, boolean isWindows, String override) {
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
             return BuildExecutable.resolve(List.of(), override, "go");
         }
     },
@@ -168,13 +169,14 @@ public enum BuildTool {
         }
 
         @Override
-        public List<String> executable(Path root, boolean isWindows, String override) {
-            return BuildExecutable.resolve(wrapperArgv(root, isWindows, "gradlew", "gradlew.bat"), override, "gradle");
+        public List<String> executable(Path root, Path projectRoot, boolean isWindows, String override) {
+            return BuildExecutable.resolve(
+                    wrapperArgv(root, projectRoot, isWindows, "gradlew", "gradlew.bat"), override, "gradle");
         }
 
         @Override
-        public Path repoWrapper(Path root, boolean isWindows) {
-            return wrapperFile(root, isWindows, "gradlew", "gradlew.bat");
+        public Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
+            return wrapperFile(root, projectRoot, isWindows, "gradlew", "gradlew.bat");
         }
 
         @Override
@@ -183,8 +185,9 @@ public enum BuildTool {
         }
 
         @Override
-        public List<String> loadTasks(Path root, boolean isWindows, String override) throws Exception {
-            List<String> argv = new ArrayList<>(executable(root, isWindows, override));
+        public List<String> loadTasks(Path root, Path projectRoot, boolean isWindows, String override)
+                throws Exception {
+            List<String> argv = new ArrayList<>(executable(root, projectRoot, isWindows, override));
             argv.add("tasks");
             argv.add("--all");
             // Gradle is a JVM: in the C locale it cannot open a project whose path is not ASCII. Its task
@@ -239,8 +242,24 @@ public enum BuildTool {
     public abstract Detected parse(Path root) throws Exception;
 
     /** The argv prefix to launch the tool from {@code root} (project wrapper, else the Settings override, else
-     *  the tool's default command). {@code override} is the Settings command override (blank = none). */
-    public abstract List<String> executable(Path root, boolean isWindows, String override);
+     *  the tool's default command). {@code override} is the Settings command override (blank = none). Looks
+     *  for the wrapper in {@code root} only; see the {@code projectRoot} overload. */
+    public final List<String> executable(Path root, boolean isWindows, String override) {
+        return executable(root, root, isWindows, override);
+    }
+
+    /**
+     * As {@link #executable(Path, boolean, String)}, but the wrapper is looked for in {@code root} <b>and its
+     * ancestors up to {@code projectRoot}</b>.
+     *
+     * <p>{@code root} is the nearest marker directory, and in a multi-module build that is the module — while
+     * {@code mvnw}/{@code gradlew} sit once at the top. Looking only in {@code root} made every build started
+     * from a module file fall back to whatever {@code mvn} was on PATH: a different Maven version than the
+     * project pins, or none at all. The search stops at {@code projectRoot} so a stray wrapper in a parent
+     * folder the user never opened is not picked up; when {@code root} is not inside it, only {@code root}
+     * itself is looked at.
+     */
+    public abstract List<String> executable(Path root, Path projectRoot, boolean isWindows, String override);
 
     /**
      * The <b>repo-shipped</b> wrapper script this tool would execute from {@code root} ({@code ./mvnw},
@@ -252,7 +271,16 @@ public enum BuildTool {
      * privileges. Only Maven and Gradle have wrappers; every other tool returns {@code null} and so is never
      * gated. Empty by default so a new tool is un-gated unless it opts in.
      */
-    public Path repoWrapper(Path root, boolean isWindows) {
+    public final Path repoWrapper(Path root, boolean isWindows) {
+        return repoWrapper(root, root, isWindows);
+    }
+
+    /**
+     * As {@link #repoWrapper(Path, boolean)} with the same ancestor search as
+     * {@link #executable(Path, Path, boolean, String)} — the two must agree, and the trust gate keys on the
+     * file returned here: its directory is the one whose author gets to run code.
+     */
+    public Path repoWrapper(Path root, Path projectRoot, boolean isWindows) {
         return null;
     }
 
@@ -264,7 +292,7 @@ public enum BuildTool {
 
     /** Enumerates task names for {@link #taskLoadLabel} by running the tool on a short-lived process (e.g.
      *  {@code gradle tasks --all}). Empty by default. Called off the FX thread by the coordinator. */
-    public List<String> loadTasks(Path root, boolean isWindows, String override) throws Exception {
+    public List<String> loadTasks(Path root, Path projectRoot, boolean isWindows, String override) throws Exception {
         return List.of();
     }
 
@@ -340,12 +368,17 @@ public enum BuildTool {
      * PATH nor resolved against the child's working directory. On Unix {@code ./mvnw} is kept — the forked
      * child chdirs to the working directory before exec, so it resolves, and it reads better in the console.
      */
-    private static List<String> wrapperArgv(Path root, boolean isWindows, String unixName, String windowsName) {
-        Path wrapper = wrapperFile(root, isWindows, unixName, windowsName);
+    private static List<String> wrapperArgv(
+            Path root, Path projectRoot, boolean isWindows, String unixName, String windowsName) {
+        Path wrapper = wrapperFile(root, projectRoot, isWindows, unixName, windowsName);
         if (wrapper == null) {
             return List.of();
         }
-        return List.of(isWindows ? wrapper.toAbsolutePath().normalize().toString() : "./" + unixName);
+        // "./mvnw" only names the wrapper when it sits in the working directory; one found in an ancestor is
+        // launched by its absolute path (the build still runs in `root`, which is what selects the module).
+        boolean inRoot = root.toAbsolutePath().normalize().equals(wrapper.getParent());
+        return List.of(
+                isWindows || !inRoot ? wrapper.toAbsolutePath().normalize().toString() : "./" + unixName);
     }
 
     /**
@@ -353,16 +386,27 @@ public enum BuildTool {
      * single source of truth for "would this run repo-controlled code?": a non-null result here is exactly
      * the case where {@link BuildExecutable#resolve} prefers the wrapper over the user's own tool, which is
      * what the workspace-trust gate keys on.
+     *
+     * <p>The nearest usable wrapper wins, from {@code root} up to and including {@code projectRoot}.
      */
-    private static Path wrapperFile(Path root, boolean isWindows, String unixName, String windowsName) {
-        Path wrapper = root.resolve(isWindows ? windowsName : unixName);
-        if (!Files.isRegularFile(wrapper)) {
-            return null;
+    private static Path wrapperFile(
+            Path root, Path projectRoot, boolean isWindows, String unixName, String windowsName) {
+        Path start = root.toAbsolutePath().normalize();
+        Path top = projectRoot == null ? start : projectRoot.toAbsolutePath().normalize();
+        if (!start.startsWith(top)) {
+            top = start; // not inside the project: look in the marker directory only
         }
-        if (!isWindows && !Files.isExecutable(wrapper)) {
-            return null; // present but not +x — fall back rather than fail the run
+        for (Path dir = start; dir != null; dir = dir.getParent()) {
+            Path wrapper = dir.resolve(isWindows ? windowsName : unixName);
+            // Present but not +x is not launchable: keep looking, then fall back rather than fail the run.
+            if (Files.isRegularFile(wrapper) && (isWindows || Files.isExecutable(wrapper))) {
+                return wrapper;
+            }
+            if (dir.equals(top)) {
+                break;
+            }
         }
-        return wrapper;
+        return null;
     }
 
     private static String npmPackageManager(Path root, NpmProject project) {

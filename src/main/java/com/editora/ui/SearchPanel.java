@@ -49,7 +49,12 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
          */
         void openMatch(Path file, int line, int col, boolean focusEditor);
 
-        void replaceAll(SearchQuery query, String replacement, List<Path> files);
+        /**
+         * Replace All over {@code files}, the shown result set. The live query and globs are passed so the
+         * controller can tell whether they still describe the search those results came from.
+         */
+        void replaceAll(
+                SearchQuery query, String includeGlobs, String excludeGlobs, String replacement, List<Path> files);
 
         /** Records an executed query into the persistent search history. */
         void recordSearch(String query);
@@ -320,7 +325,8 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
 
     private void runReplace() {
         if (!queryText().isEmpty() && !lastFiles.isEmpty()) {
-            actions.replaceAll(currentQuery(), replaceField.getText(), lastFiles);
+            actions.replaceAll(
+                    currentQuery(), includeField.getText(), excludeField.getText(), replaceField.getText(), lastFiles);
         }
     }
 

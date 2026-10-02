@@ -32,8 +32,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 
+import com.editora.build.BuildExecutable;
 import com.editora.build.BuildService;
-import com.editora.build.BuildTool;
 import com.editora.build.OutputStyle;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
@@ -79,13 +79,15 @@ final class MavenProjectCoordinator {
         Path defaultParentDir();
 
         /**
-         * Replaces an open buffer's text as one undoable edit, or returns false when the file is not open.
+         * The open buffer for {@code file}, or null when it is not open in this window.
          *
-         * <p>Exists so a version update can be taken back with a plain Ctrl-Z. Writing the file on disk
-         * instead makes the change arrive through the external-change prompt, where the editor's undo
-         * history knows nothing about it and there is no way back short of git.
+         * <p>A version update reads <em>and</em> writes through it: read, so the versions are computed from
+         * what the user is looking at — unsaved edits included — rather than from the file on disk; write,
+         * so the update is one undoable edit that a plain Ctrl-Z takes back. Writing the file instead makes
+         * the change arrive through the external-change prompt, where the editor's undo history knows
+         * nothing about it and there is no way back short of git.
          */
-        boolean replaceOpenBuffer(Path file, String text);
+        com.editora.editor.EditorBuffer openBuffer(Path file);
 
         /**
          * Registers {@code root} as a project and opens it in its own window.
@@ -163,7 +165,7 @@ final class MavenProjectCoordinator {
             host.setError(tr("status.mavenVersions.noPom"));
             return;
         }
-        String pom = read(pomFile);
+        String pom = pomText(pomFile, ops.openBuffer(pomFile));
         Map<String, String> current = new LinkedHashMap<>();
         if (pom != null) {
             current.putAll(PomEdits.dependencyVersions(pom));
@@ -221,8 +223,23 @@ final class MavenProjectCoordinator {
                 false);
     }
 
-    private void applyUpgrades(Path pomFile, Map<String, String> upgrades) {
-        String pom = read(pomFile);
+    /** The pom's text as the user has it: the open buffer's, unsaved edits included, else the file's. */
+    private String pomText(Path pomFile, com.editora.editor.EditorBuffer open) {
+        return open != null ? open.getContent() : read(pomFile);
+    }
+
+    /**
+     * Writes the accepted upgrades.
+     *
+     * <p>Computed from the open buffer when there is one. It used to be computed from the file on disk and
+     * then written over the buffer, so a pom with unsaved edits lost every one of them to an "update
+     * versions" — the buffer was replaced with disk text plus new version numbers. A buffer that cannot be
+     * edited (View mode, a huge or still-loading file) is left alone and says so; a closed pom is replaced
+     * atomically, and only if it still holds the bytes the upgrade was computed from.
+     */
+    void applyUpgrades(Path pomFile, Map<String, String> upgrades) {
+        com.editora.editor.EditorBuffer open = ops.openBuffer(pomFile);
+        String pom = pomText(pomFile, open);
         if (pom == null) {
             host.setError(tr("status.mavenVersions.noPom"));
             return;
@@ -234,10 +251,24 @@ final class MavenProjectCoordinator {
             return;
         }
         try {
-            // Through the open buffer when there is one, so a plain undo takes the whole update back; only
-            // a closed pom is written on disk, where there is no undo history to belong to anyway.
-            if (!ops.replaceOpenBuffer(pomFile, out)) {
-                Files.writeString(pomFile, out, StandardCharsets.UTF_8);
+            if (open != null) {
+                if (!open.isEditable() || open.isTruncatedLoad()) {
+                    host.setError(tr("status.mavenVersions.readOnly"));
+                    return;
+                }
+                // One replacement, so the whole update is a single undo step rather than one per artifact —
+                // and the buffer goes dirty, so it is the user who decides to save it.
+                open.replaceWholeDocument(out);
+            } else {
+                // Only a closed pom is written on disk, where there is no undo history to belong to anyway.
+                if (!com.editora.io.AtomicFileWrite.replaceIfUnchanged(
+                        pomFile,
+                        pom.getBytes(StandardCharsets.UTF_8),
+                        out.getBytes(StandardCharsets.UTF_8),
+                        () -> true)) {
+                    host.setError(tr("status.mavenVersions.changedOnDisk"));
+                    return;
+                }
                 ops.openPath(pomFile);
             }
             host.setStatus(tr("status.mavenVersions.updated", upgrades.size()));
@@ -311,7 +342,7 @@ final class MavenProjectCoordinator {
         if (base == null) {
             base = Path.of(System.getProperty("user.home", "."));
         }
-        List<String> mvn = mavenExecutable(base);
+        List<String> mvn = mavenExecutable();
         // Probe up front: with no pom writer, a missing mvn means the wizard could never finish, and
         // discovering that after five fields have been typed is the worst possible moment to say so.
         if (!DoctorProbes.onPath(mvn)) {
@@ -336,17 +367,22 @@ final class MavenProjectCoordinator {
     }
 
     /**
-     * The Maven launcher to use. Routed through {@link BuildTool} so a Settings override is honoured; in
-     * practice there is no {@code mvnw} in a not-yet-created project, so it resolves to the override or a
-     * plain {@code mvn}. {@code root} must be non-null — {@code wrapperArgv} resolves against it.
+     * The Maven launcher the wizard uses: the user's own — the Settings override, else {@code mvn} on PATH.
+     *
+     * <p><b>Never a wrapper.</b> This used to go through {@code BuildTool.executable}, which prefers an
+     * {@code mvnw} in the directory it is given — and the wizard gave it the <em>target parent folder</em>.
+     * A parent that happened to hold another project's wrapper then (a) failed the up-front probe, because
+     * {@code ./mvnw} was checked against the JVM's working directory ("Maven not found" with Maven
+     * installed), and (b) ran that folder's script to generate an unrelated project with no workspace-trust
+     * prompt, which {@code BuildCoordinator.allowRun} exists to require. Generating a project is the user's
+     * action with the user's tool; nothing in the neighbourhood gets a say.
      */
-    private List<String> mavenExecutable(Path root) {
-        return BuildTool.MAVEN.executable(
-                root,
-                System.getProperty("os.name", "")
-                        .toLowerCase(java.util.Locale.ROOT)
-                        .contains("win"),
-                host.settings().getMavenCommand());
+    static List<String> userMaven(String override) {
+        return BuildExecutable.resolve(List.of(), override, "mvn");
+    }
+
+    private List<String> mavenExecutable() {
+        return userMaven(host.settings().getMavenCommand());
     }
 
     // --- Step 1: pick an archetype ----------------------------------------------------------------
@@ -697,7 +733,7 @@ final class MavenProjectCoordinator {
         // project to register a module with. An aggregator pom is left attached, where the module is wanted.
         Path scratch = ArchetypeGenerate.detachFromExistingProject(packagingOf(parent)) ? scratchDir() : null;
         Path workingDir = scratch != null ? scratch : parent;
-        List<String> mvn = absoluteExecutable(mavenExecutable(parent), parent);
+        List<String> mvn = mavenExecutable();
         // Generated INSIDE the scratch dir and moved afterwards, rather than generated into `parent` from a
         // scratch working directory: the module check reads the pom in the OUTPUT directory, so pointing
         // outputDirectory at a folder that already holds a project fails exactly as running there did.
@@ -833,26 +869,6 @@ final class MavenProjectCoordinator {
         }
     }
 
-    /**
-     * Resolves a project-relative wrapper to an absolute path.
-     *
-     * <p>{@code BuildTool.MAVEN.executable} hands back {@code ./mvnw} on Unix, which is correct only while
-     * the working directory is the project. A detached run happens somewhere else entirely, where that
-     * relative path would resolve to nothing.
-     */
-    private static List<String> absoluteExecutable(List<String> executable, Path projectDir) {
-        if (executable.isEmpty()) {
-            return executable;
-        }
-        String first = executable.get(0);
-        if (!first.startsWith("./")) {
-            return executable;
-        }
-        List<String> out = new ArrayList<>(executable);
-        out.set(0, projectDir.resolve(first.substring(2)).toString());
-        return List.copyOf(out);
-    }
-
     private void afterGenerate(Path projectDir, MavenProjectSpec spec, MavenProjectExtras extras) {
         if (extras.editsPom()) {
             editPom(projectDir, pom -> {
@@ -868,7 +884,7 @@ final class MavenProjectCoordinator {
         // already showing. Plugins are NOT covered by it — its in-place goals expose processDependencies,
         // processDependencyManagement and processParent, and for plugins it offers only
         // display-plugin-updates (checked against 2.21.0) — so those are resolved and rewritten below.
-        List<String> argv = new ArrayList<>(mavenExecutable(projectDir));
+        List<String> argv = new ArrayList<>(mavenExecutable());
         argv.add("versions:use-latest-releases");
         argv.add("-B");
         argv.add("-DgenerateBackupPoms=false"); // the pom is seconds old; a pom.xml.versionsBackup is litter
@@ -1018,7 +1034,7 @@ final class MavenProjectCoordinator {
     }
 
     void shutdown() {
-        service.stop();
+        service.shutdown();
         if (fetchExec != null) {
             fetchExec.shutdownNow();
         }

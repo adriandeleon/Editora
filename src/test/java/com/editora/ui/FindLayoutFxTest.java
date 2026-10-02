@@ -142,7 +142,12 @@ class FindLayoutFxTest {
                 public void openMatch(Path file, int line, int col, boolean focusEditor) {}
 
                 @Override
-                public void replaceAll(SearchQuery query, String replacement, List<Path> files) {}
+                public void replaceAll(
+                        SearchQuery query,
+                        String includeGlobs,
+                        String excludeGlobs,
+                        String replacement,
+                        List<Path> files) {}
 
                 @Override
                 public void recordSearch(String query) {}

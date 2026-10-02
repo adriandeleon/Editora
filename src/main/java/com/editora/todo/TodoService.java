@@ -1,11 +1,8 @@
 package com.editora.todo;
 
 import java.io.IOException;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,6 +16,7 @@ import java.util.function.Consumer;
 import javafx.application.Platform;
 
 import com.editora.search.GitignoreFilter;
+import com.editora.search.ProjectWalk;
 
 /**
  * Scans for TODO/highlight pattern matches off the JavaFX thread (the {@code SearchService} idiom: a
@@ -118,64 +116,15 @@ public final class TodoService {
         return new Outcome(results, total, results.size(), truncated);
     }
 
+    /** Collects the scan candidates through the shared pruned walk (the same one Find in Files uses). */
     private void collect(Path root, Set<Path> out, GitignoreFilter gitignore) {
-        try {
-            int[] scanned = {0};
-            Files.walkFileTree(
-                    root,
-                    java.util.EnumSet.noneOf(java.nio.file.FileVisitOption.class),
-                    MAX_DEPTH,
-                    new SimpleFileVisitor<>() {
-                        @Override
-                        public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes a) {
-                            if (!dir.equals(root)
-                                    && dir.getFileName().toString().startsWith(".")) {
-                                return FileVisitResult.SKIP_SUBTREE; // .git, .idea, etc.
-                            }
-                            if (gitignore.ignored(relativize(root, dir), true)) {
-                                return FileVisitResult.SKIP_SUBTREE; // target/, node_modules/, …
-                            }
-                            return scanned[0] > MAX_FILES_SCANNED
-                                    ? FileVisitResult.TERMINATE
-                                    : FileVisitResult.CONTINUE;
-                        }
-
-                        @Override
-                        public FileVisitResult visitFile(Path file, BasicFileAttributes a) {
-                            if (++scanned[0] > MAX_FILES_SCANNED) {
-                                return FileVisitResult.TERMINATE;
-                            }
-                            String name = file.getFileName().toString();
-                            if (!name.startsWith(".")
-                                    && a.isRegularFile()
-                                    && a.size() <= MAX_FILE_BYTES
-                                    && !gitignore.ignored(relativize(root, file), false)) {
-                                out.add(file);
-                            }
-                            return FileVisitResult.CONTINUE;
-                        }
-
-                        @Override
-                        public FileVisitResult visitFileFailed(Path file, IOException e) {
-                            return FileVisitResult.CONTINUE;
-                        }
-                    });
-        } catch (IOException ignored) {
-            // best-effort walk
-        }
-    }
-
-    /** Root-relative, forward-slash path used to test {@code .gitignore} patterns (mirrors SearchService). */
-    private static String relativize(Path root, Path file) {
-        try {
-            return root.toAbsolutePath()
-                    .normalize()
-                    .relativize(file.toAbsolutePath().normalize())
-                    .toString()
-                    .replace('\\', '/');
-        } catch (RuntimeException e) {
-            return file.getFileName().toString();
-        }
+        ProjectWalk.walk(root, new ProjectWalk.Options(MAX_DEPTH, MAX_FILES_SCANNED, gitignore), (file, rel, attrs) -> {
+            if (!attrs.isRegularFile() || attrs.size() > MAX_FILE_BYTES) {
+                return ProjectWalk.Verdict.SKIP;
+            }
+            out.add(file);
+            return ProjectWalk.Verdict.ACCEPT;
+        });
     }
 
     private static String readText(Path file) {

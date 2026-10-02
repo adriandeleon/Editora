@@ -111,6 +111,7 @@ final class RunCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private final RunService service = new RunService();
+    private final BeforeLaunchStep beforeLaunch = new BeforeLaunchStep(service);
     private final RunPanel panel;
 
     /** The most recent launch, for {@code run.rerun} and the shared stack-trace link resolver. */
@@ -241,12 +242,9 @@ final class RunCoordinator {
         ops.editConfiguration(cfg.name());
     }
 
-    /** A before-launch step is usually a build, so it gets a generous ceiling rather than a quick-probe one. */
-    private static final java.time.Duration BEFORE_LAUNCH_TIMEOUT = java.time.Duration.ofMinutes(10);
-
     /** Whether a program is currently running, so the toolbar Stop button can reflect it. */
     boolean isRunning() {
-        return service.isRunning();
+        return service.isRunning() || beforeLaunch.isActive();
     }
 
     /** Runs a saved {@link RunConfiguration}: its main class with its own program/VM args + working dir. */
@@ -265,71 +263,45 @@ final class RunCoordinator {
         });
     }
 
-    /** {@link #withBeforeLaunch(CoordinatorHost, RunConfiguration, Path, Runnable)} at this coordinator's own
-     *  working directory. */
+    /**
+     * Runs {@code cfg}'s before-launch command in the Run console, then {@code then} — see
+     * {@link BeforeLaunchStep}. On this coordinator's own {@link RunService}, so the step and a program
+     * exclude each other and {@link #stopRun} reaches whichever is alive.
+     */
     private void withBeforeLaunch(RunConfiguration cfg, Runnable then) {
         Path cwd = beforeLaunchDir(cfg);
         Path routing = routingFor(host, cfg);
         Path project = routing == null ? ops.projectRoot() : ops.javaProjectRoot(routing);
         String jdkHome = effectiveMavenJdk(project, cfg);
-        withBeforeLaunch(host, cfg, cwd, JdkToolchain.environment(jdkHome, processPath()), then);
-    }
+        beforeLaunch.run(
+                host,
+                cfg,
+                cwd,
+                JdkToolchain.environment(jdkHome, processPath()),
+                new BeforeLaunchStep.Console() {
+                    @Override
+                    public void started(String commandLine) {
+                        lastRunDir = cwd; // so a compiler error's file link in the build output resolves
+                        panel.started(commandLine);
+                    }
 
-    /**
-     * Runs {@code cfg}'s before-launch command, if it has one, then {@code then} — or reports the failure and
-     * runs nothing.
-     *
-     * <p>The command runs <b>off the FX thread</b> (it is a build; it can take minutes) and {@code then} is
-     * marshalled back on, so everything after it keeps the single-threaded UI assumption the rest of this
-     * class is written against. With no before-launch step this is a straight call, not a thread hop, so the
-     * common case is unchanged.
-     *
-     * <p>Static and package-visible so {@link DebugCoordinator} launches through the same gate. It used to be
-     * private, and the debug path simply had no before-launch step — so a configuration whose build was
-     * {@code mvn -q compile} compiled when you pressed Run and silently debugged the previous class files
-     * when you pressed Debug, which is the exact failure the step exists to prevent, in the one mode where a
-     * stale line number is most confusing. The caller supplies {@code cwd} because each coordinator resolves
-     * the project root its own way.
-     */
-    static void withBeforeLaunch(CoordinatorHost host, RunConfiguration cfg, Path cwd, Runnable then) {
-        withBeforeLaunch(host, cfg, cwd, java.util.Map.of(), then);
-    }
+                    @Override
+                    public void output(String line, boolean stderr) {
+                        panel.appendOutput(line, stderr);
+                    }
 
-    /** As above, with a selected toolchain environment for Maven/JDK-aware build steps. */
-    static void withBeforeLaunch(
-            CoordinatorHost host,
-            RunConfiguration cfg,
-            Path cwd,
-            java.util.Map<String, String> environment,
-            Runnable then) {
-        String command = cfg.beforeLaunch();
-        if (command == null || command.isBlank()) {
-            then.run();
-            return;
-        }
-        List<String> argv = ProgramArgs.tokenize(command);
-        if (argv.isEmpty()) {
-            then.run();
-            return;
-        }
-        host.setStatus(tr("status.run.beforeLaunch", cfg.name()));
-        Thread worker = new Thread(
-                () -> {
-                    com.editora.process.ProcessRunner.Result r = com.editora.process.ProcessRunner.runInUserLocale(
-                            cwd, BEFORE_LAUNCH_TIMEOUT, argv, environment);
-                    javafx.application.Platform.runLater(() -> {
-                        if (r.ok()) {
-                            then.run();
+                    @Override
+                    public void ended(int code, String launchError) {
+                        if (launchError != null) {
+                            panel.failed(launchError);
                         } else {
-                            // Surface the tool's own output: "before-launch failed" alone tells the user
-                            // nothing about which step or why.
-                            host.setStatus(tr("status.run.beforeLaunchFailed", cfg.name(), firstLine(r)));
+                            panel.finished(code);
                         }
-                    });
+                        ops.onRunStateChanged();
+                    }
                 },
-                "run-before-launch");
-        worker.setDaemon(true);
-        worker.start();
+                then);
+        ops.onRunStateChanged(); // the step is running now: the toolbar's Stop button applies to it
     }
 
     /** Where a before-launch command runs: the configuration's working directory, else the project root. */
@@ -341,16 +313,6 @@ final class RunCoordinator {
         Path routing = routingFor(host, cfg);
         Path root = routing == null ? null : ops.javaProjectRoot(routing);
         return root != null ? root : Path.of(System.getProperty("user.dir"));
-    }
-
-    /** The most useful single line of a failed command's output — stderr if it said anything, else stdout. */
-    private static String firstLine(com.editora.process.ProcessRunner.Result r) {
-        String text = r.err() == null || r.err().isBlank() ? r.out() : r.err();
-        if (text == null || text.isBlank()) {
-            return "exit " + r.exit();
-        }
-        String[] lines = text.strip().split("\\R");
-        return lines[lines.length - 1]; // the last line: a build tool's summary, not its banner
     }
 
     /** The Java half of {@link #runConfig}, after any before-launch step has succeeded. */
@@ -834,7 +796,7 @@ final class RunCoordinator {
      */
     private boolean beginRunRequest() {
         ops.openToolWindow();
-        if (!service.isRunning()) {
+        if (!isRunning()) { // a before-launch build counts: a second Run must not start a second build
             return true;
         }
         host.setStatus(tr("status.run.busy"));
@@ -893,6 +855,10 @@ final class RunCoordinator {
 
     /** Stops the currently running program (Run tool window Stop button / {@code run.stop} command). */
     void stopRun() {
+        if (beforeLaunch.isActive()) {
+            beforeLaunch.stop(); // its exit reports "stopped" and the launch it gated never happens
+            return;
+        }
         if (service.isRunning()) {
             service.stop();
             host.setStatus(tr("status.run.stopped"));

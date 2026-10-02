@@ -1676,7 +1676,8 @@ final class WindowCommandRegistrar {
                         "debug.viaBuild",
                         () -> host.debugCoordinator().ifDebug(host.runConfigurations()::debugViaBuild)));
         host.registry()
-                .register(Command.of("debug.stop", () -> host.debugCoordinator().ifDebug(host.dapManager()::stop)));
+                .register(
+                        Command.of("debug.stop", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stop)));
         host.registry()
                 .register(Command.of(
                         "debug.restart", () -> host.debugCoordinator().ifDebug(host.dapManager()::restart)));
