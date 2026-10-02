@@ -482,10 +482,20 @@ public final class DiffViewerPane implements TabContent {
     }
 
     public boolean matchesEditableText(String text) {
-        String baseline = resultEditing && resultBaselineText != null
+        return java.util.Objects.equals(editableBaselineText(), text);
+    }
+
+    /**
+     * The exact editable-side text every apply this pane delivers was computed from: the displayed side's
+     * text, or the Result draft's baseline while the Result editor is open. A hunk or line apply rebuilds the
+     * whole document from the displayed rows, so it is only valid while the local file still equals this —
+     * which is what the controller must compare against, not its own record of the last text it wrote (that
+     * runs ahead of the pane until the re-diff lands).
+     */
+    public String editableBaselineText() {
+        return resultEditing && resultBaselineText != null
                 ? resultBaselineText
                 : editableSide == EditableSide.RIGHT ? rightText : leftText;
-        return java.util.Objects.equals(baseline, text);
     }
 
     public boolean hasDirtyResult() {

@@ -1973,6 +1973,10 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("tool.fileHistory", host.historyCoordinator()::showActive));
         host.registry().register(Command.of("history.putLabel", host.historyCoordinator()::putLabel));
         host.registry().register(Command.of("history.recentChanges", host.historyCoordinator()::showRecentChanges));
+        // Deliberately outside the feature-gated "history." prefix: turning Local History off must not gray
+        // out the commands that delete what it already stored.
+        host.registry().register(Command.of("localHistory.purgeFile", host.historyCoordinator()::purgeActiveFile));
+        host.registry().register(Command.of("localHistory.purgeProject", host.historyCoordinator()::purgeProject));
         host.registry()
                 .register(
                         Command.of("git.fileHistory", () -> host.git().ifEnabled(host.gitWindows()::showFileHistory)));

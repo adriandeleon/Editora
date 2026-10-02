@@ -83,6 +83,16 @@ public final class ProcessRunner {
      */
     public static Result run(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), false));
+    }
+
+    /**
+     * As {@link #run(Path, Duration, List, Map, String)} but feeds {@code stdin} to the child as <b>raw
+     * bytes</b>, for input whose encoding is not the caller's to choose — a git blob body handed to
+     * {@code git hash-object --stdin} must arrive byte-for-byte, not re-encoded as UTF-8.
+     */
+    public static Result runWithInput(
+            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, byte[] stdin) {
         return decoded(runRaw(workingDir, timeout, command, extraEnv, stdin, false));
     }
 
@@ -109,7 +119,11 @@ public final class ProcessRunner {
      */
     public static Result runInUserLocale(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
-        return decoded(runRaw(workingDir, timeout, command, extraEnv, stdin, true));
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), true));
+    }
+
+    private static byte[] utf8(String stdin) {
+        return stdin == null ? null : stdin.getBytes(StandardCharsets.UTF_8);
     }
 
     private static Result decoded(BytesResult raw) {
@@ -144,7 +158,7 @@ public final class ProcessRunner {
             Duration timeout,
             List<String> command,
             Map<String, String> extraEnv,
-            String stdin,
+            byte[] stdin,
             boolean userLocale) {
         // Resolve a bare command name to an absolute path against the augmented PATH: on Unix
         // ProcessBuilder searches the JVM's (stripped, GUI-launched) PATH for the executable, not the
@@ -166,7 +180,7 @@ public final class ProcessRunner {
             Thread stdinWriter = new Thread(
                     () -> {
                         try (java.io.OutputStream os = process.getOutputStream()) {
-                            os.write(stdin.getBytes(StandardCharsets.UTF_8));
+                            os.write(stdin);
                         } catch (IOException ignored) {
                             // child closed stdin early / exited — nothing to do
                         }

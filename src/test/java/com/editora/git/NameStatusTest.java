@@ -16,13 +16,8 @@ class NameStatusTest {
 
     @Test
     void parsesAddModifyDeleteAndRename() {
-        String out = """
-                M\tsrc/App.java
-                A\tsrc/New.java
-                D\tsrc/Old.java
-                R096\tsrc/From.java\tsrc/To.java
-                """;
-        List<CommitFile> files = GitService.parseNameStatus(out);
+        String out = "M\0src/App.java\0A\0src/New.java\0D\0src/Old.java\0R096\0src/From.java\0src/To.java\0";
+        List<CommitFile> files = GitService.parseNameStatusZ(out);
         assertEquals(4, files.size());
 
         assertEquals('M', files.get(0).status());
@@ -40,8 +35,8 @@ class NameStatusTest {
 
     @Test
     void emptyInputYieldsEmptyList() {
-        assertTrue(GitService.parseNameStatus("").isEmpty());
-        assertTrue(GitService.parseNameStatus(null).isEmpty());
+        assertTrue(GitService.parseNameStatusZ("").isEmpty());
+        assertTrue(GitService.parseNameStatusZ(null).isEmpty());
     }
 
     @Test

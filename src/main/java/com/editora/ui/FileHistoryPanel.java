@@ -66,7 +66,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     /**
      * The diff machinery the right pane needs, injected once by the coordinator (delegates to
      * {@code DiffCoordinator}/{@code HistoryService}). Kept separate from {@link Actions} so the panel stays
-     * a view. {@code applyToLocal}/{@code undoLocal}/{@code saveLocal} back the per-hunk chevrons.
+     * a view. {@code applyToLocalIfUnchanged}/{@code undoLocal}/{@code saveLocal} back the per-hunk chevrons.
      */
     public interface DiffSupport {
         void fetchContent(HistoryRevision revision, Consumer<Optional<String>> onText);
@@ -77,7 +77,11 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
         void revert(HistoryRevision revision);
 
-        void applyToLocal(Path target, String newText);
+        /**
+         * Applies {@code newText} only while {@code target} still holds {@code expectedText} (the text the
+         * hunk was computed from) and reports whether it did.
+         */
+        void applyToLocalIfUnchanged(Path target, String expectedText, String newText, Consumer<Boolean> done);
 
         void undoLocal(Path target);
 
@@ -326,14 +330,19 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                 pane.setOptionsControlsVisible(false);
                 // Per-hunk "apply change" chevrons on the current-file (right) side — IntelliJ-style
                 // selective restore. Each apply writes the whole-file result through the undoable buffer,
-                // then we re-diff so the remaining changes (and chevrons) update.
+                // then we re-diff so the remaining changes (and chevrons) update. The whole-file result is
+                // "the file as this pane shows it, plus that hunk", so it is applied only while the file
+                // still equals the pane's own current-side text: anything typed since the revision was
+                // selected is kept, and the refused apply re-baselines and re-diffs instead.
                 Path t = target;
-                pane.setEditable(
+                DiffViewerPane built = pane;
+                pane.setEditableAsync(
                         DiffViewerPane.EditableSide.RIGHT,
-                        newText -> {
-                            support.applyToLocal(t, newText);
-                            reDiffAfterEdit();
-                        },
+                        (newText, done) ->
+                                support.applyToLocalIfUnchanged(t, built.editableBaselineText(), newText, applied -> {
+                                    done.accept(applied);
+                                    reDiffAfterEdit();
+                                }),
                         () -> {
                             support.undoLocal(t);
                             reDiffAfterEdit();

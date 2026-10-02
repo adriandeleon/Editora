@@ -282,6 +282,17 @@ final class GitWindowCoordinator {
 
             @Override
             public void reset(String hash, String mode) {
+                // Hard is the one mode that throws work away: it sits directly under Soft and Mixed in the
+                // menu, so it is confirmed with the dialog a file discard uses, naming what will be lost.
+                String shortHash = com.editora.git.GitFormat.shortHash(hash);
+                if ("hard".equals(mode)
+                        && !host.git()
+                                .confirmDestructive(
+                                        tr("dialog.gitReset.title"),
+                                        tr("dialog.gitReset.hardConfirm", shortHash),
+                                        tr("dialog.gitReset.hard"))) {
+                    return;
+                }
                 gitMutate(
                         tr("status.git.reset", mode, com.editora.git.GitFormat.shortHash(hash)),
                         "reset",

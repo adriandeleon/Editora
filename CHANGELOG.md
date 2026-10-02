@@ -78,6 +78,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The build commit and branch shown for development builds are looked up in the background from the
   build's own checkout, so a slow or stuck `git` can no longer freeze the window at startup.
+- Git, diff and Local History hardening:
+  - Opening a file no longer lets its folder's `.git/config` run programs. The status, diff, log, blame
+    and blob lookups Editora runs by itself now override `core.fsmonitor`, hooks, external diff and
+    textconv drivers; commands you start (commit, checkout, push, …) still run your hooks. Ref names that
+    start with `-` are refused, and Git never waits on a hidden terminal prompt.
+  - Commit, checkout, reset, stash and discard are no longer killed after 10 seconds, network commands
+    get a longer limit and their own queue, a running command shows in the status bar, and closing the
+    window lets it finish instead of interrupting it mid-update.
+  - Stage Hunk no longer deletes another Git process's `index.lock`, works on CRLF files and keeps a
+    non-UTF-8 file's encoding. Exported patches are now correct for every end-of-file shape.
+  - Reset ▸ Hard and Drop Stash ask for confirmation, and destructive actions act on the repository
+    they were confirmed for even if the active tab changes while the dialog is open.
+  - Applying a hunk from Local File History, a second diff hunk before the view refreshed, or a merge
+    resolution after its tab was closed can no longer overwrite newer text or be silently lost.
+  - The Git Log file list shows non-ASCII names, root commits and merge commits correctly; a file over
+    10 MB no longer leaves a review on "Loading…"; a heading underline inside a conflict is no longer
+    read as a conflict marker; `gh pr checkout` cannot be undone by a pending save; "Add to .gitignore"
+    writes an anchored, escaped entry.
+  - Local File History now applies its age and size limits to every file at startup, expires even
+    labelled and pre-delete snapshots after a longer period (six times the age limit, at least 180
+    days), uses each file's own encoding when capturing and restoring, and no longer scans its whole
+    store on every save. New commands `Local History: Delete History of Current File…` and
+    `Local History: Delete History of Project…` remove snapshots permanently.
 
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the

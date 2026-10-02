@@ -19,6 +19,7 @@ import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 
 import com.editora.diff.BinaryDiff;
+import com.editora.diff.BlobRewrite;
 import com.editora.diff.ConflictParser;
 import com.editora.diff.DiffEngine;
 import com.editora.diff.DiffModels.DiffModel;
@@ -26,7 +27,6 @@ import com.editora.diff.DiffService;
 import com.editora.diff.DiffText;
 import com.editora.diff.DirectoryDiff;
 import com.editora.diff.PatchParser;
-import com.editora.diff.PatchWriter;
 import com.editora.diff.ThreeWayMerge;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
@@ -45,9 +45,9 @@ import static com.editora.i18n.Messages.tr;
  * compare-with-file / Git-panel rows / a commit's file), patch export, and merge-conflict resolution.
  *
  * <p>Git-backed diffs reach the repo via the shared {@link GitCoordinator} (passed in). {@code computeDiff}
- * + {@code applyToLocal}/{@code undoLocal}/{@code saveLocal} are package-visible so the Local File History
- * tool window ({@code FileHistoryPanel}, via {@code HistoryCoordinator}) reuses them for its inline revision
- * diff + per-hunk apply chevrons. {@code MainController} keeps the {@code diff.*}/{@code merge.resolve} command registrations
+ * + {@code applyToLocalIfUnchangedAsync}/{@code undoLocal}/{@code saveLocal} are package-visible so the
+ * Local File History tool window ({@code FileHistoryPanel}, via {@code HistoryCoordinator}) reuses them for
+ * its inline revision diff + per-hunk apply chevrons; its whole-file restore uses {@code applyToLocal}. {@code MainController} keeps the {@code diff.*}/{@code merge.resolve} command registrations
  * and the tab-menu / Git-panel / project-tree entry points (delegating here), and calls
  * {@link #refreshOpenDiffs()} on window focus-regain + after a git mutation.
  */
@@ -118,6 +118,9 @@ final class DiffCoordinator {
         /** Opens a changed file and moves the editor to its one-based line. */
         void openAt(Path file, int line);
     }
+
+    /** Largest working-tree file read as a diff side; matches the cap on a captured Git blob. */
+    static final long MAX_SIDE_BYTES = 10L * 1024 * 1024;
 
     private final CoordinatorHost host;
     private final GitCoordinator git;
@@ -293,8 +296,12 @@ final class DiffCoordinator {
                     pane.setEditableAsync(
                             editableSide,
                             (newText, done) -> {
-                                String expected =
-                                        current[pane.editableSide() == DiffViewerPane.EditableSide.RIGHT ? 1 : 0];
+                                // The new text was derived from the rows the pane is showing, so the file
+                                // must still equal the text those rows came from. current[] is not that:
+                                // it advances as soon as an apply lands, before the re-diff reaches the
+                                // pane, and a second hunk applied in that window passed the check while
+                                // being built from the old rows — silently reverting the first.
+                                String expected = pane.editableBaselineText();
                                 applyToLocalIfUnchangedAsync(target, expected, newText, applied -> {
                                     if (!applied) {
                                         host.setStatus(tr("status.diff.localStale"));
@@ -365,6 +372,11 @@ final class DiffCoordinator {
         }));
     }
 
+    /** The {@code .editorconfig} charset the editor would read {@code file} with, or {@code null} (see {@link Ops}). */
+    String editorConfigCharset(Path file) {
+        return ops.editorConfigCharset(file);
+    }
+
     /** Re-fetches every open diff tab's sides (run on window focus-regain + after a git mutation), so a
      *  file changed on disk or by a git command is reflected. Each pane skips the rebuild when unchanged. */
     void refreshOpenDiffs() {
@@ -383,9 +395,16 @@ final class DiffCoordinator {
         }
     }
 
-    /** Writes new text into the local file {@code target} via an undoable editor buffer (opened in the
-     *  background if not already open), marking it dirty, then re-diffs every tab. Returns whether the
-     *  buffer accepted the edit. Used by diff apply actions and Local File History restoration. */
+    /**
+     * Writes new text into the local file {@code target} via an undoable editor buffer (opened in the
+     * background if not already open), marking it dirty, then re-diffs every tab. Returns whether the buffer
+     * accepted the edit.
+     *
+     * <p><b>Unguarded:</b> it replaces whatever the buffer holds now. Only a caller that has already proved
+     * the buffer is the version it means to replace may use it — Local File History's whole-file restore
+     * checks the buffer's document version first. Anything applying a <em>hunk</em> (text computed from a
+     * displayed diff) must use {@link #applyToLocalIfUnchangedAsync} with the text that diff was showing.
+     */
     boolean applyToLocal(Path target, String newText) {
         EditorBuffer b = bufferForApply(target);
         if (b == null || !b.isEditable() || b.isDisposed() || b.isTruncatedLoad()) {
@@ -418,9 +437,13 @@ final class DiffCoordinator {
         return true;
     }
 
-    /** Async form used by diff actions so opening and decoding a closed target never blocks JavaFX. */
-    private void applyToLocalIfUnchangedAsync(
-            Path target, String expectedText, String newText, Consumer<Boolean> done) {
+    /**
+     * Applies {@code newText} only while the target still holds {@code expectedText} — the exact text the
+     * hunk was computed from — so edits typed since the diff was drawn are never overwritten. Async so
+     * opening and decoding a closed target never blocks JavaFX. Shared by every diff surface, including the
+     * Local File History panel's per-hunk restore.
+     */
+    void applyToLocalIfUnchangedAsync(Path target, String expectedText, String newText, Consumer<Boolean> done) {
         EditorBuffer existing = ops.openBufferFor(target);
         if (existing != null) {
             done.accept(applyToBufferIfUnchanged(existing, expectedText, newText));
@@ -1238,9 +1261,22 @@ final class DiffCoordinator {
                         host.setStatus(tr("status.diff.hunkStale", "index snapshot is still loading"));
                         return;
                     }
-                    String patch = PatchWriter.unifiedDiff(
-                            "a/" + repoRel, "b/" + repoRel, request.beforeText(), request.afterText());
-                    git.service().applyCachedPatch(root, repoRel, expectedBlob, patch, result -> {
+                    // Stage the desired blob bytes, not a text patch: the displayed text has forgotten
+                    // each line's terminator and the blob's charset, so a patch built from it never applied
+                    // to a CRLF blob and could put UTF-8 bytes into a Latin-1 one.
+                    String charset =
+                            EditorConfigCharset.resolveName(expectedBlob.bytes(), ops.editorConfigCharset(file));
+                    byte[] blob = BlobRewrite.rewrite(
+                            expectedBlob.found() ? expectedBlob.bytes() : new byte[0],
+                            EditorConfigCharset.charsetFor(charset),
+                            EditorConfigCharset.bomFor(charset),
+                            request.beforeText(),
+                            request.afterText());
+                    if (blob == null) {
+                        host.setStatus(tr("status.diff.hunkEncoding"));
+                        return;
+                    }
+                    git.service().stageBlob(root, repoRel, expectedBlob, blob, result -> {
                         if (result.ok()) {
                             host.setStatus(tr(
                                     request.action() == DiffViewerPane.GitHunkAction.STAGE
@@ -1324,6 +1360,11 @@ final class DiffCoordinator {
             if (!Files.exists(abs)) {
                 return DiffContent.text("");
             }
+            // Same ceiling as a Git blob side: an untracked build artefact or data dump must not be read
+            // whole into memory and handed to the line differ.
+            if (Files.size(abs) > MAX_SIDE_BYTES) {
+                return DiffContent.presentation(tr("diff.side.tooLarge"));
+            }
             // Decode the closed working file the same way the editor would (BOM / .editorconfig charset),
             // not force-UTF-8 — else a non-UTF-8 file's working side would disagree with the (now
             // charset-correct) blob side.
@@ -1361,7 +1402,10 @@ final class DiffCoordinator {
         String ecCharset = ops.editorConfigCharset(file);
         return onText -> git.service().showBlob(root, spec, result -> {
             if (result.truncated()) {
+                // Complete the callback: a review surface waits on both sides, so returning here left it on
+                // "Loading…" forever. The surrogate text is not applicable, which disables every mutation.
                 host.setStatus(tr("status.git.blobTooLarge"));
+                onText.accept(DiffContent.presentation(tr("diff.side.tooLarge")));
                 return;
             }
             onSnapshot.accept(result);
@@ -1490,16 +1534,41 @@ final class DiffCoordinator {
                 host.settings().getFontSize(),
                 format.lineSeparator(),
                 format.finalNewline(),
-                resolvedText -> {
-                    if (!buffer.text().equals(sourceText)) {
-                        host.setStatus(tr("status.merge.stale"));
-                        return false;
-                    }
-                    buffer.replaceWholeDocument(resolvedText);
-                    host.setStatus(tr("status.merge.applied"));
-                    return true;
-                });
+                (java.util.function.Predicate<String>)
+                        resolvedText -> applyMergeResolution(buffer, sourceText, resolvedText));
         ops.addDiffTab(pane);
+    }
+
+    /**
+     * Writes a merge resolution into the document it was computed for, found <em>at apply time</em>. The
+     * resolver tab can outlive the source tab: the buffer captured when it opened is then disposed, its
+     * text still equals the baseline, and writing into it reported "applied" while the resolution went
+     * nowhere. A file-backed buffer is therefore looked up by path (reopened in the background when its tab
+     * was closed) and re-checked for disposed / read-only / truncated before its <em>current</em> text is
+     * compared with the baseline. An untitled buffer has no path to find it by, so a closed one is refused.
+     */
+    boolean applyMergeResolution(EditorBuffer opened, String sourceText, String resolvedText) {
+        Path path = opened.getPath();
+        EditorBuffer open = path == null ? (opened.isDisposed() ? null : opened) : ops.openBufferFor(path);
+        EditorBuffer target = open != null || path == null ? open : ops.openBackgroundBuffer(path);
+        boolean reopened = open == null && target != null;
+        if (target == null || target.isDisposed() || !target.isEditable() || target.isTruncatedLoad()) {
+            if (reopened) {
+                ops.discardBackgroundBuffer(target);
+            }
+            host.setStatus(tr("status.diff.applyFailed", path == null ? opened.getTitle() : path.getFileName()));
+            return false;
+        }
+        if (!target.text().equals(sourceText)) {
+            if (reopened) {
+                ops.discardBackgroundBuffer(target);
+            }
+            host.setStatus(tr("status.merge.stale"));
+            return false;
+        }
+        target.replaceWholeDocument(resolvedText);
+        host.setStatus(tr("status.merge.applied"));
+        return true;
     }
 
     /** Stops the diff worker thread (window close). */

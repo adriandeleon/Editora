@@ -729,7 +729,7 @@ public class SharedConfig {
             pendingHistoryHashes.values().forEach(protectedHashes::addAll);
             // Queue GC while this live-set snapshot is still current. A durable waiter can start the
             // next publication; running its callback first would let this older GC delete its new blob.
-            historyService.gc(protectedHashes);
+            historyService.gcIfDue(protectedHashes);
         }
         boolean durable = outcome == ConfigWriter.WriteOutcome.WRITTEN;
         finished.forEach((ignored, waiter) -> waiter.accept(durable));

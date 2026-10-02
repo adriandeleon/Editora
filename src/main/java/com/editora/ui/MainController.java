@@ -6988,7 +6988,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void stagedDiff(Path root, java.util.function.Consumer<String> onResult) {
-            git.service().run(root, r -> onResult.accept(r.ok() ? r.out() : null), "diff", "--cached");
+            git.service().stagedDiff(root, onResult);
         }
 
         @Override

@@ -65,7 +65,8 @@ class FileHistoryMissingContentFxTest {
                 public void revert(HistoryRevision revision) {}
 
                 @Override
-                public void applyToLocal(Path target, String newText) {}
+                public void applyToLocalIfUnchanged(
+                        Path target, String expectedText, String newText, java.util.function.Consumer<Boolean> done) {}
 
                 @Override
                 public void undoLocal(Path target) {}
