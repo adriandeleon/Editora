@@ -120,9 +120,9 @@ This repo is worked on by multiple sessions in parallel. **Each task gets its ow
 `git worktree`** so sessions don't share a working tree:
 
 ```
-scripts/worktree.sh new <branch>     # creates ../Editora-V2-worktrees/<slug> off origin/master
+scripts/worktree.sh new <branch>     # creates ../Editora-worktrees/<slug> off origin/master
 scripts/worktree.sh list
-scripts/worktree.sh rm <branch>      # after merge
+scripts/worktree.sh rm <branch>      # after merge; keeps an unmerged branch unless --force
 ```
 
 **Never `git checkout` a different branch in the main checkout** while other sessions may be

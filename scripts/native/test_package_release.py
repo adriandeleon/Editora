@@ -41,6 +41,9 @@ class PackageReleaseTest(unittest.TestCase):
                     else:
                         self.assertNotIn('-Dprism.order=sw', launcher)
                 self.assertIn(f'{name}/{library}', members)
+                # Every archive carries Editora's licence and the third-party notice.
+                for document in ('LICENSE', 'NOTICE'):
+                    self.assertIn(f'{name}/{document}', members)
 
     def test_linux_rejects_missing_shared_libraries(self):
         with tempfile.TemporaryDirectory() as scratch:

@@ -17,6 +17,17 @@ So: a toolbar with no snapshot badge means you are running a real release build.
 
 ## Cutting a release
 
+> **Before the next tag: run a dry run.** *Actions → Release → Run workflow* on `master`
+> (`workflow_dispatch`). The macOS arm64 legs moved from `macos-14` to `macos-15` (the macOS 14
+> images are retired on 2026-11-02, with brownouts from 2026-10-05 —
+> [actions/runner-images#13518](https://github.com/actions/runner-images/issues/13518)), and that
+> runner has never built a release: AOT training there is sensitive to the runner's virtual GPU and
+> `EDITORA_REQUIRE_AOT=1` fails the leg if it regresses. The same run is the first to exercise the
+> SHA-pinned actions, the pinned JReleaser and `appimagetool`, the `--license-file` installer wraps
+> and the release-asset check. A dry run is green only if **every build leg trained its cache** (the
+> job summary lists one row per target) **and** the "Verify the expected release assets" step of the
+> `Release` job prints `ok` for all eleven files — in a dry run that step only warns.
+
 1. Set `<version>` in `pom.xml` to the release version (drop the `-SNAPSHOT`).
 2. Update `CHANGELOG.md` (move `[Unreleased]` into a versioned section).
 3. Push a `vX.Y.Z` tag. A `-rcN` suffix (`vX.Y.Z-rcN`) marks a pre-release.
@@ -26,9 +37,16 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The tag triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml). (Manual
+The tag triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml). Only
+version-shaped tags do (`v<digits>.<digits>.<digits>` plus an optional suffix). (Manual
 dispatch is available for a dry run; it validates JReleaser against the plain upcoming version
 because immutable GitHub releases reject `-SNAPSHOT` even in dry-run mode.)
+
+A `preflight` job runs first and **stops the release in seconds if the tag and the pom disagree**:
+a plain `vX.Y.Z` tag must equal the pom's `<version>` exactly (so a tag pushed while the pom still
+says `X.Y.Z-SNAPSHOT` is refused instead of publishing installers whose app calls itself a
+snapshot), and a tag must be `vX.Y.Z` or `vX.Y.Z-rcN`. An `-rc` tag is cut from the `-SNAPSHOT`
+line and is checked only for its shape.
 
 **Step 1 is the only manual version edit.** After the release publishes, the workflow's final
 `bump` job reopens `master` at the next patch `-SNAPSHOT` for you — see below.
@@ -66,21 +84,22 @@ are host-specific, so each runner builds for itself):
 
 | Target | Runner | Notes |
 | --- | --- | --- |
-| linux x64 | ubuntu | |
-| linux arm64 | ubuntu arm | |
-| macOS x64 | `macos-15-intel` | the last Intel x86_64 image (good through ~Aug 2027). |
-| macOS arm64 | macos | |
-| windows x64 | windows | |
+| linux x64 | `ubuntu-latest` | `.deb`, `.rpm`, `.AppImage`, `.tar.gz`, fat jar |
+| linux arm64 | `ubuntu-24.04-arm` | `.tar.gz` and fat jar only (no `.deb`/`.rpm`/`.AppImage`) |
+| macOS x64 | `macos-15-intel` | `.dmg`. The last Intel x86_64 image (good through ~Aug 2027). |
+| macOS arm64 | `macos-15` | `.dmg`. Was `macos-14` until that image's retirement (2026-11-02). |
+| windows x64 | `windows-latest` | `.msi`, fat jar |
 
-**Windows arm64 is omitted:** a hosted runner exists, but OpenJFX 25 publishes no `win-aarch64`
-native jar on Maven Central ([JDK-8314064]), so a native ARM64 build can't link —
-Windows-on-ARM users run the x64 installer under emulation. Revisit when JavaFX ships
-`win-aarch64` natives.
+**Windows arm64 is omitted:** a hosted runner exists, but OpenJFX — still true of the JavaFX 27
+that Editora builds against — publishes no `win-aarch64` native jar on Maven Central
+([JDK-8314064]), so a native ARM64 build can't link — Windows-on-ARM users run the x64 installer
+under emulation. Revisit when JavaFX ships `win-aarch64` natives.
 
 Each runner:
 
-- builds the native installer via the existing `-Pdist` profile (DMG/MSI/DEB);
-- builds a per-platform runnable fat jar via `-Pfatjar`;
+- builds the native installer via the existing `-Pdist` profile (DMG / MSI / DEB+RPM);
+- on Linux, builds the `.AppImage` (x64) and the install tarball from the same trained app image;
+- builds a per-platform runnable fat jar via `-Pfatjar` (not on macOS);
 - runs the AOT-cache training step (Linux legs wrap it in `xvfb`; the workflow installs
   `xvfb` + GTK/GL libs there).
 
@@ -92,6 +111,35 @@ A final job hands everything to **JReleaser** (`jreleaser.yml`, via `jreleaser/r
 which creates the GitHub release with all installers + fat jars + `checksums.txt` + a changelog.
 JReleaser only *orchestrates the release* — it does not build (the existing `dist` profile is
 reused as-is). The experimental `native` profile is opt-in, so the normal build is unaffected.
+
+### The release-asset check
+
+GitHub releases here are **immutable**: once published, an asset can never be added. And several
+upstream steps are tolerant by design — JReleaser's globs match zero files without complaint, and
+`aot_build.java` lets the `.rpm` succeed alone when the `.deb` wrap fails. So immediately before
+JReleaser, the `Release` job runs
+[`scripts/release/check-release.py`](../scripts/release/check-release.py) against the downloaded
+artifacts and, on a tag, **refuses to publish unless all eleven expected files are present and
+non-empty** (the table above; fat jars are named after the pom version, everything else after the
+tag). It prints the full list with `ok`/`MISSING` per file. The AppImage and tarball steps are
+likewise strict on a tag (a failure fails the linux leg, so *Re-run failed jobs* rebuilds just that
+leg) and best-effort only in a dry run. The experimental Native Image archives are reported but never
+required. If you add or remove a release artifact, change the `EXPECTED` table in that script, the
+Stage step and `jreleaser.yml` together — `test_check_release.py` cross-checks them.
+
+### Supply chain
+
+- The workflow token is **read-only** by default; only `release` (publishes) and `bump` (pushes the
+  version bump) ask for `contents: write`, and only `bump`'s checkout keeps its credentials.
+- Every action is pinned to a **full commit SHA** with its version in a trailing comment;
+  `.github/dependabot.yml` opens the update PRs (weekly, for Maven dependencies too).
+  `jreleaser/release-action` has no `v2` *tag* — it was being consumed from a branch — and is pinned
+  to that branch's head.
+- The JReleaser the action downloads is pinned (`version:` in `release.yml`), as is the Maven the
+  wrapper downloads (`distributionSha256Sum` in `.mvn/wrapper/maven-wrapper.properties` — update
+  it together with `distributionUrl`).
+- `scripts/build-appimage.sh` downloads a **versioned** `appimagetool` and type2 runtime and
+  verifies both by SHA-256 before running anything (per architecture; the hashes are in the script).
 
 ### Experimental Native Image archives
 
@@ -133,8 +181,8 @@ CI uses the BellSoft **Liberica** JDK 25 for full arch coverage (incl. linux aar
 ## Notes
 
 - Installers are currently **unsigned** (signing/notarization is a follow-up).
-- A JavaFX bump no longer needs any test-harness work — the headless backend ships inside JavaFX
-  26 (the old vendored Monocle rebuild is gone; see
+- A JavaFX bump no longer needs any test-harness work — the headless backend has shipped inside
+  JavaFX itself since 26 (the old vendored Monocle rebuild is gone; see
   [dependencies.md](dependencies.md#the-headless-test-backend-no-vendored-dependency)). Do
   re-run the device tests, since the per-OS Prism pipeline matters.
 - The AOT cache adds ~72 MB to the installed image (compressed in the DMG/MSI/DEB). On a **release

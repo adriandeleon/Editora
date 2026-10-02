@@ -13,7 +13,8 @@
 # Usage:  scripts/build-tarball.sh <app-image-dir> <out-dir>
 #   e.g.  scripts/build-tarball.sh target/aot-image/Editora target/dist
 #
-# Best-effort in release.yml (continue-on-error), so a hiccup here never sinks the .deb/.rpm/.jar.
+# On a manual dry run the release.yml step is continue-on-error; on a tag it is not, and the release job's
+# asset check requires the tarball — a release is immutable, so it cannot be added afterwards.
 set -euo pipefail
 
 APPIMG_DIR="${1:?app-image dir required}"   # the jpackage Linux app-image (has bin/Editora + lib/)
@@ -42,6 +43,15 @@ cp -a "$APPIMG_DIR" "$STAGE/Editora"
 cp "$INSTALLER" "$STAGE/install.sh"
 chmod +x "$STAGE/install.sh"
 
+# The licence texts as plain files beside the installer (install.sh copies them into the install dir).
+for doc in LICENSE NOTICE; do
+  if [ -f "$SCRIPT_DIR/../$doc" ]; then
+    cp "$SCRIPT_DIR/../$doc" "$STAGE/$doc"
+  else
+    echo "[tarball] $doc not found beside the scripts directory — the tarball will not carry it" >&2
+  fi
+done
+
 cat > "$STAGE/README.txt" <<'EOF'
 Editora — portable Linux install
 =================================
@@ -57,6 +67,7 @@ runtime) plus an installer. No package manager, no root required.
 
   Other options:
       ./install.sh --prefix /some/dir     # install into /some/dir/editora
+                                          # (refused if that directory holds something else)
       ./install.sh --uninstall            # remove a previous install
       ./install.sh --help
 
@@ -66,13 +77,18 @@ install.sh prints a hint if it isn't.)
 
 You can also run Editora in place without installing:
       ./Editora/bin/Editora
+
+Editora is MIT-licensed; see LICENSE. NOTICE lists the third-party software
+and data it bundles, each under its own licence.
 EOF
 
 mkdir -p "$OUTDIR"
 OUT="$OUTDIR/Editora-$ARCH.tar.gz"
 # GNU tar on the Linux runners; --owner/--group=0 keeps a clean root-owned tree regardless of the
-# building user, and a sorted listing makes the archive reproducible.
-tar --numeric-owner --owner=0 --group=0 -C "$WORK" -czf "$OUT" "editora-$ARCH"
+# building user, and --sort=name gives the members a stable order instead of readdir order. This is NOT
+# a bit-for-bit reproducible archive and is not meant to be: file timestamps are kept as built (the
+# installed runtime should carry real ones), and the AOT cache inside differs from build to build anyway.
+tar --numeric-owner --owner=0 --group=0 --sort=name -C "$WORK" -czf "$OUT" "editora-$ARCH"
 
 echo "[tarball] built $OUT"
 ls -la "$OUT"

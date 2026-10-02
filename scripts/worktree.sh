@@ -15,12 +15,23 @@
 #   scripts/worktree.sh new <branch> [base]   Create a worktree on a new branch
 #                                             (base defaults to origin/master)
 #   scripts/worktree.sh list                  List all worktrees
-#   scripts/worktree.sh rm <branch>           Remove a task worktree + its branch
+#   scripts/worktree.sh rm <branch> [--force] Remove a task worktree + its branch
+#                                             (the branch is kept if it is not fully
+#                                             merged, unless --force is given)
 #   scripts/worktree.sh prune                 Clean up stale worktree metadata
+#
+# It can be run from the main checkout or from inside any task worktree: the
+# worktrees always go beside the MAIN checkout.
 #
 set -euo pipefail
 
-repo_root="$(git rev-parse --show-toplevel)"
+# The MAIN checkout, wherever this is run from. `git rev-parse --show-toplevel`
+# answers with the CURRENT worktree, so running this from inside a task worktree
+# used to create a nested `<slug>-worktrees/` beside that worktree. The common
+# git directory is shared by every worktree and lives in the main checkout
+# (<main>/.git), so its parent is the directory we want.
+common_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)"
+repo_root="$(dirname "$common_dir")"
 repo_name="$(basename "$repo_root")"
 wt_root="$(dirname "$repo_root")/${repo_name}-worktrees"
 
@@ -47,11 +58,29 @@ case "$cmd" in
     git -C "$repo_root" worktree list
     ;;
   rm|remove)
-    branch="${1:?branch name required}"
+    force=0
+    branch=""
+    for arg in "$@"; do
+      case "$arg" in
+        --force|-f) force=1 ;;
+        *) branch="$arg" ;;
+      esac
+    done
+    [ -n "$branch" ] || { echo "error: branch name required" >&2; exit 1; }
     dir="$wt_root/$(slug_of "$branch")"
     git -C "$repo_root" worktree remove "$dir"
-    git -C "$repo_root" branch -D "$branch" 2>/dev/null || true
-    echo "Removed worktree $dir and branch '$branch'."
+    # `branch -d`, not `-D`: -D deleted the branch even when its commits existed nowhere else, so a
+    # mistyped `rm` threw unmerged (and unpushed) work away with no way back but the reflog.
+    if [ "$force" = 1 ]; then
+      git -C "$repo_root" branch -D "$branch"
+      echo "Removed worktree $dir and branch '$branch' (forced)."
+    elif git -C "$repo_root" branch -d "$branch" 2>/dev/null; then
+      echo "Removed worktree $dir and branch '$branch'."
+    else
+      echo "Removed worktree $dir. Branch '$branch' is NOT fully merged and was kept;" >&2
+      echo "delete it with: git branch -D $branch   (or re-run with --force next time)" >&2
+      exit 1
+    fi
     ;;
   prune)
     git -C "$repo_root" worktree prune -v

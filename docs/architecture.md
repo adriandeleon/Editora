@@ -158,7 +158,7 @@ save of an older snapshot therefore never authorizes disposal of newer text type
 | `command/` | The keyboard core: `Command`/`CommandRegistry`, `KeymapManager`, `KeyDispatcher`. Every action is a registered command. |
 | `editor/` | `EditorBuffer` + the editor surface: highlighting, gutter, minimap, overlays, indentation, brackets, snippets/completion, the pure editing helpers (`Indenter`, `Commenter`, `Transposer`, `MarkdownLint`, …). |
 | `ui/` | `MainController`, `WindowManager`, `SettingsWindow`, tool-window panels, the in-scene overlays (`OverlayHost`), status bar. |
-| `config/` | `ConfigManager`/`SharedConfig`, `Settings` (TOML), `WorkspaceState` (JSON), the stores, and `config/migration/` (schema versioning). |
+| `config/` | `ConfigManager`/`SharedConfig`, `Settings` (JSON — `settings.json`, see ADR 0011), `WorkspaceState` (JSON), the stores, and `config/migration/` (schema versioning). |
 | `i18n/` | `Messages` — the localized catalog (six languages). |
 | `lsp/` `dap/` | Language Server / Debug Adapter Protocol integration (lsp4j). |
 | `git/` `diff/` | Native-CLI git, the diff/merge viewer. |

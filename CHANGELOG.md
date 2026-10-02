@@ -268,6 +268,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A key binding you assign is no longer overridden by a plugin that binds the same chord, and two
   projects whose folders produce the same internal id no longer share a session.
+- **Packaging and release hardening.** Installers and archives now carry the licence: `LICENSE` and `NOTICE`
+  are inside the application (and as plain files in the Linux tarball, the AppImage and the experimental
+  Native Image archives), the `.deb`/`.rpm`/`.msi` are built with the MIT text, each bundled font family ships
+  its Open Font License, and `NOTICE` now names every bundled library (commonmark, LSP4J, JLaTeXMath,
+  java-diff-utils, SnakeYAML, the Jackson TOML/YAML formats, SLF4J and others were missing).
+  - **Windows:** the MSI no longer registers `.bat`, `.cmd`, `.js`, `.ps1`, `.psm1`, `.py`, `.pyw`, `.rb` and
+    `.sh`. The installer registers each listed type machine-wide, so on a PC with no per-user choice for them a
+    double-click would have opened Editora instead of running the script. They remain editable through
+    *Open with → Choose another app*. `.txt` is now registered (and first), so Windows keeps treating
+    `text/plain` as `.txt`.
+  - **Linux `.deb`:** installing no longer discards other applications' defaults in the shared
+    `mimeapps.list` — the file is replaced atomically, what Editora's Expert Mode default displaces is
+    remembered and restored on removal, and a `/usr/bin/editora` that belongs to something else is not
+    overwritten.
+  - **Linux tarball:** `sudo ./install.sh` now leaves `/opt/editora` owned by root (it stayed writable by the
+    user who unpacked the archive), `--prefix DIR` refuses to replace or remove a `DIR/editora` that is not an
+    Editora install, and a prefix containing spaces produces a working menu entry.
+  - **Releases** stop before publishing when an expected installer is missing or the tag does not match the
+    project version; the release tooling is pinned and checksum-verified (actions, JReleaser, Maven,
+    `appimagetool`), and the Apple Silicon build moved to the `macos-15` runner ahead of `macos-14`'s
+    retirement.
+  - **Builds:** `-Pdist` now always starts from a clean `target/` (and `-Pfatjar` from clean classes), so a
+    forgotten `clean` can no longer package stale classes; CI also runs the non-UI test suite on Windows and
+    macOS.
 
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the

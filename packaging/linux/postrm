@@ -6,47 +6,113 @@
 #
 set -e
 
+# See postinst: every path hangs off $root (DPKG_ROOT, empty for an ordinary removal) so the script can
+# be exercised against a scratch tree, and the install directory is the literal /opt/editora.
+root="${DPKG_ROOT:-}"
+app_dir=/opt/editora
+apps="$root/usr/share/applications"
+state_dir="$root/var/lib/editora"
+state="$state_dir/mimeapps.replaced"
+
+# Temporary files of the mimeapps.list rewrite, removed on every exit path (empty until mktemp has run).
+tmp=""; restored=""
+cleanup() {
+    for leftover in "$tmp" "$restored"; do
+        if [ -n "$leftover" ]; then rm -f "$leftover"; fi
+    done
+}
+trap cleanup EXIT
+
 case "$1" in
     remove|purge)
-        if [ -L /usr/bin/editora ]; then
-            case "$(readlink /usr/bin/editora 2>/dev/null || true)" in
-                /opt/*/bin/Editora) rm -f /usr/bin/editora ;;
+        link="$root/usr/bin/editora"
+        if [ -L "$link" ]; then
+            case "$(readlink "$link" 2>/dev/null || true)" in
+                "$app_dir"/*) rm -f "$link" ;;
             esac
         fi
-        rm -f /usr/share/applications/editora-Editora.desktop
-        rm -f /usr/share/applications/editora-Editora-expert.desktop
+        rm -f "$apps/editora-Editora.desktop"
+        rm -f "$apps/editora-Editora-expert.desktop"
 
         # Strip the Expert Mode default-handler lines postinst added to the system-wide
-        # mimeapps.list; if nothing but section headers remains (i.e. postinst created the file),
-        # remove it entirely.
-        mimeapps=/usr/share/applications/mimeapps.list
+        # mimeapps.list, then put back the defaults it displaced (recorded by postinst in $state):
+        # each one returns under [Default Applications] unless that type has since been given
+        # another default, which wins. If nothing but section headers remains (i.e. postinst created
+        # the file), remove it entirely. As in postinst the result is written beside the original and
+        # renamed over it, never truncated in place.
+        mimeapps="$apps/mimeapps.list"
         if [ -f "$mimeapps" ]; then
-            tmp=$(mktemp)
+            tmp=$(mktemp "$apps/.mimeapps.list.editora.XXXXXX")
             grep -v '=editora-Editora-expert\.desktop$' "$mimeapps" > "$tmp" || true
+            if [ -s "$state" ]; then
+                restored=$(mktemp "$apps/.mimeapps.list.editora.XXXXXX")
+                # Two passes over the same file: the first notes which types already have a default,
+                # the second prints the file with the remembered lines added under the header.
+                awk -v saved="$state" '
+                    BEGIN {
+                        while ((getline line < saved) > 0) {
+                            eq = index(line, "=")
+                            if (eq > 0) {
+                                key = substr(line, 1, eq - 1)
+                                if (!(key in want)) { order[++n] = key }
+                                want[key] = line
+                            }
+                        }
+                    }
+                    pass == 1 {
+                        if ($0 ~ /^\[/) { insection = ($0 == "[Default Applications]") }
+                        else if (insection) {
+                            eq = index($0, "=")
+                            if (eq > 0) have[substr($0, 1, eq - 1)] = 1
+                        }
+                        next
+                    }
+                    {
+                        print
+                        if ($0 == "[Default Applications]" && !done) {
+                            for (i = 1; i <= n; i++) if (!(order[i] in have)) print want[order[i]]
+                            done = 1
+                        }
+                    }
+                    END {
+                        if (!done) {
+                            for (i = 1; i <= n; i++) {
+                                if (order[i] in have) continue
+                                if (!header++) print "[Default Applications]"
+                                print want[order[i]]
+                            }
+                        }
+                    }
+                ' pass=1 "$tmp" pass=2 "$tmp" > "$restored"
+                mv -f "$restored" "$tmp"
+            fi
             if grep -q '=' "$tmp"; then
-                mv "$tmp" "$mimeapps"
-                chmod 0644 "$mimeapps"
+                chmod 0644 "$tmp"
+                mv -f "$tmp" "$mimeapps"
             else
                 rm -f "$mimeapps" "$tmp"
             fi
         fi
+        rm -f "$state"
+        rmdir "$state_dir" 2>/dev/null || true
+
         # The AppStream metadata + themed icons the postinst installed. Like the .desktop entries they
         # live outside the dpkg manifest (installed by the maintainer script, not unpacked), so nothing
         # else will remove them — a left-behind metainfo file would keep advertising an application
         # that is no longer installed.
-        rm -f /usr/share/metainfo/com.editora.Editora.metainfo.xml
-        for dir in /usr/share/icons/hicolor/*/apps; do
+        rm -f "$root/usr/share/metainfo/com.editora.Editora.metainfo.xml"
+        for dir in "$root"/usr/share/icons/hicolor/*/apps; do
             rm -f "$dir/editora.png"
         done
         ;;
 esac
 
 if command -v update-desktop-database >/dev/null 2>&1; then
-    update-desktop-database -q /usr/share/applications 2>/dev/null || true
+    update-desktop-database -q "$apps" 2>/dev/null || true
 fi
 
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+    gtk-update-icon-cache -q -t -f "$root/usr/share/icons/hicolor" 2>/dev/null || true
 fi
 
 exit 0

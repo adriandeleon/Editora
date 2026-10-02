@@ -19,32 +19,71 @@
 #
 set -e
 
+# Every path is addressed under $root so the script can be run against a scratch tree
+# (scripts/packaging/test_deb_maintainer_scripts.py). dpkg exports DPKG_ROOT to maintainer scripts;
+# it is empty for an ordinary install.
+root="${DPKG_ROOT:-}"
+
+# The install directory, LITERALLY. jpackage installs the payload at /opt/<package name>, and the
+# package is `editora` (aot_build.java passes --name Editora; jpackage lowercases it). This used to be
+# the glob /opt/*/bin/Editora, which takes the first match under ANY /opt directory — so with another
+# /opt/<x>/bin/Editora present (an old copy, a differently-named build) the command and the menu
+# entry could be wired to that one instead of the package being configured.
+app_dir=/opt/editora
+apps="$root/usr/share/applications"
+# What the mimeapps.list rewrite in step 4 displaced, kept so postrm can put it back.
+state_dir="$root/var/lib/editora"
+state="$state_dir/mimeapps.replaced"
+
+# Temporary files of step 4, removed on every exit path (each name is empty until its mktemp has run).
+base=""; new=""; displaced=""; merged=""
+cleanup() {
+    for leftover in "$base" "$new" "$displaced" "$merged"; do
+        if [ -n "$leftover" ]; then rm -f "$leftover"; fi
+    done
+}
+trap cleanup EXIT
+
 case "$1" in
     configure)
-        # 1) PATH command — install dir is /opt/<package-name> (jpackage lowercases it).
-        for launcher in /opt/*/bin/Editora; do
-            if [ -x "$launcher" ]; then
-                ln -sf "$launcher" /usr/bin/editora
-                break
+        # 1) PATH command. Created, or refreshed when it is already ours (a symlink into $app_dir);
+        #    a /usr/bin/editora that is anything else — a real file, a link to another program — belongs
+        #    to someone else and is left alone. (`ln -sf` here used to replace it unconditionally.)
+        launcher="$app_dir/bin/Editora"
+        link="$root/usr/bin/editora"
+        if [ -x "$root$launcher" ]; then
+            if [ -L "$link" ]; then
+                case "$(readlink "$link" 2>/dev/null || true)" in
+                    "$app_dir"/*) ln -sf "$launcher" "$link" ;;
+                    *) echo "editora: /usr/bin/editora is a link to something else; not replacing it" \
+                            "(run $launcher instead)" >&2 ;;
+                esac
+            elif [ -e "$link" ]; then
+                echo "editora: /usr/bin/editora already exists and is not ours; not replacing it" \
+                     "(run $launcher instead)" >&2
+            else
+                mkdir -p "$root/usr/bin"
+                ln -s "$launcher" "$link"
             fi
-        done
+        else
+            echo "editora: $launcher not found — no \`editora\` command or menu entry registered" >&2
+        fi
 
         # 2) Register the menu entry system-wide, injecting StartupWMClass if the source lacks it.
-        for src in /opt/*/lib/editora-Editora.desktop; do
-            [ -f "$src" ] || continue
-            mkdir -p /usr/share/applications
+        src="$root$app_dir/lib/editora-Editora.desktop"
+        if [ -f "$src" ]; then
+            mkdir -p "$apps"
             if grep -q '^StartupWMClass=' "$src"; then
-                cp -f "$src" /usr/share/applications/editora-Editora.desktop
+                cp -f "$src" "$apps/editora-Editora.desktop"
             else
                 # WM_CLASS is com.editora.App (JavaFX derives it from the module main); must match
                 # exactly or GNOME won't bind the running window to this entry (verified via wmctrl -lx).
                 awk '{ print }
                      /^\[Desktop Entry\]/ && !added { print "StartupWMClass=com.editora.App"; added = 1 }' \
-                    "$src" > /usr/share/applications/editora-Editora.desktop
+                    "$src" > "$apps/editora-Editora.desktop"
             fi
-            chmod 0644 /usr/share/applications/editora-Editora.desktop
-            break
-        done
+            chmod 0644 "$apps/editora-Editora.desktop"
+        fi
 
         # 2b) AppStream metadata + themed icons, for the software centre.
         #
@@ -59,20 +98,19 @@ case "$1" in
         # The icons are ADDITIVE: the .desktop keeps its own absolute Icon= line, which is what the
         # application menu already resolves. These exist so the software centre, which resolves the
         # metainfo's stock icon name through the theme, has something better than a generic glyph.
-        for src in /opt/*/lib/com.editora.Editora.metainfo.xml; do
-            [ -f "$src" ] || continue
-            mkdir -p /usr/share/metainfo
-            cp -f "$src" /usr/share/metainfo/com.editora.Editora.metainfo.xml
-            chmod 0644 /usr/share/metainfo/com.editora.Editora.metainfo.xml
-            break
-        done
-        for src in /opt/*/lib/icons/editora-*.png; do
+        src="$root$app_dir/lib/com.editora.Editora.metainfo.xml"
+        if [ -f "$src" ]; then
+            mkdir -p "$root/usr/share/metainfo"
+            cp -f "$src" "$root/usr/share/metainfo/com.editora.Editora.metainfo.xml"
+            chmod 0644 "$root/usr/share/metainfo/com.editora.Editora.metainfo.xml"
+        fi
+        for src in "$root$app_dir"/lib/icons/editora-*.png; do
             [ -f "$src" ] || continue
             size=$(basename "$src" .png | sed 's/^editora-//')
             case "$size" in
                 ''|*[!0-9]*) continue ;;   # not a size-suffixed icon; skip rather than guess
             esac
-            dir=/usr/share/icons/hicolor/${size}x${size}/apps
+            dir="$root/usr/share/icons/hicolor/${size}x${size}/apps"
             mkdir -p "$dir"
             cp -f "$src" "$dir/editora.png"
             chmod 0644 "$dir/editora.png"
@@ -92,8 +130,8 @@ text/javascript text/rust text/x-python text/x-go text/x-java text/x-csrc text/x
 text/x-chdr text/x-c++hdr text/x-makefile text/x-log text/x-lua text/x-kotlin text/x-csharp \
 application/json application/yaml application/toml application/xml application/sql \
 application/x-shellscript application/x-ruby application/x-php application/x-perl"
-        primary=/usr/share/applications/editora-Editora.desktop
-        expert=/usr/share/applications/editora-Editora-expert.desktop
+        primary="$apps/editora-Editora.desktop"
+        expert="$apps/editora-Editora-expert.desktop"
         if [ -f "$primary" ]; then
             mime_line=$(printf '%s;' $mime_types)
             if grep -q '^Exec=.*%F' "$primary"; then
@@ -114,22 +152,33 @@ application/x-shellscript application/x-ruby application/x-php application/x-per
         #    [Default Applications] entry per type in /usr/share/applications/mimeapps.list (the
         #    freedesktop mime-apps mechanism GIO honors for distro/system defaults). A user's own
         #    ~/.config/mimeapps.list choice still wins — deliberately, per Debian convention.
+        #
+        #    That file is SHARED with every other package and with the administrator, so:
+        #      - it is never truncated in place. The new content is written to a temporary file in the
+        #        same directory and renamed over the original; rename(2) is atomic, so a reader, a
+        #        full disk or a killed dpkg sees the old file or the new one, never an empty one.
+        #      - the defaults it displaces (another editor already registered for text/plain, say)
+        #        are remembered in $state, and postrm restores them. They used to be dropped for good.
         if [ -f "$expert" ]; then
-            mimeapps=/usr/share/applications/mimeapps.list
-            tmp=$(mktemp)
+            mimeapps="$apps/mimeapps.list"
+            base=$(mktemp "$apps/.mimeapps.list.editora.XXXXXX")
+            new=$(mktemp "$apps/.mimeapps.list.editora.XXXXXX")
+            displaced=$(mktemp "$apps/.mimeapps.list.editora.XXXXXX")
             # Start from the existing file minus any line already pointing at the expert entry
             # (idempotent across upgrades/reinstalls).
             if [ -f "$mimeapps" ]; then
-                grep -v '=editora-Editora-expert\.desktop$' "$mimeapps" > "$tmp" || true
+                grep -v '=editora-Editora-expert\.desktop$' "$mimeapps" > "$base" || true
             fi
-            grep -q '^\[Default Applications\]' "$tmp" || printf '[Default Applications]\n' >> "$tmp"
+            grep -q '^\[Default Applications\]' "$base" || printf '[Default Applications]\n' >> "$base"
             # Insert our defaults right under the header, dropping a competing default for the
-            # same type (a duplicated key in a keyfile is undefined — never leave two).
-            awk -v id=editora-Editora-expert.desktop -v types="$mime_types" '
+            # same type (a duplicated key in a keyfile is undefined — never leave two) and
+            # recording each dropped line in $displaced.
+            awk -v id=editora-Editora-expert.desktop -v types="$mime_types" -v displaced="$displaced" '
                 BEGIN { n = split(types, t, " "); for (i = 1; i <= n; i++) mine[t[i]] = 1 }
                 /^\[Default Applications\]$/ {
                     print
-                    for (i = 1; i <= n; i++) print t[i] "=" id
+                    if (!injected) { for (i = 1; i <= n; i++) print t[i] "=" id }
+                    injected = 1
                     insection = 1
                     next
                 }
@@ -137,26 +186,42 @@ application/x-shellscript application/x-ruby application/x-php application/x-per
                 {
                     if (insection) {
                         eq = index($0, "=")
-                        if (eq > 0 && (substr($0, 1, eq - 1) in mine)) next
+                        if (eq > 0 && (substr($0, 1, eq - 1) in mine)) { print > displaced; next }
                     }
                     print
                 }
-            ' "$tmp" > "$mimeapps"
-            rm -f "$tmp"
-            chmod 0644 "$mimeapps"
+            ' "$base" > "$new"
+
+            # Remember the displaced defaults BEFORE publishing the new file (if this stops in
+            # between, postrm finds the originals still in place and restores nothing twice). One
+            # line per type; a default displaced now replaces an older record for the same type,
+            # and records from earlier upgrades are kept — on an upgrade the file already holds our
+            # lines, so nothing is displaced and the state must not be emptied.
+            if [ -s "$displaced" ] || [ -s "$state" ]; then
+                mkdir -p "$state_dir"
+                merged=$(mktemp "$state_dir/.mimeapps.replaced.XXXXXX")
+                if [ -f "$state" ]; then cat "$displaced" "$state"; else cat "$displaced"; fi \
+                    | awk '{ eq = index($0, "="); key = substr($0, 1, eq - 1)
+                             if (eq > 0 && !(key in seen)) { seen[key] = 1; print } }' > "$merged"
+                chmod 0644 "$merged"
+                mv -f "$merged" "$state"
+            fi
+
+            chmod 0644 "$new"
+            mv -f "$new" "$mimeapps"
         fi
         ;;
 esac
 
 # Refresh the desktop database so the launcher + icon show up without a re-login.
 if command -v update-desktop-database >/dev/null 2>&1; then
-    update-desktop-database -q /usr/share/applications 2>/dev/null || true
+    update-desktop-database -q "$apps" 2>/dev/null || true
 fi
 
 # Without this the freshly-installed hicolor icons are not picked up until something else rebuilds
 # the cache, so the software centre keeps showing the generic glyph for a while after installing.
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+    gtk-update-icon-cache -q -t -f "$root/usr/share/icons/hicolor" 2>/dev/null || true
 fi
 
 exit 0

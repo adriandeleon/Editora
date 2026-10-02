@@ -1,0 +1,22 @@
+# Dependabot: weekly update PRs for the Maven dependencies/plugins and for the GitHub Actions the
+# workflows use. The actions are pinned to commit SHAs with the version in a trailing comment
+# (`uses: owner/action@<sha> # vX.Y.Z`); Dependabot rewrites both together.
+#
+# Nothing here scans for vulnerabilities by itself — enable "Dependabot alerts" and "Dependabot
+# security updates" in the repository's Security settings for that.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    ignore:
+      # The RichTextFX fork is vendored under m2-repo/ and published nowhere else.
+      - dependency-name: io.github.adriandeleon:richtextfx
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10

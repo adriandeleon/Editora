@@ -18,6 +18,10 @@ workflow, start with [`AGENTS.md`](../../AGENTS.md) and
     **missing that class**, and the packaged app throws `ClassNotFoundException` on the **first keypress**
     (dead keyboard). A `clean` regenerates every class and avoids it. `release.yml`'s `-Pdist` step runs
     `clean` for this reason. (`mvn javafx:run` and the fat jar are immune — they don't jlink a stale JAR.)
+    **The profile now enforces it:** `dist` binds `maven-clean-plugin:clean` to the `initialize` phase, so
+    `mvn -Pdist package` starts from an empty `target/` even when the `clean` is left out; `fatjar` deletes
+    only `target/classes` (the release workflow runs it after `-Pdist` and still needs `target/dist`).
+    `BuildHygieneTest` pins both bindings.
   - **Both** also run the AOT-cache training step (a GUI window flashes for ~2.5 s, then the build
     injects `editora.aot`) — see the AOT-cache note under *Conventions → performance*. It's
     failure-tolerant, so on a display-less machine it just skips the cache.
@@ -30,4 +34,4 @@ workflow, start with [`AGENTS.md`](../../AGENTS.md) and
   collide), so the release CI builds one fat jar per runner.
 - Cut a release: set `<version>` in `pom.xml` to the release version, i.e. **drop the `-SNAPSHOT`** (the pom is the **single** source — `AppInfo.VERSION` derives from it via Maven-filtered `build-info.properties`, so no other file needs the number; update `CHANGELOG.md` too), push a `vX.Y.Z` tag (`-rcN` ⇒ pre-release). **Between releases `master` sits on `X.Y.Z-SNAPSHOT`** — `release.yml`'s final `bump` job reopens it at the next patch `-SNAPSHOT` automatically after a non-rc release (idempotent: it bumps only when the pom still reads the version just released), so the step above is the only manual version edit. The suffix makes a build **self-identifying**: `AppInfo.isSnapshot()` shows a **`snapshot` toolbar badge** beside the `--dev` one, and the suffix appears in `--version`/About/Welcome — so a test build off `master` is never mistaken for a release. Anywhere a version must be a plain dotted number uses **`AppInfo.releaseVersion()`** (the versioned docs URL in `CommandPalette`, which would otherwise 404) or the pom's **`jpackage.publicVersion`** — each OS profile's build-helper execution strips `-SNAPSHOT` into it and derives `jpackage.appVersion` from that (mac additionally bumps a leading `0.`→`1.`), because **jpackage rejects a non-numeric app-version**; `aot_build.java` writes `publicVersion` into the macOS `Info.plist`. See [docs/release.md](../release.md).
 
-Run Maven from the project root (`/Users/adriandeleon/src/adl/Editora-V2`).
+Run Maven from the project root (the main checkout, or a task worktree under `../Editora-worktrees/`).

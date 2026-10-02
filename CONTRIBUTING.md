@@ -16,7 +16,7 @@ fat jar, and packaging.
 ## Workflow
 
 1. **Branch in a worktree** — `scripts/worktree.sh new feat/my-thing` (off `origin/master`),
-   then work in `../Editora-V2-worktrees/<slug>`. Don't `git checkout` another branch in the
+   then work in `../Editora-worktrees/<slug>`. Don't `git checkout` another branch in the
    main checkout. ([why](docs/conventions.md#worktrees-one-per-task))
 2. **Make the change**, following the conventions below.
 3. **`mvn spotless:apply`**, then **`mvn verify`** (runs all tests + the Spotless check + the

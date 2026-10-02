@@ -751,8 +751,11 @@ On **Linux**, the `.deb` installs the app under `/opt/editora/`, registers it in
 (with the Editora icon), and adds an **`editora` command on `PATH`** (a `/usr/bin/editora` symlink
 created by the package's maintainer scripts), so you can launch it from the menu or from a terminal
 with arguments — e.g. `editora some/file.java:42` or `editora --new-file=notes.md`. The menu entry and
-command are removed when you uninstall the package. (The `.rpm` installs under `/opt/editora/` too; run
-`/opt/editora/bin/Editora` or add your own symlink.)
+command are removed when you uninstall the package. It also makes *Editora Expert Mode* the system-wide
+default for text and source files; the defaults it replaces in `/usr/share/applications/mimeapps.list`
+are remembered and put back on uninstall, and an existing `/usr/bin/editora` that is not Editora's is
+left alone. (The `.rpm` installs under `/opt/editora/` too; run `/opt/editora/bin/Editora` or add your
+own symlink.)
 
 Linux releases also ship a **portable install tarball** (`Editora-<version>-linux-<arch>.tar.gz`, x64 +
 arm64) for systems without `.deb`/`.rpm` (or where you'd rather not use a package manager). It bundles the
@@ -764,6 +767,10 @@ tar xzf Editora-<version>-linux-x64.tar.gz && cd editora-x86_64
 sudo ./install.sh     # system    -> /opt/editora       (+ /usr/local/bin/editora)
 ./install.sh --uninstall   # remove it again
 ```
+
+A system install is owned by root and not group- or world-writable, whoever unpacked the tarball.
+`--prefix DIR` installs into `DIR/editora` instead, and refuses to touch that directory if it already
+holds something that is not an Editora install.
 
 Either way it adds an `editora` command and an application-menu entry (with the Editora icon). You can also
 run it in place without installing: `./Editora/bin/Editora`. Build one locally from an app-image with

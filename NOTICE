@@ -6,6 +6,18 @@ This product is licensed under the MIT License (see LICENSE).
 It includes third-party software and data, each under its own license, as
 described below.
 
+Where these files travel: LICENSE and NOTICE are packaged into the application
+jar (META-INF/editora/), so every build carries them; the Linux tarball, the
+AppImage and the experimental Native Image archives also carry them as plain
+files, and the .deb/.rpm/.msi installers are built with LICENSE as their
+licence file. Each bundled font family ships its own OFL.txt beside the font
+files, and the Apache License 2.0 text is at
+META-INF/editora/licenses/Apache-2.0.txt.
+
+The "Third-party libraries" section names every runtime dependency declared in
+pom.xml by its Maven coordinates (groupId:artifactId); NoticeCoverageTest fails
+the build when a dependency is added there without an entry here.
+
 ================================================================================
 Bundled TextMate grammars (syntax highlighting)
 ================================================================================
@@ -123,9 +135,11 @@ unmodified, each under the SIL Open Font License 1.1 (OFL-1.1):
     Source Code Pro  — https://github.com/adobe-fonts/source-code-pro (© Adobe)
     Inter            — https://github.com/rsms/inter               (© The Inter Project Authors)
 
-The full SIL Open Font License 1.1 text is available at
-https://openfontlicense.org. The OFL permits bundling and redistribution within
-this application.
+Each family's own licence file — its copyright notice followed by the full SIL
+Open Font License 1.1 text — is shipped next to the font files as
+src/main/resources/com/editora/fonts/<family>/OFL.txt (in a build:
+com/editora/fonts/<family>/OFL.txt inside the application jar / runtime image).
+The OFL permits bundling and redistribution within this application.
 
 ================================================================================
 Bundled snippets
@@ -167,19 +181,77 @@ JCodings — org.jruby.jcodings:jcodings
     https://github.com/jruby/jcodings
 
 Gson — com.google.code.gson:gson
-    Parses the TextMate grammar JSON files.
+    Parses the TextMate grammar JSON files; also the JSON layer of LSP4J.
+    Pulls com.google.errorprone:error_prone_annotations (annotations only).
     License: Apache License 2.0
     https://github.com/google/gson
 
-RichTextFX (and reactfx, flowless, undofx, wellbehavedfx)
-    The styled code-editing control.
+RichTextFX — io.github.adriandeleon:richtextfx
+    The styled code-editing control. This is a fork of FXMisc RichTextFX
+    (https://github.com/adriandeleon/RichTextFX) adding multiple carets,
+    column selection and inlay support, vendored under m2-repo/. It pulls
+    org.reactfx:reactfx, org.fxmisc.flowless:flowless, org.fxmisc.undo:undofx
+    and org.fxmisc.wellbehaved:wellbehavedfx (all BSD-2-Clause).
+    Copyright (c) 2013-2023, Tomas Mikula and contributors.
     License: BSD-2-Clause / GPL-2.0-with-classpath-exception (dual)
     https://github.com/FXMisc/RichTextFX
 
-AtlantaFX — atlantafx.base
+AtlantaFX — io.github.mkpaz:atlantafx-base
     JavaFX CSS theme library.
     License: MIT
     https://github.com/mkpaz/atlantafx
+
+commonmark-java — org.commonmark:commonmark and its extensions
+    Markdown parsing for the preview and the exporters:
+    org.commonmark:commonmark-ext-gfm-tables,
+    org.commonmark:commonmark-ext-gfm-strikethrough,
+    org.commonmark:commonmark-ext-task-list-items,
+    org.commonmark:commonmark-ext-autolink,
+    org.commonmark:commonmark-ext-yaml-front-matter,
+    org.commonmark:commonmark-ext-footnotes,
+    org.commonmark:commonmark-ext-heading-anchor,
+    org.commonmark:commonmark-ext-ins.
+    Copyright (c) 2015, Atlassian Pty Ltd.
+    License: BSD-2-Clause
+    https://github.com/commonmark/commonmark-java
+
+autolink-java — org.nibor.autolink:autolink
+    URL/e-mail detection behind the Markdown autolink extension.
+    Copyright (c) 2015 Robin Stocker.
+    License: MIT
+    https://github.com/robinst/autolink-java
+
+Eclipse LSP4J — org.eclipse.lsp4j:org.eclipse.lsp4j,
+        org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc,
+        org.eclipse.lsp4j:org.eclipse.lsp4j.debug
+        (and the transitive org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc.debug)
+    Language Server Protocol and Debug Adapter Protocol client types and their
+    JSON-RPC transport.
+    License: Eclipse Public License 2.0 (EPL-2.0), as declared by the published
+    artifacts; upstream offers the code under EPL-2.0 or the Eclipse
+    Distribution License 1.0 (BSD-3-Clause).
+    https://github.com/eclipse-lsp4j/lsp4j
+    https://www.eclipse.org/legal/epl-2.0/
+
+java-diff-utils — io.github.java-diff-utils:java-diff-utils
+    Myers line diff and unified-diff/patch generation for the diff viewer.
+    License: Apache License 2.0
+    https://github.com/java-diff-utils/java-diff-utils
+
+JLaTeXMath — org.scilab.forge:jlatexmath
+        (and the transitive org.scilab.forge:jlatexmath-font-greek,
+        org.scilab.forge:jlatexmath-font-cyrillic)
+    LaTeX math rendering for the Markdown preview and PDF export.
+    Copyright (C) 2009-2011 Calixte Denizet; Copyright (C) Kris Coolsaet,
+    Nico Van Cleemput, Kurt Vermeulen; Copyright 2004-2007 Universiteit Gent.
+    License: GNU General Public License, version 2 or (at your option) any
+    later version, WITH the special linking exception stated in the library's
+    own LICENSE (it permits linking the library with independent modules and
+    distributing the result under terms of your choice). Editora uses the
+    library unmodified, as a separate module. The jar keeps its own
+    META-INF/LICENSE and META-INF/COPYING, and the licences of the math fonts
+    it embeds (org/scilab/forge/jlatexmath/fonts/licences/).
+    https://github.com/opencollab/jlatexmath
 
 Bundled AtlantaFX community themes
     The CSS files under src/main/resources/com/editora/styles/atlantafx-themes/
@@ -189,22 +261,42 @@ Bundled AtlantaFX community themes
     Copyright (c) 2022 mkpaz. License: MIT.
     https://github.com/dlsc-software-consulting-gmbh/atlantafx-themes
 
-Jackson (jackson-databind, jackson-core, jackson-annotations)
-    JSON (de)serialization for user settings.
+Jackson — com.fasterxml.jackson.core:jackson-databind
+        (with jackson-core and jackson-annotations),
+        com.fasterxml.jackson.dataformat:jackson-dataformat-toml,
+        com.fasterxml.jackson.dataformat:jackson-dataformat-yaml
+    JSON (de)serialization for user settings, and TOML/YAML parsing for the
+    structured-data tree and the OpenAPI preview.
     License: Apache License 2.0
     https://github.com/FasterXML/jackson
+    https://github.com/FasterXML/jackson-dataformats-text
 
-JavaFX
-    UI toolkit.
+SnakeYAML — org.yaml:snakeyaml
+    YAML parser used by jackson-dataformat-yaml.
+    License: Apache License 2.0
+    https://bitbucket.org/snakeyaml/snakeyaml
+
+SLF4J API — org.slf4j:slf4j-api
+    Logging facade required by Apache MINA SSHD (no binding is bundled, so it
+    is a no-op logger).
+    Copyright (c) 2004-2022 QOS.ch Sarl (Switzerland).
+    License: MIT
+    https://www.slf4j.org
+
+JavaFX — org.openjfx:javafx-controls, org.openjfx:javafx-fxml,
+        org.openjfx:javafx-swing (with javafx-base and javafx-graphics)
+    UI toolkit. The installers and the fat jar bundle the platform's JavaFX
+    classes and native libraries.
     License: GPL-2.0-with-classpath-exception
     https://openjfx.io
 
-JSVG — com.github.weisj:jsvg
-    SVG rendering, used to rasterize SVG images (e.g. badges) in the Markdown preview.
+JSVG — com.github.weisj:jsvg, com.github.weisj:jsvg-javafx
+    SVG rendering: rasterizes SVG images (e.g. badges) in the Markdown preview
+    and draws the standalone .svg preview.
     License: MIT
     https://github.com/weisJ/jsvg
 
-Apache PDFBox (pdfbox, pdfbox-io, fontbox) — org.apache.pdfbox
+Apache PDFBox — org.apache.pdfbox:pdfbox (with pdfbox-io and fontbox)
     PDF generation for the "Export to PDF" feature (code + Markdown).
     License: Apache License 2.0
     https://pdfbox.apache.org
@@ -214,15 +306,16 @@ Apache Commons Logging — commons-logging:commons-logging
     License: Apache License 2.0
     https://commons.apache.org/proper/commons-logging/
 
-Apache POI (poi, poi-ooxml, poi-ooxml-lite) — org.apache.poi
+Apache POI — org.apache.poi:poi-ooxml (with poi and poi-ooxml-lite)
     MS Word (.docx) generation for the Markdown preview "Export to Word" feature, plus its transitive
-    dependencies (Apache XMLBeans, Apache Commons Compress/IO/Codec/Collections/Math, SparseBitSet,
-    curvesapi, Apache Log4j API).
+    dependencies (Apache XMLBeans, Apache Commons Compress/IO/Codec/Collections/Lang/Math, SparseBitSet,
+    Apache Log4j API — all Apache License 2.0 — and com.github.virtuald:curvesapi, BSD-3-Clause,
+    Copyright (c) 2005, Graph Builder).
     License: Apache License 2.0
     https://poi.apache.org/
     (OpenDocument .odt export is hand-written, not via the ODF Toolkit — no extra dependency.)
 
-Apache Lucene (lucene-core, lucene-analysis-common)
+Apache Lucene — org.apache.lucene:lucene-analysis-common (with lucene-core)
     Pure-Java spell-check engine (the org.apache.lucene.analysis.hunspell
     package) and its in-memory store.
     License: Apache License 2.0
@@ -246,7 +339,7 @@ Bundled Hunspell dictionaries (under src/main/resources/com/editora/dictionaries
         Mozilla Public License, Version 2.0.
         https://www.mozilla.org/MPL/2.0/
 
-Apache MINA SSHD (org.apache.sshd: sshd-osgi, sshd-sftp)
+Apache MINA SSHD — org.apache.sshd:sshd-osgi, org.apache.sshd:sshd-sftp
     SSH/SFTP client used for remote file access (com.editora.vfs); its nio
     FileSystemProvider lets remote files reuse the editor's existing Files/Path
     code. Copyright Apache Software Foundation. Licensed under the
@@ -275,3 +368,26 @@ Material Design Icons (category + UI glyphs)
     Material Design Icons, released under the Apache License 2.0.
     https://github.com/google/material-design-icons
     https://www.apache.org/licenses/LICENSE-2.0
+
+================================================================================
+Experimental Native Image archives only (-Pnative)
+================================================================================
+
+The Editora-<version>-<target>-native-experimental archives are linked with two
+additional libraries that no other build uses:
+
+JavaFX static libraries for GraalVM — us.hebi.graalvm:jfx-static-libs
+    The OpenJFX native libraries built as static archives, linked into the
+    native executable.
+    License: GPL-2.0-with-classpath-exception (the OpenJFX licence)
+    https://github.com/HebiRobotics/jfx-static-feature
+
+jfx-static-feature — us.hebi.graalvm:jfx-static-feature
+    The GraalVM Native Image feature that registers those static libraries.
+    License: GPL-2.0-with-classpath-exception
+    https://github.com/HebiRobotics/jfx-static-feature
+
+The executable also contains the parts of the Java runtime that GraalVM Native
+Image compiled in. Those are covered by the licence of the GraalVM distribution
+the archive was built with (the release workflow uses Oracle GraalVM for
+JDK 25; the OpenJDK class library is GPL-2.0-with-classpath-exception).
