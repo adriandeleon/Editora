@@ -1159,8 +1159,7 @@ public final class FoldManager {
 
         Label chevron = new Label(" ");
         chevron.getStyleClass().add("fold-chevron");
-        Optional<Region> region = regionStartingAt(idx);
-        if (region.isPresent()) {
+        if (regionStartingAt(idx).isPresent()) {
             boolean collapsed = isCollapsed(idx);
             chevron.setText(collapsed ? "▸" : "▾"); // ▸ / ▾
             chevron.setCursor(Cursor.HAND);
@@ -1168,7 +1167,9 @@ public final class FoldManager {
                 if (isCollapsed(idx)) {
                     unfold(idx);
                 } else {
-                    fold(region.get());
+                    // Resolved now, not when this row was built: a header's graphic is only rebuilt when its
+                    // fold-START status changes, so a block that grew since would fold at its old extent.
+                    regionStartingAt(idx).ifPresent(this::fold);
                 }
                 e.consume(); // a fold click is not a text click
             });

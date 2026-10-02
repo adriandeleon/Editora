@@ -73,6 +73,17 @@ class SearchMatcherTest {
     }
 
     @Test
+    void regexLineAnchorsMatchAtEveryLine() {
+        String text = "import a;\nimport b;\n\nclass C {}\n";
+        // ^ and $ are per-line anchors in a whole-document search, not just the document's two ends.
+        assertRanges(SearchMatcher.matches(text, "^import", true, true, false), m(0, 6), m(10, 16));
+        assertRanges(SearchMatcher.matches(text, ";$", true, true, false), m(8, 9), m(18, 19));
+        assertRanges(SearchMatcher.matches(text, "^$", true, true, false), m(20, 20)); // the one blank line
+        // A single line (what the line-oriented multi-file search hands in) is unaffected by the flag.
+        assertRanges(SearchMatcher.matches("import a;", "^import|;$", true, true, false), m(0, 6), m(8, 9));
+    }
+
+    @Test
     void zeroWidthRegexDoesNotLoopForever() {
         // a pattern that can match empty must still terminate and advance
         List<int[]> r = SearchMatcher.matches("abc", "x*", true, true, false);

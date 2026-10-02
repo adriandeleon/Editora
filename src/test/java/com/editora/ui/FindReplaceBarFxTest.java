@@ -329,6 +329,34 @@ class FindReplaceBarFxTest {
         assertFalse(h.lastStatus().isBlank(), "the user should be told why nothing happened");
     }
 
+    // --- line anchors ---
+
+    @Test
+    void regexLineAnchorsCountEveryLineInTheFindBar() throws Exception {
+        Harness h = harness("import a;\nimport b;\nclass C {}\n");
+        @SuppressWarnings("unchecked")
+        List<int[]> matches = FxTestSupport.callOnFx(() -> {
+            h.query("^import", "");
+            h.toggle("regex", true);
+            return (List<int[]>) FxTestSupport.call(
+                    h.bar, "computeMatches", new Class<?>[] {CodeArea.class, String.class}, h.area(), "^import");
+        });
+        assertEquals(2, matches.size());
+        assertEquals(0, matches.get(0)[0]);
+        assertEquals(10, matches.get(1)[0]);
+    }
+
+    @Test
+    void replaceAllHonoursLineAnchors() throws Exception {
+        Harness h = harness("import a;\nimport b;\nclass C {}\n");
+        FxTestSupport.runOnFx(() -> {
+            h.query("^import (\\w+);$", "use $1");
+            h.toggle("regex", true);
+            h.bar.replaceAllMatches();
+        });
+        assertEquals("use a\nuse b\nclass C {}\n", h.content());
+    }
+
     // --- the ranged replace ---
 
     @Test

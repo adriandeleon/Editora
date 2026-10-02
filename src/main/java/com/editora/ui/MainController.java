@@ -8058,15 +8058,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         mermaid.wireBuffer(buffer); // live maid validator + initial lint state
         // Markdown linting: the overlay gets the diagnostics; the Lint tool window mirrors them live when
         // this buffer is the active one and the window is open.
-        buffer.setMarkdownLintValidator((text, cb) ->
-                previews.markdownLintService.validate(text, previews.effectiveMarkdownLintDisabled(buffer), diags -> {
-                    cb.accept(diags);
-                    if (activeBuffer() == buffer
-                            && markdownLintToolWindow != null
-                            && toolWindows.isOpen(markdownLintToolWindow)) {
-                        markdownLintPanel.setResults(buffer.getPath(), diags);
-                    }
-                }));
+        buffer.setMarkdownLintValidator((text, cb) -> previews.lintMarkdown(buffer, text, diags -> {
+            cb.accept(diags);
+            if (activeBuffer() == buffer
+                    && markdownLintToolWindow != null
+                    && toolWindows.isOpen(markdownLintToolWindow)) {
+                markdownLintPanel.setResults(buffer.getPath(), diags);
+            }
+        }));
         buffer.setMarkdownLintEnabled(previews.markdownLintEnabled());
         buffer.setImageDropHandler(
                 files -> editing.insertDroppedImages(buffer, files)); // drag image → assets/ + ![](…)

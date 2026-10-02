@@ -216,7 +216,11 @@ public class EditorBuffer implements TabContent {
         }
     });
 
-    private final CodeArea area = new CodeArea();
+    /** Auto-rename-tag: mirrors an HTML/XML tag-name edit onto the paired tag once the edit has committed. */
+    private final TagRenameMirror tagRename = new TagRenameMirror(
+            this::getLanguage, () -> !this.largeFile && !this.hugeFile && isEditable() && !hasMultipleCarets());
+
+    private final CodeArea area = tagRename.newArea(null);
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /** The last saved/loaded content; the buffer is dirty only when the text differs from this. */
@@ -782,8 +786,8 @@ public class EditorBuffer implements TabContent {
      *  Kept exactly in step with {@link #lineStates} — cleared and spliced at the same points — so an
      *  incremental pass can start colouring at the edited line without rescanning the prefix. */
     private final java.util.ArrayList<Integer> lineDepths = new java.util.ArrayList<>();
-    /** Earliest line changed since the last highlight (0 = re-highlight the whole document). */
-    private int dirtyFromLine;
+    /** Where the next highlight pass must start: the earliest line edited or still owed by a discarded pass. */
+    private final HighlightStart highlightStart = new HighlightStart();
     /** Named definitions from the last tokenization (FX-thread confined); drives the Structure view. */
     private List<TextMateHighlighter.Symbol> symbols = List.of();
     /** Notified (on the FX thread) after {@link #symbols} is refreshed. */
@@ -1010,7 +1014,7 @@ public class EditorBuffer implements TabContent {
                 int position = Math.min(change.getPosition(), area.getLength());
                 int line = area.offsetToPosition(position, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
                         .getMajor();
-                dirtyFromLine = Math.min(dirtyFromLine, line);
+                highlightStart.edited(line);
             }
             // The cached semantic tokens now point at shifted offsets; suppress the overlay until the
             // next response re-anchors them (one boolean write — off the per-char path's cost budget). The
@@ -1048,9 +1052,6 @@ public class EditorBuffer implements TabContent {
                 .subscribe(c -> dirty.set(forcedDirty
                         || contentLength() != cleanText.length()
                         || !getContent().equals(cleanText)));
-        // Auto-rename tag: mirror a tag-name edit onto the paired open/close tag (html/xml only —
-        // the handler's first checks are two cheap boolean/string compares for every other buffer).
-        area.plainTextChanges().subscribe(this::maybeMirrorTagRename);
         // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
         // so the very first check short-circuits for every buffer that hasn't turned it on).
         area.plainTextChanges().subscribe(this::maybeAutoFill);
@@ -2056,17 +2057,10 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
         AnchorPane.setRightAnchor(scrollPane, Minimap.WIDTH);
-        // The whitespace overlay shares the text rectangle with the scroll pane (and tracks it when
-        // the minimap is toggled); it is mouse-transparent so clicks reach the editor.
-        AnchorPane.setTopAnchor(whitespace, 0d);
-        AnchorPane.setBottomAnchor(whitespace, 0d);
-        AnchorPane.setLeftAnchor(whitespace, 0d);
-        AnchorPane.setRightAnchor(whitespace, Minimap.WIDTH);
-        // The spell-check overlay (red squiggles) shares the same text rectangle, mouse-transparent.
-        AnchorPane.setTopAnchor(spellOverlay, 0d);
-        AnchorPane.setBottomAnchor(spellOverlay, 0d);
-        AnchorPane.setLeftAnchor(spellOverlay, 0d);
-        AnchorPane.setRightAnchor(spellOverlay, Minimap.WIDTH);
+        // The overlays share the text rectangle with the scroll pane (and track it when the minimap is
+        // toggled — see anchorOverText); they are mouse-transparent so clicks reach the editor.
+        anchorOverText(whitespace);
+        anchorOverText(spellOverlay); // red squiggles
         spellChecker = new SpellChecker(spellLanguage, spellUserWords);
         spellChecker.setUserWordsEnabled(spellUserWordsEnabled);
         spellChecker.setTechnicalWordsEnabled(spellTechnicalEnabled);
@@ -2074,28 +2068,14 @@ public class EditorBuffer implements TabContent {
         spellOverlay.setProseMode(isProse());
         spellOverlay.setMarkdown(isMarkdown()); // skip fenced ``` code blocks from spell check
         installLintHover(area); // hover reads lintOverlay only while mermaid lint is active (lazily attached)
-        AnchorPane.setTopAnchor(mdLintOverlay, 0d);
-        AnchorPane.setBottomAnchor(mdLintOverlay, 0d);
-        AnchorPane.setLeftAnchor(mdLintOverlay, 0d);
-        AnchorPane.setRightAnchor(mdLintOverlay, Minimap.WIDTH);
+        anchorOverText(mdLintOverlay);
         installMarkdownLintHover(area);
         installImageDrop(area);
         installLspHover(area); // hover reads lspOverlay only while LSP is active (lazily attached)
-        // Inline debugger values share the text rectangle, mouse-transparent (active only while
-        // execution is suspended in this file).
-        AnchorPane.setTopAnchor(inlineValues, 0d);
-        AnchorPane.setBottomAnchor(inlineValues, 0d);
-        AnchorPane.setLeftAnchor(inlineValues, 0d);
-        AnchorPane.setRightAnchor(inlineValues, Minimap.WIDTH);
+        anchorOverText(inlineValues); // inline debugger values (active only while suspended in this file)
         installDebugHover(area);
-        AnchorPane.setTopAnchor(todoOverlay, 0d);
-        AnchorPane.setBottomAnchor(todoOverlay, 0d);
-        AnchorPane.setLeftAnchor(todoOverlay, 0d);
-        AnchorPane.setRightAnchor(todoOverlay, Minimap.WIDTH);
-        AnchorPane.setTopAnchor(noteOverlay, 0d);
-        AnchorPane.setBottomAnchor(noteOverlay, 0d);
-        AnchorPane.setLeftAnchor(noteOverlay, 0d);
-        AnchorPane.setRightAnchor(noteOverlay, Minimap.WIDTH);
+        anchorOverText(todoOverlay);
+        anchorOverText(noteOverlay);
         noteOverlay.setSpans(notes::activeSpans);
         noteOverlay.setActive(true);
         installNoteHover();
@@ -2674,12 +2654,25 @@ public class EditorBuffer implements TabContent {
     // so they are built + wired only on first activation rather than per buffer. Each is inserted just below a
     // fixed eager sibling to preserve the z-order of the original construction.
 
-    /** Attaches {@code overlay} to the editor pane just below {@code below}, with the standard text-rect anchors. */
-    private <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, javafx.scene.Node below) {
+    /** Marks a node anchored by {@link #anchorOverText}, so {@link #setMinimapVisible} can find them all. */
+    private static final String OVER_TEXT = "editora.overText";
+
+    /**
+     * Anchors {@code overlay} over the text rectangle — exactly the scroll pane's, whatever the minimap is
+     * doing right now. Every overlay drawn on the text goes through here: one that kept the minimap's inset
+     * while the minimap was hidden stopped 90 px short of the edge, clipping highlights and squiggles there.
+     */
+    private void anchorOverText(Node overlay) {
         AnchorPane.setTopAnchor(overlay, 0d);
         AnchorPane.setBottomAnchor(overlay, 0d);
         AnchorPane.setLeftAnchor(overlay, 0d);
-        AnchorPane.setRightAnchor(overlay, Minimap.WIDTH);
+        AnchorPane.setRightAnchor(overlay, AnchorPane.getRightAnchor(scrollPane));
+        overlay.getProperties().put(OVER_TEXT, Boolean.TRUE);
+    }
+
+    /** Attaches {@code overlay} to the editor pane just below {@code below}, with the standard text-rect anchors. */
+    private <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, javafx.scene.Node below) {
+        anchorOverText(overlay);
         int idx = root.getChildren().indexOf(below);
         if (idx < 0) {
             idx = root.getChildren().indexOf(minimap); // fallback: just under the minimap
@@ -4200,16 +4193,21 @@ public class EditorBuffer implements TabContent {
      * ({@code requestGen == } the current {@link #semanticGen()}). A stale response — the server computed it
      * against an older version, or an older request's reply arrives after a newer one — is <b>dropped</b>,
      * leaving {@link #semanticStale} set so the overlay stays suppressed rather than re-anchoring the old
-     * tokens onto the shifted text (which mis-colored characters/lines until the next response).
+     * tokens onto the shifted text (which mis-colored characters/lines until the next response). A response
+     * identical to the tokens already shown restyles nothing; a different one restyles from its first line.
      */
     public void setSemanticTokens(java.util.List<SemanticToken> tokens, long requestGen) {
         if (!semanticActive || requestGen != semanticGen) {
             return;
         }
-        semanticTokens = tokens == null ? java.util.List.of() : tokens;
+        java.util.List<SemanticToken> next = tokens == null ? java.util.List.of() : tokens;
+        int from = SemanticToken.firstChangedLine(semanticTokens, next, semanticStale);
+        semanticTokens = next;
         semanticStale = false; // anchored to the current (unchanged since request) text → safe to overlay
-        invalidateHighlighting();
-        applyHighlighting();
+        if (from != Integer.MAX_VALUE) { // else the same tokens over the same text: nothing to restyle
+            highlightStart.edited(from); // style-only: the lexical end-states above stay valid, so resume there
+            applyHighlighting();
+        }
     }
 
     /** The inclusive 0-based line range currently visible in the editor (for a viewport semantic-tokens
@@ -4701,9 +4699,6 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Auto-rename-tag: editing an HTML/XML tag name mirrors the rename onto the paired tag. */
-    private boolean autoRenameTag;
-
     /** Auto-close tags: typing the {@code >} of an HTML/XML open tag inserts the matching closer. */
     private boolean autoCloseTags;
 
@@ -4738,12 +4733,9 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    /** Re-entrancy guard: the mirrored {@code replaceText} must not itself trigger another mirror. */
-    private boolean applyingTagRename;
-
     /** Enables/disables the paired-tag auto-rename (pushed from the controller's view settings). */
     public void setAutoRenameTag(boolean on) {
-        autoRenameTag = on;
+        tagRename.setEnabled(on);
     }
 
     /**
@@ -4906,58 +4898,6 @@ public class EditorBuffer implements TabContent {
         // subscriber returns — which would strand the caret inside the inserted prefix (delta > 0) and send
         // the next characters to the wrong place. Deferring makes our position the last one to win.
         javafx.application.Platform.runLater(() -> a.moveTo(Math.min(restored, a.getLength())));
-    }
-
-    /**
-     * Left/right context the local tag-name pre-check needs around an edit: at least {@code MAX_NAME + 2}
-     * (the longest name plus its {@code </}) so the window reproduces {@link com.editora.editops.TagRename}'s
-     * own region decision without a false negative.
-     */
-    private static final int TAG_RENAME_LOOKBACK = com.editora.editops.TagRename.MAX_NAME + 2;
-
-    private void maybeMirrorTagRename(org.fxmisc.richtext.model.PlainTextChange c) {
-        if (!autoRenameTag || applyingTagRename || largeFile || hugeFile || !isEditable()) {
-            return;
-        }
-        String lang = getLanguage();
-        boolean html = "html".equals(lang);
-        if (!html && !"xml".equals(lang)) {
-            return;
-        }
-        if (area.getUndoManager().isPerformingAction()
-                || (area2 != null && area2.getUndoManager().isPerformingAction())) {
-            return;
-        }
-        // TagRename.mirror only has work when the edit lands inside a tag name — a fully-local test that reads
-        // just a bounded neighborhood of the change. Run it on a small window first so the vast majority of
-        // keystrokes (in text, attributes, anywhere but a tag name) skip materializing the whole document — an
-        // O(n) String this runs per keystroke. Only a confirmed tag-name edit pays the full getText + lex.
-        int changePos = c.getPosition();
-        int changeEnd = changePos + c.getInserted().length();
-        int docLen = area.getLength();
-        int winStart = Math.max(0, changePos - TAG_RENAME_LOOKBACK);
-        int winEnd = Math.min(docLen, changeEnd + TAG_RENAME_LOOKBACK);
-        String window = area.getText(winStart, winEnd);
-        if (!com.editora.editops.TagRename.changeInTagName(window, changePos - winStart, changeEnd - winStart)) {
-            return;
-        }
-        com.editora.editops.TagRename.Mirror m =
-                com.editora.editops.TagRename.mirror(area.getText(), changePos, c.getRemoved(), c.getInserted(), html);
-        if (m == null) {
-            return;
-        }
-        CodeArea a = getFocusedArea();
-        int anchor = a.getAnchor();
-        int caret = a.getCaretPosition();
-        int delta = m.name().length() - (m.to() - m.from());
-        applyingTagRename = true;
-        try {
-            a.replaceText(m.from(), m.to(), m.name());
-            // replaceText moved this view's caret to the mirror — put it back where the user was.
-            a.selectRange(anchor >= m.to() ? anchor + delta : anchor, caret >= m.to() ? caret + delta : caret);
-        } finally {
-            applyingTagRename = false;
-        }
     }
 
     /** Per-column "rainbow" coloring for CSV/TSV buffers (replaces the source.csv grammar highlighting). */
@@ -6606,7 +6546,7 @@ public class EditorBuffer implements TabContent {
         if (area2 != null) {
             return;
         }
-        area2 = new CodeArea(area.getContent()); // shares the EditableStyledDocument
+        area2 = tagRename.newArea(area.getContent()); // shares the EditableStyledDocument
         area2.getStyleClass().add("editor-area");
         area2.setWrapText(false);
         area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
@@ -7446,7 +7386,11 @@ public class EditorBuffer implements TabContent {
         this.minimapVisible = visible;
         boolean effective = minimapEffective(visible, largeFile, heavyFile, markdownViewMode);
         applyMinimap(scrollPane, minimap, effective);
-        AnchorPane.setRightAnchor(whitespace, effective ? Minimap.WIDTH : 0d);
+        for (Node child : root.getChildren()) {
+            if (child.getProperties().containsKey(OVER_TEXT)) {
+                AnchorPane.setRightAnchor(child, AnchorPane.getRightAnchor(scrollPane));
+            }
+        }
         if (minimap2 != null) {
             applyMinimap(scrollPane2, minimap2, effective);
         }
@@ -8755,6 +8699,8 @@ public class EditorBuffer implements TabContent {
                 }
             }
         }
+        applyCloserDedent(a, '\n'); // Enter finishes a closer keyword (fi, end, done): align it first
+        caret = a.getCaretPosition();
         Indenter.EnterEdit edit = Indenter.enterEdit(
                 a.getText(), caret, language, tabSize, indentInsertSpacesOverride, indentSizeOverride);
         a.replaceText(caret, caret, edit.insert());
@@ -8806,9 +8752,9 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * When a closing token is typed alone on a line (a {@code )]}} bracket, or a completed closer keyword
-     * like {@code end}/{@code fi}), re-aligns the line's indent to its opener. Does <em>not</em> insert the
-     * character (the caller does). Shared by the auto-indent key filter and macro replay ({@link #typeChar}).
+     * When a closing token is typed alone on a line (a {@code )]}} bracket, or the character/Enter that
+     * finishes a closer keyword like {@code end}/{@code fi}), re-aligns the line's indent to its opener. Does
+     * <em>not</em> insert {@code c} (the caller does). Shared by the key filters and macro replay.
      */
     private void applyCloserDedent(CodeArea a, char c) {
         Indenter.Style style = Indenter.styleFor(language);
@@ -8825,6 +8771,7 @@ public class EditorBuffer implements TabContent {
         String aligned = Indenter.closerAlignIndent(a.getText(), caret, tabSize);
         if (!aligned.equals(currentIndent)) {
             a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
+            a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent
         }
     }
 
@@ -9252,10 +9199,10 @@ public class EditorBuffer implements TabContent {
     /**
      * Applies language-server text edits (e.g. Format Document's whole-file edit set, or a completion's
      * {@code additionalTextEdits} — the {@code import} line an auto-import adds). Edits apply as one undoable
-     * commit. Column positions beyond a line's length are clamped (the LSP spec's rule), but an edit whose
-     * <em>start line</em> lies entirely beyond the document is skipped, not clamped — no valid edit begins
-     * past the end of the file, so such a position means the server computed against a stale revision, and
-     * clamping it onto the last line would apply the edit at a wrong place (#667). Inert when not editable.
+     * commit. Column positions beyond a line's length are clamped (the LSP spec's rule), and the position one
+     * past the last line, column 0, is the document end. An edit that <em>starts</em> further out than that
+     * is skipped, not clamped — no valid edit begins there, so the server computed against a stale
+     * revision, and clamping would apply the edit at a wrong place (#667). Inert when not editable.
      */
     public void applyLspEdits(java.util.List<LspTextEdit> edits) {
         applyLspEdits(edits, false);
@@ -9291,7 +9238,7 @@ public class EditorBuffer implements TabContent {
         int last = 0;
         for (LspTextEdit e : asc) {
             try {
-                if (e.startLine() >= lineCount) {
+                if (e.startLine() > lineCount || (e.startLine() == lineCount && e.startCol() > 0)) {
                     continue; // start beyond the document — a stale edit; clamping would misplace it (#667)
                 }
                 int s = lspOffset(a, e.startLine(), e.startCol());
@@ -9356,11 +9303,18 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Absolute offset for a 0-based LSP line/character, clamped to the document/paragraph bounds. */
+    /**
+     * Absolute offset for a 0-based LSP line/character, clamped to the document/paragraph bounds. A line past
+     * the last one is the document <em>end</em> (as in {@code LspPositions.offset}), not the start of the
+     * last line: {@code (lineCount, 0)} is how a server addresses "after everything".
+     */
     private static int lspOffset(CodeArea a, int line, int col) {
-        int par = Math.max(0, Math.min(line, a.getParagraphs().size() - 1));
-        int len = a.getParagraph(par).length();
-        return a.getAbsolutePosition(par, Math.max(0, Math.min(col, len)));
+        if (line >= a.getParagraphs().size()) {
+            return a.getLength();
+        }
+        int par = Math.max(0, line);
+        return a.getAbsolutePosition(
+                par, Math.max(0, Math.min(col, a.getParagraph(par).length())));
     }
 
     /**
@@ -9559,7 +9513,8 @@ public class EditorBuffer implements TabContent {
      * <p><b>Undo history is dropped at the boundary.</b> The swap is itself an edit, and undoing across it
      * would restore the whole document <em>into</em> the narrowed area while the hidden text is still held
      * aside — duplicating the file. Rather than let that be reachable, both narrowing and widening clear
-     * the history; edits made while narrowed undo normally.
+     * the history of both split views and the Undo History checkpoints; edits made while narrowed undo
+     * normally.
      */
     public boolean narrowTo(int start, int end) {
         if (largeFile || hugeFile || logView.filtered()) {
@@ -9581,8 +9536,8 @@ public class EditorBuffer implements TabContent {
         int caret = area.getCaretPosition();
         narrowPrefix = full.substring(0, s);
         narrowSuffix = full.substring(e);
-        area.replaceText(full.substring(s, e));
-        area.getUndoManager().forgetHistory();
+        LineMarks.narrow(s, e, () -> area.replaceText(full.substring(s, e)), bookmarks, breakpoints, notes);
+        forgetHistoryAtNarrowBoundary();
         area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
         area.requestFollowCaret();
         onNarrowChanged.run();
@@ -9609,10 +9564,22 @@ public class EditorBuffer implements TabContent {
         int caret = area.getCaretPosition();
         narrowPrefix = null; // cleared first: replaceText fires the dirty listener, which reads getContent()
         narrowSuffix = null;
-        area.replaceText(prefix + visible + suffix);
-        area.getUndoManager().forgetHistory();
+        LineMarks.widen(() -> area.replaceText(prefix + visible + suffix), bookmarks, breakpoints, notes);
+        forgetHistoryAtNarrowBoundary();
         area.moveTo(Math.min(prefix.length() + caret, area.getLength()));
         area.requestFollowCaret();
+    }
+
+    /** Both views' undo stacks and the Undo History checkpoints: none may be replayed across the boundary. */
+    private void forgetHistoryAtNarrowBoundary() {
+        area.getUndoManager().forgetHistory();
+        if (area2 != null) {
+            area2.getUndoManager().forgetHistory();
+        }
+        undoHistory.clear();
+        if (onUndoHistoryChanged != null) {
+            onUndoHistoryChanged.run();
+        }
     }
 
     /**
@@ -9719,7 +9686,7 @@ public class EditorBuffer implements TabContent {
     /** Forces the next {@link #applyHighlighting()} to re-tokenize the whole document (e.g. after a
      *  language/grammar change, where no text change occurred). */
     private void invalidateHighlighting() {
-        dirtyFromLine = 0;
+        highlightStart.invalidate();
         lineStates.clear();
         lineDepths.clear();
     }
@@ -9814,7 +9781,7 @@ public class EditorBuffer implements TabContent {
         // the current document length before applying, since RichTextFX requires the spans to cover
         // their range exactly.
         // The start line is only valid if we have its predecessor's end-state; otherwise re-do all.
-        int from = dirtyFromLine;
+        int from = highlightStart.dispatch(); // includes a superseded pass's lines until one applies
         boolean colorBrackets = bracketColors;
         // The carried depth has to be usable too, or the pass would start colouring from a depth
         // belonging to a different line. Only demanded while the feature is on — otherwise lineDepths is
@@ -9831,7 +9798,6 @@ public class EditorBuffer implements TabContent {
         IGrammar g = grammar;
         int fromLine = from;
         long gen = ++highlightGen;
-        dirtyFromLine = Integer.MAX_VALUE; // captured; reset so new edits set a fresh dirty start
         HIGHLIGHT_POOL.execute(() -> {
             TextMateHighlighter.IncrementalAnalysis a;
             try {
@@ -9860,6 +9826,7 @@ public class EditorBuffer implements TabContent {
                 if (a.fromOffset() + a.spans().length() != area.getLength()) {
                     return;
                 }
+                highlightStart.applied();
                 StyleSpans<Collection<String>> spans = a.spans();
                 // Overlay the server's semantic tokens on top of the lexical highlight (semantic wins
                 // where present). Suppressed while stale (doc edited since the tokens were anchored).

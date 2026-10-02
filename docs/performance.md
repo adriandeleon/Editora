@@ -69,7 +69,11 @@ RichTextFX stream rather than doing expensive work per change.
 
 ### 3. Work incrementally, and only on what's visible
 
-- Highlighting re-tokenizes only from the **changed line**, carrying grammar state across lines.
+- Highlighting re-tokenizes only from the **changed line**, carrying grammar state across lines. A pass
+  that is dispatched but never applied (superseded, or the document changed length under it) still owes
+  its lines: `HighlightStart` keeps its start line until a pass lands, so the next one covers both edits.
+- A semantic-tokens response is a style-only update: identical tokens restyle nothing, and a different
+  list restyles from its first token line with the lexical end-states left in place — never from line 0.
 - Overlays iterate just the **visible paragraphs**
   (`firstVisibleParToAllParIndex … lastVisibleParToAllParIndex`) and skip folded lines.
 - Avoid O(document) work on an edit or a scroll.

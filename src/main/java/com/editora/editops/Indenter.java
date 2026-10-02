@@ -207,7 +207,10 @@ public final class Indenter {
         int ls = lineStart(text, caret);
         String before = text.substring(ls, caret);
         String after = lineAfter(text, caret);
-        String indent = leadingWhitespace(text.substring(ls, lineEnd(text, caret)));
+        // The indent the caret has already passed, not the whole line's: the text after the caret keeps the
+        // whitespace it sits behind. Enter at column 0 of `    foo();` must not add four more spaces in front
+        // of code that is still indented by its own four.
+        String indent = leadingWhitespace(before);
         String unit = unitFor(text, tabSize, insertSpaces, indentSize);
 
         if (isPairSplit(style, before, after)) {
@@ -250,9 +253,15 @@ public final class Indenter {
     }
 
     /**
-     * Whether {@code lineUpToCaretPlusChar} (the line's text before the caret plus the just-typed char)
-     * is exactly leading whitespace followed by a closer keyword for the style — i.e. the keystroke just
-     * completed a standalone closer. {@code ;;} (shell) is also matched.
+     * Whether {@code lineUpToCaretPlusChar} (the line's text before the caret plus the just-typed char, or
+     * {@code '\n'} for Enter) is leading whitespace followed by a <em>finished</em> closer for the style —
+     * i.e. the keystroke should de-indent the line.
+     *
+     * <p>A keyword closer is finished only once a non-word character follows it: {@code fi} is also how
+     * {@code find}, {@code file} and {@code first} begin, and {@code end} how {@code endpoint} does, so
+     * de-indenting on the keyword's last letter moved every such line. The terminator — a space, {@code ;},
+     * Enter — is what makes it a whole word. The symbolic {@code ;;} (shell) cannot be continued into a
+     * longer word, so it is finished the moment it is typed.
      */
     public static boolean completesCloserKeyword(Style style, String lineUpToCaretPlusChar) {
         Set<String> closers = style == Style.SHELL
@@ -261,9 +270,24 @@ public final class Indenter {
         if (closers.isEmpty()) {
             return false;
         }
-        String word = lineUpToCaretPlusChar.substring(
+        String rest = lineUpToCaretPlusChar.substring(
                 leadingWhitespace(lineUpToCaretPlusChar).length());
-        return closers.contains(word);
+        if (rest.isEmpty()) {
+            return false;
+        }
+        char last = rest.charAt(rest.length() - 1);
+        if (isWordChar(last)) {
+            return false; // still inside a word, which may yet turn out longer than the keyword
+        }
+        if (closers.contains(rest)) {
+            return true; // a symbolic closer (;;), complete as typed
+        }
+        String word = rest.substring(0, rest.length() - 1);
+        return !word.isEmpty() && isWordChar(word.charAt(word.length() - 1)) && closers.contains(word);
+    }
+
+    private static boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
     }
 
     /** One indent level: a tab when {@code enclosingIndent} contains a tab, else {@code tabSize} spaces

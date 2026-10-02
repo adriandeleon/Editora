@@ -111,6 +111,13 @@ class QueryReplaceTest {
     }
 
     @Test
+    void regexLineAnchorsApplyToEveryLine() {
+        List<Match> plan = QueryReplace.planRemaining("import a;\nimport b;\n", 0, regex("^import", "use"));
+        assertEquals(2, plan.size(), "^ anchors at each line, not only at the document start");
+        assertEquals(10, plan.get(1).start());
+    }
+
+    @Test
     void planRemainingStartsFromTheOffset() {
         assertEquals(
                 1, QueryReplace.planRemaining("a a a", 1, literal("a", "b")).size() - 1);

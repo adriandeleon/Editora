@@ -147,6 +147,20 @@ document never blocks a frame; each pulse's layout re-measures the slice and dro
 cost is linear in the paragraph count, so on a very large file wrapping appears a moment after the toggle.
 `WordWrapToggleFxTest` pins the behaviour.
 
+## An edit made inside a `plainTextChanges` subscriber runs before the outer edit places the caret
+
+**Symptom:** an assist that edits the document in response to a keystroke leaves the caret a few characters
+short, so the *next* keystroke lands in the wrong place. Auto-rename-tag turned `</div` + `xy` into
+`</divyx>` (and renamed the opener to match).
+
+**Why/fix:** RichTextFX's `replace(start, end, text)` changes the document, notifies subscribers, and only
+then moves the caret to `start + text.length()` — an offset computed before the subscribers ran. A
+subscriber that edits *above* the caret shifts the text under that offset. (Editing *below* the caret
+from a subscriber happens to be safe, which is why this hides.) Apply such an edit after the outer
+`replace` has returned: both editor areas are a `TagRenameMirror.Area`, whose `replace` override reports
+each single-range replace once text and caret have settled. A `Platform.runLater` fix-up is not a
+substitute — nothing guarantees it runs before the next queued key event. `AutoRenameTagFxTest` pins it.
+
 ## Never ask `getCharacterBoundsOnScreen` for an *empty* range
 
 **Symptom:** typing (or some repeated action) gets slower the longer the editor is open, and never

@@ -30,6 +30,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     unavailable at startup (an unmounted volume) are kept for the next launch.
   - Renaming from the tab menu updates the file in every window; bookmark and note positions pending when
     a window closes are saved; closing a window while files are still loading no longer applies them.
+- Java and Groovy no longer render as a wall of the bold keyword colour: referenced type names
+  (`String`, `List<Widget>`, `new HashMap<>()`) take the theme's type colour and `import`/`package`
+  paths are plain. Modifiers, primitives, `var` and other languages' declaration keywords are unchanged.
+- The server-free outline (Structure, sticky scroll, the symbol index) no longer lists calls as
+  declarations in Java, PHP, C, C++, Kotlin, Go and Rust (`event.getCode()`, `s.isEmpty()`).
+- Regex `^` and `$` in the Find bar, Replace All and Query Replace now anchor at every line instead of
+  only at the start and end of the document.
+- Bookmarks, breakpoints and notes inside a multi-line replace are kept — Replace All, a formatter edit, a
+  history restore or diff apply no longer delete them — and a narrow → widen cycle restores every one.
+  Narrowing also clears the second split view's undo history and the Undo History checkpoints, which
+  could otherwise duplicate or truncate the file.
+- Auto-rename-tag no longer scrambles text typed in a closing tag (`</div` + `xy` gave `</divyx>`), keeps
+  the caret in place for Backspace, and does nothing while several carets are active.
+- Enter at the start of an indented line no longer indents it further, and words that merely begin with
+  a closing keyword (`find`, `endpoint`) no longer de-indent; `fi`, `end`, `done` align when a space, `;`
+  or Enter follows.
+- Snippet tab stops that touch or contain one another no longer drift: the final caret lands after text
+  typed into the last field, an adjacent field keeps its own extent, and fields deleted with an
+  enclosing one are skipped.
+- A language server's edit that ends or starts one line past the end of the file now reaches the end of
+  the document (whole-file formatting no longer leaves the old last line behind; "insert final newline"
+  applies).
+- Highlighting no longer goes stale between two quick edits, and semantic tokens restyle only from their
+  first line (not at all when unchanged) instead of the whole document on every scroll or typing pause.
+- A fold chevron folds the block's current extent after it has grown, minimap clicks land on the right
+  line with folds or word wrap, and highlights and squiggles reach the edge when the minimap is hidden.
+- Re-linting several Markdown or Mermaid buffers at once updates every one of them, not only the last.
 
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the

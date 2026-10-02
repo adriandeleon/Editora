@@ -34,6 +34,10 @@ public final class MermaidService {
     public static final String DEFAULT_MAID = "npx -y @probelabs/maid";
 
     private final java.util.concurrent.atomic.AtomicLong validateGen = new java.util.concurrent.atomic.AtomicLong();
+    /** The latest validate request of each requester; weak keys, so a closed buffer is not kept alive. */
+    private final java.util.Map<Object, Long> latestValidate =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
     private volatile String mmdcPath = "";
     private volatile String maidPath = "";
     private volatile Availability cached;
@@ -94,13 +98,36 @@ public final class MermaidService {
      * drops stale results so only the latest in-flight validation wins (live linting while typing).
      */
     public void validate(String source, Consumer<List<MaidOutput.Diagnostic>> onResult) {
+        validate(this, source, onResult);
+    }
+
+    /**
+     * As {@link #validate(String, Consumer)}, with the guard scoped to {@code requester} (a buffer): a
+     * request only supersedes an earlier one from the same requester. With one counter for everyone,
+     * validating several diagram buffers in one tick delivered only the last one's diagnostics.
+     */
+    public void validate(Object requester, String source, Consumer<List<MaidOutput.Diagnostic>> onResult) {
+        Object key = requester == null ? this : requester;
         long gen = validateGen.incrementAndGet();
+        latestValidate.put(key, gen);
         exec.submit(() -> {
+            if (!isLatestValidate(key, gen)) {
+                return; // superseded while queued: don't spawn maid for text nobody is waiting on
+            }
             List<MaidOutput.Diagnostic> diagnostics = Mermaid.validate(maidCommand(), source);
-            if (gen == validateGen.get()) {
-                Platform.runLater(() -> onResult.accept(diagnostics));
+            if (isLatestValidate(key, gen)) {
+                Platform.runLater(() -> {
+                    if (isLatestValidate(key, gen)) { // re-checked where requests are made: no stale delivery
+                        onResult.accept(diagnostics);
+                    }
+                });
             }
         });
+    }
+
+    private boolean isLatestValidate(Object key, long request) {
+        Long current = latestValidate.get(key);
+        return current != null && current == request;
     }
 
     /** Stops the background render/validate thread (called when the owning window closes). */

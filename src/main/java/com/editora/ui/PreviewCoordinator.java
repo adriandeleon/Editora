@@ -98,9 +98,18 @@ final class PreviewCoordinator {
             return;
         }
         markdownLintService.validate(
+                this, // the tool window's own request: it must not cancel a buffer's live lint
                 b.getContent(),
                 effectiveMarkdownLintDisabled(b),
                 diags -> host.markdownLintPanel().setResults(b.getPath(), diags));
+    }
+
+    /** Lints {@code buffer}'s {@code text} for its live overlay; only a newer request for the same buffer supersedes it. */
+    void lintMarkdown(
+            EditorBuffer buffer,
+            String text,
+            java.util.function.Consumer<java.util.List<com.editora.markdown.MarkdownLint.Diagnostic>> onResult) {
+        markdownLintService.validate(buffer, text, effectiveMarkdownLintDisabled(buffer), onResult);
     }
 
     /** Toggles the Markdown Lint tool window; opening it auto-scans via {@code focusFirstItem}. */

@@ -161,8 +161,8 @@ class BracketColorsFxTest {
             return "hasHighlighting=" + b.hasHighlighting() + " length=" + area.getLength() + " styledChars=" + styled
                     + " styleAtProbe=" + area.getStyleOfChar(probe) + " bracketColors="
                     + FxTestSupport.field(b, "bracketColors") + " highlightGen="
-                    + FxTestSupport.field(b, "highlightGen") + " dirtyFromLine="
-                    + FxTestSupport.field(b, "dirtyFromLine") + " lineStates=" + states.size() + " lineDepths="
+                    + FxTestSupport.field(b, "highlightGen") + " highlightStart="
+                    + FxTestSupport.field(b, "highlightStart") + " lineStates=" + states.size() + " lineDepths="
                     + depths.size();
         });
         // highlightGen>0 with lineStates=0 means passes were handed to the pool and none ever applied.

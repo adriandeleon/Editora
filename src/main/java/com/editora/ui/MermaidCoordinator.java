@@ -87,7 +87,7 @@ final class MermaidCoordinator {
 
     /** Wires a freshly opened buffer's live maid validator + initial lint state. */
     void wireBuffer(EditorBuffer buffer) {
-        buffer.setMermaidValidator((text, cb) -> service.validate(text, cb));
+        buffer.setMermaidValidator((text, cb) -> service.validate(buffer, text, cb));
         buffer.setMermaidLintEnabled(isEnabled() && avail.maid());
     }
 
