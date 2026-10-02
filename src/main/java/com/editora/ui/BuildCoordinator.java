@@ -105,7 +105,7 @@ final class BuildCoordinator {
         this.panel = sharedConsole; // the shared tabbed Output window (owned by MainController)
         this.tree = new BuildActionsTree();
         this.popup = new BuildActionsPopup(new BuildActionsPopup.Labels(
-                tool.displayName(), tr("buildpopup.searchPrompt"), tr("buildpopup.hint"), tr("buildpopup.runCustom")));
+                tool.displayName(), tr("buildpopup.searchPrompt"), tr("buildpopup.runCustom")));
         popup.setOnRunCustom(this::runCustom);
         popup.setOnRun(this::runTask);
         tree.setOnRun(this::runTask);

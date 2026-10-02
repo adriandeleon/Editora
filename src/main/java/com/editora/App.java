@@ -111,9 +111,6 @@ public class App extends Application {
         KeymapManager keymap = new KeymapManager();
         keymap.loadNamed(settings.getKeymap());
         keymap.applyOverrides(settings.keybindingsFor(KeymapManager.isMac()));
-        // Make the (single, shared) keymap available to generic popup text fields so they can install Emacs
-        // caret movement + basic editing without threading it through their constructors (see TextInputKeymap).
-        com.editora.command.TextInputKeymap.setShared(keymap);
 
         // Render the UI chrome in Inter on every platform (UI Kit v1). A listener on the live window
         // list covers windows opened later, so each project window, dialog and popup picks it up.

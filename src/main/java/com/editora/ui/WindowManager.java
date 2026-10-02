@@ -93,6 +93,11 @@ public class WindowManager {
         this.shared = shared;
         this.keymap = keymap;
         this.hostServices = hostServices;
+        // Make the (single, shared) keymap available to plain text fields and consoles, so they can install
+        // the configured caret/editing chords without threading it through their constructors (see
+        // TextInputKeymap). Done here, by the keymap's owner, so every window this manager builds — including
+        // the headless test fixture's — gets them, not only one launched through App.
+        com.editora.command.TextInputKeymap.setShared(keymap);
         // Discover plugins once (startup I/O + class loaders). The predicate factors the master gate, so
         // no untrusted code loads unless plugins are enabled; the Settings page still lists all of them.
         this.pluginManager = new com.editora.plugin.PluginManager(
@@ -784,6 +789,25 @@ public class WindowManager {
             }
         }
         broadcastSettingsApplied();
+        Holder focused = focusedHolder();
+        reportUnknownKeymap(focused != null ? focused.controller() : null);
+    }
+
+    /**
+     * Tells the user — once per bad value — that {@code Settings.keymap} names no bundled keymap and the
+     * default is in use instead. The setting itself is left as written: it may be a typo the user will fix,
+     * or a keymap a newer build provides. Reported as an error so it stays in the message log, since the
+     * startup status echo is overwritten almost immediately.
+     */
+    private void reportUnknownKeymap(MainController controller) {
+        if (controller == null) {
+            return; // no window to tell yet; the name stays pending for the next one
+        }
+        String unknown = keymap.takeUnknownName();
+        if (unknown != null) {
+            controller.setError(com.editora.i18n.Messages.tr(
+                    "status.keymap.unknown", unknown, KeymapManager.displayName(keymap.activeName())));
+        }
     }
 
     // --- window construction (extracted from App.start) ---
@@ -925,6 +949,7 @@ public class WindowManager {
             } else {
                 controller.startup(null, targets, newFile, noSession); // chrome flags already applied, pre-show()
             }
+            reportUnknownKeymap(controller);
             return stage;
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException("Failed to build a window for project '" + key + "'", e);

@@ -7724,11 +7724,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         return gap;
     }
 
-    /** command id -> first chord bound to it (first binding wins), from the active keymap. */
+    /** command id -> the chord to show for it, in the active keymap's notation (see KeymapManager.displayChords). */
     private java.util.Map<String, String> invertBindings() {
-        java.util.Map<String, String> byCommand = new java.util.LinkedHashMap<>();
-        keymap.bindings().forEach((sequence, id) -> byCommand.putIfAbsent(id, sequence));
-        return byCommand;
+        return keymap.displayChords();
     }
 
     @FXML
@@ -9575,7 +9573,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         buffer.setViewMode(!buffer.isViewMode());
         afterReadOnlyChange(buffer);
-        setStatus(buffer.isViewMode() ? tr("status.viewMode") : tr("status.editable"));
+        setStatus(buffer.isViewMode() ? ChordHint.tr("status.viewMode", "view.toggleReadOnly") : tr("status.editable"));
     }
 
     /** Turns off read-only ("Enable Editing" banner button); persists + refreshes the indicators. */

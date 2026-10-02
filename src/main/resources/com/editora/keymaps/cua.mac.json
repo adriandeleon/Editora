@@ -12,6 +12,8 @@
   "Cmd-c": "edit.copy",
   "Cmd-v": "edit.paste",
   "Cmd-/": "edit.toggleComment",
+  "Cmd-S-7": "edit.toggleComment",
+  "Cmd-divide": "edit.toggleComment",
   "Cmd-f": "find.show",
   "Cmd-g": "find.show",
   "Cmd-S-g": "find.showBackward",

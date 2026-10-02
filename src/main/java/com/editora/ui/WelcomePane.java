@@ -411,22 +411,9 @@ public final class WelcomePane extends Region implements TabContent {
         return row;
     }
 
-    /** The configured keybinding chord for {@code commandId} (shortest), or null if unbound. */
+    /** The configured keybinding for {@code commandId} in the active keymap's notation, or null if unbound. */
     private String shortcutFor(String commandId) {
-        if (keymap == null) {
-            return null;
-        }
-        String best = null;
-        for (var e : keymap.bindings().entrySet()) {
-            if (!commandId.equals(e.getValue())) {
-                continue;
-            }
-            String chord = e.getKey();
-            if (best == null || chord.length() < best.length()) {
-                best = chord;
-            }
-        }
-        return best;
+        return keymap == null ? null : keymap.displayChord(commandId);
     }
 
     private static Label title(String text) {

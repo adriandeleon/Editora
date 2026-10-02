@@ -10,6 +10,7 @@ and `ui/MainController` wires it into a window. The pieces:
 - [`command/CommandRegistry.java`](../../src/main/java/com/editora/command/CommandRegistry.java) — the registry every action is looked up in.
 - [`command/KeymapManager.java`](../../src/main/java/com/editora/command/KeymapManager.java) — chord sequence → command id.
 - [`command/KeyDispatcher.java`](../../src/main/java/com/editora/command/KeyDispatcher.java) — the scene-level key filter that builds chords and dispatches.
+- [`command/ChordFormat.java`](../../src/main/java/com/editora/command/ChordFormat.java) — the one formatter that turns a chord into what the user reads.
 - [`command/KeybindingEdits.java`](../../src/main/java/com/editora/command/KeybindingEdits.java) — pure logic behind the keybinding editor.
 
 ## Command
@@ -71,6 +72,16 @@ The static `AVAILABLE` map (insertion-ordered) is the source of truth for which 
 keymaps are non-modal: they only remap chords onto the same command ids, so they fit the flat
 resolver and never strand functionality (every command is palette-reachable).
 
+### An unknown keymap name falls back
+
+`Settings.keymap` is user-editable text, so it can name something that is not bundled (`"vim"`, a
+typo, a keymap a newer build provides, `null`). `KeymapManager.resolveName(name)` maps any such value
+to `KeymapManager.DEFAULT` (`emacs`), and `loadNamed` applies it — so every call site (startup,
+`WindowManager.reloadSharedKeymap`, the keybinding editor's `baseBindings`) is covered without its own
+check. The setting itself is **not** rewritten. `takeUnknownName()` hands the bad name out exactly
+once per value; `WindowManager.reportUnknownKeymap` turns it into a `status.keymap.unknown` error in
+the status bar and message log. `activeName()` is the keymap actually in use.
+
 ### Per-OS `.mac` variants
 
 Each GUI keymap ships a base `<name>.json` (Ctrl-based, Win/Linux) **and** a complete
@@ -99,7 +110,41 @@ editor's clear/rebind uses.
 - `commandFor(sequence)` — the command id bound exactly to a chord sequence, or null.
 - `isPrefix(sequence)` — true if some binding starts with `sequence + " "`, i.e. more keys are
   expected (e.g. `C-x` is a prefix of `C-x C-s`).
-- `bindings()` — an immutable copy of the current map.
+- `bindings()` — an unmodifiable snapshot **in keymap order** (the JSON file's order, then overrides in
+  the order applied). The order is contractual: "the first chord bound to a command" must be the same
+  chord on every launch, which `Map.copyOf` did not guarantee.
+- `chordFor(commandId)` — the chord to advertise for a command, as raw tokens: the first binding that
+  can be typed on this platform (never `Cmd-…` on Windows/Linux), else the first binding.
+- `displayChord(commandId)` / `displayChords()` / `display(sequence)` — the same, formatted for the
+  reader (below). `displayChords()` is cached until the bindings change.
+
+### Showing a chord: `ChordFormat`
+
+Raw tokens (`C-S-p`) are the keymap's storage format, not something to show a VS Code-keymap user.
+`ChordFormat.format(sequence, style)` is the only place a binding is rendered:
+
+| style | used when | `C-S-p` | `C-k C-w` |
+| --- | --- | --- | --- |
+| `EMACS` | the Emacs keymap is active (any OS) | `C-S-p` | `C-k C-w` |
+| `PLATFORM` | any other keymap on Windows/Linux | `Ctrl+Shift+P` | `Ctrl+K Ctrl+W` |
+| `MAC` | any other keymap on macOS | `⌃⇧P` (`Cmd-S-p` → `⇧⌘P`) | `⌃K ⌃W` |
+
+macOS glyphs follow Apple's order (⌃ ⌥ ⇧ ⌘), not the token order. **Never print a raw chord or bake
+one into a message**: menus, toolbar/tool-window tooltips, the palette and Search Everywhere rows,
+the Welcome page, the keybinding editor, the branch popup and the dispatcher's own prefix echo all go
+through `KeymapManager.displayChord`/`display`. A status message that names a chord uses
+`ui/ChordHint.tr(key, commandId)`, which picks `<key>.chord` (with `{0}`) when the command is bound
+and plain `<key>` when it is not.
+
+### Layout-independent aliases
+
+A chord is matched on the **key code plus Shift**, not on the character typed, so a binding on US
+punctuation is unreachable where that character lives elsewhere: on ES/DE/IT/PT keyboards `/` is
+Shift+7, so `C-/` cannot be typed. Essential commands therefore carry an alias every layout can
+reach — in `emacs.json`, `edit.undo` is also `C-x u`, `C-S--` (`C-_`) and `C-S-7`, and `edit.redo` is
+also `C-M-S--`; in the GUI keymaps `edit.toggleComment` is also `C-S-7` and `C-divide` (the numpad
+slash), with `Cmd-` equivalents in the `.mac` files. When adding a punctuation binding for a command
+people cannot work without, add such an alias too (`KeymapsTest` pins the existing ones).
 
 ### Chord token format
 
@@ -156,8 +201,11 @@ forms the sequence (`pending + " " + token` when a prefix is buffered). With `co
 
 When a press is consumed, `consumedPress` is set so the paired `KEY_TYPED` is swallowed in
 `handleTyped` — this matters when a command opens a modal dialog, whose deferred `KEY_TYPED`
-would otherwise reach the editor after the dialog closes. On macOS, `handleTyped` also swallows
-any Option-produced character (Option is the Meta key).
+would otherwise reach the editor after the dialog closes. That is the **only** reason a typed
+character is swallowed: an Option-composed character on macOS (`@ [ ] { } | \ ~` on German and
+Spanish layouts) with no handled press behind it is the user typing. `TextInputKeymap` applies the
+same rule to plain text fields (`swallowTyped`), adding only that a Command/Control by-product on
+macOS is never text.
 
 ### `chord()` is public
 
@@ -171,7 +219,7 @@ the canonical `C- M- Cmd- S-` order.
 character. The macro recorder uses it to capture typed text interleaved with command invocations.
 `isRecordableChar` filters to printable characters plus tab/newline/carriage-return.
 
-### `editora.ownsKeys` and the editor-context carve-out
+### `editora.ownsKeys`, text fields, and the editor-context carve-out
 
 A focused component (e.g. a tool window) can opt out of global dispatch by setting the
 `editora.ownsKeys` node property. The dispatcher walks the target's ancestor chain
@@ -180,6 +228,23 @@ caret/text chords it repurposes for local navigation, identified by id prefix in
 (`nav.*` and `edit.*`). Jump/window/view commands (`M-x`, `M-1`, `M-g`, …) and prefixes (`C-x …`)
 stay global so they work even while a tool window is focused. The completion popup uses the same
 property so its `C-n`/`C-p`/arrows aren't hijacked.
+
+`ownsKeys` only yields editor-context chords. A component that needs a bare key which a keymap binds
+to a *global* command sets the `editora.claimsKeys` property (`KeyDispatcher.CLAIMED_KEYS`) to the
+`Set` of chord tokens it handles itself: the Project tree claims `f2` and `delete` (rename / delete
+the selected file — `f2` is `lsp.rename` in three keymaps), the Bookmarks and Notes trees claim
+`delete`. Put it on the node that should have the key (the tree, not its panel), and keep it small.
+
+A **text field needs no opt-in**. When the event target is (inside) a `TextInputControl` — or an
+editable combo box / spinner — `inTextInput(target)` is true and the dispatcher leaves it the same
+editor-context chords: the field's caret is not the document's, so `C-k`, Ctrl+V or Ctrl+Z typed in
+the Find bar must edit the field, never the buffer behind it. (The editor is a RichTextFX area, not a
+`TextInputControl`, so it never matches.) The one exception is `edit.cancel`, which stays global for
+a bare text field so `C-g` still closes the find bar. The decision is the pure
+`leftToFocusOwner(commandId, ownsKeys, textInput)`. The dispatcher only steps aside; the field gets
+the configured chords by installing `TextInputKeymap.installShared(field)` (the shared keymap is
+registered by `WindowManager`'s constructor). A field that does not install it still keeps JavaFX's
+built-in editing keys.
 
 ### `setPreDispatch` hook
 
@@ -219,6 +284,18 @@ AltGr is reported as Ctrl+Alt, so requiring Alt-down **and** Ctrl-up excludes it
 AltGr typing and explicit Ctrl+Alt chords keep working. macOS is never affected (Option = Meta),
 and a *bound* `M-` chord still runs and consumes normally.
 
+### AltGr is typing, not `C-M-`
+
+Because AltGr arrives as Ctrl+Alt, AltGr+E (the euro sign on DE/ES/IT layouts) is indistinguishable
+by modifiers from `C-M-e` — the command ran and the character was dropped. The key itself differs,
+though: AltGr is reported as `KeyCode.ALT_GRAPH`, Left Alt as `KeyCode.ALT`. The dispatcher tracks
+whether the AltGr key is held, and while it is, a Ctrl+Alt press is left alone so its `KEY_TYPED`
+delivers the character (`altGrText(isMac, ctrl, alt, altGrHeld)`, pure). Ctrl+**Left**Alt+letter still
+dispatches. The flag clears on the AltGr release and on any key pressed without Alt, so a release
+lost to another window cannot stick. The character carried by the press is deliberately not
+consulted: it is the key's unmodified character on Windows and another script's letter on Cyrillic
+or Greek layouts.
+
 ## The keybinding editor
 
 Settings → Keymaps lists every command (from `CommandRegistry.all()`) with its current chord and
@@ -237,7 +314,7 @@ lets the user rebind, reset, or reset-all. The mutation logic is the pure, toolk
 `MainController` wires it through the `SettingsWindow.ShortcutActions`/`Shortcut` interface:
 
 - `shortcutRows()` builds the rows from `registry.all()` + `invertBindings()` (the current
-  effective chord per command).
+  effective chord per command, already formatted by `KeymapManager.displayChords`).
 - `baseBindings()` is a fresh `KeymapManager.loadNamed` of the active keymap with **no** overrides
   — the defaults to rebind/reset against.
 - `rebindShortcut`/`resetShortcut`/`resetAllShortcuts` call the `KeybindingEdits` helpers, persist
@@ -253,6 +330,27 @@ warns before stealing it. The same path serves the inline Macros keybinding row.
 
 User overrides persist in `Settings.keybindings` (a `Map<String,String>` of chord → id, with blank
 values meaning UNBIND), serialized with the rest of `settings.json`.
+
+## Pickers, input cards and row menus
+
+- **Picker navigation** resolves through the keymap in
+  [`ui/PickerKeys`](../../src/main/java/com/editora/ui/PickerKeys.java): the arrows,
+  PageUp/PageDown, Ctrl/Cmd+Home/End, Enter and Esc always work, plus whatever the active keymap
+  binds to `nav.lineDown`/`lineUp`/`pageDown`/`pageUp`/`docStart`/`docEnd`/`edit.cancel`. A picker
+  must not match `Ctrl`+letter itself — in the GUI keymaps those letters are global commands that
+  the dispatcher runs first. `PickerKeys.navigate(list, action, selectable)` is the shared cursor
+  movement (wrapping Up/Down, clamped paging, header/disabled rows skipped), and
+  `PickerKeys.legend(...)` builds the hint line from the live keymap out of the `pickerKeys.*`
+  catalog entries, each time the card is shown. A picker-local key (the palette's "docs") is chosen
+  with `PickerKeys.freeChord`, so it is one the keymap leaves unbound.
+- **`OverlayHost`** dismisses on Esc or the keymap's cancel chord and keeps keyboard focus inside the
+  card while it is up (a focus listener, so cards that use Tab themselves are unaffected).
+  **`OverlayInput`** runs the primary action on Enter unless a button has the focus, in which case
+  Enter activates that button (`onEnter`, pure).
+- **Row context menus**: a keyboard menu request (Menu key / Shift+F10) targets the focused
+  `TreeView`/`ListView`, never a cell. A tree or list whose menus live on its cells calls
+  [`RowContextMenu.install(control)`](../../src/main/java/com/editora/ui/RowContextMenu.java), which
+  re-fires the request at the selected row's cell with coordinates on that row.
 
 ## Adding a command
 

@@ -602,7 +602,7 @@ final class EditingCoordinator {
     boolean activeEditable() {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer != null && !buffer.isEditable()) {
-            host.setStatus(tr("status.bufferReadOnly"));
+            host.setStatus(ChordHint.tr("status.bufferReadOnly", "view.toggleReadOnly"));
             return false;
         }
         return true;

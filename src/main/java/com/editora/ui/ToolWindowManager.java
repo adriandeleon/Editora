@@ -684,12 +684,8 @@ public class ToolWindowManager {
         if (cmd == null) {
             return tw.getTitle();
         }
-        for (Map.Entry<String, String> e : keymap.bindings().entrySet()) {
-            if (cmd.equals(e.getValue())) {
-                return tw.getTitle() + " (" + e.getKey() + ")";
-            }
-        }
-        return tw.getTitle();
+        String chord = keymap.displayChord(cmd);
+        return chord == null ? tw.getTitle() : tw.getTitle() + " (" + chord + ")";
     }
 
     /** The side this tool window is currently assigned to (settings override, falling back to the registered default). */

@@ -99,14 +99,9 @@ public final class MultiSelectPicker {
                 if (!chosen.isEmpty()) {
                     onAccept.accept(chosen);
                 }
-            } else if (e.isControlDown() && (e.getCode() == KeyCode.N || e.getCode() == KeyCode.P)) {
-                int i = list.getSelectionModel().getSelectedIndex();
-                int next = e.getCode() == KeyCode.N ? i + 1 : i - 1;
-                if (next >= 0 && next < boxes.size()) {
-                    list.getSelectionModel().select(next);
-                    list.scrollTo(next);
-                }
-                e.consume();
+            } else if (PickerKeys.navigate(
+                    list, PickerKeys.action(e, com.editora.command.TextInputKeymap.sharedKeymap(), false))) {
+                e.consume(); // arrows, PageUp/PageDown, Home/End and the keymap's line-up/down chords
             }
         });
         host.show(card, () -> list.requestFocus(), () -> {});

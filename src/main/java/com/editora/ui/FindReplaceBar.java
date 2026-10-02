@@ -126,6 +126,12 @@ public class FindReplaceBar extends HBox {
                 e.consume();
             }
         });
+        // The configured keymap's caret/editing chords (C-a/C-e/C-k/C-y, Ctrl+V/X/C/Z/A…) act on these
+        // fields. The scene-level KeyDispatcher leaves every such chord to a focused text field instead of
+        // running it against the document; this is what then handles it. Find's own chords are find.*
+        // commands (and C-g is edit.cancel), which stay global, so next/previous/replace/close still work.
+        com.editora.command.TextInputKeymap.installShared(findField);
+        com.editora.command.TextInputKeymap.installShared(replaceField);
         // Incremental: re-search (debounced) on query or option changes.
         findField.textProperty().addListener((o, a, b) -> debounce.playFromStart());
         caseSensitive.selectedProperty().addListener((o, a, b) -> recompute());

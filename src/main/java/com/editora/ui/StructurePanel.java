@@ -180,6 +180,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         tree.setShowRoot(false);
         tree.getStyleClass().add("structure-tree");
         tree.setCellFactory(t -> new StructureCell());
+        RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
         VBox.setVgrow(tree, Priority.ALWAYS);
 
         // Navigate as soon as the selection changes (keyboard, search, or single click), but only

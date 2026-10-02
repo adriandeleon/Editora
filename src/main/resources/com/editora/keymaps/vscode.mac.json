@@ -14,6 +14,8 @@
   "M-Cmd-up": "edit.addCaretAbove",
   "M-Cmd-down": "edit.addCaretBelow",
   "Cmd-/": "edit.toggleComment",
+  "Cmd-S-7": "edit.toggleComment",
+  "Cmd-divide": "edit.toggleComment",
   "C-space": "edit.completion",
   "Cmd-f": "find.show",
   "M-Cmd-f": "find.replace",

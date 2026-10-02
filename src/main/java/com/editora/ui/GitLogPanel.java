@@ -128,6 +128,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         commits.setItems(filteredCommits);
         commits.setPlaceholder(placeholder);
         commits.setCellFactory(v -> new CommitCell());
+        RowContextMenu.install(commits); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
         installListNav(commits);
         commits.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             files.getItems().clear();

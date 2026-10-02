@@ -138,6 +138,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     diagnostics when the server spells a file's URI differently; a burst of diagnostics rebuilds the
     Problems list once; opening a file on a filesystem root no longer breaks the handshake; and a
     closed window can no longer restart its language servers.
+- Keyboard routing fixes. Editing chords typed in a text field now edit that field instead of the
+  document behind it: with the caret in the Find bar, `C-k`, Ctrl+V/X/Z/A and `C-u` used to act on the
+  open buffer. The Find and Replace fields also follow the active keymap's caret and editing chords.
+- Option-typed characters (`@ [ ] { } | \ ~` on German and Spanish Mac layouts) can be typed in the
+  pickers and prompts again, and on Windows AltGr combinations such as AltGr+E are typed instead of
+  running the `Ctrl+Alt` chord bound to that key.
+- A `settings.json` naming a keymap that does not exist no longer prevents Editora from starting; the
+  default keymap is used and the problem is reported once in the message log.
+- Shortcuts are shown in the notation of the active keymap and platform — `Ctrl+Shift+P`, `⇧⌘P`, or
+  Emacs notation in the Emacs keymap — in menus, tooltips, the command palette, the Welcome page and
+  status messages, and the shortcut shown for a command no longer changes between launches.
+- Pickers take their navigation keys from the active keymap and list only keys that work there; they
+  also handle PageUp/PageDown and Ctrl+Home/End. In input cards, Enter activates the focused button
+  rather than always confirming, and Tab stays inside the card.
+- Undo, redo and toggle-comment have shortcuts that can be typed on keyboards where `/` is a shifted
+  key: `C-x u`, `C-_` and Ctrl+Shift+7 undo in the Emacs keymap, and Ctrl+Shift+7 or the numpad slash
+  toggle a comment in the other keymaps.
+- The Menu key and Shift+F10 open the context menu of the selected row in the Project, Bookmarks,
+  Notes, TODO, Git Log and Structure tool windows. F2 renames and Delete deletes the selected file in
+  the Project tree; Delete removes the selected bookmark or note.
 
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the

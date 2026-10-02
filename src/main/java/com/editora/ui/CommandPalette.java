@@ -2,9 +2,7 @@ package com.editora.ui;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import javafx.beans.property.BooleanProperty;
@@ -41,9 +39,6 @@ import static com.editora.i18n.Messages.tr;
  * focus on the one window, which works on every platform (the find bar does the same).
  */
 public class CommandPalette {
-
-    private static final boolean IS_MAC =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
 
     /**
      * Base URL for per-command documentation on the website; the command id is appended. The docs are
@@ -88,8 +83,12 @@ public class CommandPalette {
     private java.util.function.Function<Command, String> disabledReason = c -> null;
 
     private final TextField input = new TextField();
-    /** The input row's chord chip (see {@link #paletteChord}). */
+    /** The input row's chord chip: the chord bound to {@code palette.show}. */
     private final Label prefixChip = new Label();
+    /** The navigation legend under the list; rebuilt from the live keymap (see {@link #refreshKeyHints}). */
+    private final Label hint = new Label();
+    /** The raw chord token that opens the highlighted command's docs, or null if the keymap leaves none free. */
+    private String docsChord;
 
     private final ListView<Command> list = new ListView<>();
     private final ObservableList<Command> items = FXCollections.observableArrayList();
@@ -119,7 +118,7 @@ public class CommandPalette {
             java.util.function.Supplier<java.util.function.Predicate<Command>> enabledPolicy) {
         this.registry = registry;
         this.keymap = keymap;
-        this.commandToKey = invert(keymap.bindings());
+        this.commandToKey = keymap.displayChords();
         this.enabledPolicy = enabledPolicy;
         build();
     }
@@ -130,20 +129,24 @@ public class CommandPalette {
 
     /** Rebuilds the chord hints from the current keymap (after a live keymap switch). */
     public void refreshBindings() {
-        this.commandToKey = invert(keymap.bindings());
-        prefixChip.setText(paletteChord());
+        this.commandToKey = keymap.displayChords();
+        refreshKeyHints();
         list.refresh();
     }
 
-    /** The chord that opens the palette (the kit's "M-x" prefix chip); keymap-accurate, not hardcoded. */
-    private String paletteChord() {
-        return commandToKey.getOrDefault("palette.show", "M-x");
-    }
-
-    private static Map<String, String> invert(Map<String, String> bindings) {
-        Map<String, String> byCommand = new LinkedHashMap<>();
-        bindings.forEach((sequence, id) -> byCommand.putIfAbsent(id, sequence));
-        return byCommand;
+    /** The prefix chip, the docs key and the legend — everything on the card that names a key. */
+    private void refreshKeyHints() {
+        // The chord that opens the palette (the kit's "M-x" prefix chip); keymap-accurate, and absent rather
+        // than wrong when the user has unbound it.
+        String opener = commandToKey.get("palette.show");
+        prefixChip.setText(opener == null ? "" : opener);
+        prefixChip.setVisible(opener != null);
+        prefixChip.setManaged(opener != null);
+        // "Docs" is the palette's own key, so it must be one the keymap leaves alone: C-h is free in the
+        // Emacs keymap but is Replace in the CUA/VS Code/Sublime ones, where the dispatcher would take it.
+        docsChord = PickerKeys.freeChord(keymap, "C-h", "f1", "S-f1");
+        hint.setText(PickerKeys.legend(
+                keymap, PickerKeys.hint("run", "↵"), PickerKeys.hint("docs", keymap.display(docsChord))));
     }
 
     private void build() {
@@ -157,23 +160,12 @@ public class CommandPalette {
         // Emacs caret movement + basic editing in the query field. Registered after onKey so the palette's own
         // list navigation / C-h docs (C-n/C-p/C-g/C-h) consume those chords first and the keymap yields to it.
         com.editora.command.TextInputKeymap.install(input, keymap);
-        // The opening chord (e.g. M-x) is Alt/Meta+key; on macOS that combination also emits a
-        // KEY_TYPED for a special character (Option+x => "≈") that would land in the just-focused
-        // field. Swallow any character typed while a chord modifier is held; plain query typing
-        // (no modifier, or only Shift) passes through. macOS only — elsewhere chord modifiers don't
-        // emit query characters, and gating this avoids eating AltGr-composed characters on
-        // European layouts (AltGr reports as Ctrl+Alt).
-        if (IS_MAC) {
-            input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-                if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
-                    e.consume();
-                }
-            });
-        }
+        // (The opening chord's own KEY_TYPED — macOS Option+x => "≈" — is swallowed by the global
+        // KeyDispatcher, and TextInputKeymap drops Command/Control by-products; an Option-composed
+        // character typed into the query is text and passes through.)
 
         // Kit shape: no title header — the first row IS the input, led by a small chip naming the
         // chord that opened the palette (so the palette introduces itself by its keyboard identity).
-        prefixChip.setText(paletteChord());
         prefixChip.getStyleClass().add("palette-prefix");
         input.getStyleClass().add("palette-input");
         javafx.scene.layout.HBox inputRow = new javafx.scene.layout.HBox(9, prefixChip, input);
@@ -189,8 +181,8 @@ public class CommandPalette {
             String d = sel == null ? "" : sel.description();
             desc.setText(d.isEmpty() ? " " : d); // keep one line tall so the card never collapses/jitters
         });
-        Label hint = new Label(tr("palette.hint"));
         hint.getStyleClass().add("palette-hint");
+        refreshKeyHints();
         content = new VBox(6, inputRow, list, desc, hint);
         content.getStyleClass().add("command-palette");
         content.setPrefWidth(620);
@@ -221,52 +213,25 @@ public class CommandPalette {
     }
 
     private void onKey(KeyEvent e) {
-        switch (e.getCode()) {
-            case ESCAPE -> {
-                hide();
-                e.consume();
-            }
-            case ENTER -> {
-                runSelected();
-                e.consume();
-            }
-            case DOWN -> {
-                move(1);
-                e.consume();
-            }
-            case UP -> {
-                move(-1);
-                e.consume();
-            }
-            case N -> {
-                if (e.isControlDown()) {
-                    move(1);
-                    e.consume();
+        PickerKeys.Action action = PickerKeys.action(e, keymap, true);
+        switch (action) {
+            case CANCEL -> hide();
+            case ACCEPT -> runSelected();
+            default -> {
+                // The cursor only ever rests on an ENABLED command; grayed-out ones are stepped over.
+                if (PickerKeys.navigate(list, action, this::isEnabled)) {
+                    break;
                 }
-            }
-            case P -> {
-                if (e.isControlDown()) {
-                    move(-1);
-                    e.consume();
+                if (docsChord == null || !docsChord.equals(com.editora.command.KeyDispatcher.chord(e))) {
+                    return;
                 }
+                openDocs();
             }
-            case G -> {
-                if (e.isControlDown()) {
-                    hide();
-                    e.consume();
-                }
-            }
-            case H -> {
-                if (e.isControlDown()) {
-                    openDocs();
-                    e.consume();
-                }
-            }
-            default -> {}
         }
+        e.consume();
     }
 
-    /** C-h: open the highlighted command's online documentation in the system default browser. */
+    /** The docs key: open the highlighted command's online documentation in the system default browser. */
     private void openDocs() {
         Command command = list.getSelectionModel().getSelectedItem();
         if (command == null) {
@@ -282,27 +247,6 @@ public class CommandPalette {
      */
     static String docsUrl(String commandId) {
         return DOCS_BASE + commandId;
-    }
-
-    private void move(int delta) {
-        int size = items.size();
-        if (size == 0) {
-            return;
-        }
-        int cur = list.getSelectionModel().getSelectedIndex();
-        if (cur < 0) {
-            cur = 0;
-        }
-        // Step in `delta`'s direction (wrapping) to the next ENABLED command, skipping grayed-out ones.
-        for (int step = 1; step <= size; step++) {
-            int idx = Math.floorMod(cur + delta * step, size);
-            if (isEnabled(items.get(idx))) {
-                list.getSelectionModel().select(idx);
-                list.scrollTo(idx);
-                return;
-            }
-        }
-        // No enabled command anywhere — leave the selection as-is.
     }
 
     private void runSelected() {

@@ -27,6 +27,9 @@ scene, so focus never leaves it.
 - Every picker supplies a card node (which sets `editora.ownsKeys` so its `C-n`/`C-p`/arrow nav
   isn't hijacked by the global `KeyDispatcher`), an `onShown` hook (`requestFocus`), and an
   `onHidden` hook. `MainController.wireOverlayHost()` injects the host into all of them.
+- Because the card shares the window's scene, the host — not the windowing system — has to keep
+  keyboard focus inside it: `OverlayHost` pulls focus back if Tab or arrow traversal would move it to
+  the window behind the scrim. Picker keys resolve through the active keymap (`ui/PickerKeys`).
 - Input dialogs use the same mechanism via `ui/OverlayInput` (callback-driven; `onAccept` runs
   after the card hides, so focus is already back in the editor — no blocking `showAndWait`).
 - The one exception is `editor/CompletionPopup`, which stays a `Popup` — it never calls
