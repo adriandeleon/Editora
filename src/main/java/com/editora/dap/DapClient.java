@@ -54,6 +54,16 @@ import org.eclipse.lsp4j.jsonrpc.Launcher;
  *
  * <p>Pure of JavaFX: event callbacks fire on the launcher's reader thread, so the {@link Host}
  * implementation ({@link DapManager}) marshals to the FX thread. Requests return raw futures.
+ *
+ * <p><b>Multi-session adapters.</b> vscode-js-debug never debugs the program on the connection that
+ * launched it. That first ("root") session only starts the launcher; for every debuggee it then sends the
+ * reverse request {@code startDebugging} and waits for a <em>second</em> connection to the same port whose
+ * {@code launch}/{@code attach} carries the configuration it supplied (including {@code __pendingTargetId}).
+ * Breakpoints, stops, stepping and output all live on that child session. A root client therefore owns
+ * its children: it opens one per {@code startDebugging}, gives each the current breakpoints and exception
+ * filters, forwards their events to the one {@link Host}, addresses inspection and control requests to the
+ * child that last stopped ({@link #target()}), and disposes them with itself. To the manager it remains a
+ * single session.
  */
 public final class DapClient implements IDebugProtocolClient {
 
@@ -78,6 +88,16 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     private final Host host;
+    /** The root session this client is a child of, or null when it is the root (or a plain session). */
+    private final DapClient root;
+    /** Root only: the live child sessions, in the order the adapter asked for them. */
+    private final List<DapClient> children = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** Root only: the child inspection/control requests are addressed to — the one that last stopped. */
+    private volatile DapClient focus;
+    /** The port and adapter id of a socket transport, so a child can join the same adapter. */
+    private volatile int port = -1;
+
+    private volatile String adapterId;
     private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "dap-session");
         t.setDaemon(true);
@@ -102,10 +122,39 @@ public final class DapClient implements IDebugProtocolClient {
 
     public DapClient(Host host) {
         this.host = host;
+        this.root = null;
+    }
+
+    /** A child session of {@code root}; its events are folded into the root's host. */
+    private DapClient(DapClient root) {
+        this.root = root;
+        this.host = root.childHost(this);
     }
 
     public void setBreakpoints(List<DapModels.FileBreakpoints> breakpoints) {
         this.initialBreakpoints = breakpoints == null ? List.of() : List.copyOf(breakpoints);
+    }
+
+    /**
+     * The session a request about the debuggee should go to: the child that last stopped, else the first
+     * live child, else this client itself (every adapter that debugs on its first connection).
+     */
+    private DapClient target() {
+        DapClient f = focus;
+        if (f != null && !f.disposed) {
+            return f;
+        }
+        for (DapClient child : children) {
+            if (!child.disposed) {
+                return child;
+            }
+        }
+        return this;
+    }
+
+    /** Live child sessions (test/diagnostic read). */
+    int childCount() {
+        return children.size();
     }
 
     /**
@@ -117,6 +166,9 @@ public final class DapClient implements IDebugProtocolClient {
      */
     public void setExceptionFilters(List<String> filters) {
         this.exceptionFilters = filters == null ? List.of() : List.copyOf(filters);
+        for (DapClient child : children) {
+            child.setExceptionFilters(filters); // each session holds its own exception configuration
+        }
         if (server != null && configured) {
             try {
                 SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
@@ -134,7 +186,8 @@ public final class DapClient implements IDebugProtocolClient {
     /** Whether the adapter supports {@code gotoTargets}/{@code goto} (debugpy does; java-debug and
      *  vscode-js-debug currently do not). */
     public boolean supportsGotoTargets() {
-        return capabilities != null && Boolean.TRUE.equals(capabilities.getSupportsGotoTargetsRequest());
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsGotoTargetsRequest());
     }
 
     /**
@@ -163,11 +216,14 @@ public final class DapClient implements IDebugProtocolClient {
                 opened.close();
                 return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("disposed"));
             }
+            this.port = port;
+            this.adapterId = adapterId;
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
                     this, socket.getInputStream(), socket.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
             watchTransport(launcher.startListening());
-            return timed(server.initialize(initArgs(adapterId))).thenApply(c -> {
+            // A socket adapter can be joined by a second connection, so child sessions are possible here.
+            return timed(server.initialize(initArgs(adapterId, true))).thenApply(c -> {
                 this.capabilities = c;
                 return c;
             });
@@ -201,7 +257,7 @@ public final class DapClient implements IDebugProtocolClient {
                     this, process.getInputStream(), process.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
             watchTransport(launcher.startListening());
-            return timed(server.initialize(initArgs(adapterId))).thenApply(c -> {
+            return timed(server.initialize(initArgs(adapterId, false))).thenApply(c -> {
                 this.capabilities = c;
                 return c;
             });
@@ -224,21 +280,41 @@ public final class DapClient implements IDebugProtocolClient {
         watchProcess(process);
     }
 
+    /**
+     * The loopback addresses an adapter may be listening on. vscode-js-debug binds {@code localhost}, which
+     * on many systems resolves to {@code ::1} first — so an adapter that had started correctly was reported
+     * as unreachable when only the IPv4 loopback was tried.
+     */
+    private static final String[] LOOPBACKS = {"127.0.0.1", "::1"};
+
     private static Socket openWithRetry(int port, int tries) throws InterruptedException {
         for (int i = 0; i < tries; i++) {
-            try {
+            for (String loopback : LOOPBACKS) {
                 Socket s = new Socket();
-                s.connect(new InetSocketAddress("127.0.0.1", port), 200);
-                return s;
-            } catch (Exception e) {
-                Thread.sleep(40);
+                try {
+                    s.connect(new InetSocketAddress(loopback, port), 200);
+                    return s;
+                } catch (Exception e) {
+                    try {
+                        s.close();
+                    } catch (java.io.IOException ignored) {
+                        // nothing was opened
+                    }
+                }
             }
+            Thread.sleep(40);
         }
         throw new IllegalStateException("could not connect to the debug adapter on port " + port);
     }
 
-    private static InitializeRequestArguments initArgs(String adapterId) {
+    /**
+     * {@code startDebugging}: whether the adapter may ask for child sessions. Only declared for socket
+     * transports, where a child can connect to the same port; a stdio adapter has no second connection to
+     * offer, and declaring it would make debugpy route subprocesses through a request we could not serve.
+     */
+    private static InitializeRequestArguments initArgs(String adapterId, boolean startDebugging) {
         InitializeRequestArguments a = new InitializeRequestArguments();
+        a.setSupportsStartDebuggingRequest(startDebugging);
         a.setClientID("editora");
         a.setClientName("Editora");
         a.setAdapterID(adapterId == null || adapterId.isBlank() ? "java" : adapterId);
@@ -337,11 +413,30 @@ public final class DapClient implements IDebugProtocolClient {
 
     @Override
     public void output(OutputEventArguments args) {
+        if ("telemetry".equals(args.getCategory())) {
+            return; // the protocol's "send to telemetry instead of showing it to the user" — not console text
+        }
         host.onOutput(args.getOutput(), args.getCategory());
     }
 
+    /** How long a root session that has terminated waits for its children to deliver their final events. */
+    private static final long CHILD_DRAIN_MILLIS = 1_000;
+
     @Override
     public void terminated(TerminatedEventArguments args) {
+        if (root == null && !children.isEmpty()) {
+            // The debuggee's last output and its own `terminated` travel on the child's connection, and
+            // nothing orders the two sockets: ending here would dispose the child with that output still
+            // unread (measured against js-debug: the root's event overtakes the child's). The session ends
+            // when the last child does (childEnded); this is only the fallback for a child that never says so.
+            CompletableFuture.delayedExecutor(CHILD_DRAIN_MILLIS, TimeUnit.MILLISECONDS)
+                    .execute(() -> {
+                        if (!disposed) {
+                            host.onTerminated();
+                        }
+                    });
+            return;
+        }
         host.onTerminated();
     }
 
@@ -350,10 +445,160 @@ public final class DapClient implements IDebugProtocolClient {
         // The debuggee process exited; the session ends on the following `terminated` event.
     }
 
+    /**
+     * The adapter asks for a child session (see the class doc). lsp4j's default throws
+     * {@code UnsupportedOperationException}, which is why JavaScript debugging never attached: the request
+     * failed, js-debug kept waiting for a connection that never came, and the session sat in RUNNING with
+     * no debuggee behind it. A child may itself ask for children (a debuggee's subprocesses); they all join
+     * the root.
+     */
+    @Override
+    public CompletableFuture<Void> startDebugging(org.eclipse.lsp4j.debug.StartDebuggingRequestArguments args) {
+        DapClient owner = root == null ? this : root;
+        return owner.startChild(args);
+    }
+
+    private CompletableFuture<Void> startChild(org.eclipse.lsp4j.debug.StartDebuggingRequestArguments args) {
+        int adapterPort = port;
+        if (disposed || adapterPort < 0 || args == null) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("this debug adapter transport cannot start a child session"));
+        }
+        boolean attach = args.getRequest() == org.eclipse.lsp4j.debug.StartDebuggingRequestArgumentsType.ATTACH;
+        Map<String, Object> configuration = new java.util.LinkedHashMap<>();
+        if (args.getConfiguration() != null) {
+            configuration.putAll(args.getConfiguration());
+        }
+        CompletableFuture<Void> started = new CompletableFuture<>();
+        try {
+            // Off the reader thread: connecting blocks, and the child's replies arrive on its own reader.
+            executor.execute(() -> connectChild(adapterPort, attach, configuration, started));
+        } catch (RuntimeException rejected) {
+            started.completeExceptionally(rejected); // disposed between the check and the submit
+        }
+        return started;
+    }
+
+    private void connectChild(
+            int adapterPort, boolean attach, Map<String, Object> configuration, CompletableFuture<Void> started) {
+        DapClient child = new DapClient(this);
+        child.initialBreakpoints = initialBreakpoints;
+        child.exceptionFilters = exceptionFilters;
+        children.add(child);
+        if (disposed) { // the session ended while this was queued
+            children.remove(child);
+            child.dispose();
+            started.completeExceptionally(new java.util.concurrent.CancellationException("disposed"));
+            return;
+        }
+        child.connect(adapterPort, adapterId).whenComplete((caps, error) -> {
+            if (error != null) {
+                children.remove(child);
+                child.dispose();
+                started.completeExceptionally(error);
+                return;
+            }
+            // The adapter binds this connection to the pending target named in the configuration it sent.
+            // Its `initialized` event (handled by the child) then installs breakpoints + configurationDone.
+            CompletableFuture<Void> begun = attach ? child.attach(configuration) : child.launch(configuration);
+            begun.whenComplete((v, launchError) -> {
+                if (launchError == null || child.disposed) {
+                    return;
+                }
+                if (isTimeout(launchError)) {
+                    // Some adapters answer launch/attach late or only once the target ends. The session is
+                    // judged by its events, not by this reply, so a missing answer must not tear it down.
+                    LOG.log(Level.FINE, "child debug session did not answer launch/attach", launchError);
+                    return;
+                }
+                host.onError("Could not start the debug target: " + launchError.getMessage());
+                childEnded(child);
+            });
+            started.complete(null);
+        });
+    }
+
+    private static boolean isTimeout(Throwable error) {
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (t instanceof java.util.concurrent.TimeoutException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The {@link Host} a child reports to: its events become this (root) session's events. */
+    private Host childHost(DapClient child) {
+        return new Host() {
+            @Override
+            public void onStopped(int threadId, String reason) {
+                focus = child; // inspection and stepping now address the session that stopped
+                host.onStopped(threadId, reason);
+            }
+
+            @Override
+            public void onContinued() {
+                DapClient f = focus;
+                if (f == null || f == child) {
+                    host.onContinued();
+                }
+            }
+
+            @Override
+            public void onOutput(String text, String category) {
+                host.onOutput(text, category);
+            }
+
+            @Override
+            public void onTerminated() {
+                childEnded(child);
+            }
+
+            @Override
+            public void onError(String message) {
+                host.onError(message);
+            }
+
+            @Override
+            public void onTransportClosed(Throwable error) {
+                childEnded(child);
+            }
+        };
+    }
+
+    /**
+     * A child session ended. The others keep running; when it was the last one the debuggee is gone, so the
+     * whole session ends — the root session has nothing left to debug.
+     */
+    private void childEnded(DapClient child) {
+        if (!children.remove(child)) {
+            return; // already handled (terminated is followed by the transport closing)
+        }
+        boolean wasFocus = focus == child;
+        if (wasFocus) {
+            focus = null;
+        }
+        child.dispose();
+        if (disposed) {
+            return;
+        }
+        if (children.isEmpty()) {
+            host.onTerminated();
+        } else if (wasFocus) {
+            host.onContinued(); // the stop being shown belonged to the session that just ended
+        }
+    }
+
     // --- Requests (raw futures; DapManager marshals to FX + maps to neutral records) -------------
 
     /** (Re)sends the breakpoints for a single file (used live while running, and during configuration). */
     public CompletableFuture<Void> sendSetBreakpoints(DapModels.FileBreakpoints fb) {
+        if (fb != null && root == null) {
+            rememberBreakpoints(fb); // a child session started later must begin with the current set
+            for (DapClient child : children) {
+                child.sendSetBreakpoints(fb); // each session holds its own breakpoints
+            }
+        }
         if (server == null || fb == null) {
             return CompletableFuture.completedFuture(null);
         }
@@ -379,7 +624,23 @@ public final class DapClient implements IDebugProtocolClient {
         return timed(server.setBreakpoints(a)).thenApply(r -> null);
     }
 
+    /** Replaces {@code fb}'s file in the set installed on a session's {@code initialized} event. */
+    private void rememberBreakpoints(DapModels.FileBreakpoints fb) {
+        List<DapModels.FileBreakpoints> updated = new ArrayList<>();
+        for (DapModels.FileBreakpoints existing : initialBreakpoints) {
+            if (!existing.file().equals(fb.file())) {
+                updated.add(existing);
+            }
+        }
+        updated.add(fb);
+        initialBreakpoints = List.copyOf(updated);
+    }
+
     public CompletableFuture<List<DapModels.ThreadInfo>> threads() {
+        DapClient session = target();
+        if (session != this) {
+            return session.threads();
+        }
         return timed(server.threads()).thenApply(r -> {
             List<DapModels.ThreadInfo> out = new ArrayList<>();
             if (r != null && r.getThreads() != null) {
@@ -392,6 +653,10 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public CompletableFuture<List<DapModels.StackFrameInfo>> stackTrace(int threadId) {
+        DapClient session = target();
+        if (session != this) {
+            return session.stackTrace(threadId);
+        }
         StackTraceArguments a = new StackTraceArguments();
         a.setThreadId(threadId);
         return timed(server.stackTrace(a)).thenApply(r -> {
@@ -409,6 +674,10 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public CompletableFuture<List<DapModels.ScopeInfo>> scopes(int frameId) {
+        DapClient session = target();
+        if (session != this) {
+            return session.scopes(frameId);
+        }
         ScopesArguments a = new ScopesArguments();
         a.setFrameId(frameId);
         return timed(server.scopes(a)).thenApply(r -> {
@@ -423,6 +692,10 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public CompletableFuture<List<DapModels.VariableInfo>> variables(int variablesReference) {
+        DapClient session = target();
+        if (session != this) {
+            return session.variables(variablesReference);
+        }
         VariablesArguments a = new VariablesArguments();
         a.setVariablesReference(variablesReference);
         return timed(server.variables(a)).thenApply(r -> {
@@ -439,6 +712,10 @@ public final class DapClient implements IDebugProtocolClient {
 
     /** Evaluates {@code expression} in {@code frameId}'s context ({@code "repl"} or {@code "watch"}). */
     public CompletableFuture<String> evaluate(String expression, int frameId, String context) {
+        DapClient session = target();
+        if (session != this) {
+            return session.evaluate(expression, frameId, context);
+        }
         EvaluateArguments a = new EvaluateArguments();
         a.setExpression(expression);
         a.setFrameId(frameId);
@@ -449,6 +726,10 @@ public final class DapClient implements IDebugProtocolClient {
     /** Like {@link #evaluate} but keeps the full response: result + expandable children reference + type
      *  (for watches that expand into the variables tree and the hover value popup). */
     public CompletableFuture<DapModels.EvalResult> evaluateFull(String expression, int frameId, String context) {
+        DapClient session = target();
+        if (session != this) {
+            return session.evaluateFull(expression, frameId, context);
+        }
         EvaluateArguments a = new EvaluateArguments();
         a.setExpression(expression);
         a.setFrameId(frameId);
@@ -460,6 +741,10 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public CompletableFuture<String> setVariable(int variablesReference, String name, String value) {
+        DapClient session = target();
+        if (session != this) {
+            return session.setVariable(variablesReference, name, value);
+        }
         SetVariableArguments a = new SetVariableArguments();
         a.setVariablesReference(variablesReference);
         a.setName(name);
@@ -468,6 +753,11 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public void resume(int threadId) {
+        DapClient session = target();
+        if (session != this) {
+            session.resume(threadId);
+            return;
+        }
         ContinueArguments a = new ContinueArguments();
         a.setThreadId(threadId);
         ignore(timed(server.continue_(a)));
@@ -475,6 +765,11 @@ public final class DapClient implements IDebugProtocolClient {
 
     /** Pauses a running thread; the adapter answers with a {@code stopped(reason=pause)} event. */
     public void pause(int threadId) {
+        DapClient session = target();
+        if (session != this) {
+            session.pause(threadId);
+            return;
+        }
         org.eclipse.lsp4j.debug.PauseArguments a = new org.eclipse.lsp4j.debug.PauseArguments();
         a.setThreadId(threadId);
         ignore(timed(server.pause(a)));
@@ -483,6 +778,10 @@ public final class DapClient implements IDebugProtocolClient {
     /** Asks the adapter for the goto targets at {@code line} (0-based) of {@code file}; the first
      *  target's id feeds {@link #gotoTarget}. Empty when the line isn't a valid jump target. */
     public CompletableFuture<List<Integer>> gotoTargets(Path file, int line) {
+        DapClient session = target();
+        if (session != this) {
+            return session.gotoTargets(file, line);
+        }
         Source source = new Source();
         source.setName(file.getFileName().toString());
         source.setPath(file.toString());
@@ -503,6 +802,10 @@ public final class DapClient implements IDebugProtocolClient {
     /** Moves the execution pointer of {@code threadId} to a target from {@link #gotoTargets} (Jump to
      *  Line); the adapter then emits {@code stopped(reason=goto)}, refreshing the UI like any stop. */
     public CompletableFuture<Void> gotoTarget(int threadId, int targetId) {
+        DapClient session = target();
+        if (session != this) {
+            return session.gotoTarget(threadId, targetId);
+        }
         org.eclipse.lsp4j.debug.GotoArguments a = new org.eclipse.lsp4j.debug.GotoArguments();
         a.setThreadId(threadId);
         a.setTargetId(targetId);
@@ -510,18 +813,33 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public void next(int threadId) {
+        DapClient session = target();
+        if (session != this) {
+            session.next(threadId);
+            return;
+        }
         NextArguments a = new NextArguments();
         a.setThreadId(threadId);
         ignore(timed(server.next(a)));
     }
 
     public void stepIn(int threadId) {
+        DapClient session = target();
+        if (session != this) {
+            session.stepIn(threadId);
+            return;
+        }
         StepInArguments a = new StepInArguments();
         a.setThreadId(threadId);
         ignore(timed(server.stepIn(a)));
     }
 
     public void stepOut(int threadId) {
+        DapClient session = target();
+        if (session != this) {
+            session.stepOut(threadId);
+            return;
+        }
         StepOutArguments a = new StepOutArguments();
         a.setThreadId(threadId);
         ignore(timed(server.stepOut(a)));
@@ -533,6 +851,11 @@ public final class DapClient implements IDebugProtocolClient {
             return;
         }
         disposed = true;
+        focus = null;
+        for (DapClient child : children) {
+            child.dispose(); // children live and die with the session that started them
+        }
+        children.clear();
         try {
             if (server != null) {
                 DisconnectArguments a = new DisconnectArguments();

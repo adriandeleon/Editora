@@ -360,4 +360,50 @@ class LspCoordinatorDiagnosticsFxTest {
 
         assertFalse(problems().containsKey(closed));
     }
+
+    // --- the Problems tree is rebuilt once per burst, and not at all for an identical publish ---------
+
+    private int rebuilds() throws Exception {
+        return FxTestSupport.callOnFx(() -> coordinator.problemsPanel().rebuildCount());
+    }
+
+    /**
+     * jdtls publishes once per file on a project import. Each publish used to rebuild the whole tree, so a
+     * burst of N cost N full rebuilds on the FX thread; now the burst shares one.
+     */
+    @Test
+    void aBurstOfPublishesRebuildsTheProblemsTreeOnce() throws Exception {
+        EditorBuffer a = openJava("A.java", "class A {}\n");
+        EditorBuffer b = openJava("B.java", "class B {}\n");
+        EditorBuffer c = openJava("C.java", "class C {}\n");
+        FxTestSupport.runOnFx(() -> {}); // settle anything queued by opening the buffers
+        int before = rebuilds();
+
+        FxTestSupport.runOnFx(() -> {
+            coordinator.onDiagnostics(a.getPath(), one("a"));
+            coordinator.onDiagnostics(b.getPath(), one("b"));
+            coordinator.onDiagnostics(c.getPath(), one("c"));
+        });
+        FxTestSupport.runOnFx(() -> {}); // the single deferred rebuild
+
+        assertEquals(3, problems().size());
+        assertEquals(before + 1, rebuilds(), "three publishes in one burst share one rebuild");
+    }
+
+    /** Most publishes repeat what is already shown (every unaffected file, on every keystroke). */
+    @Test
+    void republishingIdenticalDiagnosticsDoesNotRebuildTheTree() throws Exception {
+        EditorBuffer a = openJava("A.java", "class A {}\n");
+        publish(a.getPath(), one("same"));
+        FxTestSupport.runOnFx(() -> {});
+        int before = rebuilds();
+
+        publish(a.getPath(), one("same"));
+        FxTestSupport.runOnFx(() -> {});
+        assertEquals(before, rebuilds(), "identical content: nothing to rebuild");
+
+        publish(a.getPath(), one("different"));
+        FxTestSupport.runOnFx(() -> {});
+        assertEquals(before + 1, rebuilds());
+    }
 }

@@ -58,6 +58,15 @@ public final class ProcessRegistry {
     /** Descendants captured for delayed escalation, retained independently after their root exits. */
     private static final Set<ProcessHandle> PENDING_REAPS = ConcurrentHashMap.newKeySet();
 
+    /**
+     * Processes that have been asked to exit through their own protocol ({@link #expectExit}) and are being
+     * given a moment to do it. The shutdown hook waits for these, briefly, before force-killing.
+     */
+    private static final Set<Process> EXITING = ConcurrentHashMap.newKeySet();
+
+    /** The longest the shutdown hook waits for {@link #EXITING} processes before force-killing them. */
+    static final long EXIT_WAIT_MS = 3000;
+
     /** Metadata for the on-disk ledger, keyed by pid (so a crash-leaked server can be reaped next run). */
     private static final ConcurrentHashMap<Long, LedgerEntry> LEDGER = new ConcurrentHashMap<>();
 
@@ -134,6 +143,39 @@ public final class ProcessRegistry {
     }
 
     /**
+     * Marks {@code p} as shutting down on request — a language server that was sent {@code shutdown} and is
+     * about to receive {@code exit}. Its owner still calls {@link #killTree} once its own bounded wait ends;
+     * this only matters when the JVM itself exits first (the last window closing starts both at once), where
+     * the shutdown hook would otherwise force-kill a server in the middle of saving its state.
+     */
+    public static void expectExit(Process p) {
+        if (p != null && p.isAlive()) {
+            EXITING.add(p);
+            p.onExit().thenRun(() -> EXITING.remove(p));
+        }
+    }
+
+    /**
+     * Blocks until every {@link #expectExit} process has exited or {@code timeoutMillis} passes; true when
+     * none is left alive. Returns immediately when nothing is exiting, so an ordinary quit pays nothing.
+     */
+    static boolean awaitExpectedExits(long timeoutMillis) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        for (Process p : List.copyOf(EXITING)) {
+            long remaining = deadline - System.nanoTime();
+            try {
+                if (remaining <= 0 || !p.waitFor(remaining, TimeUnit.NANOSECONDS)) {
+                    return false;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Kills a process tree with escalation, then untracks it. Sends SIGTERM to the descendants (children
      * first) and the root now, then schedules a force-kill of any survivor after {@link #GRACE_MS}.
      * <b>Non-blocking</b> — safe on the FX thread. If the process exits from the SIGTERM, the scheduled
@@ -143,6 +185,7 @@ public final class ProcessRegistry {
         if (p == null) {
             return;
         }
+        EXITING.remove(p); // its owner's wait is over; from here it is killed, not waited for
         List<ProcessHandle> descendants = descendantsOf(p);
         retainPending(descendants);
         destroyHandles(descendants, false);
@@ -257,16 +300,20 @@ public final class ProcessRegistry {
     }
 
     /**
-     * The shutdown hook: stop every live tree, politely first. Each tree gets SIGTERM (children before the
-     * root), then all of them together get up to {@link #GRACE_MS} to exit, and only what is still alive is
-     * force-killed. Synchronous — the JVM is exiting — and bounded: the wait ends the moment the last process
-     * is gone, so a quit with well-behaved children is not delayed.
+     * The shutdown hook: stop every live tree, politely first. Servers that were just sent their own
+     * {@code shutdown}/{@code exit} ({@link #expectExit}) get up to {@link #EXIT_WAIT_MS} to leave by themselves.
+     * Then each remaining tree gets SIGTERM (children before the root), all of them together get up to
+     * {@link #GRACE_MS} to exit, and only what is still alive is force-killed. Synchronous — the JVM is
+     * exiting — and bounded: each wait ends the moment the last process is gone, so a quit with well-behaved
+     * children is not delayed.
      *
      * <p>Force-killing at once, as this used to, gave a language server no chance to release its workspace
      * lock or flush its index, and cut a running program off mid-write. Trees already inside
      * {@link #killTree}'s grace period have had their SIGTERM, so those are force-killed without a second wait.
      */
     static void killAll() {
+        awaitExpectedExits(EXIT_WAIT_MS); // let a server that was just sent shutdown/exit finish cleanly
+        EXITING.clear();
         destroyHandles(List.copyOf(PENDING_REAPS), true);
         List<Process> roots = List.copyOf(LIVE);
         List<ProcessHandle> asked = new ArrayList<>();

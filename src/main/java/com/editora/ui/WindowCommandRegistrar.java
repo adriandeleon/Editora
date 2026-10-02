@@ -714,6 +714,7 @@ final class WindowCommandRegistrar {
                                         null)));
         host.registry().register(Command.of("lsp.toggleServer", host.lspCoordinator()::chooseServerToggle));
         host.registry().register(Command.of("lsp.setServerCommand", host.lspCoordinator()::chooseServerCommand));
+        host.registry().register(Command.of("lsp.trustProjectSettings", host.lspCoordinator()::trustProjectSettings));
         host.registry().register(Command.of("debug.toggleAdapter", host.debugCoordinator()::chooseAdapterToggle));
         host.registry().register(Command.of("debug.setAdapterPath", host.debugCoordinator()::chooseAdapterPath));
         host.registry()
@@ -1843,9 +1844,12 @@ final class WindowCommandRegistrar {
                                         "view.toggleOnTypeFormatting",
                                         () -> host.config().getSettings().isLspOnTypeFormatting(),
                                         host.config().getSettings()::setLspOnTypeFormatting,
-                                        () -> host.editorSettings()
-                                                .applyViewSettingsToAllBuffers(
-                                                        host.config().getSettings()))));
+                                        () -> {
+                                            host.editorSettings()
+                                                    .applyViewSettingsToAllBuffers(
+                                                            host.config().getSettings());
+                                            host.lspCoordinator().applyOnTypeFormatting(); // jdtls gates on it
+                                        })));
         host.registry()
                 .register(Command.of(
                         "view.togglePasteImports",

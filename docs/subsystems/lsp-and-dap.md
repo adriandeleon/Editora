@@ -76,6 +76,11 @@ language id — so js/ts/jsx/tsx in one project share a single `tsserver`. It ow
 since both detection and the FX-thread session start read it. Remote (SFTP) files are never managed —
 `isManaged` bails on `!Vfs.isLocal` before `toUri()`, which would throw for such paths.
 
+`shutdownAll()` is the restart/disable primitive and leaves the manager usable. A window that is closing
+calls `close()` instead: it shuts everything down **and makes the manager terminal**, so a callback that
+lands afterwards (a detection probe, a settings apply, a crash-restart) cannot open a document and fork a
+server nothing owns. After `close()`, `openDocument`, `configure` and `detect` do nothing.
+
 ### `LanguageServerSession`: one process over stdio
 
 [`lsp/LanguageServerSession`](../../src/main/java/com/editora/lsp/LanguageServerSession.java) drives
@@ -92,6 +97,13 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   push default configuration (enables Pyright auto-imports), then flush queued requests.
 - **Startup preparation** runs on `lsp-start`: per-project JDT workspace directory creation and installed-JDK
   discovery never execute on the JavaFX routing path.
+- **One ordered writer.** LSP4J writes a message on the calling thread, and most callers are the FX thread.
+  With the process pipe as the output a server that stops reading its stdin would block that `write()` and
+  freeze the editor. The launcher is therefore given an [`AsyncPipeWriter`](../../src/main/java/com/editora/lsp/AsyncPipeWriter.java):
+  `write` only appends to an in-memory FIFO and one daemon thread per session does the real pipe writes.
+  Wire order is unchanged — it is still the order the session issues calls in, because LSP4J emits each
+  message under its own lock and the queue has one consumer. The backlog is bounded (64 MB); reaching it
+  means the server is wedged, so the session kills it and the ordinary crash-restart path takes over.
 - **Queue-until-initialized**: `whenReady(action)` runs an action now if initialized, else parks it in
   `pending` to flush when `initialize` resolves. So a document open issued before the handshake
   completes is held rather than dropped.
@@ -104,20 +116,38 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   selection ranges, pull diagnostics, semantic tokens, inlay hints, workspace symbols, call/type hierarchy,
   `executeCommand`, and the registered JDT extension requests used by Java editing and debugging.
   Ordinary requests use a shared 30-second bound that cancels the JSON-RPC future; initialization retains
-  its 60-second budget. Disposing or losing a session completes command/raw-request futures that were still
-  queued for initialization.
+  its 60-second budget. `bounded(request, timeout)` takes the budget as a parameter — `java/buildWorkspace`
+  passes its ten minutes — and cancels its timer as soon as the request completes (the timer runs on one
+  shared `removeOnCancel` scheduler), so a delivered result is not kept reachable for the rest of the
+  timeout. Disposing or losing a session completes command/raw-request futures that were still queued for
+  initialization.
 - **Dynamic registration and refresh**: `client/registerCapability` and unregister update the effective
-  capability object used by UI gates, including trigger/options data. Diagnostic, semantic-token, inlay-hint,
-  and folding refresh requests immediately re-request data for managed open buffers.
+  capability object used by UI gates, including trigger/options data. Registration options arrive as raw
+  JSON and are decoded with **LSP4J's own gson** (`LanguageServerSession.LSP_GSON`) — a plain `new Gson()`
+  cannot read the `Either` fields (`SemanticTokensWithRegistrationOptions.range`/`full`) and either drops
+  them or throws. Each registration is applied on its own, so one unusable entry cannot abort the batch.
+  Rename and code-action registrations keep their options object (`prepareProvider`, `codeActionKinds`)
+  rather than being reduced to a Boolean. Diagnostic, semantic-token, inlay-hint, and folding refresh
+  requests immediately re-request data for managed open buffers; a capability change re-pushes every
+  buffer gate, including Go to Implementation / Type Definition.
+- **jdtls on-type formatting** is registered by the server only while `java.format.onType.enabled` is set.
+  `Settings.lspOnTypeFormatting` is mirrored into it: in `initializationOptions`, in the configuration pushed
+  after `initialized`, and again (to running Java sessions) when the setting flips. The opt-in
+  `JdtlsDynamicRegistrationProbeTest` checks this, rename's `prepareProvider`, and semantic tokens against
+  a real jdtls.
 - **stderr must be drained.** A daemon thread (`drainStderr`) reads the server's stderr to EOF and
   logs the first 200 lines to the Debug Log. An undrained PIPE fills its ~64 KB OS buffer on a chatty
   server (jdtls logs heavily) and the server blocks mid-startup, deadlocking the handshake. Capturing
   it (rather than `Redirect.DISCARD`ing) surfaces *why* a launch failed — missing JDK, a lock, a bad
   command — which would otherwise be invisible in a packaged build.
-- **Dispose** sends `shutdown`+`exit` (best-effort) then `ProcessRegistry.killTree(process)`. Killing
-  only the launcher would orphan the real server: jdtls is a wrapper script (Homebrew `jdtls` → python
-  → java), and the orphaned JVM keeps its Eclipse workspace `.lock`, blocking the next session for that
-  root.
+- **Dispose** returns immediately on every path (it runs on the FX thread during a window close). For a
+  live, initialized server a daemon thread then follows the protocol: `shutdown`, up to 2 s for the reply,
+  `exit`, up to 1 s for the process to leave by itself, and only then `ProcessRegistry.killTree(process)`.
+  Killing in the same call as `shutdown` meant `exit` was never delivered and jdtls's workspace closed
+  uncleanly on every quit. A server that never answers is killed when the bound expires, and nothing on
+  this path touches the pipe from the calling thread. Killing only the launcher would orphan the real
+  server: jdtls is a wrapper script (Homebrew `jdtls` → python → java), and the orphaned JVM keeps its
+  Eclipse workspace `.lock`, blocking the next session for that root.
 
 ### Per-jdtls workspace
 
@@ -131,7 +161,10 @@ index is reused. If a session dies before completing `initialize`, `LspManager` 
 as suspect: it removes the rebuildable cache when the Eclipse lock is free, or writes a sidecar failure
 marker and selects a fresh suffixed directory when another process still owns the lock. Automatic crash
 restarts are scoped to the failed `(server, root)` pair so one broken project cannot deactivate or restart
-Java buffers belonging to another root.
+Java buffers belonging to another root. A deliberately disposed session keeps its workspace claim until its
+process has actually exited (it is given a moment to shut down cleanly, and still holds the Eclipse lock
+meanwhile), and a restart of the same `(server, root)` waits — bounded, on the start thread — for that
+exit before launching.
 
 ### Diagnostics → overlay, stripe, minimap, Problems
 
@@ -152,6 +185,12 @@ buffer being LSP-active:
 - `editor/DiagnosticStripe` — marks docked over the scrollbar, click-to-jump.
 - the minimap edge stripes.
 - `ui/ProblemsPanel` (the `problems` tool window), grouped language → file → diagnostic.
+
+A burst of publishes costs one Problems rebuild: the coordinator defers the rebuild to the end of the FX
+queue so every publish already waiting lands first, and the panel skips it when the content is what it
+already shows. Raw diagnostics kept for the code-action context are keyed by the **managed document URI**
+(the spelling this client opened the document under), so a server that reports `file:///c%3A/…` or a
+symlink-resolved path still gets its diagnostics back as `context.diagnostics`.
 
 The Problems window defaults to **Open files** and can switch to **Whole project**. In open-file mode the
 controller drops diagnostics for files without a tab; project mode retains project-wide publishes and is
@@ -223,9 +262,36 @@ Workspace edits retain protocol versions and request-time text snapshots. Create
 operations are staged with overwrite backups and rolled back as a batch on failure or stale text. Production
 application decodes unopened files through the host's background loader and runs filesystem staging and
 cleanup on virtual threads; only RichTextFX mutation and tab/session bookkeeping run on the FX thread.
-Unversioned edits for closed files are refused when no genuine request-time preimage exists. Resource
-preflight includes dirty deletion targets, overwritten destinations, narrowed buffers, and buffers in other
-windows. Path changes retire the old URI before registering the new one.
+Resource preflight includes dirty deletion targets, overwritten destinations, narrowed buffers, and buffers
+in other windows. Path changes retire the old URI before registering the new one.
+
+**Targets the server did not have open** (a cross-file rename reaching a file with no tab, or a tab that was
+restored but never shown). jdtls sends a null version for every document, so these cannot be validated by
+version, and reading the file once the response is in would only bless whatever is there now. The preimage
+is established instead from time: `LspManager` stamps each request (`EditBasis.sentAtMillis`) and accepts a
+closed target only when its modification time **predates the moment the request was sent** — then the
+content on disk is what the server computed from (`WorkspaceEditMapper.unchangedSince`; a whole-second
+timestamp needs a 2 s margin, since a coarse filesystem can record a later write as earlier). The file edit
+is marked `diskPreimageAt`, and the applier re-checks it against the buffer it loaded: no window has unsaved
+changes to the file, the buffer's recorded disk snapshot equals the file as it is now, and the file is still
+unmodified since the request. A version the server attaches to a document it never had open is dropped
+rather than compared. Anything that cannot be shown — an edit with no known request time, a changed, missing,
+unsaved or not-yet-loaded file — refuses the whole edit, and the blocking files are named in the status
+line (`status.lsp.editBlocked`) instead of a bare "Rename failed".
+
+**Project overrides and trust.** A committed `.editora/settings.json` may replace a server's command or
+switch a server on/off (`config/ProjectSettings`). `applySupport` hands `LspManager.configure` the
+*effective* commands — the global ones with the project's laid over them — so an override is what actually
+launches, not only what the status bar and Doctor show. Because that file lets a checkout choose a program
+to run with the user's privileges, it is gated on `config/TrustStore`: a project-supplied command, or a
+project `lspEnabled: true` for a server the user disabled globally, is honoured only when the project root
+is trusted. An untrusted project gets the user's own settings (a project may always switch a server *off*),
+a one-time status message, and the `lsp.trustProjectSettings` command, which lists what the file would run
+before recording the same per-folder trust the build-wrapper prompt writes. `reloadProjectSettings` (every
+settings apply, and a save of the project file) re-runs `applySupport` when the resolved overrides changed;
+`syncBuffer` does the same when the window's project changed since the manager was configured, because a
+window learns its project after `init` has already run. The `lsp.setServerCommand` prompt is prefilled from
+the global value, never the project's, since it writes the global setting.
 
 Save completion first synchronizes the current open document, then sends `didSave` with the exact transformed
 text written to disk when the server negotiated `includeText`; explicit and automatic saves share this path.
@@ -248,7 +314,8 @@ all call `ProcessRegistry.track(process)`. Three mechanisms:
    window close.
 2. **JVM shutdown hook** (`installShutdownHook`, from `App.main`) runs `killAll` on exit — covering a
    normal quit *and* SIGTERM/`kill`/OS-quit/most crashes, the paths that bypass the window-close
-   teardown. It sends SIGTERM to every tracked tree first, waits up to `GRACE_MS` for them to exit (the
+   teardown. A server that was just sent `shutdown`/`exit` is registered with `expectExit`, and the hook
+   first waits up to 3 s for those to leave by themselves. It then sends SIGTERM to every tracked tree, waits up to `GRACE_MS` for them to exit (the
    wait ends as soon as the last one is gone), and only then force-kills survivors — so a server can
    release its workspace lock and a running program is not cut off mid-write.
 3. **On-disk ledger** + **`reapOrphans()`** (once from `App.start`, before any window builds): kills any
@@ -319,11 +386,38 @@ on a response delivered by the same thread. Events arrive on the launcher thread
 standalone adapters' stderr is `Redirect.DISCARD`ed by `DapManager` (an undrained PIPE deadlocks, like
 the LSP servers; DAP traffic is on stdin/stdout or the socket).
 
+**Child sessions (vscode-js-debug).** js-debug never debugs the program on the connection that launched
+it. That root session only starts the launcher; for every debuggee it sends the reverse request
+`startDebugging` and waits for a *second* connection to the same port whose `launch`/`attach` carries the
+configuration it supplied, including `__pendingTargetId`. lsp4j's default handler throws, which is why
+JavaScript sessions used to sit in RUNNING with breakpoints that could never hit. `DapClient` implements
+it: a root client (socket transports only — `initialize` declares `supportsStartDebuggingRequest` there)
+opens one child `DapClient` per request, gives it the current breakpoints and exception filters, and
+launches it with the supplied configuration; the child's own `initialized` handshake then installs them and
+sends `configurationDone`. Children are internal to the root: their stops, output and termination are
+forwarded to the single `Host`, inspection and control requests are addressed to the child that last
+stopped (`target()`), live breakpoint/filter changes are broadcast to every session, and children are
+disposed with the root. The session ends when its last child does. A root `terminated` that arrives while
+children are still alive is held back for up to a second, because nothing orders the two sockets: measured
+against the real adapter, the root's event overtakes the child's final `output`, and ending there would
+drop the program's last lines. The socket connect tries both `127.0.0.1` and `::1` — js-debug binds
+`localhost`, which resolves to the IPv6 loopback first on many systems — and `telemetry`-category output
+is not shown. Known limits: with several simultaneous targets (a debuggee's subprocesses) only the most
+recently stopped one is shown, and there is no UI to switch between them. `FakeDebugAdapter` (test
+sources) plays js-debug's handshake over real sockets in the default suite; the opt-in
+`JsDebugProbeFxTest` drives the real adapter and Node through `DapManager`
+(`./mvnw test -Dtest=JsDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true`).
+
 ### DapManager & the java-debug bundle
 
 [`dap/DapManager`](../../src/main/java/com/editora/dap/DapManager.java) is the UI facade (mirrors
 `LspManager`+`RunService`). It owns the single active session (one debug session at a time, like Run)
-and dispatches `startLaunch(file, language, picker)`:
+and dispatches `startLaunch(file, language, picker)`. Adapter `output` events reach the console through
+[`dap/DapOutputPump`](../../src/main/java/com/editora/dap/DapOutputPump.java), which mirrors the Run
+console's pump: a bounded queue, one scheduled drain at a time, a bounded slice per drain with neighbouring
+events joined into one append, and a "truncated" notice when the debuggee outruns the UI; the queue is
+flushed before a session ends so its last lines are not lost. Step Over/Into/Out put the state back to
+RUNNING until the next stop, exactly like Resume. Launch paths:
 
 - **java** → resolve main class (`vscode.java.resolveMainClass`) → `resolveClasspath` →
   `resolveJavaExecutable` → `startDebugSession` → connect the socket → `launch`. A loose file with

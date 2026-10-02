@@ -1262,7 +1262,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             });
         }
         WindowDisposal.runAll(
-                () -> lspManager.shutdownAll(), // don't orphan this window's external language servers
+                () -> lspManager.close(), // stop this window's language servers and refuse any late restart
                 () -> dapManager.shutdown(), // end the debug session and release the per-window connect worker
                 () -> git.shutdown(),
                 () -> github.shutdown(), // stop the gh worker thread
@@ -6837,8 +6837,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public Path jdtlsWorkspaceBase() {
-                    return config.getConfigDir().resolve("jdtls-workspaces");
+                public com.editora.config.ConfigManager config() {
+                    return config;
                 }
 
                 @Override

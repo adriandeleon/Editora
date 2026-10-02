@@ -117,6 +117,8 @@ final class LanguageServerSession implements LanguageClient {
     /** The LSP4J launcher, kept for {@link #rawRequest} (custom, non-standard requests like jdtls's
      *  {@code java/classFileContents}, which the typed {@link LanguageServer} proxy can't express). */
     private volatile Launcher<LanguageServer> launcher;
+    /** The ordered writer between LSP4J and the server's stdin; null for an in-process test server. */
+    private volatile AsyncPipeWriter writer;
 
     private volatile boolean initialized;
     /** Set only after a complete initialize response. Distinguishes a corrupt-startup failure from a
@@ -150,14 +152,57 @@ final class LanguageServerSession implements LanguageClient {
 
     private static final java.time.Duration REQUEST_TIMEOUT = java.time.Duration.ofSeconds(30);
 
-    /** Bounds every ordinary server request and cancels its JSON-RPC future when the server stops replying. */
+    /** How long {@link #dispose()} waits for the server to answer {@code shutdown} before killing it. */
+    private static final java.time.Duration SHUTDOWN_REPLY_WAIT = java.time.Duration.ofSeconds(2);
+
+    /** How long a server that acknowledged {@code shutdown} gets to act on {@code exit} by itself. */
+    private static final java.time.Duration EXIT_WAIT = java.time.Duration.ofSeconds(1);
+
+    /**
+     * One daemon timer for every session's request timeouts. {@code removeOnCancel} matters: a cancelled
+     * timer otherwise stays in the queue until it would have fired, and its task holds the request future —
+     * so every completion list and semantic-token array stayed reachable for the full timeout after the
+     * reply had long been delivered.
+     */
+    private static final java.util.concurrent.ScheduledThreadPoolExecutor REQUEST_TIMER = requestTimer();
+
+    private static java.util.concurrent.ScheduledThreadPoolExecutor requestTimer() {
+        var timer = new java.util.concurrent.ScheduledThreadPoolExecutor(1, r -> {
+            Thread t = new Thread(r, "lsp-request-timeout");
+            t.setDaemon(true);
+            return t;
+        });
+        timer.setRemoveOnCancelPolicy(true);
+        return timer;
+    }
+
+    /** Request timers still scheduled — package-private so a test can show a reply releases its timer. */
+    static int pendingRequestTimeouts() {
+        return REQUEST_TIMER.getQueue().size();
+    }
+
+    /** Bounds an ordinary server request with the shared {@link #REQUEST_TIMEOUT}. */
     private static <T> CompletableFuture<T> bounded(CompletableFuture<T> request) {
-        CompletableFuture.delayedExecutor(REQUEST_TIMEOUT.toSeconds(), java.util.concurrent.TimeUnit.SECONDS)
-                .execute(() -> {
+        return bounded(request, REQUEST_TIMEOUT);
+    }
+
+    /**
+     * Bounds {@code request}: its JSON-RPC future is cancelled if the server has not replied within
+     * {@code timeout}, and the timer is dropped as soon as the request completes on its own.
+     */
+    static <T> CompletableFuture<T> bounded(CompletableFuture<T> request, java.time.Duration timeout) {
+        if (request.isDone()) {
+            return request;
+        }
+        var timer = REQUEST_TIMER.schedule(
+                () -> {
                     if (!request.isDone()) {
                         request.cancel(true);
                     }
-                });
+                },
+                Math.max(1, timeout.toMillis()),
+                java.util.concurrent.TimeUnit.MILLISECONDS);
+        request.whenComplete((result, error) -> timer.cancel(false));
         return request;
     }
 
@@ -172,6 +217,11 @@ final class LanguageServerSession implements LanguageClient {
 
     void setOnRefresh(Consumer<String> onRefresh) {
         this.onRefresh = onRefresh == null ? kind -> {} : onRefresh;
+    }
+
+    /** The argv this session launches (or launched) — package-private so a test can see which command won. */
+    List<String> command() {
+        return command;
     }
 
     /** The server id this session runs (from its {@link LspServerRegistry.ServerSpec}); used to detect when a
@@ -190,7 +240,17 @@ final class LanguageServerSession implements LanguageClient {
         this.command = spec.command();
         this.root = root;
         this.onDiagnostics = onDiagnostics;
-        this.onStatus = onStatus == null ? (t, m) -> {} : onStatus;
+        // A disposed session keeps reading for a moment while its server exits gracefully; nothing the
+        // server says in that time (progress, "shutting down") may reach the status bar of a session that
+        // is already gone — a progress Begin would start a loading bar no End will ever stop.
+        java.util.function.BiConsumer<String, String> sink = onStatus == null ? (t, m) -> {} : onStatus;
+        this.onStatus = (type, message) -> {
+            if (!disposed) {
+                sink.accept(type, message);
+            } else if ("Error".equals(type) || "ProgressEnd".equals(type)) {
+                sink.accept(type, null); // still allowed to stop a loading bar, never to start one or speak
+            }
+        };
         this.initializationOptionsSupplier = () -> initializationOptions;
     }
 
@@ -235,11 +295,16 @@ final class LanguageServerSession implements LanguageClient {
             // old Redirect.DISCARD) surfaces *why* a server fails to come up (missing JDK, lock, bad command)
             // — otherwise that's invisible. Capped so a chatty server can't flood the log.
             drainStderr(process);
+            // Everything LSP4J sends goes through one ordered writer thread, so no caller — least of all
+            // the FX thread — ever blocks in a pipe write when the server stops reading its stdin.
+            AsyncPipeWriter out = new AsyncPipeWriter(
+                    process.getOutputStream(), "lsp-writer-" + command.get(0), this::onInputStalled);
+            writer = out;
             Launcher<LanguageServer> launcher = new Launcher.Builder<LanguageServer>()
                     .setLocalService(this)
                     .setRemoteInterface(JdtLanguageServer.class)
                     .setInput(process.getInputStream())
-                    .setOutput(process.getOutputStream())
+                    .setOutput(out)
                     .setExecutorService(executor)
                     .create();
             this.launcher = launcher;
@@ -287,13 +352,27 @@ final class LanguageServerSession implements LanguageClient {
 
     private static final int STDERR_LOG_CAP = 200;
 
+    /**
+     * The server stopped reading its stdin and the outgoing backlog reached its limit. It cannot serve
+     * requests in that state and will not recover by being sent more, so end it: the process exit then takes
+     * the ordinary died-on-its-own path ({@link #markDead}), which lets the manager restart it.
+     */
+    private void onInputStalled() {
+        LOG.warning("Language server " + command.get(0) + " stopped reading its input; ending it");
+        Process p = process;
+        if (p != null) {
+            ProcessRegistry.killTree(p);
+        } else {
+            markDead();
+        }
+    }
+
     private void sendInitialize() {
         InitializeParams ip = new InitializeParams();
         ip.setProcessId((int) ProcessHandle.current().pid());
         String uri = root.toUri().toString();
         ip.setRootUri(uri);
-        ip.setWorkspaceFolders(
-                List.of(new WorkspaceFolder(uri, root.getFileName().toString())));
+        ip.setWorkspaceFolders(List.of(new WorkspaceFolder(uri, workspaceFolderName(root))));
         ip.setCapabilities(clientCapabilities());
         Object initializationOptions = initializationOptionsSupplier.get();
         if (initializationOptions != null) {
@@ -334,6 +413,16 @@ final class LanguageServerSession implements LanguageClient {
                     markDead(); // drop the session: it is cached but can never serve a request
                     return null;
                 });
+    }
+
+    /**
+     * The display name sent for the workspace folder: the root's last path element. A filesystem or drive
+     * root ({@code /}, {@code C:\}) has none — {@code getFileName()} is null there — so it is named by its
+     * whole path instead of failing the handshake with a NullPointerException.
+     */
+    static String workspaceFolderName(Path root) {
+        Path name = root.getFileName();
+        return name == null ? root.toString() : name.toString();
     }
 
     /**
@@ -534,41 +623,67 @@ final class LanguageServerSession implements LanguageClient {
         return cc;
     }
 
+    /**
+     * Whether jdtls should format as you type ({@code java.format.onType.enabled}), mirroring
+     * {@code Settings.lspOnTypeFormatting}. jdtls registers its on-type formatting provider dynamically and
+     * only while this preference is on, so without it the feature is dead for Java however the editor's own
+     * gate is set.
+     */
+    private volatile boolean javaOnTypeFormatting;
+
+    /** Sets {@link #javaOnTypeFormatting} and, for a running Java server, pushes the changed preference. */
+    void setJavaOnTypeFormatting(boolean enabled) {
+        boolean changed = javaOnTypeFormatting != enabled;
+        javaOnTypeFormatting = enabled;
+        if (changed && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
     /** Pushes our default settings (e.g. enable Pyright auto-imports) via workspace/didChangeConfiguration. */
     private void pushConfiguration() {
         try {
-            java.util.Map<String, Object> analysis = new java.util.HashMap<>();
-            analysis.put("autoImportCompletions", true);
-            java.util.Map<String, Object> python = new java.util.HashMap<>();
-            python.put("analysis", analysis);
-            // jdtls ADVERTISES signatureHelpProvider but its handler returns an empty result unless
-            // `java.signatureHelp.enabled` is set — it ships OFF (VS Code's Java extension sets it in its
-            // own defaults, which is why it "just works" there). Verified by driving a real jdtls: same
-            // position, same params — 0 signatures before this flag, both overloads after (#674). Same
-            // class of bug as #468's provideFormatter. Harmless to non-java servers (unknown section).
-            java.util.Map<String, Object> signatureHelp = new java.util.HashMap<>();
-            signatureHelp.put("enabled", true);
-            signatureHelp.put("description", true); // include the javadoc in the signature popup
-            // Same shape of gate for smart-semicolon detection (#746): jdtls advertises
-            // java.edit.smartSemicolonDetection unconditionally, but its handler answers null until this
-            // preference is set — verified against a real jdtls (null for every argument shape before,
-            // the target position after). Editora then gates the *behaviour* on its own setting, so
-            // enabling the server-side capability here costs nothing when the feature is off.
-            java.util.Map<String, Object> smartSemicolon = new java.util.HashMap<>();
-            smartSemicolon.put("enabled", true);
-            java.util.Map<String, Object> edit = new java.util.HashMap<>();
-            edit.put("smartSemicolonDetection", smartSemicolon);
-            java.util.Map<String, Object> java_ = new java.util.HashMap<>();
-            java_.put("signatureHelp", signatureHelp);
-            java_.put("edit", edit);
-            java.util.Map<String, Object> settings = new java.util.HashMap<>();
-            settings.put("python", python);
-            settings.put("java", java_);
             server.getWorkspaceService()
-                    .didChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationParams(settings));
+                    .didChangeConfiguration(
+                            new org.eclipse.lsp4j.DidChangeConfigurationParams(defaultSettings(javaOnTypeFormatting)));
         } catch (RuntimeException e) {
             LOG.log(Level.FINE, "didChangeConfiguration failed", e);
         }
+    }
+
+    /** Pure: the settings object pushed to every server after {@code initialized}. */
+    static java.util.Map<String, Object> defaultSettings(boolean javaOnTypeFormatting) {
+        java.util.Map<String, Object> analysis = new java.util.HashMap<>();
+        analysis.put("autoImportCompletions", true);
+        java.util.Map<String, Object> python = new java.util.HashMap<>();
+        python.put("analysis", analysis);
+        // jdtls ADVERTISES signatureHelpProvider but its handler returns an empty result unless
+        // `java.signatureHelp.enabled` is set — it ships OFF (VS Code's Java extension sets it in its
+        // own defaults, which is why it "just works" there). Verified by driving a real jdtls: same
+        // position, same params — 0 signatures before this flag, both overloads after (#674). Same
+        // class of bug as #468's provideFormatter. Harmless to non-java servers (unknown section).
+        java.util.Map<String, Object> signatureHelp = new java.util.HashMap<>();
+        signatureHelp.put("enabled", true);
+        signatureHelp.put("description", true); // include the javadoc in the signature popup
+        // Same shape of gate for smart-semicolon detection (#746): jdtls advertises
+        // java.edit.smartSemicolonDetection unconditionally, but its handler answers null until this
+        // preference is set — verified against a real jdtls (null for every argument shape before,
+        // the target position after). Editora then gates the *behaviour* on its own setting, so
+        // enabling the server-side capability here costs nothing when the feature is off.
+        java.util.Map<String, Object> smartSemicolon = new java.util.HashMap<>();
+        smartSemicolon.put("enabled", true);
+        java.util.Map<String, Object> edit = new java.util.HashMap<>();
+        edit.put("smartSemicolonDetection", smartSemicolon);
+        java.util.Map<String, Object> java_ = new java.util.HashMap<>();
+        java_.put("signatureHelp", signatureHelp);
+        java_.put("edit", edit);
+        // On-type formatting: jdtls only registers textDocument/onTypeFormatting while this is on (it
+        // merges the pushed keys into its preferences and re-syncs its dynamic registrations).
+        java_.put("format", java.util.Map.of("onType", java.util.Map.of("enabled", javaOnTypeFormatting)));
+        java.util.Map<String, Object> settings = new java.util.HashMap<>();
+        settings.put("python", python);
+        settings.put("java", java_);
+        return settings;
     }
 
     boolean isInitialized() {
@@ -899,6 +1014,11 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     CompletableFuture<Object> rawRequest(String method, Object params) {
+        return rawRequest(method, params, REQUEST_TIMEOUT);
+    }
+
+    /** {@link #rawRequest(String, Object)} with its own budget, for a request that legitimately runs long. */
+    CompletableFuture<Object> rawRequest(String method, Object params, java.time.Duration timeout) {
         RawSink sink = rawSinkForTest;
         if (sink != null) {
             return sink.request(method, params);
@@ -913,13 +1033,14 @@ final class LanguageServerSession implements LanguageClient {
                         return;
                     }
                     try {
-                        bounded(l.getRemoteEndpoint().request(method, params)).whenComplete((r, e) -> {
-                            if (e != null) {
-                                out.completeExceptionally(e);
-                            } else {
-                                out.complete(r);
-                            }
-                        });
+                        bounded(l.getRemoteEndpoint().request(method, params), timeout)
+                                .whenComplete((r, e) -> {
+                                    if (e != null) {
+                                        out.completeExceptionally(e);
+                                    } else {
+                                        out.complete(r);
+                                    }
+                                });
                     } catch (RuntimeException ex) {
                         out.completeExceptionally(ex);
                     }
@@ -1036,6 +1157,10 @@ final class LanguageServerSession implements LanguageClient {
     public CompletableFuture<org.eclipse.lsp4j.ApplyWorkspaceEditResponse> applyEdit(
             org.eclipse.lsp4j.ApplyWorkspaceEditParams params) {
         CompletableFuture<org.eclipse.lsp4j.ApplyWorkspaceEditResponse> out = new CompletableFuture<>();
+        if (disposed) {
+            out.complete(new org.eclipse.lsp4j.ApplyWorkspaceEditResponse(false));
+            return out; // a server that is being shut down must not edit the workspace on its way out
+        }
         try {
             onApplyEdit.accept(
                     params == null ? null : params.getEdit(),
@@ -1440,33 +1565,93 @@ final class LanguageServerSession implements LanguageClient {
         return initialized && server != null && !disposed;
     }
 
-    /** Sends {@code shutdown}+{@code exit} (best-effort) and tears down the process + threads. */
+    /**
+     * Ends the session. Returns at once on every path — it is called on the FX thread during a window close.
+     *
+     * <p>A live, initialized server is shut down the way the protocol asks: {@code shutdown}, a short bounded
+     * wait for its reply, {@code exit}, a short bounded wait for the process to leave by itself, and only
+     * then the tree kill. That sequence runs on its own daemon thread. Killing in the same call as
+     * {@code shutdown} (what this used to do) meant {@code exit} was never sent and the server never got to
+     * close its state — jdtls's Eclipse workspace was torn down uncleanly on every quit.
+     *
+     * <p>Nothing here writes to the pipe on the calling thread or closes a stream a blocked writer holds, so
+     * a server that has stopped reading its input cannot hang the caller: the bounded waits expire and the
+     * kill releases the writer thread.
+     */
     synchronized void dispose() {
         if (disposed) {
             return;
         }
         disposed = true;
         failPending(new IllegalStateException("language server disposed"));
-        try {
-            if (server != null && initialized) {
-                server.shutdown().whenComplete((r, t) -> {
+        LanguageServer live = server;
+        Process p = process;
+        boolean handshook = live != null && initialized;
+        if (handshook && p != null && p.isAlive()) {
+            ProcessRegistry.expectExit(p); // a JVM shutdown racing this waits briefly instead of force-killing
+            Thread t = new Thread(() -> exitGracefully(live, p), "lsp-shutdown-" + command.get(0));
+            t.setDaemon(true);
+            t.start();
+            return;
+        }
+        if (handshook && p == null) {
+            // An in-process server (tests): no pipe to block on and no process to wait for.
+            try {
+                live.shutdown().whenComplete((r, t) -> {
                     try {
-                        server.exit();
+                        live.exit();
                     } catch (Exception ignored) {
                         // best effort
                     }
                 });
+            } catch (Exception ignored) {
+                // best effort
             }
-        } catch (Exception ignored) {
-            // best effort
         }
-        if (process != null) {
+        tearDown(p);
+    }
+
+    /**
+     * Completes when this session's server process has gone — at once when it never had one. A deliberate
+     * {@link #dispose()} lets the server leave by itself for a moment, and until it has, it still holds
+     * whatever it locked (jdtls: its Eclipse workspace).
+     */
+    CompletableFuture<Void> exited() {
+        Process p = process;
+        return p == null ? CompletableFuture.completedFuture(null) : p.onExit().thenApply(done -> null);
+    }
+
+    /** Off the FX thread: {@code shutdown} → bounded wait → {@code exit} → bounded wait → kill. */
+    private void exitGracefully(LanguageServer live, Process p) {
+        try {
+            live.shutdown().get(SHUTDOWN_REPLY_WAIT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            live.exit();
+            AsyncPipeWriter out = writer;
+            if (out != null) {
+                out.awaitDrained(EXIT_WAIT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            }
+            p.waitFor(EXIT_WAIT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            LOG.log(Level.FINE, "language server did not shut down cleanly", e);
+        } finally {
+            tearDown(p);
+        }
+    }
+
+    private void tearDown(Process p) {
+        if (p != null) {
             // The launcher is often a wrapper (Homebrew jdtls → python → java); destroying only the
             // wrapper orphans the real server JVM, which keeps running and holds its workspace `.lock`
             // so the next session for the same root can't start. ProcessRegistry.killTree kills the whole
             // descendant tree (children first), escalates to a force-kill if SIGTERM is ignored, and
             // untracks it so the shutdown hook / next-run reaper won't chase a dead pid.
-            ProcessRegistry.killTree(process);
+            ProcessRegistry.killTree(p);
+        }
+        AsyncPipeWriter out = writer;
+        if (out != null) {
+            out.close();
         }
         executor.shutdownNow();
     }
@@ -1533,12 +1718,12 @@ final class LanguageServerSession implements LanguageClient {
             for (var registration : params.getRegistrations()) {
                 if (registration != null && registration.getId() != null && registration.getMethod() != null) {
                     dynamicRegistrations.put(registration.getId(), registration);
-                    applyDynamicCapability(registration.getMethod(), registration.getRegisterOptions(), true);
-                    changed |= DYNAMIC_METHODS.contains(registration.getMethod());
+                    changed |= applyDynamicCapabilitySafely(
+                            registration.getMethod(), registration.getRegisterOptions(), true);
                 }
             }
         }
-        if (changed) {
+        if (changed && !disposed) {
             onRefresh.accept("capabilities");
         }
         return CompletableFuture.completedFuture(null);
@@ -1554,15 +1739,18 @@ final class LanguageServerSession implements LanguageClient {
                 }
                 var removed = dynamicRegistrations.remove(removal.getId());
                 String method = removed != null ? removed.getMethod() : removal.getMethod();
+                if (method == null) {
+                    continue; // names neither a registration we hold nor a method: nothing to undo
+                }
                 var replacement = dynamicRegistrations.values().stream()
                         .filter(r -> java.util.Objects.equals(method, r.getMethod()))
                         .findFirst();
                 if (replacement.isPresent()) {
-                    applyDynamicCapability(method, replacement.get().getRegisterOptions(), true);
+                    changed |= applyDynamicCapabilitySafely(
+                            method, replacement.get().getRegisterOptions(), true);
                 } else if (!staticCapabilityMethods.contains(method)) {
-                    applyDynamicCapability(method, null, false);
+                    changed |= applyDynamicCapabilitySafely(method, null, false);
                 }
-                changed |= DYNAMIC_METHODS.contains(method);
             }
         }
         if (changed) {
@@ -1646,19 +1834,36 @@ final class LanguageServerSession implements LanguageClient {
         return capability != null && (capability.isRight() || Boolean.TRUE.equals(capability.getLeft()));
     }
 
+    /**
+     * Applies one registration and reports whether a feature gate may have changed. A registration whose
+     * options cannot be decoded is logged and skipped on its own: a server sends several in one request, and
+     * one malformed entry must not abort the rest (nor fail the whole request back to the server).
+     */
+    private boolean applyDynamicCapabilitySafely(String method, Object options, boolean enabled) {
+        if (method == null || !DYNAMIC_METHODS.contains(method)) {
+            return false;
+        }
+        try {
+            applyDynamicCapability(method, options, enabled);
+            return true;
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "Ignoring unusable dynamic registration for " + method, e);
+            return false;
+        }
+    }
+
     private synchronized void applyDynamicCapability(String method, Object options, boolean enabled) {
         ServerCapabilities c = capabilities;
         if (c == null) {
             return;
         }
-        com.google.gson.Gson gson = new com.google.gson.Gson();
         switch (method) {
             case "textDocument/completion" ->
                 c.setCompletionProvider(
-                        enabled ? dynamicOptions(gson, options, org.eclipse.lsp4j.CompletionOptions.class) : null);
+                        enabled ? dynamicOptions(options, org.eclipse.lsp4j.CompletionOptions.class) : null);
             case "textDocument/signatureHelp" ->
                 c.setSignatureHelpProvider(
-                        enabled ? dynamicOptions(gson, options, org.eclipse.lsp4j.SignatureHelpOptions.class) : null);
+                        enabled ? dynamicOptions(options, org.eclipse.lsp4j.SignatureHelpOptions.class) : null);
             case "textDocument/hover" -> c.setHoverProvider(enabled);
             case "textDocument/definition" -> c.setDefinitionProvider(enabled);
             case "textDocument/implementation" -> c.setImplementationProvider(enabled);
@@ -1667,15 +1872,30 @@ final class LanguageServerSession implements LanguageClient {
             case "textDocument/references" -> c.setReferencesProvider(enabled);
             case "textDocument/documentHighlight" -> c.setDocumentHighlightProvider(enabled);
             case "textDocument/documentSymbol" -> c.setDocumentSymbolProvider(enabled);
-            case "textDocument/codeAction" -> c.setCodeActionProvider(enabled);
+            case "textDocument/codeAction" -> {
+                // Keep the options object: a Boolean would drop codeActionKinds/resolveProvider.
+                if (enabled && options != null) {
+                    c.setCodeActionProvider(dynamicOptions(options, org.eclipse.lsp4j.CodeActionOptions.class));
+                } else {
+                    c.setCodeActionProvider(enabled);
+                }
+            }
             case "textDocument/formatting" -> c.setDocumentFormattingProvider(enabled);
             case "textDocument/rangeFormatting" -> c.setDocumentRangeFormattingProvider(enabled);
             case "textDocument/onTypeFormatting" ->
                 c.setDocumentOnTypeFormattingProvider(
                         enabled
-                                ? dynamicOptions(gson, options, org.eclipse.lsp4j.DocumentOnTypeFormattingOptions.class)
+                                ? dynamicOptions(options, org.eclipse.lsp4j.DocumentOnTypeFormattingOptions.class)
                                 : null);
-            case "textDocument/rename" -> c.setRenameProvider(enabled);
+            case "textDocument/rename" -> {
+                // Keep the options object: a Boolean would drop prepareProvider, and with it the
+                // validate-and-placeholder step before the rename prompt.
+                if (enabled && options != null) {
+                    c.setRenameProvider(dynamicOptions(options, org.eclipse.lsp4j.RenameOptions.class));
+                } else {
+                    c.setRenameProvider(enabled);
+                }
+            }
             case "textDocument/foldingRange" -> c.setFoldingRangeProvider(enabled);
             case "textDocument/selectionRange" -> c.setSelectionRangeProvider(enabled);
             case "textDocument/prepareCallHierarchy" -> c.setCallHierarchyProvider(enabled);
@@ -1684,18 +1904,17 @@ final class LanguageServerSession implements LanguageClient {
             case "textDocument/semanticTokens" ->
                 c.setSemanticTokensProvider(
                         enabled
-                                ? dynamicOptions(
-                                        gson, options, org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions.class)
+                                ? dynamicOptions(options, org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions.class)
                                 : null);
             case "textDocument/diagnostic" ->
                 c.setDiagnosticProvider(
                         enabled
-                                ? dynamicOptions(gson, options, org.eclipse.lsp4j.DiagnosticRegistrationOptions.class)
+                                ? dynamicOptions(options, org.eclipse.lsp4j.DiagnosticRegistrationOptions.class)
                                 : null);
             case "workspace/symbol" -> c.setWorkspaceSymbolProvider(enabled);
             case "workspace/executeCommand" ->
                 c.setExecuteCommandProvider(
-                        enabled ? dynamicOptions(gson, options, org.eclipse.lsp4j.ExecuteCommandOptions.class) : null);
+                        enabled ? dynamicOptions(options, org.eclipse.lsp4j.ExecuteCommandOptions.class) : null);
             default -> {
                 return;
             }
@@ -1703,8 +1922,18 @@ final class LanguageServerSession implements LanguageClient {
         capabilities = c; // volatile write publishes the mutation to FX-thread feature gates
     }
 
-    private static <T> T dynamicOptions(com.google.gson.Gson gson, Object options, Class<T> type) {
-        T converted = options == null ? null : gson.fromJson(gson.toJsonTree(options), type);
+    /**
+     * LSP4J's own gson. Registration options arrive as raw JSON and must be decoded the way LSP4J decodes
+     * every other message: its type-adapter factories are what make an {@code Either} field readable. A
+     * plain {@code new Gson()} decodes those empty or throws — {@code SemanticTokensWithRegistrationOptions}
+     * ({@code range}/{@code full}) lost both, which switched semantic tokens off for servers that register
+     * them dynamically (tinymist).
+     */
+    static final com.google.gson.Gson LSP_GSON =
+            new org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler(java.util.Map.of()).getGson();
+
+    private static <T> T dynamicOptions(Object options, Class<T> type) {
+        T converted = options == null ? null : LSP_GSON.fromJson(LSP_GSON.toJsonTree(options), type);
         if (converted != null) {
             return converted;
         }

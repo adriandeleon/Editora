@@ -435,4 +435,51 @@ class LanguageServerSessionProtocolTest {
         assertTrue(server.changed.isEmpty());
         assertEquals(1, delayed.documentVersion(URI));
     }
+
+    // --- request bounds: the timer must not outlive the request ------------------------------------
+
+    /**
+     * {@code bounded()} used to leave its timer scheduled after the reply had arrived, and the timer held
+     * the request future — so every completion list and semantic-token array stayed reachable for the full
+     * timeout. Completing the request must drop the timer.
+     */
+    @Test
+    void completingABoundedRequestReleasesItsTimer() {
+        int before = LanguageServerSession.pendingRequestTimeouts();
+        var request = new java.util.concurrent.CompletableFuture<String>();
+
+        LanguageServerSession.bounded(request, java.time.Duration.ofMinutes(5));
+        assertEquals(before + 1, LanguageServerSession.pendingRequestTimeouts(), "the request is bounded");
+
+        request.complete("reply");
+        assertEquals(before, LanguageServerSession.pendingRequestTimeouts(), "a finished request keeps no timer");
+    }
+
+    /** The bound is the caller's: a short one cancels, while a long one (a workspace build) is left alone. */
+    @Test
+    void aBoundedRequestIsCancelledAtItsOwnTimeoutOnly() throws Exception {
+        var slow = new java.util.concurrent.CompletableFuture<String>();
+        var build = new java.util.concurrent.CompletableFuture<String>();
+        LanguageServerSession.bounded(build, java.time.Duration.ofMinutes(10));
+        LanguageServerSession.bounded(slow, java.time.Duration.ofMillis(20));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                java.util.concurrent.CancellationException.class,
+                () -> slow.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertFalse(build.isDone(), "a request with a long budget must outlive the ordinary bound");
+        build.complete("built");
+    }
+
+    // --- initialize: a filesystem root has no file name --------------------------------------------
+
+    /** {@code Path.getFileName()} is null for {@code /} or a drive root; the handshake used to NPE on it. */
+    @Test
+    void theWorkspaceFolderNameOfAFilesystemRootIsItsPath() {
+        Path root = Path.of("").toAbsolutePath().getRoot();
+        assertNull(root.getFileName(), "precondition: a root has no file name");
+        assertEquals(root.toString(), LanguageServerSession.workspaceFolderName(root));
+        assertEquals(
+                "project",
+                LanguageServerSession.workspaceFolderName(root.resolve("work").resolve("project")));
+    }
 }

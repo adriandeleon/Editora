@@ -118,6 +118,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when a file opens. Markdown copied as rich text carries no raw HTML or `javascript:` links, and HTML
   export neutralises `javascript:` URLs. A plugin whose capabilities cannot be shown is left disabled, and
   in-app installers download only from the hosts their catalog names.
+- Language servers and debugging: fixes from the whole-app review.
+  - Renaming a Java symbol used in files that are not open (or in restored tabs never shown) now works
+    instead of reporting "Rename failed". Edits to such files are applied only when the file has not
+    changed since the request was sent; when one blocks the edit, the status line names it.
+  - JavaScript (Node) debugging now attaches: Editora opens the second session vscode-js-debug asks for
+    and reaches the adapter when `localhost` is the IPv6 loopback, so breakpoints hit and stepping, the
+    call stack and variables work. Step Over/Into/Out show the session as running until the next stop,
+    and Debug console output is batched so a chatty program no longer stalls the editor.
+  - A project's `.editora/settings.json` server command is now the one that actually launches — and only
+    for a trusted folder. In an untrusted folder the project's commands (and any attempt to re-enable a
+    server you switched off) are ignored until you run "LSP: Trust This Project's Server Settings".
+    "LSP: Set Server Command" is prefilled from your global setting, not the project's.
+  - Java: on-type formatting works again, the rename prompt validates and pre-fills the symbol name
+    again, and Go to Implementation / Type Definition appear once the server is ready. Semantic
+    highlighting is restored for servers that register it late (Typst).
+  - A language server that stops responding can no longer freeze the editor; servers are shut down
+    cleanly on quit; "Build Project" is no longer cancelled after 30 seconds; quick fixes get their
+    diagnostics when the server spells a file's URI differently; a burst of diagnostics rebuilds the
+    Problems list once; opening a file on a filesystem root no longer breaks the handshake; and a
+    closed window can no longer restart its language servers.
 
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the
