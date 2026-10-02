@@ -171,6 +171,24 @@ public final class RunService {
     }
 
     /**
+     * The process a run starts, before it is started: {@code command} in {@code workingDir} with the
+     * <em>user's</em> environment — their locale included — plus the augmented PATH, then the run
+     * configuration's own variables on top (so a config can still override PATH or a locale variable).
+     *
+     * <p>Deliberately not the parse-stable environment: forcing {@code LC_ALL=C} on the user's program made a
+     * JVM child decode file names as ASCII, so a project under {@code año/} could not be run at all and
+     * anything it printed outside ASCII came out as {@code ?}.
+     */
+    static ProcessBuilder processBuilder(Path workingDir, List<String> command, java.util.Map<String, String> env) {
+        ProcessBuilder pb = new ProcessBuilder(command);
+        if (workingDir != null) {
+            pb.directory(workingDir.toAbsolutePath().toFile());
+        }
+        ProcessRunner.applyUserEnv(pb.environment(), env);
+        return pb;
+    }
+
+    /**
      * As {@link #runInDir(Path, List, Listener)}, plus {@code env} — extra environment variables for the
      * child (a saved run configuration's {@code KEY=VALUE} pairs), applied over the inherited environment.
      */
@@ -186,15 +204,7 @@ public final class RunService {
             droppedOutputNotice = null;
         }
         List<String> command = ProcessRunner.resolveExecutable(argv);
-        ProcessBuilder pb = new ProcessBuilder(command);
-        Path dir = workingDir == null ? null : workingDir.toAbsolutePath();
-        if (dir != null) {
-            pb.directory(dir.toFile());
-        }
-        ProcessRunner.applyStandardEnv(pb);
-        if (env != null && !env.isEmpty()) {
-            pb.environment().putAll(env); // after applyStandardEnv so a config can override PATH etc.
-        }
+        ProcessBuilder pb = processBuilder(workingDir, command, env);
         Process process;
         try {
             process = pb.start();

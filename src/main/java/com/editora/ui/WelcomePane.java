@@ -2,10 +2,12 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -60,8 +62,9 @@ public final class WelcomePane extends Region implements TabContent {
     private final Supplier<List<RemoteConnection>> remoteSites;
     /** Picking a site opens the connection form pre-filled for it. */
     private final Consumer<RemoteConnection> onConnectRemote;
-    /** Short build commit shown in the footer for dev builds; "" hides it (production). */
-    private final String devCommit;
+    /** The build-commit footer line for dev builds; hidden while there is nothing to show (production, or a
+     *  lookup that has not finished). One node, re-homed into each rebuilt footer. */
+    private final Label commitLabel = new Label();
 
     /** Outer margin around the centered content (also the scroll threshold for the horizontal bar). */
     private static final double MARGIN = 48;
@@ -84,6 +87,38 @@ public final class WelcomePane extends Region implements TabContent {
             Supplier<List<RemoteConnection>> remoteSites,
             Consumer<RemoteConnection> onConnectRemote,
             String devCommit) {
+        this(
+                registry,
+                keymap,
+                recentFiles,
+                projects,
+                onOpenRecent,
+                openUrl,
+                projectsEnabled,
+                gitEnabled,
+                remoteSites,
+                onConnectRemote,
+                (CompletableFuture<String>) null);
+        showDevCommit(devCommit);
+    }
+
+    /**
+     * As above, but the build commit arrives later: {@code devCommit} is the (possibly still running) lookup,
+     * or {@code null} for none. Finding the commit runs {@code git}, which must not happen on the FX thread
+     * that builds this pane — so the footer line simply appears once the answer is in.
+     */
+    public WelcomePane(
+            CommandRegistry registry,
+            KeymapManager keymap,
+            RecentFiles recentFiles,
+            Supplier<List<Project>> projects,
+            Consumer<Path> onOpenRecent,
+            Consumer<String> openUrl,
+            BooleanSupplier projectsEnabled,
+            BooleanSupplier gitEnabled,
+            Supplier<List<RemoteConnection>> remoteSites,
+            Consumer<RemoteConnection> onConnectRemote,
+            CompletableFuture<String> devCommit) {
         this.registry = registry;
         this.keymap = keymap;
         this.recentFiles = recentFiles;
@@ -94,7 +129,11 @@ public final class WelcomePane extends Region implements TabContent {
         this.gitEnabled = gitEnabled;
         this.remoteSites = remoteSites;
         this.onConnectRemote = onConnectRemote;
-        this.devCommit = devCommit == null ? "" : devCommit;
+        commitLabel.getStyleClass().add("welcome-footer");
+        showDevCommit("");
+        if (devCommit != null) {
+            devCommit.thenAccept(commit -> Platform.runLater(() -> showDevCommit(commit)));
+        }
 
         getStyleClass().add("welcome-pane");
         content.getStyleClass().add("welcome-content");
@@ -201,15 +240,19 @@ public final class WelcomePane extends Region implements TabContent {
         legal.getStyleClass().add("welcome-footer");
 
         VBox box = new VBox(4, line1);
-        // Build commit on its own line below the version/URL line — dev builds only ("" otherwise).
-        if (!devCommit.isBlank()) {
-            Label commit = new Label(tr("about.commit", devCommit));
-            commit.getStyleClass().add("welcome-footer");
-            box.getChildren().add(commit);
-        }
+        // Build commit on its own line below the version/URL line — dev builds only (hidden otherwise).
+        box.getChildren().add(commitLabel);
         box.getChildren().add(legal);
         box.getStyleClass().add("welcome-footer-row");
         return box;
+    }
+
+    /** Shows the dev-build commit line, or hides it (taking no space) when {@code commit} is blank. */
+    private void showDevCommit(String commit) {
+        boolean show = commit != null && !commit.isBlank();
+        commitLabel.setText(show ? tr("about.commit", commit) : "");
+        commitLabel.setVisible(show);
+        commitLabel.setManaged(show);
     }
 
     private static Label dotLabel() {

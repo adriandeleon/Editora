@@ -107,7 +107,8 @@ public final class Mermaid {
             Path in = dir.resolve("diagram.mmd");
             Path out = dir.resolve("diagram.png");
             Files.writeString(in, source);
-            ProcessRunner.Result r = ProcessRunner.run(dir, RENDER_TIMEOUT, renderArgs(mmdc, in, out, dark));
+            ProcessRunner.Result r =
+                    ProcessRunner.runInUserLocale(dir, RENDER_TIMEOUT, renderArgs(mmdc, in, out, dark));
             if (!r.ok() || !Files.isRegularFile(out)) {
                 return Render.fail(r.message());
             }
@@ -129,7 +130,7 @@ public final class Mermaid {
             dir = Files.createTempDirectory("editora-mermaid");
             Path in = dir.resolve("diagram.mmd");
             Files.writeString(in, source);
-            return ProcessRunner.run(dir, RENDER_TIMEOUT, renderArgs(mmdc, in, dest, dark));
+            return ProcessRunner.runInUserLocale(dir, RENDER_TIMEOUT, renderArgs(mmdc, in, dest, dark));
         } catch (IOException e) {
             return new ProcessRunner.Result(-1, "", e.getMessage() == null ? "export failed" : e.getMessage());
         } finally {

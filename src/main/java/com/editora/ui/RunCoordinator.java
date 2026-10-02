@@ -315,8 +315,8 @@ final class RunCoordinator {
         host.setStatus(tr("status.run.beforeLaunch", cfg.name()));
         Thread worker = new Thread(
                 () -> {
-                    com.editora.process.ProcessRunner.Result r =
-                            com.editora.process.ProcessRunner.run(cwd, BEFORE_LAUNCH_TIMEOUT, argv, environment);
+                    com.editora.process.ProcessRunner.Result r = com.editora.process.ProcessRunner.runInUserLocale(
+                            cwd, BEFORE_LAUNCH_TIMEOUT, argv, environment);
                     javafx.application.Platform.runLater(() -> {
                         if (r.ok()) {
                             then.run();

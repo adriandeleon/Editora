@@ -84,8 +84,9 @@ executor. Its remote interface extends `LanguageServer` with the raw JDT request
 this registration gives LSP4J the response types it needs to retain their JSON payloads. The session
 implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-message.
 
-- **Launch** reuses `ProcessRunner.resolveExecutable`/`applyStandardEnv` (the GUI-launch PATH fix, so
-  a Finder-launched `.app` finds `jdtls`), then registers the process with `ProcessRegistry.track`.
+- **Launch** reuses `ProcessRunner.resolveExecutable`/`applyUserEnv` (the GUI-launch PATH fix, so
+  a Finder-launched `.app` finds `jdtls`; the server keeps the user's locale — see
+  [below](#processregistry--processrunner)), then registers the process with `ProcessRegistry.track`.
 - **Handshake**: `initialize` (client capabilities + workspace folder + optional
   `initializationOptions`) → on success cache the server `ServerCapabilities`, send `initialized`,
   push default configuration (enables Pyright auto-imports), then flush queued requests.
@@ -245,18 +246,43 @@ all call `ProcessRegistry.track(process)`. Three mechanisms:
    can't reparent-orphan its real child), then schedule a force-kill of any survivor after `GRACE_MS`
    (1500 ms). **Non-blocking** (a daemon scheduler), so it's safe to call on the FX thread during a
    window close.
-2. **JVM shutdown hook** (`installShutdownHook`, from `App.main`) force-kills every tracked tree on
-   exit — covering a normal quit *and* SIGTERM/`kill`/OS-quit/most crashes, the paths that bypass the
-   window-close teardown.
-3. **On-disk ledger** (`<configDir>/spawned-servers.txt`) + **`reapOrphans()`** (once from `App.start`,
-   before any window builds): kills any server leaked by a previous run that died too hard for the hook
-   (SIGKILL / power loss). The pure `LedgerEntry` parse/format + the `shouldReap` decision (reap only
-   when pid **and** start-instant **and** executable all match, so a reused PID is never killed) are
-   unit-tested.
+2. **JVM shutdown hook** (`installShutdownHook`, from `App.main`) runs `killAll` on exit — covering a
+   normal quit *and* SIGTERM/`kill`/OS-quit/most crashes, the paths that bypass the window-close
+   teardown. It sends SIGTERM to every tracked tree first, waits up to `GRACE_MS` for them to exit (the
+   wait ends as soon as the last one is gone), and only then force-kills survivors — so a server can
+   release its workspace lock and a running program is not cut off mid-write.
+3. **On-disk ledger** + **`reapOrphans()`** (once from `App.start`, before any window builds): kills any
+   server leaked by a previous run that died too hard for the hook (SIGKILL / power loss). Each process
+   writes **its own** ledger file, `<configDir>/spawned-servers.<pid>.<startMillis>.txt`, and every row
+   carries its **owner** (pid + start instant + executable of the Editora process that spawned it). A
+   row is reaped only when its owner is gone (`ownerGone`) **and** the recorded pid, start instant and
+   executable all still match (`shouldReap`, so a reused PID is never killed). A second Editora on the
+   same config dir therefore neither kills the first one's live servers nor rewrites its rows. The
+   pre-owner shared file `spawned-servers.txt` is still read at startup (its rows have no owner and are
+   reaped as before) but never written. The `LedgerEntry` parse/format and both decisions are pure and
+   unit-tested; `ProcessRegistryLedgerProcessTest` runs them against real processes.
+
+`ownerGone` is deliberately conservative: a live process at the owner's pid whose start instant looks
+different but whose executable matches is treated as **alive**. Two JVMs can disagree about one
+process's start time (on Linux it is derived from the boot time, which moves when the wall clock is
+stepped), and wrongly declaring a running editor dead would kill its servers.
 
 [`process/ProcessRunner`](../../src/main/java/com/editora/process/ProcessRunner.java) is the only
-subprocess chokepoint. For servers, `applyStandardEnv` is the relevant part: it sets `LC_ALL=C` and the
-**augmented PATH**. A Finder-launched `.app` (or a `.desktop`) inherits a stripped PATH without
+subprocess chokepoint, and it builds **two child environments**:
+
+- **Parse-stable** — `run`/`runBytes`/`applyStandardEnv`: `LC_ALL=C` plus the augmented PATH. Only for
+  output Editora parses or where only the exit code matters (git, ripgrep, `gh`, version probes).
+- **User locale** — `runInUserLocale`/`applyUserEnv`: the augmented PATH only; the locale is inherited.
+  For every long-lived or user-facing child (language servers, debug adapters, Run, Build, the agent
+  CLI, the terminal, the browser), every tool whose output is shown or inserted rather than parsed
+  (External Tools, before-launch steps, plugin commands, installers, diagram/Typst renderers), and any
+  JVM tool handed the user's paths (Maven, Gradle, `javac`). Under `LC_ALL=C` a JVM decodes file names
+  as ASCII: `java año/H.java` fails with `invalid path for source file: a??o/H.java`.
+
+`ChildLocalePolicyTest` lists which production files may use which, so a new spawn site has to be
+classified deliberately.
+
+The **augmented PATH** is common to both. A Finder-launched `.app` (or a `.desktop`) inherits a stripped PATH without
 Homebrew/npm/Node dirs, so `jdtls`/`node`/`pyright` wouldn't be found. `augmentedPath()` =
 inherited PATH + the user's **login-shell PATH** (`$SHELL -l -i -c` once, fenced by markers — the
 `extractMarked` parse is unit-tested) + the hardcoded `EXTRA_PATH_DIRS`. The login-shell step recovers

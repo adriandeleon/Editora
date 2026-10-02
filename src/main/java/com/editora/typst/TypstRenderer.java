@@ -134,7 +134,7 @@ public final class TypstRenderer {
             outDir = Files.createTempDirectory("editora-typst-out");
             Files.writeString(input, source);
             Path outTemplate = outDir.resolve("page-{p}.png");
-            ProcessRunner.Result r = ProcessRunner.run(
+            ProcessRunner.Result r = ProcessRunner.runInUserLocale(
                     p.root(), RENDER_TIMEOUT, renderArgs(cmd, p.root(), input, outTemplate, renderPpi()));
             List<byte[]> pages = readPages(outDir);
             if (pages.isEmpty()) {
@@ -182,7 +182,8 @@ public final class TypstRenderer {
             input = p.inputDir().resolve(".editora-typst-" + UUID.randomUUID() + ".typ");
             Files.writeString(input, source);
             String output = exportOutput(dest);
-            return ProcessRunner.run(p.root(), RENDER_TIMEOUT, exportArgs(cmd, p.root(), input, output, renderPpi()));
+            return ProcessRunner.runInUserLocale(
+                    p.root(), RENDER_TIMEOUT, exportArgs(cmd, p.root(), input, output, renderPpi()));
         } catch (IOException e) {
             return new ProcessRunner.Result(-1, "", e.getMessage() == null ? "export failed" : e.getMessage());
         } finally {

@@ -78,9 +78,14 @@ public class App extends Application {
         // crash and can be attached to a bug report (the in-memory capture was installed in main()).
         com.editora.ui.DebugLog.attachFile(shared.getConfigDir());
 
+        // Claim the config dir. A launch that is not forwarded (no file argument, --project, --new-instance,
+        // --diff-ui) is a second process on the same directory; only the first may garbage-collect shared
+        // data, and WindowManager tells the user of a later one that the two can overwrite each other.
+        shared.claimInstance();
         // Point the spawned-server ledger at the config dir and reap any LSP/DAP server leaked by a
         // previous run that died too hard for the shutdown hook to fire (SIGKILL, power loss). Must run
         // before any window builds (which can start servers) so we don't race a fresh server's startup.
+        // Only a dead owner's children are reaped: a live second instance's servers are left alone.
         com.editora.process.ProcessRegistry.setLedgerFile(shared.getConfigDir().resolve("spawned-servers.txt"));
         com.editora.process.ProcessRegistry.reapOrphans();
         // Delete a mcp-endpoint.json left by a crashed run — it advertises a dead port with a live-looking

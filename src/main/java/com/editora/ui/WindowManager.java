@@ -104,6 +104,23 @@ public class WindowManager {
         // Surface durable config-write failures (full disk, read-only ~/.editora) instead of silently
         // swallowing them — a setting/session change would otherwise vanish next launch with no sign (#418).
         shared.setOnWriteError((file, err) -> javafx.application.Platform.runLater(() -> notifyConfigWriteError(file)));
+        // A second Editora process on this config dir (a launch that was not forwarded to the running editor)
+        // works from its own in-memory copy of settings, notes, bookmarks, breakpoints, projects and recents.
+        // Say so once, after the first window exists, instead of letting one editor silently undo the other.
+        if (!shared.isPrimaryInstance()) {
+            javafx.application.Platform.runLater(this::warnSecondaryInstance);
+        }
+    }
+
+    /** One-time notice, in the focused window, that another Editora process shares this configuration. Shown
+     *  as an error so it stays flagged in the message log after routine startup messages replace the echo. */
+    private void warnSecondaryInstance() {
+        java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                .warning("Another Editora instance is already using " + shared.getConfigDir());
+        Holder h = focusedHolder();
+        if (h != null && h.controller() != null) {
+            h.controller().setError(com.editora.i18n.Messages.tr("status.config.secondaryInstance"));
+        }
     }
 
     /** Shows a config-write failure in the focused window's status bar (best-effort; logged regardless). */

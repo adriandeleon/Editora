@@ -328,6 +328,66 @@ class InstallCatalogTest {
         assertTrue(s.directUrl().endsWith("-zip-with-dependencies.zip"));
     }
 
+    // --- the stored command is a command LINE: a path with a space must come back as one argument ---
+
+    /** Every tokenizer that reads a stored server/tool command back into argv. */
+    private static List<List<String>> tokenizedEverywhere(String command) {
+        return List.of(
+                com.editora.lsp.LspServerRegistry.tokenize(command),
+                com.editora.dap.DapServerRegistry.tokenize(command),
+                com.editora.run.ProgramArgs.tokenize(command));
+    }
+
+    /**
+     * The installer stored the extracted binary's path bare. With a config dir containing a space
+     * ({@code C:\Users\Jane Doe\.editora}) the command split at the space, so the server it had just
+     * installed was reported missing.
+     */
+    @Test
+    void aBinaryUnderAConfigDirWithASpaceIsStoredSoItReadsBackAsOneArgument() {
+        String windows = "C:\\Users\\Jane Doe\\.editora\\plugins\\lsp\\terraform\\terraform-ls.exe";
+        String stored = InstallCatalog.quoteCommandPath(windows) + " serve";
+
+        for (List<String> argv : tokenizedEverywhere(stored)) {
+            assertEquals(List.of(windows, "serve"), argv, "backslashes are literal; the space stays inside");
+        }
+
+        Path unix = Path.of("/Users/John Smith/.editora/plugins/lsp/typst/tinymist");
+        for (List<String> argv : tokenizedEverywhere(InstallCatalog.binaryCommand(unix, " lsp"))) {
+            assertEquals(List.of(unix.toString(), "lsp"), argv);
+        }
+        // What the old code stored: the very same path, unquoted, is two arguments and names no file.
+        assertEquals(
+                List.of("/Users/John", "Smith/.editora/plugins/lsp/typst/tinymist", "lsp"),
+                com.editora.lsp.LspServerRegistry.tokenize(unix + " lsp"));
+    }
+
+    @Test
+    void anOrdinaryPathIsStoredExactlyAsBefore() {
+        Path plain = Path.of("/home/u/.editora/plugins/lsp/clangd/bin/clangd");
+        assertEquals(plain.toString(), InstallCatalog.binaryCommand(plain, ""));
+        assertEquals(plain + " serve", InstallCatalog.binaryCommand(plain, " serve"));
+        assertEquals(plain.toString(), InstallCatalog.binaryCommand(plain, null));
+        assertEquals("", InstallCatalog.quoteCommandPath(""));
+        assertEquals("", InstallCatalog.quoteCommandPath(null));
+    }
+
+    @Test
+    void pathsContainingQuoteCharactersStillRoundTrip() {
+        // The tokenizers do no escape processing, so a quote in the path is wrapped in the other kind — and a
+        // path with both alternates styles; adjacent quoted runs join into one token.
+        for (String path : List.of(
+                "/home/o'brien/my tools/ls",
+                "/home/u/a \"quoted\" dir/ls",
+                "/home/o'brien/a \"quoted\" dir/ls",
+                "/home/o'brien/ls",
+                "/tab\there/ls")) {
+            for (List<String> argv : tokenizedEverywhere(InstallCatalog.quoteCommandPath(path) + " --stdio")) {
+                assertEquals(List.of(path, "--stdio"), argv, path);
+            }
+        }
+    }
+
     @Test
     void jvmClasspathCommandQuotesTheWildcardDir() {
         String cmd = InstallCatalog.jvmClasspathCommand(

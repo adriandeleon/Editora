@@ -733,7 +733,8 @@ public final class DapManager implements DapClient.Host {
             command.add(sourceVersion.toString());
         }
         command.addAll(List.of("-d", outputDir.toString(), source.toString()));
-        return ProcessRunner.run(original.getParent(), java.time.Duration.ofSeconds(60), command, environment);
+        return ProcessRunner.runInUserLocale(
+                original.getParent(), java.time.Duration.ofSeconds(60), command, environment);
     }
 
     /** Blank the first line without changing later line numbers for breakpoints and stack frames. */
@@ -1010,7 +1011,7 @@ public final class DapManager implements DapClient.Host {
         argv.addAll(spec.adapterArgs()); // -m debugpy.adapter
         List<String> cmd = ProcessRunner.resolveExecutable(argv);
         ProcessBuilder pb = new ProcessBuilder(cmd);
-        ProcessRunner.applyStandardEnv(pb);
+        ProcessRunner.applyUserEnv(pb);
         if (debugpyDir != null) {
             prependPythonPath(pb, debugpyDir);
         }
@@ -1069,7 +1070,7 @@ public final class DapManager implements DapClient.Host {
         List<String> cmd = ProcessRunner.resolveExecutable(
                 List.of(spec.defaultInterpreter(), jsServer.toString(), String.valueOf(port)));
         ProcessBuilder pb = new ProcessBuilder(cmd);
-        ProcessRunner.applyStandardEnv(pb);
+        ProcessRunner.applyUserEnv(pb);
         pb.redirectOutput(ProcessBuilder.Redirect.DISCARD); // DAP is on the socket; stdout/stderr are logs
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         Process proc = pb.start();

@@ -147,6 +147,43 @@ public final class InstallCatalog {
     }
 
     /**
+     * The command stored in Settings for an extracted server {@code binary}: its path — quoted when it needs
+     * to be (see {@link #quoteCommandPath}) — followed by {@code suffix} (e.g. {@code " serve"}). Pure.
+     */
+    public static String binaryCommand(java.nio.file.Path binary, String suffix) {
+        return quoteCommandPath(binary.toString()) + (suffix == null ? "" : suffix);
+    }
+
+    /**
+     * Quotes {@code path} for storage in a command setting, so the quote-aware tokenizers that read it back
+     * ({@code LspServerRegistry.tokenize}, {@code ProgramArgs.tokenize}) return it as <b>one</b> argv element.
+     *
+     * <p>The stored value is a command line, not a path: unquoted, a config dir with a space
+     * ({@code C:\Users\Jane Doe\.editora}) split into {@code C:\Users\Jane} + {@code Doe\...}, so a
+     * server was reported missing the moment its install finished. A path with nothing to protect is returned
+     * unchanged, so an ordinary install stores exactly what it always did. Those tokenizers do no escape
+     * processing — a backslash is literal, which is what keeps Windows paths intact — so a path containing
+     * one kind of quote is wrapped in the other, and one containing both alternates styles (adjacent quoted
+     * runs join into a single token). Pure; unit-tested against the tokenizers.
+     */
+    public static String quoteCommandPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return "";
+        }
+        boolean plain = path.chars().noneMatch(c -> Character.isWhitespace(c) || c == '"' || c == '\'');
+        if (plain) {
+            return path;
+        }
+        if (path.indexOf('"') < 0) {
+            return '"' + path + '"';
+        }
+        if (path.indexOf('\'') < 0) {
+            return '\'' + path + '\'';
+        }
+        return '"' + path.replace("\"", "\"'\"'\"") + '"';
+    }
+
+    /**
      * One install action. Only the fields relevant to {@link #kind} are populated; the rest are
      * {@code null}/empty. {@code id} is a stable identifier (also the i18n + availability key);
      * {@code destSubpath} is relative to the config dir.

@@ -1072,7 +1072,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 git::isEnabled,
                 config::getConnections, // saved SFTP sites (most-recent first); empty hides the section
                 remoteCoordinator::connect, // pick a site → prefilled connect form
-                config.isDev() ? com.editora.AppInfo.gitCommit() : ""); // build commit shown only in --dev
+                config.isDev() ? com.editora.AppInfo.gitCommitAsync() : null); // commit: --dev only, off-thread
     }
 
     /**

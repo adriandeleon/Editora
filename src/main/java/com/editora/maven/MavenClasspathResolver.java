@@ -27,7 +27,8 @@ public final class MavenClasspathResolver {
             List<String> argv = multiModule
                     ? MavenClasspath.reactorArgv(output, MavenReactor.moduleSelector(reactor, root))
                     : MavenClasspath.argv(output);
-            ProcessRunner.Result result = ProcessRunner.run(
+            // Maven is a JVM handed the user's paths: the C locale would make it decode them as ASCII.
+            ProcessRunner.Result result = ProcessRunner.runInUserLocale(
                     workingDirectory,
                     Duration.ofMinutes(3),
                     argv,

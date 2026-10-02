@@ -2,8 +2,10 @@ package com.editora.process;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,11 +24,11 @@ import java.util.logging.Logger;
  * DAP debug adapters Editora spawns. It exists so those servers never outlive the app:
  *
  * <ol>
- *   <li><b>JVM shutdown hook</b> ({@link #installShutdownHook}) force-kills every live process tree on
- *       exit. A shutdown hook runs on a normal quit <em>and on SIGTERM</em> (a plain {@code kill}, the OS
- *       asking the app to quit, most crashes) — so the close-handler teardown is no longer the only path
- *       that reaps servers. (Nothing can catch SIGKILL / {@code kill -9}; that's what the ledger below
- *       is for.)
+ *   <li><b>JVM shutdown hook</b> ({@link #installShutdownHook}) stops every live process tree on exit:
+ *       SIGTERM first, a bounded wait, then a force-kill of whatever is left (see {@link #killAll}). A
+ *       shutdown hook runs on a normal quit <em>and on SIGTERM</em> (a plain {@code kill}, the OS asking the
+ *       app to quit, most crashes) — so the close-handler teardown is no longer the only path that reaps
+ *       servers. (Nothing can catch SIGKILL / {@code kill -9}; that's what the ledger below is for.)
  *   <li><b>Escalating kill</b> ({@link #killTree}) — destroy the descendant tree (SIGTERM, children
  *       first so a wrapper script like {@code jdtls → python → java} can't orphan the real server), then,
  *       after a grace period, force-kill anything still alive. Non-blocking, so it's safe to call from the
@@ -34,7 +36,9 @@ import java.util.logging.Logger;
  *   <li><b>Startup reaping</b> ({@link #reapOrphans}) — a small on-disk ledger of spawned root PIDs (with
  *       each process's start time + executable, to be safe against PID reuse) lets a <em>fresh</em> launch
  *       kill any server leaked by a previous run that died hard (SIGKILL / power loss), and clears the
- *       stale entries.
+ *       stale entries. Every row names the Editora process that <em>owns</em> it, and each process writes
+ *       only its own ledger file, so a second instance on the same config dir neither kills the first
+ *       one's live servers nor erases its rows.
  * </ol>
  *
  * <p>Only processes that genuinely outlive their spawn call need tracking (servers/adapters); short-lived
@@ -58,7 +62,13 @@ public final class ProcessRegistry {
     private static final ConcurrentHashMap<Long, LedgerEntry> LEDGER = new ConcurrentHashMap<>();
 
     private static final Object LEDGER_FILE_LOCK = new Object();
+    /** The shared ledger older versions wrote ({@code spawned-servers.txt}): read and cleared, never written. */
     private static volatile Path ledgerFile;
+    /** This process's own ledger ({@code spawned-servers.<pid>.<start>.txt}) — the only one it writes. */
+    private static volatile Path ownLedgerFile;
+
+    /** This Editora process, stamped on every ledger row it writes. */
+    private static final Owner SELF = Owner.of(ProcessHandle.current());
 
     private static final AtomicBoolean HOOK_INSTALLED = new AtomicBoolean();
 
@@ -72,7 +82,7 @@ public final class ProcessRegistry {
     private ProcessRegistry() {}
 
     /**
-     * Registers the JVM shutdown hook that force-kills every live tracked process tree on exit. Idempotent;
+     * Registers the JVM shutdown hook that stops every live tracked process tree on exit. Idempotent;
      * call once from {@code App.main}. Cheap and safe even on the {@code --help}/{@code --version} paths
      * (nothing is tracked there, so the hook is a no-op).
      */
@@ -82,9 +92,17 @@ public final class ProcessRegistry {
         }
     }
 
-    /** Points the ledger at {@code <configDir>/spawned-servers.txt}. Call once at startup before any spawn. */
+    /**
+     * Points the ledger at {@code <configDir>/spawned-servers.txt}. Call once at startup before any spawn.
+     *
+     * <p>That name is the ledger of earlier versions, shared by every process — which is why a second
+     * instance used to kill the first one's servers. It is now only read (and cleared) by {@link
+     * #reapOrphans}; this process records its own children in a sibling file named after itself (see {@link
+     * #ownLedgerFor}), which no other process ever rewrites. {@code null} detaches the ledger.
+     */
     public static void setLedgerFile(Path file) {
         ledgerFile = file;
+        ownLedgerFile = file == null ? null : ownLedgerFor(file, SELF);
     }
 
     /**
@@ -238,11 +256,31 @@ public final class ProcessRegistry {
         }
     }
 
-    /** The shutdown hook: force-kill every live tree. Synchronous (the JVM is exiting) and fast. */
-    private static void killAll() {
+    /**
+     * The shutdown hook: stop every live tree, politely first. Each tree gets SIGTERM (children before the
+     * root), then all of them together get up to {@link #GRACE_MS} to exit, and only what is still alive is
+     * force-killed. Synchronous — the JVM is exiting — and bounded: the wait ends the moment the last process
+     * is gone, so a quit with well-behaved children is not delayed.
+     *
+     * <p>Force-killing at once, as this used to, gave a language server no chance to release its workspace
+     * lock or flush its index, and cut a running program off mid-write. Trees already inside
+     * {@link #killTree}'s grace period have had their SIGTERM, so those are force-killed without a second wait.
+     */
+    static void killAll() {
         destroyHandles(List.copyOf(PENDING_REAPS), true);
-        for (Process p : LIVE) {
-            destroyTree(p, true);
+        List<Process> roots = List.copyOf(LIVE);
+        List<ProcessHandle> asked = new ArrayList<>();
+        for (Process p : roots) {
+            List<ProcessHandle> tree = descendantsOf(p);
+            destroyHandles(tree, false);
+            destroyRoot(p, false);
+            asked.addAll(tree);
+            asked.add(p.toHandle());
+        }
+        awaitExit(asked, GRACE_MS);
+        destroyHandles(asked, true); // the handles captured above: a child is reparented once its wrapper exits
+        for (Process p : roots) {
+            destroyTree(p, true); // and anything forked during the grace period
         }
         PENDING_REAPS.clear();
         LIVE.clear();
@@ -252,93 +290,225 @@ public final class ProcessRegistry {
         writeLedger();
     }
 
+    /** Blocks until none of {@code handles} is alive, or {@code millis} have passed. */
+    private static void awaitExit(List<ProcessHandle> handles, long millis) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
+        while (System.nanoTime() < deadline && anyAlive(handles)) {
+            try {
+                Thread.sleep(20);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    private static boolean anyAlive(List<ProcessHandle> handles) {
+        for (ProcessHandle handle : handles) {
+            try {
+                if (handle.isAlive()) {
+                    return true;
+                }
+            } catch (RuntimeException ignored) {
+                // an inaccessible process is not ours to wait for
+            }
+        }
+        return false;
+    }
+
     /**
      * Reaps any server leaked by a previous run that died too hard for the shutdown hook to run (SIGKILL,
-     * power loss). Reads the ledger, and for each recorded pid still alive whose start time + executable
-     * still match what we recorded (guarding against PID reuse killing an innocent process), force-kills its
-     * tree. Then rewrites the ledger empty. Call once at startup, before any new server starts.
+     * power loss). Reads every ledger in the config dir — the legacy shared one and each per-process one — and
+     * for each row whose <b>owner is gone</b> and whose recorded pid is still alive with a matching start time
+     * + executable (guarding against PID reuse killing an innocent process), force-kills its tree. A ledger
+     * with no live owner is then deleted. Call once at startup, before any new server starts.
+     *
+     * <p>Rows owned by a <em>live</em> Editora process are not touched at all: that is a second instance on
+     * the same config dir (a launch that was not forwarded), and its language servers, debug adapters, builds
+     * and running programs are very much in use. Before rows carried an owner, starting a second editor
+     * force-killed every one of them and then emptied the ledger the first editor relied on.
      */
     public static void reapOrphans() {
-        Path file = ledgerFile;
-        if (file == null) {
+        Path legacy = ledgerFile;
+        if (legacy == null) {
             return;
         }
-        List<LedgerEntry> entries;
-        synchronized (LEDGER_FILE_LOCK) {
-            if (!Files.exists(file)) {
-                return;
-            }
-            try {
-                entries = parseLedger(Files.readAllLines(file, StandardCharsets.UTF_8));
-            } catch (IOException e) {
-                LOG.log(Level.FINE, "Could not read process ledger", e);
-                return;
-            }
-        }
         int reaped = 0;
-        for (LedgerEntry e : entries) {
-            Optional<ProcessHandle> handle = ProcessHandle.of(e.pid());
-            if (handle.isEmpty()) {
-                continue; // already gone
+        for (Path file : ledgerFiles(legacy)) {
+            List<LedgerEntry> entries;
+            synchronized (LEDGER_FILE_LOCK) {
+                try {
+                    entries = parseLedger(Files.readAllLines(file, StandardCharsets.UTF_8));
+                } catch (IOException e) {
+                    LOG.log(Level.FINE, "Could not read process ledger " + file, e);
+                    continue;
+                }
             }
-            ProcessHandle h = handle.get();
-            ProcessHandle.Info info = h.info();
-            boolean reap = h.isAlive() && shouldReap(e, info.startInstant().map(Instant::toEpochMilli), info.command());
-            if (reap) {
-                h.descendants().forEach(ProcessHandle::destroyForcibly);
-                h.destroyForcibly();
-                reaped++;
+            boolean liveOwner = false;
+            for (LedgerEntry e : entries) {
+                Optional<Live> ownerNow = liveState(e.owner().pid());
+                if (!ownerGone(e.owner(), SELF, ownerNow)) {
+                    liveOwner = true; // another running Editora's row (or our own): leave it, and its file
+                    continue;
+                }
+                Optional<ProcessHandle> handle = ProcessHandle.of(e.pid());
+                if (handle.isEmpty()) {
+                    continue; // already gone
+                }
+                ProcessHandle h = handle.get();
+                ProcessHandle.Info info = h.info();
+                boolean reap = h.isAlive()
+                        && shouldReap(
+                                e, SELF, ownerNow, info.startInstant().map(Instant::toEpochMilli), info.command());
+                if (reap) {
+                    h.descendants().forEach(ProcessHandle::destroyForcibly);
+                    h.destroyForcibly();
+                    reaped++;
+                }
+            }
+            if (!liveOwner) {
+                // Survivors were killed, dead ones are irrelevant, and nobody alive will write this file again.
+                synchronized (LEDGER_FILE_LOCK) {
+                    try {
+                        Files.deleteIfExists(file);
+                    } catch (IOException ignored) {
+                        // best effort — it is read again (and its dead pids skipped) on the next launch
+                    }
+                }
             }
         }
         if (reaped > 0) {
             LOG.info("Reaped " + reaped + " orphaned language/debug server process(es) from a previous run");
         }
-        // Clear the ledger: survivors were killed, dead ones are irrelevant. This run repopulates it.
-        synchronized (LEDGER_FILE_LOCK) {
-            try {
-                Files.write(file, List.of(), StandardCharsets.UTF_8);
-            } catch (IOException ignored) {
-                // best effort
-            }
+    }
+
+    /** The legacy ledger (when present) plus every per-process ledger beside it. */
+    private static List<Path> ledgerFiles(Path legacy) {
+        List<Path> out = new ArrayList<>();
+        if (Files.isRegularFile(legacy)) {
+            out.add(legacy);
+        }
+        Path dir = legacy.getParent();
+        Path legacyName = legacy.getFileName();
+        if (dir == null || legacyName == null || !Files.isDirectory(dir)) {
+            return out;
+        }
+        try (java.util.stream.Stream<Path> siblings = Files.list(dir)) {
+            siblings.filter(p -> isOwnLedgerName(
+                            legacyName.toString(), p.getFileName().toString()))
+                    .filter(Files::isRegularFile)
+                    .sorted()
+                    .forEach(out::add);
+        } catch (IOException | RuntimeException e) {
+            LOG.log(Level.FINE, "Could not list process ledgers in " + dir, e);
+        }
+        return out;
+    }
+
+    /** What the OS reports about {@code pid} right now, or empty when no such process is running. */
+    private static Optional<Live> liveState(long pid) {
+        if (pid <= 0) {
+            return Optional.empty();
+        }
+        try {
+            return ProcessHandle.of(pid).filter(ProcessHandle::isAlive).map(h -> {
+                ProcessHandle.Info info = h.info();
+                return new Live(info.startInstant().map(Instant::toEpochMilli), info.command());
+            });
+        } catch (RuntimeException e) {
+            return Optional.empty();
         }
     }
 
     // --- pure, unit-tested helpers -------------------------------------------------------------------
 
-    /** A ledger row: the spawned root pid plus enough identity to avoid killing a reused PID next run. */
-    record LedgerEntry(long pid, long startEpochMillis, String command) {
+    /**
+     * The Editora process a ledger row belongs to: its pid, start instant and executable. {@link #NONE} for a
+     * row written by a version that did not record one.
+     */
+    record Owner(long pid, long startEpochMillis, String command) {
+
+        /** No owner recorded — a legacy row, reaped on the child's identity alone as it always was. */
+        static final Owner NONE = new Owner(0L, 0L, "");
+
+        Owner {
+            command = command == null ? "" : command;
+        }
+
+        boolean known() {
+            return pid > 0;
+        }
+
+        static Owner of(ProcessHandle process) {
+            ProcessHandle.Info info = process.info();
+            long start = info.startInstant().map(Instant::toEpochMilli).orElse(0L);
+            return new Owner(process.pid(), start, info.command().orElse(""));
+        }
+    }
+
+    /** A running process as the OS describes it now: its start instant and executable, where exposed. */
+    record Live(Optional<Long> startMillis, Optional<String> command) {}
+
+    /** A ledger row: the spawned root pid plus enough identity to avoid killing a reused PID next run, and the
+     *  Editora process that spawned it. */
+    record LedgerEntry(long pid, long startEpochMillis, String command, Owner owner) {
+
+        LedgerEntry {
+            owner = owner == null ? Owner.NONE : owner;
+        }
+
+        /** A row with no recorded owner (the legacy format). */
+        LedgerEntry(long pid, long startEpochMillis, String command) {
+            this(pid, startEpochMillis, command, Owner.NONE);
+        }
 
         static LedgerEntry of(Process p) {
             return of(p.toHandle());
         }
 
+        /** A row for a process this JVM spawned, stamped with this JVM as its owner. */
         static LedgerEntry of(ProcessHandle process) {
             ProcessHandle.Info info = process.info();
             long start = info.startInstant().map(Instant::toEpochMilli).orElse(0L);
             String cmd = info.command().orElse("");
-            return new LedgerEntry(process.pid(), start, cmd);
+            return new LedgerEntry(process.pid(), start, cmd, SELF);
         }
 
-        /** Tab-separated: {@code pid \t startEpochMillis \t command} (command is last so tabs in it are
-         *  impossible — an executable path has no tabs — but we still strip any defensively). */
+        /**
+         * Tab-separated: {@code pid \t startEpochMillis \t command}, followed — when the owner is known — by
+         * {@code \t ownerPid \t ownerStartEpochMillis \t ownerCommand}. An executable path has no tabs, but
+         * any are stripped defensively so the field count stays exact. A row without an owner is byte-for-byte
+         * the format earlier versions wrote.
+         */
         String format() {
-            return pid + "\t" + startEpochMillis + "\t"
-                    + command.replace('\t', ' ').replace('\n', ' ');
+            String row = pid + "\t" + startEpochMillis + "\t" + field(command);
+            return owner.known()
+                    ? row + "\t" + owner.pid() + "\t" + owner.startEpochMillis() + "\t" + field(owner.command())
+                    : row;
+        }
+
+        private static String field(String text) {
+            return text.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
         }
 
         static Optional<LedgerEntry> parse(String line) {
             if (line == null || line.isBlank()) {
                 return Optional.empty();
             }
-            String[] parts = line.split("\t", 3);
-            if (parts.length < 2) {
+            String[] parts = line.split("\t", -1);
+            // 2-3 fields: a legacy row. 6: an owned row. Anything else is a torn or foreign line — skipped,
+            // because half an owner must never be read as "no owner" (that would make the row reapable).
+            if (parts.length != 2 && parts.length != 3 && parts.length != 6) {
                 return Optional.empty();
             }
             try {
                 long pid = Long.parseLong(parts[0].trim());
                 long start = Long.parseLong(parts[1].trim());
-                String cmd = parts.length == 3 ? parts[2] : "";
-                return Optional.of(new LedgerEntry(pid, start, cmd));
+                String cmd = parts.length >= 3 ? parts[2] : "";
+                Owner owner = parts.length == 6
+                        ? new Owner(Long.parseLong(parts[3].trim()), Long.parseLong(parts[4].trim()), parts[5])
+                        : Owner.NONE;
+                return Optional.of(new LedgerEntry(pid, start, cmd, owner));
             } catch (NumberFormatException e) {
                 return Optional.empty();
             }
@@ -351,6 +521,74 @@ public final class ProcessRegistry {
             LedgerEntry.parse(line).ifPresent(out::add);
         }
         return out;
+    }
+
+    /**
+     * This process's own ledger file beside {@code legacy}: {@code spawned-servers.txt} →
+     * {@code spawned-servers.<pid>.<startMillis>.txt}. The start instant keeps the name unique even when a
+     * pid is reused, so a new process can never mistake a dead one's leftover file for its own. Pure.
+     */
+    static Path ownLedgerFor(Path legacy, Owner owner) {
+        String name = legacy.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        String stem = dot > 0 ? name.substring(0, dot) : name;
+        String extension = dot > 0 ? name.substring(dot) : "";
+        return legacy.resolveSibling(stem + "." + owner.pid() + "." + owner.startEpochMillis() + extension);
+    }
+
+    /** Whether {@code candidate} is a per-process ledger name derived from {@code legacyName}. Pure. */
+    static boolean isOwnLedgerName(String legacyName, String candidate) {
+        int dot = legacyName.lastIndexOf('.');
+        String stem = dot > 0 ? legacyName.substring(0, dot) : legacyName;
+        String extension = dot > 0 ? legacyName.substring(dot) : "";
+        if (candidate.length() <= stem.length() + 1 + extension.length()
+                || !candidate.startsWith(stem + ".")
+                || !candidate.endsWith(extension)) {
+            return false;
+        }
+        String middle = candidate.substring(stem.length() + 1, candidate.length() - extension.length());
+        return middle.matches("\\d+\\.\\d+");
+    }
+
+    /**
+     * Whether the Editora process that wrote a row is gone, so its children are orphans. {@code ownerNow} is
+     * what the OS reports for the owner's pid (empty = no such process). Pure → unit-tested.
+     *
+     * <ul>
+     *   <li>No recorded owner (a legacy row): gone — there is nobody to ask, so the row is judged on the
+     *       child's identity alone, as before.
+     *   <li>The owner's pid is this process's: gone unless it <em>is</em> this process (same start instant) —
+     *       we hold the pid, so any other owner that had it is dead.
+     *   <li>No process has that pid: gone.
+     *   <li>A process has it and started at the recorded instant: alive.
+     *   <li>A process has it but the start instants differ or cannot be compared: gone only if its executable
+     *       differs from the recorded one (the pid was reused by something else). With the same executable it
+     *       is treated as <b>alive</b>. The alternative reading — "a reused pid" — would force-kill a running
+     *       editor's servers whenever two JVMs disagree about one process's start time, which on Linux
+     *       happens after the wall clock is stepped (the start instant is derived from the boot time). A
+     *       leaked server lingering until that pid is free again is much the smaller harm.
+     * </ul>
+     */
+    static boolean ownerGone(Owner owner, Owner self, Optional<Live> ownerNow) {
+        if (owner == null || !owner.known()) {
+            return true;
+        }
+        if (owner.pid() == self.pid()) {
+            return owner.startEpochMillis() != self.startEpochMillis();
+        }
+        if (ownerNow.isEmpty()) {
+            return true;
+        }
+        Live live = ownerNow.get();
+        if (owner.startEpochMillis() > 0
+                && live.startMillis().isPresent()
+                && live.startMillis().get() == owner.startEpochMillis()) {
+            return false;
+        }
+        if (!owner.command().isBlank() && live.command().isPresent()) {
+            return !owner.command().equals(live.command().get());
+        }
+        return false; // cannot prove it is gone
     }
 
     /**
@@ -374,18 +612,50 @@ public final class ProcessRegistry {
         return true;
     }
 
+    /**
+     * The full reaping decision for one row: its owner must be gone ({@link #ownerGone}) <em>and</em> the live
+     * process must still be the server that was recorded ({@link #shouldReap(LedgerEntry, Optional, Optional)}).
+     * Pure → unit-tested.
+     */
+    static boolean shouldReap(
+            LedgerEntry recorded,
+            Owner self,
+            Optional<Live> ownerNow,
+            Optional<Long> actualStartMillis,
+            Optional<String> actualCommand) {
+        return ownerGone(recorded.owner(), self, ownerNow) && shouldReap(recorded, actualStartMillis, actualCommand);
+    }
+
+    /**
+     * Writes this process's rows to its own ledger file — never to another process's, and never to the legacy
+     * shared one. An empty ledger is deleted rather than written empty, so the config dir does not collect a
+     * file per launch. Replaced atomically, so a reader in another process sees the old rows or the new ones,
+     * never a torn file.
+     */
     private static void writeLedger() {
-        Path file = ledgerFile;
+        Path file = ownLedgerFile;
         if (file == null) {
             return;
         }
-        List<String> lines = new ArrayList<>();
-        for (LedgerEntry e : LEDGER.values()) {
-            lines.add(e.format());
-        }
         synchronized (LEDGER_FILE_LOCK) {
+            // Snapshot inside the lock: two writers racing with the snapshot outside could land out of order
+            // and leave the older rows on disk.
+            List<String> lines = new ArrayList<>();
+            for (LedgerEntry e : LEDGER.values()) {
+                lines.add(e.format());
+            }
             try {
-                Files.write(file, lines, StandardCharsets.UTF_8);
+                if (lines.isEmpty()) {
+                    Files.deleteIfExists(file);
+                    return;
+                }
+                Path tmp = file.resolveSibling("." + file.getFileName() + ".tmp");
+                Files.write(tmp, lines, StandardCharsets.UTF_8);
+                try {
+                    Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException e) {
+                    Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+                }
             } catch (IOException ignored) {
                 // best effort — the shutdown hook + in-memory live set still cover the common cases
             }

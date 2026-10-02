@@ -53,6 +53,19 @@ public final class BuildService {
         run(workingDir, argv, Map.of(), listener);
     }
 
+    /**
+     * The build process, before it is started: the <em>user's</em> environment (their locale included) plus
+     * the augmented PATH, then {@code environment} on top. Not the parse-stable {@code LC_ALL=C} one — Maven,
+     * Gradle and {@code javac} are JVMs, and a JVM in the C locale cannot open a source file or project
+     * directory whose name is not ASCII; the output is streamed to the user, not parsed.
+     */
+    static ProcessBuilder processBuilder(Path workingDir, List<String> command, Map<String, String> environment) {
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.directory(workingDir.toFile());
+        ProcessRunner.applyUserEnv(pb.environment(), environment);
+        return pb;
+    }
+
     /** As {@link #run(Path, List, Listener)}, with environment overrides such as Maven's selected JDK. */
     public void run(Path workingDir, List<String> argv, Map<String, String> environment, Listener listener) {
         if (workingDir == null || argv == null || argv.isEmpty() || listener == null || isRunning()) {
@@ -60,12 +73,7 @@ public final class BuildService {
         }
         int gen = ++generation;
         List<String> command = ProcessRunner.resolveExecutable(argv);
-        ProcessBuilder pb = new ProcessBuilder(command);
-        pb.directory(workingDir.toFile());
-        ProcessRunner.applyStandardEnv(pb);
-        if (environment != null) {
-            pb.environment().putAll(environment);
-        }
+        ProcessBuilder pb = processBuilder(workingDir, command, environment);
         Process process;
         try {
             process = pb.start();

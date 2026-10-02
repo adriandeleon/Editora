@@ -89,19 +89,27 @@ public final class AcpClient {
         this.environment = Map.copyOf(environment);
     }
 
+    /**
+     * The agent process, before it is started: the user's own environment (locale included) plus the
+     * augmented PATH, then {@code environment}. The agent is an interactive CLI that reads and writes the
+     * user's files and prose — the parse-stable {@code LC_ALL=C} would make it treat their paths as ASCII.
+     */
+    static ProcessBuilder processBuilder(List<String> command, Path cwd, Map<String, String> environment) {
+        ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
+        if (cwd != null) {
+            pb.directory(cwd.toFile());
+        }
+        ProcessRunner.applyUserEnv(pb.environment(), environment);
+        return pb;
+    }
+
     /** Spawns the agent + reader/stderr threads. Returns false when the command can't launch. */
     public synchronized boolean start() {
         if (process != null && process.isAlive()) {
             return true;
         }
         try {
-            ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
-            if (cwd != null) {
-                pb.directory(cwd.toFile());
-            }
-            ProcessRunner.applyStandardEnv(pb);
-            pb.environment().putAll(environment);
-            process = pb.start();
+            process = processBuilder(command, cwd, environment).start();
             ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
             drainStderr(process);
             startReader(process);

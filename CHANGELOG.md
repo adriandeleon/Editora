@@ -57,6 +57,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A fold chevron folds the block's current extent after it has grown, minimap clicks land on the right
   line with folds or word wrap, and highlights and squiggles reach the edge when the minimap is hidden.
 - Re-linting several Markdown or Mermaid buffers at once updates every one of them, not only the last.
+- Opening a second Editora on the same configuration (launching it again without a file, with
+  `--project`, `--new-instance` or `--diff-ui`) no longer kills the first one's language servers, debug
+  adapters, builds and running programs, and no longer deletes its Local File History revisions. The second
+  instance now warns once that both share the configuration: settings, notes, bookmarks, breakpoints,
+  projects and recent files are still saved whole by each instance, so the last one to save wins.
+
+- Programs you run, builds, language servers, debug adapters, the AI agent, External Tools, before-launch
+  steps, in-app installers and the terminal/browser Editora opens now keep your locale instead of being
+  forced into `LC_ALL=C`. Projects under a path with non-ASCII characters (`año/`, `café/`) can be run,
+  built, debugged and indexed, and program output is no longer reduced to `?`. Git, ripgrep and other
+  output Editora parses still use the C locale.
+
+- Quitting now asks running language servers and programs to stop (SIGTERM) and waits briefly before
+  force-killing whatever is left, instead of killing everything at once.
+
+- In-app installs work when the configuration directory contains a space (for example
+  `C:\Users\Jane Doe\.editora`): the installed server is no longer reported missing right after the
+  install. The Typst CLI install now finds its Linux and macOS downloads.
+
+- The build commit and branch shown for development builds are looked up in the background from the
+  build's own checkout, so a slow or stuck `git` can no longer freeze the window at startup.
 
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the

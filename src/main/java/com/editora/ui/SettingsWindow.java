@@ -539,6 +539,10 @@ public class SettingsWindow {
         this.onOpenFile = onOpenFile;
         this.onExportConfig = onExportConfig;
         this.onShowDebugLog = onShowDebugLog;
+        if (com.editora.AppInfo.isSnapshot()) {
+            // Start the (background, bounded) branch lookup now, so About has it without ever waiting on git.
+            com.editora.AppInfo.gitBranchAsync();
+        }
     }
 
     /**

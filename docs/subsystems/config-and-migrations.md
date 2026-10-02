@@ -78,6 +78,39 @@ Two paths:
 
 `settings.json` and `workspace-state.json` have both async and sync save paths, and **both funnel through the one writer queue**. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. Local History's `history/index.json` also uses that queue: it waits for the exact index snapshot to become durable before confirming a destructive file operation. Its blob GC is queued under the publication lock, before durable callbacks can start a newer snapshot; the history worker also queues GC under its publication lock so an older live set cannot overtake a new blob write. Other stores (`bookmarks.json`, `notes.json`, …) keep direct synchronous writes in `SharedConfig`.
 
+## More than one process on a config directory
+
+`SharedConfig` shares the stores between the *windows* of one process. Two *processes* on the same
+directory are a different matter, and an ordinary one: `App.shouldForwardLaunch` only forwards a plain
+"open these files" launch to the running editor, so a launch with no file argument, `--project`,
+`--new-file`, `--new-instance` or `--diff-ui` starts a second JVM on `~/.editora`.
+
+`App.start` calls `SharedConfig.claimInstance()` before any window is built. The claim is an OS file lock
+on `<configDir>/instance.lock` ([`InstanceLock`](../../src/main/java/com/editora/config/InstanceLock.java)),
+released by the operating system when the holder dies, so a crash never leaves a stale claim:
+
+- **byte 0, exclusive** — held for life by the first process, the *primary*. There is no promotion: a
+  secondary that outlives the primary stays a secondary.
+- **byte 1, shared** — held for life by every secondary, so the primary can ask "is anyone else here
+  right now?" by trying to take it exclusively.
+
+`SharedConfig.isPrimaryInstance()` is the single source of truth derived from it:
+
+- `WindowManager` shows a one-time warning in a secondary (`status.config.secondaryInstance`).
+- Local-history blob GC runs only in the primary, and only while no secondary is alive
+  (`mayCollectHistoryBlobs`, asked on the history worker right before deleting). GC deletes every blob
+  outside *this* process's index, and another process's revisions are not in it.
+
+A config that was never claimed (tests, embedders) counts as its own sole user, and a filesystem that
+refuses locks degrades to "primary, alone".
+
+**What is still not safe across processes:** every store is written whole from its process's in-memory
+copy, so `settings.json`, `notes.json`, `bookmarks.json`, `breakpoints.json`, `projects.json`,
+`recent-files.json`, `history/index.json` and the other stores remain *last-writer-wins* between two
+processes. There is no merge-on-write and no cross-process change notification; the warning exists
+because of that. (The spawned-process ledger is per process — see
+[LSP and DAP](lsp-and-dap.md#processregistry--processrunner).)
+
 ## Schema versioning and migrations
 
 Every structured config file carries an integer `schemaVersion` field, and its owning POJO declares a `SCHEMA_VERSION` constant (the baseline is **1**). The [`config/migration/`](../../src/main/java/com/editora/config/migration) package drives reads through one engine.

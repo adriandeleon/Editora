@@ -187,7 +187,9 @@ public enum BuildTool {
             List<String> argv = new ArrayList<>(executable(root, isWindows, override));
             argv.add("tasks");
             argv.add("--all");
-            ProcessRunner.Result result = ProcessRunner.run(root, TASK_LOAD_TIMEOUT, argv);
+            // Gradle is a JVM: in the C locale it cannot open a project whose path is not ASCII. Its task
+            // listing is not localized, so the user's locale parses the same.
+            ProcessRunner.Result result = ProcessRunner.runInUserLocale(root, TASK_LOAD_TIMEOUT, argv);
             return GradleTasks.parse(result.out());
         }
     };

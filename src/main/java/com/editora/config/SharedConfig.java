@@ -51,6 +51,9 @@ public class SharedConfig {
     private final ConfigWriter writer = new ConfigWriter();
 
     private final HistoryService historyService;
+    /** This process's claim on the config dir ({@code null} until {@link #claimInstance()}). */
+    private volatile InstanceLock instanceLock;
+
     private final DocumentWriteSequencer documentWrites = new DocumentWriteSequencer();
     /** Durable and pending history-index references. GC may delete only outside their union. */
     private final Object historyPublicationLock = new Object();
@@ -90,7 +93,52 @@ public class SharedConfig {
         this.configDir = configDir;
         this.dev = dev;
         this.projects = new ProjectManager(configDir);
-        this.historyService = new HistoryService(new HistoryBlobStore(getHistoryBlobsDir()));
+        this.historyService =
+                new HistoryService(new HistoryBlobStore(getHistoryBlobsDir()), this::mayCollectHistoryBlobs);
+    }
+
+    // --- more than one process on this config dir ---
+
+    /**
+     * Claims the config dir for this process and reports whether it is the <em>primary</em> instance — the
+     * first Editora process using this directory. Call once at startup, before any window is built;
+     * idempotent. The claim is an OS file lock (see {@link InstanceLock}) held until {@link #shutdown()} or
+     * process exit, so a crashed primary never leaves a stale claim behind.
+     *
+     * <p>A second process on the same directory is an ordinary state (a launch that is not forwarded to the
+     * running editor), but the stores here are written whole from each process's memory. So a secondary is
+     * told apart, warns the user once, and never garbage-collects shared data.
+     */
+    public synchronized boolean claimInstance() {
+        if (instanceLock == null) {
+            instanceLock = InstanceLock.claim(configDir);
+        }
+        return instanceLock.primary();
+    }
+
+    /**
+     * Whether this process is the primary instance on its config dir: the single source of truth for both the
+     * "another instance is using this configuration" warning and the local-history GC gate. A config that was
+     * never {@linkplain #claimInstance() claimed} (a test, an embedding tool) is its own sole user.
+     */
+    public boolean isPrimaryInstance() {
+        InstanceLock lock = instanceLock;
+        return lock == null || lock.primary();
+    }
+
+    /**
+     * Whether local-history blobs may be deleted now: only by the primary, and only while no other process is
+     * using this config dir.
+     *
+     * <p>Blob GC deletes every blob outside <em>this</em> process's index. Another process's revisions are
+     * not in that index, so each history save here used to delete the other editor's revision bodies — its
+     * History view then listed revisions that opened empty. A secondary therefore never collects, and the
+     * primary skips collection while a secondary is alive (its unreferenced blobs are picked up by the first
+     * collection after it exits). Evaluated on the history worker immediately before deleting.
+     */
+    boolean mayCollectHistoryBlobs() {
+        InstanceLock lock = instanceLock;
+        return lock == null || (lock.primary() && !lock.othersPresent());
     }
 
     /** True when started in dev mode ({@code --dev}); the UI shows a "dev mode" badge in this case. */
@@ -208,6 +256,10 @@ public class SharedConfig {
     public boolean shutdown() {
         boolean durable = writer.shutdown();
         historyService.shutdown();
+        InstanceLock lock = instanceLock;
+        if (lock != null) {
+            lock.close(); // after the last write: the next launch may now be the primary
+        }
         return durable;
     }
 

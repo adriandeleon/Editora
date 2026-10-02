@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -36,6 +37,7 @@ public final class HistoryService {
     private static final Logger LOG = Logger.getLogger(HistoryService.class.getName());
 
     private final HistoryBlobStore blobs;
+    private final BooleanSupplier gcAllowed;
     private final Object publicationLock = new Object();
     private int publicationsInFlight;
     private final Set<String> publicationHashes = new LinkedHashSet<>();
@@ -48,7 +50,18 @@ public final class HistoryService {
     });
 
     public HistoryService(HistoryBlobStore blobs) {
+        this(blobs, () -> true);
+    }
+
+    /**
+     * As {@link #HistoryService(HistoryBlobStore)}, with a gate on garbage collection: {@code gcAllowed} is
+     * asked on the worker thread immediately before any blob is deleted, and a {@code false} skips that
+     * collection (keeping blobs is always the safe outcome). The config layer uses it to stop one Editora
+     * process deleting revision bodies that belong to another process sharing the same config directory.
+     */
+    public HistoryService(HistoryBlobStore blobs, BooleanSupplier gcAllowed) {
         this.blobs = blobs;
+        this.gcAllowed = gcAllowed == null ? () -> true : gcAllowed;
         exec.submit(blobs::hardenExisting);
     }
 
@@ -208,7 +221,11 @@ public final class HistoryService {
 
     private void queueGc(Set<String> snapshot) {
         try {
-            exec.submit(() -> blobs.deleteUnreferenced(snapshot));
+            exec.submit(() -> {
+                if (gcAllowed.getAsBoolean()) {
+                    blobs.deleteUnreferenced(snapshot);
+                }
+            });
         } catch (RejectedExecutionException shuttingDown) {
             // Final shutdown owns no future GC work; retaining blobs is the safe failure mode.
         }

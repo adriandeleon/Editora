@@ -214,7 +214,7 @@ final class LanguageServerSession implements LanguageClient {
         try {
             ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
             pb.directory(root.toFile());
-            ProcessRunner.applyStandardEnv(pb);
+            ProcessRunner.applyUserEnv(pb); // the user's locale: under LC_ALL=C jdtls cannot index non-ASCII paths
             JavaServerEnvironment.configure(serverId, command, pb.environment());
             process = pb.start();
             if (disposed) {

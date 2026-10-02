@@ -270,7 +270,7 @@ final class PluginCoordinator {
                 () -> {
                     ProcessRunner.Result r;
                     try {
-                        r = ProcessRunner.run(cwd, Duration.ofSeconds(120), new ArrayList<>(c.run), Map.of());
+                        r = ProcessRunner.runInUserLocale(cwd, Duration.ofSeconds(120), new ArrayList<>(c.run));
                     } catch (RuntimeException e) {
                         Platform.runLater(() -> host.setStatus(tr("status.plugins.cmdFailed", e.getMessage())));
                         return;
