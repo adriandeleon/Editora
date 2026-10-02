@@ -255,6 +255,16 @@ final class PluginCoordinator {
             snippets.reload();
             templates.reload();
         }
+        reapplyUserBindings();
+    }
+
+    /**
+     * Puts the user's own key bindings back on top of whatever plugins just bound. Plugin keymaps are applied
+     * after the user's overrides, so without this a plugin took back any chord the user had rebound.
+     */
+    private void reapplyUserBindings() {
+        keymap.applyOverrides(KeymapLayers.userBindings(
+                config.getSettings().keybindingsFor(com.editora.command.KeymapManager.isMac())));
     }
 
     /** Runs a plugin's declared external command via the subprocess runner; reports the result. */
@@ -405,7 +415,7 @@ final class PluginCoordinator {
         }
         FileChooser fc = new FileChooser();
         fc.setTitle(tr("dialog.plugins.installFileTitle"));
-        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Plugin zip", "*.zip"));
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter(tr("dialog.plugins.zipFilter"), "*.zip"));
         File f = fc.showOpenDialog(host.window());
         if (f == null) {
             return;
@@ -562,6 +572,7 @@ final class PluginCoordinator {
         public void bindKey(String chord, String commandId) {
             if (chord != null && !chord.isBlank() && commandId != null) {
                 keymap.applyOverrides(Map.of(chord, fullId(commandId)));
+                reapplyUserBindings();
             }
         }
 

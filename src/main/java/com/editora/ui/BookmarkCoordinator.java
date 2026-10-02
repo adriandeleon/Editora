@@ -118,8 +118,8 @@ final class BookmarkCoordinator {
         });
         panel.setPrompt(ops::promptText); // in-scene bookmark-note prompt
         this.jumpPalette = new QuickOpen<>(
-                "Jump to Bookmark",
-                "Type to filter bookmarks…",
+                tr("nav.bookmarks.title"),
+                tr("nav.bookmarks.prompt"),
                 this::allBookmarkEntries,
                 e -> bookmarkLabel(e.bm()),
                 e -> e.bm().isFolder() ? e.file().toString() : e.file().getFileName() + ":" + (e.bm().line() + 1),

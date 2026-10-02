@@ -300,7 +300,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
             sizeValue.setText("–");
             permissionsValue.setText("–");
             ownerValue.setText("–");
-            fullPathValue.setText("(untitled)");
+            fullPathValue.setText(tr("common.untitled"));
             return;
         }
         fullPathValue.setText(path.toString());

@@ -307,7 +307,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             return;
         }
         lastStatus = status;
-        branchLabel.setText("⎇ " + (status.branch().isBlank() ? "(detached)" : status.branch()));
+        branchLabel.setText("⎇ " + (status.branch().isBlank() ? tr("gitpanel.detached") : status.branch()));
         updatePushIndicator(status);
 
         // The commit affordances read the FULL status, never the filtered view: hiding a staged file behind

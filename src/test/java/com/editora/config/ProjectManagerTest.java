@@ -133,4 +133,28 @@ class ProjectManagerTest {
         assertNotNull(pm.active());
         assertEquals("myrepo-1a2b3c", pm.active().id());
     }
+    /**
+     * The id is a name slug plus a 32-bit hash of the root, so two same-named folders whose paths collide
+     * got one id — and with it one session file and one bookmark/note/breakpoint bucket.
+     */
+    @Test
+    void twoProjectsWhoseIdsCollideGetDistinctIds(@TempDir Path dir) {
+        // "Aa" and "BB" have the same String.hashCode, so these two roots hash identically.
+        Path first = dir.resolve("Aa").resolve("app");
+        Path second = dir.resolve("BB").resolve("app");
+        assertEquals(
+                first.toAbsolutePath().normalize().toString().hashCode(),
+                second.toAbsolutePath().normalize().toString().hashCode(),
+                "fixture: the two roots collide");
+
+        ProjectManager pm = new ProjectManager(dir);
+        Project a = pm.createOrGet("app", first);
+        Project b = pm.createOrGet("app", second);
+
+        assertFalse(a.id().equals(b.id()), "each project needs its own id");
+        assertEquals(a.id() + "-2", b.id());
+        assertFalse(pm.stateFile(a).equals(pm.stateFile(b)), "and so its own session file");
+        assertEquals(a.id(), pm.createOrGet("app", first).id(), "an existing project keeps its id");
+        assertEquals(b.id(), pm.createOrGet("app", second).id());
+    }
 }

@@ -383,7 +383,7 @@ public class ConfigManager {
 
     /** Writes preferences + this window's session state synchronously (blocks until both are on disk). */
     public boolean save() {
-        shared.enqueueSettings();
+        shared.enqueueSettings(this);
         enqueueWorkspace();
         return shared.flushWrites();
     }
@@ -396,7 +396,7 @@ public class ConfigManager {
      * actions / export.
      */
     public void saveAsync() {
-        shared.enqueueSettings();
+        shared.enqueueSettings(this);
         enqueueWorkspace();
     }
 

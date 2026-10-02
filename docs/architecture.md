@@ -79,7 +79,9 @@ Config is split:
 
 So a `config.save()` from any window writes `settings.json` + that window's session file
 without clobbering another window's in-memory copy. A settings change in one window
-broadcasts to all via `WindowManager.broadcastSettingsApplied()`. See
+reaches all of them: the Settings window broadcasts via `WindowManager.broadcastSettingsApplied()`,
+and a change made by any other command is detected at the shared save and re-applied in the other
+windows. See
 [config-and-schema](conventions.md#config-and-schema) for the storage details, and the
 [config subsystem deep-dive](subsystems/config-and-migrations.md) for the full model.
 

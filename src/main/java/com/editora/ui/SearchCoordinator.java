@@ -194,6 +194,15 @@ final class SearchCoordinator {
     private final java.util.concurrent.atomic.AtomicBoolean shutdown = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.Set<ReplaceJob> queuedReplaces = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final SearchPanel panel;
+    /**
+     * This window's copy of the shared search history, the list the query combo is bound to. The combo is
+     * bound to a copy rather than to the shared list because that list outlives the window and is changed by
+     * every window: this way the control only ever listens to a list its own window owns, and other windows'
+     * changes arrive through one explicit step, {@link #refreshHistory()}, which replaces the copy as a whole
+     * and only when it differs.
+     */
+    private final ObservableList<String> historyView = javafx.collections.FXCollections.observableArrayList();
+
     private SearchInFilesPopup popup; // lazily built on first use of the popup command
 
     private static ExecutorService newReplaceExecutor() {
@@ -238,8 +247,10 @@ final class SearchCoordinator {
             @Override
             public void recordSearch(String query) {
                 ops.recordSearch(query);
+                refreshHistory();
             }
         });
+        panel.setHistory(historyView);
     }
 
     SearchPanel panel() {
@@ -251,9 +262,15 @@ final class SearchCoordinator {
         return service;
     }
 
-    /** Binds the query dropdown to the persistent search history (called once history is loaded). */
+    /**
+     * Brings the query dropdown up to date with the shared search history: at startup, after this window
+     * records a query, and when another window does (see {@code WindowManager}). A no-op when nothing changed.
+     */
     void refreshHistory() {
-        panel.setHistory(ops.searchHistory());
+        java.util.List<String> shared = ops.searchHistory();
+        if (!historyView.equals(shared)) {
+            historyView.setAll(shared);
+        }
     }
 
     /** Snapshots every open buffer's live text keyed by absolute path (unsaved edits win over disk). */
@@ -307,6 +324,7 @@ final class SearchCoordinator {
                 @Override
                 public void recordSearch(String query) {
                     ops.recordSearch(query);
+                    refreshHistory();
                 }
             });
         }

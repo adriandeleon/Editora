@@ -1060,8 +1060,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         Deque<StructureNode> stack = new ArrayDeque<>();
         Deque<Integer> levels = new ArrayDeque<>();
         for (com.editora.markdown.MarkdownOutline.Heading h : com.editora.markdown.MarkdownOutline.headings(text)) {
-            StructureNode node =
-                    new StructureNode(null, h.title().isBlank() ? "(untitled)" : h.title(), "heading", h.line());
+            StructureNode node = new StructureNode(
+                    null, h.title().isBlank() ? tr("common.untitled") : h.title(), "heading", h.line());
             while (!levels.isEmpty() && levels.peek() >= h.level()) {
                 stack.pop();
                 levels.pop();
@@ -1097,7 +1097,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         record Entry(int line, int level, String label, String kind) {}
         List<Entry> entries = new ArrayList<>();
         for (var h : outline.headings()) {
-            entries.add(new Entry(h.line(), h.level(), h.title().isBlank() ? "(untitled)" : h.title(), "heading"));
+            entries.add(
+                    new Entry(h.line(), h.level(), h.title().isBlank() ? tr("common.untitled") : h.title(), "heading"));
         }
         for (var b : outline.bindings()) {
             // Level 0 = "not a section": it never becomes a parent and never closes one.

@@ -29,6 +29,9 @@ A Settings-window control is not enough on its own. Add a command that flips/pro
   one picker command.
 - Reuse the generic helpers: `toggleSetting` / `promptStringSetting` / `promptIntSetting` /
   `chooseSetting`.
+- The command applies the change in its own window only. The other windows follow on their own:
+  the shared save notices that preferences changed and re-applies them there (see
+  [config-and-migrations](subsystems/config-and-migrations.md#changes-reach-every-window)).
 
 ## Localize every user-facing string
 
@@ -45,6 +48,14 @@ Never hand a raw English literal to a JavaFX control. Use
 - The only deliberately-untranslated tokens are technical identifiers (`UTF-8`, `LF`/`CRLF`,
   `Ln`/`Col`, git verbs, language names, example URLs) and the pre-GUI `--help`/`--version`
   text.
+- **Apostrophes follow the value.** A value with a placeholder (`{0}`) is a `MessageFormat`
+  pattern: double every literal apostrophe (`l''onglet {0}`). A value without one is shown as
+  written: a single apostrophe. `MessagesTest` enforces both in all six catalogs.
+- **Identifiers are not quantities.** A plain `{0}` groups an integer's digits by locale
+  ("Line 12,345"). For a line or column, a port, a pull-request number or an exit code write
+  `{0,number,#}` and add the key to `MessagesTest.IDENTIFIER_ARGUMENTS`.
+- A key used by literal (`tr("some.key")`) must exist: `tr` falls back to the key itself, so a
+  missing one ships as visible gibberish. `MessagesTest` scans `src/main/java` for them.
 
 ## Keyboard, contrast and assistive technology
 

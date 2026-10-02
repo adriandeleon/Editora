@@ -273,8 +273,8 @@ final class EditorSettingsCoordinator {
             return;
         }
         QuickOpen<String> picker = new QuickOpen<>(
-                "Set Spell Check Language",
-                "Type to filter languages…",
+                tr("palette.spellLanguage.title"),
+                tr("palette.spellLanguage.prompt"),
                 SpellDictionaries::available,
                 id -> id,
                 id -> "",
@@ -390,8 +390,8 @@ final class EditorSettingsCoordinator {
     /** Picker for the app (chrome) theme — also switches the editor theme to match. */
     void chooseAppTheme() {
         QuickOpen<String> picker = new QuickOpen<>(
-                "Set App Theme",
-                "Type to filter themes…",
+                tr("palette.theme.appTitle"),
+                tr("palette.theme.prompt"),
                 () -> Themes.names(),
                 name -> name,
                 name -> "",
@@ -403,8 +403,8 @@ final class EditorSettingsCoordinator {
     /** Picker for the editor color theme only (leaves the chrome theme untouched). */
     void chooseEditorTheme() {
         QuickOpen<String> picker = new QuickOpen<>(
-                "Set Editor Theme",
-                "Type to filter themes…",
+                tr("palette.theme.editorTitle"),
+                tr("palette.theme.prompt"),
                 () -> EditorThemes.names(),
                 name -> name,
                 name -> "",

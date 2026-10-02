@@ -36,6 +36,24 @@ public final class ConfigWriter {
         byte[] get() throws IOException;
     }
 
+    /** Where a store hands the snapshot it wants persisted: the shared queue, or {@link #DIRECT}. */
+    @FunctionalInterface
+    interface Sink {
+        void write(Path file, BytesSupplier bytes);
+    }
+
+    /**
+     * Writes on the calling thread. For a store used on its own (a test, a tool) with no shared writer to
+     * queue on; inside the app every store goes through {@link #enqueue} so the FX thread never does the I/O.
+     */
+    static final Sink DIRECT = (file, bytes) -> {
+        try {
+            writeAtomicOrThrow(file, bytes.get());
+        } catch (IOException e) {
+            Logger.getLogger(ConfigWriter.class.getName()).log(Level.SEVERE, "Failed to write config file " + file, e);
+        }
+    };
+
     enum WriteOutcome {
         WRITTEN,
         SUPERSEDED,

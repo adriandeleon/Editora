@@ -336,11 +336,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
     private String currentEditorThemeCss;
 
+    /** The app-wide recent-files list ({@code SharedConfig}); the search/agent histories are read from there too. */
     private RecentFiles recentFiles;
-    /** Persistent Find-in-Files query history (backs the query combo's dropdown). */
-    private com.editora.config.SearchHistory searchHistory;
-    /** Persistent AI Agent chat-session history (backs the resume picker). */
-    private com.editora.config.AgentSessionHistory agentSessionHistory;
     /** The VSCode-style Welcome page, shown in its own tab when no file is open (or via {@code view.welcome}). */
     private WelcomePane welcomePane;
     /** The single open Welcome tab (a non-buffer {@link TabContent} tab), or null when none is open. */
@@ -1040,18 +1037,14 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void setupRecentFiles() {
-        recentFiles = new RecentFiles(config.getConfigDir());
-        searchHistory = new com.editora.config.SearchHistory(config.getConfigDir());
-        agentSessionHistory = new com.editora.config.AgentSessionHistory(config.getConfigDir());
+        recentFiles = config.shared().recentFiles();
         agentCoordinator.protectDirectory(config.getConfigDir()); // the agent never writes the editor's own config
-        searchCoordinator.refreshHistory(); // bind the query combo's dropdown to history
+        searchCoordinator.refreshHistory(); // fill the query combo's dropdown from the shared history
         recentButton.setGraphic(Icons.recent());
         recentButton.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
         recentButton.setTooltip(new Tooltip(tr("tooltip.recent")));
 
-        // Rebuild the dropdown whenever the recent-files list changes.
-        recentFiles.getList().addListener((ListChangeListener<Path>) c -> rebuildRecentMenu());
-        rebuildRecentMenu();
+        rebuildRecentMenu(); // later changes arrive through sharedHistoryChanged()
 
         setupButton(clearRecentButton, Icons.trash(), tr("tooltip.clearRecent"), "file.clearRecent");
     }
@@ -1377,15 +1370,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         // The projects index is shared across all windows (one source of truth), so use the shared one.
         projects = config.projects();
         projectPicker = new QuickOpen<>(
-                "Switch Project",
-                "Type to filter projects…",
+                tr("project.picker.title"),
+                tr("project.picker.prompt"),
                 this::projectsWithNoProject,
                 Project::name,
-                p -> p.id().isEmpty() ? "global session" : p.root(),
+                p -> p.id().isEmpty() ? tr("project.picker.globalSession") : p.root(),
                 this::switchToProject);
         // Keyboard "Open Project Folder" — mirrors the file finder, but picks a directory.
         navigation.folderFinder =
-                new FileFinder(navigation::finderStartDir, this::openProjectRoot, true, "Open Project Folder");
+                new FileFinder(navigation::finderStartDir, this::openProjectRoot, true, tr("project.openFolder.title"));
         // Which project this window edits (and its session file) is set by WindowManager via
         // setWindowContext(); the global window just keeps the default workspace-state.json.
         refreshProjectPanelList();
@@ -1771,6 +1764,17 @@ public class MainController implements com.editora.mcp.McpBridge {
                 ? List.of()
                 : RecentFiles.showable(
                         recentFiles.getList(), com.editora.vfs.Vfs::isLocal, java.nio.file.Files::exists);
+    }
+
+    /** A shared history list changed (in any window): refresh this window's recent menu and query dropdown. */
+    void sharedHistoryChanged() {
+        rebuildRecentMenu();
+        searchCoordinator.refreshHistory();
+    }
+
+    /** Brings this window's Settings window (if showing) in line with preferences changed in another window. */
+    void syncSettingsWindow() {
+        settingsWindow.syncAll();
     }
 
     private void rebuildRecentMenu() {
@@ -2267,7 +2271,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void stageAll() {
-                git.gitOp("Staged all changes", "add", "-A");
+                git.gitOp(tr("status.git.stagedAll"), "add", "-A");
             }
 
             @Override
@@ -6429,14 +6433,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                                     historyCoordinator.recordDurably(file, content, "replace-in-files", completion),
                             file -> config.shared().documentWrites().begin(file)),
                     new SearchCoordinator.Persistence(
-                            query -> {
-                                if (searchHistory != null) {
-                                    searchHistory.add(query);
-                                }
-                            },
-                            () -> searchHistory != null
-                                    ? searchHistory.getList()
-                                    : javafx.collections.FXCollections.observableArrayList(),
+                            query -> config.shared().searchHistory().add(query),
+                            () -> config.shared().searchHistory().getList(),
                             found -> {
                                 if (settingsWindow != null) {
                                     settingsWindow.syncRipgrepStatus(found);
@@ -6942,16 +6940,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void rememberSession(
                 String sessionId, String cwd, String candidateLabel, long updatedAt, String agentId) {
-            if (agentSessionHistory != null) {
-                agentSessionHistory.remember(sessionId, cwd, candidateLabel, updatedAt, agentId);
-            }
+            config.shared().agentSessions().remember(sessionId, cwd, candidateLabel, updatedAt, agentId);
         }
 
         @Override
         public javafx.collections.ObservableList<com.editora.config.AgentSessionHistory.Entry> sessionHistory() {
-            return agentSessionHistory != null
-                    ? agentSessionHistory.getList()
-                    : javafx.collections.FXCollections.observableArrayList();
+            return config.shared().agentSessions().getList();
         }
     });
 
@@ -8979,7 +8973,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             ignore.setDisable(st != com.editora.git.GitFileStatus.UNTRACKED); // ignore = for new (untracked) files
             // Save is a no-op for an unchanged, on-disk file; untitled/dirty buffers can always save.
             save.setDisable(hasPath && !buffer.isDirty());
-            pin.setText(pinned.contains(tab) ? "Unpin Tab" : "Pin Tab");
+            pin.setText(tr(pinned.contains(tab) ? "menu.unpin" : "menu.pin"));
         });
         tab.setContextMenu(menu);
     }

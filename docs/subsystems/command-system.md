@@ -170,11 +170,14 @@ every window's `KeyDispatcher`. Switching the keymap (Settings → Keymaps picke
 `WindowManager.reloadSharedKeymap()`, which rebuilds the one instance and re-applies overrides:
 
 ```java
-keymap.loadNamed(settings.getKeymap());
-keymap.applyOverrides(settings.getKeybindings());
-// then, if plugins are on, each enabled plugin's manifest.keymap
+KeymapLayers.rebuild(keymap, settings.getKeymap(), pluginKeymaps, userOverrides);
+// base keymap → user overrides → each enabled plugin's manifest.keymap → the user's bindings again
 broadcastSettingsApplied();
 ```
+
+The user's own bindings are applied last so a plugin cannot take back a chord the user bound; the
+user's *unbind* entries are not re-applied, so a plugin may still use a chord the user only freed.
+`PluginCoordinator.applyPlugins` ends the same way at startup.
 
 Because every dispatcher reads the same instance, the switch is instant with no restart; a stale
 mid-chord prefix in any dispatcher self-cancels on the next key. The broadcast lets each window

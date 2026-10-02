@@ -240,6 +240,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inline code, and its fixer no longer turns a tab-indented code line into a heading or leaves part of a
   trailing `...`. systemd `OnCalendar` accepts a time zone and `Mon-Fri`, the Dockerfile preview shows the
   real base image after `FROM --platform=…`, and `.editorconfig` `unset` clears the inherited value.
+- A mistyped value in `settings.json` (for example `"showMinimap": "yes"`) no longer resets every setting
+  after it, including key bindings and API keys. Only that value falls back to its default, the file as
+  written is kept as `settings.json.corrupt.bak`, and the first window reports which values were reset.
+  Tab size, font size and text zoom are clamped to their valid ranges on load, so `"tabSize": 0` can no
+  longer break indentation commands.
+
+- A settings file whose `schemaVersion` line was removed is no longer migrated from scratch, which
+  turned Projects back on, re-added removed TODO keywords and toolbar buttons, and on macOS replaced the
+  Cmd key-binding overrides. A config file from a newer Editora that cannot be backed up is now left
+  untouched for the session instead of being overwritten with defaults, and the status bar says so.
+
+- A blank author name stays "follow the OS user": it was saved as the current user name on the first
+  save. The unused `ijhttpCommand` setting is gone.
+
+- Settings toggled from the command palette or a key binding now apply in every open window, not just
+  the one the command ran in.
+
+- Recent files, Find in Files history and AI Agent sessions are shared by all windows. Each window used
+  to keep its own copy and rewrite the whole file, so the last window to save discarded the others'
+  entries. Remote (SFTP) recent files are no longer dropped from the list on restart.
+
+- Translations: apostrophes are no longer doubled or dropped (French and Italian palette titles and
+  messages, English "isn't"), line numbers, ports, pull-request numbers and exit codes are no longer
+  digit-grouped ("Line 12,345"), two messages that showed their internal key now have text, and the
+  remaining English-only picker titles, prompts and labels are translated. Unused strings were removed.
+
+- A key binding you assign is no longer overridden by a plugin that binds the same chord, and two
+  projects whose folders produce the same internal id no longer share a session.
 
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the
