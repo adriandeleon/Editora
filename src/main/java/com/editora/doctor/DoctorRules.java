@@ -39,6 +39,19 @@ public final class DoctorRules {
         return major >= 1 ? DoctorStatus.WARN : DoctorStatus.MISSING;
     }
 
+    /**
+     * What blocks Python debugging, or {@code ""} when nothing does. The debugger launches debugpy through
+     * the configured interpreter (a located debugpy bundle only goes on its {@code PYTHONPATH}), so health
+     * is the interpreter importing it — a located bundle alone proves nothing. When the import fails, the
+     * missing piece is the interpreter itself if it won't launch, else debugpy.
+     */
+    public static String debugpyBlocker(boolean importable, boolean interpreterRuns, String interpreter) {
+        if (importable) {
+            return "";
+        }
+        return interpreterRuns ? "debugpy" : interpreter;
+    }
+
     /** The first non-blank line of {@code out}, else of {@code err}, else {@code ""} — the version line. */
     public static String firstLine(String out, String err) {
         String line = firstNonBlankLine(out);

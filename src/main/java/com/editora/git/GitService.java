@@ -120,13 +120,21 @@ public final class GitService {
 
     /** Sets the git command/path (whitespace-tokenized); blank ⇒ resolve {@code git} on PATH. */
     public void setCommand(String command) {
-        List<String> next = command == null || command.isBlank()
-                ? List.of("git")
-                : List.copyOf(Arrays.asList(command.trim().split("\\s+")));
+        List<String> next = commandFor(command);
         if (!next.equals(GIT_CMD)) {
             GIT_CMD = next;
             gitAvailable = null; // re-probe with the new command
         }
+    }
+
+    /**
+     * The argv prefix for a configured git command/path: whitespace-tokenized, blank ⇒ {@code ["git"]}.
+     * Public so the Doctor screen checks exactly the command this service runs.
+     */
+    public static List<String> commandFor(String command) {
+        return command == null || command.isBlank()
+                ? List.of("git")
+                : List.copyOf(Arrays.asList(command.trim().split("\\s+")));
     }
 
     /**

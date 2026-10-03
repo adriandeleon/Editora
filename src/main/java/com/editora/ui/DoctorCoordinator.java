@@ -18,6 +18,7 @@ import com.editora.doctor.DoctorProbes;
 import com.editora.doctor.DoctorRules;
 import com.editora.doctor.DoctorService;
 import com.editora.doctor.DoctorStatus;
+import com.editora.git.GitService;
 import com.editora.install.InstallCatalog;
 import com.editora.process.ElevatedSave;
 import com.editora.run.RunService;
@@ -148,12 +149,11 @@ final class DoctorCoordinator {
 
         // Version control -------------------------------------------------------------------------
         boolean gitOn = ops.gitFeatureEnabled();
-        DoctorCheck git = DoctorCheck.checking("git", "vcs", "Git", "git").withSettings("git");
+        List<String> gitCmd = GitService.commandFor(s.getGitPath());
+        DoctorCheck git = DoctorCheck.checking("git", "vcs", "Git", String.join(" ", gitCmd))
+                .withSettings("git");
         if (gitOn) {
             specs.add(probe(git, base -> {
-                List<String> gitCmd = s.getGitPath() == null || s.getGitPath().isBlank()
-                        ? List.of("git")
-                        : List.of(s.getGitPath().trim().split("\\s+"));
                 DoctorProbes.Presence p = DoctorProbes.version(gitCmd);
                 return p.present() ? base.ok(p.version()) : base.missing("doctor.tip.missing", gitCmd.get(0));
             }));
@@ -202,7 +202,8 @@ final class DoctorCoordinator {
                 .withSettings("mermaid");
         if (s.isMermaidSupport()) {
             specs.add(versionedTool(mmdc, mmdcCmd, "mmdc"));
-            specs.add(versionedTool(maid, maidCmd, "maid"));
+            // The linter is optional: without it diagrams still render, only live linting is off.
+            specs.add(optionalVersionedTool(maid, maidCmd, "doctor.tip.maidOptional"));
         } else {
             specs.add(terminal(mmdc.disabled()));
         }
@@ -274,12 +275,21 @@ final class DoctorCoordinator {
                         .withSettings("debug")
                         .withInstall(DoctorCheck.Install.LANG, InstallCatalog.Lang.PYTHON.name());
                 specs.add(probe(debugpy, base -> {
-                    var located = DebugAdapterLocator.locateDebugpy("", home);
-                    if (located.isPresent()) {
-                        return base.ok(located.get().toString());
+                    if (py.isEmpty()) {
+                        return base.missing("doctor.tip.missing", "python3");
                     }
-                    boolean importable = !py.isEmpty() && DoctorProbes.succeeds(withArgs(py, "-c", "import debugpy"));
-                    return importable ? base.ok("import debugpy") : base.missing("doctor.tip.missing", "debugpy");
+                    // The same test DapManager.probeDebugpy runs: the configured interpreter must import
+                    // debugpy, with any located bundle on PYTHONPATH (finding the bundle alone isn't enough).
+                    Path dir = DebugAdapterLocator.locateDebugpy("", home).orElse(null);
+                    boolean importable = DoctorProbes.succeeds(
+                            withArgs(py, "-c", "import debugpy"), DoctorProbes.pythonPathWith(dir));
+                    boolean interpreterRuns =
+                            importable || DoctorProbes.version(py).present();
+                    String blocker = DoctorRules.debugpyBlocker(importable, interpreterRuns, py.get(0));
+                    if (!blocker.isEmpty()) {
+                        return base.missing("doctor.tip.missing", blocker);
+                    }
+                    return base.ok(dir != null ? dir.toString() : "import debugpy");
                 }));
             }
             if (s.isJsDebugEnabled()) {
@@ -308,7 +318,9 @@ final class DoctorCoordinator {
         // Standalone Java/Python/Make runs work without LSP; Bash Run still follows its LSP gate.
         String selectedJava = com.editora.run.JdkToolchain.javaExecutable(s.getMavenJdkHome());
         String javaExecutable = selectedJava.isBlank() ? "java" : selectedJava;
-        DoctorCheck java = DoctorCheck.checking("run.java", "run", "Java", javaExecutable);
+        // The JDK is the Build Tools page's Maven JDK, so that is where "Settings…" leads.
+        DoctorCheck java =
+                DoctorCheck.checking("run.java", "run", "Java", javaExecutable).withSettings("buildTools");
         specs.add(probe(java, base -> {
             String out = DoctorProbes.output(List.of(javaExecutable, "-version"));
             int major = RunService.javaMajorOf(out);
@@ -406,6 +418,15 @@ final class DoctorCoordinator {
         return probe(placeholder, base -> {
             DoctorProbes.Presence p = DoctorProbes.version(cmd);
             return p.present() ? base.ok(p.version()) : base.missing("doctor.tip.missing", toolName);
+        });
+    }
+
+    /** A tool whose absence only degrades its feature: present + version, else a WARN carrying {@code tipKey}. */
+    private static DoctorService.CheckSpec optionalVersionedTool(
+            DoctorCheck placeholder, List<String> cmd, String tipKey) {
+        return probe(placeholder, base -> {
+            DoctorProbes.Presence p = DoctorProbes.version(cmd);
+            return p.present() ? base.ok(p.version()) : base.warn("", tipKey);
         });
     }
 
