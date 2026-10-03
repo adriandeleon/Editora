@@ -62,16 +62,18 @@ class QuitAllWindowsFxTest {
         // Open a file in window B only.
         Path file = tmp.resolve("in-window-b.txt");
         Files.writeString(file, "work in the other window\n");
-        FxTestSupport.runOnFx(() -> {
+        ConfigManager configB = FxTestSupport.field(b, "config");
+        WorkspaceState stateB = configB.getWorkspaceState();
+        // Adding a tab schedules a session capture for the next FX pulse, so "not persisted yet" only holds
+        // until then: read it in the same FX task as the add, not from this thread racing that pulse.
+        boolean unpersistedAfterAdd = FxTestSupport.callOnFx(() -> {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
             buffer.setContent("work in the other window\n");
             FxTestSupport.call(b, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);
+            return stateB.getOpenFiles().isEmpty();
         });
-
-        ConfigManager configB = FxTestSupport.field(b, "config");
-        WorkspaceState stateB = configB.getWorkspaceState();
-        assertTrue(stateB.getOpenFiles().isEmpty(), "B's session hasn't been persisted yet");
+        assertTrue(unpersistedAfterAdd, "B's session hasn't been persisted yet");
 
         // Stand in for a discovered plugin loader. Quit must close the shared manager after stopping every
         // window's plugin instances; Platform.exit() does not run the ordinary Stage close handlers.
