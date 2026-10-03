@@ -482,10 +482,20 @@ public final class DiffViewerPane implements TabContent {
     }
 
     public boolean matchesEditableText(String text) {
-        String baseline = resultEditing && resultBaselineText != null
+        return java.util.Objects.equals(editableBaselineText(), text);
+    }
+
+    /**
+     * The exact editable-side text every apply this pane delivers was computed from: the displayed side's
+     * text, or the Result draft's baseline while the Result editor is open. A hunk or line apply rebuilds the
+     * whole document from the displayed rows, so it is only valid while the local file still equals this —
+     * which is what the controller must compare against, not its own record of the last text it wrote (that
+     * runs ahead of the pane until the re-diff lands).
+     */
+    public String editableBaselineText() {
+        return resultEditing && resultBaselineText != null
                 ? resultBaselineText
                 : editableSide == EditableSide.RIGHT ? rightText : leftText;
-        return java.util.Objects.equals(baseline, text);
     }
 
     public boolean hasDirtyResult() {
@@ -988,12 +998,8 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private Button iconButton(Node icon, String tip, Runnable action) {
-        Button b = new Button();
-        b.setGraphic(icon);
-        b.getStyleClass().addAll("flat", "diff-toolbar-button");
-        b.setFocusTraversable(false);
-        b.setTooltip(descriptiveTooltip(tip));
-        b.setOnAction(e -> action.run());
+        Button b = Icons.toolbarButton(icon, tip, action, "flat", "diff-toolbar-button");
+        b.setTooltip(descriptiveTooltip(tip)); // same text as the accessible name, in the diff's tooltip style
         return b;
     }
 
@@ -1882,7 +1888,8 @@ public final class DiffViewerPane implements TabContent {
                                 : tr("diff.accessibleUnified"));
         area.setEditable(false);
         area.setFocusTraversable(true);
-        area.setShowCaret(org.fxmisc.richtext.Caret.CaretVisibility.OFF);
+        // No setShowCaret(OFF): a read-only area already hides its caret under the default AUTO, and OFF/ON
+        // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         area.setWrapText(wrapLines);
         area.setStyle(fontStyle);
         return area;

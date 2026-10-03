@@ -11,6 +11,27 @@ import java.util.regex.Pattern;
  * {@code /}), {@code **} (across {@code /}), {@code ?}, {@code [seq]}/{@code [!seq]}, {@code {a,b,c}}, and
  * {@code {n1..n2}} numeric ranges. A glob with no {@code /} matches the basename in any directory; a leading
  * {@code /} anchors it to the {@code .editorconfig} directory.
+ *
+ * <p><b>A section glob is untrusted input.</b> An {@code .editorconfig} comes with whatever repository was
+ * opened, and its sections are matched on the JavaFX thread as a file opens. A backtracking regex compiled
+ * from {@code [*a*a*a*a*a*a*a*a*b]} or {@code [{a,a}{a,a}{a,a}…]} takes exponential time on a non-matching
+ * name — a frozen window from opening one file. So the translation is bounded on every axis that can blow
+ * up, and a section that exceeds a bound is <em>ignored</em> (it simply does not match), never trusted:
+ *
+ * <ul>
+ *   <li>the glob's length ({@link #MAX_GLOB_LENGTH}, the spec's own limit), its wildcard count
+ *       ({@link #MAX_WILDCARDS}) and brace nesting ({@link #MAX_BRACE_DEPTH});
+ *   <li>consecutive wildcards collapse ({@code ***} ≡ {@code **}, {@code **}{@code /**}{@code /} ≡
+ *       {@code **}{@code /}), so a run costs one loop, not one per star;
+ *   <li>the compiled regex's size ({@link #MAX_REGEX_LENGTH});
+ *   <li>and — the actual guarantee — the <em>work</em> a match may do: the input is read through a counting
+ *       {@link CharSequence} that aborts the match once it has taken more steps than any ordinary glob
+ *       needs. A {@link Budget} shared across one file's sections bounds the total as well, so a thousand
+ *       individually-cheap hostile sections cannot add up either.
+ * </ul>
+ *
+ * <p>Ordinary globs ({@code *.md}, {@code **}{@code /*.{js,ts}}, {@code [!a-c]*}, {@code file{1..9}.txt}) sit
+ * orders of magnitude below every bound and behave exactly as the spec says.
  */
 public final class EditorConfigGlob {
 
@@ -19,10 +40,66 @@ public final class EditorConfigGlob {
 
     private static final Pattern NUM_RANGE = Pattern.compile("(-?\\d+)\\.\\.(-?\\d+)");
 
+    /** Longest section name honoured (the EditorConfig specification's limit). */
+    static final int MAX_GLOB_LENGTH = 4096;
+
+    /** Most {@code *} / {@code **} wildcards (after collapsing runs) a section may use. Real ones use 1–3. */
+    static final int MAX_WILDCARDS = 16;
+
+    /** Deepest {@code {a,{b,{c}}}} nesting translated (also bounds this class's own recursion). */
+    static final int MAX_BRACE_DEPTH = 8;
+
+    /** Largest regex a glob may expand to (numeric ranges and nested alternations multiply). */
+    static final int MAX_REGEX_LENGTH = 100_000;
+
+    /** Character reads one section's match may take. Ordinary globs need a few hundred; the largest numeric
+     *  range behind a wildcard needs tens of thousands; exponential backtracking needs billions. */
+    static final long MATCH_BUDGET = 500_000;
+
+    /** Work one whole {@code .editorconfig} may spend matching a path, summed over its sections. */
+    static final long FILE_BUDGET = 4_000_000;
+
+    private static final String ANY_DIRS = "(?:.*/)?";
+    private static final String ANY = ".*";
+
     private EditorConfigGlob() {}
 
+    /**
+     * A shared allowance of matching work (regex characters compiled + input characters read). One instance
+     * per {@code .editorconfig} per resolved path; once it runs out the remaining sections do not match.
+     */
+    public static final class Budget {
+        private long remaining;
+
+        public Budget() {
+            this(FILE_BUDGET);
+        }
+
+        Budget(long units) {
+            this.remaining = units;
+        }
+
+        boolean exhausted() {
+            return remaining <= 0;
+        }
+    }
+
+    /** Thrown (and caught here) when a glob or a match exceeds a bound: the section is ignored. */
+    private static final class Rejected extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        Rejected() {
+            super(null, null, false, false); // control flow only: no message, no stack trace
+        }
+    }
+
     public static boolean matches(String glob, String relPath) {
-        if (glob == null || relPath == null) {
+        return matches(glob, relPath, new Budget());
+    }
+
+    /** As {@link #matches(String, String)}, drawing on (and charging) a {@link Budget} shared by the caller. */
+    public static boolean matches(String glob, String relPath, Budget budget) {
+        if (glob == null || relPath == null || glob.length() > MAX_GLOB_LENGTH || budget.exhausted()) {
             return false;
         }
         String g = glob;
@@ -31,13 +108,58 @@ public final class EditorConfigGlob {
         } else if (g.startsWith("/")) {
             g = g.substring(1); // leading slash → anchored to the .editorconfig directory
         }
+        StringBuilder re = new StringBuilder("^");
+        Steps input = null;
         try {
-            StringBuilder re = new StringBuilder("^");
-            appendPattern(re, g); // also inside the try: a malformed glob must never throw out of matches()
+            // also inside the try: a malformed glob must never throw out of matches()
+            appendPattern(re, g, 0, new int[1]);
             re.append('$');
-            return Pattern.compile(re.toString()).matcher(relPath).matches();
-        } catch (RuntimeException e) {
-            return false;
+            // An ordinary glob reads the path a handful of times over; anything far beyond that is backtracking.
+            long allowance = Math.min(budget.remaining - re.length(), MATCH_BUDGET);
+            if (allowance <= 0) {
+                return false;
+            }
+            input = new Steps(relPath, allowance);
+            return Pattern.compile(re.toString()).matcher(input).matches();
+        } catch (RuntimeException | StackOverflowError e) {
+            return false; // malformed, over a bound, or abandoned mid-match — the section is ignored
+        } finally {
+            budget.remaining -= re.length() + (input == null ? 0 : input.taken);
+        }
+    }
+
+    /** The match input, counting every character the regex engine reads and giving up past {@code limit}. */
+    private static final class Steps implements CharSequence {
+        private final String text;
+        private final long limit;
+        private long taken;
+
+        Steps(String text, long limit) {
+            this.text = text;
+            this.limit = limit;
+        }
+
+        @Override
+        public char charAt(int index) {
+            if (++taken > limit) {
+                throw new Rejected();
+            }
+            return text.charAt(index);
+        }
+
+        @Override
+        public int length() {
+            return text.length();
+        }
+
+        @Override
+        public CharSequence subSequence(int start, int end) {
+            return text.subSequence(start, end);
+        }
+
+        @Override
+        public String toString() {
+            return text;
         }
     }
 
@@ -50,24 +172,41 @@ public final class EditorConfigGlob {
         }
     }
 
-    private static void appendPattern(StringBuilder re, String g) {
+    /**
+     * Appends the regex for {@code g}. {@code wildcards[0]} counts the loops emitted so far across the whole
+     * glob (after collapsing, so {@code ***} and {@code **}{@code /**}{@code /} count once).
+     */
+    private static void appendPattern(StringBuilder re, String g, int depth, int[] wildcards) {
         int n = g.length();
         int i = 0;
         while (i < n) {
+            if (re.length() > MAX_REGEX_LENGTH) {
+                throw new Rejected();
+            }
             char c = g.charAt(i);
             switch (c) {
                 case '*' -> {
-                    if (i + 1 < n && g.charAt(i + 1) == '*') {
-                        if (i + 2 < n && g.charAt(i + 2) == '/') {
-                            re.append("(?:.*/)?"); // `**/` matches any number of directories, including none
-                            i += 3;
-                        } else {
-                            re.append(".*");
-                            i += 2;
-                        }
-                    } else {
-                        re.append("[^/]*");
+                    int run = 1;
+                    while (i + run < n && g.charAt(i + run) == '*') {
+                        run++;
+                    }
+                    String loop;
+                    if (run == 1) {
+                        loop = "[^/]*";
                         i++;
+                    } else if (run == 2 && i + 2 < n && g.charAt(i + 2) == '/') {
+                        loop = ANY_DIRS; // `**/` matches any number of directories, including none
+                        i += 3;
+                    } else {
+                        loop = ANY; // `***`, `****`… are `**`: one loop however long the run
+                        i += run;
+                    }
+                    // `**/**/` is `**/`, `**` twice is `**`: don't stack loops that mean the same thing
+                    if (run == 1 || !endsWith(re, loop)) {
+                        if (++wildcards[0] > MAX_WILDCARDS) {
+                            throw new Rejected();
+                        }
+                        re.append(loop);
                     }
                 }
                 case '?' -> {
@@ -90,7 +229,7 @@ public final class EditorConfigGlob {
                         re.append("\\{");
                         i++;
                     } else {
-                        appendBrace(re, g.substring(i + 1, close));
+                        appendBrace(re, g.substring(i + 1, close), depth + 1, wildcards);
                         i = close + 1;
                     }
                 }
@@ -122,7 +261,15 @@ public final class EditorConfigGlob {
         re.append(']');
     }
 
-    private static void appendBrace(StringBuilder re, String inner) {
+    private static boolean endsWith(StringBuilder re, String suffix) {
+        int at = re.length() - suffix.length();
+        return at >= 0 && re.indexOf(suffix, at) == at;
+    }
+
+    private static void appendBrace(StringBuilder re, String inner, int depth, int[] wildcards) {
+        if (depth > MAX_BRACE_DEPTH) {
+            throw new Rejected();
+        }
         Matcher m = NUM_RANGE.matcher(inner);
         if (m.matches()) {
             // NUM_RANGE accepts any digit count, so a bound past Long.MAX (e.g. `{1..99999999999999999999}` in
@@ -138,7 +285,7 @@ public final class EditorConfigGlob {
         if (parts.size() == 1) {
             // A single alternative with no comma isn't a brace expansion — treat literally (e.g. `{foo}`).
             re.append("\\{");
-            appendPattern(re, inner);
+            appendPattern(re, inner, depth, wildcards);
             re.append("\\}");
             return;
         }
@@ -147,7 +294,7 @@ public final class EditorConfigGlob {
             if (k > 0) {
                 re.append('|');
             }
-            appendPattern(re, parts.get(k));
+            appendPattern(re, parts.get(k), depth, wildcards);
         }
         re.append(')');
     }

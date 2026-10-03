@@ -3,6 +3,8 @@ package com.editora.command;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TextInputKeymapTest {
 
@@ -50,5 +52,29 @@ class TextInputKeymapTest {
         assertEquals(3, TextInputKeymap.lineUp(TEXT, 8));
         // first line → start of text
         assertEquals(0, TextInputKeymap.lineUp(TEXT, 2));
+    }
+
+    // --- KEY_TYPED swallow rule (macOS Option-composed characters must be typable) ---
+
+    @Test
+    void anOptionTypedCharacterIsNeverSwallowedOnItsOwn() {
+        // German/Spanish Mac layouts type @ [ ] { } | \ ~ with Option. No handled press, no Command/Control:
+        // it is text, on macOS as everywhere else. (The old rule dropped every Option character on macOS.)
+        assertFalse(TextInputKeymap.swallowTyped(false, true, false, false));
+        assertFalse(TextInputKeymap.swallowTyped(false, false, false, false));
+    }
+
+    @Test
+    void theCharacterPairedWithAHandledPressIsSwallowed() {
+        assertTrue(TextInputKeymap.swallowTyped(true, true, false, false)); // Option-f ran nav.wordForward: no "ƒ"
+        assertTrue(TextInputKeymap.swallowTyped(true, false, false, false));
+    }
+
+    @Test
+    void commandAndControlByProductsAreSwallowedOnMacOnly() {
+        assertTrue(TextInputKeymap.swallowTyped(false, true, true, false));
+        assertTrue(TextInputKeymap.swallowTyped(false, true, false, true));
+        // Elsewhere Ctrl+Alt is AltGr — a character typed with Control down can be real text.
+        assertFalse(TextInputKeymap.swallowTyped(false, false, false, true));
     }
 }

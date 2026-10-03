@@ -56,6 +56,14 @@ class BuildCoordinatorFxTest {
         public void setStatus(String message) {
             lastStatus = message;
         }
+
+        /** The file whose project drives detection, when a test needs one below the project root. */
+        com.editora.editor.EditorBuffer active;
+
+        @Override
+        public com.editora.editor.EditorBuffer activeBuffer() {
+            return active;
+        }
     }
 
     private static final class FakeOps implements BuildCoordinator.Ops {
@@ -412,6 +420,48 @@ class BuildCoordinatorFxTest {
         assertEquals(0, ops.trustCount, "declining must not record trust");
         assertEquals(0, ops.openConsoleCount, "declining must not run anything");
         assertEquals(tr("status.build.untrusted", disp(BuildTool.MAVEN)), host.lastStatus);
+    }
+
+    /**
+     * A module of a multi-module build: the nearest pom.xml is the module's, the wrapper is the project
+     * root's. The build must launch that wrapper (not fall back to {@code mvn} on PATH), and the trust
+     * prompt must be about the folder that ships the script actually run — the project root.
+     */
+    @Test
+    void aModuleBuildUsesAndGatesOnTheWrapperAtTheProjectRoot(@TempDir Path project) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = project;
+        ops.promptAnswer = false;
+        Files.writeString(project.resolve("pom.xml"), VALID_POM);
+        writeMavenWrapper(project);
+        Path module = Files.createDirectories(project.resolve("services").resolve("billing"));
+        Files.writeString(module.resolve("pom.xml"), VALID_POM);
+        Path source = Files.writeString(module.resolve("App.java"), "class App {}\n");
+        host.active = FxTestSupport.callOnFx(() -> {
+            com.editora.editor.EditorBuffer b = new com.editora.editor.EditorBuffer();
+            b.setPath(source);
+            return b;
+        });
+        try {
+            BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+            FxTestSupport.runOnFx(c::refresh);
+            waitUntil(
+                    () -> module.equals(c.markerRoot()) && c.detectedLabel() != null,
+                    "the module's pom.xml roots the tool");
+
+            FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+
+            assertEquals(1, ops.promptCount, "the root's wrapper is what would run, so it must be consented to");
+            assertEquals(project, ops.promptedRoot, "trust is asked about the folder that ships the wrapper");
+            assertEquals(project, ops.promptedWrapper.getParent());
+            assertTrue(ops.promptedWrapper.getFileName().toString().startsWith("mvnw"));
+            assertEquals(0, ops.openConsoleCount, "declined: nothing runs, and no quiet fallback to mvn");
+        } finally {
+            com.editora.editor.EditorBuffer active = host.active;
+            FxTestSupport.runOnFx(active::dispose);
+        }
     }
 
     @Test

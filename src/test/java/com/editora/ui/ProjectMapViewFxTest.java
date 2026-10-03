@@ -337,6 +337,60 @@ class ProjectMapViewFxTest {
         }
     }
 
+    /** White over the accent is 1.68:1 in Editora Dark: the selected node's ink is the theme's on-emphasis colour. */
+    @Test
+    void selectedNodeInkFollowsTheThemesOnEmphasisColour() throws Exception {
+        Path javaFile = Files.writeString(root.resolve("Main.java"), "class Main {}")
+                .toAbsolutePath()
+                .normalize();
+        List<ProjectMapModel.Entry> entries = ProjectMapModel.loadVisible(root, Set.of(root), false);
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                Scene scene = new Scene(mapView, 500, 300);
+                scene.getStylesheets()
+                        .add(ProjectMapViewFxTest.class
+                                .getResource("/com/editora/styles/app.css")
+                                .toExternalForm());
+                // A deliberately unmistakable on-emphasis ink, as a dark theme would supply a dark one.
+                mapView.setStyle("-color-fg-emphasis: #ff00ff;");
+                mapView.applyCss();
+                mapView.resize(500, 300);
+                mapView.layout();
+                mapView.setRememberedFlow("LEFT_TO_RIGHT", ignored -> {});
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(
+                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
+                FxTestSupport.call(surface, "setSelected", new Class<?>[] {Path.class}, javaFile);
+                mapView.applyCss();
+                mapView.layout();
+
+                javafx.scene.shape.Rectangle probe = FxTestSupport.field(surface, "onAccentProbe");
+                assertEquals(javafx.scene.paint.Color.web("#ff00ff"), probe.getFill());
+                Object box = boxFor(surface, javaFile);
+                Image shot = surface.snapshot(null, null);
+                int x0 = (int) ((Number) FxTestSupport.call(box, "x", new Class<?>[] {})).doubleValue();
+                int y0 = (int) ((Number) FxTestSupport.call(box, "y", new Class<?>[] {})).doubleValue();
+                int w = (int) ((Number) FxTestSupport.call(box, "width", new Class<?>[] {})).doubleValue();
+                int h = (int) ((Number) FxTestSupport.call(box, "height", new Class<?>[] {})).doubleValue();
+                boolean ink = false;
+                boolean white = false;
+                for (int y = Math.max(0, y0); y < Math.min(shot.getHeight(), y0 + h); y++) {
+                    for (int x = Math.max(0, x0 + 28); x < Math.min(shot.getWidth(), x0 + w); x++) {
+                        javafx.scene.paint.Color c = shot.getPixelReader().getColor(x, y);
+                        ink |= c.getRed() > 0.85 && c.getGreen() < 0.3 && c.getBlue() > 0.85;
+                        white |= c.getRed() > 0.97 && c.getGreen() > 0.97 && c.getBlue() > 0.97;
+                    }
+                }
+                assertTrue(ink, "the selected node's label is drawn in the on-emphasis ink");
+                assertFalse(white, "nothing on the selected node is hardcoded white");
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
     @Test
     void oneClickExpandsAndCollapsesFolderNodes() throws Exception {
         Path project =

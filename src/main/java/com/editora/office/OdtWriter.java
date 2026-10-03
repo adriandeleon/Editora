@@ -16,13 +16,16 @@ import javax.imageio.ImageIO;
 import com.editora.editor.MarkdownRenderer;
 import com.editora.editor.MathImages;
 import com.editora.editor.MathSpans;
+import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.gfm.tables.TableBlock;
 import org.commonmark.ext.gfm.tables.TableCell;
 import org.commonmark.ext.gfm.tables.TableRow;
+import org.commonmark.ext.task.list.items.TaskListItemMarker;
 import org.commonmark.node.BlockQuote;
 import org.commonmark.node.BulletList;
 import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.Heading;
+import org.commonmark.node.HtmlBlock;
 import org.commonmark.node.Image;
 import org.commonmark.node.IndentedCodeBlock;
 import org.commonmark.node.ListItem;
@@ -71,6 +74,9 @@ public final class OdtWriter {
         b.append(CONTENT_HEAD);
         for (Node n = ast.getFirstChild(); n != null; n = n.getNext()) {
             block(b, n, baseDir, mmdc, images);
+        }
+        for (FootnoteDefinition def : InlineRun.footnotes(ast)) {
+            footnote(b, def, baseDir, mmdc, images);
         }
         b.append(CONTENT_TAIL);
         return b.toString();
@@ -127,6 +133,42 @@ public final class OdtWriter {
             b.append("<text:p text:style-name=\"Horizontal_20_Line\"/>");
         } else if (n instanceof TableBlock t) {
             tableXml(b, t, images);
+        } else if (n instanceof HtmlBlock hb) {
+            // An HTML comment is invisible; other raw HTML is shown as its source, like the preview.
+            if (!MarkdownRenderer.isHtmlComment(hb.getLiteral())) {
+                codeBlock(b, hb.getLiteral());
+            }
+        } else if (n instanceof FootnoteDefinition) {
+            // written at the end of the document by contentXml()
+        } else {
+            // A block type with no dedicated rendering: keep its text rather than dropping it.
+            List<InlineRun> runs = InlineRun.flatten(n);
+            if (runs.stream().anyMatch(r -> !r.text().isBlank())) {
+                paragraph(b, "Standard", runs, images);
+            }
+        }
+    }
+
+    /** A footnote definition: its {@code [label]} marker leading the first paragraph, then any further blocks. */
+    private static void footnote(
+            StringBuilder b, FootnoteDefinition def, Path baseDir, List<String> mmdc, List<Embedded> images) {
+        List<InlineRun> marker = List.of(InlineRun.plain(InlineRun.footnoteMarker(def.getLabel()) + " "));
+        boolean first = true;
+        for (Node c = def.getFirstChild(); c != null; c = c.getNext()) {
+            if (first && c instanceof Paragraph p) {
+                List<InlineRun> runs = new ArrayList<>(marker);
+                runs.addAll(InlineRun.flatten(p));
+                paragraph(b, "Standard", runs, images);
+            } else {
+                if (first) {
+                    paragraph(b, "Standard", marker, images);
+                }
+                block(b, c, baseDir, mmdc, images);
+            }
+            first = false;
+        }
+        if (first) {
+            paragraph(b, "Standard", marker, images); // an empty definition still shows its label
         }
     }
 
@@ -157,13 +199,22 @@ public final class OdtWriter {
                 continue;
             }
             b.append("<text:list-item>");
+            String task = null; // "- [x] done" keeps its checkbox, in front of the item's first paragraph
             for (Node c = item.getFirstChild(); c != null; c = c.getNext()) {
-                if (c instanceof BulletList nb) {
+                if (c instanceof TaskListItemMarker marker) {
+                    task = marker.isChecked() ? "☑ " : "☐ ";
+                } else if (c instanceof BulletList nb) {
                     listXml(b, nb, false, baseDir, mmdc, images);
                 } else if (c instanceof OrderedList no) {
                     listXml(b, no, true, baseDir, mmdc, images);
                 } else if (c instanceof Paragraph p) {
-                    paragraph(b, "Standard", InlineRun.flatten(p), images);
+                    List<InlineRun> runs = InlineRun.flatten(p);
+                    if (task != null) {
+                        runs = new ArrayList<>(runs);
+                        runs.add(0, InlineRun.plain(task));
+                        task = null;
+                    }
+                    paragraph(b, "Standard", runs, images);
                 } else {
                     block(b, c, baseDir, mmdc, images);
                 }

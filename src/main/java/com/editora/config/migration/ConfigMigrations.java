@@ -3,7 +3,10 @@ package com.editora.config.migration;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -54,7 +57,7 @@ public final class ConfigMigrations {
      */
     public static ObjectNode upgrade(ConfigSchema schema, JsonNode tree, ObjectMapper mapper) {
         int current = schema.currentVersion();
-        int stored = versionOf(tree, schema.assumedLegacyVersion());
+        int stored = versionOf(tree, schema.versionWithoutMarker(tree));
         if (stored > current) {
             throw new NewerThanSupportedException(schema, stored, current);
         }
@@ -83,6 +86,21 @@ public final class ConfigMigrations {
      * this build ⇒ backed up to {@code <name>.v<n>.bak} and {@code defaults} returned.
      */
     public static <T> T readVersioned(Path file, ObjectMapper mapper, T defaults, ConfigSchema schema) {
+        return readVersioned(file, mapper, defaults, schema, problem -> {});
+    }
+
+    /**
+     * As {@link #readVersioned(Path, ObjectMapper, Object, ConfigSchema)}, reporting anything that could not be
+     * read as written to {@code problems} so the caller can tell the user and decide whether the file may be
+     * saved again (see {@link ConfigLoadProblem#mustNotOverwrite}).
+     *
+     * <p>A value of the wrong type (a hand edit such as {@code "showMinimap": "yes"}) is <b>not</b> fatal: that
+     * one top-level property keeps its default and every other property is still read. Jackson's bulk update
+     * stops at the first bad value, which used to leave every later property — key bindings, API keys — at its
+     * default and let the next save write that loss back to disk.
+     */
+    public static <T> T readVersioned(
+            Path file, ObjectMapper mapper, T defaults, ConfigSchema schema, Consumer<ConfigLoadProblem> problems) {
         if (file == null || !Files.isReadable(file)) {
             return defaults;
         }
@@ -92,24 +110,67 @@ public final class ConfigMigrations {
         } catch (IOException e) {
             // Unreadable, or not even valid JSON/TOML. Returning defaults means the next save writes an EMPTY
             // store straight over it — so preserve what's there first (see keepCorrupt).
-            keepCorrupt(file);
+            reportUnreadable(file, problems);
             return defaults;
         }
         if (tree == null || tree.isMissingNode()) {
             return defaults; // an empty file — nothing to preserve
         }
+        ObjectNode migrated;
         try {
-            ObjectNode migrated = upgrade(schema, tree, mapper);
-            return mapper.readerForUpdating(defaults).readValue(migrated);
+            migrated = upgrade(schema, tree, mapper);
         } catch (NewerThanSupportedException e) {
-            backupQuietly(file, e.storedVersion());
+            problems.accept(new ConfigLoadProblem(
+                    file, ConfigLoadProblem.Kind.NEWER_VERSION, List.of(), backupQuietly(file, e.storedVersion())));
             return defaults;
-        } catch (IOException | RuntimeException e) {
-            // Malformed content or a misconfigured migration: fall back to defaults rather than crash — but
-            // keep a copy first, because the very next save overwrites the file.
-            keepCorrupt(file);
+        } catch (RuntimeException e) {
+            // A misconfigured migration: fall back to defaults rather than crash — but keep a copy first,
+            // because the very next save overwrites the file.
+            reportUnreadable(file, problems);
             return defaults;
         }
+        try {
+            return mapper.readerForUpdating(defaults).readValue(migrated);
+        } catch (IOException | RuntimeException bulkFailure) {
+            List<String> skipped = new ArrayList<>();
+            T merged = readPropertyByProperty(mapper, defaults, migrated, skipped);
+            if (!skipped.isEmpty()) {
+                problems.accept(
+                        new ConfigLoadProblem(file, ConfigLoadProblem.Kind.VALUES_SKIPPED, skipped, keepCorrupt(file)));
+            }
+            return merged;
+        }
+    }
+
+    /**
+     * Merges {@code migrated} onto {@code target} one top-level property at a time, so a property whose value
+     * cannot be deserialized is skipped (its name added to {@code skipped}) without affecting the others. Only
+     * used after the bulk update failed; properties that update already applied are simply applied again.
+     */
+    private static <T> T readPropertyByProperty(
+            ObjectMapper mapper, T target, ObjectNode migrated, List<String> skipped) {
+        T merged = target;
+        for (Map.Entry<String, JsonNode> property : migrated.properties()) {
+            ObjectNode single = mapper.createObjectNode();
+            single.set(property.getKey(), property.getValue());
+            try {
+                merged = mapper.readerForUpdating(merged).readValue(single);
+            } catch (IOException | RuntimeException badValue) {
+                skipped.add(property.getKey());
+            }
+        }
+        return merged;
+    }
+
+    private static void reportUnreadable(Path file, Consumer<ConfigLoadProblem> problems) {
+        try {
+            if (!Files.exists(file) || Files.size(file) == 0) {
+                return; // nothing worth keeping, so nothing was lost
+            }
+        } catch (IOException ignored) {
+            // cannot tell — treat it as content worth keeping
+        }
+        problems.accept(new ConfigLoadProblem(file, ConfigLoadProblem.Kind.UNREADABLE, List.of(), keepCorrupt(file)));
     }
 
     /**
@@ -118,33 +179,44 @@ public final class ConfigMigrations {
      * is NEWER than this build understands, and we're about to load defaults over it — so skipping meant a
      * second downgrade overwrote a re-customized config with defaults while the only backup on disk was the
      * stale one from the first downgrade. The user's settings were lost with no copy at all.
+     *
+     * @return the backup's path
      */
-    public static void backup(Path file, int storedVersion) throws IOException {
-        Files.move(file, freeName(file, ".v" + storedVersion + ".bak"));
+    public static Path backup(Path file, int storedVersion) throws IOException {
+        Path target = freeName(file, ".v" + storedVersion + ".bak");
+        Files.move(file, target);
+        return target;
     }
 
     /**
      * Keeps a copy of a config file we could not parse — overwhelmingly a torn write (a crash, a full disk, or
      * a kill mid-save). The caller loads defaults, and the next save writes those defaults over the file, so
      * without this the partially-written bookmarks/notes/projects are gone for good.
+     *
+     * @return the copy's path, or {@code null} when no copy could be made
      */
-    private static void keepCorrupt(Path file) {
+    private static Path keepCorrupt(Path file) {
         try {
-            if (!Files.exists(file) || Files.size(file) == 0) {
-                return; // nothing worth keeping
-            }
             Path kept = freeName(file, ".corrupt.bak");
             Files.copy(file, kept);
             LOG.log(
                     java.util.logging.Level.WARNING,
-                    "Could not parse config file {0} — kept a copy at {1} and loaded defaults",
+                    "Could not read all of config file {0} — kept a copy at {1}",
                     new Object[] {file, kept});
-        } catch (IOException | RuntimeException ignored) {
-            // best effort — we still return defaults
+            return kept;
+        } catch (IOException | RuntimeException e) {
+            LOG.log(java.util.logging.Level.WARNING, "Could not keep a copy of config file {0}: {1}", new Object[] {
+                file, e
+            });
+            return null;
         }
     }
 
-    /** {@code file + suffix}, with a counter appended when that name is already taken. */
+    /**
+     * {@code file + suffix}, with a counter appended when that name is already taken. Once all
+     * {@link #MAX_BACKUPS} names are taken the last one is returned as is; the copy or move then fails with
+     * {@code FileAlreadyExistsException}, which callers report as a failed backup rather than replacing one.
+     */
     private static Path freeName(Path file, String suffix) {
         Path candidate = file.resolveSibling(file.getFileName() + suffix);
         for (int i = 2; Files.exists(candidate) && i <= MAX_BACKUPS; i++) {
@@ -153,11 +225,17 @@ public final class ConfigMigrations {
         return candidate;
     }
 
-    private static void backupQuietly(Path file, int storedVersion) {
+    /** {@link #backup}, returning {@code null} instead of throwing when the file could not be moved aside. */
+    private static Path backupQuietly(Path file, int storedVersion) {
         try {
-            backup(file, storedVersion);
-        } catch (IOException ignored) {
-            // best effort — if we can't back it up we still return defaults and won't overwrite on save
+            return backup(file, storedVersion);
+        } catch (IOException | RuntimeException e) {
+            // The newer file is still in place. The caller reports the failed backup so its owner stops
+            // saving the file for this session (ConfigLoadProblem.mustNotOverwrite) instead of replacing it.
+            LOG.log(java.util.logging.Level.WARNING, "Could not back up newer config file {0}: {1}", new Object[] {
+                file, e
+            });
+            return null;
         }
     }
 
@@ -291,7 +369,9 @@ public final class ConfigMigrations {
      * the same file starts from defaults instead of stale Cmd-chord overrides.
      */
     static ObjectNode splitKeybindings(ObjectNode o, boolean mac) {
-        if (!mac) {
+        if (!mac || o.has("keybindingsMac")) {
+            // Already split (the step is re-run for a current-shape file that lost its schemaVersion marker):
+            // moving again would replace the user's Cmd overrides with the Ctrl map and empty that one.
             return o;
         }
         JsonNode existing = o.get("keybindings");
@@ -365,6 +445,29 @@ public final class ConfigMigrations {
             out.add("toolbar.recent");
         }
         o.set("toolbarLayout", out);
+        return o;
+    }
+
+    /**
+     * v104 → v105 for the settings file: drops two keys that were only ever written by accident or never read.
+     *
+     * <p>{@code authorNameRaw} was not a setting: Jackson serialized the {@code getAuthorNameRaw()} helper
+     * next to {@code authorName}, which itself was written through the <em>resolving</em> getter — so a blank
+     * "follow the OS user" author name was persisted as the OS user name on the first save. Where the junk key
+     * still records that the configured name was blank, the blank is restored; that is the only case the file
+     * proves, so an {@code authorName} that merely equals the OS user name is left alone.
+     *
+     * <p>{@code ijhttpCommand} was never read by any feature (the HTTP client is built in).
+     */
+    static JsonNode retireUnusedSettingsKeys(JsonNode input) {
+        if (!(input instanceof ObjectNode o)) {
+            return input;
+        }
+        JsonNode raw = o.remove("authorNameRaw");
+        if (raw != null && raw.isTextual() && raw.asText().isBlank()) {
+            o.put("authorName", "");
+        }
+        o.remove("ijhttpCommand");
         return o;
     }
 

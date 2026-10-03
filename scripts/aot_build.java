@@ -32,6 +32,9 @@ import java.util.stream.Stream;
 
 public class aot_build {
 
+    /** Installer types whose jpackage wrap is handed {@code --license-file} (see {@code wrapInstaller}). */
+    private static final Set<String> INSTALLERS_WITH_LICENSE_FILE = Set.of("DEB", "RPM", "MSI", "EXE");
+
     public static void main(String[] rawArgs) throws Exception {
         if (rawArgs.length < 8) {
             System.err.println(
@@ -384,6 +387,29 @@ public class aot_build {
                 "--about-url", "https://editora-project.dev"));
         if (t0.equals("DEB")) {
             cmd.addAll(List.of("--linux-deb-maintainer", "editora@editora-project.dev"));
+        }
+        // Ship the licence WITH the installer. Without --license-file no installer carried the MIT text at
+        // all — the .deb's copyright file and the .rpm's License tag fell back to jpackage's defaults and
+        // the MSI never showed it. With it the .deb installs the text as /opt/editora/share/doc/copyright
+        // (checked on a locally wrapped .deb). LICENSE and NOTICE also ride inside the application jar —
+        // see the pom's <resources> — so the image itself always has them.
+        //
+        // Deliberately NOT passed for DMG: there jpackage turns the text into a click-through agreement on
+        // the disk image, a path that cannot be exercised off a Mac and is not worth risking on the legs
+        // whose packaging is already the most fragile. The macOS app still carries both files inside its
+        // runtime image.
+        Path license = Path.of(System.getProperty("user.dir"), "LICENSE");
+        if (INSTALLERS_WITH_LICENSE_FILE.contains(t0)) {
+            if (Files.isRegularFile(license)) {
+                cmd.add("--license-file");
+                cmd.add(license.toString());
+            } else {
+                System.err.println("[aot] no " + license + " — the " + type + " will not carry the licence text");
+            }
+        }
+        if (t0.equals("RPM")) {
+            // The spec's License: tag (jpackage's default is "Unknown"), SPDX id of the LICENSE file above.
+            cmd.addAll(List.of("--linux-rpm-license-type", "MIT"));
         }
         // Without these, a Windows MSI installs to Program Files but creates NO Start Menu entry,
         // NO desktop shortcut, and NO install wizard — so it looks like "nothing installed". Add a

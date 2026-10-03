@@ -52,6 +52,33 @@ class EditorConfigResolveTest {
     }
 
     @Test
+    void unsetClearsTheInheritedValueInsteadOfKeepingIt() throws IOException {
+        write(root, "root = true\n[*]\nindent_style = tab\nindent_size = 4\nend_of_line = crlf\ncharset = latin1\n");
+        Path sub = root.resolve("sub");
+        write(sub, "[*]\nindent_size = unset\nend_of_line = UNSET\n[*.md]\ncharset = unset\n");
+        EditorConfigProperties p = EditorConfig.resolveFor(sub.resolve("a.md"));
+        assertNull(p.indentSize(), "unset removes the parent's indent_size");
+        assertNull(p.endOfLine(), "values are case-insensitive");
+        assertNull(p.charset(), "a later matching section can unset too");
+        assertEquals(Boolean.FALSE, p.insertSpaces()); // untouched keys still inherit
+
+        // A later section may set the key again after an unset.
+        write(sub, "[*]\nindent_size = unset\n[*.md]\nindent_size = 3\n");
+        EditorConfig.clearCache();
+        assertEquals(3, EditorConfig.resolveFor(sub.resolve("a.md")).indentSize());
+    }
+
+    @Test
+    void invalidNearerValueStillInheritsTheParentValue() throws IOException {
+        write(root, "root = true\n[*]\nindent_size = 4\ncharset = utf-8\n");
+        Path sub = root.resolve("sub");
+        write(sub, "[*]\nindent_size = huge\ncharset = klingon\n");
+        EditorConfigProperties p = EditorConfig.resolveFor(sub.resolve("a.js"));
+        assertEquals(4, p.indentSize());
+        assertEquals("utf-8", p.charset());
+    }
+
+    @Test
     void rootTrueStopsTheWalk() throws IOException {
         write(root, "[*]\ncharset = latin1\n"); // would apply if reached
         Path sub = root.resolve("proj");

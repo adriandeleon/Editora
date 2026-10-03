@@ -216,13 +216,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     }
 
     private static Button iconButton(javafx.scene.Node icon, String tip, Runnable action) {
-        Button b = new Button();
-        b.setGraphic(icon);
-        b.getStyleClass().addAll("flat", "git-toolbar-button");
-        b.setFocusTraversable(false);
-        b.setTooltip(new Tooltip(tip));
-        b.setOnAction(e -> action.run());
-        return b;
+        return Icons.toolbarButton(icon, tip, action, "flat", "git-toolbar-button"); // tooltip + accessible name
     }
 
     private static VBox buildLoading() {

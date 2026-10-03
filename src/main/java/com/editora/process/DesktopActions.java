@@ -13,7 +13,7 @@ import java.util.function.Consumer;
  * only {@link #reveal}/{@link #openTerminal} touch the real OS, launching the command <em>detached</em>
  * on a daemon thread (fire-and-forget) so the FX thread never blocks.
  *
- * <p>Launching reuses {@link ProcessRunner#resolveExecutable}/{@link ProcessRunner#applyStandardEnv} so
+ * <p>Launching reuses {@link ProcessRunner#resolveExecutable}/{@link ProcessRunner#applyUserEnv(ProcessBuilder)} so
  * the augmented PATH applies (a Finder-launched {@code .app} can still find {@code xdg-open} etc.).
  */
 public final class DesktopActions {
@@ -122,18 +122,28 @@ public final class DesktopActions {
         launch(cmd.argv(), cmd.workingDir(), onError);
     }
 
+    /**
+     * The file manager / terminal process, before it is started. It gets the user's own environment (plus the
+     * augmented PATH), <em>not</em> the parse-stable {@code LC_ALL=C}: a terminal opened from the editor is
+     * the user's shell, and one forced into the C locale shows their file names as {@code ?} and breaks
+     * every non-ASCII keystroke.
+     */
+    static ProcessBuilder processBuilder(List<String> argv, Path workingDir) {
+        ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(argv));
+        ProcessRunner.applyUserEnv(pb);
+        if (workingDir != null) {
+            // The child's working directory (CreateProcess lpCurrentDirectory), never a shell argument.
+            pb.directory(workingDir.toFile());
+        }
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+        return pb;
+    }
+
     private static void launch(List<String> argv, Path workingDir, Consumer<String> onError) {
         EXEC.submit(() -> {
             try {
-                ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(argv));
-                ProcessRunner.applyStandardEnv(pb);
-                if (workingDir != null) {
-                    // The child's working directory (CreateProcess lpCurrentDirectory), never a shell argument.
-                    pb.directory(workingDir.toFile());
-                }
-                pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-                pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-                pb.start();
+                processBuilder(argv, workingDir).start();
             } catch (Exception e) {
                 if (onError != null) {
                     onError.accept(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());

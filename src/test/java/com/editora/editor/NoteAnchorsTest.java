@@ -26,6 +26,30 @@ class NoteAnchorsTest {
     }
 
     @Test
+    void aRangeInsideAReplacedSpanFollowsItsTextIntoTheReplacement() {
+        // "beta" sat 6 chars into the replaced span; the replacement indents the line, moving it to 8.
+        assertArrayEquals(new int[] {8, 12}, NoteAnchors.relocateInReplacement("  alpha beta gamma", 6, "beta", 4));
+        // Two occurrences: the one nearest the old relative offset wins, in either direction.
+        assertArrayEquals(new int[] {10, 14}, NoteAnchors.relocateInReplacement("beta x y, beta", 9, "beta", 4));
+        assertArrayEquals(new int[] {0, 4}, NoteAnchors.relocateInReplacement("beta x y, beta", 2, "beta", 4));
+        // A longer original selection keeps its full length, clamped to the replacement.
+        assertArrayEquals(new int[] {2, 9}, NoteAnchors.relocateInReplacement("a beta gamma", 2, "beta", 7));
+        assertArrayEquals(new int[] {2, 6}, NoteAnchors.relocateInReplacement("a beta", 2, "beta", 70));
+        assertNull(NoteAnchors.relocateInReplacement("nothing here", 3, "beta", 4), "text gone → caller collapses");
+        assertNull(NoteAnchors.relocateInReplacement("anything", 3, "", 0), "no text to follow");
+    }
+
+    @Test
+    void offsetsAreMappedAcrossTheWideningSwap() {
+        // The region [10, 20) was cut out and comes back 14 characters long.
+        assertEquals(4, NoteAnchors.acrossRegion(4, 10, 20, 14), "before the region: unchanged");
+        assertEquals(10, NoteAnchors.acrossRegion(10, 10, 20, 14), "at its start: unchanged");
+        assertEquals(24, NoteAnchors.acrossRegion(20, 10, 20, 14), "at its end: moves with the growth");
+        assertEquals(34, NoteAnchors.acrossRegion(30, 10, 20, 14), "after it: moves with the growth");
+        assertEquals(13, NoteAnchors.acrossRegion(15, 10, 20, 3), "inside a region that shrank: clamped");
+    }
+
+    @Test
     void relocateExactAtSavedOffset() {
         String doc = "alpha beta gamma";
         int[] r = NoteAnchors.relocate(doc, 6, 10, "beta", "", "");

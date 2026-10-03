@@ -25,6 +25,24 @@ class TestSupportTest {
     }
 
     @Test
+    void sourcePathHintCarriesThePackage() {
+        assertEquals("com/x/FooTest.java", TestSourceLocator.pathHint("com.x.FooTest", BuildTool.MAVEN));
+        assertEquals("com/x/Outer.java", TestSourceLocator.pathHint("com.x.Outer$Inner", BuildTool.GRADLE));
+        assertEquals("FooTest.java", TestSourceLocator.pathHint("FooTest", BuildTool.MAVEN), "default package");
+        assertNull(TestSourceLocator.pathHint("ex/pkg", BuildTool.GO));
+        assertNull(TestSourceLocator.pathHint(null, BuildTool.MAVEN));
+    }
+
+    @Test
+    void testSourcePathsAreJudgedInsideTheProjectOnly() {
+        assertTrue(TestSourceLocator.isTestSourcePath("src/test/java/com/x/FooTest.java"));
+        assertTrue(TestSourceLocator.isTestSourcePath("mod/src/tests/FooTest.java"));
+        assertFalse(TestSourceLocator.isTestSourcePath("src/main/java/com/x/Foo.java"));
+        assertFalse(TestSourceLocator.isTestSourcePath("src/test/resources/data.xml"));
+        assertFalse(TestSourceLocator.isTestSourcePath("src/main/java/com/x/test.java"), "a file is not a directory");
+    }
+
+    @Test
     void reportDirs() {
         Path root = Path.of("/proj");
         List<Path> maven = JvmReportDirs.reportDirs(BuildTool.MAVEN, root);

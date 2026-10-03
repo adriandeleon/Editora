@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -37,9 +36,6 @@ import com.editora.search.FuzzyMatch;
  */
 public class QuickOpen<T> {
 
-    private static final boolean IS_MAC =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
-
     private final Supplier<List<T>> itemsSupplier;
     private final Function<T, String> label;
     private final Function<T, String> detail;
@@ -66,6 +62,8 @@ public class QuickOpen<T> {
 
     private final TextField input = new TextField();
     private final ListView<T> list = new ListView<>();
+    /** The key legend under the list; rebuilt from the live keymap each time the picker is shown. */
+    private final Label hint = new Label();
 
     /** Supplies the value currently in force, pre-selected on open (see {@link #setCurrentItem}). */
     private java.util.function.Supplier<T> currentItem;
@@ -197,20 +195,8 @@ public class QuickOpen<T> {
         // Emacs caret movement + basic editing in the query field. Registered after onKey so the picker's own
         // list navigation (C-n/C-p/C-g) consumes those chords first and the keymap yields to it (isConsumed).
         com.editora.command.TextInputKeymap.installShared(input);
-        // On macOS the opening chord can emit an Option-composed character; swallow chars typed with a
-        // chord modifier held (plain typing passes through). The opening chord's trailing KEY_TYPED is
-        // already swallowed by the global KeyDispatcher (the card lives in the main scene now).
-        if (IS_MAC) {
-            input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-                if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
-                    e.consume();
-                }
-            });
-        }
-
         Label header = new Label(title);
         header.getStyleClass().add("palette-title");
-        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ select  ·  esc / C-g cancel");
         hint.getStyleClass().add("palette-hint");
         content = new VBox(6, header, input, list, hint);
         content.getStyleClass().add("command-palette");
@@ -231,53 +217,17 @@ public class QuickOpen<T> {
     }
 
     private void onKey(KeyEvent e) {
-        switch (e.getCode()) {
-            case ESCAPE -> {
-                hide();
-                e.consume();
-            }
-            case ENTER -> {
-                chooseSelected();
-                e.consume();
-            }
-            case DOWN -> {
-                move(1);
-                e.consume();
-            }
-            case UP -> {
-                move(-1);
-                e.consume();
-            }
-            case N -> {
-                if (e.isControlDown()) {
-                    move(1);
-                    e.consume();
+        PickerKeys.Action action = PickerKeys.action(e);
+        switch (action) {
+            case CANCEL -> hide();
+            case ACCEPT -> chooseSelected();
+            default -> {
+                if (!PickerKeys.navigate(list, action)) {
+                    return;
                 }
             }
-            case P -> {
-                if (e.isControlDown()) {
-                    move(-1);
-                    e.consume();
-                }
-            }
-            case G -> {
-                if (e.isControlDown()) {
-                    hide();
-                    e.consume();
-                }
-            }
-            default -> {}
         }
-    }
-
-    private void move(int delta) {
-        int size = items.size();
-        if (size == 0) {
-            return;
-        }
-        int idx = Math.floorMod(list.getSelectionModel().getSelectedIndex() + delta, size);
-        list.getSelectionModel().select(idx);
-        list.scrollTo(idx);
+        e.consume();
     }
 
     private void chooseSelected() {
@@ -340,6 +290,7 @@ public class QuickOpen<T> {
             return;
         }
         all = itemsSupplier.get();
+        hint.setText(PickerKeys.legend(PickerKeys.hint("select", "↵"))); // per show: follows a keymap switch
         input.clear();
         filter("");
         chosen = false;

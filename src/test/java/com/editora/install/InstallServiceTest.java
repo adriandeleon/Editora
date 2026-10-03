@@ -33,6 +33,34 @@ class InstallServiceTest {
         assertEquals(zip.replace("\"", ""), InstallService.pickArchiveUrl(zip, "darwin_arm64"));
     }
 
+    /**
+     * The Typst CLI is published as {@code .tar.xz} for Linux and macOS. The URL pattern only knew
+     * {@code .zip|.tar.gz|.tgz}, so although an xz extraction branch existed, no asset ever matched and the
+     * install failed with "no download asset matched" on both platforms.
+     */
+    @Test
+    void pickArchiveUrlMatchesTheTypstXzTarballs() {
+        // The asset list of a real typst release, as the GitHub API returns it.
+        String base = "https://github.com/typst/typst/releases/download/v0.13.1/";
+        String json = String.join(
+                ",",
+                "\"browser_download_url\":\"" + base + "typst-aarch64-apple-darwin.tar.xz\"",
+                "\"browser_download_url\":\"" + base + "typst-aarch64-unknown-linux-musl.tar.xz\"",
+                "\"browser_download_url\":\"" + base + "typst-x86_64-apple-darwin.tar.xz\"",
+                "\"browser_download_url\":\"" + base + "typst-x86_64-pc-windows-msvc.zip\"",
+                "\"browser_download_url\":\"" + base + "typst-x86_64-unknown-linux-musl.tar.xz\"");
+
+        // Every platform substring the typst-cli recipe uses must resolve to its asset.
+        var spec = InstallCatalog.archiveSpec("typst-cli").orElseThrow();
+        for (var platform : InstallCatalog.Platform.values()) {
+            String asset = spec.assetByPlatform().get(platform);
+            String url = InstallService.pickArchiveUrl(json, asset);
+            assertEquals(base + asset + (asset.contains("windows") ? ".zip" : ".tar.xz"), url, platform.toString());
+        }
+        assertEquals(
+                "https://x/y/tool-linux.txz", InstallService.pickArchiveUrl("\"https://x/y/tool-linux.txz\"", "linux"));
+    }
+
     @Test
     void pickArchiveUrlReturnsNullWhenNoArchiveMatches() {
         assertNull(InstallService.pickArchiveUrl("\"https://x/y/foo-linux.sha256\"", "linux"));

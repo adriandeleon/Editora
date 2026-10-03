@@ -21,9 +21,7 @@ import org.fxmisc.richtext.CodeArea;
  */
 final class LspDiagnosticOverlay extends Region {
 
-    private static final Color ERROR = Color.web("#e5484d");
-    private static final Color WARNING = Color.web("#e2a03f");
-    private static final Color INFO = Color.web("#4c8eda");
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final double AMP = 1.6;
     private static final double STEP = 2.0;
 
@@ -45,6 +43,10 @@ final class LspDiagnosticOverlay extends Region {
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+        OverlayPalette.track(area, palette -> {
+            colors = palette; // resolved on a theme change, not per paint
+            scheduleRedraw();
+        });
     }
 
     void setActive(boolean active) {
@@ -170,11 +172,11 @@ final class LspDiagnosticOverlay extends Region {
         return hits;
     }
 
-    private static Color color(LspDiagnostic.Severity severity) {
+    private Color color(LspDiagnostic.Severity severity) {
         return switch (severity) {
-            case ERROR -> ERROR;
-            case WARNING -> WARNING;
-            default -> INFO;
+            case ERROR -> colors.error();
+            case WARNING -> colors.warning();
+            default -> colors.info();
         };
     }
 

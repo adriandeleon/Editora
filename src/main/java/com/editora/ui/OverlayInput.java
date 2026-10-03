@@ -22,9 +22,10 @@ import static com.editora.i18n.Messages.tr;
  * keyboard-friendly replacement for a {@link javafx.scene.control.Dialog} / {@link javafx.scene.control.TextInputDialog}
  * (which open a separate native window that, on Windows, doesn't reliably take OS keyboard focus). The
  * caller builds the form body (labels + fields) and reads the field values inside {@code onAccept}, which
- * runs <em>after</em> the card hides (so focus is already back in the editor). {@code Esc}/{@code C-g}
- * cancel (handled by the {@link OverlayHost}); {@code Enter} (or {@code Ctrl/Cmd+Enter} for a multi-line
- * body) accepts.
+ * runs <em>after</em> the card hides (so focus is already back in the editor). {@code Esc} or the keymap's
+ * cancel chord cancels (handled by the {@link OverlayHost}, which also keeps Tab inside the card);
+ * {@code Enter} (or {@code Ctrl/Cmd+Enter} for a multi-line body) accepts — unless a button has the focus,
+ * in which case Enter activates that button (see {@link #onEnter}).
  *
  * <p>Stateless: each {@link #show} builds a fresh card. There's no blocking {@code showAndWait} — flows
  * become callback-driven.
@@ -32,6 +33,31 @@ import static com.editora.i18n.Messages.tr;
 public final class OverlayInput {
 
     private OverlayInput() {}
+
+    /** What Enter does in a form card. */
+    enum Enter {
+        /** Run the primary action (the accent button). */
+        ACCEPT,
+        /** Activate the button that has the focus. */
+        FIRE_FOCUSED_BUTTON,
+        /** Leave the key to the focused control (a newline in a multi-line field). */
+        PASS
+    }
+
+    /**
+     * Decides what Enter does. A focused button wins over the primary action: the user who Tabs to Cancel —
+     * or to a red Delete — and presses Enter has chosen that button, and running Save/OK instead did the
+     * opposite of what the focus ring said. The explicit submit chord (Ctrl/Cmd+Enter) always accepts. Pure.
+     */
+    static Enter onEnter(boolean buttonFocused, boolean ctrlEnterToSubmit, boolean submitChord) {
+        if (submitChord) {
+            return Enter.ACCEPT;
+        }
+        if (buttonFocused) {
+            return Enter.FIRE_FOCUSED_BUTTON;
+        }
+        return ctrlEnterToSubmit ? Enter.PASS : Enter.ACCEPT;
+    }
 
     /** A secondary, left-aligned action button (e.g. <em>Delete</em> when editing an existing note). */
     public record Extra(String label, Runnable action) {}
@@ -138,12 +164,20 @@ public final class OverlayInput {
         // Keep the form's own keys (typing, caret nav) from being hijacked by the global KeyDispatcher.
         card.getProperties().put("editora.ownsKeys", Boolean.TRUE);
         card.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == KeyCode.ENTER) {
-                if (!ctrlEnterToSubmit || e.isShortcutDown() || e.isControlDown()) {
-                    accept.run();
-                    e.consume();
+            if (e.getCode() != KeyCode.ENTER) {
+                return;
+            }
+            boolean submitChord = e.isShortcutDown() || e.isControlDown();
+            switch (onEnter(e.getTarget() instanceof Button, ctrlEnterToSubmit, submitChord)) {
+                // Fired explicitly rather than left to the button: JavaFX only maps Enter to a focused
+                // button outside macOS, and the choice the user tabbed to must win on every platform.
+                case FIRE_FOCUSED_BUTTON -> ((Button) e.getTarget()).fire();
+                case ACCEPT -> accept.run();
+                case PASS -> {
+                    return; // a multi-line field's own newline
                 }
             }
+            e.consume();
         });
 
         host.show(

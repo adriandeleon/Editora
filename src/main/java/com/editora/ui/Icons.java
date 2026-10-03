@@ -33,6 +33,38 @@ final class Icons {
 
     private Icons() {}
 
+    /**
+     * An icon-only button that still has a name: {@code name} becomes both its tooltip and its accessible
+     * text, so a screen reader announces "Refresh" rather than "button". Every icon button should be
+     * built through this (or {@link #toolbarButton}) — a hand-rolled one gets the tooltip and forgets the
+     * accessible name, which is how seven copies of the same helper drifted.
+     *
+     * @param action run on activation; {@code null} when the caller wires its own handler
+     */
+    static javafx.scene.control.Button button(Node icon, String name, Runnable action, String... styleClasses) {
+        javafx.scene.control.Button b = new javafx.scene.control.Button();
+        b.setGraphic(icon);
+        b.getStyleClass().addAll(styleClasses);
+        name(b, name);
+        if (action != null) {
+            b.setOnAction(e -> action.run());
+        }
+        return b;
+    }
+
+    /** {@link #button} for a panel toolbar: reached by its command or the mouse, not by Tab. */
+    static javafx.scene.control.Button toolbarButton(Node icon, String name, Runnable action, String... styleClasses) {
+        javafx.scene.control.Button b = button(icon, name, action, styleClasses);
+        b.setFocusTraversable(false);
+        return b;
+    }
+
+    /** Sets a control's tooltip and accessible name together (use again when a toggle's meaning flips). */
+    static void name(javafx.scene.control.Control control, String name) {
+        control.setAccessibleText(name);
+        control.setTooltip(new javafx.scene.control.Tooltip(name));
+    }
+
     /** Scale for a kit line glyph: its 16-unit box rendered at the same visual size as a 24dp Material one. */
     private static final double LINE_SCALE = ICON_SCALE * 24.0 / 16.0;
 

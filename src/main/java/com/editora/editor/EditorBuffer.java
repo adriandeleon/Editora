@@ -48,7 +48,6 @@ import com.editora.editops.BraceMatcher;
 import com.editora.editops.Commenter;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineIndent;
-import com.editora.logviewer.LogFilter;
 import com.editora.logviewer.LogLevel;
 import com.editora.markdown.MarkdownEdit;
 import com.editora.markdown.MarkdownHeading;
@@ -217,7 +216,11 @@ public class EditorBuffer implements TabContent {
         }
     });
 
-    private final CodeArea area = new CodeArea();
+    /** Auto-rename-tag: mirrors an HTML/XML tag-name edit onto the paired tag once the edit has committed. */
+    private final TagRenameMirror tagRename = new TagRenameMirror(
+            this::getLanguage, () -> !this.largeFile && !this.hugeFile && isEditable() && !hasMultipleCarets());
+
+    private final CodeArea area = tagRename.newArea(null);
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /** The last saved/loaded content; the buffer is dirty only when the text differs from this. */
@@ -394,18 +397,8 @@ public class EditorBuffer implements TabContent {
     private boolean lastStructuredOpenApi;
     /** Forces log-viewer mode on a buffer whose extension isn't {@code .log} ("View as Log"). */
     private boolean logViewForced;
-    /** While a log filter is active, the complete unfiltered text (the area shows only matching lines). */
-    private String logFullText;
-
-    private boolean logFiltered;
-    private LogLevel logMinLevel;
-    private java.util.regex.Pattern logRegex;
-    /** Inherited level at the end of {@link #logFullText}, so an appended chunk filters with the right carry. */
-    private LogLevel logCarry;
-    /** While following ({@code tail -f}), each append auto-scrolls to the bottom. */
-    private boolean logFollowing;
-    /** Max characters kept in a following log buffer before the oldest lines are trimmed (bounds memory). */
-    private static final int LOG_FOLLOW_CAP = 12 * 1024 * 1024;
+    /** Filter, follow and trim state of the log viewer; a filtered view is read-only (see {@link LogView}). */
+    private final LogView logView = new LogView(area, this::applyEditable);
     /** Fired from the debounced edit pulse while this is an HTML buffer (drives HTML live-preview reload). */
     private Runnable htmlPreviewDirtyListener;
     /** One document subscription and timer sequence for all differently-timed settled-edit work. */
@@ -793,8 +786,8 @@ public class EditorBuffer implements TabContent {
      *  Kept exactly in step with {@link #lineStates} — cleared and spliced at the same points — so an
      *  incremental pass can start colouring at the edited line without rescanning the prefix. */
     private final java.util.ArrayList<Integer> lineDepths = new java.util.ArrayList<>();
-    /** Earliest line changed since the last highlight (0 = re-highlight the whole document). */
-    private int dirtyFromLine;
+    /** Where the next highlight pass must start: the earliest line edited or still owed by a discarded pass. */
+    private final HighlightStart highlightStart = new HighlightStart();
     /** Named definitions from the last tokenization (FX-thread confined); drives the Structure view. */
     private List<TextMateHighlighter.Symbol> symbols = List.of();
     /** Notified (on the FX thread) after {@link #symbols} is refreshed. */
@@ -823,10 +816,16 @@ public class EditorBuffer implements TabContent {
 
     private Boolean indentInsertSpacesOverride;
     private Integer indentSizeOverride;
-    private String eolOverride; // "LF"/"CRLF" — effective line ending (EditorConfig or a manual choice)
+    private String eolOverride; // "LF"/"CRLF"/"CR" forced by EditorConfig end_of_line; null = none
+    /** The file's own line ending: detected on load or chosen by a conversion. The document holds bare LF. */
+    private String lineEnding = LineEndings.LF;
+
     private Integer rulerColumnOverride; // null = default 80; EditorConfigProperties.OFF = hide
     private String detectedCharset = com.editora.editorconfig.EditorConfigCharset.UTF_8;
     private String charsetOverride; // EditorConfig charset to write; null = keep detected
+    /** The declared charset could not decode the file, so {@link #detectedCharset} is a lossless stand-in. */
+    private boolean charsetAssumed;
+
     private com.editora.editorconfig.EditorConfigProperties editorConfigProps =
             com.editora.editorconfig.EditorConfigProperties.EMPTY;
     /** Whether the user enabled the 80-column ruler. The line is only actually shown when a visible
@@ -1015,7 +1014,7 @@ public class EditorBuffer implements TabContent {
                 int position = Math.min(change.getPosition(), area.getLength());
                 int line = area.offsetToPosition(position, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
                         .getMajor();
-                dirtyFromLine = Math.min(dirtyFromLine, line);
+                highlightStart.edited(line);
             }
             // The cached semantic tokens now point at shifted offsets; suppress the overlay until the
             // next response re-anchors them (one boolean write — off the per-char path's cost budget). The
@@ -1047,13 +1046,12 @@ public class EditorBuffer implements TabContent {
         // keystroke — O(n) allocation per char on a very large single buffer (e.g. minified JS on one
         // line, past the line-count heavy-file tier). The cheap getLength() check gates the full-text
         // compare so area.getText() is only built in the rare near-clean state, never while typing.
+        // A log filter or followed append rewrites the area without being a user edit: dirty is carried over.
         area.plainTextChanges()
+                .filter(c -> !logView.adjusting())
                 .subscribe(c -> dirty.set(forcedDirty
                         || contentLength() != cleanText.length()
                         || !getContent().equals(cleanText)));
-        // Auto-rename tag: mirror a tag-name edit onto the paired open/close tag (html/xml only —
-        // the handler's first checks are two cheap boolean/string compares for every other buffer).
-        area.plainTextChanges().subscribe(this::maybeMirrorTagRename);
         // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
         // so the very first check short-circuits for every buffer that hasn't turned it on).
         area.plainTextChanges().subscribe(this::maybeAutoFill);
@@ -2059,17 +2057,10 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
         AnchorPane.setRightAnchor(scrollPane, Minimap.WIDTH);
-        // The whitespace overlay shares the text rectangle with the scroll pane (and tracks it when
-        // the minimap is toggled); it is mouse-transparent so clicks reach the editor.
-        AnchorPane.setTopAnchor(whitespace, 0d);
-        AnchorPane.setBottomAnchor(whitespace, 0d);
-        AnchorPane.setLeftAnchor(whitespace, 0d);
-        AnchorPane.setRightAnchor(whitespace, Minimap.WIDTH);
-        // The spell-check overlay (red squiggles) shares the same text rectangle, mouse-transparent.
-        AnchorPane.setTopAnchor(spellOverlay, 0d);
-        AnchorPane.setBottomAnchor(spellOverlay, 0d);
-        AnchorPane.setLeftAnchor(spellOverlay, 0d);
-        AnchorPane.setRightAnchor(spellOverlay, Minimap.WIDTH);
+        // The overlays share the text rectangle with the scroll pane (and track it when the minimap is
+        // toggled — see anchorOverText); they are mouse-transparent so clicks reach the editor.
+        anchorOverText(whitespace);
+        anchorOverText(spellOverlay); // red squiggles
         spellChecker = new SpellChecker(spellLanguage, spellUserWords);
         spellChecker.setUserWordsEnabled(spellUserWordsEnabled);
         spellChecker.setTechnicalWordsEnabled(spellTechnicalEnabled);
@@ -2077,28 +2068,14 @@ public class EditorBuffer implements TabContent {
         spellOverlay.setProseMode(isProse());
         spellOverlay.setMarkdown(isMarkdown()); // skip fenced ``` code blocks from spell check
         installLintHover(area); // hover reads lintOverlay only while mermaid lint is active (lazily attached)
-        AnchorPane.setTopAnchor(mdLintOverlay, 0d);
-        AnchorPane.setBottomAnchor(mdLintOverlay, 0d);
-        AnchorPane.setLeftAnchor(mdLintOverlay, 0d);
-        AnchorPane.setRightAnchor(mdLintOverlay, Minimap.WIDTH);
+        anchorOverText(mdLintOverlay);
         installMarkdownLintHover(area);
         installImageDrop(area);
         installLspHover(area); // hover reads lspOverlay only while LSP is active (lazily attached)
-        // Inline debugger values share the text rectangle, mouse-transparent (active only while
-        // execution is suspended in this file).
-        AnchorPane.setTopAnchor(inlineValues, 0d);
-        AnchorPane.setBottomAnchor(inlineValues, 0d);
-        AnchorPane.setLeftAnchor(inlineValues, 0d);
-        AnchorPane.setRightAnchor(inlineValues, Minimap.WIDTH);
+        anchorOverText(inlineValues); // inline debugger values (active only while suspended in this file)
         installDebugHover(area);
-        AnchorPane.setTopAnchor(todoOverlay, 0d);
-        AnchorPane.setBottomAnchor(todoOverlay, 0d);
-        AnchorPane.setLeftAnchor(todoOverlay, 0d);
-        AnchorPane.setRightAnchor(todoOverlay, Minimap.WIDTH);
-        AnchorPane.setTopAnchor(noteOverlay, 0d);
-        AnchorPane.setBottomAnchor(noteOverlay, 0d);
-        AnchorPane.setLeftAnchor(noteOverlay, 0d);
-        AnchorPane.setRightAnchor(noteOverlay, Minimap.WIDTH);
+        anchorOverText(todoOverlay);
+        anchorOverText(noteOverlay);
         noteOverlay.setSpans(notes::activeSpans);
         noteOverlay.setActive(true);
         installNoteHover();
@@ -2677,12 +2654,25 @@ public class EditorBuffer implements TabContent {
     // so they are built + wired only on first activation rather than per buffer. Each is inserted just below a
     // fixed eager sibling to preserve the z-order of the original construction.
 
-    /** Attaches {@code overlay} to the editor pane just below {@code below}, with the standard text-rect anchors. */
-    private <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, javafx.scene.Node below) {
+    /** Marks a node anchored by {@link #anchorOverText}, so {@link #setMinimapVisible} can find them all. */
+    private static final String OVER_TEXT = "editora.overText";
+
+    /**
+     * Anchors {@code overlay} over the text rectangle — exactly the scroll pane's, whatever the minimap is
+     * doing right now. Every overlay drawn on the text goes through here: one that kept the minimap's inset
+     * while the minimap was hidden stopped 90 px short of the edge, clipping highlights and squiggles there.
+     */
+    private void anchorOverText(Node overlay) {
         AnchorPane.setTopAnchor(overlay, 0d);
         AnchorPane.setBottomAnchor(overlay, 0d);
         AnchorPane.setLeftAnchor(overlay, 0d);
-        AnchorPane.setRightAnchor(overlay, Minimap.WIDTH);
+        AnchorPane.setRightAnchor(overlay, AnchorPane.getRightAnchor(scrollPane));
+        overlay.getProperties().put(OVER_TEXT, Boolean.TRUE);
+    }
+
+    /** Attaches {@code overlay} to the editor pane just below {@code below}, with the standard text-rect anchors. */
+    private <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, javafx.scene.Node below) {
+        anchorOverText(overlay);
         int idx = root.getChildren().indexOf(below);
         if (idx < 0) {
             idx = root.getChildren().indexOf(minimap); // fallback: just under the minimap
@@ -4203,16 +4193,21 @@ public class EditorBuffer implements TabContent {
      * ({@code requestGen == } the current {@link #semanticGen()}). A stale response — the server computed it
      * against an older version, or an older request's reply arrives after a newer one — is <b>dropped</b>,
      * leaving {@link #semanticStale} set so the overlay stays suppressed rather than re-anchoring the old
-     * tokens onto the shifted text (which mis-colored characters/lines until the next response).
+     * tokens onto the shifted text (which mis-colored characters/lines until the next response). A response
+     * identical to the tokens already shown restyles nothing; a different one restyles from its first line.
      */
     public void setSemanticTokens(java.util.List<SemanticToken> tokens, long requestGen) {
         if (!semanticActive || requestGen != semanticGen) {
             return;
         }
-        semanticTokens = tokens == null ? java.util.List.of() : tokens;
+        java.util.List<SemanticToken> next = tokens == null ? java.util.List.of() : tokens;
+        int from = SemanticToken.firstChangedLine(semanticTokens, next, semanticStale);
+        semanticTokens = next;
         semanticStale = false; // anchored to the current (unchanged since request) text → safe to overlay
-        invalidateHighlighting();
-        applyHighlighting();
+        if (from != Integer.MAX_VALUE) { // else the same tokens over the same text: nothing to restyle
+            highlightStart.edited(from); // style-only: the lexical end-states above stay valid, so resume there
+            applyHighlighting();
+        }
     }
 
     /** The inclusive 0-based line range currently visible in the editor (for a viewport semantic-tokens
@@ -4704,9 +4699,6 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Auto-rename-tag: editing an HTML/XML tag name mirrors the rename onto the paired tag. */
-    private boolean autoRenameTag;
-
     /** Auto-close tags: typing the {@code >} of an HTML/XML open tag inserts the matching closer. */
     private boolean autoCloseTags;
 
@@ -4741,12 +4733,9 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    /** Re-entrancy guard: the mirrored {@code replaceText} must not itself trigger another mirror. */
-    private boolean applyingTagRename;
-
     /** Enables/disables the paired-tag auto-rename (pushed from the controller's view settings). */
     public void setAutoRenameTag(boolean on) {
-        autoRenameTag = on;
+        tagRename.setEnabled(on);
     }
 
     /**
@@ -4911,58 +4900,6 @@ public class EditorBuffer implements TabContent {
         javafx.application.Platform.runLater(() -> a.moveTo(Math.min(restored, a.getLength())));
     }
 
-    /**
-     * Left/right context the local tag-name pre-check needs around an edit: at least {@code MAX_NAME + 2}
-     * (the longest name plus its {@code </}) so the window reproduces {@link com.editora.editops.TagRename}'s
-     * own region decision without a false negative.
-     */
-    private static final int TAG_RENAME_LOOKBACK = com.editora.editops.TagRename.MAX_NAME + 2;
-
-    private void maybeMirrorTagRename(org.fxmisc.richtext.model.PlainTextChange c) {
-        if (!autoRenameTag || applyingTagRename || largeFile || hugeFile || !isEditable()) {
-            return;
-        }
-        String lang = getLanguage();
-        boolean html = "html".equals(lang);
-        if (!html && !"xml".equals(lang)) {
-            return;
-        }
-        if (area.getUndoManager().isPerformingAction()
-                || (area2 != null && area2.getUndoManager().isPerformingAction())) {
-            return;
-        }
-        // TagRename.mirror only has work when the edit lands inside a tag name — a fully-local test that reads
-        // just a bounded neighborhood of the change. Run it on a small window first so the vast majority of
-        // keystrokes (in text, attributes, anywhere but a tag name) skip materializing the whole document — an
-        // O(n) String this runs per keystroke. Only a confirmed tag-name edit pays the full getText + lex.
-        int changePos = c.getPosition();
-        int changeEnd = changePos + c.getInserted().length();
-        int docLen = area.getLength();
-        int winStart = Math.max(0, changePos - TAG_RENAME_LOOKBACK);
-        int winEnd = Math.min(docLen, changeEnd + TAG_RENAME_LOOKBACK);
-        String window = area.getText(winStart, winEnd);
-        if (!com.editora.editops.TagRename.changeInTagName(window, changePos - winStart, changeEnd - winStart)) {
-            return;
-        }
-        com.editora.editops.TagRename.Mirror m =
-                com.editora.editops.TagRename.mirror(area.getText(), changePos, c.getRemoved(), c.getInserted(), html);
-        if (m == null) {
-            return;
-        }
-        CodeArea a = getFocusedArea();
-        int anchor = a.getAnchor();
-        int caret = a.getCaretPosition();
-        int delta = m.name().length() - (m.to() - m.from());
-        applyingTagRename = true;
-        try {
-            a.replaceText(m.from(), m.to(), m.name());
-            // replaceText moved this view's caret to the mirror — put it back where the user was.
-            a.selectRange(anchor >= m.to() ? anchor + delta : anchor, caret >= m.to() ? caret + delta : caret);
-        } finally {
-            applyingTagRename = false;
-        }
-    }
-
     /** Per-column "rainbow" coloring for CSV/TSV buffers (replaces the source.csv grammar highlighting). */
     private boolean csvRainbow;
 
@@ -5023,124 +4960,45 @@ public class EditorBuffer implements TabContent {
 
     /** Whether a level/regex filter is currently narrowing the visible lines. */
     public boolean isLogFiltered() {
-        return logFiltered;
+        return logView.filtered();
     }
 
     /** Whether the buffer is auto-scrolling as the file grows ({@code tail -f}). */
     public boolean isLogFollowing() {
-        return logFollowing;
+        return logView.following();
     }
 
     public void setLogFollowing(boolean following) {
-        this.logFollowing = following;
-        if (following) {
-            scrollToLogBottom();
-        }
+        logView.setFollowing(following);
+    }
+
+    /** True once follow mode dropped the oldest lines: the buffer is a tail of its file. Never save it. */
+    public boolean isLogTrimmed() {
+        return logView.trimmed();
     }
 
     /**
-     * Narrows the visible lines to those whose (inherited) level is at least {@code minLevel} and which
-     * match {@code regex}; passing {@code null}/{@code null} clears the filter and restores the full text.
-     * The full text is retained so a later clear (or an appended tail) re-derives correctly.
+     * Narrows the visible lines to those at or above {@code minLevel} that match {@code regex};
+     * {@code null}/{@code null} clears the filter. {@link #getContent()} stays the whole log throughout.
      */
     public void applyLogFilter(LogLevel minLevel, java.util.regex.Pattern regex) {
-        if (minLevel == null && regex == null) {
-            if (logFiltered) {
-                String full = logFullText;
-                logFiltered = false;
-                logFullText = null;
-                logMinLevel = null;
-                logRegex = null;
-                logCarry = null;
-                replaceLogText(full);
-            }
-            return;
-        }
-        String source = logFiltered ? logFullText : area.getText();
-        logFullText = source;
-        logFiltered = true;
-        logMinLevel = minLevel;
-        logRegex = regex;
-        logCarry = LogFilter.endCarry(source, null);
-        replaceLogText(LogFilter.filter(source, minLevel, regex, null));
+        widen(); // the filter is derived from the area, which must therefore be the whole document
+        logView.applyFilter(minLevel, regex);
     }
 
     /** The current level floor of the active filter (null when unfiltered or no floor). */
     public LogLevel getLogMinLevel() {
-        return logMinLevel;
+        return logView.minLevel();
     }
 
-    /**
-     * Appends {@code text} read from the file's tail. While a filter is active the full text is grown and
-     * only the matching subset is shown; otherwise the text is appended directly. Auto-scrolls to the
-     * bottom while following, and trims the oldest lines past {@link #LOG_FOLLOW_CAP} to bound memory.
-     */
+    /** Appends {@code text} read from the file's tail (filtered when a filter is active); never dirties. */
     public void appendLogText(String text) {
-        if (text == null || text.isEmpty()) {
-            return;
-        }
-        if (logFiltered) {
-            String add = LogFilter.filter(text, logMinLevel, logRegex, logCarry);
-            logCarry = LogFilter.endCarry(text, logCarry);
-            logFullText = logFullText + text;
-            if (!add.isEmpty()) {
-                appendToArea(logFullText, add); // grow the full text; show the matches
-            }
-        } else {
-            appendToArea(null, text);
-        }
-        if (logFollowing) {
-            scrollToLogBottom();
-        }
+        logView.append(text);
     }
 
     /** Replaces the whole buffer with {@code fullText} (e.g. on log rotation), keeping any active filter. */
     public void resetLogContent(String fullText) {
-        String full = fullText == null ? "" : fullText;
-        if (logFiltered) {
-            logFullText = full;
-            logCarry = LogFilter.endCarry(full, null);
-            replaceLogText(LogFilter.filter(full, logMinLevel, logRegex, null));
-        } else {
-            replaceLogText(full);
-        }
-        if (logFollowing) {
-            scrollToLogBottom();
-        }
-    }
-
-    /** Programmatically replaces the area text (the buffer is read-only to the user, but code may write). */
-    private void replaceLogText(String text) {
-        area.replaceText(text == null ? "" : text); // the overlay redraws off the resulting plain-change
-        scrollToLogBottom();
-    }
-
-    private void appendToArea(String newFullForTrim, String displayAppend) {
-        area.appendText(displayAppend);
-        trimLogIfOversized();
-        if (newFullForTrim != null && newFullForTrim.length() > LOG_FOLLOW_CAP) {
-            logFullText = newFullForTrim.substring(newFullForTrim.length() - LOG_FOLLOW_CAP);
-        }
-    }
-
-    /** Drops the oldest lines once the displayed text exceeds the follow cap (keeps memory bounded). */
-    private void trimLogIfOversized() {
-        int len = area.getLength();
-        if (len <= LOG_FOLLOW_CAP) {
-            return;
-        }
-        int cut = len - LOG_FOLLOW_CAP;
-        // Round up to the next line start so we never leave a half line at the top.
-        int nl = area.getText().indexOf('\n', cut);
-        int end = nl < 0 ? cut : nl + 1;
-        area.deleteText(0, Math.min(end, len));
-    }
-
-    private void scrollToLogBottom() {
-        int total = area.getParagraphs().size();
-        if (total > 0) {
-            area.showParagraphAtBottom(total - 1);
-        }
+        logView.reset(fullText);
     }
 
     /** Injects the debounced HTML-edit listener (fires the live-preview reload); {@code null} disables it. */
@@ -5454,6 +5312,13 @@ public class EditorBuffer implements TabContent {
         highlightGen++; // discard any in-flight highlight result
         todoGen++; // discard any in-flight TODO scan result
         languageGen++; // discard any in-flight deferred grammar load
+        // RichTextFX's own teardown, last: it stops the caret blink timer — a running timer is a GC root, so a
+        // buffer closed while its editor had focus stayed reachable, with its whole window — and closes the
+        // undo manager and the area's streams. The document text stays readable.
+        area.dispose();
+        if (area2 != null) {
+            area2.dispose();
+        }
     }
 
     /**
@@ -6061,14 +5926,14 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Rebuilds {@link #viewHost} for the current modes. The floating control is parented to the editor
-     * pane ({@link #root}) in Editor/Split so it always sits at the right edge of the <em>code</em> area
-     * (at the divider when split); in Preview-only mode there is no code pane, so it overlays the
-     * preview instead.
+     * pane ({@link #root}) in Editor mode, at the right edge of the code area; in Split and Preview it
+     * overlays the preview — on a split's half-width code pane it sat over the first line of text, and
+     * this way it also stays in the tab's top-right corner in all three modes.
      */
     private void rebuildViewHost() {
         detachViewModeControl();
         Node content;
-        if (markdownViewMode == MarkdownViewMode.PREVIEW) {
+        if (markdownViewMode != MarkdownViewMode.EDITOR) {
             StackPane host = previewModeHost();
             if (viewModeControl != null) {
                 StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
@@ -6076,12 +5941,13 @@ public class EditorBuffer implements TabContent {
                 host.getChildren().add(viewModeControl);
             }
             content = host;
-        } else if (markdownViewMode == MarkdownViewMode.SPLIT) {
-            SplitPane pane = new SplitPane(root, previewSplitSide());
-            pane.setOrientation(Orientation.HORIZONTAL);
-            pane.setDividerPositions(0.5);
-            attachControlToCodePane();
-            content = pane;
+            if (markdownViewMode == MarkdownViewMode.SPLIT) {
+                SplitPane pane = new SplitPane(root, host);
+                pane.setOrientation(Orientation.HORIZONTAL);
+                pane.setDividerPositions(0.5);
+                attachControlToCodePane();
+                content = pane;
+            }
         } else if (split != Split.NONE) {
             ensureSecondaryView();
             SplitPane pane = new SplitPane(root, root2);
@@ -6112,20 +5978,6 @@ public class EditorBuffer implements TabContent {
             return structuredPreviewHost();
         }
         return previewHost(); // preview (+ zoom for markdown)
-    }
-
-    /** The SPLIT-mode preview side: the bare node (the mode toggle rides the code pane, not the preview). */
-    private Node previewSplitSide() {
-        if (hasCsvPreview()) {
-            return csvPreviewNode;
-        }
-        if (hasHttpPreview()) {
-            return httpPreviewNode;
-        }
-        if (hasTreePreview()) {
-            return structuredContentHolder();
-        }
-        return previewHost();
     }
 
     private StackPane previewHost() {
@@ -6462,11 +6314,11 @@ public class EditorBuffer implements TabContent {
 
     private HBox zoomControl() {
         if (zoomControl == null) {
-            Button out = zoomButton("−", this::zoomPreviewOut); // − (minus sign)
-            Button in = zoomButton("+", this::zoomPreviewIn);
+            Button out = PreviewButtons.named("−", tr("project.map.preview.zoomOut"), this::zoomPreviewOut);
+            Button in = PreviewButtons.named("+", tr("project.map.preview.zoomIn"), this::zoomPreviewIn);
             // Light/dark preview-theme toggle (independent of the app theme). Glyph shows what a click
             // switches TO: a moon while the preview is light, a sun while it's dark.
-            previewThemeButton = zoomButton("", () -> previewThemeToggle.run());
+            previewThemeButton = PreviewButtons.named("", "", () -> previewThemeToggle.run());
             updateThemeButtonGlyph();
             zoomControl = new HBox(out, in, previewThemeButton);
             zoomControl.getStyleClass().add("md-zoom");
@@ -6514,16 +6366,8 @@ public class EditorBuffer implements TabContent {
         }
         boolean dark = previewEffectiveDark();
         previewThemeButton.setText(dark ? "☀" : "☾"); // ☀ (→ light) when dark; ☾ (→ dark) when light
-        previewThemeButton.setTooltip(new javafx.scene.control.Tooltip(
-                tr(dark ? "markdown.previewTheme.toLight" : "markdown.previewTheme.toDark")));
-    }
-
-    private Button zoomButton(String text, Runnable action) {
-        Button b = new Button(text);
-        b.getStyleClass().addAll("md-zoom-button", "flat");
-        b.setFocusTraversable(false);
-        b.setOnAction(e -> action.run());
-        return b;
+        PreviewButtons.name(
+                previewThemeButton, tr(dark ? "markdown.previewTheme.toLight" : "markdown.previewTheme.toDark"));
     }
 
     /** Zooms the preview text in/out (multiplicative steps, clamped) or resets to 100%. */
@@ -6584,7 +6428,7 @@ public class EditorBuffer implements TabContent {
     /** Overlays the corner control(s) at the top-right of the code pane ({@link #root}), clear of its minimap.
      *  A buffer is Markdown <em>or</em> HTML, so at most one of the two controls is non-null. */
     private void attachControlToCodePane() {
-        placeCornerControl(viewModeControl);
+        placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? viewModeControl : null);
         placeCornerControl(htmlPreviewControl);
         placeCornerControl(logControl);
         placeStickyScroll();
@@ -6688,7 +6532,7 @@ public class EditorBuffer implements TabContent {
         if (area2 != null) {
             return;
         }
-        area2 = new CodeArea(area.getContent()); // shares the EditableStyledDocument
+        area2 = tagRename.newArea(area.getContent()); // shares the EditableStyledDocument
         area2.getStyleClass().add("editor-area");
         area2.setWrapText(false);
         area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
@@ -7528,7 +7372,11 @@ public class EditorBuffer implements TabContent {
         this.minimapVisible = visible;
         boolean effective = minimapEffective(visible, largeFile, heavyFile, markdownViewMode);
         applyMinimap(scrollPane, minimap, effective);
-        AnchorPane.setRightAnchor(whitespace, effective ? Minimap.WIDTH : 0d);
+        for (Node child : root.getChildren()) {
+            if (child.getProperties().containsKey(OVER_TEXT)) {
+                AnchorPane.setRightAnchor(child, AnchorPane.getRightAnchor(scrollPane));
+            }
+        }
         if (minimap2 != null) {
             applyMinimap(scrollPane2, minimap2, effective);
         }
@@ -7881,10 +7729,17 @@ public class EditorBuffer implements TabContent {
         applyHighlighting();
     }
 
-    /** Rewrites the document with the chosen line ending; marks the buffer dirty. */
+    /**
+     * Chooses the line ending the next save writes, and marks the buffer unsaved when that changes it. The
+     * document always holds bare {@code \n} (RichTextFX splits paragraphs on any terminator), so there is
+     * nothing to rewrite in the editor: the choice is applied to the bytes on save.
+     */
     public void convertLineEndings(boolean crlf) {
-        String normalized = area.getText().replace("\r\n", "\n");
-        area.replaceText(crlf ? normalized.replace("\n", "\r\n") : normalized);
+        String target = crlf ? LineEndings.CRLF : LineEndings.LF;
+        if (!target.equals(lineEnding)) {
+            lineEnding = target;
+            markUnsaved();
+        }
     }
 
     /** {@code "CRLF"} if {@code text} contains any Windows line ending, else {@code "LF"}. */
@@ -7892,9 +7747,14 @@ public class EditorBuffer implements TabContent {
         return text != null && text.contains("\r\n") ? "CRLF" : "LF";
     }
 
-    /** The effective line ending: the override (EditorConfig / a manual choice) when set, else detected. */
+    /** The line ending a save writes: the EditorConfig override when set, else the file's own. */
     public String getLineEnding() {
-        return eolOverride != null ? eolOverride : detectLineEnding(area.getText());
+        return eolOverride != null ? eolOverride : lineEnding;
+    }
+
+    /** Whether {@code .editorconfig} fixes the line ending, so a manual conversion cannot take effect. */
+    public boolean isLineEndingForced() {
+        return eolOverride != null;
     }
 
     /** Sets the visual tab width used by the minimap (and tracked for future use). */
@@ -7918,9 +7778,9 @@ public class EditorBuffer implements TabContent {
         this.indentSizeOverride = size;
     }
 
-    /** The effective line ending to write on save ({@code "LF"}/{@code "CRLF"}); null = no override. */
+    /** The EditorConfig line ending to write ({@code "LF"}/{@code "CRLF"}/{@code "CR"}); null = no override. */
     public void setEolOverride(String eol) {
-        this.eolOverride = "CRLF".equals(eol) || "LF".equals(eol) ? eol : null;
+        this.eolOverride = LineEndings.isLabel(eol) ? eol : null;
     }
 
     /** The ruler column (EditorConfig {@code max_line_length}); null = default, OFF = hide; re-measures. */
@@ -7934,16 +7794,26 @@ public class EditorBuffer implements TabContent {
     }
 
     public void setDetectedCharset(String charset) {
+        setDetectedCharset(charset, false);
+    }
+
+    /** {@code assumed}: a lossless stand-in for a file its declared charset could not decode. */
+    public void setDetectedCharset(String charset, boolean assumed) {
         this.detectedCharset = charset == null ? com.editora.editorconfig.EditorConfigCharset.UTF_8 : charset;
+        this.charsetAssumed = assumed;
     }
 
     public void setCharsetOverride(String charset) {
         this.charsetOverride = charset;
     }
 
-    /** The charset to write: the EditorConfig override if set, else the charset detected on open. */
+    /**
+     * The charset to write: the EditorConfig override if set, else the charset detected on open. An assumed
+     * charset wins over the override — re-encoding text that was decoded with a stand-in would rewrite bytes
+     * the override never understood.
+     */
     public String getEffectiveCharset() {
-        return charsetOverride != null ? charsetOverride : detectedCharset;
+        return charsetOverride != null && !charsetAssumed ? charsetOverride : detectedCharset;
     }
 
     public void setEditorConfigProps(com.editora.editorconfig.EditorConfigProperties props) {
@@ -8145,9 +8015,14 @@ public class EditorBuffer implements TabContent {
         applyEditable();
     }
 
-    /** True when the buffer accepts edits — no huge-file, user View mode, or loading shell is active. */
+    /** True while this is a shell whose document has not arrived: its (empty) text is not the file. */
+    public boolean isLoading() {
+        return loading;
+    }
+
+    /** True when the buffer accepts edits — no huge-file, View mode, loading shell or log filter is active. */
     public boolean isEditable() {
-        return !hugeFile && !viewMode && !loading;
+        return !hugeFile && !viewMode && !loading && !logView.filtered();
     }
 
     /** Applies editability to both views from the current flags, and tags the surface for CSS. */
@@ -8810,6 +8685,8 @@ public class EditorBuffer implements TabContent {
                 }
             }
         }
+        applyCloserDedent(a, '\n'); // Enter finishes a closer keyword (fi, end, done): align it first
+        caret = a.getCaretPosition();
         Indenter.EnterEdit edit = Indenter.enterEdit(
                 a.getText(), caret, language, tabSize, indentInsertSpacesOverride, indentSizeOverride);
         a.replaceText(caret, caret, edit.insert());
@@ -8861,9 +8738,9 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * When a closing token is typed alone on a line (a {@code )]}} bracket, or a completed closer keyword
-     * like {@code end}/{@code fi}), re-aligns the line's indent to its opener. Does <em>not</em> insert the
-     * character (the caller does). Shared by the auto-indent key filter and macro replay ({@link #typeChar}).
+     * When a closing token is typed alone on a line (a {@code )]}} bracket, or the character/Enter that
+     * finishes a closer keyword like {@code end}/{@code fi}), re-aligns the line's indent to its opener. Does
+     * <em>not</em> insert {@code c} (the caller does). Shared by the key filters and macro replay.
      */
     private void applyCloserDedent(CodeArea a, char c) {
         Indenter.Style style = Indenter.styleFor(language);
@@ -8880,6 +8757,7 @@ public class EditorBuffer implements TabContent {
         String aligned = Indenter.closerAlignIndent(a.getText(), caret, tabSize);
         if (!aligned.equals(currentIndent)) {
             a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
+            a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent
         }
     }
 
@@ -9307,10 +9185,10 @@ public class EditorBuffer implements TabContent {
     /**
      * Applies language-server text edits (e.g. Format Document's whole-file edit set, or a completion's
      * {@code additionalTextEdits} — the {@code import} line an auto-import adds). Edits apply as one undoable
-     * commit. Column positions beyond a line's length are clamped (the LSP spec's rule), but an edit whose
-     * <em>start line</em> lies entirely beyond the document is skipped, not clamped — no valid edit begins
-     * past the end of the file, so such a position means the server computed against a stale revision, and
-     * clamping it onto the last line would apply the edit at a wrong place (#667). Inert when not editable.
+     * commit. Column positions beyond a line's length are clamped (the LSP spec's rule), and the position one
+     * past the last line, column 0, is the document end. An edit that <em>starts</em> further out than that
+     * is skipped, not clamped — no valid edit begins there, so the server computed against a stale
+     * revision, and clamping would apply the edit at a wrong place (#667). Inert when not editable.
      */
     public void applyLspEdits(java.util.List<LspTextEdit> edits) {
         applyLspEdits(edits, false);
@@ -9346,7 +9224,7 @@ public class EditorBuffer implements TabContent {
         int last = 0;
         for (LspTextEdit e : asc) {
             try {
-                if (e.startLine() >= lineCount) {
+                if (e.startLine() > lineCount || (e.startLine() == lineCount && e.startCol() > 0)) {
                     continue; // start beyond the document — a stale edit; clamping would misplace it (#667)
                 }
                 int s = lspOffset(a, e.startLine(), e.startCol());
@@ -9411,11 +9289,18 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Absolute offset for a 0-based LSP line/character, clamped to the document/paragraph bounds. */
+    /**
+     * Absolute offset for a 0-based LSP line/character, clamped to the document/paragraph bounds. A line past
+     * the last one is the document <em>end</em> (as in {@code LspPositions.offset}), not the start of the
+     * last line: {@code (lineCount, 0)} is how a server addresses "after everything".
+     */
     private static int lspOffset(CodeArea a, int line, int col) {
-        int par = Math.max(0, Math.min(line, a.getParagraphs().size() - 1));
-        int len = a.getParagraph(par).length();
-        return a.getAbsolutePosition(par, Math.max(0, Math.min(col, len)));
+        if (line >= a.getParagraphs().size()) {
+            return a.getLength();
+        }
+        int par = Math.max(0, line);
+        return a.getAbsolutePosition(
+                par, Math.max(0, Math.min(col, a.getParagraph(par).length())));
     }
 
     /**
@@ -9476,8 +9361,12 @@ public class EditorBuffer implements TabContent {
      * document text and paragraph model exact while bounding each node's glyph run.
      */
     public void setInitialContent(String content, boolean segmentLongLines) {
-        String initial = content == null ? "" : content;
+        // The area never holds a '\r', so remember the file's line ending here and keep the baseline in the
+        // same normalised form — a CRLF baseline could never equal the document again (edit + undo stayed dirty).
+        lineEnding = LineEndings.dominant(content);
+        String initial = LineEndings.toLf(content);
         widen(); // a fresh document supersedes any narrowing of the old one
+        Runnable refilter = logView.suspendFilter(true);
         // Establish the baseline before the change event. Otherwise an async loading shell briefly becomes
         // dirty during replace(), which promotes a disposable preview tab before the method can clear it.
         cleanText = initial;
@@ -9487,6 +9376,7 @@ public class EditorBuffer implements TabContent {
         } else {
             area.replaceText(initial);
         }
+        refilter.run();
         dirty.set(false);
         recomputeRun(); // detect a runnable file on load (drives the Run glyph)
     }
@@ -9580,6 +9470,9 @@ public class EditorBuffer implements TabContent {
      * the accessible portion.
      */
     public String getContent() {
+        if (logView.filtered()) {
+            return logView.fullText(); // the area shows only the matching lines
+        }
         return narrowPrefix == null ? documentTextSnapshot() : narrowPrefix + documentTextSnapshot() + narrowSuffix;
     }
 
@@ -9606,10 +9499,11 @@ public class EditorBuffer implements TabContent {
      * <p><b>Undo history is dropped at the boundary.</b> The swap is itself an edit, and undoing across it
      * would restore the whole document <em>into</em> the narrowed area while the hidden text is still held
      * aside — duplicating the file. Rather than let that be reachable, both narrowing and widening clear
-     * the history; edits made while narrowed undo normally.
+     * the history of both split views and the Undo History checkpoints; edits made while narrowed undo
+     * normally.
      */
     public boolean narrowTo(int start, int end) {
-        if (largeFile || hugeFile) {
+        if (largeFile || hugeFile || logView.filtered()) {
             return false;
         }
         // Offsets arrive in *area* coordinates (callers read them from the selection), which while
@@ -9628,8 +9522,8 @@ public class EditorBuffer implements TabContent {
         int caret = area.getCaretPosition();
         narrowPrefix = full.substring(0, s);
         narrowSuffix = full.substring(e);
-        area.replaceText(full.substring(s, e));
-        area.getUndoManager().forgetHistory();
+        LineMarks.narrow(s, e, () -> area.replaceText(full.substring(s, e)), bookmarks, breakpoints, notes);
+        forgetHistoryAtNarrowBoundary();
         area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
         area.requestFollowCaret();
         onNarrowChanged.run();
@@ -9656,10 +9550,22 @@ public class EditorBuffer implements TabContent {
         int caret = area.getCaretPosition();
         narrowPrefix = null; // cleared first: replaceText fires the dirty listener, which reads getContent()
         narrowSuffix = null;
-        area.replaceText(prefix + visible + suffix);
-        area.getUndoManager().forgetHistory();
+        LineMarks.widen(() -> area.replaceText(prefix + visible + suffix), bookmarks, breakpoints, notes);
+        forgetHistoryAtNarrowBoundary();
         area.moveTo(Math.min(prefix.length() + caret, area.getLength()));
         area.requestFollowCaret();
+    }
+
+    /** Both views' undo stacks and the Undo History checkpoints: none may be replayed across the boundary. */
+    private void forgetHistoryAtNarrowBoundary() {
+        area.getUndoManager().forgetHistory();
+        if (area2 != null) {
+            area2.getUndoManager().forgetHistory();
+        }
+        undoHistory.clear();
+        if (onUndoHistoryChanged != null) {
+            onUndoHistoryChanged.run();
+        }
     }
 
     /**
@@ -9670,9 +9576,11 @@ public class EditorBuffer implements TabContent {
      */
     public void replaceWholeDocument(String text) {
         widen();
+        Runnable refilter = logView.suspendFilter(false);
         preventUndoMerge();
         area.replaceText(text == null ? "" : text);
         preventUndoMerge();
+        refilter.run();
     }
 
     /** Keeps a programmatic whole-document mutation separate from adjacent user typing in both views. */
@@ -9693,6 +9601,9 @@ public class EditorBuffer implements TabContent {
 
     /** Length of {@link #getContent()} without building it — the per-keystroke dirty-check gate. */
     private int contentLength() {
+        if (logView.filtered()) {
+            return logView.fullLength();
+        }
         return narrowPrefix == null
                 ? area.getLength()
                 : narrowPrefix.length() + area.getLength() + narrowSuffix.length();
@@ -9761,7 +9672,7 @@ public class EditorBuffer implements TabContent {
     /** Forces the next {@link #applyHighlighting()} to re-tokenize the whole document (e.g. after a
      *  language/grammar change, where no text change occurred). */
     private void invalidateHighlighting() {
-        dirtyFromLine = 0;
+        highlightStart.invalidate();
         lineStates.clear();
         lineDepths.clear();
     }
@@ -9856,7 +9767,7 @@ public class EditorBuffer implements TabContent {
         // the current document length before applying, since RichTextFX requires the spans to cover
         // their range exactly.
         // The start line is only valid if we have its predecessor's end-state; otherwise re-do all.
-        int from = dirtyFromLine;
+        int from = highlightStart.dispatch(); // includes a superseded pass's lines until one applies
         boolean colorBrackets = bracketColors;
         // The carried depth has to be usable too, or the pass would start colouring from a depth
         // belonging to a different line. Only demanded while the feature is on — otherwise lineDepths is
@@ -9873,7 +9784,6 @@ public class EditorBuffer implements TabContent {
         IGrammar g = grammar;
         int fromLine = from;
         long gen = ++highlightGen;
-        dirtyFromLine = Integer.MAX_VALUE; // captured; reset so new edits set a fresh dirty start
         HIGHLIGHT_POOL.execute(() -> {
             TextMateHighlighter.IncrementalAnalysis a;
             try {
@@ -9902,6 +9812,7 @@ public class EditorBuffer implements TabContent {
                 if (a.fromOffset() + a.spans().length() != area.getLength()) {
                     return;
                 }
+                highlightStart.applied();
                 StyleSpans<Collection<String>> spans = a.spans();
                 // Overlay the server's semantic tokens on top of the lexical highlight (semantic wins
                 // where present). Suppressed while stale (doc edited since the tokens were anchored).

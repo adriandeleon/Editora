@@ -25,7 +25,7 @@ Two serialization formats, chosen per file:
 | `workspace-state.json` | JSON | `WorkspaceState` | The no-project window's session. |
 | `projects/<id>.json` | JSON | `WorkspaceState` | One project window's session. |
 | `windows/<uuid>.json` | JSON | `WorkspaceState` | An untitled "New Window" session. |
-| `recent-files.json` | JSON | `RecentFiles.Stored` | Was a bare array (v0). |
+| `recent-files.json` | JSON | `RecentFiles.Stored` | Was a bare array (v0). One shared instance; remote entries kept. |
 | `bookmarks.json` | JSON | `BookmarkStore` | Per-project buckets. |
 | `notes.json` | JSON | `NoteStore` | Per-project buckets. |
 | `breakpoints.json` | JSON | `BreakpointStore` | Per-project buckets. |
@@ -34,7 +34,8 @@ Two serialization formats, chosen per file:
 | `macros.json` | JSON | `MacroStore` | App-global keyboard macros. |
 | `plugins.json` | JSON | `PluginStore` | Plugin enable-state. |
 | `projects.json` | JSON | `ProjectManager.Index` | Projects index + open-window set. |
-| `search-history.json` | JSON | `SearchHistory` | Find-in-Files history. |
+| `search-history.json` | JSON | `SearchHistory` | Find-in-Files history. One shared instance. |
+| `agent-sessions.json` | JSON | `AgentSessionHistory` | AI Agent chat sessions. One shared instance. |
 | `dictionary.txt` | plain text | (in-memory `Set<String>`) | User spell-check words, one per line. |
 
 On first launch after the format change, `SharedConfig.loadSettings()` converts a legacy
@@ -48,10 +49,16 @@ converted by the explicit **Edit Project Settings** action.
 
 The config is split in two so that multiple windows can run over the same preferences without clobbering each other:
 
-- [`SharedConfig`](../../src/main/java/com/editora/config/SharedConfig.java) — the **app-wide** half: the `Settings` object, the bucketed stores (`BookmarkStore`/`NoteStore`/`BreakpointStore`/`HistoryStore`), `ConnectionStore`, `MacroStore`, `PluginStore`, the user spell dictionary, and the `ProjectManager` index. A single instance is created once at startup and held **by reference** across every window. It owns the `ConfigWriter` (below) and the file-location getters (`getSettingsFile()`, `getBookmarksFile()`, …).
+- [`SharedConfig`](../../src/main/java/com/editora/config/SharedConfig.java) — the **app-wide** half: the `Settings` object, the bucketed stores (`BookmarkStore`/`NoteStore`/`BreakpointStore`/`HistoryStore`), `ConnectionStore`, `MacroStore`, `PluginStore`, the user spell dictionary, the three history lists (`recentFiles()`, `searchHistory()`, `agentSessions()`), and the `ProjectManager` index. A single instance is created once at startup and held **by reference** across every window. It owns the `ConfigWriter` (below) and the file-location getters (`getSettingsFile()`, `getBookmarksFile()`, …).
 - [`ConfigManager`](../../src/main/java/com/editora/config/ConfigManager.java) — the **per-window** half: it owns only that window's `WorkspaceState` and the `workspaceStateFile` it lives in, and delegates everything shared to its `SharedConfig`. In single-window/test use a `ConfigManager` constructs its own `SharedConfig`.
 
 So a `save()` from any window writes `settings.json` plus that window's session file without touching another window's in-memory copy.
+
+### Changes reach every window
+
+`Settings` is one object, but each window applies it to its own buffers and services. `SharedConfig.enqueueSettings(origin)` — the single point every save goes through — compares the serialized preferences with what all windows last applied (`markSettingsApplied()`, first called when a second window is built). When they differ it tells `WindowManager`, which re-applies them in every window except the one that saved (that one applied the change itself), after a short coalescing delay so a burst such as a Ctrl+wheel zoom costs the other windows one re-apply. A palette toggle, a key binding or any other command therefore needs no broadcast of its own; `lastUpdateCheckEpoch` and `dismissedUpdateVersion` are bookkeeping and never trigger one. The Settings window still calls `broadcastSettingsApplied()` directly, which applies everywhere at once and resets the baseline.
+
+The recent-files list, search history and agent-session history are single instances too. Windows read and add to the same object, `WindowManager` refreshes every window's recent menu and query dropdown when one changes, and a window never binds a control to the shared list itself (it outlives the window) — `SearchCoordinator` keeps its own copy for the combo.
 
 ### Per-window session and per-project buckets
 
@@ -76,7 +83,40 @@ Two paths:
 - `enqueue(file, bytes)` — non-blocking and **coalesced per file** (latest bytes win), via `ConfigManager.saveAsync()` → `SharedConfig.enqueueSettings()`. This backs the frequent in-session save (`MainController.requestSave`).
 - `flush()` — blocks until everything queued has landed, via `ConfigManager.save()` → `SharedConfig.flushWrites()`. This is the durable form used by quit (`persistSession`), one-off actions, and `exportConfig()`. `App.start` registers a JVM-shutdown flush.
 
-`settings.json` and `workspace-state.json` have both async and sync save paths, and **both funnel through the one writer queue**. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. Local History's `history/index.json` also uses that queue: it waits for the exact index snapshot to become durable before confirming a destructive file operation. Its blob GC is queued under the publication lock, before durable callbacks can start a newer snapshot; the history worker also queues GC under its publication lock so an older live set cannot overtake a new blob write. Other stores (`bookmarks.json`, `notes.json`, …) keep direct synchronous writes in `SharedConfig`.
+`settings.json` and `workspace-state.json` have both async and sync save paths, and **both funnel through the one writer queue**. The three history lists (`recent-files.json`, `search-history.json`, `agent-sessions.json`) are queued on it as well, as an immutable snapshot serialized on the writer thread. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. Local History's `history/index.json` also uses that queue: it waits for the exact index snapshot to become durable before confirming a destructive file operation. Its blob GC is queued under the publication lock, before durable callbacks can start a newer snapshot; the history worker also queues GC under its publication lock so an older live set cannot overtake a new blob write. That GC is throttled (`HistoryService.gcIfDue`, at most once per ten minutes) so a save does not walk the whole blob store; a skipped pass deletes nothing and the next one uses the live set of its own moment, while a purge (`localHistory.purgeFile` / `localHistory.purgeProject`) requests an immediate pass. Retention is applied to the whole index once per start, off the FX thread (`HistoryRetention.sweep`), not only to the file being saved; a file's newest revision, labelled revisions and pre-delete copies are exempt from the ordinary limits but expire after a longer lease (six times the age limit, at least 180 days). Other stores (`bookmarks.json`, `notes.json`, …) keep direct synchronous writes in `SharedConfig`.
+
+## More than one process on a config directory
+
+`SharedConfig` shares the stores between the *windows* of one process. Two *processes* on the same
+directory are a different matter, and an ordinary one: `App.shouldForwardLaunch` only forwards a plain
+"open these files" launch to the running editor, so a launch with no file argument, `--project`,
+`--new-file`, `--new-instance` or `--diff-ui` starts a second JVM on `~/.editora`.
+
+`App.start` calls `SharedConfig.claimInstance()` before any window is built. The claim is an OS file lock
+on `<configDir>/instance.lock` ([`InstanceLock`](../../src/main/java/com/editora/config/InstanceLock.java)),
+released by the operating system when the holder dies, so a crash never leaves a stale claim:
+
+- **byte 0, exclusive** — held for life by the first process, the *primary*. There is no promotion: a
+  secondary that outlives the primary stays a secondary.
+- **byte 1, shared** — held for life by every secondary, so the primary can ask "is anyone else here
+  right now?" by trying to take it exclusively.
+
+`SharedConfig.isPrimaryInstance()` is the single source of truth derived from it:
+
+- `WindowManager` shows a one-time warning in a secondary (`status.config.secondaryInstance`).
+- Local-history blob GC runs only in the primary, and only while no secondary is alive
+  (`mayCollectHistoryBlobs`, asked on the history worker right before deleting). GC deletes every blob
+  outside *this* process's index, and another process's revisions are not in it.
+
+A config that was never claimed (tests, embedders) counts as its own sole user, and a filesystem that
+refuses locks degrades to "primary, alone".
+
+**What is still not safe across processes:** every store is written whole from its process's in-memory
+copy, so `settings.json`, `notes.json`, `bookmarks.json`, `breakpoints.json`, `projects.json`,
+`recent-files.json`, `history/index.json` and the other stores remain *last-writer-wins* between two
+processes. There is no merge-on-write and no cross-process change notification; the warning exists
+because of that. (The spawned-process ledger is per process — see
+[LSP and DAP](lsp-and-dap.md#processregistry--processrunner).)
 
 ## Schema versioning and migrations
 
@@ -87,11 +127,12 @@ Every structured config file carries an integer `schemaVersion` field, and its o
 [`ConfigSchema`](../../src/main/java/com/editora/config/migration/ConfigSchema.java) is an enum, one constant per versioned file. Each carries three things:
 
 1. The **current** version (the POJO's `SCHEMA_VERSION`).
-2. The version to **assume when the file has no `schemaVersion` marker** — `1`, the pre-versioning baseline (a bare JSON array is detected as `0` instead, by `ConfigMigrations.versionOf`).
+2. The version to **assume when the file has no `schemaVersion` marker** — `1`, the pre-versioning baseline (a bare JSON array is detected as `0` instead, by `ConfigMigrations.versionOf`). `SETTINGS` also carries a small *evidence* table (`versionWithoutMarker`): a key that first appeared in version N proves the file is at least N, so a current-shape file that merely lost its marker resumes after the steps that are not safe to repeat instead of replaying all of them from 1.
 3. An ordered map of **step `Migration`s** keyed by the version they upgrade *from* (`v → v+1`).
 
-For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (104), with an additive identity step for
-the Default JDK at `102 → 103` (also used by standalone Java files); `WORKSPACE` uses `11 → 12` for the per-run-configuration JDK
+For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (105), with an additive identity step for
+the Default JDK at `102 → 103` (also used by standalone Java files) and `104 → 105` as
+`retireUnusedSettingsKeys`; `WORKSPACE` uses `11 → 12` for the per-run-configuration JDK
 override; `PROJECTS` registers `1 → 2` as `seedOpenProjectIds`; and `RECENT` registers `0 → 1` as
 `wrapRecentFilesArray`.
 
@@ -103,13 +144,22 @@ override; `PROJECTS` registers `1 → 2` as `seedOpenProjectIds`; and `RECENT` r
 2. Parse to a Jackson tree.
 3. `upgrade(schema, tree, mapper)` — read the stored version (`versionOf`), then `applySteps` runs the `from → to` chain in order (one registered step per version, throwing `IllegalStateException` if a step is missing), and stamps `schemaVersion` to the current version.
 4. Merge the migrated object **onto `defaults`** via `mapper.readerForUpdating(defaults)`. So a purely additive new field just defaults when an old file is read.
-5. Malformed content or a misconfigured migration → fall back to `defaults` rather than crash.
+5. A value of the wrong type (a hand edit such as `"showMinimap": "yes"`) costs only that top-level property: the merge is retried one property at a time, the bad one keeps its default, and every other property is still read.
+6. Unparseable content or a misconfigured migration → fall back to `defaults` rather than crash.
 
-A [`Migration`](../../src/main/java/com/editora/config/migration/Migration.java) is a `@FunctionalInterface` over the in-memory tree (`JsonNode apply(JsonNode)`). Keep steps pure and total: never throw on unexpected-but-harmless input, return the best tree you can.
+Whenever content was not read as written, the original file is copied to `<name>.corrupt.bak` (a counter is appended when the name is taken) and the caller is told through the optional `Consumer<ConfigLoadProblem>`. `SharedConfig` collects these for its own files; the first window built shows each one once as a status-bar error (`ConfigLoadMessages`), so it stays flagged in the message log.
+
+Numeric setters that feed arithmetic clamp (`Settings.setTabSize`/`setFontSize`/`setFontZoom`), so an out-of-range value in the file loads as the nearest legal one rather than failing later.
+
+A [`Migration`](../../src/main/java/com/editora/config/migration/Migration.java) is a `@FunctionalInterface` over the in-memory tree (`JsonNode apply(JsonNode)`). Keep steps pure and total: never throw on unexpected-but-harmless input, return the best tree you can. Make a step **safe to repeat** by checking for the shape it produces (`splitKeybindings` skips a file that already has `keybindingsMac`); when the target shape cannot be told apart from the source, add the next version's new key to the schema's evidence table.
+
+A getter that *resolves* a blank value (`getAuthorName()` → the OS user, `getPluginRegistryUrl()` → the built-in registry) must not be what Jackson serializes, or the first save freezes the resolved value into the file: mark it `@JsonIgnore` and put `@JsonProperty` on the raw getter and the setter.
 
 ### Downgrade safety
 
 If a file's stored `schemaVersion` is **newer** than this build supports (the user downgraded the app), `upgrade` throws [`NewerThanSupportedException`](../../src/main/java/com/editora/config/migration/NewerThanSupportedException.java). `readVersioned` then backs the file up to `<name>.v<n>.bak` (`ConfigMigrations.backup`, preserving any existing backup) and returns `defaults`. An older Editora never overwrites — and silently drops fields from — a newer config.
+
+That guarantee holds when the backup itself fails (a read-only directory, or every backup name already taken): the problem is reported with no backup path, `ConfigLoadProblem.mustNotOverwrite()` is true, and `SharedConfig` then refuses to write that file for the rest of the session (`isWriteProtected`). The same applies to an unparseable file that could not be copied aside. The Local File History index is the one exception — it is reported but still written, because its publication protocol must keep running.
 
 ### Worked examples
 

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -134,8 +135,8 @@ public final class TypstRenderer {
             outDir = Files.createTempDirectory("editora-typst-out");
             Files.writeString(input, source);
             Path outTemplate = outDir.resolve("page-{p}.png");
-            ProcessRunner.Result r = ProcessRunner.run(
-                    p.root(), RENDER_TIMEOUT, renderArgs(cmd, p.root(), input, outTemplate, renderPpi()));
+            ProcessRunner.Result r = ProcessRunner.runScrubbed(
+                    p.root(), RENDER_TIMEOUT, renderArgs(cmd, p.root(), input, outTemplate, renderPpi()), Map.of());
             List<byte[]> pages = readPages(outDir);
             if (pages.isEmpty()) {
                 return Pages.fail(r.ok() ? "no pages rendered" : friendlyMessage(r.message(), displayName));
@@ -182,7 +183,8 @@ public final class TypstRenderer {
             input = p.inputDir().resolve(".editora-typst-" + UUID.randomUUID() + ".typ");
             Files.writeString(input, source);
             String output = exportOutput(dest);
-            return ProcessRunner.run(p.root(), RENDER_TIMEOUT, exportArgs(cmd, p.root(), input, output, renderPpi()));
+            return ProcessRunner.runScrubbed(
+                    p.root(), RENDER_TIMEOUT, exportArgs(cmd, p.root(), input, output, renderPpi()), Map.of());
         } catch (IOException e) {
             return new ProcessRunner.Result(-1, "", e.getMessage() == null ? "export failed" : e.getMessage());
         } finally {

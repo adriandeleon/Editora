@@ -146,6 +146,15 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         branchLabel.getStyleClass().add("git-branch-label");
         branchLabel.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(branchLabel, Priority.ALWAYS);
+        // In a narrow dock the branch name wins: it keeps a readable minimum (the full name is in its
+        // tooltip) while the push indicator gives way, down to its arrow ("↑ …") — both used to collapse
+        // to a bare "…".
+        branchLabel.setMinWidth(BRANCH_MIN_WIDTH);
+        Tooltip branchTip = new Tooltip();
+        branchTip.textProperty().bind(branchLabel.textProperty());
+        branchLabel.setTooltip(branchTip);
+        aheadLabel.setMinWidth(AHEAD_MIN_WIDTH);
+        aheadLabel.setTextOverrun(javafx.scene.control.OverrunStyle.WORD_ELLIPSIS);
         aheadLabel.getStyleClass().add("git-ahead");
         Button stageAll = iconButton(Icons.stageAll(), tr("gitpanel.stageAllTip"), actions::stageAll);
         reviewWorkingItem = new MenuItem(tr("gitpanel.reviewWorking"));
@@ -249,13 +258,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
     /** A compact, legible icon button for the panel toolbar (graphic + tooltip, no truncated text). */
     private static Button iconButton(javafx.scene.Node icon, String tip, Runnable action) {
-        Button b = new Button();
-        b.setGraphic(icon);
-        b.getStyleClass().addAll("flat", "git-toolbar-button");
-        b.setFocusTraversable(false);
-        b.setTooltip(new Tooltip(tip));
-        b.setOnAction(e -> action.run());
-        return b;
+        return Icons.toolbarButton(icon, tip, action, "flat", "git-toolbar-button"); // tooltip + accessible name
     }
 
     private void doCommit() {
@@ -304,7 +307,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             return;
         }
         lastStatus = status;
-        branchLabel.setText("⎇ " + (status.branch().isBlank() ? "(detached)" : status.branch()));
+        branchLabel.setText("⎇ " + (status.branch().isBlank() ? tr("gitpanel.detached") : status.branch()));
         updatePushIndicator(status);
 
         // The commit affordances read the FULL status, never the filtered view: hiding a staged file behind
@@ -754,9 +757,18 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         "git-status-untracked"
     };
 
+    /** Narrowest the branch label gets in the header (room for the glyph and a short branch name). */
+    static final double BRANCH_MIN_WIDTH = 88;
+
+    /** Room for the push indicator's arrow and an ellipsis when its word no longer fits. */
+    private static final double AHEAD_MIN_WIDTH = 30;
+
     private final class GitCell extends TreeCell<Row> {
 
         GitCell() {
+            // Rows are as wide as the tree, never wider: a long path is elided (see updateItem) instead of
+            // pushing its file name behind a horizontal scrollbar.
+            setPrefWidth(0);
             // Built per request rather than stored via setContextMenu: the items depend on the current
             // selection, which changes long after updateItem last ran for this cell.
             setOnContextMenuRequested(e -> {
@@ -780,10 +792,14 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 setText(tr(g.group().key) + " (" + g.count() + ")");
                 getStyleClass().add("git-group-row");
                 setGraphic(null);
+                setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
             } else if (item instanceof FileRow f) {
                 FileEntry e = f.entry();
                 // The status letter rides in the graphic, not the text, so it can be bold on its own.
                 setText(f.entry().path());
+                // Elide the leading directories, so the file name — the part that identifies the row —
+                // stays visible; the tooltip below has the whole path.
+                setTextOverrun(javafx.scene.control.OverrunStyle.LEADING_ELLIPSIS);
                 setGraphic(FileIcons.withStatusLetter(Icons.fileSheet(), statusLetter(e)));
                 // Color the row by status (same palette as the Project tree) so the two windows match.
                 getStyleClass().add(GitFileStatus.of(e).cssClass());

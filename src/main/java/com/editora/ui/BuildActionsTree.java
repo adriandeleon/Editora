@@ -331,13 +331,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
     }
 
     private Button iconButton(javafx.scene.Node icon, String tooltip, Runnable action) {
-        Button b = new Button();
-        b.setGraphic(icon);
-        b.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
-        b.setFocusTraversable(false);
-        b.setTooltip(new Tooltip(tooltip));
-        b.setOnAction(e -> action.run());
-        return b;
+        return Icons.toolbarButton(icon, tooltip, action, "button-icon", "flat", "toolbar-button");
     }
 
     @Override

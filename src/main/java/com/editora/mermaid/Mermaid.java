@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 import com.editora.process.ProcessRunner;
 
@@ -107,7 +108,8 @@ public final class Mermaid {
             Path in = dir.resolve("diagram.mmd");
             Path out = dir.resolve("diagram.png");
             Files.writeString(in, source);
-            ProcessRunner.Result r = ProcessRunner.run(dir, RENDER_TIMEOUT, renderArgs(mmdc, in, out, dark));
+            ProcessRunner.Result r =
+                    ProcessRunner.runScrubbed(dir, RENDER_TIMEOUT, renderArgs(mmdc, in, out, dark), Map.of());
             if (!r.ok() || !Files.isRegularFile(out)) {
                 return Render.fail(r.message());
             }
@@ -129,7 +131,7 @@ public final class Mermaid {
             dir = Files.createTempDirectory("editora-mermaid");
             Path in = dir.resolve("diagram.mmd");
             Files.writeString(in, source);
-            return ProcessRunner.run(dir, RENDER_TIMEOUT, renderArgs(mmdc, in, dest, dark));
+            return ProcessRunner.runScrubbed(dir, RENDER_TIMEOUT, renderArgs(mmdc, in, dest, dark), Map.of());
         } catch (IOException e) {
             return new ProcessRunner.Result(-1, "", e.getMessage() == null ? "export failed" : e.getMessage());
         } finally {
@@ -152,7 +154,7 @@ public final class Mermaid {
             cmd.add("--format");
             cmd.add("json");
             cmd.add(in.toString());
-            ProcessRunner.Result r = ProcessRunner.run(dir, DETECT_TIMEOUT, cmd);
+            ProcessRunner.Result r = ProcessRunner.runScrubbed(dir, DETECT_TIMEOUT, cmd, Map.of());
             String payload = r.out() != null && !r.out().isBlank() ? r.out() : r.err();
             return MaidOutput.parse(payload);
         } catch (IOException e) {

@@ -132,6 +132,8 @@ public final class MergeViewerPane implements TabContent {
         Label resultLabel = new Label(tr("merge.result"));
         resultLabel.getStyleClass().add("merge-result-label");
         resultArea.setId("merge-result");
+        // The configured keymap's caret/editing chords act on the result (the KeyDispatcher leaves them to it).
+        com.editora.command.TextInputKeymap.installShared(resultArea);
         resultArea.setWrapText(false);
         resultArea.setStyle(fontStyle);
         resultArea.getStyleClass().add("merge-result");

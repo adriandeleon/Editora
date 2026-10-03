@@ -70,9 +70,15 @@ final class TestNavigationCoordinator {
     }
 
     /** A stack-trace location double-clicked in the Run/Debug console: resolve + jump. An absolute
-     *  path opens directly; a bare Java file name resolves against the open tabs, then the run file's
-     *  directory, then the active project root's top level. */
+     *  path opens directly; a Java frame resolves through its qualified class against the project's source
+     *  roots; a bare file name resolves against the open tabs, then the run file's directory, then the
+     *  active project root's top level. */
     void openRunLink(com.editora.run.StackTraceLinks.Link link) {
+        openRunLink(link, null);
+    }
+
+    /** As above; {@code onUnresolved} runs instead of the "file not found" status when nothing resolves. */
+    void openRunLink(com.editora.run.StackTraceLinks.Link link, Runnable onUnresolved) {
         // Ask the Java server first when one is running (#744): it resolves the frame against the real
         // classpath, so it can place a frame inside a dependency or the JDK — which the local
         // regex + filesystem walk below can never do, because there is no such file in the project.
@@ -80,12 +86,12 @@ final class TestNavigationCoordinator {
         if (anchor != null && link.raw() != null) {
             host.lspManager().resolveStackTraceLocation(anchor, link.raw(), uri -> {
                 if (uri == null || !openResolvedFrame(anchor, uri, link)) {
-                    openRunLinkLocally(link); // no answer, or an answer we can't open — heuristic as before
+                    openRunLinkLocally(link, onUnresolved); // no answer, or one we can't open — heuristic
                 }
             });
             return;
         }
-        openRunLinkLocally(link);
+        openRunLinkLocally(link, onUnresolved);
     }
 
     /** The file whose session answers stack-trace resolution: the active buffer if the Java server serves
@@ -119,12 +125,98 @@ final class TestNavigationCoordinator {
     }
 
     void openRunLinkLocally(com.editora.run.StackTraceLinks.Link link) {
-        Path resolved = resolveRunLinkFile(link.file());
-        if (resolved == null) {
-            host.setStatus(tr("status.run.linkNotFound", link.file()));
+        openRunLinkLocally(link, null);
+    }
+
+    /**
+     * Resolves a frame without a language server — the default, since LSP is off until a server is installed.
+     *
+     * <p>A Java frame names a bare file ({@code Bar.java}), which on its own finds a file only when it is
+     * open or sits directly in the project root. Its qualified class says where the file really is, so
+     * {@code com/foo/Bar.java} is looked up under the project's source roots off the FX thread; the old
+     * bare-name heuristics remain as the fallback for everything that is not such a frame.
+     */
+    void openRunLinkLocally(com.editora.run.StackTraceLinks.Link link, Runnable onUnresolved) {
+        String sourcePath = com.editora.run.StackTraceLinks.javaSourcePath(link);
+        Path open = sourcePath == null ? null : openFileEndingWith(sourcePath);
+        if (sourcePath == null || open != null) {
+            finishRunLink(link, open != null ? open : resolveRunLinkFile(link.file()), onUnresolved);
             return;
         }
-        host.openAndGoto(resolved, link.line() - 1, 0); // console lines are 1-based
+        locateSource(
+                sourcePath,
+                true,
+                found -> finishRunLink(link, found != null ? found : resolveRunLinkFile(link.file()), onUnresolved));
+    }
+
+    private void finishRunLink(com.editora.run.StackTraceLinks.Link link, Path resolved, Runnable onUnresolved) {
+        if (resolved != null) {
+            host.openAndGoto(resolved, link.line() - 1, 0); // console lines are 1-based
+        } else if (onUnresolved != null) {
+            onUnresolved.run();
+        } else {
+            host.setStatus(tr("status.run.linkNotFound", link.file()));
+        }
+    }
+
+    /** An open file whose path ends with {@code relPath} ('/'-separated) — the same class, not merely the same name. */
+    private Path openFileEndingWith(String relPath) {
+        for (Tab t : host.editorArea().tabs()) {
+            EditorBuffer b = host.bufferOf(t);
+            Path path = b == null ? null : b.getPath();
+            if (path != null && endsWithPath(path, relPath)) {
+                return path;
+            }
+        }
+        return null;
+    }
+
+    /** Separator-safe "{@code path} ends with the segments of {@code relPath}" (a Windows path has no '/'). */
+    static boolean endsWithPath(Path path, String relPath) {
+        String normalized = path.toString().replace('\\', '/');
+        return normalized.equals(relPath) || normalized.endsWith("/" + relPath);
+    }
+
+    /** The folder source lookups search: this window's project, else the active project. */
+    private Path projectRoot() {
+        Project project = host.windowProject();
+        if (project == null && host.projects() != null) {
+            project = host.projects().active();
+        }
+        return project == null ? null : Path.of(project.root());
+    }
+
+    /** Supersedes an in-flight navigation lookup: the latest double-click is the one the user means. */
+    private final java.util.concurrent.atomic.AtomicInteger navigationLookup =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** Test seam: how a blocking lookup is run off the FX thread. */
+    java.util.function.Consumer<Runnable> lookupRunner =
+            task -> Thread.ofVirtual().name("source-locate").start(task);
+
+    /**
+     * Finds the project file whose path ends with {@code relPath} — never on the FX thread, where a walk of
+     * a large or cold tree freezes the window — and reports it (or null) back on the FX thread.
+     *
+     * @param navigation a jump the user asked for: a newer one supersedes it, so two quick double-clicks do
+     *     not land in whichever order the disk answers. False for a lookup something else is waiting on.
+     */
+    void locateSource(String relPath, boolean navigation, java.util.function.Consumer<Path> onResult) {
+        Path root = projectRoot();
+        if (root == null) {
+            onResult.accept(null);
+            return;
+        }
+        int mine = navigation ? navigationLookup.incrementAndGet() : -1;
+        java.util.function.BooleanSupplier superseded = () -> navigation && mine != navigationLookup.get();
+        lookupRunner.accept(() -> {
+            Path found = com.editora.search.SourceFileFinder.find(root, relPath, superseded);
+            javafx.application.Platform.runLater(() -> {
+                if (!superseded.getAsBoolean()) {
+                    onResult.accept(found);
+                }
+            });
+        });
     }
 
     Path resolveRunLinkFile(String fileToken) {
@@ -310,41 +402,77 @@ final class TestNavigationCoordinator {
         host.coordinatorHost().forEachBuffer(this::applyTestGutter);
     }
 
-    /** Test Results double-click: open the test's source file and jump to the method (name-based; the failure
-     *  path already prefers the exact stack-trace frame via {@link #openRunLink}). */
+    /**
+     * Test Results double-click: jump to the test.
+     *
+     * <p>A failure carries a stack trace, and its frame is the better target — the exact line that threw —
+     * so it is tried first. When that frame does not resolve (no source for it in this project) the
+     * name-based lookup every passing test gets is used instead; a failed test used to stop at "file not
+     * found" there.
+     */
     void jumpToTestSource(com.editora.test.TestNode node, BuildTool tool) {
-        String hint = com.editora.test.TestSourceLocator.fileHint(node.className(), tool);
-        Path file = hint == null ? null : resolveTestSourceFile(hint);
-        if (file == null) {
+        com.editora.run.StackTraceLinks.Link frame = node.stackTrace() == null
+                ? null
+                : TestRunCoordinator.firstFrame(node.stackTrace(), node.sourceFileHint());
+        if (frame != null) {
+            openRunLink(frame, () -> jumpToTestByName(node, tool));
+        } else {
+            jumpToTestByName(node, tool);
+        }
+    }
+
+    /** Opens the test's source file (found by its class name) and jumps to the method once it has loaded. */
+    private void jumpToTestByName(com.editora.test.TestNode node, BuildTool tool) {
+        String hint = com.editora.test.TestSourceLocator.pathHint(node.className(), tool);
+        if (hint == null) {
             host.setStatus(tr("status.testrunner.noSource", node.displayName()));
             return;
         }
-        host.fileWorkflows().openPath(file);
-        jumpToTestMethod(file, node.methodName());
+        resolveTestSource(hint, true, file -> {
+            if (file == null) {
+                host.setStatus(tr("status.testrunner.noSource", node.displayName()));
+                return;
+            }
+            host.fileWorkflows().openPath(file);
+            EditorBuffer buffer = host.bufferOf(host.tabForPath(file));
+            if (buffer == null) {
+                return;
+            }
+            // openPath only starts the load: the tab is an empty shell until the text arrives, and a jump
+            // made now searches nothing and leaves the caret on line 1. Queue it behind the load.
+            host.fileWorkflows().afterBufferLoad(buffer, () -> jumpToTestMethod(file, node.methodName()));
+        });
     }
 
-    /** Resolves a test source file by name: an open tab / last-run dir / project root first, else a bounded
-     *  walk of the project tree (test sources live deep under src/test/…). */
-    Path resolveTestSourceFile(String name) {
-        Path direct = resolveRunLinkFile(name);
-        if (direct != null) {
-            return direct;
+    /**
+     * Resolves a test's source from {@code pathHint} ({@code com/foo/BarTest.java}, or a bare name): an open
+     * tab of that class, then the project's source roots and — off the FX thread — a pruned walk of the
+     * project, then the bare-name heuristics. Reports the file, or null, on the FX thread.
+     */
+    void resolveTestSource(String pathHint, boolean navigation, java.util.function.Consumer<Path> onResult) {
+        Path open = openFileEndingWith(pathHint);
+        if (open != null) {
+            onResult.accept(open);
+            return;
         }
-        Path root = host.windowProject() != null ? Path.of(host.windowProject().root()) : null;
-        if (root == null || !java.nio.file.Files.isDirectory(root)) {
-            return null;
-        }
-        try (java.util.stream.Stream<Path> walk = java.nio.file.Files.walk(root, 12)) {
-            return walk.filter(java.nio.file.Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().equals(name))
-                    .filter(p -> {
-                        String s = p.toString();
-                        return !s.contains("/target/") && !s.contains("/node_modules/") && !s.contains("/build/");
-                    })
-                    .findFirst()
-                    .orElse(null);
-        } catch (Exception e) {
-            return null;
+        String name = pathHint.substring(pathHint.lastIndexOf('/') + 1);
+        locateSource(pathHint, navigation, found -> onResult.accept(found != null ? found : resolveRunLinkFile(name)));
+    }
+
+    /**
+     * The file a test-JVM debug attach should be anchored to: the test class's source, else the active
+     * buffer's file. Never superseded by a navigation lookup — an attach is waiting on the answer.
+     */
+    void resolveTestClassAnchor(String className, java.util.function.Consumer<Path> onResult) {
+        java.util.function.Consumer<Path> orActive = found -> {
+            EditorBuffer active = host.activeBuffer();
+            onResult.accept(found != null ? found : active == null ? null : active.getPath());
+        };
+        String hint = com.editora.test.TestSourceLocator.pathHint(className, BuildTool.MAVEN);
+        if (hint == null) {
+            orActive.accept(null);
+        } else {
+            resolveTestSource(hint, false, orActive);
         }
     }
 
@@ -355,8 +483,8 @@ final class TestNavigationCoordinator {
         if (buffer == null || methodName == null || methodName.isBlank()) {
             return;
         }
-        String name = methodName;
-        for (char sep : new char[] {'(', '[', '/', ' '}) {
+        String name = com.editora.test.TestSourceLocator.filterMethodName(methodName);
+        for (char sep : new char[] {'/', ' '}) { // a Go subtest path, a display name
             int cut = name.indexOf(sep);
             if (cut > 0) {
                 name = name.substring(0, cut);

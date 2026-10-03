@@ -237,6 +237,48 @@ class MinimapDragFxTest {
         assertEquals(start, up, 1.0, "and a wheel back up must return it");
     }
 
+    /** Presses the column at the row drawn for {@code line} and returns the line then at the top of the editor. */
+    private int pressOnLine(int line) throws Exception {
+        fire(mouseAt(MouseEvent.MOUSE_PRESSED, (line + 0.5) * rowHeight()));
+        var first = new AtomicReference<Integer>();
+        onFx(() -> {
+            area.layout();
+            first.set(area.firstVisibleParToAllParIndex());
+        });
+        return first.get();
+    }
+
+    @Test
+    void aPressBelowAFoldLandsOnTheLineUnderTheCursor() throws Exception {
+        // 290 hidden lines above the target: the proportional mapping assumed every line still took a row
+        // in the editor, so the press scrolled to a line far from the one drawn under the cursor.
+        onFx(() -> {
+            area.foldParagraphs(10, 300);
+            area.layout();
+        });
+        assertEquals(450, pressOnLine(450), "the line drawn under the cursor is the one shown at the top");
+        assertEquals(350, pressOnLine(350));
+    }
+
+    @Test
+    void aPressOnAHiddenLineShowsItsFoldHeader() throws Exception {
+        onFx(() -> {
+            area.foldParagraphs(10, 300);
+            area.layout();
+        });
+        assertEquals(500, pressOnLine(500)); // move the viewport box off the fold, so the next press is a jump
+        assertEquals(10, pressOnLine(150), "a folded line is represented by the header above it");
+    }
+
+    @Test
+    void aPressWithWordWrapOnLandsOnTheLineUnderTheCursor() throws Exception {
+        onFx(() -> {
+            area.setWrapText(true);
+            area.layout();
+        });
+        assertEquals(200, pressOnLine(200));
+    }
+
     private double totalHeight() throws Exception {
         var out = new AtomicReference<Double>();
         onFx(() -> out.set(area.totalHeightEstimateProperty().getValue()));

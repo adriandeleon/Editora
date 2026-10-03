@@ -105,6 +105,15 @@ public final class PrintService {
         });
     }
 
+    /**
+     * Prepares an already-built CommonMark {@code document} — content that is data rather than Markdown
+     * source (the CSV print builds its table node by node, so a cell is never re-parsed as markup).
+     */
+    public void prepareDocument(org.commonmark.node.Node document, Path baseDir, Consumer<Prepared> onReady) {
+        exec.submit(() -> deliver(
+                onReady, new Prepared(layout -> MarkdownPrintLayout.paginate(document, baseDir, layout), null)));
+    }
+
     /** Prepares a standalone Mermaid diagram (rendered to PNG via mmdc, scaled to fit one page). */
     public void prepareMermaid(String source, List<String> mmdc, boolean dark, Consumer<Prepared> onReady) {
         exec.submit(() -> {

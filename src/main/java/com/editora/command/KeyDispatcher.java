@@ -6,6 +6,9 @@ import java.util.function.Consumer;
 import javafx.event.EventTarget;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.ComboBoxBase;
+import javafx.scene.control.Spinner;
+import javafx.scene.control.TextInputControl;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
@@ -15,8 +18,8 @@ import javafx.scene.input.KeyEvent;
  */
 public class KeyDispatcher {
 
-    private static final boolean IS_MAC =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+    /** Whether this dispatcher runs on macOS (Option is Meta there; no Alt menu mode, no AltGr-as-Ctrl+Alt). */
+    private final boolean mac;
 
     private final CommandRegistry registry;
     private final KeymapManager keymap;
@@ -27,6 +30,8 @@ public class KeyDispatcher {
     private String pending = "";
     /** True when the last KEY_PRESSED was consumed, so its paired KEY_TYPED is swallowed too. */
     private boolean consumedPress;
+    /** True while the AltGr key itself is held (it arrives as {@link KeyCode#ALT_GRAPH}); see {@link #altGrText}. */
+    private boolean altGrHeld;
 
     /** The Emacs prefix (universal) argument being entered, if any. See {@link #handle}. */
     private final PrefixArg prefixArg = new PrefixArg();
@@ -54,6 +59,12 @@ public class KeyDispatcher {
     private java.util.function.Predicate<EventTarget> recordTarget = t -> false;
 
     public KeyDispatcher(CommandRegistry registry, KeymapManager keymap, Consumer<String> statusListener) {
+        this(registry, keymap, statusListener, KeymapManager.isMac());
+    }
+
+    /** Package-visible variant with an explicit platform flag so tests don't depend on the host OS. */
+    KeyDispatcher(CommandRegistry registry, KeymapManager keymap, Consumer<String> statusListener, boolean mac) {
+        this.mac = mac;
         this.registry = registry;
         this.keymap = keymap;
         this.statusListener = statusListener != null ? statusListener : s -> {};
@@ -128,7 +139,10 @@ public class KeyDispatcher {
      */
     void handleReleased(KeyEvent event) {
         consumedPress = false;
-        if (!IS_MAC) {
+        if (event.getCode() == KeyCode.ALT_GRAPH) {
+            altGrHeld = false;
+        }
+        if (!mac) {
             suppressMenuAlt(event);
         }
     }
@@ -148,6 +162,22 @@ public class KeyDispatcher {
      */
     static boolean plainAltActive(boolean isMac, boolean altDown, boolean controlDown) {
         return !isMac && altDown && !controlDown;
+    }
+
+    /**
+     * Whether a key press with Ctrl+Alt down is <em>AltGr typing a character</em> rather than a {@code C-M-}
+     * chord. Windows reports AltGr as Ctrl+Alt, so on a German or Spanish layout AltGr+E (the euro sign)
+     * looked exactly like {@code C-M-e}: the command ran and the character was thrown away.
+     *
+     * <p>The modifier flags cannot tell the two apart, but the key can: AltGr is reported as its own key
+     * code ({@link KeyCode#ALT_GRAPH}), Left Alt as {@link KeyCode#ALT}. So while the AltGr key is held, a
+     * Ctrl+Alt press is text input; Ctrl+<b>Left</b>Alt+letter still dispatches its chord. The character
+     * the press carries is deliberately not consulted — it is the key's unmodified character on Windows and
+     * a different script's letter on a Cyrillic or Greek layout, so it would misfire both ways. macOS never
+     * qualifies: Option is Meta there, and its glyphs are handled in {@link #handleTyped}. Pure — tested.
+     */
+    static boolean altGrText(boolean isMac, boolean controlDown, boolean altDown, boolean altGrHeld) {
+        return !isMac && controlDown && altDown && altGrHeld;
     }
 
     /**
@@ -201,13 +231,27 @@ public class KeyDispatcher {
         consumedPress = false;
         // Bare Alt: consume so Windows can't enter menu mode (which freezes the keyboard). Plain Alt
         // only — AltGr (Ctrl+Alt) is left alone (see plainAltActive).
-        if (event.getCode() == KeyCode.ALT && plainAltActive(IS_MAC, event.isAltDown(), event.isControlDown())) {
+        if (event.getCode() == KeyCode.ALT && plainAltActive(mac, event.isAltDown(), event.isControlDown())) {
             event.consume();
             return;
+        }
+        if (event.getCode() == KeyCode.ALT_GRAPH) {
+            altGrHeld = true;
+        } else if (!event.isAltDown()) {
+            altGrHeld = false; // a missed release (focus left the window) must not outlive the next plain key
         }
         String token = chord(event);
         if (token == null) {
             return; // a modifier key on its own
+        }
+        // AltGr composing a character (reported as Ctrl+Alt outside macOS): this is typing, not a C-M- chord.
+        // Leave the press alone so its KEY_TYPED delivers the character to whatever is focused.
+        if (pending.isEmpty() && altGrText(mac, event.isControlDown(), event.isAltDown(), altGrHeld)) {
+            if (prefixArg.isActive()) {
+                prefixArg.reset();
+                statusListener.accept("");
+            }
+            return;
         }
         // While a prefix argument is being entered (C-u …), intercept its continuation keys — digits and a
         // leading minus accumulate, C-g/Escape cancels. Anything else falls through to be the command (or
@@ -245,9 +289,19 @@ public class KeyDispatcher {
         // A window that owns its keys (e.g. a tool window) handles only the editor navigation/edit
         // chords it repurposes for local navigation (C-n/C-p, C-f/C-b, …) — those are left to it.
         // Everything else stays global so jump/window commands (M-x, M-1, M-g …) and prefixes (C-x …)
-        // work even while a tool window is focused.
-        if (pending.isEmpty() && !prefix && isEditorContext(commandId) && ownsKeys(event.getTarget())) {
-            return; // let the focused window handle this editor-context key
+        // work even while a tool window is focused. A focused text field gets the same treatment without
+        // having to opt in: its caret is not the document's, so C-k / Ctrl+V / Ctrl+Z typed there must edit
+        // the field, never the buffer behind it.
+        if (pending.isEmpty()
+                && !prefix
+                && isEditorContext(commandId) // checked first: plain typing must not walk the ancestor chain
+                && leftToFocusOwner(commandId, ownsKeys(event.getTarget()), inTextInput(event.getTarget()))) {
+            return; // let the focused window or field handle this editor-context key
+        }
+        // A key the focused component declared its own (the Project tree's F2 = rename file) wins over a
+        // global binding of the same key (F2 = rename symbol in the VS Code/Sublime/IntelliJ keymaps).
+        if (pending.isEmpty() && (commandId != null || prefix) && claimsKey(event.getTarget(), token)) {
+            return;
         }
 
         // C-u (universal-argument): start or extend the prefix argument instead of running a command.
@@ -270,7 +324,7 @@ public class KeyDispatcher {
             event.consume();
             consumedPress = true;
             pending = sequence;
-            statusListener.accept(sequence + " -");
+            statusListener.accept(keymap.display(sequence) + " -");
             return;
         }
 
@@ -278,7 +332,7 @@ public class KeyDispatcher {
             // Mid-chord but no continuation matched: cancel the chord and swallow the key.
             event.consume();
             consumedPress = true;
-            statusListener.accept(sequence + " is undefined");
+            statusListener.accept(keymap.display(sequence) + " is undefined");
             reset();
             prefixArg.reset();
             return;
@@ -296,7 +350,7 @@ public class KeyDispatcher {
         // If it falls through, Windows treats the Alt+<key> as a menu mnemonic, enters native menu mode,
         // and the keyboard freezes app-wide (mouse still works) until restart — the reported bug. AltGr
         // (Ctrl+Alt) is excluded by plainAltActive, so international layouts keep composing characters.
-        if (plainAltActive(IS_MAC, event.isAltDown(), event.isControlDown())) {
+        if (plainAltActive(mac, event.isAltDown(), event.isControlDown())) {
             event.consume();
             consumedPress = true;
             prefixArg.reset();
@@ -431,10 +485,67 @@ public class KeyDispatcher {
         return commandId != null && (commandId.startsWith("nav.") || commandId.startsWith("edit."));
     }
 
+    /** The one editor-context command a bare text field does not keep: it dismisses chrome, it edits nothing. */
+    public static final String CANCEL = "edit.cancel";
+
+    /**
+     * Whether a bound single chord is left to whatever is focused instead of being run as a command. A
+     * key-owning window keeps every editor-context chord. A text field outside such a window keeps them too
+     * — except {@link #CANCEL}, which stays global so {@code C-g} still closes the find bar or the palette
+     * from inside their fields. Pure — tested.
+     */
+    static boolean leftToFocusOwner(String commandId, boolean ownsKeys, boolean textInput) {
+        if (!isEditorContext(commandId)) {
+            return false;
+        }
+        return ownsKeys || (textInput && !CANCEL.equals(commandId));
+    }
+
+    /**
+     * True if the event is aimed at a text-entry control — a {@link TextInputControl}, or an editable combo
+     * box / spinner, whose inner field receives the keys the control is sent. The editor itself is a
+     * RichTextFX area, not a {@code TextInputControl}, so it never matches. Decided here rather than by an
+     * opt-in property so a text field added to the main scene later cannot forget it.
+     */
+    static boolean inTextInput(EventTarget target) {
+        Node node = target instanceof Node n ? n : null;
+        while (node != null) {
+            if (node instanceof TextInputControl
+                    || (node instanceof ComboBoxBase<?> combo && combo.isEditable())
+                    || (node instanceof Spinner<?> spinner && spinner.isEditable())) {
+                return true;
+            }
+            node = node.getParent();
+        }
+        return false;
+    }
+
     private static boolean ownsKeys(EventTarget target) {
         Node node = target instanceof Node n ? n : null;
         while (node != null) {
-            if (Boolean.TRUE.equals(node.getProperties().get("editora.ownsKeys"))) {
+            if (node.hasProperties() && Boolean.TRUE.equals(node.getProperties().get("editora.ownsKeys"))) {
+                return true;
+            }
+            node = node.getParent();
+        }
+        return false;
+    }
+
+    /**
+     * Node property naming the bare keys a component handles itself even when the keymap binds them to a
+     * <em>global</em> command: a {@code Set<String>} of chord tokens (e.g. {@code "f2"}, {@code "delete"}).
+     * {@code editora.ownsKeys} only yields editor-context chords, which is not enough for a key like F2 —
+     * "rename the selected file" in a file tree, but bound to {@code lsp.rename} in three keymaps. Set it on
+     * the node that should have the key (the tree, not its whole panel), and keep the set small.
+     */
+    public static final String CLAIMED_KEYS = "editora.claimsKeys";
+
+    private static boolean claimsKey(EventTarget target, String token) {
+        Node node = target instanceof Node n ? n : null;
+        while (node != null) {
+            if (node.hasProperties()
+                    && node.getProperties().get(CLAIMED_KEYS) instanceof java.util.Set<?> keys
+                    && keys.contains(token)) {
                 return true;
             }
             node = node.getParent();

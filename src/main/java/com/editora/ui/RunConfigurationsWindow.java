@@ -287,9 +287,6 @@ public final class RunConfigurationsWindow {
     }
 
     private void centerOn(Window owner) {
-        if (owner != null) {
-            stage.setX(owner.getX() + (owner.getWidth() - WIDTH) / 2);
-            stage.setY(owner.getY() + (owner.getHeight() - HEIGHT) / 2);
-        }
+        WindowPlacement.centerOnOwner(stage, owner, WIDTH, HEIGHT); // kept on the owner's screen
     }
 }

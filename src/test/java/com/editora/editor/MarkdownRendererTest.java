@@ -156,4 +156,42 @@ class MarkdownRendererTest {
         String joined = runs.stream().map(MarkdownRenderer.Run::text).reduce("", String::concat);
         assertTrue(joined.equals("public class X { void main() {} }"), "runs cover the whole input");
     }
+
+    // --- image policy: which surfaces may load which images ---
+
+    @Test
+    void theDocumentPolicyAllowsWhatThePreviewAlwaysLoaded() {
+        MarkdownRenderer.ImagePolicy doc = MarkdownRenderer.ImagePolicy.DOCUMENT;
+        assertTrue(doc.allows("https://img.shields.io/badge/a-b-green"));
+        assertTrue(doc.allows("file:///home/u/notes/pic.png"));
+        assertTrue(doc.allows("data:image/png;base64,AAAA"));
+        assertFalse(doc.allows(null));
+        assertFalse(doc.allows(" "));
+    }
+
+    @Test
+    void theDataOnlyPolicyAllowsNothingThatLeavesTheMessage() {
+        MarkdownRenderer.ImagePolicy untrusted = MarkdownRenderer.ImagePolicy.DATA_ONLY;
+        assertTrue(untrusted.allows("data:image/png;base64,AAAA"));
+        assertTrue(untrusted.allows("DATA:image/svg+xml,%3Csvg/%3E"));
+        assertFalse(untrusted.allows("https://attacker.example/pixel.png?d=SECRET"), "an exfiltration beacon");
+        assertFalse(untrusted.allows("http://169.254.169.254/latest/meta-data"));
+        assertFalse(untrusted.allows("file:///etc/passwd"));
+        assertFalse(untrusted.allows("//attacker.example/x.png"));
+        assertFalse(untrusted.allows("datafile.png"), "only the data: scheme, not a name that starts like it");
+        assertFalse(untrusted.allows(null));
+    }
+
+    @Test
+    void aBlockedImagePlaceholderNamesTheAltTextAndTheUrl() {
+        assertEquals("[image]", MarkdownRenderer.imagePlaceholder("", null));
+        assertEquals("[image: logo]", MarkdownRenderer.imagePlaceholder("logo", null));
+        assertEquals(
+                "[image: logo] https://h.example/a.png",
+                MarkdownRenderer.imagePlaceholder("logo", "https://h.example/a.png"));
+        assertEquals(
+                "[image] https://h.example/a.png", MarkdownRenderer.imagePlaceholder(" ", " https://h.example/a.png "));
+        String shown = MarkdownRenderer.imagePlaceholder("x", "https://h.example/?d=" + "A".repeat(5000));
+        assertTrue(shown.length() < 130 && shown.endsWith("…"), "a kilobyte query string is cut: " + shown.length());
+    }
 }

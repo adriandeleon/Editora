@@ -138,8 +138,8 @@ final class NavigationCoordinator {
     /** Builds the keyboard "Jump to…" pickers (recent files, structure) — command-palette-style popups. */
     void setupJumpPickers() {
         recentPalette = new QuickOpen<>(
-                "Jump to Recent File",
-                "Type to filter recent files…",
+                tr("nav.recentFiles.title"),
+                tr("nav.recentFiles.prompt"),
                 () -> List.copyOf(host.recentFiles().getList()),
                 p -> p.getFileName() == null ? p.toString() : p.getFileName().toString(),
                 p -> p.getParent() == null ? "" : p.getParent().toString(),
@@ -147,15 +147,15 @@ final class NavigationCoordinator {
         recentPalette.setItemIcon(p -> FileIcons.forFileName(
                 p.getFileName() == null ? p.toString() : p.getFileName().toString()));
         structurePalette = new QuickOpen<>(
-                "Jump to Structure",
-                "Type to filter symbols…",
+                tr("nav.structure.title"),
+                tr("nav.structure.prompt"),
                 () -> host.structurePanel().outline(),
                 StructurePanel.Outline::label,
                 StructurePanel.Outline::kind,
                 entry -> host.navigateToLine(entry.line()));
         openFilesPalette = new QuickOpen<>(
-                "Jump to Open File",
-                "Type to filter open files…",
+                tr("nav.openFiles.title"),
+                tr("nav.openFiles.prompt"),
                 host::openTabsForSwitcher,
                 tab -> (isTabDirty(tab) ? "• " : "") + bufferTitle(tab), // dirty marker, like the tab
                 tab -> bufferParentDir(tab),
@@ -165,8 +165,8 @@ final class NavigationCoordinator {
                 tab -> isTabDirty(tab) ? "dirty-name" : null); // amber/italic, like a dirty tab
         openFilesPalette.setItemIcon(tab -> FileIcons.forFileName(bufferTitle(tab))); // file-type glyph
         toolWindowPalette = new QuickOpen<>(
-                "Jump to Tool Window",
-                "Type to filter tool windows…",
+                tr("nav.toolWindows.title"),
+                tr("toolwindow.splitPrompt"),
                 () -> host.toolWindows().getRegisteredToolWindows().stream()
                         .filter(tw -> host.git().isEnabled() || !"tool.commit".equals(tw.getCommandId()))
                         .filter(tw -> host.projectsEnabled() || !"tool.project".equals(tw.getCommandId()))
@@ -210,8 +210,8 @@ final class NavigationCoordinator {
                 host.fileWorkflows()::openPath);
         relatedPalette.setOverlayHost(host.overlayHost());
         snippetPalette = new QuickOpen<>(
-                "Insert Snippet",
-                "Type to filter snippets…",
+                tr("nav.snippets.title"),
+                tr("nav.snippets.prompt"),
                 () -> {
                     EditorBuffer b = host.activeBuffer();
                     return new ArrayList<>(host.snippets().forLanguage(b == null ? "global" : b.getLanguage()));

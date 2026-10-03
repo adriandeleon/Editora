@@ -45,6 +45,8 @@ public class FileBreadcrumb extends StackPane {
     private static final double BAR_HEIGHT = 24;
 
     private final Consumer<Path> onOpenFile;
+    /** The window's open project root (null when none): a file inside it is shown from that folder down. */
+    private final java.util.function.Supplier<Path> projectRoot;
     /** Injected by MainController: reveal a crumb in the OS file manager. Args: (path, isDirectory). */
     private BiConsumer<Path, Boolean> onReveal;
     /** Injected by MainController: open a terminal at a crumb's folder. Args: (path, isDirectory). */
@@ -95,7 +97,12 @@ public class FileBreadcrumb extends StackPane {
     private Path currentFile;
 
     public FileBreadcrumb(Consumer<Path> onOpenFile) {
+        this(onOpenFile, () -> null);
+    }
+
+    public FileBreadcrumb(Consumer<Path> onOpenFile, java.util.function.Supplier<Path> projectRoot) {
         this.onOpenFile = onOpenFile;
+        this.projectRoot = projectRoot;
         getStyleClass().add("file-breadcrumb");
 
         breadcrumbs.setAutoNavigationEnabled(false);
@@ -165,10 +172,11 @@ public class FileBreadcrumb extends StackPane {
 
     /**
      * Rebuilds the crumb trail from {@link BreadcrumbTrail}: the cumulative segments of {@code path}, with
-     * the filesystem root ("/" or "C:\\") left out and the home directory collapsed to one {@code ~} crumb.
+     * the filesystem root ("/" or "C:\\") left out and the home directory collapsed to one {@code ~} crumb —
+     * or, for a file inside the open project, starting at the project root.
      */
     private void showPath(Path path) {
-        List<BreadcrumbTrail.Crumb> trail = BreadcrumbTrail.of(path, HOME);
+        List<BreadcrumbTrail.Crumb> trail = BreadcrumbTrail.of(path, HOME, projectRootOrNull());
         crumbNodes.clear(); // rebuilt by the crumb factory as setSelectedCrumb lays out the new trail
         crumbLabels.clear();
         List<Path> cumulative = new ArrayList<>(trail.size());
@@ -177,6 +185,15 @@ public class FileBreadcrumb extends StackPane {
             crumbLabels.put(crumb.path(), crumb.label());
         }
         breadcrumbs.setSelectedCrumb(Breadcrumbs.buildTreeModel(cumulative.toArray(new Path[0])));
+    }
+
+    private Path projectRootOrNull() {
+        try {
+            Path root = projectRoot.get();
+            return root == null ? null : root.toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            return null; // an unresolvable root just means the full trail
+        }
     }
 
     private Callback<BreadCrumbItem<Path>, ButtonBase> crumbFactory() {

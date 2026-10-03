@@ -23,8 +23,8 @@ import org.reactfx.Subscription;
  * live, and steps through the stops with {@link #next()}/{@link #previous()} until {@code $0}.
  *
  * <p>Field offsets are kept in sync with edits via a {@code plainTextChanges} subscription using the
- * pure {@link #shift} arithmetic (mirrors {@code BookmarkManager.shift}); programmatic mirror edits
- * are guarded by {@link #applying} to avoid reentrancy.
+ * pure {@link #shift} arithmetic; programmatic mirror edits are guarded by {@link #applying} to avoid
+ * reentrancy.
  */
 public final class SnippetSession {
 
@@ -53,6 +53,8 @@ public final class SnippetSession {
         final List<String> choices;
         final List<SnippetTransform> transforms;
         final int primaryIdx;
+        /** Set once the field's text was deleted with an enclosing field's: there is nothing left to visit. */
+        boolean retired;
 
         Field(int number, List<int[]> ranges, List<String> choices, List<SnippetTransform> transforms, int primaryIdx) {
             this.number = number;
@@ -155,8 +157,12 @@ public final class SnippetSession {
         if (ended) {
             return;
         }
-        if (active + 1 < fields.size()) {
-            active++;
+        int target = active + 1;
+        while (target < fields.size() && fields.get(target).retired) {
+            target++;
+        }
+        if (target < fields.size()) {
+            active = target;
             selectActive();
         } else {
             finish();
@@ -165,11 +171,17 @@ public final class SnippetSession {
 
     /** Goes back to the previous stop (no-op at the first). */
     public void previous() {
-        if (ended || active <= 0) {
+        if (ended) {
             return;
         }
-        active--;
-        selectActive();
+        int target = active - 1;
+        while (target >= 0 && fields.get(target).retired) {
+            target--;
+        }
+        if (target >= 0) {
+            active = target;
+            selectActive();
+        }
     }
 
     /** Ends the session, placing the caret at {@code $0}. */
@@ -359,9 +371,28 @@ public final class SnippetSession {
             cancel();
             return;
         }
+        retireSwallowed(primary, pos, removed);
         // Grow/shrink the active field and shift everything after the edit.
-        shift(allRanges(), indexOf(primary), pos, delta);
+        shift(allRanges(), indexOf(primary), pos, removed, inserted);
         if (!suspended) mirrorActive();
+    }
+
+    /**
+     * Retires every field whose whole text an edit of the active field ({@code primary}) just deleted: typing
+     * over {@code ${2: ${3:Exception} as ${4:e}}} removes {@code $3} and {@code $4} with it, and there is
+     * nothing left for Tab to visit. An empty stop sitting exactly at the edit position is left alone — it
+     * may be a neighbour, not something nested in the removed text.
+     */
+    private void retireSwallowed(int[] primary, int pos, int removed) {
+        if (removed <= 0) {
+            return;
+        }
+        for (Field f : fields) {
+            int[] r = f.primary();
+            if (r != primary && swallowed(r, pos, removed) && (r[1] > r[0] || r[0] > pos)) {
+                f.retired = true;
+            }
+        }
     }
 
     /**
@@ -427,11 +458,22 @@ public final class SnippetSession {
         // Re-derive every tracked range: each occurrence (in document order) changes from its old length to its
         // derived text's length. shift() mutates the arrays in place, so by the time we reach a later occurrence
         // its start is already in current coordinates — read o[0] directly (no cumulative-delta double-count).
+        // The primary is described by the edit the user actually made inside it, so ranges nested in the
+        // untouched part of the field keep their place; a mirror is rewritten whole.
+        retireSwallowed(p, from, to - from);
         List<int[]> all = allRanges();
         for (int i : order) {
             int[] o = f.ranges.get(i);
-            int newLen = f.textFor(i, newPrimary).length();
-            shift(all, all.indexOf(o), o[0], newLen - (o[1] - o[0]));
+            if (o == p) {
+                shift(all, all.indexOf(o), o[0] + relFrom, to - from, replacement.length());
+            } else {
+                shift(
+                        all,
+                        all.indexOf(o),
+                        o[0],
+                        o[1] - o[0],
+                        f.textFor(i, newPrimary).length());
+            }
         }
         int caret = p[0] + relFrom + replacement.length(); // p[0] was shifted in place by the loop above
         area.moveTo(Math.min(caret, area.getLength()));
@@ -561,23 +603,59 @@ public final class SnippetSession {
     }
 
     /**
-     * Pure offset arithmetic for an edit replacing text at {@code editPos} with a net {@code delta}
-     * length change: every range after the edit shifts by {@code delta}, and the active primary
-     * (at {@code activePrimaryIdx}) grows even when the edit is at its end. A range's start moves only
-     * when strictly after the edit; its end moves when after the edit, or when it is the active
-     * primary's end exactly at the edit position (so typing at the field end extends it).
+     * Pure offset arithmetic for an edit inside the active field that replaced {@code removed} characters at
+     * {@code editPos} with {@code inserted} characters.
+     *
+     * <ul>
+     *   <li>The <b>active primary</b> (at {@code activePrimaryIdx}) keeps its start and its end follows the
+     *       edit — including an insertion exactly at its end, which extends it.</li>
+     *   <li>Any other offset before the edit stays, one at or after the end of the removed text moves by the
+     *       net length change, and one <em>inside</em> the removed text collapses to the edit position —
+     *       shifting it by the delta instead put it in front of the edit, into unrelated text.</li>
+     *   <li>A range the removal <b>swallowed whole</b> (a field nested in the text just typed over) collapses
+     *       to an empty range at the edit position rather than stretching over the replacement.</li>
+     *   <li>A range that <b>starts exactly where an insertion at the active field's end lands</b> — the next
+     *       field directly after it, or {@code $0} — is pushed along with it. Without that it stayed put and
+     *       either grew to include the typed text ({@code ${1:_, }${2:v}}) or left the final caret in front
+     *       of it ({@code val ${1:name} = ${2:value}}).</li>
+     * </ul>
      */
-    public static void shift(List<int[]> ranges, int activePrimaryIdx, int editPos, int delta) {
+    public static void shift(List<int[]> ranges, int activePrimaryIdx, int editPos, int removed, int inserted) {
+        int removedEnd = editPos + removed;
+        int delta = inserted - removed;
+        boolean atActiveEnd = removed == 0
+                && activePrimaryIdx >= 0
+                && activePrimaryIdx < ranges.size()
+                && ranges.get(activePrimaryIdx)[1] == editPos;
         for (int i = 0; i < ranges.size(); i++) {
             int[] r = ranges.get(i);
-            if (r[0] > editPos) {
-                r[0] += delta;
-            }
-            boolean activePrimary = i == activePrimaryIdx;
-            if (r[1] > editPos || (activePrimary && r[1] == editPos)) {
-                r[1] += delta;
+            if (i == activePrimaryIdx) {
+                r[0] = moved(r[0], editPos, removedEnd, delta);
+                r[1] = r[1] == editPos ? editPos + inserted : moved(r[1], editPos, removedEnd, delta);
+            } else if (atActiveEnd && r[0] == editPos) {
+                r[0] += inserted;
+                r[1] += inserted;
+            } else if (swallowed(r, editPos, removed)) {
+                r[0] = editPos;
+                r[1] = editPos;
+            } else {
+                r[0] = moved(r[0], editPos, removedEnd, delta);
+                r[1] = moved(r[1], editPos, removedEnd, delta);
             }
         }
+    }
+
+    /** Where {@code offset} lands: unchanged up to the edit, collapsed inside the removal, shifted after it. */
+    private static int moved(int offset, int editPos, int removedEnd, int delta) {
+        if (offset <= editPos) {
+            return offset;
+        }
+        return offset >= removedEnd ? offset + delta : editPos;
+    }
+
+    /** True when {@code range} lies wholly inside the {@code removed} characters at {@code editPos}. */
+    private static boolean swallowed(int[] range, int editPos, int removed) {
+        return removed > 0 && range[0] >= editPos && range[0] < editPos + removed && range[1] <= editPos + removed;
     }
 
     /** Re-indents continuation lines of a parsed snippet to {@code indent}, shifting stop ranges. Pure. */

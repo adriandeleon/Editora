@@ -65,6 +65,6 @@ Run the automated suite with:
 mvn verify
 ```
 
-For manual checks, use the curated fixtures in
-[`../tests/editora/README.md`](../tests/editora/README.md). In particular,
-`pairs/08-rules-alignment` demonstrates both smart alignment and case-insensitive matching.
+For manual checks, use the fixtures under `samples/diff/` (described in
+[`../samples/README.md`](../samples/README.md)): `original.txt` + `modified.txt` for a side-by-side
+comparison and `conflict.txt` for the merge resolver.

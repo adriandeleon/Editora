@@ -29,6 +29,9 @@ A Settings-window control is not enough on its own. Add a command that flips/pro
   one picker command.
 - Reuse the generic helpers: `toggleSetting` / `promptStringSetting` / `promptIntSetting` /
   `chooseSetting`.
+- The command applies the change in its own window only. The other windows follow on their own:
+  the shared save notices that preferences changed and re-applies them there (see
+  [config-and-migrations](subsystems/config-and-migrations.md#changes-reach-every-window)).
 
 ## Localize every user-facing string
 
@@ -45,6 +48,37 @@ Never hand a raw English literal to a JavaFX control. Use
 - The only deliberately-untranslated tokens are technical identifiers (`UTF-8`, `LF`/`CRLF`,
   `Ln`/`Col`, git verbs, language names, example URLs) and the pre-GUI `--help`/`--version`
   text.
+- **Apostrophes follow the value.** A value with a placeholder (`{0}`) is a `MessageFormat`
+  pattern: double every literal apostrophe (`l''onglet {0}`). A value without one is shown as
+  written: a single apostrophe. `MessagesTest` enforces both in all six catalogs.
+- **Identifiers are not quantities.** A plain `{0}` groups an integer's digits by locale
+  ("Line 12,345"). For a line or column, a port, a pull-request number or an exit code write
+  `{0,number,#}` and add the key to `MessagesTest.IDENTIFIER_ARGUMENTS`.
+- A key used by literal (`tr("some.key")`) must exist: `tr` falls back to the key itself, so a
+  missing one ships as visible gibberish. `MessagesTest` scans `src/main/java` for them.
+
+## Keyboard, contrast and assistive technology
+
+A control that works with the mouse but cannot be reached, seen or named from the keyboard is a defect.
+
+- **Icon-only buttons** are built with `Icons.button` / `Icons.toolbarButton` (or re-named with
+  `Icons.name`), which set the tooltip **and** the accessible text. Never hand-roll `new Button()` +
+  `setTooltip`.
+- **On/off settings rows** use `checkRow` / `switchFor`, which yield a `SettingSwitch` (Space/Enter,
+  `TOGGLE_BUTTON` role, named by the row title). A bare AtlantaFX `ToggleSwitch` is mouse-only.
+- **Keyboard focus** is drawn by the one `:focus-visible` block at the end of `app.css`. `app.css` is an
+  author sheet: a base-state `-fx-background-color` there erases the theme's `:focused` variant of the same
+  control, so restate the states you override and keep that block last.
+- **Colour**: text people must read uses `-color-fg-muted` or stronger (`-color-fg-subtle` is ~3:1 —
+  disabled/decorative only); ink on an `-emphasis` fill is `-color-fg-emphasis`, never `white`; state
+  colours come from the `-state-*` tokens, never a hex. `StyleContrastTest` pins the ratios.
+- **Failures** go to the error channel. A message whose key is `status.…Failed` / `…Error` is routed
+  there automatically wherever it is reported (`StatusSeverity`); `…cannot…` / `…invalid…` are warnings.
+  Name new failure keys accordingly, or call `setError`.
+- **Native dialogs** are created through `Dialogs.styled(new Alert(…))`: a dialog has its own scene and
+  does not inherit `app.css`.
+- A row that can run out of width **wraps** (`WrapRow`, `SettingRowPane`) rather than ellipsizing a label
+  or a button to "…"; check German at 1024 px.
 
 ## Config and schema
 
@@ -86,9 +120,9 @@ This repo is worked on by multiple sessions in parallel. **Each task gets its ow
 `git worktree`** so sessions don't share a working tree:
 
 ```
-scripts/worktree.sh new <branch>     # creates ../Editora-V2-worktrees/<slug> off origin/master
+scripts/worktree.sh new <branch>     # creates ../Editora-worktrees/<slug> off origin/master
 scripts/worktree.sh list
-scripts/worktree.sh rm <branch>      # after merge
+scripts/worktree.sh rm <branch>      # after merge; keeps an unmerged branch unless --force
 ```
 
 **Never `git checkout` a different branch in the main checkout** while other sessions may be

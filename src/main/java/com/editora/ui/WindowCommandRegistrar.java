@@ -714,6 +714,7 @@ final class WindowCommandRegistrar {
                                         null)));
         host.registry().register(Command.of("lsp.toggleServer", host.lspCoordinator()::chooseServerToggle));
         host.registry().register(Command.of("lsp.setServerCommand", host.lspCoordinator()::chooseServerCommand));
+        host.registry().register(Command.of("lsp.trustProjectSettings", host.lspCoordinator()::trustProjectSettings));
         host.registry().register(Command.of("debug.toggleAdapter", host.debugCoordinator()::chooseAdapterToggle));
         host.registry().register(Command.of("debug.setAdapterPath", host.debugCoordinator()::chooseAdapterPath));
         host.registry()
@@ -1658,6 +1659,7 @@ final class WindowCommandRegistrar {
         // HTTP Client (.http via ijhttp). Gated by the "Enable HTTP Client" setting (default off).
         host.registry().register(Command.of("http.runRequest", host.httpClient()::runRequestAtCaret));
         host.registry().register(Command.of("http.runFile", host.httpClient()::runFile));
+        host.registry().register(Command.of("http.cancelRequest", host.httpClient()::cancelActiveRequest));
         host.registry().register(Command.of("http.selectEnvironment", host.httpClient()::selectEnvironment));
         host.registry().register(Command.of("http.importCurl", host.httpClient()::importCurl));
         host.registry().register(Command.of("http.copyAsCurl", host.httpClient()::copyActiveAsCurl));
@@ -1675,7 +1677,8 @@ final class WindowCommandRegistrar {
                         "debug.viaBuild",
                         () -> host.debugCoordinator().ifDebug(host.runConfigurations()::debugViaBuild)));
         host.registry()
-                .register(Command.of("debug.stop", () -> host.debugCoordinator().ifDebug(host.dapManager()::stop)));
+                .register(
+                        Command.of("debug.stop", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stop)));
         host.registry()
                 .register(Command.of(
                         "debug.restart", () -> host.debugCoordinator().ifDebug(host.dapManager()::restart)));
@@ -1843,9 +1846,12 @@ final class WindowCommandRegistrar {
                                         "view.toggleOnTypeFormatting",
                                         () -> host.config().getSettings().isLspOnTypeFormatting(),
                                         host.config().getSettings()::setLspOnTypeFormatting,
-                                        () -> host.editorSettings()
-                                                .applyViewSettingsToAllBuffers(
-                                                        host.config().getSettings()))));
+                                        () -> {
+                                            host.editorSettings()
+                                                    .applyViewSettingsToAllBuffers(
+                                                            host.config().getSettings());
+                                            host.lspCoordinator().applyOnTypeFormatting(); // jdtls gates on it
+                                        })));
         host.registry()
                 .register(Command.of(
                         "view.togglePasteImports",
@@ -1973,6 +1979,10 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("tool.fileHistory", host.historyCoordinator()::showActive));
         host.registry().register(Command.of("history.putLabel", host.historyCoordinator()::putLabel));
         host.registry().register(Command.of("history.recentChanges", host.historyCoordinator()::showRecentChanges));
+        // Deliberately outside the feature-gated "history." prefix: turning Local History off must not gray
+        // out the commands that delete what it already stored.
+        host.registry().register(Command.of("localHistory.purgeFile", host.historyCoordinator()::purgeActiveFile));
+        host.registry().register(Command.of("localHistory.purgeProject", host.historyCoordinator()::purgeProject));
         host.registry()
                 .register(
                         Command.of("git.fileHistory", () -> host.git().ifEnabled(host.gitWindows()::showFileHistory)));

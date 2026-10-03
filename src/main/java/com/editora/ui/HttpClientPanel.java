@@ -1,9 +1,16 @@
 package com.editora.ui;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
@@ -30,6 +37,7 @@ import com.editora.http.HttpResult;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.StyleSpans;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -37,9 +45,14 @@ import static com.editora.i18n.Messages.tr;
  * The HTTP Client response viewer: a request/response viewer modeled on {@link RunPanel}. Shows the selected
  * {@link HttpExchange}'s status + response headers in one pane and its body — syntax-highlighted by content
  * type (JSON/XML/HTML, reusing the editor's TextMate grammars) — in a read-only {@link CodeArea} below. A
- * history picker keeps the last runs, plus actions for "Copy as cURL", "Open in editor tab", Save, and
- * Clear, and an environment picker for {@code {{var}}} resolution. The controller drives it via
+ * history picker keeps the last runs, plus actions for Cancel, "Copy as cURL", "Open in editor tab", Save,
+ * and Clear, and an environment picker for {@code {{var}}} resolution. The controller drives it via
  * {@code started}/{@code showExchanges} on the FX thread.
+ *
+ * <p>Formatting and tokenizing a response are proportional to its size, so they run on a background worker
+ * and land under a generation guard: only the newest selection's body is applied. The body pane shows a
+ * pretty-printed, length-limited <em>view</em> (with a visible line when it is cut); Save and Open-in-tab
+ * always use the response as received.
  *
  * <p>This is the {@code .http} buffer's <b>preview</b> — one instance per open {@code .http} buffer, embedded
  * in the editor's Editor/Split/Preview view by {@link HttpClientCoordinator}. It scrolls its own body area,
@@ -48,13 +61,30 @@ import static com.editora.i18n.Messages.tr;
 public final class HttpClientPanel extends VBox {
 
     private static final int MAX_HISTORY = 20;
-    private static final int MAX_BODY_CHARS = 400_000;
+    static final int MAX_BODY_CHARS = 400_000;
+
+    /** Shared worker for response formatting + highlighting; idles out, so it costs nothing when unused. */
+    private static final ExecutorService FORMAT = formatExecutor();
+
+    private static ExecutorService formatExecutor() {
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), r -> {
+            Thread t = new Thread(r, "http-response-format");
+            t.setDaemon(true);
+            return t;
+        });
+        pool.allowCoreThreadTimeOut(true);
+        return pool;
+    }
+
+    /** A formatted body ready to apply on the FX thread: the view plus its highlight spans (or null). */
+    private record Rendered(HttpResponseFormat.BodyView view, StyleSpans<Collection<String>> spans) {}
 
     private final Label status = new Label();
     private final ComboBox<String> envCombo = new ComboBox<>();
     private final ComboBox<HttpExchange> historyCombo = new ComboBox<>();
     private final TextArea headersArea = new TextArea();
     private final CodeArea bodyArea = new CodeArea();
+    private final Button cancelButton = new Button();
     private final Button copyCurlButton = new Button();
     private final Button openTabButton = new Button();
     private final Button saveButton = new Button();
@@ -70,6 +100,13 @@ public final class HttpClientPanel extends VBox {
     private boolean updatingEnv;
     private boolean updatingHistory;
     private String fontStyle;
+    private Runnable onCancel;
+
+    /** Bumped for every body shown or cleared (FX thread); a formatting result from an older one is dropped. */
+    private long bodyGeneration;
+
+    /** Completes once the most recent body render has been applied or dropped. Test seam. */
+    private CompletableFuture<Void> bodyRender = CompletableFuture.completedFuture(null);
 
     public HttpClientPanel(
             Runnable onSaveResponse,
@@ -122,6 +159,14 @@ public final class HttpClientPanel extends VBox {
             }
         });
 
+        cancelButton.setText(tr("httppanel.cancel"));
+        cancelButton.getStyleClass().add("danger");
+        cancelButton.setDisable(true);
+        cancelButton.setOnAction(e -> {
+            if (onCancel != null) {
+                onCancel.run();
+            }
+        });
         copyCurlButton.setText(tr("httppanel.copyAsCurl"));
         copyCurlButton.setDisable(true);
         copyCurlButton.setOnAction(e -> withSelected(onCopyAsCurl));
@@ -139,7 +184,8 @@ public final class HttpClientPanel extends VBox {
         clearButton.setText(tr("httppanel.clear"));
         clearButton.setOnAction(e -> clear());
 
-        HBox header = new HBox(8, status, spacer(), copyCurlButton, openTabButton, clearButton, saveButton);
+        HBox header =
+                new HBox(8, status, spacer(), cancelButton, copyCurlButton, openTabButton, clearButton, saveButton);
         header.setAlignment(Pos.CENTER_LEFT);
 
         HBox controls = new HBox(
@@ -159,7 +205,8 @@ public final class HttpClientPanel extends VBox {
         bodyArea.getStyleClass().addAll("editor-area", "http-body");
         bodyArea.setEditable(false);
         bodyArea.setFocusTraversable(true);
-        bodyArea.setShowCaret(org.fxmisc.richtext.Caret.CaretVisibility.OFF);
+        // No setShowCaret(OFF): a read-only area already hides its caret under the default AUTO, and OFF/ON
+        // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         bodyArea.setWrapText(false);
         installBodyContextMenu(); // RichTextFX has no default menu — add Copy / Select All for the response
         setEditorFont(fontFamily, fontSize);
@@ -220,10 +267,23 @@ public final class HttpClientPanel extends VBox {
     /** A request started: shows a running note for {@code label} (method + URL). */
     public void started(String label) {
         status.setText(tr("httppanel.running", label));
+        cancelButton.setDisable(false);
+    }
+
+    /** The running request was cancelled by the user: back to an idle, non-cancellable state. */
+    public void cancelled() {
+        status.setText(tr("httppanel.cancelled"));
+        cancelButton.setDisable(true);
+    }
+
+    /** Wires the Cancel button (the same action as the {@code http.cancelRequest} command, for this buffer). */
+    public void setOnCancel(Runnable onCancel) {
+        this.onCancel = onCancel;
     }
 
     /** Adds the finished exchanges to the history (newest first) and shows the first. */
     public void showExchanges(List<HttpExchange> exchanges) {
+        cancelButton.setDisable(true);
         if (exchanges == null || exchanges.isEmpty()) {
             return;
         }
@@ -246,6 +306,9 @@ public final class HttpClientPanel extends VBox {
     private void showExchange(HttpExchange ex) {
         HttpResult r = ex.result();
         StringBuilder head = new StringBuilder();
+        for (String w : r.warnings()) {
+            head.append("⚠  ").append(w).append('\n'); // an unsent header, a truncated body, a missing file…
+        }
         if (r.failed()) {
             head.append("⚠  ").append(r.error());
         } else {
@@ -263,35 +326,93 @@ public final class HttpClientPanel extends VBox {
         headersArea.setText(head.toString());
         headersArea.positionCaret(0);
 
-        String body = r.failed() ? "" : HttpResponseFormat.prettyBody(r.body(), r.contentType());
-        if (body.length() > MAX_BODY_CHARS) {
-            body = body.substring(0, MAX_BODY_CHARS);
-        }
-        bodyArea.replaceText(body);
-        bodyArea.setStyle(fontStyle);
-        applyHighlight(body, r.contentType());
-        bodyArea.moveTo(0);
-        bodyArea.scrollToPixel(0, 0);
-
         boolean has = !r.failed();
         copyCurlButton.setDisable(false);
-        openTabButton.setDisable(!has);
+        openTabButton.setDisable(!has || r.binary());
         saveButton.setDisable(false);
+        renderBody(r);
     }
 
-    private void applyHighlight(String body, String contentType) {
-        if (body.isEmpty()) {
-            return; // RichTextFX rejects zero-length spans
+    /**
+     * Formats + tokenizes {@code r}'s body off the FX thread, then applies it — unless another exchange was
+     * selected (or the panel cleared) meanwhile. A multi-megabyte JSON response used to freeze the window here
+     * for as long as the pretty-printer and the TextMate tokenizer took.
+     */
+    private void renderBody(HttpResult r) {
+        long generation = ++bodyGeneration;
+        CompletableFuture<Void> done = new CompletableFuture<>();
+        bodyRender = done;
+        bodyArea.replaceText(""); // never leave the previous response under the new status + headers
+        FORMAT.execute(() -> {
+            Rendered rendered;
+            try {
+                rendered = format(r);
+            } catch (RuntimeException | Error e) {
+                done.completeExceptionally(e);
+                return;
+            }
+            Platform.runLater(() -> {
+                try {
+                    if (generation == bodyGeneration) {
+                        applyBody(r, rendered);
+                    }
+                    done.complete(null);
+                } catch (RuntimeException e) {
+                    done.completeExceptionally(e);
+                }
+            });
+        });
+    }
+
+    /** Worker-thread half: the pretty-printed, length-limited view and its highlight spans. */
+    private static Rendered format(HttpResult r) {
+        HttpResponseFormat.BodyView view = HttpResponseFormat.view(r, MAX_BODY_CHARS);
+        StyleSpans<Collection<String>> spans = null;
+        IGrammar grammar = view.text().isEmpty() ? null : grammarFor(r.contentType());
+        if (grammar != null) {
+            try {
+                spans = TextMateHighlighter.compute(view.text(), grammar);
+            } catch (RuntimeException ignored) {
+                // unknown/oversized — leave it unstyled
+            }
         }
-        IGrammar grammar = grammarFor(contentType);
-        if (grammar == null) {
-            return;
+        return new Rendered(view, spans);
+    }
+
+    /** FX-thread half: shows the view, with a visible line wherever something was left out. */
+    private void applyBody(HttpResult r, Rendered rendered) {
+        HttpResponseFormat.BodyView view = rendered.view();
+        StringBuilder text = new StringBuilder(view.text());
+        if (view.binary()) {
+            text.append(tr("httppanel.binaryBody", humanSize(r.sizeBytes())));
         }
-        try {
-            bodyArea.setStyleSpans(0, TextMateHighlighter.compute(body, grammar));
-        } catch (RuntimeException ignored) {
-            // unknown/oversized — leave it unstyled
+        if (view.clipped()) {
+            text.append("\n\n").append(tr("httppanel.bodyClipped", view.text().length(), view.totalChars()));
         }
+        if (r.truncated()) {
+            text.append("\n\n").append(tr("httppanel.responseTruncated", humanSize(r.sizeBytes())));
+        }
+        bodyArea.replaceText(text.toString());
+        bodyArea.setStyle(fontStyle);
+        if (rendered.spans() != null && rendered.spans().length() > 0) {
+            try {
+                bodyArea.setStyleSpans(0, rendered.spans()); // covers the body; an appended note stays plain
+            } catch (RuntimeException ignored) {
+                // leave it unstyled
+            }
+        }
+        bodyArea.moveTo(0);
+        bodyArea.scrollToPixel(0, 0);
+    }
+
+    /** The body text currently shown (the view, not the raw response). Test accessor. */
+    String shownBodyForTest() {
+        return bodyArea.getText();
+    }
+
+    /** Completes when the latest body render has landed (or been superseded). Test accessor. */
+    CompletableFuture<Void> bodyRenderForTest() {
+        return bodyRender;
     }
 
     private static IGrammar grammarFor(String contentType) {
@@ -324,13 +445,7 @@ public final class HttpClientPanel extends VBox {
     }
 
     private static String humanSize(long bytes) {
-        if (bytes < 1024) {
-            return bytes + " B";
-        }
-        double kb = bytes / 1024.0;
-        return kb < 1024
-                ? String.format(java.util.Locale.ROOT, "%.1f KB", kb)
-                : String.format(java.util.Locale.ROOT, "%.1f MB", kb / 1024);
+        return HttpResponseFormat.humanSize(bytes);
     }
 
     private static String historyLabel(HttpExchange ex) {
@@ -352,6 +467,7 @@ public final class HttpClientPanel extends VBox {
         historyCombo.setValue(null);
         updatingHistory = false;
         headersArea.clear();
+        bodyGeneration++; // a body still being formatted must not reappear after Clear
         bodyArea.clear();
         copyCurlButton.setDisable(true);
         openTabButton.setDisable(true);
@@ -388,7 +504,7 @@ public final class HttpClientPanel extends VBox {
         return historyCombo.getValue();
     }
 
-    /** The current response as a full text report (for Save response). */
+    /** The current response as a full text report with the body as received (for Save response). */
     public String getResponseText() {
         HttpExchange ex = historyCombo.getValue();
         return ex == null ? "" : HttpResponseFormat.render(ex.result());

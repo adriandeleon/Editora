@@ -200,6 +200,55 @@ class SingleInstanceTest {
         }
     }
 
+    // --- endpoint ownership ------------------------------------------------------------------------
+
+    @Test
+    void aClaimDoesNotDeleteAnEndpointPublishedAfterStartLooked(@TempDir Path dir) throws Exception {
+        Path endpoint = dir.resolve(SingleInstance.ENDPOINT_FILE);
+        // start() saw a dead endpoint and decided to become primary…
+        Files.writeString(endpoint, "magic=" + SingleInstance.MAGIC + "\nport=1\ntoken=dead\npid=1\n");
+        SingleInstance late = SingleInstance.beforeClaim(dir);
+        // …but before its (asynchronous) claim ran, another launch reaped that file and published its own.
+        String theirs = "magic=" + SingleInstance.MAGIC + "\nport=2\ntoken=fresh\npid=2\n";
+        Files.writeString(endpoint, theirs);
+
+        late.claim();
+
+        assertEquals(theirs, Files.readString(endpoint), "a live instance's endpoint is not ours to remove");
+        assertFalse(late.serving(), "this process simply runs without receiving forwards");
+        late.close();
+        assertEquals(theirs, Files.readString(endpoint), "and closing must not remove it either");
+    }
+
+    @Test
+    void aClaimStillReapsTheEndpointStartJudgedDead(@TempDir Path dir) throws Exception {
+        Path endpoint = dir.resolve(SingleInstance.ENDPOINT_FILE);
+        Files.writeString(endpoint, "magic=" + SingleInstance.MAGIC + "\nport=1\ntoken=dead\npid=1\n");
+        SingleInstance instance = SingleInstance.beforeClaim(dir);
+
+        instance.claim();
+        try {
+            assertTrue(instance.serving(), "the same dead endpoint is still replaced");
+            assertFalse(Files.readString(endpoint).contains("token=dead"));
+        } finally {
+            instance.close();
+        }
+    }
+
+    @Test
+    void closingDoesNotRemoveASuccessorsEndpoint(@TempDir Path dir) throws Exception {
+        Path endpoint = dir.resolve(SingleInstance.ENDPOINT_FILE);
+        SingleInstance.Result first = SingleInstance.start(dir, List.of(), true);
+        awaitServing(first);
+        // The first instance stopped answering for a while; a later launch judged it dead and took over.
+        String successor = "magic=" + SingleInstance.MAGIC + "\nport=2\ntoken=successor\npid=2\n";
+        Files.writeString(endpoint, successor);
+
+        first.instance().close();
+
+        assertEquals(successor, Files.readString(endpoint));
+    }
+
     /** Waits for the asynchronous claim to land and asserts this process ended up owning the endpoint. */
     private static void awaitServing(SingleInstance.Result r) throws InterruptedException {
         assertNotNull(r.instance());

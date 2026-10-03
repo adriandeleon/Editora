@@ -1,10 +1,8 @@
 package com.editora.search;
 
 import java.io.IOException;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -16,7 +14,9 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
@@ -50,6 +50,9 @@ public final class SearchService {
     });
     private final AtomicLong gen = new AtomicLong();
     private volatile Future<?> currentSearch;
+
+    /** The search whose outcome is still owed to its caller: delivered, or reported as superseded. */
+    private final AtomicReference<Pending> inFlight = new AtomicReference<>();
 
     /** ripgrep timeout — generous so a big tree finishes, but bounded so a hung process can't pin the thread. */
     private static final Duration RG_TIMEOUT = Duration.ofSeconds(60);
@@ -91,6 +94,23 @@ public final class SearchService {
             List<String> include,
             List<String> exclude,
             Consumer<Outcome> onResult) {
+        search(query, scopeRoot, openContents, include, exclude, onResult, null);
+    }
+
+    /**
+     * As above, plus {@code onSuperseded}: run instead of {@code onResult} — exactly one of the two, once —
+     * when a newer search or {@link #shutdown} drops this one. A caller that opened something for the
+     * duration of the search (a progress indicator) releases it there; the generation guard discards a
+     * superseded result without ever calling {@code onResult}, so there is no other place to do it.
+     */
+    public void search(
+            SearchQuery query,
+            Path scopeRoot,
+            Map<Path, String> openContents,
+            List<String> include,
+            List<String> exclude,
+            Consumer<Outcome> onResult,
+            Runnable onSuperseded) {
         long g = gen.incrementAndGet();
         Map<Path, String> open = openContents == null ? Map.of() : Map.copyOf(openContents);
         List<String> inc = include == null ? List.of() : List.copyOf(include);
@@ -99,16 +119,45 @@ public final class SearchService {
         if (previous != null) {
             previous.cancel(true);
         }
+        Pending pending = new Pending(onSuperseded);
+        drop(inFlight.getAndSet(pending));
         currentSearch = exec.submit(() -> {
             Outcome outcome = run(query, scopeRoot, open, inc, exc, g);
             if (g == gen.get()) {
                 Platform.runLater(() -> {
-                    if (g == gen.get()) {
+                    if (g == gen.get() && pending.settle()) {
+                        inFlight.compareAndSet(pending, null);
                         onResult.accept(outcome);
                     }
                 });
             }
         });
+    }
+
+    /** The search whose result has not been delivered yet; settled exactly once, by delivery or by a drop. */
+    private static final class Pending {
+        private final Runnable onSuperseded;
+        private final AtomicBoolean settled = new AtomicBoolean();
+
+        Pending(Runnable onSuperseded) {
+            this.onSuperseded = onSuperseded;
+        }
+
+        boolean settle() {
+            return settled.compareAndSet(false, true);
+        }
+    }
+
+    /** Tells a dropped search's owner, on the FX thread like every other callback of this service. */
+    private static void drop(Pending pending) {
+        if (pending == null || pending.onSuperseded == null || !pending.settle()) {
+            return;
+        }
+        if (Platform.isFxApplicationThread()) {
+            pending.onSuperseded.run();
+        } else {
+            Platform.runLater(pending.onSuperseded);
+        }
     }
 
     private Outcome run(
@@ -183,7 +232,7 @@ public final class SearchService {
             long generation) {
         Set<Path> candidates = new LinkedHashSet<>();
         GitignoreFilter gitignore = respectGitignore ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
-        boolean truncated = collect(root, candidates, gitignore, openKeys, generation);
+        boolean truncated = collect(root, candidates, gitignore, exclude, openKeys, generation);
         boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> out = new ArrayList<>();
         int total = 0;
@@ -198,14 +247,16 @@ public final class SearchService {
             if (openKeys.contains(file.toAbsolutePath().normalize())) {
                 continue;
             }
-            if (filtering && !Globs.accept(relativize(root, file), include, exclude)) {
+            // acceptFile, not accept: collect() already pruned every excluded directory above this file.
+            if (filtering && !Globs.acceptFile(relativize(root, file), include, exclude)) {
                 continue;
             }
             String content = readText(file);
             if (content == null || content.indexOf('\0') >= 0) {
                 continue; // unreadable or binary
             }
-            List<LineMatch> ms = MultiFileSearch.matchesInText(content, query, MAX_MATCHES + 1 - total);
+            List<LineMatch> ms = MultiFileSearch.matchesInText(
+                    content, query, MAX_MATCHES + 1 - total, MultiFileSearch.UNICODE_CLASSES);
             if (!ms.isEmpty()) {
                 out.add(new FileResult(file, ms));
                 total += ms.size();
@@ -287,7 +338,8 @@ public final class SearchService {
             if (content == null || content.indexOf('\0') >= 0) {
                 continue;
             }
-            List<LineMatch> ms = MultiFileSearch.matchesInText(content, query, MAX_MATCHES + 1 - collected);
+            List<LineMatch> ms = MultiFileSearch.matchesInText(
+                    content, query, MAX_MATCHES + 1 - collected, MultiFileSearch.UNICODE_CLASSES);
             if (!ms.isEmpty()) {
                 all.add(new FileResult(e.getKey(), ms));
                 collected += ms.size();
@@ -315,75 +367,41 @@ public final class SearchService {
         return new Outcome(results, total, results.size(), truncated);
     }
 
-    private boolean collect(Path root, Set<Path> out, GitignoreFilter gitignore, Set<Path> openKeys, long generation) {
-        boolean[] truncated = {false};
-        try {
-            int[] scanned = {0};
-            Files.walkFileTree(
-                    root,
-                    java.util.EnumSet.noneOf(java.nio.file.FileVisitOption.class),
-                    MAX_DEPTH,
-                    new SimpleFileVisitor<>() {
-                        @Override
-                        public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes a) {
-                            if (cancelled(generation)) {
-                                return FileVisitResult.TERMINATE;
-                            }
-                            if (!dir.equals(root)
-                                    && dir.getFileName().toString().startsWith(".")) {
-                                return FileVisitResult.SKIP_SUBTREE; // .git, .idea, etc.
-                            }
-                            if (gitignore.ignored(relativize(root, dir), true)) {
-                                return FileVisitResult.SKIP_SUBTREE; // target/, node_modules/, …
-                            }
-                            return scanned[0] > MAX_FILES_SCANNED
-                                    ? terminateTruncated(truncated)
-                                    : FileVisitResult.CONTINUE;
-                        }
+    /** Collects the on-disk candidates through the shared pruned walk; true when the tree was not fully covered. */
+    private boolean collect(
+            Path root,
+            Set<Path> out,
+            GitignoreFilter gitignore,
+            List<String> exclude,
+            Set<Path> openKeys,
+            long generation) {
+        boolean[] oversize = {false};
+        ProjectWalk.Outcome walked = ProjectWalk.walk(
+                root,
+                new ProjectWalk.Options(MAX_DEPTH, MAX_FILES_SCANNED, gitignore, () -> cancelled(generation)),
+                new ProjectWalk.Visitor() {
+                    @Override
+                    public boolean enter(Path dir, String rel) {
+                        // An exclude of `target` or `node_modules` names the directory, as `rg -g '!target'`
+                        // does: skip it whole instead of testing (and failing to match) each file below it.
+                        return !Globs.excludesDirectory(rel, exclude);
+                    }
 
-                        @Override
-                        public FileVisitResult visitFile(Path file, BasicFileAttributes a) {
-                            if (cancelled(generation)) {
-                                return FileVisitResult.TERMINATE;
-                            }
-                            if (a.isDirectory()) {
-                                truncated[0] = true; // reached MAX_DEPTH with an unvisited subtree
-                                return FileVisitResult.CONTINUE;
-                            }
-                            if (openKeys.contains(file.toAbsolutePath().normalize())) {
-                                return FileVisitResult.CONTINUE; // authoritative in-memory content uses no disk budget
-                            }
-                            if (++scanned[0] > MAX_FILES_SCANNED) {
-                                return terminateTruncated(truncated);
-                            }
-                            String name = file.getFileName().toString();
-                            if (!name.startsWith(".")
-                                    && a.isRegularFile()
-                                    && !gitignore.ignored(relativize(root, file), false)) {
-                                if (a.size() <= MAX_FILE_BYTES) {
-                                    out.add(file);
-                                } else {
-                                    truncated[0] = true;
-                                }
-                            }
-                            return FileVisitResult.CONTINUE;
+                    @Override
+                    public ProjectWalk.Verdict file(Path file, String rel, BasicFileAttributes attrs) {
+                        if (!attrs.isRegularFile()
+                                || openKeys.contains(file.toAbsolutePath().normalize())) {
+                            return ProjectWalk.Verdict.SKIP; // in-memory content uses no disk budget
                         }
-
-                        @Override
-                        public FileVisitResult visitFileFailed(Path file, IOException e) {
-                            truncated[0] = true;
-                            return FileVisitResult.CONTINUE;
+                        if (attrs.size() > MAX_FILE_BYTES) {
+                            oversize[0] = true;
+                            return ProjectWalk.Verdict.SKIP;
                         }
-                    });
-        } catch (IOException ignored) {
-            // best-effort walk
-        }
-        return truncated[0];
-    }
-
-    private static FileVisitResult terminateTruncated(boolean[] truncated) {
-        truncated[0] = true;
-        return FileVisitResult.TERMINATE;
+                        out.add(file);
+                        return ProjectWalk.Verdict.ACCEPT;
+                    }
+                });
+        return walked.truncated() || oversize[0] || walked.unreadable() > 0;
     }
 
     private boolean cancelled(long generation) {
@@ -409,6 +427,7 @@ public final class SearchService {
         if (active != null) {
             active.cancel(true);
         }
+        drop(inFlight.getAndSet(null));
         exec.shutdownNow();
     }
 }

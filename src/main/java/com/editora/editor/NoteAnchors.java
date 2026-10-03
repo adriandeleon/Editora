@@ -42,6 +42,44 @@ public final class NoteAnchors {
     }
 
     /**
+     * Where a range that began {@code relStart} characters into a <em>replaced</em> span lives in the text
+     * that replaced it: the occurrence of its {@code selectedText} nearest that same relative offset, as
+     * {@code {start, end}} relative to the replacement. {@code null} when the replacement no longer contains
+     * the text (the caller then falls back to {@link #shiftRange}, which collapses the range to the edit
+     * point). This is what keeps a note through a Replace All, a formatter edit or a history restore that
+     * rewrites the lines around it without touching the noted text itself.
+     */
+    public static int[] relocateInReplacement(String inserted, int relStart, String selectedText, int length) {
+        if (inserted == null || selectedText == null || selectedText.isEmpty()) {
+            return null;
+        }
+        int at = clamp(relStart, 0, inserted.length());
+        int after = inserted.indexOf(selectedText, at);
+        int before = inserted.lastIndexOf(selectedText, at);
+        int best = after < 0 ? before : before < 0 || after - at < at - before ? after : before;
+        if (best < 0) {
+            return null;
+        }
+        return new int[] {best, Math.min(best + Math.max(length, selectedText.length()), inserted.length())};
+    }
+
+    /**
+     * An offset of the whole document mapped across the widening swap: the region {@code [start, end)} was
+     * cut out and now comes back {@code regionLength} characters long. Offsets before it are unchanged,
+     * offsets after it move by the region's growth, and an offset that was inside it is clamped to its new
+     * extent.
+     */
+    public static int acrossRegion(int offset, int start, int end, int regionLength) {
+        if (offset <= start) {
+            return offset;
+        }
+        if (offset >= end) {
+            return offset + regionLength - (end - start);
+        }
+        return start + Math.min(offset - start, regionLength);
+    }
+
+    /**
      * Locates the anchor's text in {@code doc}. Returns {@code {start,end}} (end exclusive) or {@code null}
      * if it can't be relocated (the note should be marked orphaned). The span runs from the match to
      * {@code start + length} (clamped to the document): {@code length} is the note's <em>full</em> original

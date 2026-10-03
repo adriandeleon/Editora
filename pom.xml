@@ -53,7 +53,10 @@
         <poi.version>5.5.1</poi.version>
         <lucene.version>10.5.1</lucene.version>
         <javadiffutils.version>4.17</javadiffutils.version>
-        <sshd.version>2.16.0</sshd.version>
+        <!-- Do not bump without reading docs/dependencies.md (sshd-osgi): 2.17+ changed
+             SftpFileSystem.getDefaultDir() in a way RemoteFileSystems depends on, and 2.20.0 is wanted
+             (CVE-2026-94002, SFTP client memory exhaustion). -->
+        <sshd.version>2.20.0</sshd.version>
         <slf4j.version>2.0.18</slf4j.version>
         <moditect.version>1.3.0.Final</moditect.version>
         <spotless.version>3.10.2</spotless.version>
@@ -401,6 +404,22 @@
                 <excludes>
                     <exclude>com/editora/build-info.properties</exclude>
                 </excludes>
+            </resource>
+            <!-- LICENSE and NOTICE travel INSIDE the application jar, so every artifact built from it
+                 (the jlink image behind the installers, the tarball, the AppImage, the fat jar) carries
+                 them. Copied from the repository root rather than duplicated under src/main/resources,
+                 so there is exactly one copy to keep current. The path is META-INF/editora/, not
+                 META-INF/LICENSE|NOTICE: the fat jar's Apache licence/notice shade transformers rewrite
+                 those two names (see the fatjar profile) and must not touch ours. The Apache-2.0 text
+                 (META-INF/editora/licenses/) and each font family's OFL.txt are ordinary resources. -->
+            <resource>
+                <directory>${project.basedir}</directory>
+                <filtering>false</filtering>
+                <includes>
+                    <include>LICENSE</include>
+                    <include>NOTICE</include>
+                </includes>
+                <targetPath>META-INF/editora</targetPath>
             </resource>
         </resources>
         <plugins>
@@ -1091,10 +1110,12 @@
                                         <artifactId>sshd-osgi</artifactId>
                                         <version>${sshd.version}</version>
                                     </artifact>
-                                    <!-- Hand-maintained descriptor: the jdeps-generated one (106 exports +
-                                         the RootedFileSystemProvider service) plus `requires org.slf4j`,
-                                         which jdeps drops under ignore-missing-deps — without it every SSHD
-                                         class fails at load time (its static slf4j Logger is unreadable). -->
+                                    <!-- Hand-maintained descriptor: the jdeps-generated one (107 exports —
+                                         every package in the jar — + the RootedFileSystemProvider service)
+                                         plus `requires org.slf4j`, which jdeps drops under ignore-missing-deps
+                                         — without it every SSHD class fails at load time (its static slf4j
+                                         Logger is unreadable). SshdModuleDescriptorTest fails when a version
+                                         bump adds or removes a package and this file is not re-derived. -->
                                     <moduleInfoFile>${project.basedir}/src/moditect/module-info-sshd-osgi.java</moduleInfoFile>
                                 </module>
                                 <module>
@@ -1450,6 +1471,28 @@
             <id>dist</id>
             <build>
                 <plugins>
+                    <!-- `clean` is not optional for this profile, so the profile runs it itself instead of
+                         trusting the command line. An incremental compile does not regenerate a synthetic
+                         enum-switch class (KeyDispatcher$1 and friends) that an earlier or parallel build
+                         left out of target/classes; jlink then ships an image whose keyboard dies on the
+                         first keypress (commit b9748039 did exactly that). jpackage also refuses to write
+                         into an existing target/aot-image. Bound to `initialize`, before anything is
+                         generated, so `mvn -Pdist package` now behaves like `mvn clean -Pdist package`
+                         (with which it is merely redundant). -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-clean-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>dist-clean-first</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>clean</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-dependency-plugin</artifactId>
@@ -1754,6 +1797,37 @@
             <id>fatjar</id>
             <build>
                 <plugins>
+                    <!-- Same stale-class hazard as the dist profile (see there): the shaded jar is built
+                         from target/classes, so recompile it from scratch. Deliberately NOT a full clean:
+                         the release workflow runs `-Pfatjar package` right after `clean -Pdist package`
+                         in the same checkout and then stages target/dist (the installers) and
+                         target/aot-image (the AppImage/tarball input) — wiping target/ here would throw
+                         those away. Only the compiled classes and the compiler's incremental state go. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-clean-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>fatjar-clean-classes</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>clean</goal>
+                                </goals>
+                                <configuration>
+                                    <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                                    <filesets>
+                                        <fileset>
+                                            <directory>${project.build.outputDirectory}</directory>
+                                        </fileset>
+                                        <fileset>
+                                            <directory>${project.build.directory}/maven-status</directory>
+                                        </fileset>
+                                    </filesets>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-shade-plugin</artifactId>
@@ -1778,6 +1852,28 @@
                                         </transformer>
                                         <!-- Merge META-INF/services (e.g. Jackson, tm4e SPI files). -->
                                         <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                        <!-- Licences. Most dependencies carry a META-INF/LICENSE (usually the
+                                             same Apache-2.0 text) and the Apache ones a META-INF/NOTICE. Left
+                                             alone, shade keeps whichever copy it meets first and drops the
+                                             rest — including NOTICE content that Apache-2.0 §4(d) says must
+                                             travel with the binary. So: drop the per-jar licence duplicates
+                                             (the Apache-2.0 text ships once, at
+                                             META-INF/editora/licenses/Apache-2.0.txt), merge every dependency
+                                             NOTICE into one META-INF/NOTICE, and put Editora's own MIT licence
+                                             at META-INF/LICENSE. Editora's LICENSE/NOTICE also sit at
+                                             META-INF/editora/ (see <resources>), which nothing here rewrites;
+                                             that NOTICE is the one naming every bundled library. -->
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                                            <projectName>Editora</projectName>
+                                            <copyright>Editora — Copyright (c) 2026 Adrián Arturo De León Saldivar (MIT License, see META-INF/LICENSE).</copyright>
+                                            <organizationName>the Editora project</organizationName>
+                                            <organizationURL>https://github.com/adriandeleon/Editora</organizationURL>
+                                        </transformer>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+                                            <resource>META-INF/LICENSE</resource>
+                                            <file>${project.basedir}/LICENSE</file>
+                                        </transformer>
                                     </transformers>
                                     <filters>
                                         <filter>

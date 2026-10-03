@@ -124,6 +124,40 @@ class IndexCoordinatorFxTest {
                 "answering with the previous project's symbols would send the user to another repository");
     }
 
+    /**
+     * A walk the cap cut short says so in the status bar, after whatever the build itself reports — a
+     * partial index that looks complete sends the user hunting for a symbol that was simply never read.
+     */
+    @Test
+    void anIndexCutShortByTheCapSaysSoInTheStatusBar() throws Exception {
+        Files.createDirectories(project.resolve("cap"));
+        for (String name : List.of("One", "Two", "Three")) {
+            Files.writeString(project.resolve("cap").resolve(name + ".java"), "class Cap" + name + " {}\n");
+        }
+        Harness h = harness(project.resolve("cap"));
+        h.coordinator().maxFiles = 2;
+
+        buildAndSettle(h.coordinator());
+        FxTestSupport.runOnFx(() -> {});
+
+        String truncated = com.editora.i18n.Messages.tr("status.index.truncated", 2);
+        assertEquals(truncated, h.statuses().get(h.statuses().size() - 1), "statuses: " + h.statuses());
+        assertEquals(2, indexOf(h.coordinator()).fileCount());
+    }
+
+    @Test
+    void aCompleteIndexDoesNotClaimToBePartial() throws Exception {
+        Files.createDirectories(project.resolve("whole"));
+        Files.writeString(project.resolve("whole").resolve("Whole.java"), "class Whole {}\n");
+        Harness h = harness(project.resolve("whole"));
+
+        buildAndSettle(h.coordinator());
+        FxTestSupport.runOnFx(() -> {});
+
+        String built = com.editora.i18n.Messages.tr("status.index.built", 1, 1);
+        assertEquals(built, h.statuses().get(h.statuses().size() - 1), "statuses: " + h.statuses());
+    }
+
     @Test
     void withNoProjectItSaysSoRatherThanDoingNothing() throws Exception {
         Harness h = harness(null);

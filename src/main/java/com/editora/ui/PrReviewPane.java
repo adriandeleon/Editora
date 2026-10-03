@@ -169,7 +169,8 @@ public final class PrReviewPane extends Region implements TabContent {
      *  the fallback if rendering fails, so a malformed body never breaks the tab. */
     private static Node renderMarkdown(String markdown) {
         try {
-            Node node = MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(markdown), null);
+            Node node = MarkdownRenderer.renderDocument(
+                    MarkdownRenderer.parseToDocument(markdown), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
             node.getStyleClass().add("pr-review-md");
             return node;
         } catch (RuntimeException e) {

@@ -74,7 +74,7 @@ final class FileWorkflowCoordinator {
         CANCEL
     }
 
-    private record AdminResult(int exit, String error, long modifiedMillis, long size) {}
+    record AdminResult(int exit, String error, long modifiedMillis, long size) {}
 
     interface Host {
 
@@ -169,6 +169,15 @@ final class FileWorkflowCoordinator {
 
     /** Local-document persistence boundary. Package-visible replacement supports deterministic faults. */
     private volatile DocumentWriter documentWriter = com.editora.io.AtomicFileWrite::writeIf;
+
+    @FunctionalInterface
+    interface ElevatedWriter {
+
+        AdminResult write(Path target, byte[] bytes) throws IOException;
+    }
+
+    /** The privileged write ({@code pkexec}/{@code osascript}). Package-visible replacement for tests. */
+    volatile ElevatedWriter elevatedWriter = this::runElevatedWrite;
 
     /** Test seam for holding an actual write worker while proving the FX thread remains responsive. */
     volatile Runnable beforeDocumentWriteForTest;
@@ -279,12 +288,30 @@ final class FileWorkflowCoordinator {
         fileLoadExecutor.execute(() -> {
             try {
                 PreparedLoad load = prepareLoad(file, classifyBinary);
-                Platform.runLater(() -> host.finishAsyncOpen(tab, buffer, load));
+                Platform.runLater(() -> ifWindowOpen(() -> host.finishAsyncOpen(tab, buffer, load)));
             } catch (IOException | RuntimeException e) {
-                Platform.runLater(() -> host.failAsyncOpen(tab, buffer, file, e));
+                Platform.runLater(() -> ifWindowOpen(() -> host.failAsyncOpen(tab, buffer, file, e)));
             }
         });
     }
+
+    /**
+     * Runs a load completion unless the window was disposed while the read was in flight. Its tabs outlive
+     * disposal, so the completion would otherwise fill a disposed buffer and start a language server for a
+     * window that no longer exists.
+     */
+    private void ifWindowOpen(Runnable completion) {
+        if (!shutdown) {
+            completion.run();
+        }
+    }
+
+    /** True once {@link #shutdown()} has run: the window is closed and no completion may touch it. */
+    boolean isShutdown() {
+        return shutdown;
+    }
+
+    private volatile boolean shutdown;
 
     /** Runs an action after an asynchronous buffer load reaches the FX thread, or now if it already has. */
     void afterBufferLoad(EditorBuffer buffer, Runnable action) {
@@ -419,7 +446,14 @@ final class FileWorkflowCoordinator {
             boolean log,
             long logOffset,
             boolean tail,
-            byte[] sourceBytes) {}
+            byte[] sourceBytes,
+            String declaredCharset) {
+
+        /** The declared charset could not decode the file, so {@link #charset} is a lossless stand-in. */
+        boolean charsetAssumed() {
+            return declaredCharset != null && !declaredCharset.equals(charset);
+        }
+    }
 
     /** Document shape computed while the decoded text is already in background-thread memory. */
     record TextStats(int lines, int maxLineLength) {}
@@ -477,6 +511,7 @@ final class FileWorkflowCoordinator {
                         isLog,
                         0,
                         false,
+                        null,
                         null);
             }
             if (isLog) {
@@ -501,6 +536,7 @@ final class FileWorkflowCoordinator {
                         true,
                         tail.offset(),
                         true,
+                        null,
                         null);
             }
             String content = readCapped(file, (int) EditorBuffer.HUGE_FILE_BYTES);
@@ -522,6 +558,7 @@ final class FileWorkflowCoordinator {
                     false,
                     0,
                     false,
+                    null,
                     null);
         }
         byte[] bytes = Files.readAllBytes(file);
@@ -547,11 +584,15 @@ final class FileWorkflowCoordinator {
                         false,
                         0,
                         false,
-                        bytes);
+                        bytes,
+                        null);
             }
         }
-        String charset = com.editora.editorconfig.EditorConfigCharset.resolveName(bytes, editorConfig.charset());
-        String content = com.editora.editorconfig.EditorConfigCharset.decode(bytes, charset);
+        // Strict, never with replacement: a U+FFFD substituted here would be written back on the next save.
+        com.editora.editorconfig.EditorConfigCharset.Decoded decoded =
+                com.editora.editorconfig.EditorConfigCharset.decodeLossless(bytes, editorConfig.charset());
+        String charset = decoded.charset();
+        String content = decoded.text();
         boolean large = size >= EditorBuffer.LARGE_FILE_BYTES;
         // Intermediate tier: a very long single file (e.g. a 13k-line source) keeps highlighting + editing
         // but drops the minimap + LSP — the two heaviest features for a huge source — so it stays responsive.
@@ -576,7 +617,8 @@ final class FileWorkflowCoordinator {
                 isLog,
                 size,
                 false,
-                bytes);
+                bytes,
+                decoded.declared());
     }
 
     /** Applies a prepared document atomically on the FX thread, with all expensive-mode flags already active. */
@@ -584,7 +626,7 @@ final class FileWorkflowCoordinator {
         buffer.setDiskSnapshot(load.mtime(), load.size(), fingerprint(load.sourceBytes()));
         buffer.setTruncatedLoad(load.truncated());
         host.editorSettings().applyResolvedEditorConfig(buffer, load.editorConfig());
-        buffer.setDetectedCharset(load.charset());
+        buffer.setDetectedCharset(load.charset(), load.charsetAssumed());
         buffer.setLargeFile(load.large() || load.longLine());
         buffer.setHeavyFile(load.heavy());
         if (load.longLine()) {
@@ -605,6 +647,13 @@ final class FileWorkflowCoordinator {
                     + StatusBar.formatSize(load.size())
                     + (load.tail() ? "): read-only, showing last " : "): read-only, showing first ")
                     + StatusBar.formatSize(load.content().length());
+        }
+        if (load.charsetAssumed()) {
+            return tr(
+                    "status.charsetAssumed",
+                    load.file().getFileName(),
+                    com.editora.editorconfig.EditorConfigCharset.displayName(load.declaredCharset()),
+                    com.editora.editorconfig.EditorConfigCharset.displayName(load.charset()));
         }
         if (load.large()) {
             return largeFileNote(load.file(), load.size());
@@ -871,18 +920,39 @@ final class FileWorkflowCoordinator {
      * and destroy everything outside the slice. The buffer is read-only, but that only stops <em>typing</em>:
      * {@code file.save} (Ctrl/Cmd-S) needs no edit and no dirty flag to fire, so it has to be refused here.
      *
+     * <p>The same holds for a tab whose document has not arrived yet (an empty loading shell would replace
+     * the file with zero bytes) and for a log that follow mode has trimmed to its tail.
+     *
      * @return true when the save was refused (the caller must not write).
      */
-    boolean refuseTruncatedSave(EditorBuffer buffer) {
-        if (buffer == null || !buffer.isTruncatedLoad()) {
+    boolean refuseUnsavable(EditorBuffer buffer) {
+        SaveRefusal refusal = saveRefusal(buffer);
+        if (refusal == SaveRefusal.NONE) {
             return false;
         }
-        host.setStatus(tr("status.truncatedNoSave"));
+        if (refusal.messageKey() != null) {
+            host.setStatus(tr(refusal.messageKey(), buffer.getTitle()));
+        }
         return true;
     }
 
+    /**
+     * Why {@code buffer} must not be written right now. Evaluated again in {@link #captureSave}, the one point
+     * every write path passes through, so a caller that forgot to ask (autosave, the elevated save, the MCP
+     * bridge) still cannot put an incomplete document on disk.
+     */
+    SaveRefusal saveRefusal(EditorBuffer buffer) {
+        return buffer == null
+                ? SaveRefusal.DISPOSED
+                : SaveRefusal.of(
+                        buffer.isDisposed(),
+                        buffer.isLoading() || loadingBuffers.contains(buffer),
+                        buffer.isTruncatedLoad(),
+                        buffer.isLogTrimmed());
+    }
+
     boolean save(EditorBuffer buffer) {
-        if (refuseTruncatedSave(buffer)) {
+        if (refuseUnsavable(buffer)) {
             return false;
         }
         if (buffer.getPath() == null) {
@@ -897,7 +967,7 @@ final class FileWorkflowCoordinator {
 
     /** Synchronous variant for close/run/debug flows that must observe the saved bytes before continuing. */
     boolean saveSynchronously(EditorBuffer buffer) {
-        if (refuseTruncatedSave(buffer)) {
+        if (refuseUnsavable(buffer)) {
             return false;
         }
         if (buffer.getPath() == null) {
@@ -928,11 +998,23 @@ final class FileWorkflowCoordinator {
             return;
         }
         SaveRequest request = captureSave(buffer, target);
+        if (request == null) {
+            return;
+        }
         host.setStatus(tr("status.admin.saving", com.editora.config.PathDisplay.of(target)));
         new Thread(
                         () -> {
                             try {
-                                var outcome = request.ticket().runIfCurrent(() -> runElevatedWrite(request));
+                                var outcome = request.ticket().runIfCurrent(() -> {
+                                    // The same preimage check as an ordinary save: the elevated copy truncates
+                                    // in place, so an external edit would otherwise be overwritten unasked.
+                                    if (Files.exists(target)
+                                            && !prepareRemoteWrite(request, false, false, null)
+                                                    .proceed()) {
+                                        return new AdminResult(-2, "conflict", -1, -1);
+                                    }
+                                    return elevatedWriter.write(request.target(), request.bytes());
+                                });
                                 AdminResult result = outcome.executed()
                                         ? outcome.value()
                                         : new AdminResult(-2, "superseded", -1, -1);
@@ -949,7 +1031,7 @@ final class FileWorkflowCoordinator {
                 .start();
     }
 
-    private AdminResult runElevatedWrite(SaveRequest request) throws IOException {
+    private AdminResult runElevatedWrite(Path target, byte[] bytes) throws IOException {
         Path tmp = Files.createTempFile("editora-admin-", ".tmp");
         try {
             try {
@@ -961,17 +1043,13 @@ final class FileWorkflowCoordinator {
             } catch (UnsupportedOperationException | IOException ignore) {
                 // Non-POSIX filesystem: the temp file keeps default permissions.
             }
-            Files.write(tmp, request.bytes());
+            Files.write(tmp, bytes);
             var result = com.editora.process.ProcessRunner.run(
                     null,
                     java.time.Duration.ofMinutes(2),
                     com.editora.process.ElevatedSave.elevatedArgv(
-                            System.getProperty("os.name"),
-                            com.editora.process.ElevatedSave.PKEXEC,
-                            tmp,
-                            request.target()));
-            return new AdminResult(
-                    result.exit(), result.err(), lastModifiedMillis(request.target()), fileSize(request.target()));
+                            System.getProperty("os.name"), com.editora.process.ElevatedSave.PKEXEC, tmp, target));
+            return new AdminResult(result.exit(), result.err(), lastModifiedMillis(target), fileSize(target));
         } finally {
             Files.deleteIfExists(tmp);
         }
@@ -1020,7 +1098,7 @@ final class FileWorkflowCoordinator {
     }
 
     private boolean saveAs(EditorBuffer buffer, boolean synchronous) {
-        if (refuseTruncatedSave(buffer)) {
+        if (refuseUnsavable(buffer)) {
             return false;
         }
         if (com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
@@ -1047,6 +1125,9 @@ final class FileWorkflowCoordinator {
     }
 
     private boolean applySaveAsTarget(EditorBuffer buffer, Path file, boolean synchronous) {
+        if (refuseUnsavable(buffer)) {
+            return false; // before the buffer is re-pointed: a refused write must not leave it renamed
+        }
         Path previousPath = buffer.getPath();
         saveAsOrigins.putIfAbsent(buffer, new SaveAsOrigin(previousPath));
         invalidatePendingWrites(buffer);
@@ -1080,7 +1161,7 @@ final class FileWorkflowCoordinator {
      * overwriting a different existing file.
      */
     void saveAsPrompt(EditorBuffer buffer) {
-        if (buffer == null || refuseTruncatedSave(buffer)) {
+        if (buffer == null || refuseUnsavable(buffer)) {
             return;
         }
         if (buffer.getPath() != null && com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
@@ -1140,8 +1221,8 @@ final class FileWorkflowCoordinator {
     /**
      * The exact bytes to write for {@code buffer}: the EditorConfig save transforms (trim trailing
      * whitespace / final newline / end-of-line) applied to the text, then encoded in the effective charset
-     * (BOM-aware). The live document is not mutated — only what we write. Inert (content + detected charset)
-     * when EditorConfig is off.
+     * (BOM-aware). The live document is not mutated — only what we write. With EditorConfig off this is the
+     * content in the file's own line ending and detected charset.
      */
     byte[] saveBytes(EditorBuffer buffer) {
         return savePayload(buffer, buffer.getContent()).bytes();
@@ -1153,6 +1234,11 @@ final class FileWorkflowCoordinator {
                         ? buffer.getEditorConfigProps()
                         : com.editora.editorconfig.EditorConfigProperties.EMPTY;
         String text = com.editora.editorconfig.EditorConfigTransform.transform(content, p);
+        if (com.editora.editor.LineEndings.labelOf(p.endOfLine()) == null) {
+            // No end_of_line rule: write the file's own line ending back. The document only ever holds '\n',
+            // so without this every CRLF file was rewritten as LF by its first save.
+            text = com.editora.editor.LineEndings.apply(text, buffer.getLineEnding());
+        }
         String charset = buffer.getEffectiveCharset();
         // A charset that can't represent what the user typed (an em dash / curly quote / emoji under
         // `charset = latin1`) would be written as '?' by String.getBytes — and the editor keeps showing the
@@ -1184,6 +1270,9 @@ final class FileWorkflowCoordinator {
 
     private boolean writeBuffer(EditorBuffer buffer, Path file, boolean saveAs) {
         SaveRequest request = captureSave(buffer, file, saveAs);
+        if (request == null) {
+            return false;
+        }
         try {
             autoSaveExecutor.submit(() -> writeAsync(request, false));
             return true;
@@ -1199,6 +1288,9 @@ final class FileWorkflowCoordinator {
 
     private boolean writeBufferSynchronously(EditorBuffer buffer, Path file, boolean saveAs) {
         SaveRequest request = captureSave(buffer, file, saveAs);
+        if (request == null) {
+            return false;
+        }
         CompletableFuture<Boolean> completed = new CompletableFuture<>();
         try {
             autoSaveExecutor.submit(() -> writeAsync(request, false, completed));
@@ -1241,6 +1333,9 @@ final class FileWorkflowCoordinator {
     void autoSaveBuffer(EditorBuffer buffer) {
         Path file = buffer.getPath();
         SaveRequest request = captureSave(buffer, file);
+        if (request == null) {
+            return;
+        }
         try {
             autoSaveExecutor.submit(() -> writeAsync(request, true));
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
@@ -1252,7 +1347,15 @@ final class FileWorkflowCoordinator {
         return captureSave(buffer, file, false);
     }
 
+    /**
+     * Snapshots {@code buffer} for a write, or returns {@code null} (with a status message) when it must not be
+     * written — see {@link #saveRefusal}. The single choke point for Save, Save As, autosave, the elevated
+     * save and every programmatic caller.
+     */
     private SaveRequest captureSave(EditorBuffer buffer, Path file, boolean saveAs) {
+        if (refuseUnsavable(buffer)) {
+            return null;
+        }
         String content = buffer.getContent();
         SavePayload payload = savePayload(buffer, content);
         pendingSaves.merge(buffer, 1, Integer::sum);
@@ -1304,7 +1407,8 @@ final class FileWorkflowCoordinator {
      * The returned preimage is checked again at the atomic replacement boundary, closing the gap between
      * conflict detection and commit.
      */
-    private RemoteWritePlan prepareRemoteWrite(SaveRequest request, boolean autoSave, boolean raced)
+    private RemoteWritePlan prepareRemoteWrite(
+            SaveRequest request, boolean autoSave, boolean raced, java.util.concurrent.atomic.AtomicBoolean blocked)
             throws IOException {
         PreparedLoad current = prepareLoad(request.target(), false);
         byte[] currentBytes = current.sourceBytes();
@@ -1324,6 +1428,7 @@ final class FileWorkflowCoordinator {
             return new RemoteWritePlan(true, currentBytes, false);
         }
         if (autoSave) {
+            blocked.set(true); // never prompt from a background save, but do not go quiet either
             return new RemoteWritePlan(false, currentBytes, false);
         }
         RemoteSaveChoice choice = promptRemoteSaveConflict(request, current);
@@ -1409,13 +1514,22 @@ final class FileWorkflowCoordinator {
     }
 
     private void writeAsync(SaveRequest request, boolean autoSave, CompletableFuture<Boolean> completed) {
+        java.util.concurrent.atomic.AtomicBoolean autoSaveBlocked = new java.util.concurrent.atomic.AtomicBoolean();
         try {
             var outcome = request.ticket().runIfCurrent(() -> {
-                boolean raced = false;
-                while (request.ticket().isCurrent()) {
-                    boolean existing = Files.exists(request.target());
-                    RemoteWritePlan plan = existing
-                            ? prepareRemoteWrite(request, autoSave, raced)
+                Path target = request.target();
+                for (int attempt = 0; request.ticket().isCurrent(); attempt++) {
+                    SaveTarget state = SaveTarget.of(Files.exists(target), Files.notExists(target));
+                    if (state == SaveTarget.INDETERMINATE) {
+                        // Neither present nor absent (a dropped mount, a folder that can no longer be
+                        // searched). The commit check can never pass, so retrying would spin forever.
+                        throw new IOException(tr("status.save.targetUnreachable", target.getFileName()));
+                    }
+                    if (attempt >= SaveTarget.MAX_ATTEMPTS) {
+                        throw new IOException(tr("status.save.targetKeptChanging", target.getFileName()));
+                    }
+                    RemoteWritePlan plan = state == SaveTarget.PRESENT
+                            ? prepareRemoteWrite(request, autoSave, attempt > 0, autoSaveBlocked)
                             : new RemoteWritePlan(true, null, true);
                     if (!plan.proceed()) {
                         return null;
@@ -1426,7 +1540,6 @@ final class FileWorkflowCoordinator {
                     }
                     // The target appeared or changed after preflight. Read the new preimage and ask before
                     // overwriting it, including Save As targets that were absent when the dialog closed.
-                    raced = true;
                 }
                 return null;
             });
@@ -1440,6 +1553,15 @@ final class FileWorkflowCoordinator {
                         completeSave(request, disk, autoSave, request.ticket().isCurrent());
                     } else {
                         rollbackFailedSaveAs(request);
+                        if (autoSaveBlocked.get()
+                                && request.ticket().isCurrent()
+                                && !request.buffer().isDisposed()) {
+                            // The disk copy differs from what this buffer was loaded from. Say so, and ask
+                            // now if it is the file being looked at, rather than leaving auto-save silently off.
+                            host.setStatus(tr(
+                                    "status.autoSaveConflict", request.target().getFileName()));
+                            checkExternalChanges();
+                        }
                     }
                     completeFuture(completed, disk != null);
                 } finally {
@@ -1572,6 +1694,7 @@ final class FileWorkflowCoordinator {
     }
 
     void shutdown() {
+        shutdown = true;
         autoSaveIdleTimer.stop();
         autoSaveExecutor.shutdownNow();
         fileLoadExecutor.shutdownNow();

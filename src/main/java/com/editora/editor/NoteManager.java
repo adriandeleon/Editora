@@ -29,7 +29,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * <b>not</b> fire {@code onChanged} (no per-keystroke persistence) — the controller persists positions on
  * save/tab-switch via {@link #snapshot()}; only explicit mutations fire {@code onChanged}.
  */
-public final class NoteManager {
+public final class NoteManager implements LineMarks.Carrier {
 
     private final CodeArea area;
     /** id -> live tracking; insertion order preserved for the panel/snapshot. */
@@ -38,6 +38,14 @@ public final class NoteManager {
     private Runnable onChanged = () -> {};
     private Consumer<Collection<Integer>> onLinesRepaint = c -> {};
     private boolean restoring;
+    /** True while a narrow/widen text swap runs: the swap is not an edit, so nothing is shifted through it. */
+    private boolean swapping;
+    /** While narrowed, the whole-document ranges of the notes outside the region; {@code null} otherwise. */
+    private Map<UUID, int[]> held;
+    /** The narrowed region's whole-document {@code [start, end)} at the moment it was cut out. */
+    private int heldStart;
+
+    private int heldEnd;
 
     /** A note plus its current offset range ({@code start==end==-1} for file-scope / orphaned notes). */
     private static final class Tracked {
@@ -292,8 +300,67 @@ public final class NoteManager {
                 .getMajor();
     }
 
+    /**
+     * Carries the notes across the narrowing swap: a note inside the region is rebased onto it; the others
+     * are unpositioned (no gutter marker, no highlight) with their whole-document range held for
+     * {@link #widen}.
+     */
+    @Override
+    public void narrow(int start, int end, Runnable swap) {
+        runSwap(swap);
+        Map<UUID, int[]> outside = new java.util.HashMap<>();
+        for (Tracked t : tracked.values()) {
+            if (!t.positioned()) {
+                continue;
+            }
+            if (t.start >= start && t.end <= end) {
+                t.start -= start;
+                t.end -= start;
+            } else {
+                outside.put(t.note.id(), new int[] {t.start, t.end});
+                t.start = -1;
+                t.end = -1;
+            }
+        }
+        held = outside;
+        heldStart = start;
+        heldEnd = end;
+        onLinesRepaint.accept(activeLines());
+    }
+
+    /** Moves the region's notes back to whole-document offsets and re-positions the held ones around them. */
+    @Override
+    public void widen(Runnable swap) {
+        int regionLength = area.getLength();
+        runSwap(swap);
+        if (held == null) {
+            return;
+        }
+        for (Tracked t : tracked.values()) {
+            int[] range = held.get(t.note.id());
+            if (range != null) {
+                t.start = NoteAnchors.acrossRegion(range[0], heldStart, heldEnd, regionLength);
+                t.end = NoteAnchors.acrossRegion(range[1], heldStart, heldEnd, regionLength);
+            } else if (t.positioned()) {
+                t.start += heldStart;
+                t.end += heldStart;
+            }
+        }
+        held = null;
+        onLinesRepaint.accept(activeLines());
+    }
+
+    private void runSwap(Runnable swap) {
+        swapping = true;
+        try {
+            swap.run();
+        } finally {
+            swapping = false;
+        }
+    }
+
     private void onTextChange(PlainTextChange change) {
-        if (tracked.isEmpty()) {
+        if (swapping || tracked.isEmpty()) {
             return; // hot-path early-out
         }
         int pos = change.getPosition();
@@ -309,6 +376,16 @@ public final class NoteManager {
             }
             int oldLine = lineOf(t.start);
             int[] shifted = NoteAnchors.shiftRange(t.start, t.end, pos, removed, inserted);
+            if (inserted > 0 && t.start >= pos && t.end <= pos + removed && t.end - t.start < removed) {
+                // The note sat inside a replaced span (Replace All, a formatter edit, a history restore):
+                // follow its text into the replacement instead of collapsing onto the edit point.
+                TextAnchor anchor = t.note.anchor();
+                int[] kept = NoteAnchors.relocateInReplacement(
+                        change.getInserted(), t.start - pos, anchor.selectedText(), anchor.length());
+                if (kept != null) {
+                    shifted = new int[] {pos + kept[0], pos + kept[1]};
+                }
+            }
             t.start = shifted[0];
             t.end = shifted[1];
             int newLine = lineOf(t.start);

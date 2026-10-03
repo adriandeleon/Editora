@@ -6,7 +6,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -55,11 +54,8 @@ final class ToolWindowPanel extends BorderPane {
         floatButton.getStyleClass().addAll("button-icon", "flat", "tool-window-float");
         floatButton.setOnAction(e -> onToggleFloat.run());
 
-        Button close = new Button();
-        close.setGraphic(Icons.closeSmall());
-        close.getStyleClass().addAll("button-icon", "flat", "tool-window-close");
-        close.setTooltip(new Tooltip(tr("toolwindow.hide")));
-        close.setOnAction(e -> onClose.run());
+        Button close = Icons.button(
+                Icons.closeSmall(), tr("toolwindow.hide"), onClose, "button-icon", "flat", "tool-window-close");
 
         HBox header = new HBox(8, title, spacer, floatButton, maximize, close);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -125,7 +121,7 @@ final class ToolWindowPanel extends BorderPane {
     void setFloating(boolean floating) {
         this.floating = floating;
         floatButton.setGraphic(floating ? Icons.dock() : Icons.detach());
-        floatButton.setTooltip(new Tooltip(tr(floating ? "toolwindow.dock" : "toolwindow.float")));
+        Icons.name(floatButton, tr(floating ? "toolwindow.dock" : "toolwindow.float"));
         maximize.setVisible(!floating);
         maximize.setManaged(!floating);
         refreshMenuLabels();
@@ -138,7 +134,7 @@ final class ToolWindowPanel extends BorderPane {
     void setMaximized(boolean maximized) {
         this.maximized = maximized;
         maximize.setGraphic(maximized ? Icons.restoreSize() : Icons.maximize());
-        maximize.setTooltip(new Tooltip(tr(maximized ? "toolwindow.restoreSize" : "toolwindow.maximize")));
+        Icons.name(maximize, tr(maximized ? "toolwindow.restoreSize" : "toolwindow.maximize"));
         refreshMenuLabels();
     }
 }

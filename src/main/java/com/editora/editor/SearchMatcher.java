@@ -156,7 +156,8 @@ public final class SearchMatcher {
 
     /**
      * Compiles the regex query exactly as {@link #matches} does (whole-word wrapped in a non-capturing
-     * group so user capture groups keep their numbers), or {@code null} on a bad pattern. Shared with
+     * group so user capture groups keep their numbers; {@code ^}/{@code $} anchor per line), or
+     * {@code null} on a bad pattern. Shared with
      * {@code MultiFileSearch.replaceAll}'s capture-group replace so the two can't diverge.
      */
     public static Pattern compileRegex(String query, boolean caseSensitive, boolean wholeWord) {
@@ -165,7 +166,10 @@ public final class SearchMatcher {
             // UNICODE_CASE so case-insensitive folds non-ASCII too (é↔É) — matching the literal path's
             // String.regionMatches folding and ripgrep's -i; without it the regex path silently misses
             // accented/Cyrillic/Greek case variants that the other two backends find.
-            int flags = caseSensitive ? 0 : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+            // MULTILINE so ^ and $ anchor at every line of a whole-document search (the find bar, Replace All,
+            // Query Replace) instead of only at the document's two ends. The line-oriented callers
+            // (MultiFileSearch) hand in one line at a time, where the flag changes nothing.
+            int flags = Pattern.MULTILINE | (caseSensitive ? 0 : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE));
             return Pattern.compile(pattern, flags);
         } catch (PatternSyntaxException e) {
             return null;

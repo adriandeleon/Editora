@@ -364,7 +364,7 @@ final class AiCoordinator {
                                 String replacement = AiRequests.stripCodeFence(out.toString());
                                 area.replaceText(start, end, replacement);
                                 area.selectRange(start, start + replacement.length());
-                                host.setStatus(tr("status.ai.rewritten"));
+                                host.setStatus(ChordHint.tr("status.ai.rewritten", "edit.undo"));
                             }
 
                             @Override

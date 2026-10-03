@@ -35,4 +35,24 @@ class InstallCoordinatorTest {
                     true, com.editora.install.InstallCatalog.archiveSpec(id).isPresent(), id + ": no archiveSpec");
         });
     }
+
+    /**
+     * The installer's stored command is a command line, so the binary path must be quoted when the config dir
+     * has a space in it ({@code C:\Users\Jane Doe\.editora}). Stored bare, the registry split it at the space
+     * and the server that had just been installed was reported missing.
+     */
+    @Test
+    void anInstalledBinaryUnderAPathWithASpaceIsStillOneArgumentToTheServerRegistry() {
+        java.nio.file.Path binary =
+                java.nio.file.Path.of("/Users/Jane Doe/.editora/plugins/lsp/terraform/terraform-ls");
+        Settings s = new Settings();
+
+        InstallCoordinator.applyServerCommand(
+                s, "terraform", com.editora.install.InstallCatalog.binaryCommand(binary, " serve"));
+
+        assertEquals(
+                java.util.List.of(binary.toString(), "serve"),
+                com.editora.lsp.LspServerRegistry.commandFor(
+                        "terraform", Map.of("terraform", s.getTerraformLspCommand())));
+    }
 }

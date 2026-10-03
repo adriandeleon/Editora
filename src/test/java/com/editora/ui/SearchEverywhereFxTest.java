@@ -300,7 +300,17 @@ class SearchEverywhereFxTest {
         FxTestSupport.runOnFxUnchecked(() -> popup().show(""));
         FxTestSupport.runOnFx(() -> {});
         int landed = cursor();
-        FxTestSupport.runOnFxUnchecked(() -> FxTestSupport.call(popup(), "move", new Class<?>[] {int.class}, 1));
+        // The keystroke itself: Down in the query field (the picker's cursor movement lives in PickerKeys).
+        FxTestSupport.runOnFxUnchecked(() -> FxTestSupport.<javafx.scene.control.TextField>field(popup(), "input")
+                .fireEvent(new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_PRESSED,
+                        "",
+                        "",
+                        javafx.scene.input.KeyCode.DOWN,
+                        false,
+                        false,
+                        false,
+                        false)));
         int moved = cursor();
         assertTrue(moved != landed, "sanity: the move actually moved the cursor");
         FxTestSupport.runOnFxUnchecked(() -> FxTestSupport.invoke(popup(), "reassertCursor"));

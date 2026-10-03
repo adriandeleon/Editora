@@ -3,6 +3,8 @@ package com.editora.office;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.commonmark.ext.footnotes.FootnoteDefinition;
+import org.commonmark.ext.footnotes.FootnoteReference;
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
 import org.commonmark.ext.ins.Ins;
 import org.commonmark.node.Code;
@@ -66,6 +68,8 @@ public record InlineRun(
             if (!alt.isEmpty()) {
                 out.add(new InlineRun(alt, b, i, s, u, code, href));
             }
+        } else if (n instanceof FootnoteReference ref) {
+            out.add(new InlineRun(footnoteMarker(ref.getLabel()), b, i, s, u, code, href)); // was dropped
         } else if (n instanceof SoftLineBreak || n instanceof HardLineBreak) {
             out.add(new InlineRun("\n", b, i, s, u, code, href));
         } else {
@@ -77,6 +81,32 @@ public record InlineRun(
             Node n, boolean b, boolean i, boolean s, boolean u, boolean code, String href, List<InlineRun> out) {
         for (Node c = n.getFirstChild(); c != null; c = c.getNext()) {
             collect(c, b, i, s, u, code, href, out);
+        }
+    }
+
+    /** The visible marker for a footnote label — the same {@code [label]} the on-screen preview shows. */
+    static String footnoteMarker(String label) {
+        return "[" + (label == null ? "" : label) + "]";
+    }
+
+    /**
+     * Every footnote definition under {@code root}, in document order. The office writers render them
+     * together at the end of the document (where a reader expects notes), not wherever the source happened
+     * to define them.
+     */
+    static List<FootnoteDefinition> footnotes(Node root) {
+        List<FootnoteDefinition> out = new ArrayList<>();
+        collectFootnotes(root, out);
+        return out;
+    }
+
+    private static void collectFootnotes(Node n, List<FootnoteDefinition> out) {
+        for (Node c = n.getFirstChild(); c != null; c = c.getNext()) {
+            if (c instanceof FootnoteDefinition def) {
+                out.add(def);
+            } else {
+                collectFootnotes(c, out);
+            }
         }
     }
 

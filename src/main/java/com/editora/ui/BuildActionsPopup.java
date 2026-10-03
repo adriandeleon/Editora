@@ -45,7 +45,7 @@ public final class BuildActionsPopup {
     }
 
     /** The tool-specific fixed strings (localized by the coordinator). */
-    public record Labels(String title, String searchPrompt, String hint, String runCustom) {}
+    public record Labels(String title, String searchPrompt, String runCustom) {}
 
     private sealed interface Row permits Header, ActionRow, TaskRow, ToggleRow {}
 
@@ -61,6 +61,9 @@ public final class BuildActionsPopup {
     private final Label titleLabel;
     private final TextField search = new TextField();
     private final ListView<Row> list = new ListView<>();
+    /** The key legend under the list; rebuilt from the live keymap each time the popup is shown. */
+    private final Label hint = new Label();
+
     private final ObservableList<Row> items = FXCollections.observableArrayList();
     private List<Row> all = List.of();
 
@@ -95,7 +98,6 @@ public final class BuildActionsPopup {
         search.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
 
         titleLabel.getStyleClass().add("palette-title");
-        Label hint = new Label(labels.hint());
         hint.getStyleClass().add("palette-hint");
         content = new VBox(6, titleLabel, search, list, hint);
         content.getStyleClass().add("command-palette");
@@ -168,6 +170,7 @@ public final class BuildActionsPopup {
 
     private void prepare(BuildActionsProvider provider) {
         this.provider = provider;
+        hint.setText(PickerKeys.legend(PickerKeys.hint("run", "↵"))); // per show: follows a keymap switch
         activeToggles.clear();
         rebuildRows();
         search.clear();
@@ -275,59 +278,18 @@ public final class BuildActionsPopup {
     }
 
     private void onKey(KeyEvent e) {
-        switch (e.getCode()) {
-            case ESCAPE -> {
-                hide();
-                e.consume();
-            }
-            case ENTER -> {
-                activate(list.getSelectionModel().getSelectedItem());
-                e.consume();
-            }
-            case DOWN -> {
-                move(1);
-                e.consume();
-            }
-            case UP -> {
-                move(-1);
-                e.consume();
-            }
-            case N -> {
-                if (e.isControlDown()) {
-                    move(1);
-                    e.consume();
+        PickerKeys.Action action = PickerKeys.action(e);
+        switch (action) {
+            case CANCEL -> hide();
+            case ACCEPT -> activate(list.getSelectionModel().getSelectedItem());
+            default -> {
+                // Section headers are stepped over.
+                if (!PickerKeys.navigate(list, action, row -> !(row instanceof Header))) {
+                    return;
                 }
             }
-            case P -> {
-                if (e.isControlDown()) {
-                    move(-1);
-                    e.consume();
-                }
-            }
-            case G -> {
-                if (e.isControlDown()) {
-                    hide();
-                    e.consume();
-                }
-            }
-            default -> {}
         }
-    }
-
-    private void move(int dir) {
-        int n = items.size();
-        if (n == 0) {
-            return;
-        }
-        int idx = list.getSelectionModel().getSelectedIndex();
-        for (int step = 0; step < n; step++) {
-            idx = Math.floorMod(idx + dir, n);
-            if (!(items.get(idx) instanceof Header)) {
-                list.getSelectionModel().select(idx);
-                list.scrollTo(idx);
-                return;
-            }
-        }
+        e.consume();
     }
 
     private void activate(Row row) {

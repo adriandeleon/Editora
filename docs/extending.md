@@ -132,6 +132,10 @@ The discipline that keeps overlays off the hot path (see
 - `setActive(false)` clears and **releases the canvas to 1×1** so it holds no full-viewport
   texture;
 - the data (diagnostics/marks) is **pushed in** by `EditorBuffer`; the overlay only renders.
+- colours come from `OverlayPalette`, not from a `Color.web("#…")` constant: a Canvas cannot be styled
+  from CSS, and one fixed colour is too faint on one editor theme or too loud on the other. Call
+  `OverlayPalette.track(area, palette -> { colors = palette; scheduleRedraw(); })` in the constructor —
+  it re-resolves when the editor theme repaints the background, never per paint.
 
 Attach it in `EditorBuffer.installOverlays()` (eagerly for a common feature, or lazily via
 `attachLazyOverlay` for a rare one), anchor it inside `Minimap.WIDTH`, and add an

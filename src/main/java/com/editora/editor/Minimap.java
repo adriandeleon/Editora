@@ -237,19 +237,42 @@ final class Minimap extends Region {
     }
 
     /**
-     * Scrolls the editor to the grabbed position — <b>continuously</b>, by setting the estimated scroll
-     * offset in pixels rather than by jumping to a paragraph index.
+     * The document line drawn at column pixel {@code minimapY}. Pure.
      *
-     * <p>{@code showParagraphAtTop} can only land on a line boundary, so a drag moved the document in whole
-     * lines with stalls in between. Measured on this repo's {@code CLAUDE.md} (592 lines, 16 px per line, a
-     * 900 px column): consecutive pixels of mouse travel produced deltas of {@code 16, 0, 16, 16, 0, …} —
-     * roughly two thirds of a line per pixel, delivered as a full-line jump or nothing at all. That is the
-     * choppiness; it is worst on a long file, where each column pixel covers more lines. Setting
-     * {@code estimatedScrollY} instead gives {@code 10, 9, 10, 9, …} over the same travel.
+     * <p>This is the mapping that stays true whatever the editor's rows look like: the overview always draws
+     * line {@code i} at {@code i * rowHeight}. {@link #documentScrollY} is only its pixel-smooth equivalent
+     * while every editor row is one line high — a fold (rows of zero height) or word wrap (rows several
+     * lines high) breaks the proportion, and a click then landed on a different line than the one under the
+     * cursor.
      *
-     * <p>Falls back to the paragraph jump only when the height estimate isn't available yet (before the
-     * first layout), where an approximate landing beats not scrolling at all.
+     * @return the 0-based line, clamped to the document, or -1 when the geometry isn't measurable yet
      */
+    static int lineAt(double minimapY, double rowHeight, int totalLines) {
+        if (rowHeight <= 0 || totalLines <= 0) {
+            return -1;
+        }
+        return (int) Math.max(0, Math.min(totalLines - 1, Math.floor(Math.max(0, minimapY) / rowHeight)));
+    }
+
+    /**
+     * Whether the editor's rows are <em>not</em> all one line high, so column pixels have to be mapped by
+     * line ({@link #lineAt}) rather than by proportion. Decided once per press: the fold scan is a plain
+     * style read per paragraph (no layout), but it is still O(lines) and a drag fires per pixel.
+     */
+    private boolean unevenRows;
+
+    private boolean hasUnevenRows() {
+        if (area.isWrapText()) {
+            return true;
+        }
+        for (int p = 0, n = area.getParagraphs().size(); p < n; p++) {
+            if (area.isFolded(p)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Minimum height at which the viewport box can be grabbed, in column pixels. The box is as tall as the
      * viewport is <i>as a share of the document</i>, so on a long file it is a pixel or two — not something
@@ -290,6 +313,7 @@ final class Minimap extends Region {
 
     /** Grabs the viewport box if the press landed on it, else jumps to the pressed position. */
     private void beginDrag(MouseEvent e) {
+        unevenRows = hasUnevenRows();
         double y = Math.max(0, Math.min(getHeight(), e.getY()));
         double[] box = viewportBox();
         if (box != null && withinBox(y, box[0], box[1])) {
@@ -318,12 +342,26 @@ final class Minimap extends Region {
      * choppiness; it is worst on a long file, where each column pixel covers more lines. Setting
      * {@code estimatedScrollY} instead gives {@code 10, 9, 10, 9, …} over the same travel.
      *
+     * <p>That proportional mapping is only right while every editor row is one line high. With a fold or
+     * word wrap in the document ({@link #unevenRows}) the press is mapped to the <em>line</em> drawn under
+     * it instead and that line is shown at the top — whole-line steps, but on the right line.
+     *
      * <p>Falls back to the paragraph jump only when the height estimate isn't available yet (before the
      * first layout), where an approximate landing beats not scrolling at all.
      */
     private void scrollToBoxTop(double boxTop) {
         int total = area.getParagraphs().size();
         if (total == 0 || getHeight() <= 0) {
+            return;
+        }
+        if (unevenRows) {
+            int line = lineAt(boxTop, rowHeight(getHeight(), total), total);
+            while (line > 0 && area.isFolded(line)) {
+                line--; // a hidden line is represented by the fold header above it
+            }
+            if (line >= 0) {
+                area.showParagraphAtTop(line);
+            }
             return;
         }
         Double totalHeight = area.totalHeightEstimateProperty().getValue();

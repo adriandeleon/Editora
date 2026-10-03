@@ -11,6 +11,8 @@
   "Cmd-v": "edit.paste",
   "C-g": "edit.addCaretNextOccurrence",
   "Cmd-/": "edit.toggleComment",
+  "Cmd-S-7": "edit.toggleComment",
+  "Cmd-divide": "edit.toggleComment",
   "C-space": "edit.completion",
   "Cmd-f": "find.show",
   "Cmd-r": "find.replace",

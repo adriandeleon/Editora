@@ -1,10 +1,14 @@
 package com.editora.http;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.CookieManager;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -14,8 +18,16 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -23,54 +35,145 @@ import javafx.application.Platform;
 
 /**
  * UI-facing façade for running {@code .http} requests with the <b>built-in JDK {@code HttpClient}</b>
- * (no external CLI): work runs on one daemon executor and results post back on the JavaFX thread. A run
+ * (no external CLI): each run gets its own daemon worker and results post back on the JavaFX thread. A run
  * gets a fresh {@link CookieManager} (a per-run cookie jar) and a {@link CapturedResponses} session, so a
  * later request can reference an earlier one's response ({@code {{name.response.body.$.x}}}). Per-request
  * directives ({@code @no-redirect}/{@code @no-cookie-jar}/{@code @timeout}), external bodies, multipart, and
  * the {@code >>}/{@code >>!} response-redirect operators are honored here. Each call returns an
  * {@link HttpExchange} carrying the fully resolved request alongside its {@link HttpResult}.
+ *
+ * <p>Bodies are <b>bytes</b> end to end: a raw {@code < file} body is uploaded as its bytes, the response is
+ * read as bytes ({@link HttpResult#rawBody()}), and {@code >>} writes exactly those bytes — text is decoded
+ * only for display. A response is read up to {@link #DEFAULT_MAX_RESPONSE_BYTES} and then cut with a visible
+ * warning. Every run returns a {@link Handle}: {@link Handle#cancel()} tears the exchange down, and an
+ * overall deadline stops a response that never ends (a server-sent-event stream), so neither can hold up
+ * the requests run after it.
  */
 public final class HttpClientService {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(15);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(60);
 
-    private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
+    /** The most response bytes kept; a longer response is cut here and flagged {@link HttpResult#truncated()}. */
+    public static final int DEFAULT_MAX_RESPONSE_BYTES = 50 * 1024 * 1024;
+
+    /** How long a response body may keep arriving after its headers before the run is stopped. */
+    private static final Duration DEFAULT_BODY_DEADLINE = Duration.ofMinutes(5);
+
+    /** The {@link HttpResult#error()} of a request the user cancelled. */
+    public static final String CANCELLED = "request cancelled";
+
+    // One worker per run (not a single shared thread): a request that hangs must not queue up the next run.
+    private final ExecutorService exec = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "http-client");
         t.setDaemon(true);
         return t;
     });
 
+    private final Set<Handle> active = ConcurrentHashMap.newKeySet();
+    private final int maxResponseBytes;
+    private final Duration bodyDeadline;
+
+    public HttpClientService() {
+        this(DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_BODY_DEADLINE);
+    }
+
+    /** Test seam: a small size cap / short body deadline. */
+    HttpClientService(int maxResponseBytes, Duration bodyDeadline) {
+        this.maxResponseBytes = maxResponseBytes;
+        this.bodyDeadline = bodyDeadline;
+    }
+
+    /**
+     * A running request (or run-all): {@link #cancel()} aborts the in-flight exchange — the pending send, or
+     * the body still streaming in — and skips any requests not yet started. The result callback still fires,
+     * with a {@link #CANCELLED} failure, so the viewer can leave its "running" state.
+     */
+    public static final class Handle {
+        private final AtomicBoolean cancelled = new AtomicBoolean();
+        private final CompletableFuture<Void> delivered = new CompletableFuture<>();
+        private volatile CompletableFuture<?> pending;
+        private volatile InputStream stream;
+
+        public void cancel() {
+            if (cancelled.compareAndSet(false, true)) {
+                CompletableFuture<?> f = pending;
+                if (f != null) {
+                    f.cancel(true);
+                }
+                closeQuietly(stream);
+            }
+        }
+
+        public boolean isCancelled() {
+            return cancelled.get();
+        }
+
+        /** Completes once the result callback has run on the FX thread (also for a cancelled run). */
+        public CompletableFuture<Void> delivered() {
+            return delivered;
+        }
+
+        private void deliver(Runnable callback) {
+            Platform.runLater(() -> {
+                try {
+                    callback.run();
+                } finally {
+                    delivered.complete(null);
+                }
+            });
+        }
+    }
+
     /** Runs a single request off-thread (its own cookie jar, no prior context), posting on the FX thread. */
-    public void run(HttpFile.Parsed request, Map<String, String> vars, Path baseDir, Consumer<HttpExchange> onResult) {
+    public Handle run(
+            HttpFile.Parsed request, Map<String, String> vars, Path baseDir, Consumer<HttpExchange> onResult) {
+        Handle handle = new Handle();
+        active.add(handle);
         exec.submit(() -> {
-            CookieManager cookies = new CookieManager();
-            HttpExchange ex = execute(request, vars, baseDir, new CapturedResponses(), cookies);
-            Platform.runLater(() -> onResult.accept(ex));
+            HttpExchange ex;
+            try {
+                ex = execute(handle, request, vars, baseDir, new CapturedResponses(), new CookieManager());
+            } finally {
+                active.remove(handle);
+            }
+            handle.deliver(() -> onResult.accept(ex));
         });
+        return handle;
     }
 
     /** Runs {@code requests} sequentially off-thread, sharing one cookie jar + captured-response session so
      *  later requests can reference earlier responses; posts all exchanges together on the FX thread. */
-    public void runAll(
+    public Handle runAll(
             List<HttpFile.Parsed> requests,
             Map<String, String> vars,
             Path baseDir,
             Consumer<List<HttpExchange>> onResult) {
+        Handle handle = new Handle();
+        active.add(handle);
         exec.submit(() -> {
-            CookieManager cookies = new CookieManager();
-            CapturedResponses captured = new CapturedResponses();
             List<HttpExchange> out = new ArrayList<>();
-            for (HttpFile.Parsed req : requests) {
-                HttpExchange ex = execute(req, vars, baseDir, captured, cookies);
-                captured.put(req.name(), ex.result());
-                out.add(ex);
+            try {
+                CookieManager cookies = new CookieManager();
+                CapturedResponses captured = new CapturedResponses();
+                for (HttpFile.Parsed req : requests) {
+                    HttpExchange ex = execute(handle, req, vars, baseDir, captured, cookies);
+                    captured.put(req.name(), ex.result());
+                    out.add(ex);
+                    if (handle.isCancelled()) {
+                        break; // the cancelled request is reported; the rest are not started
+                    }
+                }
+            } finally {
+                active.remove(handle);
             }
-            Platform.runLater(() -> onResult.accept(out));
+            handle.deliver(() -> onResult.accept(out));
         });
+        return handle;
     }
 
     private HttpExchange execute(
+            Handle handle,
             HttpFile.Parsed request,
             Map<String, String> vars,
             Path baseDir,
@@ -103,19 +206,29 @@ public final class HttpClientService {
 
         BodyContent bc = resolveBody(request, baseDir, sub, contentType, headers);
         String label = method + " " + url;
+        if (bc.problem() != null) {
+            // The body the request names cannot be read. Sending the request without it would look like a
+            // server problem (and could create an empty resource), so it is not sent at all.
+            warnings.add(bc.problem());
+            HttpResult notSent = HttpResult.failure("request not sent: " + bc.problem(), warnings);
+            return new HttpExchange(label, method, url, headers, bc.display(), notSent);
+        }
+        if (handle.isCancelled()) {
+            return new HttpExchange(label, method, url, headers, bc.display(), HttpResult.failure(CANCELLED, warnings));
+        }
         // Digest shorthand (Authorization: Digest user pass): send anonymously, then answer a 401 challenge.
         DigestAuth.Credentials digest = digestCredentials(headers);
         if (digest != null) {
             headers.removeIf(h -> h[0].equalsIgnoreCase("Authorization"));
         }
+        HttpClient client = clientFor(request.directives(), cookies);
         try {
-            HttpClient client = clientFor(request.directives(), cookies);
             Duration timeout = request.directives().timeoutSeconds() > 0
                     ? Duration.ofSeconds(request.directives().timeoutSeconds())
                     : REQUEST_TIMEOUT;
 
             long t0 = System.nanoTime();
-            HttpResponse<String> resp = send(client, url, method, headers, timeout, bc.publisher(), null);
+            Received resp = send(handle, client, url, method, headers, timeout, bc.publisher(), null);
             if (digest != null && resp.statusCode() == 401) {
                 String challenge = resp.headers().firstValue("WWW-Authenticate").orElse("");
                 if (challenge.regionMatches(true, 0, "Digest", 0, 6)) {
@@ -126,7 +239,7 @@ public final class HttpClientService {
                             DigestAuth.parseChallenge(challenge),
                             randomHex(),
                             "00000001");
-                    resp = send(client, url, method, headers, timeout, bc.publisher(), authz);
+                    resp = send(handle, client, url, method, headers, timeout, bc.publisher(), authz);
                 }
             }
             long ms = (System.nanoTime() - t0) / 1_000_000;
@@ -138,19 +251,53 @@ public final class HttpClientService {
                 }
             });
             String respType = resp.headers().firstValue("content-type").orElse("");
-            long size = resp.body() == null ? 0 : resp.body().getBytes(StandardCharsets.UTF_8).length;
-            HttpResult result =
-                    new HttpResult(resp.statusCode(), respHeaders, resp.body(), respType, ms, size, null, warnings);
+            if (resp.truncated()) {
+                warnings.add("response truncated at " + megabytes(maxResponseBytes)
+                        + " — the rest of the body was not downloaded");
+            }
+            if (resp.expired()) {
+                warnings.add("response still arriving after " + bodyDeadline.toSeconds() + " s — stopped; showing the "
+                        + resp.body().length + " bytes received so far");
+            }
+            HttpResult result = HttpResult.ofBytes(
+                    resp.statusCode(),
+                    respHeaders,
+                    resp.body(),
+                    respType,
+                    ms,
+                    warnings,
+                    resp.truncated() || resp.expired());
             writeRedirects(request, baseDir, result);
             return new HttpExchange(label, method, url, headers, bc.display(), result);
         } catch (Exception e) {
-            HttpResult err = new HttpResult(0, List.of(), "", "", 0, 0, errorMessage(url, e), warnings);
-            return new HttpExchange(label, method, url, headers, bc.display(), err);
+            String message = handle.isCancelled() ? CANCELLED : errorMessage(url, e);
+            return new HttpExchange(label, method, url, headers, bc.display(), HttpResult.failure(message, warnings));
+        } finally {
+            client.shutdownNow(); // release the connection (and its selector thread) — also after a cancel
         }
     }
 
-    /** The request body publisher + a display string (for the cURL/history view). */
-    private record BodyContent(HttpRequest.BodyPublisher publisher, String display) {}
+    private static String megabytes(int bytes) {
+        return bytes >= 1024 * 1024 ? (bytes / (1024 * 1024)) + " MB" : bytes + " bytes";
+    }
+
+    /**
+     * The request body publisher + a display string (for the cURL/history view). A non-null {@code problem}
+     * means the body the request refers to could not be read and the request must not be sent.
+     */
+    private record BodyContent(HttpRequest.BodyPublisher publisher, String display, String problem) {
+        BodyContent(HttpRequest.BodyPublisher publisher, String display) {
+            this(publisher, display, null);
+        }
+
+        static BodyContent unreadable(String problem) {
+            return new BodyContent(HttpRequest.BodyPublishers.noBody(), "(" + problem + ")", problem);
+        }
+    }
+
+    /** A response read to the end (or to the size cap / body deadline): status, headers and raw bytes. */
+    private record Received(
+            int statusCode, java.net.http.HttpHeaders headers, byte[] body, boolean truncated, boolean expired) {}
 
     private static BodyContent resolveBody(
             HttpFile.Parsed request,
@@ -165,7 +312,11 @@ public final class HttpClientService {
                 boundary = "EditoraBoundary" + Long.toHexString(System.nanoTime());
                 setHeader(headers, "Content-Type", contentType + "; boundary=" + boundary);
             }
-            byte[] bytes = Multipart.build(Multipart.parse(request.body(), boundary), boundary, baseDir, sub);
+            List<String> problems = new ArrayList<>();
+            byte[] bytes = Multipart.build(Multipart.parse(request.body(), boundary), boundary, baseDir, sub, problems);
+            if (!problems.isEmpty()) {
+                return BodyContent.unreadable(String.join("; ", problems));
+            }
             return new BodyContent(
                     HttpRequest.BodyPublishers.ofByteArray(bytes), "(multipart/form-data, " + bytes.length + " bytes)");
         }
@@ -176,20 +327,27 @@ public final class HttpClientService {
                 Charset cs = ref.encoding() == null ? StandardCharsets.UTF_8 : Charset.forName(ref.encoding());
                 Path bodyFile = HttpPaths.contained(baseDir, ref.path());
                 if (bodyFile == null) {
-                    return new BodyContent(
-                            HttpRequest.BodyPublishers.noBody(),
-                            "(body file outside the request folder: " + ref.path() + ")");
+                    return BodyContent.unreadable("body file outside the request folder: " + ref.path());
                 }
-                String content = new String(Files.readAllBytes(bodyFile), cs);
-                if (ref.substitute()) {
-                    content = sub.apply(content);
+                byte[] raw = Files.readAllBytes(bodyFile);
+                if (!ref.substitute()) {
+                    // "< file": the file's bytes are the body, untouched — a decode/re-encode round trip
+                    // through String corrupts anything that is not valid UTF-8 (an image, a protobuf).
+                    String shown = HttpResult.looksBinary(raw, null)
+                            ? "(binary body from " + ref.path() + ", " + raw.length + " bytes)"
+                            : new String(raw, cs);
+                    return new BodyContent(HttpRequest.BodyPublishers.ofByteArray(raw), shown);
                 }
+                String content = sub.apply(new String(raw, cs));
                 return new BodyContent(HttpRequest.BodyPublishers.ofString(content), content);
             } catch (Exception e) {
-                return new BodyContent(
-                        HttpRequest.BodyPublishers.noBody(),
-                        "(missing body file: " + request.bodyRef().path() + ")");
+                return BodyContent.unreadable(
+                        "body file not found: " + request.bodyRef().path());
             }
+        }
+        if (request.bodyRef() != null) {
+            return BodyContent.unreadable("body file needs a saved request file to resolve against: "
+                    + request.bodyRef().path());
         }
         String body = sub.apply(request.body());
         if (body == null || body.isBlank()) {
@@ -211,8 +369,14 @@ public final class HttpClientService {
         return b.build();
     }
 
-    /** Builds and sends one request; {@code authOverride} (when non-null) sets the Authorization header. */
-    private static HttpResponse<String> send(
+    /**
+     * Builds and sends one request and reads its body as bytes; {@code authOverride} (when non-null) sets the
+     * Authorization header. The send is asynchronous so {@code handle} can cancel it; the body is streamed so
+     * it can be cut at the size cap, and a body still arriving at the deadline is closed and returned as far
+     * as it got.
+     */
+    private Received send(
+            Handle handle,
             HttpClient client,
             String url,
             String method,
@@ -220,7 +384,7 @@ public final class HttpClientService {
             Duration timeout,
             HttpRequest.BodyPublisher publisher,
             String authOverride)
-            throws java.io.IOException, InterruptedException {
+            throws IOException, InterruptedException {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).timeout(timeout);
         for (String[] h : headers) {
             b.header(h[0], h[1]); // pre-validated by HttpHeaders.partition — un-sendable ones were surfaced
@@ -229,7 +393,88 @@ public final class HttpClientService {
             b.header("Authorization", authOverride);
         }
         b.method(method, publisher);
-        return client.send(b.build(), HttpResponse.BodyHandlers.ofString());
+        CompletableFuture<HttpResponse<InputStream>> future =
+                client.sendAsync(b.build(), HttpResponse.BodyHandlers.ofInputStream());
+        handle.pending = future;
+        if (handle.isCancelled()) {
+            future.cancel(true); // cancel() raced the assignment above
+        }
+        HttpResponse<InputStream> resp;
+        try {
+            // HttpRequest.timeout bounds the wait for the response headers; the margin only covers its slack.
+            resp = future.get(timeout.toMillis() + 5_000, TimeUnit.MILLISECONDS);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            throw cause instanceof IOException io ? io : new IOException(cause.getMessage(), cause);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new HttpTimeoutException("request timed out");
+        } catch (CancellationException e) {
+            throw new IOException(CANCELLED, e);
+        }
+        AtomicBoolean expired = new AtomicBoolean();
+        try (InputStream in = resp.body()) {
+            handle.stream = in;
+            if (handle.isCancelled()) {
+                throw new IOException(CANCELLED);
+            }
+            // Closing the stream from the timer unblocks a read that would otherwise wait forever.
+            CompletableFuture<Void> watchdog = CompletableFuture.runAsync(
+                    () -> {
+                        expired.set(true);
+                        closeQuietly(in);
+                    },
+                    CompletableFuture.delayedExecutor(bodyDeadline.toMillis(), TimeUnit.MILLISECONDS));
+            try {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                boolean truncated = readCapped(in, out, maxResponseBytes, handle, expired);
+                return new Received(resp.statusCode(), resp.headers(), out.toByteArray(), truncated, expired.get());
+            } finally {
+                watchdog.cancel(false);
+            }
+        } finally {
+            handle.stream = null;
+        }
+    }
+
+    /**
+     * Copies {@code in} to {@code out} up to {@code max} bytes; returns true when the stream had more. A read
+     * that fails because the user cancelled is rethrown; one that fails because the body deadline closed the
+     * stream ends the copy with what arrived.
+     */
+    private static boolean readCapped(
+            InputStream in, ByteArrayOutputStream out, int max, Handle handle, AtomicBoolean expired)
+            throws IOException {
+        byte[] buf = new byte[16 * 1024];
+        try {
+            int n;
+            while ((n = in.read(buf)) >= 0) {
+                int room = max - out.size();
+                if (n > room) {
+                    out.write(buf, 0, room);
+                    return true;
+                }
+                out.write(buf, 0, n);
+            }
+        } catch (IOException e) {
+            if (handle.isCancelled() || !expired.get()) {
+                throw e;
+            }
+        }
+        if (handle.isCancelled()) {
+            throw new IOException(CANCELLED); // a closed stream may also just report end-of-stream
+        }
+        return false;
+    }
+
+    private static void closeQuietly(InputStream in) {
+        if (in != null) {
+            try {
+                in.close();
+            } catch (IOException | RuntimeException ignore) {
+                // already closed / torn down
+            }
+        }
     }
 
     private static DigestAuth.Credentials digestCredentials(List<String[]> headers) {
@@ -267,9 +512,9 @@ public final class HttpClientService {
         }
         for (HttpFile.Redirect r : request.redirects()) {
             try {
-                Path target = HttpPaths.contained(baseDir, r.path());
+                Path target = HttpPaths.containedForWrite(baseDir, r.path());
                 if (target == null) {
-                    continue; // a ">> ../../x" must not write outside the request file's folder
+                    continue; // a ">> ../../x" (or a symlink) must not write outside the request file's folder
                 }
                 if (!r.force() && Files.exists(target)) {
                     continue;
@@ -277,7 +522,15 @@ public final class HttpClientService {
                 if (target.getParent() != null) {
                     Files.createDirectories(target.getParent());
                 }
-                Files.writeString(target, result.body() == null ? "" : result.body());
+                // Raw bytes, and never through a symlink: the containment check above ran a moment ago, and
+                // NOFOLLOW makes a link swapped in since then fail the write instead of redirecting it.
+                Files.write(
+                        target,
+                        result.rawBody() == null ? new byte[0] : result.rawBody(),
+                        java.nio.file.StandardOpenOption.CREATE,
+                        java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+                        java.nio.file.StandardOpenOption.WRITE,
+                        java.nio.file.LinkOption.NOFOLLOW_LINKS);
             } catch (Exception ignore) {
                 // best-effort: a failed redirect write never aborts the response
             }
@@ -311,6 +564,7 @@ public final class HttpClientService {
 
     /** Stops the daemon worker (window close). Without this, each closed window leaks its http-client thread. */
     public void shutdown() {
+        active.forEach(Handle::cancel);
         exec.shutdownNow();
     }
 }

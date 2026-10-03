@@ -18,6 +18,7 @@ import com.editora.index.DeclarationScanner;
 import com.editora.index.Symbol;
 import com.editora.index.SymbolIndex;
 import com.editora.search.GitignoreFilter;
+import com.editora.search.ProjectWalk;
 import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
@@ -44,7 +45,10 @@ final class IndexCoordinator {
     /** Files bigger than this are skipped — a generated bundle is not worth the scan or the entries. */
     private static final long MAX_FILE_BYTES = 2_000_000;
 
-    /** Ceiling on files visited in one walk, so a pathological tree cannot spin the thread forever. */
+    /**
+     * Ceiling on files indexed in one walk, so a pathological tree cannot spin the thread forever. It counts
+     * the files the index keeps — never the ignored ones — and reaching it is reported, not swallowed.
+     */
     private static final int MAX_VISIT = 50_000;
 
     /** Window hooks this coordinator needs beyond the shared host. */
@@ -76,6 +80,12 @@ final class IndexCoordinator {
 
     private Path indexedRoot;
     private boolean building;
+
+    /** The last walk stopped at {@link #maxFiles} files, so the index covers only part of the project. */
+    private boolean truncated;
+
+    /** The cap one walk honours; {@link #MAX_VISIT} outside tests. */
+    int maxFiles = MAX_VISIT;
 
     /** Every file the last walk saw — the corpus behind Search Everywhere's file results. */
     private List<Path> projectFiles = List.of();
@@ -131,6 +141,7 @@ final class IndexCoordinator {
             projectFiles = List.of();
             projectRelPaths = List.of();
             indexedRoot = null;
+            truncated = false;
         }
     }
 
@@ -222,58 +233,72 @@ final class IndexCoordinator {
                 projectFiles = walked.files();
                 projectRelPaths = relativize(root, projectFiles);
                 indexedRoot = root;
+                truncated = walked.truncated();
                 if (then != null) {
                     then.run();
+                }
+                if (truncated) {
+                    // Last, so it is what the status bar is left showing: a partial index that looks
+                    // complete sends the user hunting for a symbol that was simply never read.
+                    host.setStatus(tr("status.index.truncated", projectFiles.size()));
                 }
             });
         });
     }
 
-    /** One walk's yield: the files it saw, and the symbols it found in them. */
-    private record Walked(List<Path> files, List<Scanned> scanned) {}
+    /** One walk's yield: the files it saw, the symbols it found in them, and whether the cap cut it short. */
+    record Walked(List<Path> files, List<Scanned> scanned, boolean truncated) {}
 
-    private record Scanned(Path file, List<Symbol> symbols) {}
+    record Scanned(Path file, List<Symbol> symbols) {}
 
     /** The blocking half — runs on {@link #worker}, touches nothing that belongs to the FX thread. */
     private Walked walk(Path root) {
         GitignoreFilter ignore = ops.respectGitignore() ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
+        return walk(root, ignore, maxFiles);
+    }
+
+    /**
+     * Walks {@code root} through the shared {@link ProjectWalk}, so an ignored directory is pruned before
+     * anything under it is listed, read, or counted: {@code target/} and {@code node_modules/} used to be
+     * walked in full, read file by file, offered in Search Everywhere, and charged against the cap — which a
+     * large {@code node_modules} exhausted, leaving the project's own sources unindexed without a word.
+     */
+    static Walked walk(Path root, GitignoreFilter ignore, int maxFiles) {
         List<Scanned> out = new ArrayList<>();
         // Every file the walk sees, not only the ones with symbols: Search Everywhere needs to offer
         // files too, and this walk is already paying for the traversal. Doing it separately would mean a
         // second pass over the same tree for the same information.
         List<Path> files = new ArrayList<>();
-        int[] visited = {0};
-        try (var stream = Files.walk(root)) {
-            for (Path p : (Iterable<Path>) stream::iterator) {
-                if (++visited[0] > MAX_VISIT) {
-                    break;
-                }
-                if (!Files.isRegularFile(p)) {
-                    continue;
-                }
-                String rel = root.relativize(p).toString().replace(java.io.File.separatorChar, '/');
-                if (rel.startsWith(".") || rel.contains("/.") || ignore.ignored(rel, false)) {
-                    continue; // dot-dirs and .gitignore'd paths, matching Find in Files
-                }
-                files.add(p);
-                String language = LanguageRegistry.forFileName(p.getFileName().toString());
-                try {
-                    if (Files.size(p) > MAX_FILE_BYTES) {
-                        continue;
+        ProjectWalk.Outcome outcome = ProjectWalk.walk(
+                root, new ProjectWalk.Options(Integer.MAX_VALUE, maxFiles, ignore), (p, rel, attrs) -> {
+                    // A symlink to a file is still a file to open (the walk reads attributes without
+                    // following links, so it reports the link itself).
+                    if (!attrs.isRegularFile() && !(attrs.isSymbolicLink() && Files.isRegularFile(p))) {
+                        return ProjectWalk.Verdict.SKIP;
                     }
-                    List<Symbol> symbols = DeclarationScanner.scan(Files.readString(p), language);
-                    if (!symbols.isEmpty()) {
-                        out.add(new Scanned(p, symbols));
+                    files.add(p);
+                    String language =
+                            LanguageRegistry.forFileName(p.getFileName().toString());
+                    // No declaration rules means no symbols whatever the file says: don't read 2 MB of a
+                    // lock file, an image or a minified bundle to learn that.
+                    if (!DeclarationScanner.supports(language)) {
+                        return ProjectWalk.Verdict.ACCEPT;
                     }
-                } catch (IOException | RuntimeException ex) {
-                    // An unreadable or non-UTF-8 file is skipped, not fatal: the rest of the tree is
-                    // still worth indexing, and a navigation index has no business failing loudly.
-                }
-            }
-        } catch (IOException | RuntimeException ex) {
-            // Same: a partial index beats none.
-        }
-        return new Walked(List.copyOf(files), out);
+                    try {
+                        if (Files.size(p) > MAX_FILE_BYTES) { // of the target, when p is a link
+                            return ProjectWalk.Verdict.ACCEPT;
+                        }
+                        List<Symbol> symbols = DeclarationScanner.scan(Files.readString(p), language);
+                        if (!symbols.isEmpty()) {
+                            out.add(new Scanned(p, symbols));
+                        }
+                    } catch (IOException | RuntimeException ex) {
+                        // An unreadable or non-UTF-8 file is skipped, not fatal: the rest of the tree is
+                        // still worth indexing, and a navigation index has no business failing loudly.
+                    }
+                    return ProjectWalk.Verdict.ACCEPT;
+                });
+        return new Walked(List.copyOf(files), out, outcome.truncated());
     }
 
     private void promptForSymbol() {

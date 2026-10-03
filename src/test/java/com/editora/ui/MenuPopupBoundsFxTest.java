@@ -52,6 +52,7 @@ class MenuPopupBoundsFxTest {
     static void tearDown() throws Exception {
         if (fx != null) {
             fx.dispose();
+            fx = null; // a static field would otherwise keep the closed window reachable for the whole run
         }
     }
 

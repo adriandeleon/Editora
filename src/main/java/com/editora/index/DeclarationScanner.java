@@ -41,6 +41,14 @@ public final class DeclarationScanner {
     /** Cap on symbols from one file, so a generated monster cannot dominate the index. */
     public static final int MAX_SYMBOLS = 5_000;
 
+    /**
+     * Whether {@code language} has declaration rules at all. A caller walking a project asks this before it
+     * reads a file, so it does not pull megabytes off disk only for {@link #scan} to return nothing.
+     */
+    public static boolean supports(String language) {
+        return !DeclarationRules.forLanguage(language).isEmpty();
+    }
+
     /** The declarations in {@code text}, in document order; empty for an unsupported or oversized file. */
     public static List<Symbol> scan(String text, String language) {
         if (text == null || text.isEmpty() || text.length() > MAX_CHARS) {
