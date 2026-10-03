@@ -33,7 +33,7 @@
              Source: https://github.com/adriandeleon/RichTextFX (feat/multi-caret-box-selection). -->
         <richtextfx.version>0.11.7-inlay.1</richtextfx.version>
         <atlantafx.version>2.1.0</atlantafx.version>
-        <jackson.version>2.22.2</jackson.version>
+        <jackson.version>2.22.3</jackson.version>
         <junit.version>6.1.3</junit.version>
         <tm4e.version>RELEASE260</tm4e.version>
         <joni.version>2.2.7</joni.version>
