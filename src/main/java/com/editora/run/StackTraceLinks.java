@@ -32,7 +32,41 @@ public final class StackTraceLinks {
     private static final Pattern NODE =
             Pattern.compile("((?:[A-Za-z]:)?[^\\s():]+\\.(?:js|mjs|cjs|ts)):(\\d+)(?::\\d+)?");
 
+    /**
+     * A Java frame's qualified class and file: {@code at [loader/module/]pkg.Outer$Inner.method(File.java:12)}.
+     * Group 1 is the qualified class, group 2 the file. The loader/module prefix ({@code app//},
+     * {@code java.base/}) is skipped, and the method may be {@code <init>} or a {@code lambda$x$0}.
+     */
+    private static final Pattern JAVA_FRAME = Pattern.compile(
+            "\\bat\\s+(?:[^\\s/(]*/)*([\\p{L}\\p{N}_$.]+)\\.[^.\\s(]+\\(([A-Za-z0-9_$]+\\.java):\\d+\\)");
+
     private StackTraceLinks() {}
+
+    /**
+     * Where a Java frame's source file sits below a source root — {@code com/foo/Bar.java} for
+     * {@code at com.foo.Bar.baz(Bar.java:12)} — or {@code null} when the link is not a Java frame or the
+     * class is in the default package (then the bare file name is all there is).
+     *
+     * <p>The frame prints a <em>bare</em> file name, and resolving that alone finds a file only if it is
+     * open or lies directly in the project root. The qualified class beside it says which directory the file
+     * is in: the package comes from the class, the file name from the parentheses (a nested or secondary
+     * top-level class lives in a file named after another class, so the class name is not used for it).
+     */
+    public static String javaSourcePath(Link link) {
+        if (link == null || link.raw() == null) {
+            return null;
+        }
+        Matcher m = JAVA_FRAME.matcher(link.raw());
+        if (!m.find() || !m.group(2).equals(link.file())) {
+            return null;
+        }
+        String qualifiedClass = m.group(1);
+        int lastDot = qualifiedClass.lastIndexOf('.');
+        if (lastDot <= 0) {
+            return null;
+        }
+        return qualifiedClass.substring(0, lastDot).replace('.', '/') + "/" + m.group(2);
+    }
 
     /** The first source location in {@code line}, or null when the line holds none. */
     public static Link parse(String line) {

@@ -264,6 +264,16 @@ final class ExternalToolCoordinator {
             host.setStatus(tr("status.externalTool.failed", tool.getName(), r.message()));
             return;
         }
+        if (outputIncomplete(r)) {
+            // ProcessRunner keeps only the first 10 MB of stdout. Applying that would replace the buffer or
+            // selection with a silently cut-off prefix of the tool's real output — and the next save would
+            // make the loss permanent. Refuse, and put what there is in the console with the reason.
+            String message = tr("status.externalTool.outputTruncated", tool.getName());
+            ops.openConsole();
+            panel.show(tool.getName(), inv.displayCommand(), r.out(), message + "\n" + r.err(), r.exit());
+            host.setError(message);
+            return;
+        }
         if (r.out().isEmpty()) {
             // A successful run with nothing on stdout is not a failure — `sed 's|//.*||'` over a
             // comment-only selection legitimately produces "". Reporting "<tool> failed: " with a blank
@@ -292,6 +302,15 @@ final class ExternalToolCoordinator {
             default -> {}
         }
         host.setStatus(tr("status.externalTool.done", tool.getName()));
+    }
+
+    /**
+     * Whether a finished tool's stdout is only part of what it wrote (the capture cap was hit), so it must
+     * never be applied to a document. The console target shows it regardless — a console is a view, not text
+     * the user is about to save.
+     */
+    static boolean outputIncomplete(ProcessRunner.Result r) {
+        return r.outTruncated();
     }
 
     /** CLI tools usually append a trailing newline; drop one for selection/caret inserts (not whole-buffer). */

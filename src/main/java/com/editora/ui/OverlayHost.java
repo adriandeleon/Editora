@@ -31,6 +31,22 @@ public final class OverlayHost {
     private final StackPane overlayRoot = new StackPane(backdrop);
     private final BooleanProperty showing = new SimpleBooleanProperty(false);
 
+    /** Whether the last Tab pressed in the overlay was Shift+Tab — which end a wrap-around lands on. */
+    private boolean tabBackward;
+
+    /**
+     * Keeps keyboard focus inside the card while the overlay is up. The scrim only blocks the mouse: Tab past
+     * the card's last control (or Shift+Tab before its first) used to hand focus to the editor or a tool
+     * window behind it, where typing then edited a document the user could not see was focused. A focus
+     * listener rather than a Tab key handler, so cards that use Tab themselves (the file finder completes a
+     * path with it, a multi-line field inserts one) are unaffected, and arrow-key traversal is covered too.
+     */
+    private final javafx.beans.value.ChangeListener<Node> focusTrap = (obs, was, now) -> {
+        if (showing.get() && now != null && !isInOverlay(now)) {
+            Platform.runLater(this::reclaimFocus); // not re-entrantly, inside the focus change itself
+        }
+    };
+
     private Node previousFocus;
     private Runnable onHidden;
     private long lastHiddenAt;
@@ -51,15 +67,70 @@ public final class OverlayHost {
             e.consume();
         });
         overlayRoot.setVisible(false); // hidden ⇒ not painted and not pickable, so the editor stays usable
-        // Esc / C-g dismiss the overlay (the card's own handlers run after this capturing filter for
-        // their action keys: Enter, arrows, C-n/C-p). C-g reaches us because the card sets
-        // editora.ownsKeys, so the global KeyDispatcher leaves edit.cancel to the focused overlay.
+        // Esc / the keymap's cancel chord (C-g in the Emacs keymap) dismiss the overlay (the card's own
+        // handlers run after this capturing filter for their action keys: Enter, arrows, C-n/C-p). The
+        // cancel chord reaches us because the card sets editora.ownsKeys, so the global KeyDispatcher
+        // leaves edit.cancel to the focused overlay.
         overlayRoot.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == KeyCode.ESCAPE || (e.getCode() == KeyCode.G && (e.isControlDown() || e.isAltDown()))) {
+            if (PickerKeys.isCancel(e)) {
                 hide();
                 e.consume();
+            } else if (e.getCode() == KeyCode.TAB) {
+                tabBackward = e.isShiftDown(); // not consumed: the card may use Tab itself (see focusTrap)
             }
         });
+        overlayRoot.sceneProperty().addListener((obs, was, now) -> {
+            if (was != null) {
+                was.focusOwnerProperty().removeListener(focusTrap);
+            }
+            if (now != null) {
+                now.focusOwnerProperty().addListener(focusTrap);
+            }
+        });
+    }
+
+    private boolean isInOverlay(Node node) {
+        for (Node n = node; n != null; n = n.getParent()) {
+            if (n == overlayRoot) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void reclaimFocus() {
+        javafx.scene.Scene scene = overlayRoot.getScene();
+        if (!showing.get() || scene == null || overlayRoot.getChildren().size() < 2) {
+            return;
+        }
+        Node owner = scene.getFocusOwner();
+        if (owner != null && isInOverlay(owner)) {
+            return; // something already brought it back
+        }
+        Node target = edgeFocusable(overlayRoot.getChildren().get(1), tabBackward);
+        if (target != null) {
+            target.requestFocus();
+        }
+    }
+
+    /** The first (or, with {@code last}, the last) control in {@code node}'s subtree that Tab would stop on. */
+    static Node edgeFocusable(Node node, boolean last) {
+        if (!node.isVisible() || node.isDisabled()) {
+            return null;
+        }
+        if (node.isFocusTraversable()) {
+            return node;
+        }
+        if (node instanceof javafx.scene.Parent parent) {
+            var children = parent.getChildrenUnmodifiable();
+            for (int i = 0; i < children.size(); i++) {
+                Node found = edgeFocusable(children.get(last ? children.size() - 1 - i : i), last);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     /** Adds the overlay to the scene-root StackPane (hidden). Call once, after the scene exists. */

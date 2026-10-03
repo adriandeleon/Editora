@@ -74,7 +74,9 @@ public final class PdfText {
                 col += spaces;
             } else {
                 piece = String.valueOf(ch);
-                col++;
+                if (!Character.isLowSurrogate(ch)) {
+                    col += columns(text.codePointAt(i)); // a wide (CJK) character occupies two cells
+                }
             }
             if (have && (!c.equals(color) || b != bold || ita != italic)) {
                 flush(line, buf, color, bold, italic, true);
@@ -100,11 +102,45 @@ public final class PdfText {
         buf.setLength(0);
     }
 
-    /** Wraps one line's runs into visual lines no wider than {@code maxCols} (monospace ⇒ 1 col/char). */
+    /**
+     * The number of monospace cells {@code cp} occupies: two for an East Asian wide character (CJK
+     * ideographs, kana, hangul, full-width forms), one for everything else.
+     */
+    public static int columns(int cp) {
+        boolean wide = (cp >= 0x1100 && cp <= 0x115F)
+                || (cp >= 0x2E80 && cp <= 0x303E)
+                || (cp >= 0x3041 && cp <= 0x33FF)
+                || (cp >= 0x3400 && cp <= 0x4DBF)
+                || (cp >= 0x4E00 && cp <= 0x9FFF)
+                || (cp >= 0xA000 && cp <= 0xA4CF)
+                || (cp >= 0xAC00 && cp <= 0xD7A3)
+                || (cp >= 0xF900 && cp <= 0xFAFF)
+                || (cp >= 0xFE30 && cp <= 0xFE4F)
+                || (cp >= 0xFF00 && cp <= 0xFF60)
+                || (cp >= 0xFFE0 && cp <= 0xFFE6)
+                || (cp >= 0x20000 && cp <= 0x3FFFD);
+        return wide ? 2 : 1;
+    }
+
+    /** The number of monospace cells {@code text} occupies (see {@link #columns(int)}). */
+    public static int columns(String text) {
+        int n = 0;
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            i += Character.charCount(cp);
+            n += columns(cp);
+        }
+        return n;
+    }
+
+    /**
+     * Wraps one line's runs into visual lines no wider than {@code maxCols} cells (monospace: one cell per
+     * character, two for a wide one). Never splits a surrogate pair.
+     */
     public static List<List<Run>> wrap(List<Run> line, int maxCols) {
         int total = 0;
         for (Run r : line) {
-            total += r.text().length();
+            total += columns(r.text());
         }
         if (maxCols <= 0 || total <= maxCols) {
             return List.of(line);
@@ -116,15 +152,26 @@ public final class PdfText {
             String t = r.text();
             int pos = 0;
             while (pos < t.length()) {
-                if (col >= maxCols) {
+                int end = pos;
+                int used = 0;
+                while (end < t.length()) {
+                    int cp = t.codePointAt(end);
+                    int w = columns(cp);
+                    if (col + used + w > maxCols && (col + used > 0)) {
+                        break; // (a wide character alone on a 1-cell line is still emitted)
+                    }
+                    used += w;
+                    end += Character.charCount(cp);
+                }
+                if (end == pos) {
                     out.add(cur);
                     cur = new ArrayList<>();
                     col = 0;
+                    continue;
                 }
-                int take = Math.min(maxCols - col, t.length() - pos);
-                cur.add(new Run(t.substring(pos, pos + take), r.color(), r.bold(), r.italic()));
-                pos += take;
-                col += take;
+                cur.add(new Run(t.substring(pos, end), r.color(), r.bold(), r.italic()));
+                pos = end;
+                col += used;
             }
         }
         out.add(cur);

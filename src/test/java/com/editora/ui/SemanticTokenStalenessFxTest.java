@@ -72,4 +72,37 @@ class SemanticTokenStalenessFxTest {
         assertFalse(FxTestSupport.callOnFx(() -> stale(buffer)), "the current-gen response applies");
         assertEquals(1, FxTestSupport.callOnFx(() -> tokenCount(buffer)));
     }
+
+    private static long highlightPasses(EditorBuffer b) {
+        return FxTestSupport.<Long>field(b, "highlightGen");
+    }
+
+    @Test
+    void anIdenticalResponseDoesNotRestyleTheDocument() throws Exception {
+        // Every scroll and every typing pause re-requests the viewport's tokens. Each response used to
+        // invalidate from line 0 and re-tokenize + restyle the whole document, even when nothing changed.
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("java");
+            b.setContent("class A {\n    int x = 1;\n}\n");
+            b.setSemanticActive(true);
+            return b;
+        });
+        long gen = FxTestSupport.callOnFx(buffer::semanticGen);
+        FxTestSupport.runOnFx(() -> buffer.setSemanticTokens(TOKENS, gen));
+        long afterFirst = FxTestSupport.callOnFx(() -> highlightPasses(buffer));
+
+        FxTestSupport.runOnFx(() -> buffer.setSemanticTokens(List.of(new SemanticToken(0, 0, 3, "keyword")), gen));
+        assertEquals(
+                afterFirst,
+                FxTestSupport.callOnFx(() -> highlightPasses(buffer)),
+                "the same tokens over the same text dispatch no highlight pass");
+
+        FxTestSupport.runOnFx(() -> buffer.setSemanticTokens(List.of(new SemanticToken(1, 4, 3, "sem-type")), gen));
+        assertEquals(
+                afterFirst + 1,
+                FxTestSupport.callOnFx(() -> highlightPasses(buffer)),
+                "a different response restyles once");
+        assertEquals(1, FxTestSupport.callOnFx(() -> tokenCount(buffer)));
+    }
 }

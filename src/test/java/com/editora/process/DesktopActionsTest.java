@@ -75,4 +75,20 @@ class DesktopActionsTest {
         assertEquals(PARENT, DesktopActions.containingDir(FILE, false));
         assertEquals(DIR, DesktopActions.containingDir(DIR, true));
     }
+
+    /**
+     * A terminal opened from the editor is the user's shell. Started with the parse-stable {@code LC_ALL=C}
+     * (as it used to be) it showed their file names as {@code ?} and mangled non-ASCII input.
+     */
+    @Test
+    void theTerminalAndFileManagerInheritTheUsersLocale() {
+        ProcessBuilder pb = DesktopActions.processBuilder(List.of("/usr/bin/some-terminal"), DIR);
+
+        assertEquals(System.getenv("LC_ALL"), pb.environment().get("LC_ALL"));
+        assertEquals(ProcessRunner.augmentedPath(), ChildEnv.path(pb.environment()));
+        assertEquals(DIR.toFile(), pb.directory());
+        assertEquals(ProcessBuilder.Redirect.DISCARD, pb.redirectOutput());
+        assertNull(
+                DesktopActions.processBuilder(List.of("/usr/bin/some-fm"), null).directory());
+    }
 }

@@ -95,13 +95,28 @@ public final class ConflictParser {
     private static final String SEP = "=======";
     private static final String THEIRS = ">>>>>>>";
 
-    /** Fast check (used to offer the merge view) — any line beginning with the ours marker. */
+    /**
+     * Whether {@code line} is the {@code marker} line Git writes: exactly seven marker characters, then
+     * either the end of the line or a space and a label. A longer run is ordinary text — a Markdown or
+     * reStructuredText heading underline ({@code ==========}) used to end the "ours" side early and corrupt
+     * a marker-fallback merge.
+     */
+    private static boolean isMarker(String line, String marker) {
+        return line.startsWith(marker) && (line.length() == marker.length() || line.charAt(marker.length()) == ' ');
+    }
+
+    /** The ours/theirs separator carries no label: it is the seven characters and nothing else. */
+    private static boolean isSeparator(String line) {
+        return SEP.equals(line);
+    }
+
+    /** Fast check (used to offer the merge view) — any line that is an ours marker. */
     public static boolean hasConflictMarkers(String text) {
         if (text == null || text.isEmpty()) {
             return false;
         }
         for (String line : text.replace("\r\n", "\n").split("\n", -1)) {
-            if (line.startsWith(OURS)) {
+            if (isMarker(line, OURS)) {
                 return true;
             }
         }
@@ -115,7 +130,7 @@ public final class ConflictParser {
         int n = lines.size();
         while (i < n) {
             String line = lines.get(i);
-            if (line.startsWith(OURS)) {
+            if (isMarker(line, OURS)) {
                 if (!plain.isEmpty()) {
                     segments.add(new PlainSegment(List.copyOf(plain)));
                     plain.clear();
@@ -130,32 +145,30 @@ public final class ConflictParser {
                 i++;
                 // ours lines until the base (|||||||) or separator (=======)
                 while (i < n
-                        && !lines.get(i).startsWith(SEP)
-                        && !lines.get(i).startsWith(BASE)
-                        && !lines.get(i).startsWith(THEIRS)) {
+                        && !isSeparator(lines.get(i))
+                        && !isMarker(lines.get(i), BASE)
+                        && !isMarker(lines.get(i), THEIRS)) {
                     ours.add(lines.get(i));
                     i++;
                 }
                 // optional base region (3-way diff3/zdiff3 style) — capture it
-                if (i < n && lines.get(i).startsWith(BASE)) {
+                if (i < n && isMarker(lines.get(i), BASE)) {
                     basePresent = true;
                     baseLabel = label(lines.get(i), BASE);
                     i++;
-                    while (i < n
-                            && !lines.get(i).startsWith(SEP)
-                            && !lines.get(i).startsWith(THEIRS)) {
+                    while (i < n && !isSeparator(lines.get(i)) && !isMarker(lines.get(i), THEIRS)) {
                         base.add(lines.get(i));
                         i++;
                     }
                 }
-                if (i < n && lines.get(i).startsWith(SEP)) {
+                if (i < n && isSeparator(lines.get(i))) {
                     i++;
                 }
-                while (i < n && !lines.get(i).startsWith(THEIRS)) {
+                while (i < n && !isMarker(lines.get(i), THEIRS)) {
                     theirs.add(lines.get(i));
                     i++;
                 }
-                if (i < n && lines.get(i).startsWith(THEIRS)) {
+                if (i < n && isMarker(lines.get(i), THEIRS)) {
                     theirsLabel = label(lines.get(i), THEIRS);
                     i++;
                 }

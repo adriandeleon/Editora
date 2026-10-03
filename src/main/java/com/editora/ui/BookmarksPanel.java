@@ -156,6 +156,9 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         tree.setShowRoot(false);
         tree.getStyleClass().add("bookmarks-tree");
         tree.setCellFactory(t -> new BookmarkCell());
+        RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
+        // Delete removes the selected entry here, whatever a keymap may bind the key to globally.
+        tree.getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("delete"));
         VBox.setVgrow(tree, Priority.ALWAYS);
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
@@ -323,6 +326,20 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
     private void onKey(KeyEvent e) {
         switch (e.getCode()) {
+            case DELETE -> {
+                // Remove the selected entry — the row menu's Delete, which was mouse-only. Tree only: in the
+                // filter field Delete edits text.
+                TreeItem<Row> sel = tree.getSelectionModel().getSelectedItem();
+                if (e.getTarget() != tree || sel == null) {
+                    return;
+                }
+                if (sel.getValue() instanceof MarkRow m) {
+                    deleteMark(m);
+                } else if (sel.getValue() instanceof FileRow f) {
+                    deleteFile(f); // confirms first, as the menu does
+                }
+                e.consume();
+            }
             case ENTER -> {
                 activateSelected();
                 e.consume();

@@ -842,4 +842,99 @@ class LspWorkspaceEditFxTest {
                 WorkspaceEditMapper.map(we) == null,
                 "an edit after a rename would need path remapping mid-apply — refused instead");
     }
+
+    // --- edits to files the server did not have open (the cross-file rename case) -------------------
+
+    /** Ages the file and records that state as the one the buffer mirrors, as the editor's loader does. */
+    private void mirrorDisk(EditorBuffer buffer, long ageMillis) throws Exception {
+        Path f = buffer.getPath();
+        long at = System.currentTimeMillis() - ageMillis;
+        Files.setLastModifiedTime(f, java.nio.file.attribute.FileTime.fromMillis(at % 1000 == 0 ? at + 1 : at));
+        long modified = Files.getLastModifiedTime(f).toMillis();
+        long size = Files.size(f);
+        FxTestSupport.runOnFx(() -> {
+            buffer.setDiskSnapshot(modified, size);
+            buffer.markClean();
+        });
+    }
+
+    /** An edit as {@code LspManager} plans it for a target the server computed from the file on disk. */
+    private static WorkspaceEditMapper.Mapped closedFileEdit(EditorBuffer buffer, long requestSentAt) {
+        return new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        buffer.getPath(), List.of(new LspTextEdit(0, 6, 0, 7, "Renamed")), null, null, requestSentAt)),
+                List.of());
+    }
+
+    @Test
+    void aClosedFileEditAppliesToACleanBufferThatMirrorsTheDisk() throws Exception {
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+
+        assertTrue(FxTestSupport.callOnFx(
+                () -> coordinator.applyWorkspaceEdits(closedFileEdit(b, System.currentTimeMillis()))));
+        assertEquals("class Renamed {}\n", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    @Test
+    void theAsyncPathAppliesAClosedFileEditToo() throws Exception {
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+
+        assertTrue(applyAsync(closedFileEdit(b, System.currentTimeMillis()))
+                .get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals("class Renamed {}\n", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    @Test
+    void aClosedFileEditIsRefusedForUnsavedChangesAndNamesTheFile() throws Exception {
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+        FxTestSupport.runOnFx(b::markUnsaved);
+
+        assertFalse(FxTestSupport.callOnFx(
+                () -> coordinator.applyWorkspaceEdits(closedFileEdit(b, System.currentTimeMillis()))));
+        assertEquals("class B {}\n", FxTestSupport.callOnFx(b::getContent), "nothing may be half-applied");
+        assertTrue(host.error != null && host.error.contains("B.java"), "the blocking file is named: " + host.error);
+    }
+
+    /** The H12 protection at the applier: the file changed between the request and now. */
+    @Test
+    void aClosedFileEditIsRefusedWhenTheFileChangedAfterTheRequest() throws Exception {
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+        long sentBeforeTheLastWrite = Files.getLastModifiedTime(b.getPath()).toMillis() - 5_000;
+
+        var result = applyAsync(closedFileEdit(b, sentBeforeTheLastWrite));
+
+        assertFalse(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals("class B {}\n", FxTestSupport.callOnFx(b::getContent));
+        assertTrue(host.error != null && host.error.contains("B.java"));
+    }
+
+    /** A clean buffer that was loaded from an older version of the file is not what the server edited. */
+    @Test
+    void aClosedFileEditIsRefusedWhenTheBufferDoesNotMirrorTheDisk() throws Exception {
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+        long modified = Files.getLastModifiedTime(b.getPath()).toMillis();
+        FxTestSupport.runOnFx(() -> b.setDiskSnapshot(modified - 30_000, 3)); // loaded before an external write
+
+        assertFalse(FxTestSupport.callOnFx(
+                () -> coordinator.applyWorkspaceEdits(closedFileEdit(b, System.currentTimeMillis()))));
+        assertEquals("class B {}\n", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    @Test
+    void blockedFileNamesAreSummarised() {
+        assertEquals("A.java", LspCoordinator.blockedFileNames(List.of(Path.of("/p/A.java"))));
+        assertEquals(
+                "A.java, B.java, C.java +2",
+                LspCoordinator.blockedFileNames(List.of(
+                        Path.of("/p/A.java"),
+                        Path.of("/p/B.java"),
+                        Path.of("/p/C.java"),
+                        Path.of("/p/D.java"),
+                        Path.of("/p/E.java"))));
+    }
 }

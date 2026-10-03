@@ -27,7 +27,11 @@ class TestRunTest {
     @Test
     void mavenFilter() {
         assertEquals(
-                List.of("test", "-Dtest=FooTest#TestBar"),
+                List.of(
+                        "test",
+                        "-Dtest=FooTest#TestBar",
+                        "-DfailIfNoTests=false",
+                        "-Dsurefire.failIfNoSpecifiedTests=false"),
                 runWithFailures(BuildTool.MAVEN).failedTestFilters());
     }
 
@@ -50,6 +54,49 @@ class TestRunTest {
         assertEquals(
                 List.of("test", "--", "TestBar"),
                 runWithFailures(BuildTool.CARGO).failedTestFilters());
+    }
+
+    /**
+     * A parameterized test reports one leaf per invocation — {@code isOdd(int)[1]}, {@code isOdd(int)[2]} —
+     * and neither Surefire nor Gradle accepts that as a filter. Each must collapse to the method, once.
+     */
+    private static TestRun runWithParameterizedFailures(BuildTool tool) {
+        TestRun run = new TestRun(tool, Path.of("."), List.of("test"), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "com.x.NumbersTest",
+                        List.of(
+                                ParsedTest.of("com.x.NumbersTest", "isOdd(int)[1]", TestStatus.FAILED, 1),
+                                ParsedTest.of("com.x.NumbersTest", "isOdd(int)[2]", TestStatus.FAILED, 1),
+                                ParsedTest.of("com.x.NumbersTest", "isEven(int)[1]", TestStatus.FAILED, 1),
+                                ParsedTest.of("com.x.NumbersTest", "plain", TestStatus.FAILED, 1))));
+        return run;
+    }
+
+    @Test
+    void mavenRerunFailedStripsParameterizedSuffixesAndDedupes() {
+        assertEquals(
+                List.of(
+                        "test",
+                        "-Dtest=NumbersTest#isOdd,NumbersTest#isEven,NumbersTest#plain",
+                        "-DfailIfNoTests=false",
+                        "-Dsurefire.failIfNoSpecifiedTests=false"),
+                runWithParameterizedFailures(BuildTool.MAVEN).failedTestFilters());
+    }
+
+    @Test
+    void gradleRerunFailedStripsParameterizedSuffixesAndDedupes() {
+        assertEquals(
+                List.of(
+                        "test",
+                        "--tests",
+                        "com.x.NumbersTest.isOdd",
+                        "--tests",
+                        "com.x.NumbersTest.isEven",
+                        "--tests",
+                        "com.x.NumbersTest.plain"),
+                runWithParameterizedFailures(BuildTool.GRADLE).failedTestFilters());
     }
 
     @Test

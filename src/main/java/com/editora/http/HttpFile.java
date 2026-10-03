@@ -165,6 +165,9 @@ public final class HttpFile {
         List<String[]> headers = new ArrayList<>();
         String warning = null;
         for (; i < lines.length && !lines[i].strip().isEmpty(); i++) {
+            if (isComment(lines[i].strip())) {
+                continue; // a `# …` / `// …` line between headers is a comment, not a header named "#Authorization"
+            }
             int colon = lines[i].indexOf(':');
             if (colon > 0 && isHeaderFieldName(lines[i].substring(0, colon).strip())) {
                 headers.add(new String[] {
@@ -184,11 +187,12 @@ public final class HttpFile {
         while (i < lines.length && lines[i].strip().isEmpty()) {
             i++; // skip the blank line between headers and body
         }
-        // An external-body reference (< ./file raw, <@ ./file substituted) replaces an inline body.
+        // An external-body reference (< ./file raw, <@ ./file substituted) replaces an inline body. A body that
+        // merely STARTS with '<' — XML, HTML, a SOAP envelope — is inline text (see isBodyFileRef).
         BodyRef bodyRef = null;
         if (i < lines.length) {
             String t = lines[i].stripLeading();
-            if (t.startsWith("<@") || (t.startsWith("<") && !t.startsWith("<>"))) {
+            if (isBodyFileRef(t)) {
                 bodyRef = parseBodyRef(t);
                 i++;
             }
@@ -385,11 +389,38 @@ public final class HttpFile {
         return new Directives(noRedirect, noCookieJar, noLog, noAutoEncoding, timeout, connectionTimeout);
     }
 
-    private static BodyRef parseBodyRef(String line) {
+    /**
+     * Whether {@code line} (leading whitespace already stripped) is an external-body reference. Per the
+     * JetBrains grammar that is {@code <} followed by <b>whitespace</b> and a path, or {@code <@}, an optional
+     * encoding, whitespace and a path. Anything else beginning with {@code <} — {@code <?xml version="1.0"?>},
+     * {@code <html>}, {@code <soap:Envelope>} — is the first line of an inline body; treating it as a file
+     * name sent XML/HTML/SOAP requests with no body at all.
+     */
+    static boolean isBodyFileRef(String line) {
+        if (!line.startsWith("<")) {
+            return false;
+        }
+        int i = 1;
+        if (line.startsWith("<@")) {
+            i = 2;
+            while (i < line.length() && !Character.isWhitespace(line.charAt(i))) {
+                i++; // the optional encoding, written right after "<@"
+            }
+        }
+        return i < line.length()
+                && Character.isWhitespace(line.charAt(i))
+                && !line.substring(i).isBlank();
+    }
+
+    static BodyRef parseBodyRef(String line) {
         boolean substitute = line.startsWith("<@");
-        String rest = line.substring(substitute ? 2 : 1).strip();
+        String rest = line.substring(substitute ? 2 : 1);
+        // "<@latin1 ./file": an encoding attached to "<@". The detached "<@ latin1 ./file" is also accepted
+        // when the first word cannot be the start of a path.
+        boolean attached = substitute && !rest.isEmpty() && !Character.isWhitespace(rest.charAt(0));
+        rest = rest.strip();
         String encoding = null;
-        if (substitute && !rest.startsWith(".") && !rest.startsWith("/")) {
+        if (substitute && (attached || (!rest.startsWith(".") && !rest.startsWith("/")))) {
             int sp = rest.indexOf(' ');
             if (sp > 0) {
                 encoding = rest.substring(0, sp);

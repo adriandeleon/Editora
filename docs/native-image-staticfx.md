@@ -57,7 +57,7 @@ Other inspected paths:
 - Serialization: Jackson 2.22.2 JSON/TOML/YAML, Gson 2.14.0, SnakeYAML 2.5; POI/XMLBeans and PDFBox
   bring further reflective/resource surfaces. Successful startup does not certify all these formats.
 - Git is **external `git`**, via `GitService`/`ProcessRunner`, not JGit. There is no JGit metadata to add.
-- SSH is Apache MINA SSHD 2.16.0 (`sshd-osgi`, `sshd-sftp`), with host verification and SFTP `Path`s
+- SSH is Apache MINA SSHD 2.20.0 (`sshd-osgi`, `sshd-sftp`), with host verification and SFTP `Path`s
   through `RemoteFileSystems`. Its service providers caused a measured build-time heap failure.
 - Terminal integration is external OS terminal launching in `DesktopActions`, not an embedded PTY/JNI
   terminal. Run/output tools use subprocesses.

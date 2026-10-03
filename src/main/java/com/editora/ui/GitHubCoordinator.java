@@ -318,11 +318,13 @@ final class GitHubCoordinator {
 
     private void doCheckout(Path dir, int number) {
         host.setStatus(tr("status.github.checkingOut", number));
-        service.prCheckout(dir, number, r -> {
+        // `gh pr checkout` switches branches just as `git checkout` does, so it goes through the same
+        // boundary: saves queued for files in the repository are superseded before and after it (a pending
+        // save must not write the old branch's text over the checked-out file), then the Git UI refreshes
+        // and clean buffers reload — on failure too, since a refused checkout can still have moved files.
+        git.aroundWorkingTreeMutation(done -> service.prCheckout(dir, number, done), r -> {
             if (r.ok()) {
                 host.setStatus(tr("status.github.checkedOut", number));
-                git.afterMutation();
-                ops.reloadAllFromDiskSilently();
                 javafx.application.Platform.runLater(ops::checkExternalChanges);
                 refreshChecks(dir); // the checked-out branch's PR may have CI checks
             } else {

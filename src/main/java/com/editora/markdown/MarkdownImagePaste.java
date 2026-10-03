@@ -43,9 +43,72 @@ public final class MarkdownImagePaste {
         return rel.toString().replace('\\', '/');
     }
 
-    /** The Markdown image snippet {@code ![alt](relPath)} (alt may be empty). */
+    /**
+     * The Markdown image snippet {@code ![alt](relPath)} (alt may be empty), written so that it parses back to
+     * exactly that alt text and that path.
+     *
+     * <p>A bare link destination cannot contain whitespace or unbalanced parentheses, so
+     * {@code ![shot](assets/Screenshot 2026-10-01 at 10.15.32.png)} or {@code (assets/image (1).png)} — the
+     * default names for screenshots and duplicate downloads — is not an image at all: the preview showed the
+     * raw text while the file sat, already copied, in {@code assets/}. Such a path is wrapped in the
+     * angle-bracket form {@code ![alt](<assets/image (1).png>)}, which CommonMark reads back as the same
+     * path (so the preview, the PDF and the office exports all resolve it unchanged). Markup characters in
+     * the alt text are escaped for the same reason.
+     */
     public static String snippet(String relPath, String alt) {
-        return "![" + (alt == null ? "" : alt) + "](" + relPath + ")";
+        return "![" + escapeAlt(alt == null ? "" : alt) + "](" + destination(relPath) + ")";
+    }
+
+    /** {@code path} as a link destination: bare when that is valid, else {@code <…>} with {@code <>\} escaped. */
+    static String destination(String path) {
+        boolean needsBrackets = path.isEmpty();
+        for (int i = 0; i < path.length() && !needsBrackets; i++) {
+            char c = path.charAt(i);
+            needsBrackets = Character.isWhitespace(c) || c == '(' || c == ')' || c == '<' || c == '>' || c < 0x20;
+        }
+        if (!needsBrackets) {
+            return path;
+        }
+        StringBuilder sb = new StringBuilder(path.length() + 4).append('<');
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c == '<' || c == '>' || c == '\\') {
+                sb.append('\\');
+            }
+            sb.append(c == '\n' || c == '\r' ? ' ' : c); // a destination cannot span lines
+        }
+        return sb.append('>').toString();
+    }
+
+    /**
+     * Backslash-escapes what would otherwise be read as markup inside the alt text — brackets (a {@code ]}
+     * ends it), inline HTML, code, emphasis and entities — so a file called {@code plot [final].png} or
+     * {@code a<b>.png} keeps its name as the alt. An underscore inside a word ({@code screen_shot}) is never
+     * emphasis and is left alone.
+     */
+    private static String escapeAlt(String alt) {
+        StringBuilder sb = new StringBuilder(alt.length());
+        for (int i = 0; i < alt.length(); i++) {
+            char c = alt.charAt(i);
+            boolean escape =
+                    switch (c) {
+                        case '[', ']', '\\', '<', '>', '*', '`', '~' -> true;
+                        case '&' ->
+                            i + 1 < alt.length()
+                                    && (Character.isLetterOrDigit(alt.charAt(i + 1)) || alt.charAt(i + 1) == '#');
+                        case '_' ->
+                            !(i > 0
+                                    && i + 1 < alt.length()
+                                    && Character.isLetterOrDigit(alt.charAt(i - 1))
+                                    && Character.isLetterOrDigit(alt.charAt(i + 1)));
+                        default -> false;
+                    };
+            if (escape) {
+                sb.append('\\');
+            }
+            sb.append(c == '\n' || c == '\r' ? ' ' : c);
+        }
+        return sb.toString();
     }
 
     private static final Set<String> IMAGE_EXTS =

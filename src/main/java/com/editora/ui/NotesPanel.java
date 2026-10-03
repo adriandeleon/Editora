@@ -135,6 +135,9 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         tree.setShowRoot(false);
         tree.getStyleClass().add("notes-tree");
         tree.setCellFactory(t -> new NoteCell());
+        RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
+        // Delete removes the selected entry here, whatever a keymap may bind the key to globally.
+        tree.getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("delete"));
         VBox.setVgrow(tree, Priority.ALWAYS);
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
@@ -144,6 +147,12 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         tree.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ENTER) {
                 activateSelected();
+                e.consume();
+            } else if (e.getCode() == KeyCode.DELETE
+                    && tree.getSelectionModel().getSelectedItem() != null
+                    && tree.getSelectionModel().getSelectedItem().getValue() instanceof NoteRow n) {
+                // Remove the selected note — the row menu's Delete, which was mouse-only.
+                actions.delete(n.projectKey(), n.fileKey(), n.note());
                 e.consume();
             }
         });

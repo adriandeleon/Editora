@@ -4,7 +4,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.function.Consumer;
 
 import javafx.animation.PauseTransition;
@@ -43,9 +42,6 @@ import static com.editora.i18n.Messages.tr;
  * dismiss (handled by the host).
  */
 final class SearchInFilesPopup {
-
-    private static final boolean IS_MAC =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
 
     /** One result row: a file header ({@code match == null}, {@code count} = its match count) or a match. */
     private record Row(Path file, LineMatch match, int count) {
@@ -95,6 +91,9 @@ final class SearchInFilesPopup {
     private final Label backendBadge = new Label("ripgrep");
 
     private final ListView<Row> list = new ListView<>();
+    /** The key legend under the list; rebuilt from the live keymap each time the popup is shown. */
+    private final Label hint = new Label();
+
     private final ObservableList<Row> rows = FXCollections.observableArrayList();
     private final Label status = new Label();
     private final VBox content;
@@ -115,14 +114,6 @@ final class SearchInFilesPopup {
         query.addEventFilter(KeyEvent.KEY_PRESSED, this::onQueryKey);
         // Emacs caret movement + basic editing (registered after onQueryKey so its list navigation wins).
         com.editora.command.TextInputKeymap.installShared(query);
-        if (IS_MAC) {
-            // Swallow Option-composed chars from the opening chord / chorded keys (mirrors QuickOpen).
-            query.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-                if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
-                    e.consume();
-                }
-            });
-        }
 
         caseSensitive.setTooltip(new Tooltip(tr("search.caseTip")));
         regex.setTooltip(new Tooltip(tr("search.regexTip")));
@@ -168,7 +159,6 @@ final class SearchInFilesPopup {
         status.getStyleClass().add("fif-status");
         Label title = new Label(tr("search.popupTitle"));
         title.getStyleClass().add("palette-title");
-        Label hint = new Label(tr("search.popupHint"));
         hint.getStyleClass().add("palette-hint");
 
         VBox card = new VBox(6, title, query, toggles, rootRow, globRow, list, status, hint);
@@ -195,6 +185,7 @@ final class SearchInFilesPopup {
      * focuses + selects the query field, and runs the search if a query is present.
      */
     void show(String selection) {
+        hint.setText(PickerKeys.legend(PickerKeys.hint("open", "↵")));
         Path root = ops.defaultRoot();
         rootField.setText(root == null ? "" : root.toString());
         if (selection != null && !selection.isEmpty()) {
@@ -222,44 +213,13 @@ final class SearchInFilesPopup {
     }
 
     private void onQueryKey(KeyEvent e) {
-        switch (e.getCode()) {
-            case DOWN -> {
-                move(1);
-                e.consume();
-            }
-            case UP -> {
-                move(-1);
-                e.consume();
-            }
-            case N -> {
-                if (e.isControlDown()) {
-                    move(1);
-                    e.consume();
-                }
-            }
-            case P -> {
-                if (e.isControlDown()) {
-                    move(-1);
-                    e.consume();
-                }
-            }
-            case ENTER -> {
-                openSelected();
-                e.consume();
-            }
-            default -> {}
-            // ESCAPE / C-g are handled by the OverlayHost.
+        PickerKeys.Action action = PickerKeys.action(e);
+        if (action == PickerKeys.Action.ACCEPT) {
+            openSelected();
+        } else if (!PickerKeys.navigate(list, action)) {
+            return; // cancel (Esc / the keymap's cancel chord) is handled by the OverlayHost
         }
-    }
-
-    private void move(int delta) {
-        int size = rows.size();
-        if (size == 0) {
-            return;
-        }
-        int idx = Math.floorMod(list.getSelectionModel().getSelectedIndex() + delta, size);
-        list.getSelectionModel().select(idx);
-        list.scrollTo(idx);
+        e.consume();
     }
 
     private void openSelected() {

@@ -131,7 +131,8 @@ class AiCoordinatorFxTest {
             scope.onClose(() -> FxTestSupport.runOnFx(coordinator::shutdown));
             FxTestSupport.runOnFx(coordinator::rewriteSelection);
             scope.await(done, "Codex rewrite");
-            assertEquals(com.editora.i18n.Messages.tr("status.ai.rewritten"), status.get());
+            // The hint names the active keymap's undo chord (none when the shared keymap is not set up).
+            assertEquals(ChordHint.tr("status.ai.rewritten", "edit.undo"), status.get());
             assertEquals("answer", FxTestSupport.callOnFx(buffer::getContent));
             FxTestSupport.runOnFx(buffer.getArea()::undo);
             assertEquals("original", FxTestSupport.callOnFx(buffer::getContent));

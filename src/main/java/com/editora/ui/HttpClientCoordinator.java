@@ -64,6 +64,10 @@ final class HttpClientCoordinator {
      *  close ({@link #onBufferClosed}) and when the feature is switched off. */
     private final Map<EditorBuffer, HttpClientPanel> panels = new IdentityHashMap<>();
 
+    /** The in-flight run of each buffer (FX thread only). A result is applied only while its handle is still
+     *  the buffer's current one, so a cancelled or superseded run can never overwrite a newer response. */
+    private final Map<EditorBuffer, com.editora.http.HttpClientService.Handle> running = new IdentityHashMap<>();
+
     HttpClientCoordinator(CoordinatorHost host, WindowOps ops) {
         this.host = host;
         this.ops = ops;
@@ -110,6 +114,10 @@ final class HttpClientCoordinator {
     void onBufferClosed(EditorBuffer closed) {
         if (closed != null) {
             panels.remove(closed);
+            com.editora.http.HttpClientService.Handle run = running.remove(closed);
+            if (run != null) {
+                run.cancel(); // nobody is left to read the response
+            }
         }
     }
 
@@ -122,6 +130,7 @@ final class HttpClientCoordinator {
                 s.getFontFamily(),
                 editorFontSize());
         p.setOnEnvironmentChanged(ops::persistEnvironment);
+        p.setOnCancel(() -> cancelRun(buffer));
         return p;
     }
 
@@ -183,7 +192,46 @@ final class HttpClientCoordinator {
         String label = parsed.method() + " " + parsed.url();
         startRun(buffer, label);
         Path baseDir = buffer.getPath().toAbsolutePath().getParent();
-        service.run(parsed, variables(buffer, text), baseDir, ex -> finishRun(buffer, label, ex));
+        com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
+        run[0] = service.run(parsed, variables(buffer, text), baseDir, ex -> {
+            if (running.remove(buffer, run[0])) {
+                finishRun(buffer, label, ex);
+            }
+        });
+        track(buffer, run[0]);
+    }
+
+    /** Makes {@code run} the buffer's current run, cancelling the one it replaces. */
+    private void track(EditorBuffer buffer, com.editora.http.HttpClientService.Handle run) {
+        com.editora.http.HttpClientService.Handle previous = running.put(buffer, run);
+        if (previous != null) {
+            previous.cancel();
+        }
+    }
+
+    /** {@code http.cancelRequest}: cancel the active {@code .http} buffer's in-flight request(s). */
+    void cancelActiveRequest() {
+        ifHttp(() -> cancelRun(host.activeBuffer()));
+    }
+
+    /** Cancels {@code buffer}'s in-flight run (the Cancel button and the command share this). */
+    void cancelRun(EditorBuffer buffer) {
+        com.editora.http.HttpClientService.Handle run = buffer == null ? null : running.remove(buffer);
+        if (run == null) {
+            host.setStatus(tr("status.http.nothingRunning"));
+            return;
+        }
+        run.cancel();
+        HttpClientPanel p = panelFor(buffer);
+        if (p != null) {
+            p.cancelled();
+        }
+        host.setStatus(tr("status.http.cancelled"));
+    }
+
+    /** Whether {@code buffer} has a request in flight. Test accessor. */
+    boolean isRunningForTest(EditorBuffer buffer) {
+        return running.containsKey(buffer);
     }
 
     // --- commands ---
@@ -222,7 +270,11 @@ final class HttpClientCoordinator {
             String label = b.getPath().getFileName().toString();
             startRun(b, label);
             Path baseDir = b.getPath().toAbsolutePath().getParent();
-            service.runAll(reqs, variables(b, text), baseDir, exchanges -> {
+            com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
+            run[0] = service.runAll(reqs, variables(b, text), baseDir, exchanges -> {
+                if (!running.remove(b, run[0])) {
+                    return; // cancelled or superseded
+                }
                 HttpClientPanel p = panelFor(b);
                 if (p != null) {
                     p.showExchanges(exchanges);
@@ -230,6 +282,7 @@ final class HttpClientCoordinator {
                 boolean allOk = exchanges.stream().allMatch(ex -> ex.result().ok());
                 host.setStatus(allOk ? tr("status.http.done", label) : tr("status.http.failed", exchanges.size()));
             });
+            track(b, run[0]);
         });
     }
 
@@ -349,10 +402,14 @@ final class HttpClientCoordinator {
             host.setStatus(tr("status.http.noResponse"));
             return;
         }
+        if (r.binary()) {
+            host.setStatus(tr("status.http.binaryResponse")); // no text form — ">> file" keeps the bytes
+            return;
+        }
         EditorBuffer buffer = new EditorBuffer();
         buffer.setDisplayName("response" + HttpResponseFormat.extensionFor(r.contentType()));
         ops.openTab(buffer);
-        buffer.setContent(HttpResponseFormat.prettyBody(r.body(), r.contentType()));
+        buffer.setContent(r.body()); // the body as received; the viewer's pretty-printing is display-only
     }
 
     /** Save-response, bound to the owning buffer's own panel when it is created. */

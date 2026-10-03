@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -22,6 +23,8 @@ import javafx.util.Duration;
 
 import com.editora.build.BuildTool;
 import com.editora.run.StackTraceLinks;
+import com.editora.search.GitignoreFilter;
+import com.editora.search.ProjectWalk;
 import com.editora.test.JavaTestScanner;
 import com.editora.test.JvmReportDirs;
 import com.editora.test.ParsedSuite;
@@ -34,6 +37,7 @@ import com.editora.test.TestResultParser;
 import com.editora.test.TestResultParsers;
 import com.editora.test.TestRun;
 import com.editora.test.TestRunRecognizer;
+import com.editora.test.TestSourceLocator;
 import com.editora.test.TestTreeBuilder;
 
 import static com.editora.i18n.Messages.tr;
@@ -259,8 +263,19 @@ final class TestRunCoordinator implements TestRunHook {
             // single-threaded poller serializes this after any in-flight tick; its mergeAll runLater is posted
             // before completeRun, so the last class lands before the run is marked finished.
             poller.execute(() -> {
-                sweepReports(gen, tool, dir, true); // full: catch the last class + anything a tick missed
-                Platform.runLater(() -> completeRun(run, gen, code));
+                sweepReports(gen, tool, dir, true, false); // full: catch the last class + anything a tick missed
+                // An up-to-date Gradle test task rewrote nothing, so every report equals its baseline and
+                // the sweep above found no results: show the ones on disk rather than an empty tree.
+                boolean reused = TestRunRecognizer.showsExistingReports(tool, code, !seenMtimes.isEmpty());
+                if (reused) {
+                    sweepReports(gen, tool, dir, true, true);
+                }
+                Platform.runLater(() -> {
+                    completeRun(run, gen, code);
+                    if (reused && gen == runGeneration) {
+                        host.setStatus(tr("status.testrunner.upToDate"));
+                    }
+                });
             });
         } else {
             mergeAll(parser.onExit(code));
@@ -345,7 +360,7 @@ final class TestRunCoordinator implements TestRunHook {
 
     private void startPolling(int gen, BuildTool tool, Path root) {
         pollTask = poller.scheduleWithFixedDelay(
-                () -> sweepReports(gen, tool, root, false), POLL_MS, POLL_MS, TimeUnit.MILLISECONDS);
+                () -> sweepReports(gen, tool, root, false, false), POLL_MS, POLL_MS, TimeUnit.MILLISECONDS);
     }
 
     /** Poller thread: snapshot the pre-run report mtimes (and reset the seen/baseline maps for the new run). */
@@ -376,17 +391,12 @@ final class TestRunCoordinator implements TestRunHook {
      */
     private void seedFromSources(int gen, Path root) {
         List<JavaTestScanner.TestTarget> targets = new ArrayList<>();
-        int files = 0;
-        try (Stream<Path> walk = Files.walk(root, SEED_WALK_DEPTH)) {
-            List<Path> javaTestFiles = walk.filter(Files::isRegularFile)
-                    .filter(TestRunCoordinator::isTestSourceFile)
-                    .limit(MAX_SEED_FILES + 1L)
-                    .toList();
-            if (javaTestFiles.size() > MAX_SEED_FILES) {
+        try {
+            List<Path> javaTestFiles = testSourceFiles(root);
+            if (javaTestFiles == null) {
                 return; // too many files — don't stall the run scanning them; per-class pop-in still works
             }
             for (Path f : javaTestFiles) {
-                files++;
                 if (Files.size(f) > MAX_SEED_FILE_BYTES) {
                     continue;
                 }
@@ -412,33 +422,48 @@ final class TestRunCoordinator implements TestRunHook {
         });
     }
 
-    /** A Java file under a {@code test} source dir (heuristic to skip {@code src/main} + speed the scan). */
-    private static boolean isTestSourceFile(Path f) {
-        String name = f.getFileName().toString();
-        if (!name.endsWith(".java")) {
-            return false;
-        }
-        for (Path seg : f) {
-            String s = seg.toString();
-            if (s.equals("test") || s.equals("tests")) {
-                return true; // src/test/java, or a Gradle test source set
-            }
-        }
-        return false;
+    /**
+     * The project's Java test sources, or {@code null} when there are more than {@link #MAX_SEED_FILES}.
+     * Through the shared pruned walk: build output, dependency trees, dot-directories and {@code .gitignore}d
+     * paths are never entered, where the old {@code Files.walk} enumerated all of {@code target/} and
+     * {@code node_modules/} only to throw the entries away.
+     */
+    static List<Path> testSourceFiles(Path root) {
+        List<Path> files = new ArrayList<>();
+        ProjectWalk.Outcome walked = ProjectWalk.walk(
+                root,
+                new ProjectWalk.Options(SEED_WALK_DEPTH, MAX_SEED_FILES, GitignoreFilter.load(root)),
+                new ProjectWalk.Visitor() {
+                    @Override
+                    public boolean enter(Path dir, String rel) {
+                        return !ProjectWalk.isBuildOutputDir(rel);
+                    }
+
+                    @Override
+                    public ProjectWalk.Verdict file(Path file, String rel, BasicFileAttributes attrs) {
+                        if (!attrs.isRegularFile() || !TestSourceLocator.isTestSourcePath(rel)) {
+                            return ProjectWalk.Verdict.SKIP;
+                        }
+                        files.add(file);
+                        return ProjectWalk.Verdict.ACCEPT;
+                    }
+                });
+        return walked.capped() ? null : files;
     }
 
     /**
      * Scans the report dirs for {@code TEST-*.xml} files, parses those whose mtime advanced (all of them when
      * {@code full}), and merges the results on the FX thread. Runs on the poll thread (or the FX thread for the
-     * final sweep — parsing is bounded and off the hot path either way).
+     * final sweep — parsing is bounded and off the hot path either way). {@code includeLeftovers} also parses
+     * reports untouched since before the run (see {@link TestRunRecognizer#showsExistingReports}).
      */
-    private void sweepReports(int gen, BuildTool tool, Path root, boolean full) {
+    private void sweepReports(int gen, BuildTool tool, Path root, boolean full, boolean includeLeftovers) {
         try {
             List<ParsedSuite> parsed = new ArrayList<>();
             for (Path file : reportFiles(tool, root)) {
                 long mtime = Files.getLastModifiedTime(file).toMillis();
                 Long base = baselineMtimes.get(file);
-                if (base != null && base == mtime) {
+                if (!includeLeftovers && base != null && base == mtime) {
                     continue; // an untouched leftover from a previous run — never this run's result
                 }
                 Long seen = seenMtimes.get(file);
@@ -463,19 +488,43 @@ final class TestRunCoordinator implements TestRunHook {
         }
     }
 
-    private List<Path> reportFiles(BuildTool tool, Path root) {
+    /** Directory names that never hold a module, so the report-dir walk does not enter them. */
+    private static final Set<String> NOT_A_MODULE = Set.of("node_modules");
+
+    /**
+     * The {@code TEST-*.xml} files of every module's report directory under {@code root}.
+     *
+     * <p>Runs every {@link #POLL_MS} for the length of a test run, so it must not enumerate the project. The
+     * report directories live under {@code target/} and {@code build/} — exactly what {@code .gitignore}
+     * excludes — so the gitignore filter cannot be used here; what is pruned instead is everything that
+     * cannot contain one: dot-directories ({@code .git} alone is thousands of entries), dependency trees,
+     * anything below the depth limit, and a report directory's own contents.
+     */
+    static List<Path> reportFiles(BuildTool tool, Path root) {
         Set<Path> dirs = new LinkedHashSet<>(JvmReportDirs.reportDirs(tool, root));
-        try (Stream<Path> walk = Files.walk(root, WALK_DEPTH)) {
-            walk.filter(Files::isDirectory)
-                    .filter(d -> {
-                        Path name = d.getFileName();
-                        return name != null && JvmReportDirs.isReportDirName(tool, name.toString());
-                    })
-                    .forEach(dirs::add);
-        } catch (Exception ignored) {
-            // fall back to the standard leaf dirs
-        }
-        List<Path> files = new ArrayList<>();
+        ProjectWalk.walk(
+                root,
+                new ProjectWalk.Options(WALK_DEPTH + 1, Integer.MAX_VALUE, GitignoreFilter.NONE),
+                new ProjectWalk.Visitor() {
+                    @Override
+                    public boolean enter(Path dir, String rel) {
+                        String name = rel.substring(rel.lastIndexOf('/') + 1);
+                        if (JvmReportDirs.isReportDirName(tool, name)) {
+                            dirs.add(dir);
+                            return false; // its files are listed below; nothing nested is another module
+                        }
+                        long depth = rel.chars().filter(c -> c == '/').count() + 1;
+                        return depth < WALK_DEPTH && !NOT_A_MODULE.contains(name);
+                    }
+
+                    @Override
+                    public ProjectWalk.Verdict file(Path file, String rel, BasicFileAttributes attrs) {
+                        return ProjectWalk.Verdict.SKIP; // only directories matter to this walk
+                    }
+                });
+        // A set: Gradle's standard dir (build/test-results/test) lies inside the walked one
+        // (build/test-results), and a file listed twice was parsed and merged twice on every sweep.
+        Set<Path> files = new LinkedHashSet<>();
         for (Path dir : dirs) {
             if (!Files.isDirectory(dir)) {
                 continue;
@@ -491,27 +540,24 @@ final class TestRunCoordinator implements TestRunHook {
                 // skip an unreadable dir
             }
         }
-        return files;
+        return new ArrayList<>(files);
     }
 
     // --- panel actions -----------------------------------------------------------------------------
 
+    /**
+     * Double-click on a result. One route for passing and failing tests alike: the navigation coordinator
+     * prefers the failure's own stack frame (an exact line) and falls back to the name-based lookup when the
+     * frame does not resolve — which a failed test never got while its frame was opened here directly.
+     */
     private void activate(TestNode node) {
-        if (node == null) {
-            return;
+        if (node != null) {
+            ops.jumpToTest(node, currentTool);
         }
-        if (node.stackTrace() != null) {
-            StackTraceLinks.Link link = firstFrame(node.stackTrace(), node.sourceFileHint());
-            if (link != null) {
-                ops.openLink(link);
-                return;
-            }
-        }
-        ops.jumpToTest(node, currentTool);
     }
 
     /** The first stack frame that resolves to a location — preferring one in the test's own source file. */
-    private static StackTraceLinks.Link firstFrame(String stackTrace, String preferredFile) {
+    static StackTraceLinks.Link firstFrame(String stackTrace, String preferredFile) {
         StackTraceLinks.Link fallback = null;
         for (String line : stackTrace.split("\n")) {
             StackTraceLinks.Link link = StackTraceLinks.parse(line);

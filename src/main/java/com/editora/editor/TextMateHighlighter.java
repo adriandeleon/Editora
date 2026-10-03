@@ -190,16 +190,25 @@ public final class TextMateHighlighter {
 
     /**
      * Classifies a token's scopes as a definition kind for the structure view, or {@code null} if the
-     * token is not a definition name. Calls are excluded: their name carries {@code entity.name.*} too,
-     * but always nested under {@code meta.function-call}.
+     * token is not a definition name. Calls are excluded: their name carries {@code entity.name.*} too, but
+     * every bundled grammar that can tell the two apart marks the call (see {@link #isCallScope}).
+     *
+     * <p>What decides is the <em>innermost</em> structural ({@code meta.*}) scope around the name, not any
+     * call scope anywhere above it: Java and PHP keep a call's scope open across its whole argument list,
+     * so the methods of an anonymous class passed as an argument sit inside one — under their own
+     * {@code meta.method} scope, which is nearer and wins.
      */
     static String kindForScopes(List<String> scopes) {
         if (scopes == null) {
             return null;
         }
-        for (String scope : scopes) {
-            if (scope.startsWith("meta.function-call")) {
+        for (int i = scopes.size() - 1; i >= 0; i--) {
+            String scope = scopes.get(i);
+            if (isCallScope(scope)) {
                 return null;
+            }
+            if (scope.startsWith("meta.")) {
+                break; // a declaration's own scope is nearer than any enclosing call
             }
         }
         for (int i = scopes.size() - 1; i >= 0; i--) {
@@ -221,6 +230,35 @@ public final class TextMateHighlighter {
             }
         }
         return null;
+    }
+
+    /**
+     * Whether {@code scope} marks a call (or another non-declaring use) of a function. The bundled grammars
+     * spell this two ways. An enclosing {@code meta} scope: {@code meta.function-call} (Java, C,
+     * TypeScript, Python, Ruby, PHP), {@code meta.method-call} (Java, Groovy, PHP),
+     * {@code meta.function.call} and the macro invocation {@code meta.macro.rust} (Rust). Or a suffix on
+     * the name scope itself: {@code .call} (C++, Kotlin), {@code .member} (C, C++), {@code .support} (Go),
+     * {@code .reference} (Kotlin), {@code .tagged-template} (TypeScript), {@code .decorator} (Python) and
+     * {@code .macro.rules}, which is Rust's {@code macro_rules!} keyword rather than the macro's name.
+     */
+    static boolean isCallScope(String scope) {
+        if (scope.startsWith("meta.")) {
+            return scope.startsWith("meta.function-call")
+                    || scope.startsWith("meta.method-call")
+                    || scope.startsWith("meta.function.call")
+                    || scope.equals("meta.macro.rust");
+        }
+        if (!scope.startsWith("entity.name.function.")) {
+            return false;
+        }
+        String kind = scope.substring("entity.name.function.".length());
+        return kind.startsWith("call.")
+                || kind.startsWith("member.")
+                || kind.startsWith("support.")
+                || kind.startsWith("reference.")
+                || kind.startsWith("tagged-template.")
+                || kind.startsWith("decorator.")
+                || kind.startsWith("macro.rules.");
     }
 
     private static void addLineSpans(SpanMerger spans, int lineLength, IToken[] tokens) {
@@ -292,10 +330,40 @@ public final class TextMateHighlighter {
         for (int i = scopes.size() - 1; i >= 0; i--) {
             String style = classify(scopes.get(i));
             if (style != null) {
-                return style;
+                return style.isEmpty() ? null : style; // PLAIN
             }
         }
         return null;
+    }
+
+    /** {@link #classify}'s answer for "this scope decides the token, and the token is unstyled". */
+    private static final String PLAIN = "";
+
+    /**
+     * The style for a {@code storage.*} scope. Nearly every grammar reserves {@code storage} for declaration
+     * keywords and modifiers ({@code class}, {@code const}, {@code static}, {@code fn}, primitive type words),
+     * which is why it defaults to {@code keyword}. Java and Groovy are the exception: they scope every
+     * <em>referenced type name</em> as {@code storage.type.<lang>} / {@code storage.type.generic} /
+     * {@code storage.type.object.array} and the whole dotted path of an {@code import}/{@code package} line
+     * as {@code storage.modifier.import|package}. Left as keywords those turn a Java file into a wall of the
+     * bold keyword colour, so type names take the theme's {@code type} class and import paths stay plain
+     * (the themes have no namespace class) — the same special-casing VS Code's own themes apply. Primitive
+     * type words ({@code int}, {@code boolean[]}), {@code var}/{@code def} and {@code ->} stay keywords.
+     */
+    private static String classifyStorage(String scope) {
+        if (scope.startsWith("storage.modifier.import.") || scope.startsWith("storage.modifier.package.")) {
+            return PLAIN;
+        }
+        if (scope.endsWith(".java") || scope.endsWith(".groovy")) {
+            if (scope.equals("storage.type.java")
+                    || scope.equals("storage.type.groovy")
+                    || scope.startsWith("storage.type.generic.")
+                    || scope.startsWith("storage.type.object.array.")
+                    || scope.startsWith("storage.type.parameters.")) {
+                return "type";
+            }
+        }
+        return "keyword";
     }
 
     /** Maps a single TextMate scope to a token category, checking the most specific prefixes first. */
@@ -331,7 +399,7 @@ public final class TextMateHighlighter {
             return "keyword";
         }
         if (scope.startsWith("storage")) {
-            return "keyword";
+            return classifyStorage(scope);
         }
         if (scope.startsWith("entity.name.function")
                 || scope.startsWith("support.function")

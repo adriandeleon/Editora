@@ -58,7 +58,7 @@ public final class EditorConfigTransform {
      * {@code insert_final_newline} was set with no {@code end_of_line} — every line of the file changed, with
      * no user action and no indication. And it only ever ratcheted toward CRLF, never back.
      */
-    static String dominantEol(String content) {
+    public static String dominantEol(String content) {
         int crlf = 0;
         int cr = 0;
         int lf = 0;

@@ -7,6 +7,298 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fixed a memory leak of about 20 MB per closed window: read-only console areas (Run, build output, HTTP
+  response, diff sides, the Settings preview) were held by a static RichTextFX stream, and an editor that had
+  focus when its window closed kept its caret blink timer running. Buffers now dispose their editor areas.
+- Updated Apache MINA SSHD to 2.20.0, which fixes CVE-2026-94002 (a malicious SFTP server could exhaust the
+  editor's memory). The remote connection root is now resolved to an absolute path at connect time, as
+  2.17+ requires.
+- File loading, saving and session fixes:
+  - Files that are not valid UTF-8 (Latin-1, Windows-1252, Shift-JIS, …) are no longer corrupted on save.
+    They open as Windows-1252 (or ISO-8859-1 when the bytes rule that out) so every byte is preserved, the
+    status bar shows the encoding and says it was assumed, and saving writes the same bytes back.
+  - CRLF (and CR) files keep their line endings on save; the status bar shows the file's real line ending,
+    and `Convert Line Endings` now changes what is written to disk. An `.editorconfig` `end_of_line`
+    still takes precedence.
+  - Saving a log while a level or text filter is active writes the whole log, not just the matching lines.
+    Filtering and follow mode no longer mark the tab as modified, and a log that follow mode has trimmed is
+    not saved over its file.
+  - Save is refused for a tab that is still loading (it used to write an empty file), and a restored tab
+    whose file cannot be read is removed instead of left empty.
+  - A save whose target cannot be examined (a dropped network mount) now fails with a message instead of
+    spinning at full CPU; auto-save reports when it is paused because the file changed on disk; the
+    administrator save checks for an external change before overwriting.
+  - Newly created files honour the umask instead of always being owner-only, and saved data is flushed to
+    disk before it replaces the previous version.
+  - `editora FILE` handed to an already-running editor resolves relative paths against the directory it
+    was run from; an oversized `:line` suffix no longer fails the launch.
+  - Open tabs are remembered as they change rather than only on a clean exit, and tabs whose folder is
+    unavailable at startup (an unmounted volume) are kept for the next launch.
+  - Renaming from the tab menu updates the file in every window; bookmark and note positions pending when
+    a window closes are saved; closing a window while files are still loading no longer applies them.
+- Java and Groovy no longer render as a wall of the bold keyword colour: referenced type names
+  (`String`, `List<Widget>`, `new HashMap<>()`) take the theme's type colour and `import`/`package`
+  paths are plain. Modifiers, primitives, `var` and other languages' declaration keywords are unchanged.
+- The server-free outline (Structure, sticky scroll, the symbol index) no longer lists calls as
+  declarations in Java, PHP, C, C++, Kotlin, Go and Rust (`event.getCode()`, `s.isEmpty()`).
+- Regex `^` and `$` in the Find bar, Replace All and Query Replace now anchor at every line instead of
+  only at the start and end of the document.
+- Bookmarks, breakpoints and notes inside a multi-line replace are kept — Replace All, a formatter edit, a
+  history restore or diff apply no longer delete them — and a narrow → widen cycle restores every one.
+  Narrowing also clears the second split view's undo history and the Undo History checkpoints, which
+  could otherwise duplicate or truncate the file.
+- Auto-rename-tag no longer scrambles text typed in a closing tag (`</div` + `xy` gave `</divyx>`), keeps
+  the caret in place for Backspace, and does nothing while several carets are active.
+- Enter at the start of an indented line no longer indents it further, and words that merely begin with
+  a closing keyword (`find`, `endpoint`) no longer de-indent; `fi`, `end`, `done` align when a space, `;`
+  or Enter follows.
+- Snippet tab stops that touch or contain one another no longer drift: the final caret lands after text
+  typed into the last field, an adjacent field keeps its own extent, and fields deleted with an
+  enclosing one are skipped.
+- A language server's edit that ends or starts one line past the end of the file now reaches the end of
+  the document (whole-file formatting no longer leaves the old last line behind; "insert final newline"
+  applies).
+- Highlighting no longer goes stale between two quick edits, and semantic tokens restyle only from their
+  first line (not at all when unchanged) instead of the whole document on every scroll or typing pause.
+- A fold chevron folds the block's current extent after it has grown, minimap clicks land on the right
+  line with folds or word wrap, and highlights and squiggles reach the edge when the minimap is hidden.
+- Re-linting several Markdown or Mermaid buffers at once updates every one of them, not only the last.
+- Opening a second Editora on the same configuration (launching it again without a file, with
+  `--project`, `--new-instance` or `--diff-ui`) no longer kills the first one's language servers, debug
+  adapters, builds and running programs, and no longer deletes its Local File History revisions. The second
+  instance now warns once that both share the configuration: settings, notes, bookmarks, breakpoints,
+  projects and recent files are still saved whole by each instance, so the last one to save wins.
+
+- Programs you run, builds, language servers, debug adapters, the AI agent, External Tools, before-launch
+  steps, in-app installers and the terminal/browser Editora opens now keep your locale instead of being
+  forced into `LC_ALL=C`. Projects under a path with non-ASCII characters (`año/`, `café/`) can be run,
+  built, debugged and indexed, and program output is no longer reduced to `?`. Git, ripgrep and other
+  output Editora parses still use the C locale.
+
+- Quitting now asks running language servers and programs to stop (SIGTERM) and waits briefly before
+  force-killing whatever is left, instead of killing everything at once.
+
+- In-app installs work when the configuration directory contains a space (for example
+  `C:\Users\Jane Doe\.editora`): the installed server is no longer reported missing right after the
+  install. The Typst CLI install now finds its Linux and macOS downloads.
+
+- The build commit and branch shown for development builds are looked up in the background from the
+  build's own checkout, so a slow or stuck `git` can no longer freeze the window at startup.
+- Git, diff and Local History hardening:
+  - Opening a file no longer lets its folder's `.git/config` run programs. The status, diff, log, blame
+    and blob lookups Editora runs by itself now override `core.fsmonitor`, hooks, external diff and
+    textconv drivers; commands you start (commit, checkout, push, …) still run your hooks. Ref names that
+    start with `-` are refused, and Git never waits on a hidden terminal prompt.
+  - Commit, checkout, reset, stash and discard are no longer killed after 10 seconds, network commands
+    get a longer limit and their own queue, a running command shows in the status bar, and closing the
+    window lets it finish instead of interrupting it mid-update.
+  - Stage Hunk no longer deletes another Git process's `index.lock`, works on CRLF files and keeps a
+    non-UTF-8 file's encoding. Exported patches are now correct for every end-of-file shape.
+  - Reset ▸ Hard and Drop Stash ask for confirmation, and destructive actions act on the repository
+    they were confirmed for even if the active tab changes while the dialog is open.
+  - Applying a hunk from Local File History, a second diff hunk before the view refreshed, or a merge
+    resolution after its tab was closed can no longer overwrite newer text or be silently lost.
+  - The Git Log file list shows non-ASCII names, root commits and merge commits correctly; a file over
+    10 MB no longer leaves a review on "Loading…"; a heading underline inside a conflict is no longer
+    read as a conflict marker; `gh pr checkout` cannot be undone by a pending save; "Add to .gitignore"
+    writes an anchored, escaped entry.
+  - Local File History now applies its age and size limits to every file at startup, expires even
+    labelled and pre-delete snapshots after a longer period (six times the age limit, at least 180
+    days), uses each file's own encoding when capturing and restoring, and no longer scans its whole
+    store on every save. New commands `Local History: Delete History of Current File…` and
+    `Local History: Delete History of Project…` remove snapshots permanently.
+- Hardened the places where content you merely opened could reach outside its own folder or the app.
+  Links (Markdown preview and Ctrl/Cmd-click, tool output, plugins, the update page) now go through one
+  check: only `http`, `https` and `mailto` are handed to the system; a relative or `file:` link opens
+  inside the editor when it is a file in the project or the document's folder; anything else is refused
+  with a status message. `.http` body files and `>>` response targets can no longer follow a symlink out of
+  the request's folder. PlantUML previews run with `PLANTUML_SECURITY_PROFILE=SANDBOX` (no local-file or URL
+  `!include`; export the variable yourself to choose another profile), and every preview renderer
+  (PlantUML, Graphviz, Mermaid, Typst) starts without secret-looking environment variables. Agent replies,
+  language-server hovers and completion docs, and pull-request text no longer load remote images — they
+  show the alt text and URL instead. The HTML Live Preview server answers only its own browser tab (Host
+  check plus an unguessable URL prefix) and refuses to serve a home directory or drive root. PDF/DOCX/ODT
+  export fetches images through the same internal-address guard and size cap as the preview; oversized
+  SVG dimensions are clamped. An agent's file reads and writes are confined to the session folder and can
+  never touch Editora's own configuration. A hostile `.editorconfig` section can no longer freeze a window
+  when a file opens. Markdown copied as rich text carries no raw HTML or `javascript:` links, and HTML
+  export neutralises `javascript:` URLs. A plugin whose capabilities cannot be shown is left disabled, and
+  in-app installers download only from the hosts their catalog names.
+- Language servers and debugging: fixes from the whole-app review.
+  - Renaming a Java symbol used in files that are not open (or in restored tabs never shown) now works
+    instead of reporting "Rename failed". Edits to such files are applied only when the file has not
+    changed since the request was sent; when one blocks the edit, the status line names it.
+  - JavaScript (Node) debugging now attaches: Editora opens the second session vscode-js-debug asks for
+    and reaches the adapter when `localhost` is the IPv6 loopback, so breakpoints hit and stepping, the
+    call stack and variables work. Step Over/Into/Out show the session as running until the next stop,
+    and Debug console output is batched so a chatty program no longer stalls the editor.
+  - A project's `.editora/settings.json` server command is now the one that actually launches — and only
+    for a trusted folder. In an untrusted folder the project's commands (and any attempt to re-enable a
+    server you switched off) are ignored until you run "LSP: Trust This Project's Server Settings".
+    "LSP: Set Server Command" is prefilled from your global setting, not the project's.
+  - Java: on-type formatting works again, the rename prompt validates and pre-fills the symbol name
+    again, and Go to Implementation / Type Definition appear once the server is ready. Semantic
+    highlighting is restored for servers that register it late (Typst).
+  - A language server that stops responding can no longer freeze the editor; servers are shut down
+    cleanly on quit; "Build Project" is no longer cancelled after 30 seconds; quick fixes get their
+    diagnostics when the server spells a file's URI differently; a burst of diagnostics rebuilds the
+    Problems list once; opening a file on a filesystem root no longer breaks the handshake; and a
+    closed window can no longer restart its language servers.
+- Keyboard routing fixes. Editing chords typed in a text field now edit that field instead of the
+  document behind it: with the caret in the Find bar, `C-k`, Ctrl+V/X/Z/A and `C-u` used to act on the
+  open buffer. The Find and Replace fields also follow the active keymap's caret and editing chords.
+- Option-typed characters (`@ [ ] { } | \ ~` on German and Spanish Mac layouts) can be typed in the
+  pickers and prompts again, and on Windows AltGr combinations such as AltGr+E are typed instead of
+  running the `Ctrl+Alt` chord bound to that key.
+- A `settings.json` naming a keymap that does not exist no longer prevents Editora from starting; the
+  default keymap is used and the problem is reported once in the message log.
+- Shortcuts are shown in the notation of the active keymap and platform — `Ctrl+Shift+P`, `⇧⌘P`, or
+  Emacs notation in the Emacs keymap — in menus, tooltips, the command palette, the Welcome page and
+  status messages, and the shortcut shown for a command no longer changes between launches.
+- Pickers take their navigation keys from the active keymap and list only keys that work there; they
+  also handle PageUp/PageDown and Ctrl+Home/End. In input cards, Enter activates the focused button
+  rather than always confirming, and Tab stays inside the card.
+- Undo, redo and toggle-comment have shortcuts that can be typed on keyboards where `/` is a shifted
+  key: `C-x u`, `C-_` and Ctrl+Shift+7 undo in the Emacs keymap, and Ctrl+Shift+7 or the numpad slash
+  toggle a comment in the other keymaps.
+- The Menu key and Shift+F10 open the context menu of the selected row in the Project, Bookmarks,
+  Notes, TODO, Git Log and Structure tool windows. F2 renames and Delete deletes the selected file in
+  the Project tree; Delete removes the selected bookmark or note.
+- Keyboard and screen-reader access: Settings switches now toggle with Space or Enter and are announced
+  by their row title; every button, switch, check box, link and combo shows a focus ring when reached
+  with the keyboard; icon-only buttons (tool windows, Git, diff, test results, preview zoom) have
+  accessible names; closing the focused tool window returns focus to the editor.
+
+- Readability: key legends, line numbers and tinted labels now meet contrast guidelines in Editora Light
+  and Dark; text on accent-coloured badges and the selected Project Map node is readable in dark themes;
+  whitespace markers, diagnostic squiggles and search highlights adapt to the editor theme; Problems and
+  Debug colours follow the theme. Failure messages such as "PDF export failed" are shown as errors in the
+  status bar and stay flagged in the message log.
+
+- Layout: the Find bar's fields use the available width and the bar wraps instead of truncating its
+  labels in a narrow window; Find in Files gives the query its own row; one wide diagram, image or
+  formula no longer stops the Markdown preview from wrapping in Split view; Settings rows with a wide
+  control put it under the description; the command palette no longer cuts its last row in half; long
+  paths in the Commit window keep the file name visible; the breadcrumb starts at the project folder;
+  in Split view the Editor/Split/Preview control sits on the preview instead of over the first line.
+
+- Settings: search matches the titles and descriptions shown in your language, accepts several words in
+  any order, and says when nothing matches; the window always opens fully on the screen its parent is
+  on; Reset to Defaults now also restores the keymap immediately.
+- The symbol index and Search Everywhere no longer walk into `.gitignore`d directories: `target/`,
+  `node_modules/` and `build/` are skipped whole instead of being read, listed and counted against the
+  50,000-file cap; an unreadable directory no longer ends the index early; and an index that does reach the
+  cap says so in the status bar. The same pruned walk now backs Find in Files, the TODO scan and the
+  test-source lookups, and the JVM test-report poll no longer re-walks `.git` and `node_modules` every 750 ms.
+
+- Build output is delivered in bounded batches with a line-length cap, so a chatty build (`mvn -X`) no
+  longer stalls the window or its Stop button, and the exit is reported only after the last output has
+  arrived — Go, Cargo and npm test runs no longer lose their final results.
+
+- Stack-trace links and Test Results activation work without a Java language server: a frame such as
+  `at com.foo.Bar.baz(Bar.java:12)` opens `com/foo/Bar.java` under the project's source roots instead of
+  looking for `Bar.java` in the project root, a failed test whose frame cannot be resolved falls back to
+  the test's own source, and a test in a closed file lands on its method instead of line 1.
+
+- Find in Files: an include such as `*.{js,ts}` is one glob; an exclude of `target` or `node_modules`
+  drops everything beneath it with or without ripgrep and in open buffers; `\w`, `\d` and `\b` mean the
+  same in open buffers and replacements as they do in ripgrep; Replace All uses the query its results were
+  found with and refreshes instead of replacing when the fields were edited since; and a superseded search
+  no longer leaves "Searching…" counting up in the status bar.
+
+- `mvnw`/`gradlew` at the project root are used when the build file is in a module, and the
+  workspace-trust prompt is about the folder that ships the wrapper actually launched.
+
+- `Maven: Update Versions` computes from the open `pom.xml` buffer, so unsaved edits are kept; a read-only
+  buffer is left alone and a closed pom is replaced atomically. New Maven Project always uses your own
+  Maven, never a wrapper found in the target folder. A `pom.xml` with a byte-order mark or a declared
+  non-UTF-8 encoding is no longer reported as malformed.
+
+- A run configuration's before-launch step streams into the console, is stopped by Stop, ends with the
+  window, and cannot be started twice by pressing Run again.
+
+- External tools: output larger than the 10 MB capture limit is no longer applied to the buffer or
+  selection; it goes to the tool console with an explanation.
+
+- Rerun test / rerun failed: parameterized invocations collapse to their method, Maven reruns no longer
+  fail a multi-module build on modules without the selected test, and an up-to-date Gradle test task shows
+  its existing results instead of an empty tree.
+- Exports no longer lose or change content while reporting success. Markdown → PDF keeps the source's
+  spacing around inline styles (`**world**!`, `un*real*ly`, `` `Ctrl`+`C` ``), wraps long code-block lines
+  and expands tabs instead of clipping them or printing `?`, hard-breaks words wider than the page (URLs,
+  table cells), and draws CJK, Arabic, Hebrew, Thai and other scripts with an installed system font; any
+  character no font can draw is counted and the status says so. Word/OpenDocument exports keep code blocks,
+  quotes and images inside list items, task checkboxes, raw HTML and footnotes. CSV → Excel/OpenDocument
+  leaves values such as `12D`, `5F` and 19-digit ids as text, and CSV → PDF/Print shows cells verbatim
+  (`__init__`, `2*3*4`, `List<String>`) with the same columns as the grid, including pipe-delimited files.
+
+- HTTP Client: a request body that starts with `<` (XML, HTML, SOAP) is sent as the body instead of being
+  mistaken for a file reference, and a missing body file stops the request with a warning instead of sending
+  it empty. Uploads and downloads are byte-exact (`< file`, `>>`), responses over 50 MB are cut with a visible
+  marker, and a running request can be cancelled (`HTTP: Cancel Running Request` or the Cancel button) so a
+  hung or streaming response no longer blocks later runs. The response view pretty-prints JSON without
+  altering numbers or dropping duplicate keys, marks a truncated view, formats in the background, and Save /
+  Open in tab use the response as received. Comment lines between headers are no longer sent as headers.
+
+- Dropped or pasted images whose names contain spaces or parentheses now insert a working Markdown link.
+  Image and binary (hex) tabs load in the background, and very large images are shown at reduced resolution
+  instead of exhausting memory. Markdown lint no longer flags URLs that are already links or `m[i][j]` in
+  inline code, and its fixer no longer turns a tab-indented code line into a heading or leaves part of a
+  trailing `...`. systemd `OnCalendar` accepts a time zone and `Mon-Fri`, the Dockerfile preview shows the
+  real base image after `FROM --platform=…`, and `.editorconfig` `unset` clears the inherited value.
+- A mistyped value in `settings.json` (for example `"showMinimap": "yes"`) no longer resets every setting
+  after it, including key bindings and API keys. Only that value falls back to its default, the file as
+  written is kept as `settings.json.corrupt.bak`, and the first window reports which values were reset.
+  Tab size, font size and text zoom are clamped to their valid ranges on load, so `"tabSize": 0` can no
+  longer break indentation commands.
+
+- A settings file whose `schemaVersion` line was removed is no longer migrated from scratch, which
+  turned Projects back on, re-added removed TODO keywords and toolbar buttons, and on macOS replaced the
+  Cmd key-binding overrides. A config file from a newer Editora that cannot be backed up is now left
+  untouched for the session instead of being overwritten with defaults, and the status bar says so.
+
+- A blank author name stays "follow the OS user": it was saved as the current user name on the first
+  save. The unused `ijhttpCommand` setting is gone.
+
+- Settings toggled from the command palette or a key binding now apply in every open window, not just
+  the one the command ran in.
+
+- Recent files, Find in Files history and AI Agent sessions are shared by all windows. Each window used
+  to keep its own copy and rewrite the whole file, so the last window to save discarded the others'
+  entries. Remote (SFTP) recent files are no longer dropped from the list on restart.
+
+- Translations: apostrophes are no longer doubled or dropped (French and Italian palette titles and
+  messages, English "isn't"), line numbers, ports, pull-request numbers and exit codes are no longer
+  digit-grouped ("Line 12,345"), two messages that showed their internal key now have text, and the
+  remaining English-only picker titles, prompts and labels are translated. Unused strings were removed.
+
+- A key binding you assign is no longer overridden by a plugin that binds the same chord, and two
+  projects whose folders produce the same internal id no longer share a session.
+- **Packaging and release hardening.** Installers and archives now carry the licence: `LICENSE` and `NOTICE`
+  are inside the application (and as plain files in the Linux tarball, the AppImage and the experimental
+  Native Image archives), the `.deb`/`.rpm`/`.msi` are built with the MIT text, each bundled font family ships
+  its Open Font License, and `NOTICE` now names every bundled library (commonmark, LSP4J, JLaTeXMath,
+  java-diff-utils, SnakeYAML, the Jackson TOML/YAML formats, SLF4J and others were missing).
+  - **Windows:** the MSI no longer registers `.bat`, `.cmd`, `.js`, `.ps1`, `.psm1`, `.py`, `.pyw`, `.rb` and
+    `.sh`. The installer registers each listed type machine-wide, so on a PC with no per-user choice for them a
+    double-click would have opened Editora instead of running the script. They remain editable through
+    *Open with → Choose another app*. `.txt` is now registered (and first), so Windows keeps treating
+    `text/plain` as `.txt`.
+  - **Linux `.deb`:** installing no longer discards other applications' defaults in the shared
+    `mimeapps.list` — the file is replaced atomically, what Editora's Expert Mode default displaces is
+    remembered and restored on removal, and a `/usr/bin/editora` that belongs to something else is not
+    overwritten.
+  - **Linux tarball:** `sudo ./install.sh` now leaves `/opt/editora` owned by root (it stayed writable by the
+    user who unpacked the archive), `--prefix DIR` refuses to replace or remove a `DIR/editora` that is not an
+    Editora install, and a prefix containing spaces produces a working menu entry.
+  - **Releases** stop before publishing when an expected installer is missing or the tag does not match the
+    project version; the release tooling is pinned and checksum-verified (actions, JReleaser, Maven,
+    `appimagetool`), and the Apple Silicon build moved to the `macos-15` runner ahead of `macos-14`'s
+    retirement.
+  - **Builds:** `-Pdist` now always starts from a clean `target/` (and `-Pfatjar` from clean classes), so a
+    forgotten `clean` can no longer package stale classes; CI also runs the non-UI test suite on Windows and
+    macOS.
+
 - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
   unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the
   horizontal scrollbar stayed until you scrolled back over those lines or restarted.

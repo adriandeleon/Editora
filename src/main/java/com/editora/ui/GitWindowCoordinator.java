@@ -97,22 +97,20 @@ final class GitWindowCoordinator {
         }
         host.git().service().branches(host.git().repoRoot(), branches -> {
             List<BranchPopup.MenuAction> actions = List.of(
-                    // Each row names its command so the popup takes the VCS menu's own glyph for it.
-                    new BranchPopup.MenuAction(tr("branch.newBranch"), "", "git.newBranch", host.git()::newBranch),
+                    // Each row names its command so the popup takes the VCS menu's own glyph (and chord) for it.
+                    new BranchPopup.MenuAction(tr("branch.newBranch"), "git.newBranch", host.git()::newBranch),
                     new BranchPopup.MenuAction(
                             tr("branch.pull"),
-                            "",
                             "git.pull",
                             () -> host.git().gitSync(tr("gitlabel.pull"), "pull", "--ff-only")),
                     new BranchPopup.MenuAction(
                             tr("branch.fetch"),
-                            "",
                             "git.fetch",
                             () -> host.git().gitSync(tr("gitlabel.fetch"), "fetch", "--all")),
-                    new BranchPopup.MenuAction(tr("branch.push"), "", "git.push", host.git()::gitPush),
-                    new BranchPopup.MenuAction(tr("branch.stash"), "", "git.stash", host.git()::gitStash),
-                    new BranchPopup.MenuAction(tr("branch.unstash"), "", "git.unstash", host.git()::gitUnstash),
-                    new BranchPopup.MenuAction(tr("branch.commit"), "C-x g", "git.commit", host.git()::gitCommitFocus));
+                    new BranchPopup.MenuAction(tr("branch.push"), "git.push", host.git()::gitPush),
+                    new BranchPopup.MenuAction(tr("branch.stash"), "git.stash", host.git()::gitStash),
+                    new BranchPopup.MenuAction(tr("branch.unstash"), "git.unstash", host.git()::gitUnstash),
+                    new BranchPopup.MenuAction(tr("branch.commit"), "git.commit", host.git()::gitCommitFocus));
             branchPopup.show(
                     host.stage(),
                     host.statusBar().gitSegmentNode(),
@@ -282,6 +280,17 @@ final class GitWindowCoordinator {
 
             @Override
             public void reset(String hash, String mode) {
+                // Hard is the one mode that throws work away: it sits directly under Soft and Mixed in the
+                // menu, so it is confirmed with the dialog a file discard uses, naming what will be lost.
+                String shortHash = com.editora.git.GitFormat.shortHash(hash);
+                if ("hard".equals(mode)
+                        && !host.git()
+                                .confirmDestructive(
+                                        tr("dialog.gitReset.title"),
+                                        tr("dialog.gitReset.hardConfirm", shortHash),
+                                        tr("dialog.gitReset.hard"))) {
+                    return;
+                }
                 gitMutate(
                         tr("status.git.reset", mode, com.editora.git.GitFormat.shortHash(hash)),
                         "reset",

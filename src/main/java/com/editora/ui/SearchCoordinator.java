@@ -194,6 +194,15 @@ final class SearchCoordinator {
     private final java.util.concurrent.atomic.AtomicBoolean shutdown = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.Set<ReplaceJob> queuedReplaces = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final SearchPanel panel;
+    /**
+     * This window's copy of the shared search history, the list the query combo is bound to. The combo is
+     * bound to a copy rather than to the shared list because that list outlives the window and is changed by
+     * every window: this way the control only ever listens to a list its own window owns, and other windows'
+     * changes arrive through one explicit step, {@link #refreshHistory()}, which replaces the copy as a whole
+     * and only when it differs.
+     */
+    private final ObservableList<String> historyView = javafx.collections.FXCollections.observableArrayList();
+
     private SearchInFilesPopup popup; // lazily built on first use of the popup command
 
     private static ExecutorService newReplaceExecutor() {
@@ -230,15 +239,18 @@ final class SearchCoordinator {
             }
 
             @Override
-            public void replaceAll(SearchQuery query, String replacement, List<Path> files) {
-                replaceInFiles(query, replacement, files);
+            public void replaceAll(
+                    SearchQuery query, String includeGlobs, String excludeGlobs, String replacement, List<Path> files) {
+                replaceShownResults(query, includeGlobs, excludeGlobs, replacement, files);
             }
 
             @Override
             public void recordSearch(String query) {
                 ops.recordSearch(query);
+                refreshHistory();
             }
         });
+        panel.setHistory(historyView);
     }
 
     SearchPanel panel() {
@@ -250,9 +262,15 @@ final class SearchCoordinator {
         return service;
     }
 
-    /** Binds the query dropdown to the persistent search history (called once history is loaded). */
+    /**
+     * Brings the query dropdown up to date with the shared search history: at startup, after this window
+     * records a query, and when another window does (see {@code WindowManager}). A no-op when nothing changed.
+     */
     void refreshHistory() {
-        panel.setHistory(ops.searchHistory());
+        java.util.List<String> shared = ops.searchHistory();
+        if (!historyView.equals(shared)) {
+            historyView.setAll(shared);
+        }
     }
 
     /** Snapshots every open buffer's live text keyed by absolute path (unsaved edits win over disk). */
@@ -306,6 +324,7 @@ final class SearchCoordinator {
                 @Override
                 public void recordSearch(String query) {
                     ops.recordSearch(query);
+                    refreshHistory();
                 }
             });
         }
@@ -315,6 +334,11 @@ final class SearchCoordinator {
 
     /** Runs a multi-file search: open buffers (in-memory) + the active project root, results to the panel. */
     private void runFileSearch(SearchQuery query, String includeGlobs, String excludeGlobs) {
+        runFileSearch(query, includeGlobs, excludeGlobs, false);
+    }
+
+    /** {@code forStaleReplace}: this is the refresh a Replace All forced, and its status must say so. */
+    private void runFileSearch(SearchQuery query, String includeGlobs, String excludeGlobs, boolean forStaleReplace) {
         Map<Path, String> open = collectOpenBuffers();
         // Scope to THIS window's project root, else the active file's folder ("Current Folder").
         Path root = searchScopeRoot();
@@ -324,14 +348,60 @@ final class SearchCoordinator {
         List<String> exclude = Globs.split(excludeGlobs);
         // Registered so a sweep over a large tree reads as running work rather than going quiet (#770).
         AutoCloseable task = host.startBackgroundTask(tr("search.searching"));
-        service.search(query, root, open, include, exclude, outcome -> {
-            closeQuietly(task);
-            panel.setResults(outcome);
-            host.setStatus(
-                    outcome.totalMatches() == 0
+        SearchSnapshot snapshot = new SearchSnapshot(query, include, exclude);
+        service.search(
+                query,
+                root,
+                open,
+                include,
+                exclude,
+                outcome -> {
+                    closeQuietly(task);
+                    shown = snapshot; // what the result tree now shows, and so what Replace All may act on
+                    panel.setResults(outcome);
+                    String summary = outcome.totalMatches() == 0
                             ? tr("search.none")
-                            : tr("search.summary", outcome.totalMatches(), outcome.fileCount()));
-        });
+                            : tr("search.summary", outcome.totalMatches(), outcome.fileCount());
+                    host.setStatus(forStaleReplace ? tr("search.replaceStale", summary) : summary);
+                },
+                // A superseded search never reaches the callback above (the generation guard drops it), so
+                // its handle is closed here — otherwise "Searching… (N)" counted up until the window closed.
+                () -> closeQuietly(task));
+    }
+
+    /** The query and globs a result set was produced by — the only thing Replace All may be applied with. */
+    record SearchSnapshot(SearchQuery query, List<String> include, List<String> exclude) {
+
+        SearchSnapshot {
+            include = List.copyOf(include);
+            exclude = List.copyOf(exclude);
+        }
+
+        /** Whether the panel's live fields still describe the search these results came from. */
+        boolean matches(SearchQuery liveQuery, String includeGlobs, String excludeGlobs) {
+            return query.equals(liveQuery)
+                    && include.equals(Globs.split(includeGlobs))
+                    && exclude.equals(Globs.split(excludeGlobs));
+        }
+    }
+
+    /** The search behind the results currently in the panel; null until one has landed. */
+    private SearchSnapshot shown;
+
+    /**
+     * Replace All from the panel. The file list is the <em>shown</em> result set, so it is replaced with the
+     * query that produced it — never with whatever the fields say now. If the fields were edited since
+     * (text, {@code .*}/{@code Aa}/{@code W}, or the globs) nothing is replaced: the search is re-run with
+     * the new fields and the status says so, leaving a preview that matches what a second press will change.
+     * Rewriting the old files under the new semantics changed things the preview never showed.
+     */
+    CompletableFuture<ReplaceResult> replaceShownResults(
+            SearchQuery liveQuery, String includeGlobs, String excludeGlobs, String replacement, List<Path> files) {
+        if (shown == null || !shown.matches(liveQuery, includeGlobs, excludeGlobs)) {
+            runFileSearch(liveQuery, includeGlobs, excludeGlobs, true);
+            return CompletableFuture.completedFuture(new ReplaceResult(0, 0, List.of(), true));
+        }
+        return replaceInFiles(shown.query(), replacement, files);
     }
 
     /** Closes a background-task handle; a bookkeeping slip must never break the callback around it. */
@@ -677,7 +747,8 @@ final class SearchCoordinator {
         if (buffer == null || loading || !buffer.isEditable() || buffer.isTruncatedLoad()) {
             return new ClosedReplace(0, false, true);
         }
-        var result = MultiFileSearch.replaceAll(buffer.getContent(), query, replacement);
+        var result =
+                MultiFileSearch.replaceAll(buffer.getContent(), query, replacement, MultiFileSearch.UNICODE_CLASSES);
         if (result.count() == 0) {
             return new ClosedReplace(0, false, false);
         }
@@ -694,7 +765,7 @@ final class SearchCoordinator {
             Path file, SearchQuery query, String replacement, Consumer<String> beforeWrite, BooleanSupplier commit) {
         try {
             String original = Files.readString(file);
-            var result = MultiFileSearch.replaceAll(original, query, replacement);
+            var result = MultiFileSearch.replaceAll(original, query, replacement, MultiFileSearch.UNICODE_CLASSES);
             if (result.count() == 0) {
                 return new ClosedReplace(0, false, false);
             }

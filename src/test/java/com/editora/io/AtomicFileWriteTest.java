@@ -337,4 +337,95 @@ class AtomicFileWriteTest {
     private static boolean hasOption(CopyOption[] options, CopyOption expected) {
         return Arrays.asList(options).contains(expected);
     }
+
+    @Test
+    void aNewFileGetsTheOrdinaryNewFileModeNotTheTempFilesOwnerOnlyOne() throws IOException {
+        // The reference is whatever this process's umask gives a file created the ordinary way.
+        Path reference = Files.createFile(dir.resolve("reference.txt"));
+        Set<PosixFilePermission> expected;
+        try {
+            expected = Files.getPosixFilePermissions(reference);
+        } catch (UnsupportedOperationException notPosix) {
+            Assumptions.abort("not a POSIX filesystem");
+            return;
+        }
+        Path created = dir.resolve("first-save.txt");
+
+        AtomicFileWrite.write(created, bytes("hello\n"));
+
+        assertEquals(expected, Files.getPosixFilePermissions(created), "a first save must honour the umask");
+        assertEquals("hello\n", Files.readString(created));
+    }
+
+    @Test
+    void anExistingFilesModeIsStillCopiedNotReset() throws IOException {
+        Path secret = dir.resolve("secret.txt");
+        Files.writeString(secret, "old");
+        try {
+            Files.setPosixFilePermissions(secret, PosixFilePermissions.fromString("rw-------"));
+        } catch (UnsupportedOperationException notPosix) {
+            Assumptions.abort("not a POSIX filesystem");
+        }
+
+        AtomicFileWrite.write(secret, bytes("new"));
+
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(secret));
+    }
+
+    @Test
+    void theStagedBytesAreForcedToDiskBeforeTheyReplaceTheTarget() throws IOException {
+        Path file = dir.resolve("durable.txt");
+        Files.writeString(file, "old");
+        java.util.List<String> order = new java.util.ArrayList<>();
+        AtomicFileWrite.FileOperations files = new DelegatingFileOperations() {
+            @Override
+            public void write(Path path, byte[] content) throws IOException {
+                order.add("write");
+                super.write(path, content);
+            }
+
+            @Override
+            public void force(Path path) throws IOException {
+                order.add("force " + (path.equals(file) ? "target" : "staged"));
+            }
+
+            @Override
+            public void move(Path source, Path target, CopyOption... options) throws IOException {
+                order.add("move");
+                super.move(source, target, options);
+            }
+        };
+
+        assertTrue(AtomicFileWrite.writeIf(file, bytes("new"), () -> true, files));
+        assertTrue(AtomicFileWrite.replaceIfUnchanged(file, bytes("new"), bytes("newer"), () -> true, files));
+
+        assertEquals(java.util.List.of("write", "force staged", "move", "write", "force staged", "move"), order);
+        assertEquals("newer", Files.readString(file));
+    }
+
+    @Test
+    void aFailedSyncLeavesTheOriginalInPlace() throws IOException {
+        Path file = dir.resolve("unsynced.txt");
+        Files.writeString(file, "old");
+        AtomicFileWrite.FileOperations files = new DelegatingFileOperations() {
+            @Override
+            public void force(Path path) throws IOException {
+                throw new IOException("fsync failed");
+            }
+        };
+
+        assertThrows(IOException.class, () -> AtomicFileWrite.writeIf(file, bytes("new"), () -> true, files));
+
+        assertEquals("old", Files.readString(file), "bytes that may not be durable never replace the document");
+        try (var entries = Files.list(dir)) {
+            assertEquals(1, entries.count(), "and the staging file is cleaned up");
+        }
+    }
+
+    @Test
+    void theSystemOperationsSyncARealFile() throws IOException {
+        Path file = Files.writeString(dir.resolve("sync.txt"), "data");
+        AtomicFileWrite.systemFileOperations().force(file); // must not throw, and must not truncate
+        assertEquals("data", Files.readString(file));
+    }
 }

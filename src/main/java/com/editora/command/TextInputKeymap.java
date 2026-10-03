@@ -1,7 +1,6 @@
 package com.editora.command;
 
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -21,9 +20,6 @@ import javafx.scene.input.KeyEvent;
  * unit-tested ({@link #lineStart}/{@link #lineEnd}/{@link #lineUp}/{@link #lineDown}/{@link #backToIndentation}).
  */
 public final class TextInputKeymap {
-
-    private static final boolean IS_MAC =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
 
     private static final Map<String, Consumer<TextInputControl>> ACTIONS = actions();
 
@@ -54,6 +50,11 @@ public final class TextInputKeymap {
 
     /** Installs configured-keymap caret movement + basic editing on {@code control}. */
     public static void install(TextInputControl control, KeymapManager keymap) {
+        install(control, keymap, KeymapManager.isMac());
+    }
+
+    /** Package-visible variant with an explicit platform flag so tests don't depend on the host OS. */
+    static void install(TextInputControl control, KeymapManager keymap, boolean mac) {
         if (control == null || keymap == null) {
             return;
         }
@@ -74,13 +75,29 @@ public final class TextInputKeymap {
                 consumed[0] = true;
             }
         });
-        // Swallow the character that pairs with a handled press (e.g. macOS Option-f → "ƒ").
         control.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            if (consumed[0] || (IS_MAC && e.isAltDown())) {
-                consumed[0] = false;
+            if (swallowTyped(consumed[0], mac, e.isMetaDown(), e.isControlDown())) {
                 e.consume();
             }
+            consumed[0] = false;
         });
+        // A handled chord that produces no KEY_TYPED at all (Control/Command shortcuts, notably on macOS)
+        // must not leave the flag set to eat the next ordinary character.
+        control.addEventFilter(KeyEvent.KEY_RELEASED, e -> consumed[0] = false);
+    }
+
+    /**
+     * Whether a {@code KEY_TYPED} aimed at a text field is dropped instead of typed.
+     *
+     * <p>The character that pairs with a press this keymap handled always is (macOS Option-f also emits
+     * "ƒ"). On macOS a character typed with Command or Control held is a shortcut's by-product, never text.
+     * <b>Option on its own is not a reason</b>: it is how {@code @ [ ] { } | \ ~} are typed on German and
+     * Spanish Mac layouts, and swallowing every Option character — as this and five pickers once did — made
+     * those untypable in every picker and prompt. The same rule as {@link KeyDispatcher#handleTyped}. Pure —
+     * tested.
+     */
+    static boolean swallowTyped(boolean pressHandled, boolean mac, boolean commandDown, boolean controlDown) {
+        return pressHandled || (mac && (commandDown || controlDown));
     }
 
     private static Map<String, Consumer<TextInputControl>> actions() {
@@ -105,6 +122,7 @@ public final class TextInputKeymap {
         m.put("edit.cut", TextInputControl::cut);
         m.put("edit.copy", TextInputControl::copy);
         m.put("edit.paste", TextInputControl::paste);
+        m.put("edit.selectAll", TextInputControl::selectAll);
         m.put("edit.undo", c -> {
             if (c.isUndoable()) {
                 c.undo();

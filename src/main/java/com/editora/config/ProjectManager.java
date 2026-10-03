@@ -186,9 +186,26 @@ public class ProjectManager {
                 return p;
             }
         }
-        Project project = new Project(idFor(name, absRoot), name, absRoot);
+        Project project = new Project(uniqueId(idFor(name, absRoot)), name, absRoot);
         index.getProjects().add(project);
         return project;
+    }
+
+    /**
+     * {@code id}, or {@code id-2}, {@code id-3}, … when another project already has it. The id names the
+     * project's session file and its bookmark/note/breakpoint buckets, and {@link #idFor} hashes the root to
+     * only 32 bits: two folders with the same name whose paths collide would otherwise share all of them.
+     */
+    private String uniqueId(String id) {
+        String candidate = id;
+        for (int n = 2; idInUse(candidate); n++) {
+            candidate = id + "-" + n;
+        }
+        return candidate;
+    }
+
+    private boolean idInUse(String id) {
+        return index.getProjects().stream().anyMatch(p -> p.id().equals(id));
     }
 
     /** Per-project session-state file: {@code <configDir>/projects/<id>.json}. */
@@ -196,7 +213,7 @@ public class ProjectManager {
         return configDir.resolve(PROJECTS_DIR).resolve(project.id() + ".json");
     }
 
-    /** A filesystem-safe, reasonably-unique id: a name slug plus a short hash of the root path. */
+    /** A filesystem-safe id: a name slug plus a short hash of the root path. Unique only via {@link #uniqueId}. */
     private static String idFor(String name, String absRoot) {
         String slug =
                 name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");

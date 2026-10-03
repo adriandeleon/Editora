@@ -221,10 +221,6 @@ class MessagesTest {
     @Test
     void everyParameterizedValueFormatsInEveryLocaleWithoutSwallowingAPlaceholder() {
         Properties base = loadProps("/com/editora/i18n/messages.properties");
-        Object[] args = new Object[10];
-        for (int i = 0; i < args.length; i++) {
-            args[i] = "‹A" + i + "›"; // a sentinel unlikely to occur in any translation
-        }
         // A REAL MessageFormat placeholder is `{n}` or `{n,…}` — digits then a comma or close brace. This
         // must NOT match a snippet help string's `${1:default}` (the `{1:` isn't a placeholder, and that key
         // is shown via tr(key) with no args, so MessageFormat never touches it).
@@ -249,6 +245,12 @@ class MessagesTest {
                 if (value == null) {
                     continue; // key-parity is covered by another test
                 }
+                // A sentinel per argument, unlikely to occur in any translation. A placeholder with a format
+                // type ({n,number,#} for a line number, {n,choice,…} for a plural) needs a number, not text.
+                Object[] args = new Object[10];
+                for (int i = 0; i < args.length; i++) {
+                    args[i] = value.matches("(?s).*\\{" + i + "\\s*,.*") ? (Object) (731 + i) : "‹A" + i + "›";
+                }
                 String out;
                 try {
                     out = new java.text.MessageFormat(value).format(args);
@@ -260,7 +262,7 @@ class MessagesTest {
                 // Every index the English pattern carries must survive into the output as its sentinel; if a
                 // stray apostrophe swallowed it, the literal "{n}" shows instead.
                 for (int idx : indices) {
-                    if (idx < args.length && !out.contains((String) args[idx])) {
+                    if (idx < args.length && !out.contains(String.valueOf(args[idx]))) {
                         problems.add((suffix.isEmpty() ? "en" : suffix.substring(1)) + " / " + key + " → {" + idx
                                 + "} not substituted (likely an unescaped apostrophe): " + value);
                     }
@@ -271,6 +273,183 @@ class MessagesTest {
                 problems.isEmpty(),
                 "MessageFormat values that drop an argument in some locale (double the apostrophes: l' → l''):\n"
                         + String.join("\n", problems));
+    }
+
+    /** A MessageFormat placeholder: {@code {n}} or {@code {n,…}}. Its presence decides how a value is written. */
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\d+\\s*[,}]");
+
+    private static Properties catalog(String lang) {
+        return loadProps("/com/editora/i18n/messages" + (lang.isEmpty() ? "" : "_" + lang) + ".properties");
+    }
+
+    private static String name(String lang) {
+        return lang.isEmpty() ? "en" : lang;
+    }
+
+    /**
+     * A value <b>without</b> a placeholder is shown exactly as written ({@code Messages.tr} never runs it
+     * through {@link java.text.MessageFormat}), so an apostrophe doubled "to be safe" is displayed doubled:
+     * the palette showed {@code Configuration d''exécution…} in French and {@code isn''t} in English.
+     */
+    @Test
+    void aValueWithoutAPlaceholderNeverDoublesAnApostrophe() {
+        Set<String> problems = new TreeSet<>();
+        for (String lang : ALL_CATALOGS) {
+            Properties props = catalog(lang);
+            for (String key : props.stringPropertyNames()) {
+                String value = props.getProperty(key);
+                if (!PLACEHOLDER.matcher(value).find() && value.contains("''")) {
+                    problems.add(name(lang) + " / " + key + " = " + value);
+                }
+            }
+        }
+        assertTrue(
+                problems.isEmpty(),
+                "values without {n} are shown verbatim — write a single apostrophe:\n" + String.join("\n", problems));
+    }
+
+    /**
+     * A value <b>with</b> a placeholder is a MessageFormat pattern, where a lone apostrophe is not text but
+     * the start of a quoted section: at best it vanishes ({@code nell'albero} rendered "nellalbero"), at worst
+     * it swallows the placeholder after it. Every literal apostrophe in such a value is doubled.
+     */
+    @Test
+    void aValueWithAPlaceholderNeverHasALoneApostrophe() {
+        Set<String> problems = new TreeSet<>();
+        for (String lang : ALL_CATALOGS) {
+            Properties props = catalog(lang);
+            for (String key : props.stringPropertyNames()) {
+                String value = props.getProperty(key);
+                if (PLACEHOLDER.matcher(value).find() && value.replace("''", "").indexOf('\'') >= 0) {
+                    problems.add(name(lang) + " / " + key + " = " + value);
+                }
+            }
+        }
+        assertTrue(
+                problems.isEmpty(),
+                "values with {n} are MessageFormat patterns — double the apostrophe (l' → l''):\n"
+                        + String.join("\n", problems));
+    }
+
+    /** The code half of the rule above: what decides is the value, not whether the caller passed arguments. */
+    @Test
+    void trShowsAValueWithoutAPlaceholderVerbatimEvenWhenGivenArguments() {
+        Messages.init("fr");
+        try {
+            String raw = Messages.tr("menu.unpin");
+            assertTrue(raw.contains("l'onglet"), "fixture: a French value with one apostrophe and no placeholder");
+            assertEquals(raw, Messages.tr("menu.unpin", "ignored"));
+        } finally {
+            Messages.init("en");
+        }
+    }
+
+    /**
+     * Arguments that are identifiers rather than quantities — a line or column, a port, a pull-request number,
+     * an exit code — as {@code key → argument indices}. A plain {@code {0}} groups digits by locale ("Line
+     * 12,345", "port 5.005"), so each of these uses {@code {n,number,#}} in every catalog. Add a message here
+     * when it takes such an argument.
+     */
+    private static final Map<String, int[]> IDENTIFIER_ARGUMENTS = Map.ofEntries(
+            Map.entry("status.gotoResult", new int[] {0, 1}),
+            Map.entry("status.testrunner.debugAttaching", new int[] {0}),
+            Map.entry("agent.context.header", new int[] {1}),
+            Map.entry("agent.exited", new int[] {0}),
+            Map.entry("csvgrid.column", new int[] {0}),
+            Map.entry("dialog.removeBookmark.body", new int[] {0}),
+            Map.entry("dialog.review.title", new int[] {0}),
+            Map.entry("diff.title.prFile", new int[] {1}),
+            Map.entry("github.review.tab", new int[] {0}),
+            Map.entry("github.review.title", new int[] {0}),
+            Map.entry("status.github.checkingOut", new int[] {0}),
+            Map.entry("status.github.checkedOut", new int[] {0}),
+            Map.entry("status.github.prDiffEmpty", new int[] {0}),
+            Map.entry("status.github.reviewing", new int[] {0}),
+            Map.entry("status.github.reviewed", new int[] {0}),
+            Map.entry("externalTool.exited", new int[] {1}),
+            Map.entry("run.exited", new int[] {0}),
+            Map.entry("status.run.exit", new int[] {0}),
+            Map.entry("status.build.exit", new int[] {1}),
+            Map.entry("status.http.failed", new int[] {0}),
+            Map.entry("httppanel.failed", new int[] {0}),
+            Map.entry("lsp.peek.title", new int[] {1}),
+            Map.entry("markdownLint.row", new int[] {0, 1}),
+            Map.entry("mermaid.diagnosticLine", new int[] {0, 1}),
+            Map.entry("notes.line", new int[] {0}));
+
+    @Test
+    void identifierArgumentsAreNeverDigitGrouped() {
+        Set<String> problems = new TreeSet<>();
+        for (String lang : ALL_CATALOGS) {
+            Properties props = catalog(lang);
+            java.util.Locale locale = java.util.Locale.forLanguageTag(name(lang));
+            IDENTIFIER_ARGUMENTS.forEach((key, indices) -> {
+                String value = props.getProperty(key);
+                if (value == null) {
+                    problems.add(name(lang) + " / " + key + " is missing");
+                    return;
+                }
+                Object[] args = {"a", "b", "c"};
+                for (int index : indices) {
+                    args[index] = 1234567 + index;
+                }
+                String out = new java.text.MessageFormat(value, locale).format(args);
+                for (int index : indices) {
+                    if (!out.contains(String.valueOf(1234567 + index))) {
+                        problems.add(name(lang) + " / " + key + " groups {" + index + "}: " + out);
+                    }
+                }
+            });
+        }
+        assertTrue(problems.isEmpty(), "use {n,number,#} for these arguments:\n" + String.join("\n", problems));
+    }
+
+    /** {@code tr("key")} / {@code tr("key", …)} with a literal key, and the two keys of {@code tr(c ? "a" : "b")}. */
+    private static final Pattern LITERAL_KEY = Pattern.compile("\\b(?:Messages\\.)?tr\\(\\s*\"([^\"\\\\]+)\"\\s*[,)]");
+
+    private static final Pattern TERNARY_KEYS = Pattern.compile(
+            "\\b(?:Messages\\.)?tr\\([^()\";]*\\?\\s*\"([^\"\\\\]+)\"\\s*:\\s*\"([^\"\\\\]+)\"\\s*[,)]");
+
+    /**
+     * Literal keys that are deliberately not in the catalog. A key built at run time ({@code tr("prefix." + id)})
+     * is not a literal and needs no entry here.
+     */
+    private static final Set<String> KEYS_NOT_IN_CATALOG = Set.of();
+
+    /**
+     * Every key a source file asks for by literal exists. A missing key is not an error at run time — {@code tr}
+     * falls back to the key itself — so {@code status.occur.none} and {@code undoHistory.popupPrompt} were
+     * shown to users as those very strings, in every language, with all six catalogs "in parity".
+     */
+    @Test
+    void everyLiteralKeyUsedInTheSourcesExists() throws IOException {
+        java.nio.file.Path sourceRoot = java.nio.file.Path.of("src/main/java");
+        assertTrue(java.nio.file.Files.isDirectory(sourceRoot), "Run from the Maven project root");
+        Set<String> known = catalog("").stringPropertyNames();
+        Set<String> missing = new TreeSet<>();
+        int[] found = {0};
+        try (var files = java.nio.file.Files.walk(sourceRoot)) {
+            for (java.nio.file.Path file :
+                    files.filter(p -> p.toString().endsWith(".java")).sorted().toList()) {
+                String source = java.nio.file.Files.readString(file);
+                for (Pattern pattern : List.of(LITERAL_KEY, TERNARY_KEYS)) {
+                    java.util.regex.Matcher m = pattern.matcher(source);
+                    while (m.find()) {
+                        for (int g = 1; g <= m.groupCount(); g++) {
+                            found[0]++;
+                            String key = m.group(g);
+                            if (!known.contains(key) && !KEYS_NOT_IN_CATALOG.contains(key)) {
+                                missing.add(key + "  (" + sourceRoot.relativize(file) + ")");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(found[0] > 1000, "the scan no longer finds the tr(…) calls: " + found[0]);
+        assertTrue(
+                missing.isEmpty(),
+                "keys used in the sources but missing from messages.properties:\n" + String.join("\n", missing));
     }
 
     @Test

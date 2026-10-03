@@ -39,14 +39,26 @@ public final class Messages {
     private static Map<String, String> base = Map.of();
     private static Map<String, String> active = Map.of();
     private static String currentLang = "en";
+    private static volatile int generation;
 
     private Messages() {}
+
+    /** Every catalog key (the English base defines the full set). */
+    public static Set<String> keys() {
+        return java.util.Collections.unmodifiableSet(base.keySet());
+    }
+
+    /** Changes whenever {@link #init} reloads the catalog, so a cache derived from it knows to rebuild. */
+    public static int generation() {
+        return generation;
+    }
 
     /** Loads the English base + the chosen language overlay (falling back to English for an unknown code). */
     public static synchronized void init(String lang) {
         base = load("en");
         currentLang = LANGUAGES.containsKey(lang) ? lang : "en";
         active = "en".equals(currentLang) ? base : load(currentLang);
+        generation++;
     }
 
     private static Map<String, String> load(String lang) {
@@ -77,10 +89,23 @@ public final class Messages {
         return v != null ? v : key;
     }
 
-    /** The localized string for {@code key} with {@link MessageFormat} arguments. */
+    /**
+     * The localized string for {@code key} with {@link MessageFormat} arguments.
+     *
+     * <p><b>One rule decides how a catalog value is written:</b> a value that contains an argument placeholder
+     * ({@code {0}}, {@code {1,number,#}}, …) is a {@code MessageFormat} pattern, so a literal apostrophe in it is
+     * doubled ({@code l''onglet {0}}); a value without one is shown exactly as written, with a single
+     * apostrophe. The rule follows the <em>value</em>, not the call: a translation that leaves the placeholder
+     * out is returned as is even though the caller passed arguments, instead of having {@code MessageFormat}
+     * silently drop its apostrophes. {@code MessagesTest} enforces both halves for every catalog.
+     *
+     * <p>A plain {@code {0}} formats an integer with the locale's digit grouping ("12,345"), which is wrong
+     * for a line number, a port, a pull-request number or an exit code: those patterns use
+     * {@code {0,number,#}}.
+     */
     public static String tr(String key, Object... args) {
         String pattern = tr(key);
-        if (args == null || args.length == 0) {
+        if (args == null || args.length == 0 || pattern.indexOf('{') < 0) {
             return pattern;
         }
         try {

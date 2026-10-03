@@ -65,10 +65,12 @@ public final class MarkdownLintFix {
             }
 
             String fixed = line;
-            if (enabled(off, dir, i, "MD010")) {
+            if (enabled(off, dir, i, "MD010") && tabReplacementKeepsBlock(line, tabWidth)) {
                 fixed = fixed.replace("\t", " ".repeat(tabWidth));
             }
-            int hashes = MarkdownLint.leadingHashes(fixed);
+            // Heading-ness is decided on the ORIGINAL line: a tab-indented `\t# install deps` is indented code,
+            // and must not turn into a heading because this pass rewrote its indentation.
+            int hashes = MarkdownLint.leadingHashes(line);
             if (hashes > 0) {
                 int indent = MarkdownLint.leadingSpaces(fixed);
                 if (indent > 0 && enabled(off, dir, i, "MD023")) {
@@ -92,8 +94,10 @@ public final class MarkdownLintFix {
                 }
                 if (enabled(off, dir, i, "MD026")) {
                     int hb = MarkdownLint.leadingSpaces(fixed) + MarkdownLint.leadingHashes(fixed);
-                    int punct = MarkdownLint.trailingPunctuation(fixed, hb);
-                    if (punct >= 0) {
+                    // Strip the whole run (`# Wait...` → `# Wait`), not one character per pass.
+                    for (int punct = MarkdownLint.trailingPunctuation(fixed, hb);
+                            punct >= 0;
+                            punct = MarkdownLint.trailingPunctuation(fixed, hb)) {
                         fixed = fixed.substring(0, punct) + fixed.substring(punct + 1);
                     }
                 }
@@ -123,6 +127,32 @@ public final class MarkdownLintFix {
             result = e == 0 ? "" : result.substring(0, e) + "\n";
         }
         return result;
+    }
+
+    /**
+     * Whether replacing {@code line}'s tabs with {@code tabWidth} spaces leaves its Markdown block structure
+     * alone. Markdown measures indentation with 4-column tab stops, and 4+ columns means indented code (or a
+     * nested list level), so a line indented that far is rewritten only when the spaces land on the same
+     * column. With a tab size of 2, {@code \t# install deps} would otherwise become a 2-space-indented
+     * heading; such lines are left as they are.
+     */
+    static boolean tabReplacementKeepsBlock(String line, int tabWidth) {
+        int cols = 0;
+        int spaces = 0;
+        int i = 0;
+        for (; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '\t') {
+                cols += 4 - cols % 4;
+                spaces += tabWidth;
+            } else if (c == ' ') {
+                cols++;
+                spaces++;
+            } else {
+                break;
+            }
+        }
+        return cols < 4 || cols == spaces;
     }
 
     private static boolean enabled(Set<String> off, MarkdownLintDirectives dir, int line, String code) {

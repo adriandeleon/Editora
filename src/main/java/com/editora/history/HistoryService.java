@@ -5,11 +5,14 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -36,6 +39,7 @@ public final class HistoryService {
     private static final Logger LOG = Logger.getLogger(HistoryService.class.getName());
 
     private final HistoryBlobStore blobs;
+    private final BooleanSupplier gcAllowed;
     private final Object publicationLock = new Object();
     private int publicationsInFlight;
     private final Set<String> publicationHashes = new LinkedHashSet<>();
@@ -47,8 +51,45 @@ public final class HistoryService {
         return t;
     });
 
+    /**
+     * Minimum spacing of throttled blob collections ({@link #gcIfDue}). A collection lists every shard
+     * directory of the store; doing that after each save made every save cost a walk of the whole history.
+     */
+    static final long GC_MIN_INTERVAL_NANOS = java.util.concurrent.TimeUnit.MINUTES.toNanos(10);
+
+    private final LongSupplier nanoClock;
+    /** Guarded by {@link #publicationLock}. */
+    private boolean gcHasRun;
+
+    private long lastGcNanos;
+    private boolean gcRequested;
+    /** The policy the index was last swept with; {@code null} until the startup sweep is claimed. */
+    private RetentionPolicy sweptPolicy;
+
     public HistoryService(HistoryBlobStore blobs) {
+        this(blobs, () -> true, System::nanoTime);
+    }
+
+    /**
+     * As {@link #HistoryService(HistoryBlobStore)}, with a gate on garbage collection: {@code gcAllowed} is
+     * asked on the worker thread immediately before any blob is deleted, and a {@code false} skips that
+     * collection (keeping blobs is always the safe outcome). The config layer uses it to stop one Editora
+     * process deleting revision bodies that belong to another process sharing the same config directory.
+     */
+    public HistoryService(HistoryBlobStore blobs, BooleanSupplier gcAllowed) {
+        this(blobs, gcAllowed, System::nanoTime);
+    }
+
+    /** As above with an injectable monotonic clock (tests drive the GC throttle without waiting). */
+    public HistoryService(HistoryBlobStore blobs, LongSupplier nanoClock) {
+        this(blobs, () -> true, nanoClock);
+    }
+
+    /** The GC gate and the throttle clock together. */
+    public HistoryService(HistoryBlobStore blobs, BooleanSupplier gcAllowed, LongSupplier nanoClock) {
         this.blobs = blobs;
+        this.gcAllowed = gcAllowed == null ? () -> true : gcAllowed;
+        this.nanoClock = nanoClock;
         exec.submit(blobs::hardenExisting);
     }
 
@@ -206,9 +247,86 @@ public final class HistoryService {
         }
     }
 
+    /**
+     * {@link #gc} at most once per {@link #GC_MIN_INTERVAL_NANOS}: the call made after every index
+     * publication. A skipped collection deletes nothing, which is always safe — the unreferenced blobs are
+     * picked up by the next one that runs, with a live set that is current at that moment (a stale live set
+     * is never kept for later). The first call of a session and the first after {@link #requestGc()} always
+     * run.
+     */
+    public void gcIfDue(Set<String> live) {
+        long now = nanoClock.getAsLong();
+        synchronized (publicationLock) {
+            if (gcHasRun && !gcRequested && now - lastGcNanos < GC_MIN_INTERVAL_NANOS) {
+                return;
+            }
+            gcHasRun = true;
+            gcRequested = false;
+            lastGcNanos = now;
+        }
+        gc(live);
+    }
+
+    /**
+     * Makes the next {@link #gcIfDue} run regardless of the throttle. Called when the user purges history:
+     * the snapshots they asked to delete must leave the disk now, not at the next scheduled collection.
+     */
+    public void requestGc() {
+        synchronized (publicationLock) {
+            gcRequested = true;
+        }
+    }
+
+    /**
+     * Whether the caller should sweep the index with {@code policy}: true the first time it is asked (the
+     * once-per-start sweep, whichever window gets there first) and again whenever the limits change.
+     */
+    public boolean claimSweep(RetentionPolicy policy) {
+        synchronized (publicationLock) {
+            if (policy == null || policy.equals(sweptPolicy)) {
+                return false;
+            }
+            sweptPolicy = policy;
+            return true;
+        }
+    }
+
+    /**
+     * Computes a retention {@link HistoryRetention#sweep sweep} of {@code snapshot} off the FX thread and
+     * delivers, on the FX thread, the revisions it would drop. {@code snapshot} must be a private copy: the
+     * live index belongs to the FX thread and keeps changing while this runs, which is why the result is
+     * "what to remove" rather than a replacement index.
+     */
+    public void sweep(
+            Map<String, Map<String, List<HistoryRevision>>> snapshot,
+            RetentionPolicy policy,
+            long now,
+            Consumer<Map<String, Map<String, List<HistoryRevision>>>> onEvicted) {
+        try {
+            exec.submit(() -> {
+                Map<String, Map<String, List<HistoryRevision>>> evicted;
+                try {
+                    evicted = HistoryRetention.evicted(snapshot, HistoryRetention.sweep(snapshot, policy, now));
+                } catch (RuntimeException failure) {
+                    LOG.log(Level.WARNING, "Local history retention sweep failed", failure);
+                    return;
+                }
+                Platform.runLater(() -> onEvicted.accept(evicted));
+            });
+        } catch (RejectedExecutionException shuttingDown) {
+            // Nothing to sweep for a closing application; the next start sweeps again.
+        }
+    }
+
     private void queueGc(Set<String> snapshot) {
         try {
-            exec.submit(() -> blobs.deleteUnreferenced(snapshot));
+            exec.submit(() -> {
+                if (gcAllowed.getAsBoolean()) {
+                    blobs.deleteUnreferenced(snapshot);
+                } else {
+                    requestGc(); // refused, not done: the throttle must not count it, so the next save collects
+                }
+            });
         } catch (RejectedExecutionException shuttingDown) {
             // Final shutdown owns no future GC work; retaining blobs is the safe failure mode.
         }

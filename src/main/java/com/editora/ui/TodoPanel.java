@@ -152,6 +152,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         tree.setShowRoot(false);
         tree.setRoot(new TreeItem<>());
         tree.setCellFactory(t -> new RowCell(actions, this::reopenKeywords));
+        RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                 activateSelected();

@@ -366,4 +366,74 @@ class AppArgsTest {
         // control the contents of. Dropping it beats an exception out of the event handler.
         assertNull(App.externalTarget("bad\u0000name", path -> false));
     }
+
+    // --- forwarding to a running instance ------------------------------------------------------------
+
+    @Test
+    void forwardedTargetsAreAbsoluteAgainstTheForwardingProcessDirectory() {
+        Path cwd = Path.of("/home/me/projB").toAbsolutePath();
+
+        List<String> forwarded = App.forwardArgs(List.of("README.md", "src/Main.java:12:3"), cwd, p -> true);
+
+        assertEquals(List.of(cwd.resolve("README.md").toString(), cwd.resolve("src/Main.java") + ":12:3"), forwarded);
+        // …and the receiving process, whatever its own working directory, parses them back to the same files.
+        assertEquals(
+                List.of(
+                        new OpenTarget(cwd.resolve("README.md"), 0, 0),
+                        new OpenTarget(cwd.resolve("src/Main.java"), 12, 3)),
+                App.fileTargets(forwarded, NOTHING_EXISTS));
+    }
+
+    @Test
+    void forwardingKeepsAbsoluteTargetsAndNormalisesParentSegments() {
+        Path cwd = Path.of("/home/me/projB/sub").toAbsolutePath();
+        Path absolute = Path.of("/etc/hosts").toAbsolutePath();
+
+        List<String> forwarded = App.forwardArgs(List.of(absolute.toString(), "../notes.txt:7"), cwd, p -> true);
+
+        assertEquals(List.of(absolute.toString(), cwd.getParent().resolve("notes.txt") + ":7"), forwarded);
+    }
+
+    @Test
+    void forwardingKeepsFocusFlagsAndDropsWhatTheReceiverIgnores() {
+        Path cwd = Path.of("/work").toAbsolutePath();
+
+        List<String> forwarded = App.forwardArgs(
+                List.of("--no-session", "--expert", "--single-window", "a.txt", "--zen"), cwd, p -> true);
+
+        assertEquals(List.of("--zen", "--expert", cwd.resolve("a.txt").toString()), forwarded);
+        assertTrue(App.expertFlag(forwarded));
+        assertTrue(App.zenFlag(forwarded));
+    }
+
+    @Test
+    void aLeakedFlagValueIsJudgedInTheForwardingDirectoryAndNotForwarded() {
+        Path cwd = Path.of("/work").toAbsolutePath();
+        // Only /work/real.txt exists. The value after the foreign option does not, so it is a leaked value —
+        // and the receiving process must not get a second chance to find a same-named file in *its* directory.
+        Predicate<Path> exists = p -> p.equals(cwd.resolve("real.txt"));
+
+        List<String> forwarded =
+                App.forwardArgs(List.of("--add-exports", "javafx.graphics/x=y", "real.txt", "typo.txt"), cwd, exists);
+
+        assertEquals(
+                List.of(
+                        cwd.resolve("real.txt").toString(),
+                        cwd.resolve("typo.txt").toString()),
+                forwarded);
+        assertEquals(
+                List.of(cwd.resolve("real.txt").toString()),
+                App.forwardArgs(List.of("--add-exports", "real.txt"), cwd, exists),
+                "a value that does exist there is a file, as fileTargets decides");
+    }
+
+    @Test
+    void anOverlongLineNumberSaturatesInsteadOfFailingTheLaunch() {
+        assertEquals(new OpenTarget(Path.of("f"), Integer.MAX_VALUE, 0), App.parseTarget("f:99999999999"));
+        assertEquals(
+                new OpenTarget(Path.of("f"), 3, Integer.MAX_VALUE),
+                App.parseTarget("f:3:123456789012345678901234567890"));
+        assertEquals(
+                1, App.fileTargets(List.of("f:99999999999"), NOTHING_EXISTS).size());
+    }
 }

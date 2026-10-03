@@ -20,7 +20,31 @@ class MarkdownLintFixTest {
 
     @Test
     void md010ConvertsTabsToSpaces() {
-        assertEquals("  x\n", MarkdownLintFix.fix("\tx\n", Set.of(), 2));
+        assertEquals("a  b\n", MarkdownLintFix.fix("a\tb\n", Set.of(), 2));
+        // A leading tab is 4 Markdown columns; 4 spaces keep the same block, so it is still converted.
+        assertEquals("    x\n", MarkdownLintFix.fix("\tx\n", Set.of(), 4));
+    }
+
+    @Test
+    void md010NeverTurnsTabIndentedCodeIntoAHeading() {
+        // With a tab size below 4 the replacement would drop the line under the 4-column code threshold,
+        // making `# install deps` an H1 (and MD023/MD026 would then rewrite it further). Leave it alone.
+        String md = "Run:\n\n\t# install deps.\n\tnpm ci\n";
+        assertEquals(md, MarkdownLintFix.fix(md, Set.of(), 2));
+        assertEquals(md, MarkdownLintFix.fix(md, Set.of(), 3));
+        // Tab size 4 keeps the column, so the tab goes — and the line stays indented code, not a heading.
+        assertEquals("Run:\n\n    # install deps.\n    npm ci\n", MarkdownLintFix.fix(md, Set.of(), 4));
+        // Two tabs at size 2 would be 4 spaces (8 columns → 4): a different nesting level, so skipped too.
+        assertEquals("\t\t- deep\n", MarkdownLintFix.fix("\t\t- deep\n", Set.of(), 2));
+    }
+
+    @Test
+    void md026StripsTheWholeTrailingPunctuationRun() {
+        assertEquals("# Wait\n", fix("# Wait...\n"));
+        assertEquals("## Done ##\n", fix("## Done!!! ##\n"));
+        assertEquals("# Why?\n", fix("# Why?\n")); // the question mark is allowed
+        String once = fix("# Wait...\n");
+        assertEquals(once, fix(once));
     }
 
     @Test

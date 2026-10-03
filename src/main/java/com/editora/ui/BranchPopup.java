@@ -45,7 +45,7 @@ public final class BranchPopup {
      * table the VCS menu draws from — rather than naming a glyph here. The two surfaces offer the same
      * actions, so picking icons independently would let them drift apart for no reason.
      */
-    public record MenuAction(String label, String accel, String commandId, Runnable run) {}
+    public record MenuAction(String label, String commandId, Runnable run) {}
 
     private sealed interface Row permits Header, ActionRow, BranchRow {}
 
@@ -70,6 +70,9 @@ public final class BranchPopup {
 
     private final TextField search = new TextField();
     private final ListView<Row> list = new ListView<>();
+    /** The key legend under the list; rebuilt from the live keymap each time the popup is shown. */
+    private final Label hint = new Label();
+
     private final ObservableList<Row> items = FXCollections.observableArrayList();
     private List<Row> all = List.of();
 
@@ -103,7 +106,6 @@ public final class BranchPopup {
         HBox.setHgrow(remoteUrlLabel, Priority.ALWAYS);
         HBox header = new HBox(8, titleLabel, remoteUrlLabel);
         header.setAlignment(Pos.CENTER_LEFT);
-        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ select  ·  esc / C-g cancel");
         hint.getStyleClass().add("palette-hint");
         content = new VBox(6, header, search, list, hint);
         content.getStyleClass().addAll("command-palette", "branch-popup");
@@ -143,8 +145,12 @@ public final class BranchPopup {
             Consumer<String> onCheckoutLocal,
             Consumer<String> onCheckoutRemote) {
         List<Row> rows = new ArrayList<>();
+        // The chord beside an action comes from the live keymap, never from the caller: a hardcoded "C-x g"
+        // was only true of the Emacs keymap.
+        var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
         for (MenuAction a : actions) {
-            rows.add(new ActionRow(a.label(), a.accel(), a.commandId(), a.run()));
+            String chord = keymap == null ? null : keymap.displayChord(a.commandId());
+            rows.add(new ActionRow(a.label(), chord == null ? "" : chord, a.commandId(), a.run()));
         }
         rows.add(new Header(tr("branchpopup.local")));
         List<com.editora.git.GitService.BranchInfo> locals = new ArrayList<>(local);
@@ -202,6 +208,7 @@ public final class BranchPopup {
         if (overlayHost == null) {
             return;
         }
+        hint.setText(PickerKeys.legend(PickerKeys.hint("select", "↵")));
         search.clear();
         filter("");
         showing = true;
@@ -266,60 +273,18 @@ public final class BranchPopup {
     }
 
     private void onKey(KeyEvent e) {
-        switch (e.getCode()) {
-            case ESCAPE -> {
-                hide();
-                e.consume();
-            }
-            case ENTER -> {
-                activate(list.getSelectionModel().getSelectedItem());
-                e.consume();
-            }
-            case DOWN -> {
-                move(1);
-                e.consume();
-            }
-            case UP -> {
-                move(-1);
-                e.consume();
-            }
-            case N -> {
-                if (e.isControlDown()) {
-                    move(1);
-                    e.consume();
+        PickerKeys.Action action = PickerKeys.action(e);
+        switch (action) {
+            case CANCEL -> hide();
+            case ACCEPT -> activate(list.getSelectionModel().getSelectedItem());
+            default -> {
+                // Section headers are stepped over.
+                if (!PickerKeys.navigate(list, action, row -> !(row instanceof Header))) {
+                    return;
                 }
             }
-            case P -> {
-                if (e.isControlDown()) {
-                    move(-1);
-                    e.consume();
-                }
-            }
-            case G -> {
-                if (e.isControlDown()) {
-                    hide();
-                    e.consume();
-                }
-            }
-            default -> {}
         }
-    }
-
-    /** Moves the selection by {@code dir}, skipping section headers, wrapping at the ends. */
-    private void move(int dir) {
-        int n = items.size();
-        if (n == 0) {
-            return;
-        }
-        int idx = list.getSelectionModel().getSelectedIndex();
-        for (int step = 0; step < n; step++) {
-            idx = Math.floorMod(idx + dir, n);
-            if (!(items.get(idx) instanceof Header)) {
-                list.getSelectionModel().select(idx);
-                list.scrollTo(idx);
-                return;
-            }
-        }
+        e.consume();
     }
 
     private void activate(Row row) {

@@ -6,20 +6,21 @@ release workflow and use this catalog when changing platform-specific implementa
 The separate Linux x64 `native-experimental` job uses GraalVM 25 to build `-Pnative` with a 6 GiB
 builder heap/four workers. It runs the actual-application smoke probe under Xvfb with its
 disposable project in the runner's temporary directory, outside the repository's `.editorconfig`, before
-`scripts/native/package-release.sh` bundles the executable and adjacent shared libraries as
+`scripts/native/package-release.py` bundles the executable and adjacent shared libraries as
 `Editora-<version>-linux-x64-native-experimental.tar.gz`. The JReleaser `*.tar.gz` glob picks it
 up with the established Linux portable tarballs. The job is best-effort; the `release` job waits
 for its outcome but runs whenever the ordinary build matrix succeeds. A native failure leaves no
 experimental asset and does not block the ordinary release. See the measured limitations in
 [`native-image-staticfx.md`](../native-image-staticfx.md).
 
-`.github/workflows/release.yml` runs on a `v*` tag (or manual dispatch for a dry run): a 5-way
+`.github/workflows/release.yml` runs on a version-shaped `vX.Y.Z*` tag (or manual dispatch for a
+dry run), after a `preflight` job has checked the tag against the pom version: a 5-way
 matrix (linux x64/arm64, macOS x64/arm64, windows x64 — **Windows arm64 is omitted: a hosted
-runner now exists (`windows-11-arm`, GA Jan 2026), but OpenJFX 25 publishes no `win-aarch64` native
+runner now exists (`windows-11-arm`, GA Jan 2026), but OpenJFX (through 27) publishes no `win-aarch64` native
 jar on Maven Central (see [JDK-8314064]), so a native ARM64 build can't link — Windows-on-ARM users
 run the x64 installer under x64 emulation. Revisit when JavaFX ships win-aarch64 natives.** macOS x64
 uses the `macos-15-intel` runner — the last Intel x86_64 image (good through ~Aug 2027) — since the
-old `macos-13` Intel runner was retired Dec 2025;
+old `macos-13` Intel runner was retired Dec 2025; macOS arm64 uses `macos-15` (it was `macos-14` until that image's retirement on 2026-11-02);
 each on its own GitHub-hosted runner) builds the native
 installer via the existing `-Pdist` profile — there is **no cross-building** (jpackage + JavaFX are
 host-specific), so each runner builds for itself. Each runner also builds a per-platform runnable
@@ -30,7 +31,7 @@ second `-Pdist` build):** a single-file **`.AppImage`** (`scripts/build-appimage
 image to `/opt/editora` (root) or `~/.local/editora` (user) with an `editora` command + a `.desktop`
 (`StartupWMClass=com.editora.App`), supporting `--system`/`--user`/`--prefix`/`--uninstall`. Both reuse the
 jpackage `APP_IMAGE` output (= jlink + the native launcher + `lib/app/editora.aot`, `$APPDIR`-relative so it's
-relocatable); both release steps are `continue-on-error` so a hiccup can't sink the installers. The
+relocatable); both release steps are `continue-on-error` **only on a manual dry run** — on a tag a failure fails the leg, and the `Release` job's asset check (`scripts/release/check-release.py`) refuses to publish an immutable release with any expected file missing. The
 `.tar.gz`/`.AppImage`/`.rpm` are attached to the GitHub release via `jreleaser.yml`'s file globs. Installers are renamed to
 `Editora-<version>-<target>.<ext>` per target (the Stage step preserves the compound `.tar.gz`
 extension) — one consistent `Editora-<version>-<target>` prefix
@@ -88,8 +89,10 @@ guarded) still matters, but only for the deliveries built directly from the app 
 `.tar.gz` / `.AppImage`). **Because the maintainer-script override *replaces* jpackage's generated
 scripts, it must reproduce their registration or the launcher is never installed into
 `/usr/share/applications` and the app shows the generic Java icon.** So `postinst` (`configure`):
-(1) symlinks `/usr/bin/editora` → the launcher (found via the `/opt/*/bin/Editora` glob, since
-jpackage lowercases the install dir); (2) **copies the bundled `.desktop` into
+(1) symlinks `/usr/bin/editora` → the launcher at the **literal** `/opt/editora/bin/Editora` (jpackage
+lowercases the package name; the earlier `/opt/*/bin/Editora` glob took the first match under any `/opt`
+directory), and only when `/usr/bin/editora` is absent or already a link into `/opt/editora` — a foreign
+file or link is left alone; (2) **copies the bundled `.desktop` into
 `/usr/share/applications/editora-Editora.desktop`** (the template already carries
 StartupWMClass/MimeType/`%F`, so the copy takes the verbatim fast path; an awk StartupWMClass
 injection remains as a fallback — the menu icon itself comes from the `.desktop`'s already-absolute
@@ -102,7 +105,9 @@ concrete text types; and (4) **registers Expert Mode as the system-wide default 
 merging a `[Default Applications]` `type=editora-Editora-expert.desktop` line per type into
 `/usr/share/applications/mimeapps.list` (the freedesktop mime-apps mechanism GIO honors for system
 defaults; idempotent across re-runs, drops a competing default for the same type, preserves
-unrelated entries). The type list is the **canonical shared-mime-info names** (verified via
+unrelated entries). That file is shared, so the rewrite is **atomic** (a temp file in the same
+directory, then `mv`), and every default it displaces is **remembered** in
+`/var/lib/editora/mimeapps.replaced` for `postrm` to restore. The type list is the **canonical shared-mime-info names** (verified via
 `xdg-mime query filetype` on Debian 13): the `text/*` source/config types plus the `application/*`
 text formats (json/yaml/toml/xml/sql/x-shellscript/x-ruby/x-php/x-perl); anything unlisted still
 reaches Editora via GIO's `text/plain` **subclass fallback** (a type with its own explicit default
@@ -113,8 +118,10 @@ convention — postinst runs as root and must not rewrite per-user config). Then
 `update-desktop-database`. Verify a real `.deb`'s icon by
 `sha256sum`-ing `/opt/editora/lib/Editora.png` against `branding/editora.png` — they must match.
 `postrm` (remove/purge) removes all of it: the symlink, both `.desktop` entries, and the
-expert-default lines from `mimeapps.list` (deleting that file only when nothing but section headers
-remains, i.e. postinst created it). DEB-only — the RPM bundler ignores the resource-dir maintainer
+expert-default lines from `mimeapps.list`, **putting back the defaults `postinst` displaced** (unless
+the type has since been given another default) and deleting that file only when nothing but section
+headers remains, i.e. postinst created it. Both scripts address every path under `$DPKG_ROOT`, which
+is how `scripts/packaging/test_deb_maintainer_scripts.py` runs them against a scratch root. DEB-only — the RPM bundler ignores the resource-dir maintainer
 scripts, and the `.tar.gz`'s `tarball-install.sh` installs its own single `.desktop`. **Device-test on Linux** (install the `.deb`: `which editora`
 works + the app shows our icon in the menu and dock; then remove: both are gone) — the macOS dev box and
 the `os-linux` profile can't exercise this. *(If a terminal-launched window's dock icon is still generic,

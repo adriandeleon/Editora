@@ -1,11 +1,6 @@
 package com.editora.office;
 
-import java.io.InputStream;
-import java.net.URI;
-import java.net.URLConnection;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Base64;
 import java.util.List;
 
 import com.editora.editor.MathImages;
@@ -15,9 +10,8 @@ import org.apache.poi.xwpf.usermodel.Document;
 
 /**
  * Shared, pure image helpers for the office exporters: resolve a Markdown image URL to bytes (a local file
- * relative to the document, or a {@code data:} URI) and sniff its raster type. Remote ({@code http(s)}) and
- * SVG images are deliberately not fetched/rasterized here (they degrade to alt text), keeping the writers
- * offline and dependency-light.
+ * relative to the document, a {@code data:} URI, or a public {@code http(s)} URL through the preview's guarded
+ * fetcher) and sniff its raster type. SVG is rasterized to PNG, since Word/ODT can't embed it.
  */
 public final class OfficeImages {
 
@@ -41,33 +35,11 @@ public final class OfficeImages {
         return raw;
     }
 
+    /** The image's bytes through the one guarded fetcher the preview uses — internal-address block re-checked
+     *  on every redirect hop, UNC refusal, regular files only, and a byte cap — so exporting a document cannot
+     *  reach what previewing it refuses. */
     private static byte[] rawBytes(String src, Path baseDir) {
-        if (src == null || src.isBlank()) {
-            return null;
-        }
-        String s = src.trim();
-        try {
-            if (s.startsWith("data:")) {
-                int comma = s.indexOf(',');
-                return comma < 0 ? null : Base64.getMimeDecoder().decode(s.substring(comma + 1));
-            }
-            if (s.startsWith("http://") || s.startsWith("https://")) {
-                URLConnection con = URI.create(s).toURL().openConnection();
-                con.setConnectTimeout(5000);
-                con.setReadTimeout(5000);
-                con.setRequestProperty("User-Agent", "Editora");
-                try (InputStream in = con.getInputStream()) {
-                    return in.readAllBytes();
-                }
-            }
-            Path p = s.startsWith("file:") ? Path.of(URI.create(s)) : Path.of(s);
-            if (!p.isAbsolute() && baseDir != null) {
-                p = baseDir.resolve(p);
-            }
-            return Files.isRegularFile(p) ? Files.readAllBytes(p) : null;
-        } catch (Exception ignored) {
-            return null;
-        }
+        return PreviewImageLoader.fetchForExport(src, baseDir);
     }
 
     /** Renders a Mermaid diagram source to PNG bytes via the {@code mmdc} CLI, or null (no command / failure). */

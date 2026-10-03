@@ -83,6 +83,9 @@ public final class SingleInstance implements AutoCloseable {
     }
 
     private final Path endpoint;
+    /** The endpoint {@link #start} found and judged dead, or null. The only one {@link #claim} may remove. */
+    private final Endpoint stale;
+
     private final List<List<String>> pending = new ArrayList<>();
     private Listener listener;
     private volatile boolean closed;
@@ -93,8 +96,15 @@ public final class SingleInstance implements AutoCloseable {
     /** Counted down when the claim has finished, either way — so a test can wait for it deterministically. */
     private final java.util.concurrent.CountDownLatch claimed = new java.util.concurrent.CountDownLatch(1);
 
-    private SingleInstance(Path endpoint) {
+    private SingleInstance(Path endpoint, Endpoint stale) {
         this.endpoint = endpoint;
+        this.stale = stale;
+    }
+
+    /** Test seam: the instance {@link #start} would hand to the asynchronous claim, with the claim not yet run. */
+    static SingleInstance beforeClaim(Path configDir) {
+        Path endpoint = configDir.resolve(ENDPOINT_FILE);
+        return new SingleInstance(endpoint, read(endpoint));
     }
 
     /** Runs the claim off the startup path; see the note in {@link #start}. */
@@ -162,7 +172,7 @@ public final class SingleInstance implements AutoCloseable {
         // ~38 ms of time-to-first-paint for ~4 ms of actual work, i.e. almost entirely class loading. Nothing
         // needs the endpoint to exist before this process has a window: a launch arriving in that gap simply
         // starts its own editor, exactly as it did before this feature existed.
-        SingleInstance instance = new SingleInstance(endpoint);
+        SingleInstance instance = new SingleInstance(endpoint, existing);
         instance.claimAsync();
         return new Result(Role.PRIMARY, instance);
     }
@@ -173,7 +183,7 @@ public final class SingleInstance implements AutoCloseable {
      * launch can create the name) and guarantees a reader never sees a half-written file — a plain
      * create-then-write would leave a window where the endpoint exists but names no port yet.
      */
-    private void claim() {
+    void claim() {
         ServerSocket socket = null;
         Path tmp = endpoint.resolveSibling(
                 ENDPOINT_FILE + "." + ProcessHandle.current().pid() + ".tmp");
@@ -184,7 +194,16 @@ public final class SingleInstance implements AutoCloseable {
             // permanently. Safe to delete precisely because a live primary publishes atomically, so a reader
             // never sees a partial file: unparseable really does mean nobody's. An endpoint that parses but
             // does not answer was already established as dead by start().
+            //
+            // But only that one. The claim runs some time after start() looked: a file that now parses and
+            // carries a different token was published in between by another launch, is live, and is theirs —
+            // deleting it here would cut a running editor off from every later launch.
             if (Files.exists(endpoint)) {
+                Endpoint current = read(endpoint);
+                if (current != null && (stale == null || !current.token.equals(stale.token))) {
+                    LOG.fine("Another instance published the endpoint first; not serving forwarded launches");
+                    return;
+                }
                 deleteStale(endpoint, "it named no reachable instance");
             }
             // First run: the config dir doesn't exist yet (ConfigManager creates it later, in start()), and
@@ -207,7 +226,7 @@ public final class SingleInstance implements AutoCloseable {
             Files.move(tmp, endpoint); // no REPLACE_EXISTING: fails iff someone else already claimed
             if (closed) { // the app exited while we were still claiming
                 closeQuietly(socket);
-                deleteQuietly(endpoint);
+                deleteIfOwned(newToken);
                 return;
             }
             this.token = newToken;
@@ -450,6 +469,18 @@ public final class SingleInstance implements AutoCloseable {
         // and a stale endpoint file.
         closeQuietly(server);
         if (server != null) {
+            deleteIfOwned(token);
+        }
+    }
+
+    /**
+     * Removes the endpoint only while it still advertises <em>this</em> process. If we stopped answering for
+     * long enough, another launch will have judged us dead and published its own endpoint under the same
+     * name; removing that on our way out would leave a live editor unreachable.
+     */
+    private void deleteIfOwned(String ownToken) {
+        Endpoint current = read(endpoint);
+        if (current != null && ownToken != null && current.token.equals(ownToken)) {
             deleteQuietly(endpoint);
         }
     }

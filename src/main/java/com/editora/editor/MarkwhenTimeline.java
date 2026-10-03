@@ -15,6 +15,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 
+import com.editora.i18n.Messages;
 import com.editora.markwhen.MwNode;
 import com.editora.markwhen.Timeline;
 
@@ -55,10 +56,10 @@ public final class MarkwhenTimeline {
         flatten(model.nodes(), 0, rows, domain, count);
 
         if (count[0] == 0) {
-            return placeholder(model.title(), "No dated events to plot yet.");
+            return placeholder(model.title(), Messages.tr("markwhen.timeline.empty"));
         }
         if (count[0] > MAX_EVENTS) {
-            return placeholder(model.title(), "Timeline too large to preview (" + count[0] + " events).");
+            return placeholder(model.title(), Messages.tr("markwhen.timeline.tooLarge", count[0]));
         }
 
         long min = domain[0];
@@ -133,7 +134,7 @@ public final class MarkwhenTimeline {
         double x2 = xFor(endDay, min, max, axisW);
         double w = x2 - x1;
         Color color = MarkwhenPaint.colorFor(e, model);
-        String text = e.label().isBlank() ? "(untitled)" : e.label();
+        String text = e.label().isBlank() ? Messages.tr("common.untitled") : e.label();
 
         Node mark;
         double labelX;

@@ -39,6 +39,11 @@ public class Switcher {
     private static final int MAX_VISIBLE = 12;
 
     private final ListView<Tab> filesList = new ListView<>();
+    /** The key legend under the list; rebuilt from the live keymap each time the switcher is shown. */
+    private final Label hint = new Label();
+    /** The keymap command whose chord also closes the highlighted file (Emacs {@code C-d}); Backspace/Delete always do. */
+    private static final String CLOSE_COMMAND = "edit.deleteChar";
+
     private final Label pathLabel = new Label();
     private VBox root;
     /** Shared in-scene overlay host (injected by MainController) + shown state. */
@@ -101,7 +106,6 @@ public class Switcher {
         pathLabel.getStyleClass().add("switcher-path");
         pathLabel.setMaxWidth(Double.MAX_VALUE);
 
-        Label hint = new Label("↑↓ / C-n C-p move  ·  ↵ open  ·  C-d close  ·  esc / C-g cancel");
         hint.getStyleClass().add("switcher-hint");
 
         root = new VBox(column, pathLabel, hint);
@@ -142,6 +146,12 @@ public class Switcher {
 
     public void show(Window owner, boolean reverse) {
         List<Tab> tabs = tabsSupplier.get();
+        hint.setText(PickerKeys.legend(
+                PickerKeys.hint("open", "↵"),
+                PickerKeys.hint(
+                        "close",
+                        PickerKeys.withChords(
+                                "⌫", com.editora.command.TextInputKeymap.sharedKeymap(), CLOSE_COMMAND))));
         filesList.getItems().setAll(tabs);
         if (!tabs.isEmpty()) {
             // Preselect the current tab; arrows move from there through the list in tab order.
@@ -197,45 +207,23 @@ public class Switcher {
     }
 
     private void onKey(KeyEvent e) {
-        switch (e.getCode()) {
-            case ESCAPE -> consume(e, this::hide);
-            case ENTER -> consume(e, this::commit);
-            case DOWN -> consume(e, () -> move(1));
-            case UP -> consume(e, () -> move(-1));
-            case BACK_SPACE -> consume(e, this::removeSelected);
-            default -> {
-                if (!e.isControlDown()) {
-                    return;
-                }
-                switch (e.getCode()) {
-                    case N -> consume(e, () -> move(1));
-                    case P -> consume(e, () -> move(-1));
-                    case G -> consume(e, this::hide);
-                    case D -> consume(e, this::removeSelected);
-                    default -> {}
-                }
-            }
-        }
-    }
-
-    private static void consume(KeyEvent e, Runnable action) {
-        action.run();
-        e.consume();
-    }
-
-    private void move(int delta) {
-        int size = filesList.getItems().size();
-        if (size == 0) {
+        var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
+        PickerKeys.Action action = PickerKeys.action(e, keymap, false); // no query field: Home/End jump
+        String token = com.editora.command.KeyDispatcher.chord(e);
+        if (action == PickerKeys.Action.CANCEL) {
+            hide();
+        } else if (action == PickerKeys.Action.ACCEPT) {
+            commit();
+        } else if (PickerKeys.navigate(filesList, action)) {
+            updateFooter();
+        } else if (e.getCode() == KeyCode.BACK_SPACE
+                || e.getCode() == KeyCode.DELETE
+                || (keymap != null && token != null && CLOSE_COMMAND.equals(keymap.commandFor(token)))) {
+            removeSelected();
+        } else {
             return;
         }
-        int idx = filesList.getSelectionModel().getSelectedIndex();
-        if (idx < 0) {
-            idx = delta > 0 ? -1 : size;
-        }
-        int next = Math.floorMod(idx + delta, size);
-        filesList.getSelectionModel().select(next);
-        filesList.scrollTo(next);
-        updateFooter();
+        e.consume();
     }
 
     /** Footer shows the highlighted file's full path. */

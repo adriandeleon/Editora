@@ -1,14 +1,14 @@
 package com.editora.config;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 
+import com.editora.config.migration.ConfigLoadProblem;
 import com.editora.config.migration.ConfigMigrations;
 import com.editora.config.migration.ConfigSchema;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -20,7 +20,8 @@ import com.fasterxml.jackson.databind.SerializationFeature;
  * user can resume a conversation after starting a new one. Most-recently-used first, deduplicated by
  * {@code sessionId}, capped at {@link #MAX_ENTRIES}. Mirrors {@link SearchHistory}; the backing
  * {@link ObservableList} lets the resume picker update automatically. Stored as a versioned object
- * {@code { "schemaVersion": 2, "sessions": [ … ] }}.
+ * {@code { "schemaVersion": 2, "sessions": [ … ] }}. The app holds <b>one</b> instance, in
+ * {@link SharedConfig#agentSessions()}, shared by every window.
  *
  * <p>An entry's {@code label} and {@code agentId} (derived from the session's first user prompt / the
  * active client at creation) are set once and never overwritten on later prompts, but its {@code updatedAt}
@@ -48,12 +49,19 @@ public class AgentSessionHistory {
     }
 
     private final Path file;
+    private final ConfigWriter.Sink sink;
     private final ObservableList<Entry> sessions = FXCollections.observableArrayList();
     private final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
+    /** A standalone history that writes on the calling thread (tests, tools). The app uses {@link SharedConfig}. */
     public AgentSessionHistory(Path configDir) {
+        this(configDir, ConfigWriter.DIRECT, problem -> {});
+    }
+
+    AgentSessionHistory(Path configDir, ConfigWriter.Sink sink, Consumer<ConfigLoadProblem> problems) {
         this.file = configDir.resolve(FILE_NAME);
-        load();
+        this.sink = sink;
+        load(problems);
     }
 
     public ObservableList<Entry> getList() {
@@ -99,8 +107,9 @@ public class AgentSessionHistory {
         }
     }
 
-    private void load() {
-        Stored stored = ConfigMigrations.readVersioned(file, mapper, new Stored(), ConfigSchema.AGENT_SESSIONS);
+    private void load(Consumer<ConfigLoadProblem> problems) {
+        Stored stored =
+                ConfigMigrations.readVersioned(file, mapper, new Stored(), ConfigSchema.AGENT_SESSIONS, problems);
         sessions.setAll(stored.sessions.stream()
                 .filter(e ->
                         e != null && e.sessionId() != null && !e.sessionId().isBlank())
@@ -109,13 +118,8 @@ public class AgentSessionHistory {
     }
 
     private void save() {
-        try {
-            Files.createDirectories(file.getParent());
-            Stored stored = new Stored();
-            stored.sessions = new ArrayList<>(sessions);
-            ConfigWriter.writeAtomic(file, mapper, stored);
-        } catch (IOException e) {
-            // Best effort.
-        }
+        Stored snapshot = new Stored();
+        snapshot.sessions = List.copyOf(sessions);
+        sink.write(file, () -> mapper.writeValueAsBytes(snapshot));
     }
 }

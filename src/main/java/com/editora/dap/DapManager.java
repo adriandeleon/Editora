@@ -733,7 +733,8 @@ public final class DapManager implements DapClient.Host {
             command.add(sourceVersion.toString());
         }
         command.addAll(List.of("-d", outputDir.toString(), source.toString()));
-        return ProcessRunner.run(original.getParent(), java.time.Duration.ofSeconds(60), command, environment);
+        return ProcessRunner.runInUserLocale(
+                original.getParent(), java.time.Duration.ofSeconds(60), command, environment);
     }
 
     /** Blank the first line without changing later line numbers for breakpoints and stack frames. */
@@ -1010,7 +1011,7 @@ public final class DapManager implements DapClient.Host {
         argv.addAll(spec.adapterArgs()); // -m debugpy.adapter
         List<String> cmd = ProcessRunner.resolveExecutable(argv);
         ProcessBuilder pb = new ProcessBuilder(cmd);
-        ProcessRunner.applyStandardEnv(pb);
+        ProcessRunner.applyUserEnv(pb);
         if (debugpyDir != null) {
             prependPythonPath(pb, debugpyDir);
         }
@@ -1069,7 +1070,7 @@ public final class DapManager implements DapClient.Host {
         List<String> cmd = ProcessRunner.resolveExecutable(
                 List.of(spec.defaultInterpreter(), jsServer.toString(), String.valueOf(port)));
         ProcessBuilder pb = new ProcessBuilder(cmd);
-        ProcessRunner.applyStandardEnv(pb);
+        ProcessRunner.applyUserEnv(pb);
         pb.redirectOutput(ProcessBuilder.Redirect.DISCARD); // DAP is on the socket; stdout/stderr are logs
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         Process proc = pb.start();
@@ -1270,20 +1271,39 @@ public final class DapManager implements DapClient.Host {
     }
 
     public void stepOver() {
-        if (client != null) {
-            client.next(currentThreadId);
+        DapClient c = client;
+        if (c != null) {
+            c.next(currentThreadId);
+            stepping();
         }
     }
 
     public void stepInto() {
-        if (client != null) {
-            client.stepIn(currentThreadId);
+        DapClient c = client;
+        if (c != null) {
+            c.stepIn(currentThreadId);
+            stepping();
         }
     }
 
     public void stepOut() {
-        if (client != null) {
-            client.stepOut(currentThreadId);
+        DapClient c = client;
+        if (c != null) {
+            c.stepOut(currentThreadId);
+            stepping();
+        }
+    }
+
+    /**
+     * A step was sent: the thread is running again until the adapter reports the next stop, exactly as
+     * after {@link #resume()}. Leaving the state SUSPENDED kept the execution line, inline values and frame
+     * list of the previous stop on screen — and offered Step/Evaluate against frames that no longer exist —
+     * for as long as the step took, which for a step over a blocking call is indefinitely. It also made
+     * {@link #pause()} a no-op during that time, since it only acts while RUNNING.
+     */
+    private void stepping() {
+        if (state == State.SUSPENDED) {
+            setState(State.RUNNING);
         }
     }
 
@@ -1482,12 +1502,15 @@ public final class DapManager implements DapClient.Host {
         onOutput(sessionEpoch, text, category);
     }
 
+    /** Batches adapter output onto the FX thread (see {@link DapOutputPump}); the sink runs on FX. */
+    private final DapOutputPump outputPump = new DapOutputPump(Platform::runLater, (epoch, text, category) -> {
+        if (isCurrent(epoch)) {
+            listener.onOutput(text, category);
+        }
+    });
+
     private void onOutput(long epoch, String text, String category) {
-        Platform.runLater(() -> {
-            if (isCurrent(epoch)) {
-                listener.onOutput(text, category);
-            }
-        });
+        outputPump.offer(epoch, text, category);
     }
 
     @Override
@@ -1500,6 +1523,7 @@ public final class DapManager implements DapClient.Host {
             if (!isCurrent(epoch)) {
                 return;
             }
+            outputPump.flush(); // the program's last lines arrived before this event — show them first
             tempBreakpointFile = null; // session over — nothing to restore
             DapClient c;
             synchronized (sessionLock) {

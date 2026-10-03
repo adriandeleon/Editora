@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /** User preferences, (de)serialized to {@code settings.json}. Session/state lives in {@link WorkspaceState}. */
@@ -40,13 +42,26 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 104;
+    public static final int SCHEMA_VERSION = 105;
 
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Default plugin-registry index URL (a curated {@code index.json} on GitHub); user-overridable. */
     public static final String DEFAULT_PLUGIN_REGISTRY =
             "https://raw.githubusercontent.com/adriandeleon/editora-plugins/main/index.json";
+
+    /**
+     * Bounds applied by the numeric setters, so a hand-edited {@code settings.json} cannot load a value the
+     * editor's arithmetic cannot use ({@code "tabSize": 0} divided by zero in the indent helpers). Each range
+     * is the widest one any UI path offers: the Settings spinners and the palette prompts.
+     */
+    public static final int MIN_FONT_SIZE = 6;
+
+    public static final int MAX_FONT_SIZE = 72;
+    public static final double MIN_FONT_ZOOM = 0.5;
+    public static final double MAX_FONT_ZOOM = 3.0;
+    public static final int MIN_TAB_SIZE = 1;
+    public static final int MAX_TAB_SIZE = 16;
 
     /** Author name used by file templates' {@code ${author}}; blank = the OS user (see getter). */
     private String authorName = "";
@@ -314,8 +329,6 @@ public class Settings {
     private boolean searchRespectGitignore = true;
     /** HTTP Client support (run {@code .http} requests via the built-in JDK HTTP client): on by default. */
     private boolean httpClientSupport = true;
-    /** The {@code ijhttp} command/path; blank = resolve {@code ijhttp} on PATH. */
-    private String ijhttpCommand = "";
     /** HTML Live Preview (serve an HTML file over a loopback HttpServer + open it in a browser): on by default. */
     private boolean htmlPreviewSupport = true;
     /** The last-used browser id for the HTML preview ({@code ""} until the user picks one). */
@@ -555,7 +568,7 @@ public class Settings {
     }
 
     public void setFontSize(int fontSize) {
-        this.fontSize = fontSize;
+        this.fontSize = Math.clamp(fontSize, MIN_FONT_SIZE, MAX_FONT_SIZE);
     }
 
     public double getFontZoom() {
@@ -563,7 +576,7 @@ public class Settings {
     }
 
     public void setFontZoom(double fontZoom) {
-        this.fontZoom = fontZoom;
+        this.fontZoom = Double.isNaN(fontZoom) ? 1.0 : Math.clamp(fontZoom, MIN_FONT_ZOOM, MAX_FONT_ZOOM);
     }
 
     public String getTheme() {
@@ -603,7 +616,7 @@ public class Settings {
     }
 
     public void setTabSize(int tabSize) {
-        this.tabSize = tabSize;
+        this.tabSize = Math.clamp(tabSize, MIN_TAB_SIZE, MAX_TAB_SIZE);
     }
 
     /** {@code "detect"} (default), {@code "space"}, or {@code "tab"}. */
@@ -639,16 +652,25 @@ public class Settings {
         this.uiLanguage = uiLanguage == null ? "" : uiLanguage;
     }
 
-    /** The configured author name, or the OS user name when blank (used by template {@code ${author}}). */
+    /**
+     * The configured author name, or the OS user name when blank (used by template {@code ${author}}).
+     *
+     * <p>Not serialized: Jackson writes through getters, so persisting this resolved value stored the OS user
+     * name on the first save and ended the "blank = follow the OS user" mode. {@link #getAuthorNameRaw()} is
+     * the persisted form.
+     */
+    @JsonIgnore
     public String getAuthorName() {
         return authorName == null || authorName.isBlank() ? System.getProperty("user.name", "") : authorName;
     }
 
     /** The raw configured author name (may be blank, meaning "follow the OS user"). */
+    @JsonProperty("authorName")
     public String getAuthorNameRaw() {
         return authorName == null ? "" : authorName;
     }
 
+    @JsonProperty("authorName")
     public void setAuthorName(String authorName) {
         this.authorName = authorName == null ? "" : authorName;
     }
@@ -1092,14 +1114,6 @@ public class Settings {
         } else {
             setAiCompletionModel(value);
         }
-    }
-
-    public String getIjhttpCommand() {
-        return ijhttpCommand == null ? "" : ijhttpCommand;
-    }
-
-    public void setIjhttpCommand(String ijhttpCommand) {
-        this.ijhttpCommand = ijhttpCommand == null ? "" : ijhttpCommand;
     }
 
     public boolean isShowColumnRuler() {
@@ -1650,10 +1664,19 @@ public class Settings {
     }
 
     /** The plugin-registry index URL; falls back to {@link #DEFAULT_PLUGIN_REGISTRY} when blank. */
+    /** The registry index URL in force: the configured one, or {@link #DEFAULT_PLUGIN_REGISTRY} when blank. */
+    @JsonIgnore
     public String getPluginRegistryUrl() {
         return pluginRegistryUrl == null || pluginRegistryUrl.isBlank() ? DEFAULT_PLUGIN_REGISTRY : pluginRegistryUrl;
     }
 
+    /** The persisted form: the URL as configured, blank meaning "use the built-in registry". */
+    @JsonProperty("pluginRegistryUrl")
+    public String getPluginRegistryUrlRaw() {
+        return pluginRegistryUrl == null ? "" : pluginRegistryUrl;
+    }
+
+    @JsonProperty("pluginRegistryUrl")
     public void setPluginRegistryUrl(String pluginRegistryUrl) {
         this.pluginRegistryUrl = pluginRegistryUrl;
     }

@@ -123,6 +123,14 @@ final class DebugCoordinator {
     private final Ops ops;
     private final DebugPanel debugPanel;
 
+    /**
+     * The before-launch build of a debug launch. On its own service rather than the Run console's, so
+     * debugging a configuration is not refused merely because another program is running there.
+     */
+    private final com.editora.run.RunService beforeLaunchService = new com.editora.run.RunService();
+
+    private final BeforeLaunchStep beforeLaunch = new BeforeLaunchStep(beforeLaunchService);
+
     private final Set<String> exceptionFilters = new LinkedHashSet<>();
 
     /** The java-debug bundle jars last pushed to the LSP layer — restart jdtls only when this changes. */
@@ -213,6 +221,45 @@ final class DebugCoordinator {
     }
 
     /** Runs {@code action} only when the Debug feature is enabled; otherwise reports it. */
+    /** Debug ▸ Stop: a before-launch build still running is what gets stopped; else the session. */
+    void stop() {
+        if (beforeLaunch.isActive()) {
+            beforeLaunch.stop();
+        } else {
+            dapManager.stop();
+        }
+    }
+
+    /** Window close: the before-launch build must not outlive the window that started it. */
+    void shutdown() {
+        beforeLaunchService.shutdown();
+    }
+
+    /** Streams a before-launch build into the Debug console and keeps Stop usable while it runs. */
+    private BeforeLaunchStep.Console beforeLaunchConsole() {
+        return new BeforeLaunchStep.Console() {
+            @Override
+            public void started(String commandLine) {
+                ops.openToolWindow();
+                debugPanel.setPreparing(true);
+                debugPanel.appendOutput("$ " + commandLine + "\n", "console");
+            }
+
+            @Override
+            public void output(String line, boolean stderr) {
+                debugPanel.appendOutput(line + "\n", stderr ? "stderr" : "stdout");
+            }
+
+            @Override
+            public void ended(int code, String launchError) {
+                debugPanel.setPreparing(false);
+                if (launchError != null) {
+                    debugPanel.appendOutput(launchError + "\n", "stderr");
+                }
+            }
+        };
+    }
+
     void ifDebug(Runnable action) {
         if (debugSupportEnabled()) {
             action.run();
@@ -578,7 +625,7 @@ final class DebugCoordinator {
 
             @Override
             public void stop() {
-                dapManager.stop();
+                DebugCoordinator.this.stop();
             }
 
             @Override
@@ -851,11 +898,16 @@ final class DebugCoordinator {
         // dispatch — because those guards reject a configuration that cannot launch at all (a script type, a
         // blank main class), and spending a multi-minute build on one before saying so is worse than not
         // building.
-        RunCoordinator.withBeforeLaunch(
+        if (beforeLaunch.isActive()) {
+            host.setStatus(tr("status.run.busy"));
+            return;
+        }
+        beforeLaunch.run(
                 host,
                 cfg,
                 cwd,
                 com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()),
+                beforeLaunchConsole(),
                 () -> {
                     // routing may be a background tab whose server start was deferred; open it on jdtls first, or the
                     // resolve below comes back "no language server for file" while jdtls is running perfectly.

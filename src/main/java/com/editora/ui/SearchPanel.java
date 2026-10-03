@@ -49,7 +49,12 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
          */
         void openMatch(Path file, int line, int col, boolean focusEditor);
 
-        void replaceAll(SearchQuery query, String replacement, List<Path> files);
+        /**
+         * Replace All over {@code files}, the shown result set. The live query and globs are passed so the
+         * controller can tell whether they still describe the search those results came from.
+         */
+        void replaceAll(
+                SearchQuery query, String includeGlobs, String excludeGlobs, String replacement, List<Path> files);
 
         /** Records an executed query into the persistent search history. */
         void recordSearch(String query);
@@ -96,7 +101,6 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         wordBox.setTooltip(new Tooltip(tr("find.wholeWord")));
         HBox.setHgrow(queryCombo, Priority.ALWAYS);
         queryCombo.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(replaceField, Priority.ALWAYS);
 
         Button searchBtn = new Button(tr("search.run"));
         searchBtn.setDefaultButton(false);
@@ -123,11 +127,28 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         queryCombo.setOnAction(e -> runSearch());
         // Trailing clear ("✕") buttons on each field (shown only while the field has text).
         Button queryClear = ClearableField.clearButton(queryCombo.getEditor());
-        HBox queryRow = new HBox(6, queryCombo, queryClear, caseBox, regexBox, wordBox, searchBtn);
+        // The query gets the panel's full width: sharing one row with the options and the Search button
+        // left it ~8 characters at the default dock width (and just the dropdown arrow in German).
+        queryCombo.setMinWidth(120);
+        queryCombo.setAccessibleText(tr("search.queryPrompt"));
+        HBox queryRow = new HBox(6, queryCombo, queryClear);
         queryRow.setAlignment(Pos.CENTER_LEFT);
+        Region optionsSpacer = new Region();
+        HBox.setHgrow(optionsSpacer, Priority.ALWAYS);
+        searchBtn.setMinWidth(Region.USE_PREF_SIZE);
+        replaceBtn.setMinWidth(Region.USE_PREF_SIZE);
+        HBox optionsRow = new HBox(
+                2,
+                OptionToggle.viewOf(caseBox, tr("search.caseTip")),
+                OptionToggle.viewOf(regexBox, tr("search.regexTip")),
+                OptionToggle.viewOf(wordBox, tr("find.wholeWord")),
+                optionsSpacer,
+                searchBtn);
+        optionsRow.setAlignment(Pos.CENTER_LEFT);
         Button replaceClear = ClearableField.clearButton(replaceField);
-        HBox replaceRow = new HBox(6, replaceField, replaceClear, replaceBtn);
-        replaceRow.setAlignment(Pos.CENTER_LEFT);
+        // Field + button side by side while they fit; a narrow panel drops the button to its own line
+        // instead of ellipsizing it.
+        WrapRow replaceRow = new WrapRow(6, 6, WrapRow.setGrow(fieldGroup(replaceField, replaceClear)), replaceBtn);
 
         includeField.setPromptText(tr("search.includePrompt"));
         excludeField.setPromptText(tr("search.excludePrompt"));
@@ -135,12 +156,16 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         excludeField.setTooltip(new Tooltip(tr("search.globsTip")));
         includeField.setOnAction(e -> runSearch());
         excludeField.setOnAction(e -> runSearch());
-        HBox.setHgrow(includeField, Priority.ALWAYS);
-        HBox.setHgrow(excludeField, Priority.ALWAYS);
+        includeField.setAccessibleText(tr("search.includePrompt"));
+        excludeField.setAccessibleText(tr("search.excludePrompt"));
         Button includeClear = ClearableField.clearButton(includeField);
         Button excludeClear = ClearableField.clearButton(excludeField);
-        HBox globsRow = new HBox(6, includeField, includeClear, excludeField, excludeClear);
-        globsRow.setAlignment(Pos.CENTER_LEFT);
+        // Side by side when the panel is wide; stacked when each would be too narrow to show its prompt.
+        WrapRow globsRow = new WrapRow(
+                6,
+                6,
+                WrapRow.setGrow(fieldGroup(includeField, includeClear)),
+                WrapRow.setGrow(fieldGroup(excludeField, excludeClear)));
 
         summary.getStyleClass().add("search-summary");
         backendBadge.getStyleClass().add("search-backend-badge");
@@ -185,7 +210,20 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         // arrow keys also work in the tree; text fields keep their own keys.
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
 
-        getChildren().addAll(scopeRow, queryRow, replaceRow, globsRow, summaryRow, tree);
+        getChildren().addAll(scopeRow, queryRow, optionsRow, replaceRow, globsRow, summaryRow, tree);
+    }
+
+    /** Narrowest a replace / glob field gets before its row wraps (wide enough to read the prompt). */
+    private static final double FIELD_MIN_WIDTH = 170;
+
+    /** A text field that fills its group, with its clear button beside it. */
+    private static HBox fieldGroup(TextField field, Button clear) {
+        field.setMinWidth(FIELD_MIN_WIDTH);
+        field.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(field, Priority.ALWAYS);
+        HBox group = new HBox(6, field, clear);
+        group.setAlignment(Pos.CENTER_LEFT);
+        return group;
     }
 
     /** Sets the displayed search-scope folder. {@code display} is a friendly label (e.g. {@code ~/proj});
@@ -287,7 +325,8 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
 
     private void runReplace() {
         if (!queryText().isEmpty() && !lastFiles.isEmpty()) {
-            actions.replaceAll(currentQuery(), replaceField.getText(), lastFiles);
+            actions.replaceAll(
+                    currentQuery(), includeField.getText(), excludeField.getText(), replaceField.getText(), lastFiles);
         }
     }
 

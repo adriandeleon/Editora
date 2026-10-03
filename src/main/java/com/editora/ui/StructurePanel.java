@@ -180,6 +180,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         tree.setShowRoot(false);
         tree.getStyleClass().add("structure-tree");
         tree.setCellFactory(t -> new StructureCell());
+        RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
         VBox.setVgrow(tree, Priority.ALWAYS);
 
         // Navigate as soon as the selection changes (keyboard, search, or single click), but only
@@ -1059,8 +1060,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         Deque<StructureNode> stack = new ArrayDeque<>();
         Deque<Integer> levels = new ArrayDeque<>();
         for (com.editora.markdown.MarkdownOutline.Heading h : com.editora.markdown.MarkdownOutline.headings(text)) {
-            StructureNode node =
-                    new StructureNode(null, h.title().isBlank() ? "(untitled)" : h.title(), "heading", h.line());
+            StructureNode node = new StructureNode(
+                    null, h.title().isBlank() ? tr("common.untitled") : h.title(), "heading", h.line());
             while (!levels.isEmpty() && levels.peek() >= h.level()) {
                 stack.pop();
                 levels.pop();
@@ -1096,7 +1097,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         record Entry(int line, int level, String label, String kind) {}
         List<Entry> entries = new ArrayList<>();
         for (var h : outline.headings()) {
-            entries.add(new Entry(h.line(), h.level(), h.title().isBlank() ? "(untitled)" : h.title(), "heading"));
+            entries.add(
+                    new Entry(h.line(), h.level(), h.title().isBlank() ? tr("common.untitled") : h.title(), "heading"));
         }
         for (var b : outline.bindings()) {
             // Level 0 = "not a section": it never becomes a parent and never closes one.

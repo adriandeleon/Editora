@@ -26,7 +26,7 @@ import org.fxmisc.richtext.CodeArea;
  */
 final class InlineValuesOverlay extends Region {
 
-    private static final Color VALUE_COLOR = Color.web("#808a93");
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final int MAX_PER_LINE = 3;
     private static final int MAX_VALUE_CHARS = 60;
 
@@ -48,6 +48,10 @@ final class InlineValuesOverlay extends Region {
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+        OverlayPalette.track(area, palette -> {
+            colors = palette; // resolved on a theme change, not per paint
+            scheduleRedraw();
+        });
     }
 
     /** Sets the suspended frame's variables (null or empty clears and releases the canvas). */
@@ -117,7 +121,7 @@ final class InlineValuesOverlay extends Region {
             }
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            g.setFill(VALUE_COLOR);
+            g.setFill(colors.inlineValue());
             g.setFont(font);
             g.setTextBaseline(VPos.CENTER);
             g.setTextAlign(TextAlignment.LEFT);

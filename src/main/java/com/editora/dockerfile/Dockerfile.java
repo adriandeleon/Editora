@@ -79,9 +79,14 @@ public final class Dockerfile {
 
     private static Stage fromStage(String args, int index, int line) {
         String[] tok = args.split("\\s+");
-        String baseImage = tok.length > 0 ? tok[0] : "";
+        // FROM [--platform=<platform>] <image> [AS <name>] — flags come before the image.
+        int img = 0;
+        while (img < tok.length - 1 && tok[img].startsWith("--")) {
+            img++;
+        }
+        String baseImage = tok.length > 0 ? tok[img] : "";
         String name = null;
-        for (int i = 1; i + 1 < tok.length; i++) {
+        for (int i = img + 1; i + 1 < tok.length; i++) {
             if (tok[i].equalsIgnoreCase("AS")) {
                 name = tok[i + 1];
                 break;

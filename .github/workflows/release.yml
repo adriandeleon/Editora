@@ -2,16 +2,46 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    # Version-shaped tags only (vX.Y.Z, optionally with a suffix such as -rc1). A bare `v*` also fired on
+    # tags like `vendor-import` or `v-test`, and everything downstream assumes the tag IS a version.
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
   workflow_dispatch: {}
 
+# Read-only by default. Only the two jobs that publish (`release`) or push (`bump`) ask for more, in their
+# own `permissions:` blocks; the build matrices run third-party actions and downloaded tools and must not
+# hold a token that can write to the repository.
+#
+# Every action below is pinned to a full commit SHA with its version in a trailing comment (Dependabot
+# keeps both in step, see .github/dependabot.yml). A tag such as `@v6` is mutable; a SHA is not.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  # Fails in seconds — before five build legs and four Native Image builds start — when the tag is not a
+  # version or does not match the pom. Without it a `v1.2.3` tag pushed from a `1.2.3-SNAPSHOT` pom built
+  # and published installers named 1.2.3 whose app reports 1.2.3-SNAPSHOT (and the post-release bump then
+  # quietly did nothing). -rc tags are cut from the -SNAPSHOT line and are only checked for their shape; a
+  # manual dispatch from a branch is not checked at all. See scripts/release/check-release.py.
+  preflight:
+    name: Preflight (tag vs pom version)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Check the tag against the pom version
+        run: python3 scripts/release/check-release.py version "$GITHUB_REF_TYPE" "$GITHUB_REF_NAME" pom.xml
+
   build:
     name: Build ${{ matrix.target }}
+    needs: preflight
     runs-on: ${{ matrix.os }}
+    # A leg normally finishes in minutes; the cap only stops a hung AOT trainer or installer wrap from
+    # holding a runner for the 6-hour default.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -19,14 +49,20 @@ jobs:
           - { target: linux-x64,     os: ubuntu-latest }
           - { target: linux-arm64,   os: ubuntu-24.04-arm }
           - { target: macos-x64,     os: macos-15-intel }
-          - { target: macos-arm64,   os: macos-14 }
+          # macos-15 (arm64), not macos-14: the macOS 14 images are retired on 2026-11-02, with brownouts
+          # from 2026-10-05 (actions/runner-images#13518). This leg trains the AOT cache on the runner's
+          # paravirtual GPU and EDITORA_REQUIRE_AOT=1 fails it if training regresses — and macos-15 has
+          # never built a release. RUN A workflow_dispatch DRY RUN before the next tag (docs/release.md).
+          - { target: macos-arm64,   os: macos-15 }
           - { target: windows-x64,   os: windows-latest }
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: liberica
           java-version: '25'
@@ -74,13 +110,15 @@ jobs:
         run: ./mvnw -B --no-transfer-progress clean -Pdist -DskipTests package
 
       # Portable single-file Linux build from the AOT-trained app-image (no sandbox — host tools work;
-      # see scripts/build-appimage.sh). Best-effort: continue-on-error so a flaky appimagetool / FUSE /
-      # network hiccup can't sink the .deb/.rpm/.jar release. Runs before staging so the .AppImage is
-      # picked up from target/dist.
+      # see scripts/build-appimage.sh). Runs before staging so the .AppImage is picked up from target/dist.
+      # Best-effort ONLY on a manual dry run. On a tag a failure fails this leg: the .AppImage is part of
+      # the release, the Release job's asset check refuses to publish without it, and failing here lets
+      # "Re-run failed jobs" rebuild just this leg. (It used to be continue-on-error always, which let a
+      # network hiccup publish an immutable release with the AppImage missing for good.)
       # x64 only — on Linux ARM we ship just the tar.gz + jar (no .deb/.rpm/.AppImage).
       - name: Build AppImage (Linux)
         if: matrix.target == 'linux-x64'
-        continue-on-error: true
+        continue-on-error: ${{ github.event_name != 'push' }}
         shell: bash
         run: scripts/build-appimage.sh target/aot-image/Editora branding/editora.png target/dist
 
@@ -88,10 +126,10 @@ jobs:
       # scripts/build-tarball.sh): a jlink runtime + native bin/Editora launcher + a bundled install.sh
       # that installs to /opt/editora (root) or ~/.local/editora (user) with an `editora` command + menu
       # entry. The extract-and-install counterpart to the .AppImage — no jpackage installer, no FUSE.
-      # Best-effort: continue-on-error so it can't sink the .deb/.rpm/.AppImage/.jar release.
+      # Best-effort only on a manual dry run, for the same reason as the AppImage step above.
       - name: Build install tarball (Linux)
         if: runner.os == 'Linux'
-        continue-on-error: true
+        continue-on-error: ${{ github.event_name != 'push' }}
         shell: bash
         run: scripts/build-tarball.sh target/aot-image/Editora target/dist
 
@@ -148,7 +186,7 @@ jobs:
           fi
 
       - name: Upload installer
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Editora-${{ steps.ver.outputs.version }}-${{ matrix.target }}
           path: staging/*
@@ -159,6 +197,7 @@ jobs:
   # Failure is visible on the run but never suppresses the established JVM release.
   native-experimental:
     name: Experimental Native Image (${{ matrix.target }})
+    needs: preflight
     runs-on: ${{ matrix.os }}
     continue-on-error: true
     timeout-minutes: 60
@@ -169,15 +208,18 @@ jobs:
           - { target: linux-x64,   os: ubuntu-24.04,   graal: '25.0.4', gc: G1,     heap: 6g, workers: 4 }
           # Oracle GraalVM 25.0.1 is the last JDK 25 build for Intel macOS.
           - { target: macos-x64,   os: macos-15-intel, graal: '25',     gc: serial, heap: 6g, workers: 4 }
-          # Standard Apple Silicon runners have only 7 GiB RAM / 3 vCPUs.
-          - { target: macos-arm64, os: macos-14,       graal: '25.0.4', gc: serial, heap: 5g, workers: 2 }
+          # Standard Apple Silicon runners have only 7 GiB RAM / 3 vCPUs. macos-15 for the same reason as
+          # the build leg above (macos-14 is retired on 2026-11-02); unverified until a dry run.
+          - { target: macos-arm64, os: macos-15,       graal: '25.0.4', gc: serial, heap: 5g, workers: 2 }
           - { target: windows-x64, os: windows-latest, graal: '25.0.4', gc: serial, heap: 6g, workers: 4 }
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up GraalVM for JDK 25
-        uses: graalvm/setup-graalvm@v1
+        uses: graalvm/setup-graalvm@27b360dbb857524eaf0b4c4cef364d38e5b4f173 # v1.6.7
         with:
           java-version: ${{ matrix.graal }}
           distribution: graalvm
@@ -185,7 +227,7 @@ jobs:
           cache: maven
 
       - name: Set up Python for packaging and smoke test
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
 
@@ -260,7 +302,7 @@ jobs:
 
       - name: Upload native smoke diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: native-smoke-diagnostics-${{ matrix.target }}
           path: |
@@ -282,14 +324,14 @@ jobs:
 
       - name: Upload unqualified native candidate
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: native-unqualified-${{ matrix.target }}
           path: staging/*.candidate
           if-no-files-found: ignore
 
       - name: Upload experimental native build
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Editora-${{ steps.ver.outputs.version }}-${{ matrix.target }}-native-experimental
           path: staging/*
@@ -300,16 +342,20 @@ jobs:
     needs: [build, native-experimental]
     if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
+      # JReleaser talks to the GitHub API with JRELEASER_GITHUB_TOKEN and only READS the local history
+      # (for the changelog); nothing here pushes with git, so the token is not left in .git/config.
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download all installers
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
 
@@ -328,9 +374,30 @@ jobs:
           # artifacts retain their actual -SNAPSHOT build identity.
           echo "release_version=${v%-SNAPSHOT}" >> "$GITHUB_OUTPUT"
 
+      # The last gate before an IMMUTABLE release. A green build matrix does not prove every installer
+      # exists: aot_build.java lets the .rpm succeed alone when the .deb wrap fails, the Stage step copies
+      # whatever it finds, and jreleaser.yml's globs accept zero matches — so without this a release could
+      # publish with an installer missing and no way to add it afterwards. On a tag this fails the job and
+      # names every missing file; a manual dispatch only reports, so a dry run still reaches JReleaser
+      # (read the step's output: every line must say `ok`).
+      # The expected set lives in scripts/release/check-release.py (unit-tested there).
+      - name: Verify the expected release assets
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          mode=report
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then mode=enforce; fi
+          python3 scripts/release/check-release.py assets artifacts "$VERSION" --pom pom.xml --mode "$mode"
+
       - name: JReleaser
-        uses: jreleaser/release-action@v2
+        # No `v2` TAG exists upstream — `@v2` was a branch. Pinned to that branch's head as of 2026-10-01
+        # (newest tagged release: 2.5.0).
+        uses: jreleaser/release-action@97b5e2f0e845de2fe1dbbdf451ac6a21233fafff # v2
         with:
+          # The JReleaser the action downloads. The default is `latest`, i.e. whatever was published
+          # most recently on the day of the release; pin it and bump deliberately.
+          version: 1.26.0
           # Real tag pushes publish; manual runs only validate (dry run).
           arguments: ${{ github.event_name == 'workflow_dispatch' && 'release --dry-run' || 'full-release' }}
         env:
@@ -339,7 +406,7 @@ jobs:
 
       - name: Upload JReleaser logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jreleaser-output
           path: |
@@ -358,11 +425,13 @@ jobs:
     needs: release
     if: github.event_name == 'push' && github.ref_type == 'tag' && !contains(github.ref_name, '-rc')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      # The one checkout that keeps its credentials: this job pushes the version bump.
       - name: Check out master
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: master
           # Default GITHUB_TOKEN; if master is branch-protected, swap in a PAT with bypass rights.

@@ -157,10 +157,16 @@ public final class HtmlPreviewService {
 
     /** Launches the browser without waiting (fire-and-forget) so a foreground process can't stall us. */
     private static void launchDetached(List<String> argv) throws IOException {
+        browserProcess(argv).start();
+    }
+
+    /** The browser process, before it is started: the user's own locale (a browser forced into {@code
+     *  LC_ALL=C} loses its UI language and mangles non-ASCII download names), plus the augmented PATH. */
+    static ProcessBuilder browserProcess(List<String> argv) {
         ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(argv));
-        ProcessRunner.applyStandardEnv(pb);
+        ProcessRunner.applyUserEnv(pb);
         pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-        pb.start();
+        return pb;
     }
 }

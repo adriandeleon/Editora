@@ -134,8 +134,19 @@ final class LspCoordinator {
         /** Refreshes the toolbar Run button after the shell Run gate changes. */
         void refreshRunButton();
 
+        /**
+         * The window's configuration, or null in a test that has none. Read for the trusted-folder list
+         * (project-supplied server commands run only in a trusted folder) and the config directory.
+         */
+        default com.editora.config.ConfigManager config() {
+            return null;
+        }
+
         /** Base dir for per-project jdtls Eclipse workspaces ({@code <configDir>/jdtls-workspaces}). */
-        Path jdtlsWorkspaceBase();
+        default Path jdtlsWorkspaceBase() {
+            com.editora.config.ConfigManager config = config();
+            return config == null ? null : config.getConfigDir().resolve("jdtls-workspaces");
+        }
 
         /** The active project's root for LSP root resolution (null when Projects is off / no project). */
         Path lspProjectRoot();
@@ -380,6 +391,7 @@ final class LspCoordinator {
         });
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setApplyEditHandler(this::applyWorkspaceEditsAsync); // server quick-fix edits land here (#670)
+        lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
     }
 
@@ -415,6 +427,11 @@ final class LspCoordinator {
                 b.setLspOnTypeTriggers(lspManager.onTypeTriggerCharacters(b.getPath()));
                 b.setLspCodeActionsAvailable(lspManager.supportsCodeActions(b.getPath()));
                 b.setLspRenameAvailable(lspManager.supportsRename(b.getPath()));
+                // Both navigation gates used to be pushed only by syncBuffer — which runs before initialize
+                // answers, when no capability is known — so a server that registers them dynamically (or
+                // simply finishes its handshake) never got its menu entries switched on.
+                b.setLspImplementationAvailable(lspManager.supportsImplementation(b.getPath()));
+                b.setLspTypeDefinitionAvailable(lspManager.supportsTypeDefinition(b.getPath()));
                 b.setLspSignatureTriggerChars(lspManager.signatureTriggerCharacters(b.getPath()));
                 lspManager.pullDiagnostics(b.getPath());
                 requestFoldingRanges(b);
@@ -673,8 +690,26 @@ final class LspCoordinator {
         refreshProblems();
     }
 
+    /** Whether a Problems rebuild is already queued behind the diagnostics still waiting on the FX queue. */
+    private boolean problemsRefreshQueued;
+
+    /**
+     * Queues one Problems rebuild for the current burst of changes.
+     *
+     * <p>Every {@code publishDiagnostics} used to rebuild the whole tree, and jdtls publishes once per file
+     * on a project import — hundreds of full rebuilds back to back on the FX thread. Deferring the rebuild
+     * to the end of the queue lets every publish already waiting there land first, so a burst costs one
+     * rebuild; the panel then skips it altogether when the content is what it already shows.
+     */
     private void refreshProblems() {
-        problemsPanel.setProblems(problems);
+        if (problemsRefreshQueued) {
+            return;
+        }
+        problemsRefreshQueued = true;
+        Platform.runLater(() -> {
+            problemsRefreshQueued = false;
+            problemsPanel.setProblems(problems);
+        });
     }
 
     // --- gating + lifecycle (the configure/detect/per-buffer-sync machine) ----------------------------
@@ -709,7 +744,16 @@ final class LspCoordinator {
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
         lspManager.setJdtlsWorkspaceBase(ops.jdtlsWorkspaceBase());
-        lspManager.configure(on, commandsForAllServers(s));
+        applyOnTypeFormatting();
+        // The commands that actually launch: the global ones, with this project's overrides laid over them
+        // when (and only when) its folder is trusted. Building this from the global settings alone meant a
+        // committed override was shown in the status bar and Doctor but never run.
+        lspManager.configure(on, effectiveCommands());
+        appliedProjectRoot = ops.lspProjectRoot();
+        appliedProjectOverrides = projectOverrideSignature();
+        if (on) {
+            noticeWithheldOverrides();
+        }
         updateProblemsAvailability();
         // Standalone file Run remains available without LSP. Shell Run still follows the Bash LSP toggle.
         boolean shellRun = on && s.isBashLspEnabled();
@@ -770,6 +814,21 @@ final class LspCoordinator {
             commands.put(serverId, serverCommand(s, serverId));
         }
         return commands;
+    }
+
+    /** Every server's effective launch command: {@link #commandsForAllServers} with the project overrides
+     *  that this window's trust allows ({@link #serverCommand(String)}) laid over it. */
+    Map<String, String> effectiveCommands() {
+        Map<String, String> commands = commandsForAllServers(host.settings());
+        for (String serverId : SERVER_IDS) {
+            commands.put(serverId, serverCommand(serverId));
+        }
+        return commands;
+    }
+
+    /** Pushes {@code Settings.lspOnTypeFormatting} to the manager, which jdtls needs to register the provider. */
+    void applyOnTypeFormatting() {
+        lspManager.setJavaOnTypeFormatting(host.settings().isLspOnTypeFormatting());
     }
 
     /** Clears the diagnostics (Problems entry + editor overlay) of every open buffer served by {@code serverId}
@@ -878,7 +937,7 @@ final class LspCoordinator {
 
     /** Whether a server's own enable toggle is on (under the global LSP enable). */
     boolean serverEnabled(String serverId) {
-        return projectSettings().enabledFor(serverId, globalServerEnabled(serverId));
+        return projectSettings().enabledFor(serverId, globalServerEnabled(serverId), projectTrusted());
     }
 
     /** The global (non-project) enable for {@code serverId}. */
@@ -921,7 +980,91 @@ final class LspCoordinator {
     private com.editora.config.ProjectSettings projectSettingsCache = EMPTY_PROJECT_SETTINGS;
 
     private String serverCommand(String serverId) {
-        return projectSettings().commandFor(serverId, serverCommand(host.settings(), serverId));
+        return projectSettings().commandFor(serverId, serverCommand(host.settings(), serverId), projectTrusted());
+    }
+
+    /**
+     * Whether this window's project folder is trusted, which is what lets its committed
+     * {@code .editora/settings.json} choose a program to run. Only consulted when the file overrides
+     * something, so a project without one never touches the trust list.
+     */
+    private boolean projectTrusted() {
+        Path root = ops.lspProjectRoot();
+        com.editora.config.ConfigManager config = ops.config();
+        return root != null
+                && config != null
+                && !projectSettings().isEmpty()
+                && config.getTrustStore().isTrusted(root);
+    }
+
+    /** What the project file asks for that needs trust (see {@code ProjectSettings.trustRequests}). */
+    private List<String> projectTrustRequests() {
+        return projectSettings().trustRequests(id -> serverCommand(host.settings(), id), this::globalServerEnabled);
+    }
+
+    /** The project root whose withheld overrides were last announced, so a gating pass does not repeat it. */
+    private Path withheldNoticeRoot;
+
+    /** Says once per project that its server overrides are being ignored, and how to allow them. */
+    private void noticeWithheldOverrides() {
+        Path root = ops.lspProjectRoot();
+        if (root == null || projectTrusted() || projectTrustRequests().isEmpty()) {
+            withheldNoticeRoot = null;
+            return;
+        }
+        if (!root.equals(withheldNoticeRoot)) {
+            withheldNoticeRoot = root;
+            host.setStatus(tr("status.lsp.projectSettingsUntrusted", tr("command.lsp.trustProjectSettings")));
+        }
+    }
+
+    /** Asks before a folder is trusted; a field so a test can answer without a dialog. */
+    java.util.function.BiPredicate<Path, List<String>> trustConfirmer = this::confirmTrustProjectSettings;
+
+    private boolean confirmTrustProjectSettings(Path root, List<String> requests) {
+        javafx.scene.control.ButtonType trust = new javafx.scene.control.ButtonType(
+                tr("dialog.lsp.trust.accept"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.WARNING,
+                tr("dialog.lsp.trust.body", root.toString(), String.join("\n", requests)),
+                javafx.scene.control.ButtonType.CANCEL,
+                trust);
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("dialog.trust.title"));
+        Path name = root.getFileName();
+        confirm.setHeaderText(tr("dialog.lsp.trust.header", name == null ? root.toString() : name.toString()));
+        confirm.getDialogPane().setMinWidth(520);
+        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == trust;
+    }
+
+    /**
+     * Trusts this window's project folder so the language-server overrides in its
+     * {@code .editora/settings.json} take effect ({@code lsp.trustProjectSettings}). Shows exactly which
+     * commands the file would run before recording anything; the trust is the same per-folder record the
+     * build-wrapper prompt writes, so it is listed and revocable in Settings under Workspace.
+     */
+    void trustProjectSettings() {
+        Path root = ops.lspProjectRoot();
+        com.editora.config.ConfigManager config = ops.config();
+        if (root == null || config == null) {
+            host.setStatus(tr("status.trust.noProject"));
+            return;
+        }
+        List<String> requests = projectTrustRequests();
+        if (requests.isEmpty()) {
+            host.setStatus(tr("status.lsp.projectSettingsNothing"));
+            return;
+        }
+        if (!config.getTrustStore().isTrusted(root)) {
+            if (!trustConfirmer.test(root, requests)) {
+                return;
+            }
+            config.getTrustStore().trust(root);
+            config.saveTrust(); // durable: a security decision must survive a crash
+        }
+        applySupport();
+        host.syncSettingsWindow();
+        host.setStatus(tr("status.lsp.projectSettingsTrusted"));
     }
 
     /**
@@ -943,10 +1086,69 @@ final class LspCoordinator {
         return projectSettingsCache;
     }
 
-    /** Forgets the cached project overrides, so the next read picks up an edited file. */
+    /** Whether {@code file} is this window's project {@code .editora/settings.json}. */
+    private boolean isProjectSettingsFile(Path file) {
+        Path root = ops.lspProjectRoot();
+        return file != null
+                && root != null
+                && com.editora.vfs.Vfs.isLocal(file)
+                && com.editora.config.PathKeys.sameNormalized(file, com.editora.config.ProjectSettings.fileFor(root));
+    }
+
+    /** The overrides in force when {@link #applySupport} last configured the manager. */
+    private String appliedProjectOverrides = "";
+
+    /** The project root those overrides were resolved for. */
+    private Path appliedProjectRoot;
+
+    /**
+     * Re-runs {@link #applySupport} when this window's project has changed since it last ran and the new
+     * project resolves to different server commands or enables; true when it did.
+     *
+     * <p>A window learns its project after {@code init} has already configured the manager, so without
+     * this the first buffer would launch the previous project's (or the global) command.
+     */
+    private boolean overridesReapplied() {
+        Path root = ops.lspProjectRoot();
+        if (java.util.Objects.equals(root, appliedProjectRoot)) {
+            return false;
+        }
+        appliedProjectRoot = root;
+        if (projectOverrideSignature().equals(appliedProjectOverrides)) {
+            return false;
+        }
+        applySupport(); // re-detects and re-gates every buffer, this one included
+        return true;
+    }
+
+    /** Everything a re-configure depends on: the project's effective commands and enables, as one string. */
+    private String projectOverrideSignature() {
+        StringBuilder signature = new StringBuilder();
+        for (String serverId : SERVER_IDS) {
+            signature
+                    .append(serverId)
+                    .append('=')
+                    .append(serverEnabled(serverId))
+                    .append(':')
+                    .append(serverCommand(serverId))
+                    .append('\n');
+        }
+        return signature.toString();
+    }
+
+    /**
+     * Forgets the cached project overrides so the next read picks up an edited file — and, when what they
+     * resolve to has changed (an edited file, another project, a trust decision), re-runs
+     * {@link #applySupport} so the change reaches the running servers instead of only the labels.
+     */
     void reloadProjectSettings() {
         projectSettingsRoot = null;
         projectSettingsCache = EMPTY_PROJECT_SETTINGS;
+        applyOnTypeFormatting();
+        appliedProjectRoot = ops.lspProjectRoot();
+        if (ops.lspFeatureEnabled() && !projectOverrideSignature().equals(appliedProjectOverrides)) {
+            applySupport();
+        }
     }
 
     /** Pure: {@code serverId}'s configured command from {@code s} — the id→Settings-field mapping, kept
@@ -1196,6 +1398,9 @@ final class LspCoordinator {
 
     /** Opens+activates an eligible buffer on its language's server, or deactivates+closes it otherwise. */
     void syncBuffer(EditorBuffer buffer) {
+        if (ops.lspFeatureEnabled() && overridesReapplied()) {
+            return;
+        }
         Path path = buffer.getPath();
         String serverId = serverIdForBuffer(buffer); // pom.xml → maven-pom (when available), else the language's server
         boolean eligible = ops.lspFeatureEnabled()
@@ -1430,6 +1635,9 @@ final class LspCoordinator {
 
     /** Notifies the server of a save (didSave) for a managed file + refreshes pull-model diagnostics. */
     void notifyDocumentSaved(EditorBuffer buffer, String savedText) {
+        if (buffer != null && isProjectSettingsFile(buffer.getPath())) {
+            reloadProjectSettings(); // the overrides were just edited: apply them to the running servers
+        }
         if (buffer != null && buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
             // Flush the current open-document state first. savedText may be an older snapshot when the user
             // continued typing during I/O; includeText still describes the bytes that actually reached disk.
@@ -1583,7 +1791,9 @@ final class LspCoordinator {
                     if (id == null) {
                         return;
                     }
-                    host.promptText(id, tr("palette.setting.value"), serverCommand(id), v -> {
+                    // Prefill with the GLOBAL value: this prompt writes the persistent global setting, so
+                    // showing the project's override here would copy a repository's command into it.
+                    host.promptText(id, tr("palette.setting.value"), serverCommand(host.settings(), id), v -> {
                         String value = v.trim();
                         setServerCommand(id, value);
                         host.requestSave();
@@ -1701,9 +1911,10 @@ final class LspCoordinator {
                             plan.status(),
                             item.expectedDocuments(),
                             chosen,
-                            ok -> host.setStatus(tr(
-                                    ok ? "status.lsp.codeActionApplied" : "status.lsp.codeActionFailed",
-                                    item.title()))));
+                            ok -> reportEdit(
+                                    ok,
+                                    tr("status.lsp.codeActionApplied", item.title()),
+                                    tr("status.lsp.codeActionFailed", item.title()))));
         });
         return true;
     }
@@ -2389,11 +2600,14 @@ final class LspCoordinator {
             return; // a jdtls generate prompt: we drive it, not the server (#741)
         }
         LspManager.CodeActionItem applied = item;
+        blockedTargets = List.of();
         lspManager.applyCodeAction(
                 path,
                 applied,
-                ok -> host.setStatus(
-                        tr(ok ? "status.lsp.codeActionApplied" : "status.lsp.codeActionFailed", applied.title())));
+                ok -> reportEdit(
+                        ok,
+                        tr("status.lsp.codeActionApplied", applied.title()),
+                        tr("status.lsp.codeActionFailed", applied.title())));
     }
 
     /**
@@ -2446,9 +2660,10 @@ final class LspCoordinator {
                 return; // nothing to do
             }
             host.setStatus(tr("status.lsp.renaming"));
+            blockedTargets = List.of();
             lspManager.previewRename(path, line, col, name, mapped -> {
                 if (mapped == null) {
-                    host.setStatus(tr("status.lsp.renameFailed", name));
+                    reportEdit(false, "", tr("status.lsp.renameFailed", name));
                     return;
                 }
                 if (!com.editora.lsp.RenamePreview.worthPreviewing(mapped)) {
@@ -2492,8 +2707,90 @@ final class LspCoordinator {
 
     /** Applies a (possibly filtered) rename edit and reports the outcome. */
     private void applyRename(com.editora.lsp.WorkspaceEditMapper.Mapped mapped, String name) {
+        blockedTargets = List.of();
         applyWorkspaceEditsAsync(
-                mapped, ok -> host.setStatus(tr(ok ? "status.lsp.renamed" : "status.lsp.renameFailed", name)));
+                mapped, ok -> reportEdit(ok, tr("status.lsp.renamed", name), tr("status.lsp.renameFailed", name)));
+    }
+
+    /** The files that made the workspace edit in progress unsafe to apply; consumed by {@link #reportEdit}. */
+    private List<Path> blockedTargets = List.of();
+
+    /**
+     * A workspace edit was refused because of specific files — changed since the request, unsaved, or not
+     * loaded — rather than for a reason nobody can act on. Names them, so "Rename failed" is not all the
+     * user gets when the fix is to save or reload one file.
+     */
+    private void editBlocked(List<Path> files) {
+        if (files == null || files.isEmpty()) {
+            return;
+        }
+        blockedTargets = List.copyOf(files);
+        host.setError(tr("status.lsp.editBlocked", blockedFileNames(files)));
+    }
+
+    /** Pure: up to three file names, then a count of the rest. */
+    static String blockedFileNames(List<Path> files) {
+        StringBuilder names = new StringBuilder();
+        int shown = Math.min(3, files.size());
+        for (int i = 0; i < shown; i++) {
+            Path name = files.get(i).getFileName();
+            names.append(i == 0 ? "" : ", ").append(name == null ? files.get(i) : name);
+        }
+        if (files.size() > shown) {
+            names.append(" +").append(files.size() - shown);
+        }
+        return names.toString();
+    }
+
+    /** Reports an edit's outcome. A failure whose blocking files were already named keeps that message. */
+    private void reportEdit(boolean ok, String success, String failure) {
+        boolean named = !blockedTargets.isEmpty();
+        blockedTargets = List.of();
+        if (ok) {
+            host.setStatus(success);
+        } else if (!named) {
+            host.setStatus(failure);
+        }
+    }
+
+    /**
+     * Whether an edit to a file the server did not have open may be applied to {@code buffer}. The server
+     * computed it from the file on disk, so three things must hold: no window has unsaved changes to the
+     * file, the buffer mirrors the file as it is on disk now, and the file has not been modified since the
+     * request was sent. Anything that cannot be shown refuses the edit.
+     */
+    private boolean diskPreimageHolds(com.editora.lsp.WorkspaceEditMapper.FileEdit edit, EditorBuffer buffer) {
+        Long since = edit.diskPreimageAt();
+        if (since == null) {
+            return true;
+        }
+        if (buffer.isDirty() || ops.buffersAtOrUnder(edit.file()).stream().anyMatch(EditorBuffer::isDirty)) {
+            return false;
+        }
+        try {
+            WorkspaceFileIdentity onDisk =
+                    workspaceFiles.identity(edit.file().toAbsolutePath().normalize());
+            EditorBuffer.DiskSnapshot loaded = buffer.diskSnapshot();
+            return loaded.modifiedMillis() >= 0
+                    && !loaded.differsFrom(onDisk.lastModifiedMillis(), onDisk.size())
+                    && com.editora.lsp.WorkspaceEditMapper.unchangedSince(onDisk.lastModifiedMillis(), since);
+        } catch (java.io.IOException | RuntimeException failure) {
+            return false;
+        }
+    }
+
+    /** The disk-preimage targets of {@code mapped} that no longer hold, for {@link #editBlocked}. */
+    private List<Path> staleDiskTargets(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.List<EditorBuffer> buffers) {
+        List<Path> stale = new java.util.ArrayList<>();
+        for (int i = 0; i < mapped.edits().size() && i < buffers.size(); i++) {
+            var edit = mapped.edits().get(i);
+            EditorBuffer buffer = buffers.get(i);
+            if (edit.diskPreimageAt() != null && (buffer == null || !diskPreimageHolds(edit, buffer))) {
+                stale.add(edit.file());
+            }
+        }
+        return stale;
     }
 
     /** The document text inside a 0-based LSP range (single-line expected), or "" when out of bounds. */
@@ -2686,6 +2983,13 @@ final class LspCoordinator {
             }
             buffers.add(buf);
         }
+        List<Path> stale = staleDiskTargets(mapped, buffers);
+        if (!stale.isEmpty()) {
+            editBlocked(stale);
+            rollbackCreates(creates, transaction);
+            reportIncompleteRollback(transaction);
+            return false;
+        }
         java.util.List<StagedRename> staged = stageRenames(mapped.renames(), transaction);
         if (staged == null) {
             rollbackCreates(creates, transaction);
@@ -2755,6 +3059,12 @@ final class LspCoordinator {
         // Supersede saves started while the resource transaction was staging, before UI identity changes.
         invalidateResourceWrites(mapped);
         if (!resourceStateCurrent(creates, renames, deletes)) {
+            rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
+            return;
+        }
+        List<Path> stale = staleDiskTargets(mapped, buffers);
+        if (!stale.isEmpty()) {
+            editBlocked(stale);
             rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
             return;
         }
@@ -3229,7 +3539,8 @@ final class LspCoordinator {
         hideHoverPopup();
         Node content;
         try {
-            content = MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(markdown), null);
+            content = MarkdownRenderer.renderDocument(
+                    MarkdownRenderer.parseToDocument(markdown), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
         } catch (RuntimeException e) {
             Label label = new Label(markdown);
             label.setWrapText(true);
@@ -3488,8 +3799,11 @@ final class LspCoordinator {
         }
         if (!active.documentation().isBlank()) {
             try {
-                Node doc =
-                        MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(active.documentation()), null);
+                Node doc = MarkdownRenderer.renderDocument(
+                        MarkdownRenderer.parseToDocument(active.documentation()),
+                        null,
+                        null,
+                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
                 box.getChildren().add(doc);
             } catch (RuntimeException e) {
                 Label docLabel = new Label(active.documentation());

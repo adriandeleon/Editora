@@ -62,5 +62,5 @@ Thumbs.db
 # Corpus log samples are intentionally tracked (the global *.log above would drop them)
 !/samples/log/*.log
 
-# Python caches from the optional native experiment tooling
-/scripts/native/__pycache__/
+# Python caches from the script tests (scripts/, scripts/release, scripts/packaging, scripts/native)
+/scripts/**/__pycache__/

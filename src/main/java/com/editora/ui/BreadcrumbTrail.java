@@ -35,6 +35,31 @@ public final class BreadcrumbTrail {
      * @param home the user's home directory, or {@code null} to collapse nothing
      */
     public static List<Crumb> of(Path file, Path home) {
+        return of(file, home, null);
+    }
+
+    /**
+     * As {@link #of(Path, Path)}, but a file inside {@code projectRoot} starts its trail <em>at</em> the
+     * project root — the first crumb is the project folder — instead of at the filesystem root or
+     * {@code ~}: inside a project the segments above it are the same for every file and only push the
+     * part that matters off the bar. A file outside the project (or no project) keeps the full trail.
+     *
+     * @param projectRoot the open project's root folder, or {@code null} when there is none
+     */
+    public static List<Crumb> of(Path file, Path home, Path projectRoot) {
+        int rootSegments = containingSegmentCount(file, projectRoot);
+        if (rootSegments > 0) {
+            List<Crumb> out = new ArrayList<>();
+            Path acc = file.getRoot();
+            int i = 0;
+            for (Path segment : file) {
+                acc = acc == null ? segment : acc.resolve(segment);
+                if (++i >= rootSegments) {
+                    out.add(new Crumb(acc, segment.toString()));
+                }
+            }
+            return out;
+        }
         List<Crumb> out = new ArrayList<>();
         int homeSegments = homeSegmentCount(file, home);
         Path acc = file.getRoot();
@@ -67,6 +92,11 @@ public final class BreadcrumbTrail {
      * would at best be nonsense and at worst provider-mismatched.
      */
     private static int homeSegmentCount(Path file, Path home) {
+        return containingSegmentCount(file, home);
+    }
+
+    /** How many leading segments of {@code file} the directory {@code home} covers; 0 when it is not inside. */
+    private static int containingSegmentCount(Path file, Path home) {
         if (home == null || file == null) {
             return 0;
         }

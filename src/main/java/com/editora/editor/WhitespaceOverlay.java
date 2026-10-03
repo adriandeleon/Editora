@@ -24,7 +24,7 @@ import org.fxmisc.richtext.CodeArea;
  */
 final class WhitespaceOverlay extends Region {
 
-    private static final Color MARKER = Color.web("#b8bdc4");
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final String SPACE = "·";
     private static final String TAB = "→";
     private static final String EOL = "¶";
@@ -48,6 +48,10 @@ final class WhitespaceOverlay extends Region {
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+        OverlayPalette.track(area, palette -> {
+            colors = palette; // resolved on a theme change, not per paint
+            scheduleRedraw();
+        });
     }
 
     /** Turns the markers on or off. */
@@ -119,7 +123,7 @@ final class WhitespaceOverlay extends Region {
             }
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            g.setFill(MARKER);
+            g.setFill(colors.whitespace());
             g.setFont(font);
             g.setTextBaseline(VPos.CENTER);
             // The text area's left edge (past the line-number gutter). Empty lines have no character

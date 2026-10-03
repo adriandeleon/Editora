@@ -147,6 +147,40 @@ document never blocks a frame; each pulse's layout re-measures the slice and dro
 cost is linear in the paragraph count, so on a very large file wrapping appears a moment after the toggle.
 `WordWrapToggleFxTest` pins the behaviour.
 
+## An edit made inside a `plainTextChanges` subscriber runs before the outer edit places the caret
+
+**Symptom:** an assist that edits the document in response to a keystroke leaves the caret a few characters
+short, so the *next* keystroke lands in the wrong place. Auto-rename-tag turned `</div` + `xy` into
+`</divyx>` (and renamed the opener to match).
+
+**Why/fix:** RichTextFX's `replace(start, end, text)` changes the document, notifies subscribers, and only
+then moves the caret to `start + text.length()` — an offset computed before the subscribers ran. A
+subscriber that edits *above* the caret shifts the text under that offset. (Editing *below* the caret
+from a subscriber happens to be safe, which is why this hides.) Apply such an edit after the outer
+`replace` has returned: both editor areas are a `TagRenameMirror.Area`, whose `replace` override reports
+each single-range replace once text and caret have settled. A `Platform.runLater` fix-up is not a
+substitute — nothing guarantees it runs before the next queued key event. `AutoRenameTagFxTest` pins it.
+
+## A RichTextFX area can pin its whole window after close
+
+**Symptom:** memory grows by about 20 MB for every closed project window (and the test JVM runs out of heap
+on a 4 GB CI runner partway through the FX suite). A closed window's `MainController` stays reachable.
+
+**Cause, two routes, both through the caret:**
+
+- `setShowCaret(CaretVisibility.OFF)` (or `ON`) makes `CaretNode` flat-map onto a **static** stream
+  (`CaretNode.ALWAYS_FALSE` / `ALWAYS_TRUE`). The static stream's observer list then holds the caret, its
+  area, the area's panel and, through the panel's callbacks, the window. The default `AUTO` uses a per-area
+  stream instead and already hides the caret of a read-only area.
+- An area that has focus runs a caret **blink timer** — a JavaFX animation, which is a GC root while it
+  runs. Closing a window does not stop it; `GenericStyledArea.dispose()` does.
+
+**Fix / rule:** never call `setShowCaret` (`CaretVisibilityPolicyTest` enforces it), and dispose the area
+when its owner goes: `EditorBuffer.dispose()` calls `area.dispose()` for both views. A new long-lived
+editable area outside `EditorBuffer` needs the same call from its owner's close path.
+`WindowReleasedOnCloseFxTest` holds a weak reference to a closed window's controller and fails if either
+route comes back.
+
 ## Never ask `getCharacterBoundsOnScreen` for an *empty* range
 
 **Symptom:** typing (or some repeated action) gets slower the longer the editor is open, and never

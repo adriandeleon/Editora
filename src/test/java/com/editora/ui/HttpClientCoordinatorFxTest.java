@@ -305,6 +305,71 @@ class HttpClientCoordinatorFxTest {
     }
 
     @Test
+    void cancelWithNothingRunningReportsAndClosingABufferDropsItsRun() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setHttpClientSupport(true);
+        HttpClientCoordinator c = new HttpClientCoordinator(host, new FakeOps());
+        EditorBuffer b = httpBuffer();
+        host.active = b;
+        FxTestSupport.runOnFx(() -> c.ensureHttpPreview(b));
+
+        FxTestSupport.runOnFx(c::cancelActiveRequest);
+        assertEquals(tr("status.http.nothingRunning"), host.lastStatus);
+        assertFalse(FxTestSupport.callOnFx(() -> c.isRunningForTest(b)));
+
+        host.settings.setHttpClientSupport(false);
+        host.lastStatus = null;
+        FxTestSupport.runOnFx(c::cancelActiveRequest);
+        assertEquals(tr("statusbar.tip.httpDisabled"), host.lastStatus, "gated like the other http commands");
+        c.shutdown();
+    }
+
+    @Test
+    void cancellingARunningRequestStopsItAndIgnoresItsLateResult(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        // A server that accepts the connection and never answers.
+        try (java.net.ServerSocket silent =
+                new java.net.ServerSocket(0, 5, java.net.InetAddress.getLoopbackAddress())) {
+            FakeHost host = new FakeHost();
+            host.settings.setHttpClientSupport(true);
+            HttpClientCoordinator c = new HttpClientCoordinator(host, new FakeOps());
+            java.nio.file.Path file = dir.resolve("r.http");
+            java.nio.file.Files.writeString(file, "GET http://127.0.0.1:" + silent.getLocalPort() + "/\n");
+            EditorBuffer b = FxTestSupport.callOnFx(() -> {
+                EditorBuffer nb = new EditorBuffer();
+                nb.setPath(file);
+                nb.setContent(java.nio.file.Files.readString(file));
+                return nb;
+            });
+            host.active = b;
+            FxTestSupport.runOnFx(() -> {
+                c.ensureHttpPreview(b);
+                c.runRequest(b, 0);
+            });
+            assertTrue(FxTestSupport.callOnFx(() -> c.isRunningForTest(b)), "the request is in flight");
+            HttpClientPanel panel = FxTestSupport.callOnFx(() -> c.panelForTest(b));
+            javafx.scene.control.Button cancel = FxTestSupport.field(panel, "cancelButton");
+            assertFalse(FxTestSupport.callOnFx(cancel::isDisabled));
+
+            java.util.Map<EditorBuffer, com.editora.http.HttpClientService.Handle> running =
+                    FxTestSupport.field(c, "running");
+            com.editora.http.HttpClientService.Handle run = FxTestSupport.callOnFx(() -> running.get(b));
+
+            FxTestSupport.runOnFx(c::cancelActiveRequest);
+            assertEquals(tr("status.http.cancelled"), host.lastStatus);
+            assertFalse(FxTestSupport.callOnFx(() -> c.isRunningForTest(b)));
+            assertTrue(FxTestSupport.callOnFx(cancel::isDisabled));
+            assertTrue(run.isCancelled());
+            run.delivered().get(30, java.util.concurrent.TimeUnit.SECONDS); // the late callback has now run
+            assertEquals(tr("status.http.cancelled"), host.lastStatus, "…and did not report a failed request");
+            assertNull(
+                    FxTestSupport.callOnFx(panel::getSelectedExchange),
+                    "the cancelled run's late result must not appear as a response");
+            c.shutdown();
+        }
+    }
+
+    @Test
     void runRequestAtCaretWithNoHttpBufferReports() throws Exception {
         FakeHost host = new FakeHost();
         host.settings.setHttpClientSupport(true);

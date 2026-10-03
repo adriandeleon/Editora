@@ -1,3 +1,23 @@
+# Line endings: text files are LF in the repository AND in every working tree, on every platform.
+# Without this a Windows checkout (core.autocrlf=true is Git for Windows' default) rewrites every text
+# file to CRLF, and the Windows CI lane then fails tests that compare file contents — grammars, snippets,
+# message catalogs and golden files are all read as bytes. Verified when this was added: every tracked
+# text file was already LF in the index, so `git add --renormalize .` changes nothing.
+* text=auto eol=lf
+
+# The one tracked file that is CRLF on purpose (cmd.exe batch files want it). Left byte-for-byte alone.
+mvnw.cmd -text
+
+# Binary files: never converted, never diffed as text. (text=auto would detect these by their NUL bytes;
+# naming them means a new one cannot be misdetected.)
+*.png binary
+*.ico binary
+*.icns binary
+*.jar binary
+*.ttf binary
+*.pdf binary
+*.bin binary
+
 # Sample corpus: preserve bytes verbatim and keep it out of language stats / diffs.
 # The encoding/EOL samples MUST NOT be normalized by git (autocrlf, eol, BOM
 # stripping) — that would destroy exactly what they exercise.

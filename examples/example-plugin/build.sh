@@ -5,7 +5,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"     # the Editora-V2 project root
+ROOT="$(cd "$HERE/../.." && pwd)"     # the Editora project root
 
 echo "==> Compiling Editora (provides the plugin API + JavaFX deps)"
 ( cd "$ROOT" && ./mvnw -q -o compile )

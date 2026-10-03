@@ -4,35 +4,60 @@
 #
 # The plugin (com.microsoft.java.debug.plugin-*.jar) is the jar that teaches jdtls how to debug. It
 # isn't published as a standalone download; it ships inside the VS Code "Debugger for Java" extension
-# (vscjava.vscode-java-debug), which is just a zip (.vsix). This script fetches the latest release from
-# Open VSX and extracts only the plugin jar.
+# (vscjava.vscode-java-debug), which is just a zip (.vsix). This script fetches a PINNED release from
+# Open VSX, checks its SHA-256, and extracts only the plugin jar.
 #
 # Destination:  $EDITORA_CONFIG_DIR/plugins/dap/java/   (default: ~/.editora/plugins/dap/java/)
 #   Editora auto-detects this location (and the ~/.editora-dev/... variant for --dev runs), so once the
 #   jar is here you just enable Settings -> Debugging; no path needs to be set.
 #   For a --dev instance, run:  EDITORA_CONFIG_DIR="$HOME/.editora-dev" scripts/install-java-debug.sh
 #
-# Requirements: curl, unzip.
+# Requirements: curl, unzip, and sha256sum or shasum.
 set -euo pipefail
 
 CONFIG_DIR="${EDITORA_CONFIG_DIR:-$HOME/.editora}"
 DEST="$CONFIG_DIR/plugins/dap/java"
-API="https://open-vsx.org/api/vscjava/vscode-java-debug/latest"
+# A PINNED release with its checksum — deliberately not the registry's "latest" alias. This script runs in pull-request CI
+# (ci.yml, the compact-source probes) and its output is loaded into jdtls, so "whatever was published most
+# recently, unchecked" meant a new upstream release (or a compromised registry response) changed what CI
+# ran with no change in this repository. To move to a newer release, set both values together: the hash is
+# `sha256sum` of the .vsix and should equal the registry's own
+# https://open-vsx.org/api/vscjava/vscode-java-debug/<version>/file/vscjava.vscode-java-debug-<version>.sha256
+# Override with JAVA_DEBUG_VERSION + JAVA_DEBUG_SHA256 to try another release.
+PINNED_VERSION="0.59.0"
+PINNED_SHA256="87627e24dbb5b01137decc0265f043cb08adad22af3c195f1ba39898dafb1588"
+VERSION="${JAVA_DEBUG_VERSION:-$PINNED_VERSION}"
+if [ "$VERSION" = "$PINNED_VERSION" ]; then
+  SHA256="${JAVA_DEBUG_SHA256:-$PINNED_SHA256}"
+else
+  SHA256="${JAVA_DEBUG_SHA256:?JAVA_DEBUG_VERSION is overridden, so JAVA_DEBUG_SHA256 must be given too}"
+fi
+VSIX_URL="https://open-vsx.org/api/vscjava/vscode-java-debug/$VERSION/file/vscjava.vscode-java-debug-$VERSION.vsix"
 
 for cmd in curl unzip; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "error: '$cmd' is required but not installed." >&2; exit 1; }
 done
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256_of() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then
+  sha256_of() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else
+  echo "error: 'sha256sum' or 'shasum' is required to verify the download." >&2; exit 1
+fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$DEST"
 
-echo "Resolving the latest 'Debugger for Java' release from Open VSX..."
-VSIX_URL="$(curl -fsSL "$API" | grep -oE 'https://[^"]+\.vsix' | head -n1)"
-[ -n "$VSIX_URL" ] || { echo "error: could not find a .vsix download URL from $API" >&2; exit 1; }
-
-echo "Downloading: $VSIX_URL"
+echo "Downloading 'Debugger for Java' $VERSION: $VSIX_URL"
 curl -fSL --progress-bar "$VSIX_URL" -o "$TMP/java-debug.vsix"
+GOT="$(sha256_of "$TMP/java-debug.vsix")"
+if [ "$GOT" != "$SHA256" ]; then
+  echo "error: checksum mismatch for $VSIX_URL" >&2
+  echo "  expected $SHA256" >&2
+  echo "  got      $GOT" >&2
+  exit 1
+fi
 
 echo "Extracting the plugin jar..."
 unzip -o -q "$TMP/java-debug.vsix" 'extension/server/com.microsoft.java.debug.plugin-*.jar' -d "$TMP"

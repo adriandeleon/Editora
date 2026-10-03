@@ -395,7 +395,9 @@ Editora is built with the help of AI coding tools.
   cached by source hash. Zoom resizes the image; export a diagram to **SVG / PNG / PDF**
   (`diagram.export`). **On by default** — self-gating on detection, so it's inert until the tool is found
   (install via your package manager, e.g. `brew install graphviz plantuml`). Toggle + tool paths under
-  *Settings → Languages & Tools → Diagrams*.
+  *Settings → Languages & Tools → Diagrams*. PlantUML runs with its **`SANDBOX` security profile** (the
+  bundled standard library works; local-file and URL `!include` do not) — start Editora with
+  `PLANTUML_SECURITY_PROFILE` set to choose another.
 - **Typst document preview** — standalone `.typ` files get the same 3-mode preview as Markdown, rendered
   off-thread via the external **`typst`** CLI as a **multi-page** stack (one image per page). The last good
   render stays on screen while you edit (no flicker), and a compile error keeps it visible under a small
@@ -601,7 +603,8 @@ Editora is built with the help of AI coding tools.
 - **HTML live preview** — a floating browser icon on any HTML file opens it in a detected desktop
   browser (Safari, Chrome, Firefox, Edge, or the system default), served over a tiny **loopback** web server
   so its CSS/JS/images load. The page **reloads live as you type** (unsaved edits included). On by default
-  (*Settings → HTML Preview*); no external tool — it uses the JDK's built-in HTTP server.
+  (*Settings → HTML Preview*); no external tool — it uses the JDK's built-in HTTP server, which answers only
+  the tab it opened (a per-session URL prefix) and will not serve a home directory or drive root.
 - **Remote files (SFTP)** _(Beta)_ — connect to a server over SSH/SFTP (*Remote: Connect to SFTP…*) and edit its
   files as if they were local: the remote folder mounts in the Project tool window, and open/edit/save go
   straight over SFTP. Authenticates with your default `~/.ssh` keys, a chosen key file, or a password;
@@ -748,8 +751,11 @@ On **Linux**, the `.deb` installs the app under `/opt/editora/`, registers it in
 (with the Editora icon), and adds an **`editora` command on `PATH`** (a `/usr/bin/editora` symlink
 created by the package's maintainer scripts), so you can launch it from the menu or from a terminal
 with arguments — e.g. `editora some/file.java:42` or `editora --new-file=notes.md`. The menu entry and
-command are removed when you uninstall the package. (The `.rpm` installs under `/opt/editora/` too; run
-`/opt/editora/bin/Editora` or add your own symlink.)
+command are removed when you uninstall the package. It also makes *Editora Expert Mode* the system-wide
+default for text and source files; the defaults it replaces in `/usr/share/applications/mimeapps.list`
+are remembered and put back on uninstall, and an existing `/usr/bin/editora` that is not Editora's is
+left alone. (The `.rpm` installs under `/opt/editora/` too; run `/opt/editora/bin/Editora` or add your
+own symlink.)
 
 Linux releases also ship a **portable install tarball** (`Editora-<version>-linux-<arch>.tar.gz`, x64 +
 arm64) for systems without `.deb`/`.rpm` (or where you'd rather not use a package manager). It bundles the
@@ -761,6 +767,10 @@ tar xzf Editora-<version>-linux-x64.tar.gz && cd editora-x86_64
 sudo ./install.sh     # system    -> /opt/editora       (+ /usr/local/bin/editora)
 ./install.sh --uninstall   # remove it again
 ```
+
+A system install is owned by root and not group- or world-writable, whoever unpacked the tarball.
+`--prefix DIR` installs into `DIR/editora` instead, and refuses to touch that directory if it already
+holds something that is not an Editora install.
 
 Either way it adds an `editora` command and an application-menu entry (with the Editora icon). You can also
 run it in place without installing: `./Editora/bin/Editora`. Build one locally from an app-image with

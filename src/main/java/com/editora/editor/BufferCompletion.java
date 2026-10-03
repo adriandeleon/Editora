@@ -327,7 +327,11 @@ final class BufferCompletion {
         javafx.scene.Node rendered = null;
         if (doc != null && !doc.isBlank()) {
             try {
-                rendered = MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(doc.strip()), null);
+                rendered = MarkdownRenderer.renderDocument(
+                        MarkdownRenderer.parseToDocument(doc.strip()),
+                        null,
+                        null,
+                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
             } catch (RuntimeException ex) {
                 rendered = null;
             }

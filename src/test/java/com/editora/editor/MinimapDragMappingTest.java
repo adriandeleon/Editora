@@ -45,6 +45,19 @@ class MinimapDragMappingTest {
     }
 
     @Test
+    void aColumnPixelMapsToTheLineDrawnUnderIt() {
+        // Line i is drawn at [i*rowHeight, (i+1)*rowHeight) whatever the editor's own row heights are.
+        assertEquals(0, Minimap.lineAt(0, ROW_HEIGHT, LINES));
+        assertEquals(100, Minimap.lineAt(100 * ROW_HEIGHT, ROW_HEIGHT, LINES));
+        assertEquals(100, Minimap.lineAt(100 * ROW_HEIGHT + ROW_HEIGHT * 0.9, ROW_HEIGHT, LINES));
+        assertEquals(101, Minimap.lineAt(101 * ROW_HEIGHT, ROW_HEIGHT, LINES));
+        assertEquals(LINES - 1, Minimap.lineAt(COLUMN * 4, ROW_HEIGHT, LINES), "past the last row: the last line");
+        assertEquals(0, Minimap.lineAt(-20, ROW_HEIGHT, LINES), "above the column: the first");
+        assertEquals(-1, Minimap.lineAt(10, 0, LINES), "not measurable yet");
+        assertEquals(-1, Minimap.lineAt(10, ROW_HEIGHT, 0));
+    }
+
+    @Test
     void aPressInsideTheViewportBoxGrabsIt() {
         assertTrue(Minimap.withinBox(120, 100, 60));
         assertTrue(Minimap.withinBox(100, 100, 60), "the top edge counts as a grab");

@@ -2,9 +2,14 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import com.editora.command.CommandRegistry;
+import com.editora.config.NoteScope;
+import com.editora.config.PersonalNote;
+import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer;
+import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -190,6 +195,102 @@ class NarrowingFxTest {
         assertEquals(DOC, visible(b));
     }
 
+    // --- gutter marks across the boundary ---
+
+    /** Bookmarks on lines 0, 2 and 4 of {@code DOC}, breakpoints on 1 and 4, and a note on "three". */
+    private EditorBuffer marked() throws Exception {
+        EditorBuffer b = open(DOC);
+        FxTestSupport.runOnFx(() -> {
+            for (int line : new int[] {0, 2, 4}) {
+                b.toggleBookmark(line);
+            }
+            b.getBookmarkManager().setNote(2, "keep me");
+            b.toggleBreakpoint(1);
+            b.toggleBreakpoint(4);
+            b.getNoteManager()
+                    .add(PersonalNote.create(
+                            null, NoteScope.RANGE, new TextAnchor(2, 0, 2, 5, "three", "", ""), "n", List.of()));
+            b.getNoteManager()
+                    .add(PersonalNote.create(
+                            null, NoteScope.RANGE, new TextAnchor(4, 0, 4, 4, "five", "", ""), "n", List.of()));
+        });
+        return b;
+    }
+
+    private void narrowLines1To2(EditorBuffer b) throws Exception {
+        FxTestSupport.runOnFx(() -> b.getArea().selectRange(at(DOC, 1, 0), at(DOC, 2, 5)));
+        run("edit.narrowToRegion");
+    }
+
+    private static List<Integer> bookmarkLines(EditorBuffer b) throws Exception {
+        return FxTestSupport.callOnFx(() -> List.copyOf(b.getBookmarkManager().lines()));
+    }
+
+    private static List<Integer> breakpointLines(EditorBuffer b) throws Exception {
+        return FxTestSupport.callOnFx(() -> List.copyOf(b.getBreakpointManager().lines()));
+    }
+
+    private static List<Integer> noteLines(EditorBuffer b) throws Exception {
+        return FxTestSupport.callOnFx(() -> List.copyOf(b.getNoteManager().activeLines()));
+    }
+
+    @Test
+    void whileNarrowedOnlyTheRegionsMarksShowAndTheyAreRegionRelative() throws Exception {
+        EditorBuffer b = marked();
+        narrowLines1To2(b);
+        assertEquals(List.of(1), bookmarkLines(b), "the bookmark on \"three\" is region line 1");
+        assertEquals(List.of(0), breakpointLines(b), "the breakpoint on \"two\" is region line 0");
+        assertEquals(List.of(1), noteLines(b));
+    }
+
+    @Test
+    void aNarrowWidenCycleRestoresEveryBookmarkBreakpointAndNote() throws Exception {
+        // The two swaps are whole-document replaces; tracked as edits they deleted nearly every mark, and
+        // the loss was then persisted. Nothing in the file changed, so nothing may move.
+        EditorBuffer b = marked();
+        narrowLines1To2(b);
+        run("edit.widen");
+        assertEquals(DOC, content(b));
+        assertEquals(List.of(0, 2, 4), bookmarkLines(b));
+        assertEquals(
+                "keep me",
+                FxTestSupport.callOnFx(
+                        () -> b.getBookmarkManager().snapshot().get(1).note()));
+        assertEquals(List.of(1, 4), breakpointLines(b));
+        assertEquals(List.of(2, 4), noteLines(b));
+        assertEquals(
+                List.of("three", "five"),
+                FxTestSupport.callOnFx(() -> b.getNoteManager().activeSpans().stream()
+                        .map(r -> b.getArea().getText(r[0], r[1]))
+                        .toList()),
+                "each note still covers its own text");
+    }
+
+    @Test
+    void linesAddedWhileNarrowedMoveTheMarksBelowTheRegion() throws Exception {
+        EditorBuffer b = marked();
+        narrowLines1To2(b);
+        FxTestSupport.runOnFx(() -> b.getArea().insertText(0, "new\nnew\n")); // two lines above "two"
+        run("edit.widen");
+        assertEquals("one\nnew\nnew\ntwo\nthree\nfour\nfive", content(b));
+        assertEquals(List.of(0, 4, 6), bookmarkLines(b));
+        assertEquals(List.of(3, 6), breakpointLines(b));
+        assertEquals(List.of(4, 6), noteLines(b));
+    }
+
+    @Test
+    void reNarrowingFromANarrowedBufferStillKeepsEveryMark() throws Exception {
+        EditorBuffer b = marked();
+        narrowLines1To2(b);
+        FxTestSupport.runOnFx(() -> b.getArea().selectRange(0, 3)); // "two", measured in the region
+        run("edit.narrowToRegion");
+        assertEquals("two", visible(b));
+        run("edit.widen");
+        assertEquals(List.of(0, 2, 4), bookmarkLines(b));
+        assertEquals(List.of(1, 4), breakpointLines(b));
+        assertEquals(List.of(2, 4), noteLines(b));
+    }
+
     @Test
     void undoHistoryIsDroppedAtTheBoundarySoItCannotDuplicateTheDocument() throws Exception {
         // Undoing the narrowing swap would restore the whole document into the narrowed area while the
@@ -204,5 +305,51 @@ class NarrowingFxTest {
         FxTestSupport.runOnFx(() -> b.getArea().undo());
         assertEquals("two\nthree", visible(b));
         assertEquals(DOC, content(b), "and the hidden text is untouched throughout");
+    }
+
+    @Test
+    void theSecondSplitViewCannotUndoAcrossTheBoundaryEither() throws Exception {
+        // Each split view keeps its own undo stack over the shared document. Only the primary's was cleared,
+        // so Undo in the second view replayed the swap — the whole file back inside the held prefix/suffix.
+        EditorBuffer b = open(DOC);
+        FxTestSupport.runOnFx(() -> {
+            b.setSplit(EditorBuffer.Split.SIDE_BY_SIDE);
+            CodeArea second = FxTestSupport.field(b, "area2");
+            second.insertText(0, "X"); // an entry on the second view's stack, from before narrowing
+            second.deleteText(0, 1);
+            b.getArea().selectRange(at(DOC, 1, 0), at(DOC, 2, 5));
+        });
+        run("edit.narrowToRegion");
+        CodeArea second = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "area2"));
+        assertFalse(FxTestSupport.callOnFx(second::isUndoAvailable), "narrowing cleared the second view's history");
+        FxTestSupport.runOnFx(second::undo);
+        assertEquals("two\nthree", visible(b));
+        assertEquals(DOC, content(b));
+
+        FxTestSupport.runOnFx(() -> second.insertText(0, "Y"));
+        run("edit.widen");
+        assertFalse(FxTestSupport.callOnFx(second::isUndoAvailable), "and widening cleared it again");
+        FxTestSupport.runOnFx(second::undo);
+        assertEquals("one\nYtwo\nthree\nfour\nfive", content(b));
+        FxTestSupport.runOnFx(() -> b.setSplit(EditorBuffer.Split.NONE));
+    }
+
+    @Test
+    void undoHistoryCheckpointsDoNotSurviveTheBoundary() throws Exception {
+        // A checkpoint is a whole-text snapshot of the AREA. One taken before narrowing holds the whole file;
+        // restored into the narrowed area it would be saved between the held prefix and suffix — the file
+        // twice over. One taken while narrowed holds only the region; restored after widening it truncates.
+        EditorBuffer b = open(DOC);
+        FxTestSupport.runOnFx(b::captureUndoCheckpoint);
+        assertFalse(FxTestSupport.callOnFx(() -> b.getUndoHistory().isEmpty()), "precondition: a checkpoint exists");
+        FxTestSupport.runOnFx(() -> b.getArea().selectRange(at(DOC, 1, 0), at(DOC, 2, 5)));
+        run("edit.narrowToRegion");
+        assertTrue(FxTestSupport.callOnFx(() -> b.getUndoHistory().isEmpty()), "narrowing dropped the checkpoints");
+
+        FxTestSupport.runOnFx(b::captureUndoCheckpoint); // a region-only snapshot
+        assertFalse(FxTestSupport.callOnFx(() -> b.getUndoHistory().isEmpty()));
+        run("edit.widen");
+        assertTrue(FxTestSupport.callOnFx(() -> b.getUndoHistory().isEmpty()), "widening dropped them too");
+        assertEquals(DOC, content(b));
     }
 }

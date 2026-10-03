@@ -36,7 +36,8 @@ public final class ExternalToolService {
         exec.submit(() -> {
             ProcessRunner.Result r;
             try {
-                r = ProcessRunner.run(inv.workingDir(), timeout, inv.argv(), Map.of(), inv.stdin());
+                // The user's own tool, whose output they read or insert: their locale, not the parse-stable C one.
+                r = ProcessRunner.runInUserLocale(inv.workingDir(), timeout, inv.argv(), Map.of(), inv.stdin());
             } catch (Throwable t) {
                 // exec.submit discards the Future, so an Error (an OutOfMemoryError on a huge capture, say)
                 // would be swallowed into it: onResult never runs and the caller's "Running…" status spins

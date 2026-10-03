@@ -1,6 +1,16 @@
 package com.editora.diff;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -80,5 +90,118 @@ class PatchWriterTest {
 
         assertTrue(added.contains("+new\n\\ No newline at end of file"), added);
         assertTrue(deleted.contains("-old\n\\ No newline at end of file"), deleted);
+    }
+
+    // --- end-of-file shapes, checked against real `git apply` ----------------------------------------
+
+    /** Both sides unterminated and lines appended after the old last line: that line is no longer last. */
+    @Test
+    void appendingAfterAnUnterminatedLastLineReplacesItWithMarkers() {
+        assertEquals("""
+                --- a/f
+                +++ b/f
+                @@ -1,1 +1,2 @@
+                -a
+                \\ No newline at end of file
+                +a
+                +b
+                \\ No newline at end of file
+                """, PatchWriter.unifiedDiff("a/f", "b/f", "a", "a\nb"));
+    }
+
+    /** Both unterminated and trailing lines deleted: the surviving line becomes the unterminated last one. */
+    @Test
+    void deletingTrailingLinesAtAnUnterminatedEofKeepsTheResultUnterminated() {
+        String patch = PatchWriter.unifiedDiff("a/f", "b/f", "a\nb", "a");
+
+        assertTrue(patch.contains("-b\n\\ No newline at end of file\n"), patch);
+        assertTrue(patch.contains("+a\n\\ No newline at end of file\n"), patch);
+    }
+
+    /** Only one side's last line is in the hunk and the EOF state differs: one hunk, never an overlapping second. */
+    @Test
+    void anAppendedUnterminatedLineStaysInOneHunk() {
+        String patch = PatchWriter.unifiedDiff("a/f", "b/f", "a\nb\n", "a\nb\nc");
+
+        assertEquals(1, patch.split("\n@@ ", -1).length - 1, patch);
+        assertTrue(patch.endsWith(" a\n b\n+c\n\\ No newline at end of file\n"), patch);
+    }
+
+    @Test
+    void anUnterminatedLastLineSharedByBothSidesIsMarkedContext() {
+        String patch = PatchWriter.unifiedDiff("a/f", "b/f", "old\nsame", "new\nsame");
+
+        assertTrue(patch.endsWith("-old\n+new\n same\n\\ No newline at end of file\n"), patch);
+    }
+
+    /**
+     * Every pairing of a few bodies and both end-of-file states must produce a patch real Git accepts and
+     * that reproduces the right side byte for byte — including the three shapes that used to be rejected,
+     * to gain a newline, or to carry an overlapping hunk.
+     */
+    @Test
+    void everyEofShapeRoundTripsThroughGitApply(@TempDir Path dir) throws Exception {
+        Assumptions.assumeTrue(gitAvailable(), "git is not installed");
+        run(dir, null, "git", "init", "-q");
+        List<String> bodies = List.of(
+                "",
+                "a",
+                "a\nb",
+                "a\nb\nc",
+                "b",
+                "x\na\nb",
+                "a\n\nb",
+                "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve",
+                "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve",
+                "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\nthirteen");
+        List<String> texts = new ArrayList<>();
+        for (String body : bodies) {
+            texts.add(body);
+            if (!body.isEmpty()) {
+                texts.add(body + "\n");
+            }
+        }
+        Path file = dir.resolve("f.txt");
+        int checked = 0;
+        for (String left : texts) {
+            for (String right : texts) {
+                if (left.equals(right) || left.isEmpty() || right.isEmpty()) {
+                    continue; // creation/deletion need git's /dev/null headers, which this writer does not emit
+                }
+                String patch = PatchWriter.unifiedDiff("a/f.txt", "b/f.txt", left, right);
+                Files.writeString(file, left);
+                String label = "[" + left.replace("\n", "\\n") + "] -> [" + right.replace("\n", "\\n") + "]\n" + patch;
+                assertEquals(0, run(dir, patch, "git", "apply", "--check", "-").exit(), "git apply --check: " + label);
+                assertEquals(0, run(dir, patch, "git", "apply", "-").exit(), "git apply: " + label);
+                assertEquals(right, Files.readString(file), label);
+                checked++;
+            }
+        }
+        assertTrue(checked > 200, "the matrix should cover every EOF combination, covered " + checked);
+    }
+
+    private record Outcome(int exit, String output) {}
+
+    private static boolean gitAvailable() {
+        try {
+            return run(null, null, "git", "--version").exit() == 0;
+        } catch (IOException | InterruptedException e) {
+            return false;
+        }
+    }
+
+    private static Outcome run(Path dir, String stdin, String... command) throws IOException, InterruptedException {
+        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
+        if (dir != null) {
+            builder.directory(dir.toFile());
+        }
+        Process process = builder.start();
+        try (OutputStream in = process.getOutputStream()) {
+            if (stdin != null) {
+                in.write(stdin.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        return new Outcome(process.waitFor(), output);
     }
 }

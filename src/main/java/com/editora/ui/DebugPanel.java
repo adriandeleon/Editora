@@ -126,6 +126,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private DapManager.State lastState = DapManager.State.INACTIVE;
 
+    /** A before-launch build is in flight — see {@link #setPreparing}. */
+    private boolean preparing;
+
     /** Row kinds in the variables tree (watches are merged into it, IntelliJ-style). */
     enum Kind {
         SCOPE,
@@ -396,13 +399,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         boolean running = state == DapManager.State.RUNNING;
         boolean active = state != DapManager.State.INACTIVE;
         // Green play = Start when idle, Continue when paused; Pause is its complement while running.
-        start.setDisable(!(state == DapManager.State.INACTIVE || suspended));
+        start.setDisable(preparing || !(state == DapManager.State.INACTIVE || suspended));
         pause.setDisable(!running);
         stepOver.setDisable(!suspended);
         stepInto.setDisable(!suspended);
         stepOut.setDisable(!suspended);
         runToCursor.setDisable(!suspended);
-        stop.setDisable(!active);
+        stop.setDisable(!active && !preparing);
         restart.setDisable(!active);
         evalInput.setDisable(!suspended);
         threads.setDisable(!suspended);
@@ -414,6 +417,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             selectedFrameId = -1;
         }
         refreshStatus();
+    }
+
+    /**
+     * A before-launch build is running for a debug launch: there is no session yet, but Stop must be able to
+     * cancel the build and Start must not begin a second one.
+     */
+    public void setPreparing(boolean preparing) {
+        this.preparing = preparing;
+        boolean active = lastState != DapManager.State.INACTIVE;
+        start.setDisable(preparing || !(!active || lastState == DapManager.State.SUSPENDED));
+        stop.setDisable(!active && !preparing);
     }
 
     /** Records the file the session is debugging; shown beside the state while the session lives. */
