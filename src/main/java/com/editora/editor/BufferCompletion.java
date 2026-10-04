@@ -115,7 +115,7 @@ final class BufferCompletion {
 
     /**
      * The chords the completion popup and the quick-fix list take from the keymap while they are up, each
-     * with the command it stands in for (see {@link com.editora.command.KeyDispatcher#OWNED_CHORDS}): the
+     * with the command it stands in for (see {@code KeyDispatcher.OWNED_CHORDS}): the
      * list moves its own selection on {@code C-n}/{@code C-p} and closes on the cancel chord. Every other
      * binding keeps running its command — the lists used to mark the whole area {@code editora.ownsKeys},
      * which took all caret and editing chords off the keymap and left them to the text area's built-ins.
@@ -123,7 +123,8 @@ final class BufferCompletion {
     static final java.util.Map<String, String> LIST_CHORDS =
             java.util.Map.of("C-n", "nav.lineDown", "C-p", "nav.lineUp", "C-g", "edit.cancel", "escape", "edit.cancel");
 
-    private static final String OWNED_CHORDS = com.editora.command.KeyDispatcher.OWNED_CHORDS;
+    private static final String OWNED_CHORDS =
+            "editora.ownsChords"; // KeyDispatcher.OWNED_CHORDS (no editor -> command import)
 
     /**
      * State of the popup when it shows the <em>local</em> list (snippets/keywords, no server session): the

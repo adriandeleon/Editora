@@ -2,10 +2,14 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Callable;
 
 import com.editora.command.CommandRegistry;
+import com.editora.config.ConfigManager;
 import com.editora.editor.EditorBuffer;
+import com.editora.externaltool.ExternalTool;
 import com.editora.mcp.McpBridge;
 import com.editora.plugin.ActiveEditor;
 import org.junit.jupiter.api.AfterAll;
@@ -13,6 +17,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -104,6 +110,33 @@ class NarrowedWholeBufferWritersFxTest {
             editor.setText(text.replace("three", "THREE"));
         });
         assertWholeFileIs(DOC.replace("three", "THREE"), b);
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // the tool is `tr`
+    void anExternalToolReplacingTheBufferReplacesTheWholeFile() throws Exception {
+        EditorBuffer b = openNarrowed("tool.txt", DOC, 1, 2);
+        ExternalTool tool = new ExternalTool(
+                "Upcase",
+                "tr",
+                "a-z A-Z",
+                "",
+                ExternalTool.StdinSource.BUFFER,
+                ExternalTool.OutputTarget.REPLACE_BUFFER,
+                true);
+        ConfigManager config = FxTestSupport.field(fx.controller, "config");
+        FxTestSupport.runOnFx(() -> {
+            config.getSettings().setExternalTools(new ArrayList<>(List.of(tool)));
+            FxTestSupport.call(fx.controller, "refreshExternalToolCommands", new Class<?>[] {});
+        });
+        long before = FxTestSupport.callOnFx(b::docVersion);
+        assertTrue(FxTestSupport.callOnFx(() -> registry.run(ExternalTool.commandIdFor("Upcase"))));
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (FxTestSupport.callOnFx(b::docVersion) == before && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50);
+        }
+        FxTestSupport.drainFx();
+        assertWholeFileIs(DOC.toUpperCase(java.util.Locale.ROOT), b);
     }
 
     // --- helpers -----------------------------------------------------------------------------------

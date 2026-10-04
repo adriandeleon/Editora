@@ -36,8 +36,8 @@ gutter work behind it. Working-tree mutations are serialised across both.
   repository's own config names (`remote.<name>.uploadpack`, `core.sshCommand`), which no `-c`
   override can blanket-disable. The cost is that in a genuine `--filter=blob:none` clone the gutter
   bars, blame and blob views of a not-yet-fetched file stay empty until a user-initiated command
-  (fetch, pull, checkout) brings the object in; a git too old to know the variable (before 2.45 and
-  the 2.39.4–2.44.1 maintenance releases) ignores it. Not covered:
+  (fetch, pull, checkout) brings the object in; a git too old to know the variable ignores it
+  (verified with git 2.47; the minimum version has not been established). Not covered:
   `filter.<name>.clean`/`process` drivers selected through `.gitattributes`, which cannot be
   disabled without breaking Git LFS and end-of-line conversion; that needs a trust decision, not an
   override. The cost is that a `core.fsmonitor` daemon is not used for background status.

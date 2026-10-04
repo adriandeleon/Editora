@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Coding-feature fixes from the October review of LSP, Git, diff, debugging, completion, editing, search and
+  the test runner:
+  - Security:
+    - Background Git reads (gutter diff, blob view, blame, folder review) no longer fetch missing objects on
+      demand, so a partial-clone repository's own config can no longer make opening a file run its transport
+      program.
+    - The Astro language server no longer loads a TypeScript SDK from an untrusted folder. It uses the SDK
+      beside the server, or is not started until the folder is trusted; the trust prompt lists the SDK.
+  - Editing:
+    - Undo could go past the file load (or a reload from disk) and empty the buffer, after which a save wrote
+      a zero-byte file. The loaded text is now the undo baseline.
+    - Enter or a terminator after an already aligned `fi`/`end`/`done`/`else` no longer dedents that line
+      again; Backspace and Escape no longer trigger the closer re-align.
+    - Editing a collapsed fold's header no longer strands its hidden body: kill/cut/copy line, duplicate,
+      move, transpose and comment act on the whole folded block, and splitting or joining the header expands
+      the fold.
+    - Pasting CRLF clipboard text (and yank-pop, the kill-ring picker) no longer overshoots the caret and yank
+      range.
+    - Whole-buffer External Tools ("Replace buffer"), Markdown lint fix, CSV align/shrink, an AI agent file
+      write, a plugin `setText` and an MCP whole-buffer `edit_buffer` no longer duplicate the hidden text of a
+      narrowed buffer; they widen and replace the whole document.
+  - Completion and snippets:
+    - With the completion popup or quick-fix list open, caret and editing chords (C-a, C-e, C-k, M-f,
+      Ctrl+/ …) run their commands again instead of selecting the whole document, pasting, or typing a
+      letter; the documentation panel no longer swallows the first Escape.
+    - Without a language server the completion list follows the word as you type, and Enter/Tab no longer
+      replace a finished word with a snippet offered for its first letters.
+    - Snippets use the buffer's indentation, and CRLF in snippet, clipboard or server text no longer
+      misplaces tab stops.
+    - User snippet files with comments or trailing commas (VS Code style) load; Settings → Snippets never
+      overwrites a file it could not parse and keeps multiple prefixes and `scope`.
+  - Search:
+    - Find bar Replace rewrote a different match than the selected one after navigating or on repeated
+      presses; it now replaces the selected match and moves to the next.
+    - Find in Files Replace All with the ripgrep backend could rewrite text the preview never showed for
+      patterns ripgrep and Java read differently; the listed matches now come from the engine that replaces
+      them.
+    - Search Everywhere filters as you type in a window with no project, with the symbol index off, and
+      while the first project walk is running.
+  - Git, diff and history:
+    - The Git Log acts on the repository it lists: it clears and reloads when the active repository or branch
+      changes, its actions run there even if the active tab changes while a dialog is open, and the
+      hard-reset confirmation names the branch and repository.
+    - Stage/Unstage hunk no longer writes an index blob that matches neither side at end of file; unstaging
+      a newly added file removes it from the index and staging a deleted file stages the deletion.
+    - The three-way merge resolver no longer drops or duplicates an edit when both sides change lines inside
+      a run of identical lines.
+    - Diffs, the merge resolver and Local History read non-UTF-8 files the way the editor does, so an
+      unmodified file no longer shows changes against HEAD and applying a hunk no longer writes U+FFFD;
+      hunks can be applied to a CRLF file that is not open; restoring a revision keeps line endings and
+      encoding.
+    - Resolve Conflicts and diffs on a narrowed buffer use the whole document.
+    - A Local History index that could not be loaded no longer causes every stored revision to be deleted
+      at the next save.
+  - Language servers:
+    - Renaming a Java class from a usage site no longer fails when the declaring file is not open, and a
+      file-moving rename in a project opened through a symlink no longer leaves the tab on the old path.
+    - JSON, CSS and HTML diagnostics work again and Pyright resolves `src/`-layout imports: configuration is
+      now sent and answered per server.
+  - Run, test and debug:
+    - The Run console no longer closes when a run exits.
+    - Test Results no longer reports a failed run as "N of N tests passed"; Go build failures and the npm
+      "see Output" banner are shown.
+    - Re-hitting the same breakpoint with debugpy no longer leaves stale variables; Java debugging with
+      program arguments no longer times out.
+  - Navigation and windows:
+    - Bookmark, note, mnemonic-mark and diff "open at line" jumps into a file with no tab land on the line
+      instead of line 1, and are recorded once in the Back/Forward history.
+    - A file opened in the background (cross-file rename, diff apply, agent write) restores its folds,
+      bookmarks, breakpoints, notes and read-only pin.
+  - Ruby and `.desktop` files have syntax highlighting again, as do TypeScript `using` lines.
 - Fixed a memory leak of about 20 MB per closed window: read-only console areas (Run, build output, HTTP
   response, diff sides, the Settings preview) were held by a static RichTextFX stream, and an editor that had
   focus when its window closed kept its caret blink timer running. Buffers now dispose their editor areas.
