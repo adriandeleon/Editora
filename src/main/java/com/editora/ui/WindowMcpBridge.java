@@ -220,7 +220,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             CodeArea area = b.getArea();
             String replacement = newText == null ? "" : newText;
             if (oldText == null || oldText.isEmpty()) {
-                area.replaceText(replacement); // whole-buffer rewrite, one undo step
+                // read_buffer returns the whole file, so a rewrite replaces the whole file: widens a narrowed
+                // buffer first, then one undo step.
+                b.replaceWholeDocument(replacement);
                 return null;
             }
             String text = area.getText();

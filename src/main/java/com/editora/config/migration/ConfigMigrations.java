@@ -170,7 +170,16 @@ public final class ConfigMigrations {
         } catch (IOException ignored) {
             // cannot tell — treat it as content worth keeping
         }
-        problems.accept(new ConfigLoadProblem(file, ConfigLoadProblem.Kind.UNREADABLE, List.of(), keepCorrupt(file)));
+        problems.accept(unreadable(file));
+    }
+
+    /**
+     * An {@link ConfigLoadProblem.Kind#UNREADABLE} problem for {@code file}, keeping a copy of it beside it
+     * first. For an owner that knows a file is damaged when {@link #readVersioned} cannot — a zero-length
+     * Local History index beside stored revision bodies, which reads as "an empty file".
+     */
+    public static ConfigLoadProblem unreadable(Path file) {
+        return new ConfigLoadProblem(file, ConfigLoadProblem.Kind.UNREADABLE, List.of(), keepCorrupt(file));
     }
 
     /**
