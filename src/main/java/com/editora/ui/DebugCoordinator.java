@@ -159,6 +159,12 @@ final class DebugCoordinator {
             new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
     private EditorBuffer pendingPersist;
 
+    /** What each open file's breakpoints were when last sent to the live session (cleared between sessions). */
+    private final Map<Path, DapModels.FileBreakpoints> sentBreakpoints = new java.util.HashMap<>();
+
+    /** Repeats the last coordinator-level start (save, before-launch build, closed-file breakpoints, launch). */
+    private Runnable relaunch;
+
     DebugCoordinator(CoordinatorHost host, DapManager dapManager, LspManager lspManager, LspCoordinator lsp, Ops ops) {
         this.host = host;
         this.dapManager = dapManager;
@@ -228,6 +234,22 @@ final class DebugCoordinator {
         } else {
             dapManager.stop();
         }
+    }
+
+    /**
+     * Debug ▸ Restart: stops the session and starts it again <em>the way it was started</em> — saving the
+     * edited file, running the configuration's before-launch build, re-anchoring closed-file breakpoints.
+     * Re-running only the adapter launch debugged the previous code against the edited buffer's breakpoint
+     * lines. An attach has nothing to redo and is simply re-attached.
+     */
+    void restart() {
+        Runnable again = relaunch;
+        if (again == null) {
+            dapManager.restart();
+            return;
+        }
+        dapManager.stop();
+        again.run();
     }
 
     /** Window close: the before-launch build must not outlive the window that started it. */
@@ -349,7 +371,12 @@ final class DebugCoordinator {
     void onBreakpointsChanged(EditorBuffer buffer) {
         schedulePersistBreakpoints(buffer); // debounced FS write (off the per-newline hot path)
         if (buffer.getPath() != null && dapManager.isActive()) {
-            dapManager.updateBreakpoints(fileBreakpoints(buffer)); // adapter stays current immediately
+            // Adapter stays current immediately — but only when what it is told actually changed: editing
+            // the text of a breakpoint's line is a change to persist, not one to put on the wire.
+            DapModels.FileBreakpoints now = fileBreakpoints(buffer);
+            if (!now.equals(sentBreakpoints.put(buffer.getPath(), now))) {
+                dapManager.updateBreakpoints(now);
+            }
         }
     }
 
@@ -399,10 +426,13 @@ final class DebugCoordinator {
         }
     }
 
-    /** The enabled breakpoints of {@code buffer} as a DAP {@code FileBreakpoints} (empty list if none). */
+    /**
+     * The enabled breakpoints of {@code buffer} as a DAP {@code FileBreakpoints} (empty list if none), in
+     * whole-file lines even while the buffer is narrowed.
+     */
     private DapModels.FileBreakpoints fileBreakpoints(EditorBuffer buffer) {
         List<DapModels.LineBreakpoint> lines = new ArrayList<>();
-        for (Breakpoint bp : buffer.getBreakpointManager().snapshot()) {
+        for (Breakpoint bp : buffer.getBreakpointManager().documentSnapshot()) {
             if (bp.enabled()) {
                 lines.add(new DapModels.LineBreakpoint(bp.line(), bp.condition(), bp.logMessage()));
             }
@@ -424,6 +454,7 @@ final class DebugCoordinator {
             }
             open.add(b.getPath().toString());
             DapModels.FileBreakpoints fb = fileBreakpoints(b);
+            sentBreakpoints.put(b.getPath(), fb);
             if (!fb.breakpoints().isEmpty()) {
                 out.add(fb);
             }
@@ -547,6 +578,9 @@ final class DebugCoordinator {
             public void onState(DapManager.State state) {
                 debugPanel.setState(state);
                 updateDebugStatus(state);
+                if (state == DapManager.State.INACTIVE || state == DapManager.State.STARTING) {
+                    sentBreakpoints.clear(); // the next session is told everything afresh
+                }
                 if (state != DapManager.State.SUSPENDED) {
                     clearExecHighlight();
                     clearDebugEditorSurfaces(); // inline values + hover live only while suspended
@@ -630,7 +664,7 @@ final class DebugCoordinator {
 
             @Override
             public void restart() {
-                dapManager.restart();
+                DebugCoordinator.this.restart();
             }
 
             @Override
@@ -736,7 +770,9 @@ final class DebugCoordinator {
                 // The user may resume or select another frame while this file is still loading. Never let
                 // that obsolete completion repaint an execution marker that clearExecHighlight removed.
                 if (execHighlightBuffer == b) {
-                    b.setExecutionLine(frame.line());
+                    // A narrowed buffer shows only its region: the frame's file line is region-relative
+                    // there (a stop outside the region has no line to show and paints nothing).
+                    b.setExecutionLine(frame.line() - b.getBreakpointManager().regionFirstLine());
                 }
             });
         }
@@ -777,6 +813,7 @@ final class DebugCoordinator {
             // SUSPENDED the green button keeps its Continue semantics (never yank a paused session).
             boolean differentFile = b != null && b.getPath() != null && !samePath(b.getPath(), dapManager.debugFile());
             if (dapManager.state() == DapManager.State.SUSPENDED
+                    || dapManager.isStepping() // a step in flight reads RUNNING, but it is the paused session
                     || !differentFile
                     || !debugEffectiveFor(b.getLanguage())) {
                 dapManager.resume(); // F5-style continue (no-op unless suspended)
@@ -784,6 +821,11 @@ final class DebugCoordinator {
             }
             dapManager.stop(); // retarget to the newly active file below
         }
+        launchBuffer(b);
+    }
+
+    /** Saves {@code b} and launches a debug session for it; also what Restart repeats for such a session. */
+    private void launchBuffer(EditorBuffer b) {
         if (b == null || b.getPath() == null && !ops.saveBuffer(b)) {
             host.setStatus(tr("status.debug.saveFirst"));
             return;
@@ -815,6 +857,8 @@ final class DebugCoordinator {
         String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
         dapManager.setEnv(
                 com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
+        Path launched = b.getPath();
+        relaunch = () -> relaunchFor(launched, this::launchBuffer);
         withClosedBreakpoints(() -> {
             if (compactSource && shebangSource != null) {
                 dapManager.startCompactShebang(b.getPath(), shebangSource, javaExec);
@@ -824,6 +868,16 @@ final class DebugCoordinator {
                 dapManager.startLaunch(b.getPath(), language, this::pickMainClass, javaExec);
             }
         });
+    }
+
+    /** Restart of a session started from {@code file}'s tab: repeat it there, or plainly if the tab is gone. */
+    private void relaunchFor(Path file, Consumer<EditorBuffer> launch) {
+        EditorBuffer b = ops.bufferForPath(file);
+        if (b != null) {
+            launch.accept(b);
+        } else {
+            dapManager.restart();
+        }
     }
 
     /**
@@ -902,6 +956,7 @@ final class DebugCoordinator {
             host.setStatus(tr("status.run.busy"));
             return;
         }
+        relaunch = () -> debugConfig(cfg);
         beforeLaunch.run(
                 host,
                 cfg,
@@ -932,11 +987,14 @@ final class DebugCoordinator {
     }
 
     private void startMainClassDebug(String targetFqn) {
+        startMainClassDebug(host.activeBuffer(), targetFqn);
+    }
+
+    private void startMainClassDebug(EditorBuffer b, String targetFqn) {
         if (!debugEffectiveFor("java")) {
             host.setStatus(tr("status.debug.unavailable"));
             return;
         }
-        EditorBuffer b = host.activeBuffer();
         if (b == null || b.getPath() == null || !host.isLocalBuffer(b) || !"java".equals(b.getLanguage())) {
             host.setStatus(tr("status.debug.needJavaFile"));
             return;
@@ -965,6 +1023,7 @@ final class DebugCoordinator {
                 dapManager.setVmArgs(""); // the gutter/command debug carries no VM args/env
                 dapManager.setEnv(configuredJdkEnvironment(root, null));
                 lsp.ensureManaged(routing); // see above
+                relaunch = () -> relaunchFor(routing, again -> startMainClassDebug(again, opt.mainClass()));
                 String javaExec = configuredJavaExecutable(root, null);
                 withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, opt, root, javaExec));
             };
@@ -1036,7 +1095,7 @@ final class DebugCoordinator {
         if (b == null || b.getPath() == null || dapManager.state() != DapManager.State.SUSPENDED) {
             return;
         }
-        dapManager.runToCursor(b.getPath(), b.getArea().getCurrentParagraph());
+        dapManager.runToCursor(b.getPath(), fileLineAtCaret(b));
     }
 
     /** Jump to Line: move the execution pointer to the caret line without executing in-between code.
@@ -1052,11 +1111,15 @@ final class DebugCoordinator {
         }
         dapManager.jumpToLine(
                 b.getPath(),
-                b.getArea().getCurrentParagraph(),
+                fileLineAtCaret(b),
                 err -> host.setStatus(err.isEmpty() ? tr("status.debug.jumpNoTarget") : err));
     }
 
-    /** Attaches to a running JVM (asks for {@code host:port}). */
+    /** The caret's line in the whole file (a narrowed buffer's paragraphs are region-relative). */
+    private static int fileLineAtCaret(EditorBuffer b) {
+        return b.getArea().getCurrentParagraph() + b.getBreakpointManager().regionFirstLine();
+    }
+
     /**
      * Attaches to an already-suspended JVM on {@code host:port} without prompting — used by the Test Results
      * "Debug Test" action, where Surefire/Gradle forked the test JVM suspended and printed its JDWP port.
@@ -1071,7 +1134,51 @@ final class DebugCoordinator {
         if (anchorFile != null) {
             debugPanel.setSessionFile(anchorFile.getFileName().toString());
         }
-        withClosedBreakpoints(() -> dapManager.startAttach(anchorFile, attachHost, port));
+        // The anchor names the session, but the adapter is started through jdtls, which only answers for a
+        // document it has open: a test class found on disk (Debug Test with no tab for it) has no session.
+        Path routing = attachRouting(anchorFile);
+        lsp.ensureManaged(routing); // an open tab whose server start was deferred
+        relaunch = null; // an attach is re-attached as it was
+        withClosedBreakpoints(() -> dapManager.startAttach(routing, attachHost, port));
+    }
+
+    /** The open Java file an attach anchored at {@code anchor} is routed through — see {@link #attachRouting}. */
+    private Path attachRouting(Path anchor) {
+        List<Path> openJava = new ArrayList<>();
+        host.forEachBuffer(b -> {
+            if (b.getPath() != null && host.isLocalBuffer(b) && "java".equals(b.getLanguage())) {
+                openJava.add(b.getPath());
+            }
+        });
+        return attachRouting(anchor, openJava, JavaProjectRoot.find(anchor), host::isLspManaged);
+    }
+
+    /**
+     * Pure: the file whose jdtls session starts the debug adapter for an attach. The anchor itself when it is
+     * open in a tab; otherwise an open Java file of the anchor's project (one already on the server first),
+     * else any open Java file already on the server, else the anchor — which then fails with the precise
+     * "no language server for file" rather than attaching through an unrelated project.
+     */
+    static Path attachRouting(Path anchor, List<Path> openJavaFiles, Path projectRoot, Predicate<Path> managed) {
+        if (anchor == null) {
+            return openJavaFiles.stream().filter(managed).findFirst().orElse(null);
+        }
+        Path sameProject = null;
+        Path anyManaged = null;
+        for (Path open : openJavaFiles) {
+            if (PathKeys.sameNormalized(open, anchor)) {
+                return anchor;
+            }
+            boolean onServer = managed.test(open);
+            if (projectRoot != null && open.toAbsolutePath().normalize().startsWith(projectRoot)) {
+                if (sameProject == null || (onServer && !managed.test(sameProject))) {
+                    sameProject = open;
+                }
+            } else if (onServer && anyManaged == null) {
+                anyManaged = open;
+            }
+        }
+        return sameProject != null ? sameProject : anyManaged != null ? anyManaged : anchor;
     }
 
     void debugAttach() {
@@ -1098,6 +1205,7 @@ final class DebugCoordinator {
                 ops.openToolWindow();
                 debugPanel.setSessionFile(b.getPath().getFileName().toString());
                 String attachHost = hostName;
+                relaunch = null; // an attach is re-attached as it was
                 withClosedBreakpoints(() -> dapManager.startAttach(b.getPath(), attachHost, port));
             } catch (NumberFormatException e) {
                 host.setStatus(tr("status.debug.badAddress", text));

@@ -467,7 +467,15 @@ and dispatches `startLaunch(file, language, picker)`. Adapter `output` events re
 console's pump: a bounded queue, one scheduled drain at a time, a bounded slice per drain with neighbouring
 events joined into one append, and a "truncated" notice when the debuggee outruns the UI; the queue is
 flushed before a session ends so its last lines are not lost. Step Over/Into/Out put the state back to
-RUNNING until the next stop, exactly like Resume. Launch paths:
+RUNNING until the next stop, exactly like Resume — but only once the adapter *acknowledges* the step: a
+refused step (java-debug: "the thread is not suspended") leaves the session SUSPENDED and reports the
+adapter's message. `isStepping()` is true from the request to the next stop; `debug.start` treats that as
+the paused session it is (Continue), never as a running one to retarget. The manager also tracks *which*
+threads are stopped (`stopped.allThreadsStopped`, `continue`'s `allThreadsContinued`, `continued`
+events): java-debug suspends and resumes per thread, so after Continue on one of several stopped threads
+the next still-stopped thread is brought forward instead of reporting a running session. Restart goes
+through `DebugCoordinator.restart()`, which repeats the coordinator-level start (save, before-launch
+build, closed-file breakpoints) rather than only the adapter launch. Launch paths:
 
 - **java** → resolve main class (`vscode.java.resolveMainClass`) → `resolveClasspath` →
   `resolveJavaExecutable` → `startDebugSession` → connect the socket → `launch`. A loose file with

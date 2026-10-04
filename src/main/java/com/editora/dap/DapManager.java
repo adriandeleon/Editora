@@ -116,6 +116,19 @@ public final class DapManager implements DapClient.Host {
     private final Object sessionLock = new Object();
     private State state = State.INACTIVE;
     private int currentThreadId;
+    /**
+     * The threads known to be stopped, with each one's stop reason, oldest first (FX thread). java-debug
+     * suspends and resumes <em>per thread</em>: two workers can sit on the same breakpoint, and resuming the
+     * one on screen leaves the other suspended with no further event to say so.
+     */
+    private final java.util.LinkedHashMap<Integer, String> stoppedThreads = new java.util.LinkedHashMap<>();
+    /** Counts stops shown, so a late step acknowledgement can tell the step has already ended. */
+    private int stopCount;
+    /** A step was acknowledged and its stop has not arrived yet (FX thread). */
+    private boolean stepInFlight;
+    /** The session epoch of a step request the adapter has not answered yet, else -1 (FX thread). */
+    private long stepPendingEpoch = -1;
+
     private Path debugFile;
     /** Temporary .java copy used to compile an extensionless shebang, scoped to its launch epoch. */
     private volatile SourceAlias sourceAlias;
@@ -342,6 +355,15 @@ public final class DapManager implements DapClient.Host {
 
     public int currentThreadId() {
         return currentThreadId;
+    }
+
+    /**
+     * Whether a Step Over/Into/Out is under way: requested, and its stop not yet reported. The session reads
+     * RUNNING for most of that time, but to the user it is still the paused session they are stepping
+     * through — not one to be replaced by a new launch.
+     */
+    public boolean isStepping() {
+        return stepInFlight || (client != null && stepPendingEpoch == sessionEpoch);
     }
 
     // --- Start (launch / attach) ----------------------------------------------------------------
@@ -835,7 +857,8 @@ public final class DapManager implements DapClient.Host {
     /** Matches a top-level type declaration, capturing its name (e.g. {@code public final class Foo}). */
     private static final java.util.regex.Pattern TYPE_DECL =
             java.util.regex.Pattern.compile("\\b(?:public\\s+)?(?:final\\s+|abstract\\s+|sealed\\s+|non-sealed\\s+)*"
-                    + "(?:class|record|enum|interface)\\s+(\\w+)");
+                    + "(?:class|record|enum|interface)\\s+([\\p{L}_$][\\p{L}\\p{N}_$]*)"); // not \\w: ASCII-only, cut
+    // Café to Caf
 
     /**
      * Derives the fully-qualified main-class name from a {@code .java} file: its {@code package}
@@ -1126,10 +1149,38 @@ public final class DapManager implements DapClient.Host {
     // --- Controls -------------------------------------------------------------------------------
 
     public void resume() {
-        if (client != null) {
-            client.resume(currentThreadId);
-            setState(State.RUNNING);
+        DapClient c = client;
+        if (c == null) {
+            return;
         }
+        long epoch = sessionEpoch;
+        int threadId = currentThreadId;
+        stepInFlight = false;
+        stoppedThreads.remove(threadId);
+        c.resume(threadId)
+                .whenComplete((all, e) -> Platform.runLater(() -> {
+                    if (e == null && isCurrent(epoch, c)) {
+                        afterThreadResumed(epoch, c, all == null || all);
+                    }
+                }));
+        setState(State.RUNNING);
+    }
+
+    /**
+     * One thread was resumed. When the adapter says the others were not ({@code allThreadsContinued=false})
+     * and one of them is still stopped, show that one instead of reporting a running session: nothing else
+     * would ever bring it back, and the program waits on it for good.
+     */
+    private void afterThreadResumed(long epoch, DapClient c, boolean allThreads) {
+        if (allThreads) {
+            stoppedThreads.clear();
+            return;
+        }
+        if (state != State.RUNNING || stoppedThreads.isEmpty()) {
+            return;
+        }
+        var next = stoppedThreads.entrySet().iterator().next();
+        presentStop(epoch, c, next.getKey(), next.getValue(), false, false);
     }
 
     /** Pauses a running session: targets the current thread if the adapter reports it, else the first.
@@ -1274,40 +1325,60 @@ public final class DapManager implements DapClient.Host {
     }
 
     public void stepOver() {
-        DapClient c = client;
-        if (c != null) {
-            c.next(currentThreadId);
-            stepping();
-        }
+        step(DapClient::next);
     }
 
     public void stepInto() {
-        DapClient c = client;
-        if (c != null) {
-            c.stepIn(currentThreadId);
-            stepping();
-        }
+        step(DapClient::stepIn);
     }
 
     public void stepOut() {
-        DapClient c = client;
-        if (c != null) {
-            c.stepOut(currentThreadId);
-            stepping();
-        }
+        step(DapClient::stepOut);
     }
 
     /**
-     * A step was sent: the thread is running again until the adapter reports the next stop, exactly as
-     * after {@link #resume()}. Leaving the state SUSPENDED kept the execution line, inline values and frame
-     * list of the previous stop on screen — and offered Step/Evaluate against frames that no longer exist —
-     * for as long as the step took, which for a step over a blocking call is indefinitely. It also made
-     * {@link #pause()} a no-op during that time, since it only acts while RUNNING.
+     * Sends a step for the current thread. Once the adapter <em>acknowledges</em> it the thread is running
+     * again until the next stop, exactly as after {@link #resume()}: leaving the state SUSPENDED kept the
+     * execution line, inline values and frame list of the previous stop on screen — and offered
+     * Step/Evaluate against frames that no longer exist — for as long as the step took, which for a step
+     * over a blocking call is indefinitely. It also made {@link #pause()} a no-op during that time.
+     *
+     * <p>A step the adapter <em>refuses</em> (java-debug: "the thread is not suspended", when another thread
+     * was picked in the selector) changes nothing: the debuggee is still where it was, so the session stays
+     * SUSPENDED with its controls usable and the adapter's message is reported.
      */
-    private void stepping() {
-        if (state == State.SUSPENDED) {
-            setState(State.RUNNING);
+    private void step(
+            java.util.function.BiFunction<DapClient, Integer, java.util.concurrent.CompletableFuture<Void>> request) {
+        DapClient c = client;
+        if (c == null || state != State.SUSPENDED || stepPendingEpoch == sessionEpoch) {
+            return;
         }
+        long epoch = sessionEpoch;
+        int threadId = currentThreadId;
+        int stops = stopCount;
+        stepPendingEpoch = epoch;
+        request.apply(c, threadId)
+                .whenComplete((v, e) -> Platform.runLater(() -> {
+                    if (stepPendingEpoch == epoch) {
+                        stepPendingEpoch = -1;
+                    }
+                    if (!isCurrent(epoch, c)) {
+                        return;
+                    }
+                    if (e != null) {
+                        listener.onError(msg(
+                                e instanceof java.util.concurrent.CompletionException && e.getCause() != null
+                                        ? e.getCause()
+                                        : e));
+                        return;
+                    }
+                    if (stopCount != stops || state != State.SUSPENDED) {
+                        return; // the step has already ended in a new stop (or the session moved on)
+                    }
+                    stoppedThreads.remove(threadId);
+                    stepInFlight = true;
+                    setState(State.RUNNING);
+                }));
     }
 
     public void stop() {
@@ -1466,21 +1537,50 @@ public final class DapManager implements DapClient.Host {
 
     @Override
     public void onStopped(int threadId, String reason) {
-        onStopped(sessionEpoch, threadId, reason);
+        onStopped(sessionEpoch, threadId, reason, false);
     }
 
-    private void onStopped(long epoch, int threadId, String reason) {
+    @Override
+    public void onStopped(int threadId, String reason, boolean allThreadsStopped) {
+        onStopped(sessionEpoch, threadId, reason, allThreadsStopped);
+    }
+
+    private void onStopped(long epoch, int threadId, String reason, boolean allThreadsStopped) {
         DapClient c = client;
         if (!isCurrent(epoch, c)) {
             return;
         }
+        presentStop(epoch, c, threadId, reason, true, allThreadsStopped);
+    }
+
+    /**
+     * Shows {@code threadId} as the stopped thread. {@code event} is a stop the adapter just reported;
+     * otherwise it is a thread that was already stopped and is being brought forward because the one on
+     * screen was resumed — which is dropped if a real stop arrives first, and must not consume a
+     * run-to-cursor temp breakpoint that the resumed thread has yet to reach.
+     */
+    private void presentStop(
+            long epoch, DapClient c, int threadId, String reason, boolean event, boolean allThreadsStopped) {
         c.stackTrace(threadId)
                 .whenComplete((frames, e) -> Platform.runLater(() -> {
                     if (!isCurrent(epoch, c)) {
                         return;
                     }
+                    if (e != null) {
+                        LOG.log(Level.WARNING, "stackTrace failed for thread " + threadId, e);
+                    }
+                    if (event) {
+                        if (allThreadsStopped) {
+                            stoppedThreads.clear(); // one stop stands for all of them, and so will one continue
+                        }
+                        stoppedThreads.put(threadId, reason == null ? "" : reason);
+                        clearTempBreakpoint(); // a run-to-cursor temp breakpoint is one-shot
+                    } else if (state != State.RUNNING || !stoppedThreads.containsKey(threadId)) {
+                        return;
+                    }
+                    stopCount++;
+                    stepInFlight = false;
                     currentThreadId = threadId;
-                    clearTempBreakpoint(); // a run-to-cursor temp breakpoint is one-shot
                     state = State.SUSPENDED;
                     listener.onState(State.SUSPENDED);
                     listener.onStopped(threadId, reason, originalFrames(frames));
@@ -1489,14 +1589,28 @@ public final class DapManager implements DapClient.Host {
 
     @Override
     public void onContinued() {
-        onContinued(sessionEpoch);
+        onContinued(sessionEpoch, 0, true);
     }
 
-    private void onContinued(long epoch) {
+    @Override
+    public void onContinued(int threadId, boolean allThreadsContinued) {
+        onContinued(sessionEpoch, threadId, allThreadsContinued);
+    }
+
+    private void onContinued(long epoch, int threadId, boolean allThreads) {
         Platform.runLater(() -> {
-            if (isCurrent(epoch)) {
-                setState(State.RUNNING);
+            if (!isCurrent(epoch)) {
+                return;
             }
+            if (allThreads) {
+                stoppedThreads.clear();
+            } else {
+                stoppedThreads.remove(threadId);
+                if (state == State.SUSPENDED && threadId != currentThreadId) {
+                    return; // another thread resumed; the one on screen is still stopped
+                }
+            }
+            setState(State.RUNNING);
         });
     }
 
@@ -1568,6 +1682,12 @@ public final class DapManager implements DapClient.Host {
             lspLease.run();
             lspLease = () -> {};
         }
+        if (s != State.RUNNING) {
+            stepInFlight = false;
+        }
+        if (s == State.INACTIVE || s == State.STARTING) {
+            stoppedThreads.clear();
+        }
         this.state = s;
         listener.onState(s);
     }
@@ -1606,12 +1726,22 @@ public final class DapManager implements DapClient.Host {
         return new DapClient.Host() {
             @Override
             public void onStopped(int threadId, String reason) {
-                DapManager.this.onStopped(epoch, threadId, reason);
+                DapManager.this.onStopped(epoch, threadId, reason, false);
+            }
+
+            @Override
+            public void onStopped(int threadId, String reason, boolean allThreadsStopped) {
+                DapManager.this.onStopped(epoch, threadId, reason, allThreadsStopped);
             }
 
             @Override
             public void onContinued() {
-                DapManager.this.onContinued(epoch);
+                DapManager.this.onContinued(epoch, 0, true);
+            }
+
+            @Override
+            public void onContinued(int threadId, boolean allThreadsContinued) {
+                DapManager.this.onContinued(epoch, threadId, allThreadsContinued);
             }
 
             @Override

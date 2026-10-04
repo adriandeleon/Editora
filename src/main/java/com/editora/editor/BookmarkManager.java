@@ -36,6 +36,8 @@ public final class BookmarkManager implements LineMarks.Carrier {
     private boolean restoring;
     /** True while a narrow/widen text swap runs: the swap is not an edit, so nothing is shifted through it. */
     private boolean swapping;
+    /** A marked line's text changed since the last {@link #snapshot()} (reported once, not per keystroke). */
+    private boolean textStale;
     /** While narrowed, the bookmarks outside the region (in whole-document lines); {@code null} otherwise. */
     private LineMarks.Held<Bookmark> held;
 
@@ -54,11 +56,16 @@ public final class BookmarkManager implements LineMarks.Carrier {
         public Bookmark withLine(Bookmark mark, int line) {
             return mark.withLine(line);
         }
+
+        @Override
+        public Bookmark withLineText(Bookmark mark, String lineText) {
+            return mark.withLineText(lineText);
+        }
     };
 
     public BookmarkManager(CodeArea area) {
         this.area = area;
-        area.plainTextChanges().subscribe(this::onTextChange);
+        area.multiPlainChanges().subscribe(this::onTextChanges);
     }
 
     /** Notified after any change (toggle/note/remove or an edit-driven line shift) for persistence. */
@@ -149,6 +156,7 @@ public final class BookmarkManager implements LineMarks.Carrier {
 
     /** A sorted snapshot of this buffer's bookmarks (for persistence). */
     public List<Bookmark> snapshot() {
+        textStale = false;
         return new ArrayList<>(byLine.values());
     }
 
@@ -293,40 +301,31 @@ public final class BookmarkManager implements LineMarks.Carrier {
     }
 
     private static String textAt(java.util.function.IntFunction<String> lineTextAt, int line) {
-        String t = lineTextAt.apply(line);
-        return t == null ? "" : t.strip();
+        return LineMarks.snapshotText(lineTextAt.apply(line));
     }
 
-    private void onTextChange(PlainTextChange change) {
+    private void onTextChanges(List<PlainTextChange> changes) {
         if (swapping || byLine.isEmpty()) {
             return; // hot-path early-out: nothing to track
         }
-        var pos = area.offsetToPosition(change.getPosition(), Bias.Forward);
-        int startLine = pos.getMajor();
-        boolean atLineStart = pos.getMinor() == 0;
-        int removedNL = countNewlines(change.getRemoved());
-        int insertedNL = countNewlines(change.getInserted());
-        if (removedNL == 0 && insertedNL == 0) {
-            return; // intra-line edit: no line moved
-        }
-        NavigableMap<Integer, Bookmark> shifted = LineMarks.shift(
-                byLine,
-                KIND,
-                startLine,
-                atLineStart,
-                removedNL,
-                insertedNL,
-                area.getParagraphs().size(),
-                line -> area.getParagraph(line).getText());
-        if (!shifted.equals(byLine)) {
+        LineMarkTracker.Result<Bookmark> result = LineMarkTracker.apply(byLine, KIND, changes, area);
+        if (result.moved()) {
             // Both the vacated and the new lines need their gutter markers repainted: the document edit
-            // already rebuilds those graphics, but with the pre-shift bookmark set, so the moved marker
-            // would otherwise vanish until the next manual refresh.
+            // already rebuilds those graphics, but with the pre-shift set, so the moved marker would
+            // otherwise vanish until the next manual refresh.
             java.util.Set<Integer> affected = new java.util.HashSet<>(byLine.keySet());
-            affected.addAll(shifted.keySet());
-            byLine = shifted;
+            affected.addAll(result.marks().keySet());
+            byLine = result.marks();
             fireChanged();
             onLinesRepaint.accept(affected);
+        } else if (result.retexted()) {
+            // Only a marked line's own text changed. Typing on such a line does this per keystroke, so the
+            // change is reported once and the fresh text is picked up by the next snapshot().
+            byLine = result.marks();
+            if (!textStale) {
+                textStale = true;
+                fireChanged();
+            }
         }
     }
 
@@ -400,15 +399,5 @@ public final class BookmarkManager implements LineMarks.Carrier {
             return "";
         }
         return area.getParagraph(line).getText().strip();
-    }
-
-    private static int countNewlines(String s) {
-        int n = 0;
-        for (int i = 0; i < s.length(); i++) {
-            if (s.charAt(i) == '\n') {
-                n++;
-            }
-        }
-        return n;
     }
 }

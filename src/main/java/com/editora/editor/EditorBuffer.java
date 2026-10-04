@@ -6946,28 +6946,22 @@ public class EditorBuffer implements TabContent {
         return reanchored;
     }
 
-    /** 0-based line currently highlighted as the debugger's execution point, or -1 when none. */
-    private int executionLine = -1;
+    /** The debugger's execution-point highlight (see {@link ExecutionLine}). */
+    private final ExecutionLine executionLine = new ExecutionLine();
 
     /**
      * Marks {@code line} as the current execution point (a distinct paragraph background) and scrolls/moves
      * the caret there so the built-in current-line highlight reinforces it. Clears any previous mark.
      */
     public void setExecutionLine(int line) {
-        clearExecutionLine();
-        if (line >= 0 && line < area.getParagraphs().size()) {
-            executionLine = line;
-            area.setParagraphStyle(line, java.util.List.of("exec-line"));
+        if (executionLine.set(area, folds, line)) {
             jumpToLine(line);
         }
     }
 
     /** Removes the execution-point highlight (if any). */
     public void clearExecutionLine() {
-        if (executionLine >= 0 && executionLine < area.getParagraphs().size()) {
-            area.setParagraphStyle(executionLine, java.util.Collections.emptyList());
-        }
-        executionLine = -1;
+        executionLine.clear(area);
     }
 
     /** The extra glyph CSS-class suffix for the breakpoint on {@code line} (disabled/logpoint/conditional). */

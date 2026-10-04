@@ -74,7 +74,20 @@ public final class DapClient implements IDebugProtocolClient {
     public interface Host {
         void onStopped(int threadId, String reason);
 
+        /**
+         * A stop, with whether the adapter suspended every thread or only {@code threadId}. java-debug
+         * suspends per thread, so several threads can be stopped at once and each must be resumed.
+         */
+        default void onStopped(int threadId, String reason, boolean allThreadsStopped) {
+            onStopped(threadId, reason);
+        }
+
         void onContinued();
+
+        /** A {@code continued} event for {@code threadId}, or for every thread. */
+        default void onContinued(int threadId, boolean allThreadsContinued) {
+            onContinued();
+        }
 
         void onOutput(String text, String category);
 
@@ -403,12 +416,13 @@ public final class DapClient implements IDebugProtocolClient {
     @Override
     public void stopped(StoppedEventArguments args) {
         Integer tid = args.getThreadId();
-        host.onStopped(tid == null ? 0 : tid, args.getReason());
+        host.onStopped(tid == null ? 0 : tid, args.getReason(), Boolean.TRUE.equals(args.getAllThreadsStopped()));
     }
 
     @Override
     public void continued(ContinuedEventArguments args) {
-        host.onContinued();
+        // "allThreadsContinued" is optional on the event and means "only this thread" when it is missing.
+        host.onContinued(args.getThreadId(), Boolean.TRUE.equals(args.getAllThreadsContinued()));
     }
 
     @Override
@@ -532,8 +546,13 @@ public final class DapClient implements IDebugProtocolClient {
         return new Host() {
             @Override
             public void onStopped(int threadId, String reason) {
+                onStopped(threadId, reason, false);
+            }
+
+            @Override
+            public void onStopped(int threadId, String reason, boolean allThreadsStopped) {
                 focus = child; // inspection and stepping now address the session that stopped
-                host.onStopped(threadId, reason);
+                host.onStopped(threadId, reason, allThreadsStopped);
             }
 
             @Override
@@ -663,14 +682,33 @@ public final class DapClient implements IDebugProtocolClient {
             List<DapModels.StackFrameInfo> out = new ArrayList<>();
             if (r != null && r.getStackFrames() != null) {
                 for (StackFrame f : r.getStackFrames()) {
-                    Source src = f.getSource();
-                    Path path = src != null && src.getPath() != null ? Path.of(src.getPath()) : null;
                     out.add(new DapModels.StackFrameInfo(
-                            f.getId(), f.getName(), path, f.getLine() - 1, f.getColumn())); // back to 0-based line
+                            f.getId(),
+                            f.getName(),
+                            sourcePath(f.getSource()),
+                            f.getLine() - 1, // back to 0-based line
+                            f.getColumn()));
                 }
             }
             return out;
         });
+    }
+
+    /**
+     * A frame's source as a local path, or {@code null} when it has none. Adapters put strings that are not
+     * file paths into {@code Source.path} — {@code <node_internals>/…}, {@code jdt://contents/…}, {@code
+     * <frozen importlib>} — and on Windows those are not even legal paths: one such frame used to fail the
+     * whole {@code stackTrace} response, leaving every stop with an empty call stack.
+     */
+    static Path sourcePath(Source source) {
+        if (source == null || source.getPath() == null) {
+            return null;
+        }
+        try {
+            return Path.of(source.getPath());
+        } catch (java.nio.file.InvalidPathException e) {
+            return null;
+        }
     }
 
     public CompletableFuture<List<DapModels.ScopeInfo>> scopes(int frameId) {
@@ -752,15 +790,20 @@ public final class DapClient implements IDebugProtocolClient {
         return timed(server.setVariable(a)).thenApply(r -> r == null ? value : r.getValue());
     }
 
-    public void resume(int threadId) {
+    /**
+     * Resumes {@code threadId}. The result says whether the adapter resumed <em>every</em> thread: per the
+     * protocol a missing {@code allThreadsContinued} means it did, and only an explicit {@code false} means
+     * other stopped threads are still stopped.
+     */
+    public CompletableFuture<Boolean> resume(int threadId) {
         DapClient session = target();
         if (session != this) {
-            session.resume(threadId);
-            return;
+            return session.resume(threadId);
         }
         ContinueArguments a = new ContinueArguments();
         a.setThreadId(threadId);
-        ignore(timed(server.continue_(a)));
+        return timed(server.continue_(a))
+                .thenApply(r -> r == null || !Boolean.FALSE.equals(r.getAllThreadsContinued()));
     }
 
     /** Pauses a running thread; the adapter answers with a {@code stopped(reason=pause)} event. */
@@ -812,37 +855,34 @@ public final class DapClient implements IDebugProtocolClient {
         return timed(server.goto_(a));
     }
 
-    public void next(int threadId) {
+    public CompletableFuture<Void> next(int threadId) {
         DapClient session = target();
         if (session != this) {
-            session.next(threadId);
-            return;
+            return session.next(threadId);
         }
         NextArguments a = new NextArguments();
         a.setThreadId(threadId);
-        ignore(timed(server.next(a)));
+        return timed(server.next(a));
     }
 
-    public void stepIn(int threadId) {
+    public CompletableFuture<Void> stepIn(int threadId) {
         DapClient session = target();
         if (session != this) {
-            session.stepIn(threadId);
-            return;
+            return session.stepIn(threadId);
         }
         StepInArguments a = new StepInArguments();
         a.setThreadId(threadId);
-        ignore(timed(server.stepIn(a)));
+        return timed(server.stepIn(a));
     }
 
-    public void stepOut(int threadId) {
+    public CompletableFuture<Void> stepOut(int threadId) {
         DapClient session = target();
         if (session != this) {
-            session.stepOut(threadId);
-            return;
+            return session.stepOut(threadId);
         }
         StepOutArguments a = new StepOutArguments();
         a.setThreadId(threadId);
-        ignore(timed(server.stepOut(a)));
+        return timed(server.stepOut(a));
     }
 
     /** Disconnects (terminates the debuggee), closes the socket, and kills the adapter subprocess tree. */

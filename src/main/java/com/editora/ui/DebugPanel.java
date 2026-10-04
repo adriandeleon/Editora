@@ -409,7 +409,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         runToCursor.setDisable(!suspended);
         stop.setDisable(!active && !preparing);
         restart.setDisable(!active);
-        evalInput.setDisable(!suspended);
+        // Usable while the program runs as well as while it is paused (Enter only evaluates when paused):
+        // disabling the field on every Step/Continue made JavaFX move focus out of the panel, the next stop
+        // then handed focus to the editor, and the expression being typed went into the source file.
+        evalInput.setDisable(!(suspended || running));
         threads.setDisable(!suspended);
         if (!active) {
             sessionFile = "";
@@ -656,7 +659,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         setValuePrompt(); // no-ops unless a settable leaf variable is selected
     }
 
-    /** Focuses the evaluate (REPL) field so the user can type an expression (enabled only while suspended). */
+    /** Focuses the evaluate (REPL) field so the user can type an expression (enabled only during a session). */
     public void focusEvaluate() {
         if (!evalInput.isDisabled()) {
             evalInput.requestFocus();
@@ -689,8 +692,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private void runEval() {
         String expr = evalInput.getText();
-        if (expr == null || expr.isBlank()) {
-            return;
+        if (expr == null || expr.isBlank() || lastState != DapManager.State.SUSPENDED) {
+            return; // nothing to evaluate against while the program runs; the typed text is kept
         }
         appendOutput("> " + expr + "\n", "console");
         evalInput.clear();

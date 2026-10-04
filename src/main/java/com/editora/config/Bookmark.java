@@ -54,6 +54,11 @@ public record Bookmark(int line, String note, String lineText, String mnemonic) 
         return new Bookmark(newLine, note, lineText, mnemonic);
     }
 
+    /** This bookmark with a fresh snapshot of its line's text (the line was edited in place). */
+    public Bookmark withLineText(String newLineText) {
+        return new Bookmark(line, note, newLineText, mnemonic);
+    }
+
     /** This bookmark with a new note (keeps the line, captured text and mnemonic). */
     public Bookmark withNote(String newNote) {
         return new Bookmark(line, newNote, lineText, mnemonic);

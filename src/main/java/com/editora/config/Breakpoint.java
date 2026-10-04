@@ -47,6 +47,11 @@ public record Breakpoint(int line, String condition, String logMessage, boolean 
         return new Breakpoint(newLine, condition, logMessage, enabled, lineText);
     }
 
+    /** This breakpoint with a fresh snapshot of its line's text (the line was edited in place). */
+    public Breakpoint withLineText(String newLineText) {
+        return new Breakpoint(line, condition, logMessage, enabled, newLineText);
+    }
+
     public Breakpoint withCondition(String newCondition) {
         return new Breakpoint(line, newCondition, logMessage, enabled, lineText);
     }
