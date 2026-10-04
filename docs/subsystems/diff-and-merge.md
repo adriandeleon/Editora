@@ -15,8 +15,14 @@ last line of each side a distinct identity before diffing, so the engine itself 
 when both sides end with it and as a `-line`/`+line` pair otherwise; its EOF shapes are tested by feeding
 every combination to real `git apply`.
 
-Git blobs and closed files are decoded through the editor's charset rules (BOM, then EditorConfig, then
-UTF-8). `BinaryDiff` sniffs bytes before decoding and renders stable type/size/hash metadata rather than
+Every side is held in the form an editor buffer of the same bytes holds. `DiffSideText` decodes Git blobs,
+closed files, merge stages and Local History's pre-delete capture exactly as the editor loads a file: the
+open buffer's effective charset when the file is open, else BOM, then EditorConfig, then UTF-8, with the
+editor's lossless fallback (`EditorConfigCharset.decodeLossless`) instead of U+FFFD substitution. Diff sides
+and merge stages are also reduced to bare `\n`, as a buffer is, so a hunk can be applied to a closed CRLF
+file (the buffer re-applies the file's line ending on save) and `BlobRewrite` compares the displayed text
+with a blob line by line rather than terminator by terminator. An open buffer contributes its whole
+document (`getContent()`), never just a narrowed region. `BinaryDiff` sniffs bytes before decoding and renders stable type/size/hash metadata rather than
 mojibake. Equal binary hashes therefore compare as equal; different binaries remain inspectable without
 pretending they are text. A Git blob or closed working file over 10 MB is likewise replaced by a short
 surrogate: the side always completes (a review never waits on it) and, like a binary side, it disables
@@ -109,7 +115,15 @@ restore goes through the same guarded path. Apply-all confirms; Undo and Save en
 operation. Line apply is deliberately secondary to hunk apply.
 
 Git-panel diffs add Stage/Unstage/Revert for the current hunk and line. The view derives the desired full
-index or worktree text. Working-tree application validates the displayed preimage. Index application does
+index or worktree text. Working-tree application validates the displayed preimage. For the index there is
+no separate final-newline action, so `HunkText` gives the result the end-of-file state of the side that
+supplies its last line (and an empty file when no line is left); when the hunk is everything that differs,
+the result is the other side as it stands. Three such whole-file results are not a rewrite of the entry's
+blob: unstaging a path HEAD does not have, and staging a file that is gone from the working tree, remove the
+index entry (`GitService.removeIndexEntry`, `update-index --force-remove` under the same compare-and-swap);
+unstaging a path HEAD has restores HEAD's own bytes. A path not yet in the index takes its charset,
+byte-order mark and line terminators from the working file, and its bytes are hashed with the path's Git
+filters (`hash-object --path`) as `git add` would. Index application does
 not use a text patch: `BlobRewrite` turns the desired text back into blob **bytes** — untouched lines keep
 their own terminators, new lines take the blob's dominant one, the blob's charset and byte-order mark are
 kept — and refuses when that cannot be done losslessly. `GitService.stageBlob` then holds Git's conventional
@@ -123,10 +137,18 @@ open-changed-line are available from the context menu and command palette.
 
 `merge.resolve` first asks Git for the conflicted path's `:1`, `:2`, and `:3` index blobs: the common
 ancestor, ours, and theirs. `GitService.BlobResult` distinguishes a valid empty blob from a missing stage.
-Blob reads stay on the Git executor, charset decoding follows the editor's BOM/EditorConfig rules, and the
-pure `ThreeWayMerge` computation runs away from the FX thread.
+Blob reads stay on the Git executor, the stages are decoded into the buffer's own form (see Text fidelity),
+and the pure `ThreeWayMerge` computation runs away from the FX thread. The source text, both staleness checks
+and Apply all work on the buffer's whole document, so resolving inside a narrowed buffer keeps the text outside
+the region.
 
-`ThreeWayMerge` diffs both sides against the ancestor. It automatically composes disjoint changes and
+`ThreeWayMerge` diffs both sides against the ancestor and first compacts each side's deltas the way Git's
+xdiff does (`xdl_change_compact`, without the indent heuristic): a run of changed lines is slid across the
+equal lines beside it until it joins a neighbouring run or lines up with the other file's change. Raw
+java-diff-utils deltas describe a line replaced inside a run of identical lines as an insertion plus a
+deletion of the run's last line, and that detached deletion was unified with the other side's real one,
+dropping an edit. Touching (adjacent) changes are still merged independently, which Git reports as a
+conflict; that divergence is deliberate. It automatically composes disjoint changes and
 overlapping changes that produce identical text; only divergent overlapping regions become conflicts. Each
 conflict retains an explicit base-presence bit, because two competing insertions have a real but empty
 ancestor region. If all three Git stages are not available, `ConflictParser` remains the fallback for files

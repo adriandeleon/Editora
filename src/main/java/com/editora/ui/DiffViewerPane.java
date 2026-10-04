@@ -160,7 +160,13 @@ public final class DiffViewerPane implements TabContent {
     }
 
     public record GitHunkRequest(
-            GitHunkAction action, int startRow, int endRow, String beforeText, String afterText, int targetLine) {}
+            GitHunkAction action,
+            int startRow,
+            int endRow,
+            String beforeText,
+            String afterText,
+            int targetLine,
+            boolean wholeFile) {}
 
     /**
      * Width of the side-by-side view's left pane, or 0 in unified view. The toolbar's right-hand cluster
@@ -1620,14 +1626,31 @@ public final class DiffViewerPane implements TabContent {
             leftTarget = !leftTarget;
         }
         String before = leftTarget ? leftText : rightText;
+        String other = leftTarget ? rightText : leftText;
+        // Stage and Unstage rewrite the index side. When the rows are everything that differs, the result is
+        // the other side as it stands (its end of file included), which lets the handler stage the file's
+        // own bytes or drop the entry; otherwise the end of the result follows the side supplying its last
+        // line. Revert edits the local file and keeps the documented local-apply rule.
+        boolean indexAction = action == GitHunkAction.STAGE || action == GitHunkAction.UNSTAGE;
+        boolean wholeFile = indexAction && com.editora.diff.HunkText.coversEveryChange(model.rows(), start, end);
         String after = action == GitHunkAction.OPEN
                 ? before
-                : computeAppliedFor(leftTarget ? EditableSide.LEFT : EditableSide.RIGHT, start, end);
+                : wholeFile
+                        ? other
+                        : indexAction
+                                ? com.editora.diff.HunkText.apply(
+                                        model.rows(),
+                                        start,
+                                        end,
+                                        !leftTarget,
+                                        DiffText.parse(before),
+                                        DiffText.parse(other))
+                                : computeAppliedFor(leftTarget ? EditableSide.LEFT : EditableSide.RIGHT, start, end);
         Row target = model.rows().get(row);
         int preferredLine = leftTarget ? target.leftLine() : target.rightLine();
         int fallbackLine = leftTarget ? target.rightLine() : target.leftLine();
         int line = preferredLine >= 0 ? preferredLine : fallbackLine;
-        onGitHunkAction.accept(new GitHunkRequest(action, start, end, before, after, Math.max(1, line)));
+        onGitHunkAction.accept(new GitHunkRequest(action, start, end, before, after, Math.max(1, line), wholeFile));
     }
 
     private void copyHunk(int row) {

@@ -939,6 +939,21 @@ public final class GitService {
         });
     }
 
+    /**
+     * Removes {@code path}'s index entry under the same compare-and-swap as {@link #stageBlob}. A hunk action
+     * whose result is "the path is not in the index" — unstaging a newly added file, staging the deletion of
+     * a file that is gone from the working tree — cannot be expressed as a blob: writing an empty one left
+     * the path staged as an empty (or one-newline) file.
+     */
+    public void removeIndexEntry(
+            Path root, String path, BlobResult expectedBlob, Consumer<ProcessRunner.Result> onResult) {
+        submit(exec, () -> {
+            ProcessRunner.Result result =
+                    userCommand(localCommands, () -> stageBlobNow(root, path, expectedBlob, null));
+            Platform.runLater(() -> onResult.accept(result));
+        });
+    }
+
     private static final Pattern OBJECT_ID = Pattern.compile("[0-9a-f]{40,64}");
 
     /** A path's index entry: {@code id} is a blob id, {@link #MISSING} or {@link #CONFLICT}. */
@@ -954,8 +969,17 @@ public final class GitService {
     /** Writes {@code body} as a blob and points {@code path} at it in the index named by {@code env}. */
     private ProcessRunner.Result writeIndexEntry(
             Path root, String path, IndexEntry entry, byte[] body, Map<String, String> env) {
-        ProcessRunner.Result hashed =
-                gitWithInput(root, body, List.of("hash-object", "-w", "--no-filters", "--stdin"), USER_ENV);
+        // An existing entry's bytes were rebuilt from its own blob and are stored verbatim. A path that is new
+        // to the index gets the working file's bytes, which Git must clean exactly as `git add` would
+        // (core.autocrlf, a clean filter): stored verbatim, a new CRLF file would be committed with CRLF in a
+        // repository that normalises line endings.
+        ProcessRunner.Result hashed = gitWithInput(
+                root,
+                body,
+                entry.found()
+                        ? List.of("hash-object", "-w", "--no-filters", "--stdin")
+                        : List.of("hash-object", "-w", "--stdin", "--path=" + path),
+                USER_ENV);
         String id = hashed.out().strip();
         if (!hashed.ok() || !OBJECT_ID.matcher(id).matches()) {
             return hashed.ok() ? new ProcessRunner.Result(1, "", "Git returned no blob id") : hashed;
@@ -1018,7 +1042,9 @@ public final class GitService {
                     return emptyIndex;
                 }
             }
-            ProcessRunner.Result result = writeIndexEntry(root, path, entry, body, env);
+            ProcessRunner.Result result = body != null
+                    ? writeIndexEntry(root, path, entry, body, env)
+                    : gitWithInput(root, new byte[0], List.of("update-index", "--force-remove", "--", path), env);
             if (!result.ok()) {
                 return result;
             }
