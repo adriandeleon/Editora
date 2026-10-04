@@ -142,6 +142,83 @@ class GitServiceHardeningFxTest {
         }
     }
 
+    /**
+     * A partial-clone repository fetches a missing blob the first time a command needs it, through the
+     * transport program its own config names. Background reads must fail instead of running that program.
+     */
+    @Test
+    void backgroundReadsDoNotFetchMissingObjectsThroughTheRepositorysTransport(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        Path file = repo.write("notes.txt", "one\ntwo\n");
+        repo.commitAll("init");
+        repo.write("notes.txt", "one\nTWO\n"); // the working tree differs, so every diff needs the HEAD blob
+
+        // Make the HEAD blob a promised-but-absent object of a partial clone.
+        String blob = repo.git("rev-parse", "HEAD:notes.txt").text().strip();
+        Files.delete(
+                repo.root.resolve(".git/objects").resolve(blob.substring(0, 2)).resolve(blob.substring(2)));
+        Path uploadPackRan = dir.resolve("uploadpack-ran");
+        Path sshRan = dir.resolve("ssh-ran");
+        repo.git("config", "core.repositoryformatversion", "1");
+        repo.git("config", "extensions.partialClone", "origin");
+        repo.git("config", "remote.origin.promisor", "true");
+        repo.git("config", "remote.origin.partialclonefilter", "blob:none");
+        repo.git("config", "remote.origin.url", dir.resolve("no-such-remote").toString());
+        repo.git("config", "remote.origin.uploadpack", "touch '" + uploadPackRan + "'; false");
+        repo.git("config", "core.sshCommand", "touch '" + sshRan + "'; false");
+
+        // Control: the trap is live. The gutter diff as Editora ran it before (no lazy-fetch suppression)
+        // starts the local transport; with an ssh URL it starts core.sshCommand.
+        repo.tryGit("diff", "--no-ext-diff", "--no-textconv", "-U0", "HEAD", "--", "notes.txt");
+        assertTrue(Files.exists(uploadPackRan), "a plain `git diff` lazily fetches through remote.origin.uploadpack");
+        repo.git("config", "remote.origin.url", "ssh://user@example.invalid/x.git");
+        repo.tryGit("show", "HEAD:notes.txt");
+        assertTrue(Files.exists(sshRan), "a plain `git show` lazily fetches through core.sshCommand");
+        Files.delete(uploadPackRan);
+        Files.delete(sshRan);
+
+        GitService service = new GitService();
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            async.onClose(service::shutdown);
+            for (String url : List.of(
+                    "ssh://user@example.invalid/x.git",
+                    dir.resolve("no-such-remote").toString())) {
+                repo.git("config", "remote.origin.url", url);
+                GitService.RepoState state =
+                        call(async, "refresh", (Consumer<GitService.RepoState> cb) -> service.refresh(file, file, cb));
+                assertTrue(state.isRepo(), "status does not need the blob and still works");
+                call(async, "diff", (Consumer<GitService.GitDiff> cb) -> service.diff(repo.root, file, cb));
+                assertArrayEquals(
+                        new byte[0],
+                        call(
+                                async,
+                                "show",
+                                (Consumer<byte[]> cb) -> service.showBytes(repo.root, "HEAD:notes.txt", cb)),
+                        "the absent blob reads as not found");
+                call(
+                        async,
+                        "blame",
+                        (Consumer<List<com.editora.git.BlameParser.BlameLine>> cb) ->
+                                service.blame(repo.root, file, cb));
+                call(async, "log", (Consumer<List<GitService.Commit>> cb) -> service.log(repo.root, file, 10, cb));
+                String head = repo.git("rev-parse", "HEAD").text().strip();
+                call(
+                        async,
+                        "commit files",
+                        (Consumer<List<CommitFile>> cb) -> service.commitFiles(repo.root, head, cb));
+                call(
+                        async,
+                        "folder diff",
+                        (Consumer<GitService.WorkingTreeDiff> cb) ->
+                                service.workingTreeDiff(repo.root, repo.root, "HEAD", cb));
+                call(async, "staged diff", (Consumer<String> cb) -> service.stagedDiff(repo.root, cb));
+
+                assertFalse(Files.exists(uploadPackRan), "remote.origin.uploadpack must not run for " + url);
+                assertFalse(Files.exists(sshRan), "core.sshCommand must not run for " + url);
+            }
+        }
+    }
+
     @Test
     void userInitiatedCommitsStillRunTheUsersHooks(@TempDir Path dir) throws Exception {
         GitTestRepo repo = GitTestRepo.init(dir);

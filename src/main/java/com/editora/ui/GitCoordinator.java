@@ -125,6 +125,7 @@ final class GitCoordinator {
     private java.util.Map<Path, com.editora.git.GitFileStatus> lastStatusByPath = java.util.Map.of();
 
     private String branchName = "";
+    private java.util.function.BiConsumer<Path, String> repositoryListener = (root, branch) -> {};
     private String upstream = "";
     private boolean supportApplied;
 
@@ -183,6 +184,14 @@ final class GitCoordinator {
      * "not a repo" / "git not installed" status and returns {@code true} so the caller early-returns.
      * Returns {@code false} (no echo) when a repo is present.
      */
+    /**
+     * Told (on the FX thread) whenever a refresh has applied the active repository root and branch — the
+     * Git Log uses it to stop listing the commits of a repository that is no longer the active one.
+     */
+    void onRepositoryChanged(java.util.function.BiConsumer<Path, String> listener) {
+        repositoryListener = listener;
+    }
+
     boolean reportIfNoRepo() {
         if (repoRoot != null) {
             return false;
@@ -221,6 +230,7 @@ final class GitCoordinator {
             lastStatus = GitStatus.NOT_A_REPO;
             branchName = "";
             upstream = "";
+            repositoryListener.accept(null, "");
             ops.setGitPanelStatus(null);
             lastStatusByPath = java.util.Map.of();
             ops.setProjectGitStatus(java.util.Map.of()); // Git turned off → clear the Project tree coloring
@@ -276,6 +286,7 @@ final class GitCoordinator {
         if (!state.isRepo()) {
             branchName = "";
             upstream = "";
+            repositoryListener.accept(null, "");
             ops.setStatusBarBranch(null, 0, 0);
             ops.setGitPanelStatus(null);
             lastStatusByPath = java.util.Map.of();
@@ -289,6 +300,7 @@ final class GitCoordinator {
         var status = state.status();
         branchName = status.branch();
         upstream = status.upstream();
+        repositoryListener.accept(repoRoot, branchName);
         ops.setStatusBarBranch(status.branch(), status.ahead(), status.behind());
         ops.setGitPanelStatus(status);
         lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, state.root());
@@ -746,7 +758,14 @@ final class GitCoordinator {
             Consumer<Consumer<ProcessRunner.Result>> operation,
             Consumer<ProcessRunner.Result> report,
             Runnable afterReload) {
-        Path root = repoRoot;
+        aroundWorkingTreeMutation(repoRoot, operation, report, afterReload);
+    }
+
+    private void aroundWorkingTreeMutation(
+            Path root,
+            Consumer<Consumer<ProcessRunner.Result>> operation,
+            Consumer<ProcessRunner.Result> report,
+            Runnable afterReload) {
         invalidatePendingWrites(root, List.of());
         operation.accept(result -> {
             invalidatePendingWrites(root, List.of());
@@ -764,8 +783,20 @@ final class GitCoordinator {
         if (reportIfNoRepo()) {
             return;
         }
-        Path root = repoRoot;
+        mutateWorkingTree(repoRoot, successMessage, afterCompletion, args);
+    }
+
+    /**
+     * {@link #mutateWorkingTree(String, Runnable, String...)} in the repository the caller chose its
+     * arguments from. A commit hash listed for one repository must not run in whichever repository is active
+     * by the time a confirmation has been answered, so the Git Log passes the root it listed.
+     */
+    void mutateWorkingTree(Path root, String successMessage, Runnable afterCompletion, String... args) {
+        if (root == null) {
+            return;
+        }
         aroundWorkingTreeMutation(
+                root,
                 done -> service.runWorktreeMutation(root, running(args, done), args),
                 result -> {
                     if (result.ok()) {

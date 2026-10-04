@@ -327,7 +327,11 @@ class GitDestructiveOperationsFxTest {
             CountDownLatch cancelled = new CountDownLatch(1);
             FxTestSupport.runOnFx(() -> {
                 Platform.runLater(() -> {
-                    assertDialogSays(tr("dialog.gitReset.hardConfirm", shortFirst));
+                    assertDialogSays(tr(
+                            "dialog.gitReset.hardConfirm",
+                            shortFirst,
+                            "main",
+                            repo.toAbsolutePath().normalize()));
                     pressDialog(ButtonBar.ButtonData.CANCEL_CLOSE, cancelled);
                 });
                 windows.gitLogActions().reset(first, "hard");
@@ -418,6 +422,149 @@ class GitDestructiveOperationsFxTest {
 
             assertEquals(0, git(repo, "stash", "list").out().lines().count());
             assertEquals(1, git(other, "stash", "list").out().lines().count(), "the other repository is untouched");
+        }
+    }
+
+    // --- the Git Log acts on the repository it listed ---------------------------------------------------
+
+    /** {@code repo} with commits first/second/third on main, and a linked worktree on {@code task} at "second". */
+    private record TwoWorktrees(Path repo, Path worktree, String first, String second, String third, String task) {}
+
+    private static TwoWorktrees twoWorktrees(Path dir) throws Exception {
+        Path repo = initRepo(dir);
+        Path file = Files.writeString(repo.resolve("work.txt"), "first\n");
+        commitAll(repo, "first");
+        String first = git(repo, "rev-parse", "HEAD").out().strip();
+        Files.writeString(file, "second\n");
+        commitAll(repo, "second");
+        String second = git(repo, "rev-parse", "HEAD").out().strip();
+        Files.writeString(file, "third\n");
+        commitAll(repo, "third");
+        String third = git(repo, "rev-parse", "HEAD").out().strip();
+        Path worktree = dir.resolve("task");
+        git(repo, "worktree", "add", "-q", "-b", "task", worktree.toString(), second);
+        Files.writeString(worktree.resolve("task-only.txt"), "committed on task\n");
+        commitAll(worktree, "task work");
+        String task = git(worktree, "rev-parse", "HEAD").out().strip();
+        Files.writeString(worktree.resolve("work.txt"), "uncommitted work in the task worktree\n");
+        return new TwoWorktrees(repo, worktree, first, second, third, task);
+    }
+
+    private static void assertWorktreeUntouched(TwoWorktrees t) throws Exception {
+        assertEquals(t.task(), git(t.worktree(), "rev-parse", "HEAD").out().strip(), "the task branch did not move");
+        assertEquals("task", git(t.worktree(), "branch", "--show-current").out().strip());
+        assertEquals(
+                "uncommitted work in the task worktree\n",
+                Files.readString(t.worktree().resolve("work.txt")));
+        assertTrue(Files.exists(t.worktree().resolve("task-only.txt")));
+    }
+
+    private static List<String> logRows(FxWindowFixture fx) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            GitLogPanel panel = FxTestSupport.field(fx.controller, "gitLogPanel");
+            List<GitService.Commit> rows = FxTestSupport.field(panel, "allCommits");
+            return rows.stream().map(GitService.Commit::hash).toList();
+        });
+    }
+
+    private static void awaitLogRows(FxWindowFixture fx, List<String> expected) throws Exception {
+        for (int i = 0; i < 100 && !expected.equals(logRows(fx)); i++) {
+            Thread.sleep(50);
+        }
+        assertEquals(expected, logRows(fx));
+    }
+
+    @Test
+    void theGitLogDropsItsRowsAndReloadsWhenTheActiveRepositoryChanges(@TempDir Path dir) throws Exception {
+        TwoWorktrees t = twoWorktrees(dir);
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            open(fx.controller, t.repo().resolve("work.txt"));
+            GitCoordinator coordinator = applyRepo(fx, t.repo(), "main");
+            GitWindowCoordinator windows = FxTestSupport.field(fx.controller, "gitWindows");
+            FxTestSupport.runOnFx(() -> {
+                windows.showGitLog();
+                windows.loadGitLog(null);
+            });
+            awaitLogRows(fx, List.of(t.third(), t.second(), t.first()));
+            async.awaitWorker(FxTestSupport.field(coordinator.service(), "exec"));
+            async.awaitFx();
+            GitLogPanel panel = FxTestSupport.field(fx.controller, "gitLogPanel");
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.control.ListView<GitService.Commit> commits = FxTestSupport.field(panel, "commits");
+                commits.getSelectionModel().select(0);
+                assertEquals(t.third(), panel.selectedHash());
+
+                // A tab of the other worktree is activated. Its hashes are shared with this one, so a row left
+                // on screen could be checked out or reset there: the old rows go at once…
+                coordinator.applyState(repoState(t.worktree(), "task"));
+                assertEquals(null, panel.selectedHash(), "no commit of the previous repository stays selected");
+                List<GitService.Commit> rows = FxTestSupport.field(panel, "allCommits");
+                assertTrue(rows.isEmpty(), "the previous repository's commits are no longer listed");
+            });
+            // …and the log, still open, lists the repository its actions now run in.
+            awaitLogRows(fx, List.of(t.task(), t.second(), t.first()));
+        }
+    }
+
+    @Test
+    void hardResetFromTheLogRunsInTheRepositoryItWasConfirmedFor(@TempDir Path dir) throws Exception {
+        TwoWorktrees t = twoWorktrees(dir);
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitCoordinator coordinator = applyRepo(fx, t.repo(), "main");
+            GitWindowCoordinator windows = FxTestSupport.field(fx.controller, "gitWindows");
+            String shortFirst = com.editora.git.GitFormat.shortHash(t.first());
+            CountDownLatch confirmed = new CountDownLatch(1);
+            CountDownLatch done = watchStatus(fx, tr("status.git.reset", "hard", shortFirst)::equals);
+
+            FxTestSupport.runOnFx(() -> {
+                Platform.runLater(() -> {
+                    // The confirmation says which repository and branch are about to lose work.
+                    assertDialogSays(tr(
+                            "dialog.gitReset.hardConfirm",
+                            shortFirst,
+                            "main",
+                            t.repo().toAbsolutePath().normalize()));
+                    coordinator.applyState(repoState(t.worktree(), "task")); // the active repository changes
+                    pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed);
+                });
+                windows.gitLogActions().reset(t.first(), "hard");
+            });
+            async.await(confirmed, "hard reset confirmation");
+            async.await(done, "hard reset completion");
+
+            assertEquals(t.first(), git(t.repo(), "rev-parse", "HEAD").out().strip());
+            assertWorktreeUntouched(t);
+        }
+    }
+
+    @Test
+    void resetChosenFromThePaletteRunsInTheRepositoryTheCommitWasSelectedIn(@TempDir Path dir) throws Exception {
+        TwoWorktrees t = twoWorktrees(dir);
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitCoordinator coordinator = applyRepo(fx, t.repo(), "main");
+            GitWindowCoordinator windows = FxTestSupport.field(fx.controller, "gitWindows");
+            CountDownLatch chosen = new CountDownLatch(1);
+            CountDownLatch done = watchStatus(
+                    fx, tr("status.git.reset", "mixed", com.editora.git.GitFormat.shortHash(t.first()))::equals);
+
+            FxTestSupport.runOnFx(() -> {
+                Platform.runLater(() -> {
+                    coordinator.applyState(repoState(t.worktree(), "task")); // while the mode prompt is up
+                    pressDialog(ButtonBar.ButtonData.OK_DONE, chosen); // accepts the default, "mixed"
+                });
+                windows.promptGitReset(t.first());
+            });
+            async.await(chosen, "reset mode choice");
+            async.await(done, "mixed reset completion");
+
+            assertEquals(t.first(), git(t.repo(), "rev-parse", "HEAD").out().strip());
+            assertWorktreeUntouched(t);
         }
     }
 

@@ -150,9 +150,11 @@ public final class GitService {
         return GitSafety.backgroundArgv(GIT_CMD, args);
     }
 
-    /** Environment of every background read: lock-free, never prompting, never paging. */
-    private static final Map<String, String> READ_ENV =
-            Map.of("GIT_OPTIONAL_LOCKS", "0", "GIT_TERMINAL_PROMPT", "0", "GIT_PAGER", "cat");
+    /**
+     * Environment of every background read: lock-free, never prompting, never paging, and never fetching a
+     * missing object on demand ({@link GitSafety#BACKGROUND_ENV}).
+     */
+    private static final Map<String, String> READ_ENV = GitSafety.BACKGROUND_ENV;
 
     /**
      * Environment of a user-initiated command. {@code GIT_TERMINAL_PROMPT=0} makes a missing credential fail

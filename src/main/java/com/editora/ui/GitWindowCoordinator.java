@@ -62,6 +62,18 @@ final class GitWindowCoordinator {
     /** The path the Git Log is currently filtered to (file history), or null for the whole repo. */
     Path gitLogFilter;
 
+    /**
+     * The repository (and its branch) whose commits the Git Log lists — or is about to list, the rows having
+     * been cleared. Every action on a row runs here, never in whichever repository is active at click time:
+     * commit hashes are shared between the worktrees and clones of a project, so a reset or checkout chosen
+     * from one repository's history would otherwise succeed in another.
+     */
+    private Path gitLogRoot;
+
+    private String gitLogBranch = "";
+    /** Bumped per load and per repository change; a log result for an earlier request is dropped. */
+    private long gitLogGeneration;
+
     /** IntelliJ-style branch dropdown (actions + Local/Remote branches), anchored to the status bar. */
     final BranchPopup branchPopup = new BranchPopup();
 
@@ -214,30 +226,36 @@ final class GitWindowCoordinator {
 
             @Override
             public void selected(String hash) {
-                if (host.git().repoRoot() != null) {
-                    host.git().service().commitFiles(host.git().repoRoot(), hash, host.gitLogPanel()::setCommitFiles);
+                Path root = gitLogRoot;
+                long generation = gitLogGeneration;
+                if (root != null) {
+                    host.git().service().commitFiles(root, hash, files -> {
+                        if (generation == gitLogGeneration) {
+                            host.gitLogPanel().setCommitFiles(files);
+                        }
+                    });
                 }
             }
 
             @Override
             public void openFileDiff(String hash, String repoRel, String origRepoRel) {
-                host.diffCoordinator().diffCommitFile(hash, repoRel, origRepoRel);
+                host.diffCoordinator().diffCommitFile(gitLogRoot, hash, repoRel, origRepoRel);
             }
 
             @Override
             public void compareFileWithWorking(String hash, String repoRel) {
-                Path root = host.git().repoRoot();
+                Path root = gitLogRoot;
                 if (root == null) {
                     return;
                 }
                 Path workingFile =
                         gitLogFilter != null && !Files.isDirectory(gitLogFilter) ? gitLogFilter : root.resolve(repoRel);
-                host.diffCoordinator().diffCommitFileVsWorking(hash, repoRel, workingFile);
+                host.diffCoordinator().diffCommitFileVsWorking(root, hash, repoRel, workingFile);
             }
 
             @Override
             public void openFile(String repoRel) {
-                Path root = host.git().repoRoot();
+                Path root = gitLogRoot;
                 if (root == null) {
                     return;
                 }
@@ -251,7 +269,7 @@ final class GitWindowCoordinator {
 
             @Override
             public void showFileHistory(String repoRel) {
-                Path root = host.git().repoRoot();
+                Path root = gitLogRoot;
                 if (root != null) {
                     openGitLog(root.resolve(repoRel));
                 }
@@ -280,22 +298,7 @@ final class GitWindowCoordinator {
 
             @Override
             public void reset(String hash, String mode) {
-                // Hard is the one mode that throws work away: it sits directly under Soft and Mixed in the
-                // menu, so it is confirmed with the dialog a file discard uses, naming what will be lost.
-                String shortHash = com.editora.git.GitFormat.shortHash(hash);
-                if ("hard".equals(mode)
-                        && !host.git()
-                                .confirmDestructive(
-                                        tr("dialog.gitReset.title"),
-                                        tr("dialog.gitReset.hardConfirm", shortHash),
-                                        tr("dialog.gitReset.hard"))) {
-                    return;
-                }
-                gitMutate(
-                        tr("status.git.reset", mode, com.editora.git.GitFormat.shortHash(hash)),
-                        "reset",
-                        "--" + mode,
-                        hash);
+                resetIn(gitLogRoot, gitLogBranch, hash, mode);
             }
 
             @Override
@@ -315,10 +318,11 @@ final class GitWindowCoordinator {
 
             @Override
             public void newBranch(String hash) {
+                Path root = gitLogRoot; // before the prompt: the active repository can change while it is up
                 host.promptText(tr("dialog.newBranch.title"), tr("dialog.newBranch.content"), "", input -> {
                     String name = input.strip();
                     if (!name.isEmpty()) {
-                        gitMutate(tr("status.createdBranch", name), "checkout", "-b", name, hash);
+                        gitMutateIn(root, tr("status.createdBranch", name), "checkout", "-b", name, hash);
                     }
                 });
             }
@@ -339,13 +343,40 @@ final class GitWindowCoordinator {
 
     /** Asks for the reset mode (soft/mixed/hard) then resets the selected commit (the {@code git.log.reset} command). */
     void promptGitReset(String hash) {
+        // Both dialogs below run a nested event loop in which the active repository can change; the commit
+        // was selected in the log's repository, so that is captured first.
+        Path root = gitLogRoot;
+        String branch = gitLogBranch;
         javafx.scene.control.ChoiceDialog<String> d =
                 new javafx.scene.control.ChoiceDialog<>("mixed", java.util.List.of("soft", "mixed", "hard"));
         d.initOwner(host.stage());
         d.setTitle(tr("dialog.gitReset.title"));
         d.setHeaderText(null);
         d.setContentText(tr("dialog.gitReset.content"));
-        d.showAndWait().ifPresent(mode -> host.gitLogOps().reset(hash, mode));
+        d.showAndWait().ifPresent(mode -> resetIn(root, branch, hash, mode));
+    }
+
+    /**
+     * {@code git reset --<mode> <hash>} in {@code root} — the repository the commit was listed from, captured
+     * by the caller before any dialog. Hard is the one mode that throws work away: it sits directly under Soft
+     * and Mixed in the menu, so it is confirmed with the dialog a file discard uses, naming what will be lost
+     * and the repository and branch it will be lost from.
+     */
+    private void resetIn(Path root, String branch, String hash, String mode) {
+        if (root == null) {
+            host.git().reportIfNoRepo();
+            return;
+        }
+        String shortHash = com.editora.git.GitFormat.shortHash(hash);
+        if ("hard".equals(mode)
+                && !host.git()
+                        .confirmDestructive(
+                                tr("dialog.gitReset.title"),
+                                tr("dialog.gitReset.hardConfirm", shortHash, branch, root),
+                                tr("dialog.gitReset.hard"))) {
+            return;
+        }
+        gitMutateIn(root, tr("status.git.reset", mode, shortHash), "reset", "--" + mode, hash);
     }
 
     /**
@@ -380,24 +411,68 @@ final class GitWindowCoordinator {
     /** Loads up to 200 commits (whole-repo when {@code file} is null, else that file's history). */
     void loadGitLog(Path file) {
         gitLogFilter = file;
-        if (host.git().repoRoot() == null) {
+        Path root = host.git().repoRoot();
+        long generation = ++gitLogGeneration;
+        if (!java.util.Objects.equals(root, gitLogRoot)) {
+            // Rows of another repository must not stay on screen while this one's history is fetched.
+            host.gitLogPanel().setLog(List.of(), null);
+        }
+        gitLogRoot = root;
+        gitLogBranch = host.git().branchName();
+        if (root == null) {
             host.gitLogPanel().setLog(List.of(), null);
             host.git().reportIfNoRepo(); // echoes "not a repo" / "git not installed"
             return;
         }
         String name = file != null ? file.getFileName().toString() : null;
-        host.git()
-                .service()
-                .log(
-                        host.git().repoRoot(),
-                        file,
-                        200,
-                        commits -> host.gitLogPanel().setLog(commits, name));
+        host.git().service().log(root, file, 200, commits -> {
+            if (generation == gitLogGeneration) {
+                host.gitLogPanel().setLog(commits, name);
+            }
+        });
     }
 
-    /** A history mutation (checkout/reset/revert/cherry-pick/branch): run, report, refresh + reload log. */
+    /**
+     * The active repository or its branch changed (a tab of another repository or worktree was activated, a
+     * branch was switched, the folder is no longer a repository). The log must not keep offering the commits
+     * of a repository its actions no longer run in: its rows are dropped at once, and the new repository's
+     * history is loaded when the window is open (a closed window loads on its next open).
+     */
+    void repositoryChanged(Path root, String branch) {
+        boolean sameRoot = java.util.Objects.equals(root, gitLogRoot);
+        if (sameRoot && java.util.Objects.equals(branch, gitLogBranch)) {
+            return;
+        }
+        gitLogBranch = branch;
+        if (!sameRoot) {
+            gitLogRoot = root;
+            gitLogGeneration++;
+            if (gitLogFilter != null && (root == null || !gitLogFilter.startsWith(root))) {
+                gitLogFilter = null; // a file history of the previous repository
+            }
+            if (host.gitLogPanel() != null) {
+                host.gitLogPanel().setLog(List.of(), null);
+            }
+        }
+        if (root != null
+                && host.gitLogToolWindow() != null
+                && host.toolWindows().isOpen(host.gitLogToolWindow())) {
+            loadGitLog(gitLogFilter);
+        }
+    }
+
+    /** A history mutation (checkout/reset/revert/cherry-pick/branch) in the repository the log lists. */
     void gitMutate(String successMessage, String... args) {
-        host.git().mutateWorkingTree(successMessage, () -> loadGitLog(gitLogFilter), args);
+        gitMutateIn(gitLogRoot, successMessage, args);
+    }
+
+    /** Runs the mutation in {@code root}, reports, refreshes and reloads the log. */
+    private void gitMutateIn(Path root, String successMessage, String... args) {
+        if (root == null) {
+            host.git().reportIfNoRepo();
+            return;
+        }
+        host.git().mutateWorkingTree(root, successMessage, () -> loadGitLog(gitLogFilter), args);
     }
 
     /** Project-tree Git ▸ Show File History for {@code file}: loads that file's Git log + opens the window. */

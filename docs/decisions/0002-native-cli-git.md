@@ -30,7 +30,14 @@ gutter work behind it. Working-tree mutations are serialised across both.
   initiative (status, diff, show, log, blame, ref and file listings) therefore carries the
   `-c` overrides in `git/GitSafety` — `core.fsmonitor=false`, `core.hooksPath=<null device>`,
   `core.pager=cat`, `log.showSignature=false`, `protocol.ext.allow=never` — plus `--no-ext-diff`
-  and `--no-textconv` on diff-producing commands. `credential.helper` is left alone. Not covered:
+  and `--no-textconv` on diff-producing commands. `credential.helper` is left alone. They also run
+  with `GIT_NO_LAZY_FETCH=1`: in a partial-clone (promisor) repository a diff, `show` or blame of a
+  file whose blob is absent would otherwise fetch it on demand through the transport program the
+  repository's own config names (`remote.<name>.uploadpack`, `core.sshCommand`), which no `-c`
+  override can blanket-disable. The cost is that in a genuine `--filter=blob:none` clone the gutter
+  bars, blame and blob views of a not-yet-fetched file stay empty until a user-initiated command
+  (fetch, pull, checkout) brings the object in; a git too old to know the variable (before 2.45 and
+  the 2.39.4–2.44.1 maintenance releases) ignores it. Not covered:
   `filter.<name>.clean`/`process` drivers selected through `.gitattributes`, which cannot be
   disabled without breaking Git LFS and end-of-line conversion; that needs a trust decision, not an
   override. The cost is that a `core.fsmonitor` daemon is not used for background status.

@@ -2305,6 +2305,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         commitToolWindow = new ToolWindow(
                 "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, gitPanel, "tool.commit");
         gitLogPanel = new GitLogPanel(gitLogOps = gitWindows.gitLogActions());
+        git.onRepositoryChanged(gitWindows::repositoryChanged);
         gitLogToolWindow = new ToolWindow(
                 "gitLog", tr("toolwindow.gitLog"), ToolWindow.Side.BOTTOM, Icons::gitLog, gitLogPanel, "tool.gitLog");
         githubPanel = new GitHubPanel(gitWindows.githubActions());

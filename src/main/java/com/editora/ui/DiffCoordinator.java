@@ -1304,7 +1304,11 @@ final class DiffCoordinator {
      * rename.
      */
     void diffCommitFile(String hash, String repoRel, String origRepoRel) {
-        Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
+        diffCommitFile(git.repoRoot(), hash, repoRel, origRepoRel); // capture at open time; see diffPathVsHead
+    }
+
+    /** {@link #diffCommitFile(String, String, String)} in the repository the commit was listed from. */
+    void diffCommitFile(Path root, String hash, String repoRel, String origRepoRel) {
         if (root == null) {
             return;
         }
@@ -1329,7 +1333,11 @@ final class DiffCoordinator {
      * current path after a rename.
      */
     void diffCommitFileVsWorking(String hash, String repoRel, Path workingFile) {
-        Path root = git.repoRoot(); // capture at open time; see diffPathVsHead
+        diffCommitFileVsWorking(git.repoRoot(), hash, repoRel, workingFile); // capture at open time
+    }
+
+    /** {@link #diffCommitFileVsWorking(String, String, Path)} in the repository the commit was listed from. */
+    void diffCommitFileVsWorking(Path root, String hash, String repoRel, Path workingFile) {
         if (root == null || workingFile == null) {
             return;
         }

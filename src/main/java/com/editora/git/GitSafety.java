@@ -3,6 +3,7 @@ package com.editora.git;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -18,6 +19,15 @@ import java.util.regex.Pattern;
  * each such command and adds {@code --no-ext-diff} / {@code --no-textconv} to the diff-producing ones.
  * {@code diff.external} is disabled with the flag rather than an empty {@code -c diff.external=} because Git
  * treats the empty value as a program to run and fails. {@code credential.helper} is left alone.
+ *
+ * <p><b>No on-demand fetch.</b> A partial-clone ("promisor") repository fetches a missing object the first
+ * time a command needs it, through the transport program its own config names
+ * ({@code remote.<name>.uploadpack}, {@code core.sshCommand}). A diff, {@code show} or blame of a file whose
+ * blob is absent would therefore run that program. {@code remote.<name>.*} cannot be overridden wholesale
+ * with {@code -c}, so {@link #BACKGROUND_ENV} sets {@code GIT_NO_LAZY_FETCH=1} instead: the read fails
+ * cleanly ("lazy fetching disabled") and the object arrives with the user's next fetch, pull or checkout.
+ * Git older than the release that introduced the variable (2.45, and the 2.39.4–2.44.1 maintenance
+ * releases) ignores it.
  *
  * <p><b>User commands</b> (commit, checkout, push, pull, …) are <em>not</em> hardened: the user asked for
  * them in this repository, and their own hooks must run. That split is explicit in {@code GitService}.
@@ -45,6 +55,13 @@ public final class GitSafety {
     /** {@code -c} overrides for the current platform; see the class comment. */
     static final List<String> BACKGROUND_CONFIG = backgroundConfig(
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win"));
+
+    /**
+     * Environment of every background command: no optional index lock, no terminal prompt, no pager, and no
+     * on-demand object fetch from a promisor remote (see the class comment).
+     */
+    static final Map<String, String> BACKGROUND_ENV =
+            Map.of("GIT_OPTIONAL_LOCKS", "0", "GIT_TERMINAL_PROMPT", "0", "GIT_PAGER", "cat", "GIT_NO_LAZY_FETCH", "1");
 
     /** {@code -c key=value} pairs that neutralise repository-controlled program execution. */
     static List<String> backgroundConfig(boolean windows) {
