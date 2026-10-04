@@ -1596,6 +1596,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         fileWorkflows.invalidatePendingWrite(old);
         Tab tab = tabForPath(old); // before the cache goes: `old` no longer exists, so it cannot be re-resolved
         com.editora.config.PathKeys.invalidateCanonicalCache(); // stale resolutions must not survive a move (#680)
+        indexCoordinator.onFileRenamed(old, target);
         if (tab != null) {
             EditorBuffer buffer = bufferOf(tab);
             buffer.setPath(target);
@@ -1673,6 +1674,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     void removeProjectFileLocal(Path path) {
         com.editora.config.PathKeys.invalidateCanonicalCache(); // (#680)
+        indexCoordinator.onFileDeleted(path);
         for (EditorBuffer buffer : buffersAtOrUnderLocal(path)) {
             Tab tab = tabFor(buffer);
             if (tab != null) {
@@ -2064,6 +2066,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
         projectPanel.setOnExternalChange(() -> {
             com.editora.config.PathKeys.invalidateCanonicalCache(); // files moved on disk under us (#680)
+            indexCoordinator.markStale();
             git.refresh();
             refreshBuildTools();
             diffCoordinator.refreshOpenDiffs();

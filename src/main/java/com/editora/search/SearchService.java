@@ -17,6 +17,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
@@ -48,11 +49,29 @@ public final class SearchService {
         t.setDaemon(true);
         return t;
     });
-    private final AtomicLong gen = new AtomicLong();
-    private volatile Future<?> currentSearch;
+    /**
+     * One consumer's line of searches: a newer search on a channel supersedes the older one on the
+     * <em>same</em> channel and nothing else. The panel, the popup and the MCP bridge used to share one
+     * counter, so whichever searched last silently dropped the others' — the popup stayed on "Searching…"
+     * and an MCP call waited out its timeout for an answer that had been discarded.
+     */
+    public static final class Channel {
+        private final AtomicLong gen = new AtomicLong();
+        private final AtomicReference<Pending> inFlight = new AtomicReference<>();
+        private volatile Future<?> current;
 
-    /** The search whose outcome is still owed to its caller: delivered, or reported as superseded. */
-    private final AtomicReference<Pending> inFlight = new AtomicReference<>();
+        private Channel() {}
+    }
+
+    /** The channel of the plain {@code search(...)} overloads (the Find-in-Files tool window). */
+    private final Channel main = new Channel();
+
+    private final List<Channel> channels = new java.util.concurrent.CopyOnWriteArrayList<>(List.of(main));
+
+    /** Every search still owed an answer, so {@link #shutdown} can tell each one it will not get a result. */
+    private final Set<Pending> owed = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private volatile boolean closed;
 
     /** ripgrep timeout — generous so a big tree finishes, but bounded so a hung process can't pin the thread. */
     private static final Duration RG_TIMEOUT = Duration.ofSeconds(60);
@@ -111,27 +130,80 @@ public final class SearchService {
             List<String> exclude,
             Consumer<Outcome> onResult,
             Runnable onSuperseded) {
-        long g = gen.incrementAndGet();
-        Map<Path, String> open = openContents == null ? Map.of() : Map.copyOf(openContents);
+        search(main, query, scopeRoot, openContents, include, exclude, onResult, onSuperseded);
+    }
+
+    /** A new, independent line of searches for one more consumer (see {@link Channel}). */
+    public Channel newChannel() {
+        Channel channel = new Channel();
+        channels.add(channel);
+        return channel;
+    }
+
+    /**
+     * A search nothing supersedes and that supersedes nothing — for a caller that blocks on the answer (the
+     * MCP {@code findInFiles} tool). Exactly one of {@code onResult} / {@code onAbandoned} runs, the latter
+     * only when the service shuts down or the search itself fails.
+     */
+    public void searchDetached(
+            SearchQuery query,
+            Path scopeRoot,
+            Map<Path, String> openContents,
+            Consumer<Outcome> onResult,
+            Runnable onAbandoned) {
+        search(new Channel(), query, scopeRoot, openContents, List.of(), List.of(), onResult, onAbandoned);
+    }
+
+    /** As the seven-argument {@code search}, on {@code channel} instead of the tool window's. */
+    public void search(
+            Channel channel,
+            SearchQuery query,
+            Path scopeRoot,
+            Map<Path, String> openContents,
+            List<String> include,
+            List<String> exclude,
+            Consumer<Outcome> onResult,
+            Runnable onSuperseded) {
+        long g = channel.gen.incrementAndGet();
+        // A list, never a Path-keyed map: an immutable map's probe calls key.equals on whatever shares the
+        // slot, and a remote (SFTP) path's equals throws ProviderMismatchException against a local one — so
+        // with a remote tab among the open buffers the search threw before it was even submitted.
+        List<Map.Entry<Path, String>> open = new ArrayList<>();
+        if (openContents != null) {
+            openContents.forEach(
+                    (path, text) -> open.add(new java.util.AbstractMap.SimpleImmutableEntry<>(path, text)));
+        }
         List<String> inc = include == null ? List.of() : List.copyOf(include);
         List<String> exc = exclude == null ? List.of() : List.copyOf(exclude);
-        Future<?> previous = currentSearch;
+        Future<?> previous = channel.current;
         if (previous != null) {
             previous.cancel(true);
         }
         Pending pending = new Pending(onSuperseded);
-        drop(inFlight.getAndSet(pending));
-        currentSearch = exec.submit(() -> {
-            Outcome outcome = run(query, scopeRoot, open, inc, exc, g);
-            if (g == gen.get()) {
-                Platform.runLater(() -> {
-                    if (g == gen.get() && pending.settle()) {
-                        inFlight.compareAndSet(pending, null);
-                        onResult.accept(outcome);
-                    }
-                });
-            }
-        });
+        owed.add(pending);
+        drop(channel.inFlight.getAndSet(pending));
+        try {
+            channel.current = exec.submit(() -> {
+                Outcome outcome;
+                try {
+                    outcome = run(query, scopeRoot, open, inc, exc, () -> cancelled(channel, g));
+                } catch (RuntimeException failed) {
+                    drop(pending); // never leave the caller waiting for a result that cannot come
+                    return;
+                }
+                if (g == channel.gen.get() && !closed) {
+                    Platform.runLater(() -> {
+                        if (g == channel.gen.get() && !closed && pending.settle()) {
+                            channel.inFlight.compareAndSet(pending, null);
+                            owed.remove(pending);
+                            onResult.accept(outcome);
+                        }
+                    });
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException shutDown) {
+            drop(pending);
+        }
     }
 
     /** The search whose result has not been delivered yet; settled exactly once, by delivery or by a drop. */
@@ -149,8 +221,12 @@ public final class SearchService {
     }
 
     /** Tells a dropped search's owner, on the FX thread like every other callback of this service. */
-    private static void drop(Pending pending) {
-        if (pending == null || pending.onSuperseded == null || !pending.settle()) {
+    private void drop(Pending pending) {
+        if (pending == null || !pending.settle()) {
+            return;
+        }
+        owed.remove(pending);
+        if (pending.onSuperseded == null) {
             return;
         }
         if (Platform.isFxApplicationThread()) {
@@ -163,30 +239,30 @@ public final class SearchService {
     private Outcome run(
             SearchQuery query,
             Path scopeRoot,
-            Map<Path, String> open,
+            List<Map.Entry<Path, String>> open,
             List<String> include,
             List<String> exclude,
-            long generation) {
+            BooleanSupplier cancelled) {
         if (query == null || query.text() == null || query.text().isEmpty()) {
             return new Outcome(List.of(), 0, 0, false);
         }
         boolean haveRoot = scopeRoot != null && Files.isDirectory(scopeRoot);
-        Set<Path> openKeys = normalizedPaths(open.keySet());
+        Set<Path> openKeys = localKeys(open);
         // On-disk results: ripgrep when enabled + local root, else the Java walker. rg falls back to the
         // walker on a pattern/IO error (exit 2) or if it failed to launch (null), so nothing regresses.
         List<FileResult> disk = null;
         boolean[] sourceTruncated = {false};
         if (haveRoot && useRipgrep && Vfs.isLocal(scopeRoot)) {
-            disk = ripgrepDisk(query, scopeRoot, include, exclude, openKeys, generation, sourceTruncated);
+            disk = ripgrepDisk(query, scopeRoot, include, exclude, openKeys, cancelled, sourceTruncated);
         }
         if (disk == null) {
             DiskSearch walked = haveRoot
-                    ? walkDisk(query, scopeRoot, include, exclude, openKeys, generation)
+                    ? walkDisk(query, scopeRoot, include, exclude, openKeys, cancelled)
                     : new DiskSearch(new ArrayList<>(), false);
             disk = walked.files();
             sourceTruncated[0] |= walked.truncated();
         }
-        return overlay(disk, query, open, scopeRoot, include, exclude, generation, sourceTruncated[0]);
+        return overlay(disk, query, open, scopeRoot, include, exclude, cancelled, sourceTruncated[0]);
     }
 
     /** On-disk search via ripgrep, paths resolved to absolute. Returns null to signal "fall back to the walker". */
@@ -196,7 +272,7 @@ public final class SearchService {
             List<String> include,
             List<String> exclude,
             Set<Path> openKeys,
-            long generation,
+            BooleanSupplier cancelled,
             boolean[] truncated) {
         List<String> cmd = new ArrayList<>(rgCommand);
         cmd.addAll(RipgrepArgs.build(query, include, exclude, respectGitignore, MAX_FILE_BYTES)); // off ⇒ --no-ignore
@@ -207,11 +283,16 @@ public final class SearchService {
         } catch (RuntimeException e) {
             return null;
         }
-        // rg: 0 = matches, 1 = no matches (both valid), 2 = pattern/IO error, -1 = failed to launch.
-        if (r.exit() != 0 && r.exit() != 1) {
+        // rg: 0 = matches, 1 = no matches (both valid), 2 = an error, -1 = failed to launch. Exit 2 covers two
+        // different things: a rejected pattern (nothing on stdout → fall back to the walker) and a "soft"
+        // error such as one unreadable directory, where rg still searched everything else and closed its
+        // output with the summary event. That result is kept and flagged partial; discarding it re-ran every
+        // search in the walker for the sake of one locked folder.
+        boolean partial = r.exit() == 2 && r.out() != null && r.out().lastIndexOf("\"type\":\"summary\"") >= 0;
+        if (r.exit() != 0 && r.exit() != 1 && !partial) {
             return null;
         }
-        truncated[0] = r.outTruncated();
+        truncated[0] = r.outTruncated() || partial;
         List<FileResult> out = new ArrayList<>();
         for (FileResult fr : RipgrepOutput.parse(
                 r.out(),
@@ -220,7 +301,7 @@ public final class SearchService {
             out.add(new FileResult(root.resolve(fr.file().toString()).normalize(), fr.matches()));
         }
         if (!sameInBothEngines(query)) {
-            truncated[0] |= rematch(out, query, SearchService::readText, MAX_MATCHES + 1, () -> cancelled(generation));
+            truncated[0] |= rematch(out, query, SearchService::readText, MAX_MATCHES + 1, cancelled);
         }
         return out;
     }
@@ -251,7 +332,7 @@ public final class SearchService {
             SearchQuery query,
             java.util.function.Function<Path, String> reader,
             int limit,
-            java.util.function.BooleanSupplier cancelled) {
+            BooleanSupplier cancelled) {
         List<FileResult> rematched = new ArrayList<>();
         int total = 0;
         boolean truncated = false;
@@ -284,15 +365,15 @@ public final class SearchService {
             List<String> include,
             List<String> exclude,
             Set<Path> openKeys,
-            long generation) {
+            BooleanSupplier cancelled) {
         Set<Path> candidates = new LinkedHashSet<>();
         GitignoreFilter gitignore = respectGitignore ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
-        boolean truncated = collect(root, candidates, gitignore, exclude, openKeys, generation);
+        boolean truncated = collect(root, candidates, gitignore, exclude, openKeys, cancelled);
         boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> out = new ArrayList<>();
         int total = 0;
         for (Path file : candidates) {
-            if (cancelled(generation)) {
+            if (cancelled.getAsBoolean()) {
                 break;
             }
             if (total > MAX_MATCHES) {
@@ -338,43 +419,39 @@ public final class SearchService {
     }
 
     /**
+     * The open buffers' paths that can name a file on disk, normalized. Remote paths are left out: they can
+     * never equal a local result, and hashing them beside local ones is what invites a cross-provider
+     * {@code equals}.
+     */
+    private static Set<Path> localKeys(List<Map.Entry<Path, String>> open) {
+        Set<Path> keys = new HashSet<>();
+        for (Map.Entry<Path, String> e : open) {
+            if (Vfs.isLocal(e.getKey())) {
+                keys.add(e.getKey().toAbsolutePath().normalize());
+            }
+        }
+        return keys;
+    }
+
+    /**
      * Overlay open buffers on the on-disk results (their in-memory text wins for any open path, and open
      * files outside the root are included), then sort by path and apply the match cap.
      */
     private Outcome overlay(
             List<FileResult> disk,
             SearchQuery query,
-            Map<Path, String> open,
-            Path root,
-            List<String> include,
-            List<String> exclude) {
-        return overlay(disk, query, open, root, include, exclude, gen.get(), false);
-    }
-
-    private static Set<Path> normalizedPaths(Set<Path> paths) {
-        Set<Path> normalized = new HashSet<>();
-        paths.forEach(path -> normalized.add(path.toAbsolutePath().normalize()));
-        return normalized;
-    }
-
-    private Outcome overlay(
-            List<FileResult> disk,
-            SearchQuery query,
-            Map<Path, String> open,
+            List<Map.Entry<Path, String>> open,
             Path root,
             List<String> include,
             List<String> exclude,
-            long generation,
+            BooleanSupplier cancelled,
             boolean sourceTruncated) {
-        Set<Path> openKeys = new HashSet<>();
-        for (Path p : open.keySet()) {
-            openKeys.add(p.toAbsolutePath().normalize());
-        }
+        Set<Path> openKeys = localKeys(open);
         boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> all = new ArrayList<>();
         int collected = 0;
         for (FileResult fr : disk) {
-            if (cancelled(generation)) {
+            if (cancelled.getAsBoolean()) {
                 return new Outcome(List.of(), 0, 0, false);
             }
             if (!openKeys.contains(fr.file().toAbsolutePath().normalize())) {
@@ -382,8 +459,8 @@ public final class SearchService {
                 collected += fr.matches().size();
             }
         }
-        for (Map.Entry<Path, String> e : open.entrySet()) {
-            if (cancelled(generation) || collected > MAX_MATCHES) {
+        for (Map.Entry<Path, String> e : open) {
+            if (cancelled.getAsBoolean() || collected > MAX_MATCHES) {
                 break;
             }
             if (filtering && !Globs.accept(relativize(root, e.getKey()), include, exclude)) {
@@ -429,11 +506,11 @@ public final class SearchService {
             GitignoreFilter gitignore,
             List<String> exclude,
             Set<Path> openKeys,
-            long generation) {
+            BooleanSupplier cancelled) {
         boolean[] oversize = {false};
         ProjectWalk.Outcome walked = ProjectWalk.walk(
                 root,
-                new ProjectWalk.Options(MAX_DEPTH, MAX_FILES_SCANNED, gitignore, () -> cancelled(generation)),
+                new ProjectWalk.Options(MAX_DEPTH, MAX_FILES_SCANNED, gitignore, cancelled),
                 new ProjectWalk.Visitor() {
                     @Override
                     public boolean enter(Path dir, String rel) {
@@ -459,8 +536,8 @@ public final class SearchService {
         return walked.truncated() || oversize[0] || walked.unreadable() > 0;
     }
 
-    private boolean cancelled(long generation) {
-        return Thread.currentThread().isInterrupted() || generation != gen.get();
+    private boolean cancelled(Channel channel, long generation) {
+        return closed || Thread.currentThread().isInterrupted() || generation != channel.gen.get();
     }
 
     private static String readText(Path file) {
@@ -476,13 +553,19 @@ public final class SearchService {
 
     /** Stops the background search thread (called when the owning window closes). */
     public void shutdown() {
-        gen.incrementAndGet();
-        Future<?> active = currentSearch;
-        currentSearch = null;
-        if (active != null) {
-            active.cancel(true);
+        closed = true;
+        for (Channel channel : channels) {
+            channel.gen.incrementAndGet();
+            Future<?> active = channel.current;
+            channel.current = null;
+            if (active != null) {
+                active.cancel(true);
+            }
+            channel.inFlight.set(null);
         }
-        drop(inFlight.getAndSet(null));
+        for (Pending pending : List.copyOf(owed)) {
+            drop(pending);
+        }
         exec.shutdownNow();
     }
 }

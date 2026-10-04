@@ -158,7 +158,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (p != null) {
                 root = Path.of(p.root());
             }
-            host.searchCoordinator().service().search(q, root, open, fut::complete);
+            // Detached: an MCP call must neither drop the user's own search nor be dropped by it (or by a
+            // second, parallel MCP call) and then wait out the timeout for an answer nobody will send.
+            host.searchCoordinator().service().searchDetached(q, root, open, fut::complete, () -> fut.cancel(false));
         });
         com.editora.search.SearchService.Outcome outcome;
         try {
