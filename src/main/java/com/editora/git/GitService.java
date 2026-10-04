@@ -48,7 +48,11 @@ import com.editora.process.ProcessRunner;
  * </ul>
  *
  * <p>Reads and local mutations share one serial lane; network commands have their own, so a slow remote
- * does not hold up status. Working-tree mutations are additionally serialised across both.
+ * does not hold up status. Working-tree mutations are additionally serialised across both, and user commands
+ * keep the order they were requested in: a fetch, pull or push is handed to the network lane only once the
+ * local lane has reached it (so a push never overtakes the commit clicked just before it), and a local
+ * mutation that finds a pull in the working tree waits behind it on the network lane instead of blocking
+ * the reads.
  *
  * <p>Scope: status, gutter diff, staging, commit, branch switch/create, fetch/pull/push, the diff
  * viewer (blob {@link #showBlob}/{@link #log}), commit history ({@link #commitFiles}), inline blame
@@ -108,8 +112,18 @@ public final class GitService {
         });
     }
 
-    /** null = not yet probed; cached after the first {@code git --version}. */
-    private volatile Boolean gitAvailable;
+    /** The outcome of {@code git --version} for one configured command. */
+    private record Availability(List<String> command, boolean available) {}
+
+    /**
+     * null = not yet probed; cached after the first {@code git --version}. It remembers the command it was
+     * probed with: {@link #GIT_CMD} is shared by every window's service, so an answer for another command
+     * (the path was changed in Settings, through a different window) is stale and is probed again.
+     */
+    private volatile Availability gitAvailable;
+
+    /** Local mutations waiting on the network lane behind a pull; see {@link #runWorktreeMutation}. */
+    private final AtomicInteger parkedMutations = new AtomicInteger();
 
     /**
      * The configured git command tokens (default {@code ["git"]}; blank override resets). Static —
@@ -118,15 +132,34 @@ public final class GitService {
      */
     private static volatile List<String> GIT_CMD = List.of("git");
 
-    /** Sets the git command/path (whitespace-tokenized); blank ⇒ resolve {@code git} on PATH. */
+    /** Sets the git command/path (see {@link #commandTokens}); blank ⇒ resolve {@code git} on PATH. */
     public void setCommand(String command) {
-        List<String> next = command == null || command.isBlank()
-                ? List.of("git")
-                : List.copyOf(Arrays.asList(command.trim().split("\\s+")));
+        List<String> next = commandTokens(command);
         if (!next.equals(GIT_CMD)) {
-            GIT_CMD = next;
-            gitAvailable = null; // re-probe with the new command
+            GIT_CMD = next; // each service re-probes: its cached availability names the command it was for
         }
+    }
+
+    /**
+     * The argv prefix for a configured git command. A value that <em>is</em> an existing file is taken whole —
+     * Settings has a Browse… button that writes the raw absolute path, and
+     * {@code C:\Program Files\Git\cmd\git.exe} split at the space could never start. Anything else is
+     * tokenized quote-aware, so a wrapper command with arguments (or a hand-quoted path) still works.
+     */
+    static List<String> commandTokens(String command) {
+        if (command == null || command.isBlank()) {
+            return List.of("git");
+        }
+        String raw = command.strip();
+        try {
+            if (Files.isRegularFile(Path.of(raw))) {
+                return List.of(raw);
+            }
+        } catch (RuntimeException notAPath) {
+            // Not a valid path on this platform: a command line.
+        }
+        List<String> tokens = com.editora.run.ProgramArgs.tokenize(raw);
+        return tokens.isEmpty() ? List.of(raw) : List.copyOf(tokens);
     }
 
     /**
@@ -161,10 +194,10 @@ public final class GitService {
      * at once rather than wait on a terminal nobody can see (GUI askpass / credential helpers still work).
      * Git's diffstat output abbreviates the beginning of long paths to fit its assumed 80-column terminal, but
      * the output is captured for the Output tab where users can scroll sideways, so stat rows get enough room
-     * to keep the paths intact and linkable.
+     * to keep the paths intact and linkable. The command also runs in the user's own locale with only the
+     * message language pinned — see {@link GitSafety#userEnv}.
      */
-    private static final Map<String, String> USER_ENV =
-            Map.of("GIT_OPTIONAL_LOCKS", "0", "GIT_TERMINAL_PROMPT", "0", "COLUMNS", "1000");
+    private static final Map<String, String> USER_ENV = GitSafety.userEnv(System.getenv());
 
     /** Whether the probed git understands {@code --end-of-options} (2.24+); see {@link GitSafety}. */
     private static volatile boolean endOfOptions;
@@ -174,10 +207,18 @@ public final class GitService {
      * Volatile: installed from the FX thread, read on {@link #exec}.
      */
     private volatile CommandLog commandLog = CommandLog.none();
-    /** Directory (absolute string) → repo root, or {@code null} sentinel cached as the NO_ROOT marker. */
+    /** Directory (absolute string) → repo root. Only successes live here; see {@link #notARepoSince}. */
     private final Map<String, Path> rootCache = new ConcurrentHashMap<>();
 
-    private static final Path NO_ROOT = Path.of("");
+    /**
+     * How long "not a repository" is believed for a directory. Long enough that a burst of refreshes in a
+     * plain folder costs one {@code rev-parse}, short enough that a {@code git init} or clone made in a
+     * terminal is seen by the refresh that runs when the window regains focus.
+     */
+    static final Duration NOT_A_REPO_TTL = Duration.ofSeconds(2);
+
+    /** Directory (absolute string) → {@link System#nanoTime()} at which git last said "not a repository". */
+    private final Map<String, Long> notARepoSince = new ConcurrentHashMap<>();
     /** Bumped per {@link #refresh}; a stale background result is dropped instead of posted to the UI. */
     private final AtomicLong refreshGen = new AtomicLong();
 
@@ -185,20 +226,34 @@ public final class GitService {
 
     /** Whether {@code git} is on PATH (probed once on the executor thread, then cached). */
     public boolean gitAvailable() {
-        Boolean cached = gitAvailable;
-        if (cached != null) {
-            return cached;
+        List<String> command = GIT_CMD;
+        Availability cached = gitAvailable;
+        if (cached != null && cached.command().equals(command)) {
+            return cached.available();
         }
-        boolean ok;
+        probeVersion(command);
+        Availability probed = gitAvailable;
+        return probed != null && probed.available();
+    }
+
+    /** Runs {@code <command> --version}, records the availability for that command, returns the output. */
+    private String probeVersion(List<String> command) {
+        String version = "";
+        boolean ok = false;
         try {
-            ProcessRunner.Result r = ProcessRunner.run(null, QUICK, gitArgv("--version"), READ_ENV);
+            List<String> argv = new ArrayList<>(command);
+            argv.add("--version");
+            ProcessRunner.Result r = ProcessRunner.run(null, QUICK, argv, READ_ENV);
             ok = r.ok();
-            endOfOptions = ok && GitSafety.supportsEndOfOptions(r.out());
+            if (ok) {
+                version = r.out().strip();
+                endOfOptions = GitSafety.supportsEndOfOptions(r.out());
+            }
         } catch (RuntimeException e) {
             ok = false;
         }
-        gitAvailable = ok;
-        return ok;
+        gitAvailable = new Availability(command, ok);
+        return version;
     }
 
     /**
@@ -208,18 +263,7 @@ public final class GitService {
      */
     public void version(Consumer<String> onResult) {
         submit(exec, () -> {
-            String v = "";
-            try {
-                ProcessRunner.Result r = ProcessRunner.run(null, QUICK, gitArgv("--version"), READ_ENV);
-                gitAvailable = r.ok();
-                if (r.ok()) {
-                    v = r.out().strip();
-                    endOfOptions = GitSafety.supportsEndOfOptions(r.out());
-                }
-            } catch (RuntimeException e) {
-                gitAvailable = false;
-            }
-            String posted = v;
+            String posted = probeVersion(GIT_CMD);
             Platform.runLater(() -> onResult.accept(posted));
         });
     }
@@ -237,6 +281,9 @@ public final class GitService {
     public void refresh(Path contextPath, Path diffFile, Consumer<RepoState> onResult) {
         long gen = refreshGen.incrementAndGet();
         submit(exec, () -> {
+            if (gen != refreshGen.get()) {
+                return; // superseded while queued: do not run status + diff only to throw the result away
+            }
             RepoState state = computeRefresh(contextPath, diffFile);
             if (gen == refreshGen.get()) {
                 Platform.runLater(() -> {
@@ -287,6 +334,7 @@ public final class GitService {
         ProcessRunner.Result r = git(
                 root,
                 QUICK,
+                GitSafety.LITERAL_PATHSPECS,
                 "diff",
                 "--no-color",
                 "-U0",
@@ -377,11 +425,12 @@ public final class GitService {
                 // A ref name is repository data: one beginning with "-" would be read as an option.
                 result = new WorkingTreeDiff(List.of(), false, "Unsafe revision name: " + ref);
             } else if (gitAvailable() && root != null && relative != null) {
-                List<String> diffArgs = new ArrayList<>(List.of("diff", "--name-status", "-z", "--no-renames"));
+                List<String> diffArgs = new ArrayList<>(
+                        List.of(GitSafety.LITERAL_PATHSPECS, "diff", "--name-status", "-z", "--no-renames"));
                 diffArgs.addAll(GitSafety.revisionArgs(endOfOptions, ref));
                 diffArgs.add("--");
-                List<String> untrackedArgs =
-                        new ArrayList<>(List.of("ls-files", "--others", "--exclude-standard", "-z", "--"));
+                List<String> untrackedArgs = new ArrayList<>(
+                        List.of(GitSafety.LITERAL_PATHSPECS, "ls-files", "--others", "--exclude-standard", "-z", "--"));
                 if (!relative.isEmpty()) {
                     diffArgs.add(relative);
                     untrackedArgs.add(relative);
@@ -464,6 +513,7 @@ public final class GitService {
             List<Commit> commits = List.of();
             if (gitAvailable() && root != null) {
                 List<String> args = new ArrayList<>(List.of(
+                        GitSafety.LITERAL_PATHSPECS,
                         "log",
                         "--no-color",
                         "--pretty=format:%H%x09%h%x09%an%x09%ad%x09%s",
@@ -513,6 +563,7 @@ public final class GitService {
                 ProcessRunner.Result r = git(
                         root,
                         QUICK,
+                        GitSafety.LITERAL_PATHSPECS,
                         "blame",
                         "--line-porcelain",
                         "--",
@@ -786,6 +837,14 @@ public final class GitService {
     // --- clone -----------------------------------------------------------------------------------
 
     /**
+     * {@code clone -- <url> <destination>}. The URL is pasted text: without the {@code --} a value beginning
+     * with {@code -} is an option, and {@code --upload-pack=<program>} runs that program.
+     */
+    static String[] cloneArgs(String url, String destination) {
+        return new String[] {"clone", "--", url == null ? "" : url, destination};
+    }
+
+    /**
      * Clones {@code url} into {@code destination} (an absolute target path that must not yet exist; its
      * parent must). Runs off the FX thread with the network timeout — the user's git handles
      * credentials/SSH. Posts the {@link ProcessRunner.Result} on the FX thread.
@@ -802,9 +861,7 @@ public final class GitService {
                         () -> gitLogged(
                                 parent,
                                 NETWORK,
-                                "clone",
-                                url,
-                                destination.toAbsolutePath().toString()));
+                                cloneArgs(url, destination.toAbsolutePath().toString())));
             }
             Platform.runLater(() -> onResult.accept(r));
         });
@@ -857,10 +914,11 @@ public final class GitService {
 
     /**
      * Network operations that leave the working tree alone (fetch/push). They run on their own lane, so a
-     * slow or unreachable remote never holds up status and gutter refreshes.
+     * slow or unreachable remote never holds up status and gutter refreshes — but they start only after the
+     * local commands requested before them ({@link #submitNetworkInRequestOrder}).
      */
     public void runNetwork(Path root, Consumer<ProcessRunner.Result> onResult, String... args) {
-        submit(networkExec, () -> {
+        submitNetworkInRequestOrder(() -> {
             ProcessRunner.Result r = gitAvailable() && root != null
                     ? userCommand(networkCommands, () -> gitLogged(root, NETWORK, args))
                     : NOT_INSTALLED;
@@ -1026,13 +1084,8 @@ public final class GitService {
                 return new ProcessRunner.Result(1, "", "The index changed after this diff was created");
             }
             temporary = parent.resolve(".editora-index-" + java.util.UUID.randomUUID() + ".tmp");
-            Map<String, String> env = Map.of(
-                    "GIT_OPTIONAL_LOCKS",
-                    "0",
-                    "GIT_TERMINAL_PROMPT",
-                    "0",
-                    "GIT_INDEX_FILE",
-                    temporary.toAbsolutePath().toString());
+            Map<String, String> env = new java.util.HashMap<>(USER_ENV);
+            env.put("GIT_INDEX_FILE", temporary.toAbsolutePath().toString());
             if (originalExists) {
                 Files.write(temporary, original, java.nio.file.StandardOpenOption.CREATE_NEW);
             } else {
@@ -1093,7 +1146,7 @@ public final class GitService {
 
     /** {@code git show <spec>} as raw bytes; a spec that could be read as an option is "not found". */
     private static BlobResult blobNow(Path root, String spec) {
-        if (!GitSafety.isSafeRevision(spec)) {
+        if (!GitSafety.isSafeBlobSpec(spec)) {
             return new BlobResult(false, new byte[0]);
         }
         List<String> args = new ArrayList<>(List.of("show"));
@@ -1108,7 +1161,7 @@ public final class GitService {
     /** The stage-0 index entry of {@code path} (its mode and blob id), or why there is none. */
     private static IndexEntry indexEntryNow(Path root, String path) {
         ProcessRunner.Result result =
-                git(root, QUICK, "--literal-pathspecs", "ls-files", "-s", "--", path == null ? "" : path);
+                git(root, QUICK, GitSafety.LITERAL_PATHSPECS, "ls-files", "-s", "--", path == null ? "" : path);
         if (!result.ok() || result.out().isBlank()) {
             return new IndexEntry("", IndexEntry.MISSING);
         }
@@ -1126,6 +1179,16 @@ public final class GitService {
         return new IndexEntry("", IndexEntry.CONFLICT);
     }
 
+    /**
+     * Queues a working-tree mutation. One runs at a time, whichever lane it arrived on, and in the order the
+     * user asked for them.
+     *
+     * <p>A pull ({@code lane == networkExec}) waits for the working tree on its own lane. A local mutation
+     * must not: the local lane also carries every read, so blocking there while a pull sits on a dead
+     * connection froze status, gutters, blame and every diff until the pull's ceiling. When the working tree
+     * is taken (or an earlier mutation is already parked) the mutation is handed to the network lane, behind
+     * the pull, and the local lane moves on.
+     */
     private void runWorktreeMutation(
             ExecutorService lane,
             AtomicInteger running,
@@ -1133,36 +1196,71 @@ public final class GitService {
             Duration timeout,
             List<String[]> commands,
             Consumer<ProcessRunner.Result> onResult) {
+        if (lane == networkExec) {
+            submitNetworkInRequestOrder(() -> mutateWorktree(running, root, timeout, commands, onResult, false));
+            return;
+        }
         submit(lane, () -> {
-            ProcessRunner.Result result;
-            if (!gitAvailable() || root == null) {
+            if (parkedMutations.get() == 0 && worktreeLock.tryLock()) {
+                mutateWorktree(running, root, timeout, commands, onResult, true);
+                return;
+            }
+            parkedMutations.incrementAndGet();
+            boolean queued = submit(networkExec, () -> {
+                try {
+                    mutateWorktree(networkCommands, root, timeout, commands, onResult, false);
+                } finally {
+                    parkedMutations.decrementAndGet();
+                }
+            });
+            if (!queued) {
+                parkedMutations.decrementAndGet();
+            }
+        });
+    }
+
+    /** Runs {@code commands} holding {@link #worktreeLock} ({@code locked}: the caller already took it). */
+    private void mutateWorktree(
+            AtomicInteger running,
+            Path root,
+            Duration timeout,
+            List<String[]> commands,
+            Consumer<ProcessRunner.Result> onResult,
+            boolean locked) {
+        ProcessRunner.Result result;
+        boolean held = locked;
+        try {
+            if (!held) {
+                try {
+                    worktreeLock.lockInterruptibly();
+                    held = true;
+                } catch (InterruptedException closed) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            if (!held) {
+                result = new ProcessRunner.Result(-1, "", "interrupted");
+            } else if (!gitAvailable() || root == null) {
                 result = NOT_INSTALLED;
             } else {
                 result = userCommand(running, () -> {
-                    // One working-tree mutation at a time, whichever lane it arrived on.
-                    try {
-                        worktreeLock.lockInterruptibly();
-                    } catch (InterruptedException closed) {
-                        Thread.currentThread().interrupt();
-                        return new ProcessRunner.Result(-1, "", "interrupted");
-                    }
-                    try {
-                        ProcessRunner.Result combined = new ProcessRunner.Result(0, "", "");
-                        for (String[] command : commands) {
-                            ProcessRunner.Result current = gitLogged(root, timeout, command);
-                            if (combined.ok()) {
-                                combined = current;
-                            }
+                    ProcessRunner.Result combined = new ProcessRunner.Result(0, "", "");
+                    for (String[] command : commands) {
+                        ProcessRunner.Result current = gitLogged(root, timeout, command);
+                        if (combined.ok()) {
+                            combined = current;
                         }
-                        return combined;
-                    } finally {
-                        worktreeLock.unlock();
                     }
+                    return combined;
                 });
             }
-            ProcessRunner.Result posted = result;
-            Platform.runLater(() -> onResult.accept(posted));
-        });
+        } finally {
+            if (held) {
+                worktreeLock.unlock();
+            }
+        }
+        ProcessRunner.Result posted = result;
+        Platform.runLater(() -> onResult.accept(posted));
     }
 
     // --- internals -------------------------------------------------------------------------------
@@ -1170,16 +1268,28 @@ public final class GitService {
     private static final ProcessRunner.Result NOT_INSTALLED = new ProcessRunner.Result(-1, "", "Git is not installed");
 
     /** Queues {@code task} on {@code lane}; a task still queued when the window closes is dropped. */
-    private void submit(ExecutorService lane, Runnable task) {
+    private boolean submit(ExecutorService lane, Runnable task) {
         try {
             lane.submit(() -> {
                 if (!closing) {
                     task.run();
                 }
             });
+            return true;
         } catch (RejectedExecutionException closed) {
             // The window is closing: there is no longer anyone to report the result to.
+            return false;
         }
+    }
+
+    /**
+     * Queues a fetch / pull / push so that it starts after the local commands requested before it. The two
+     * lanes are independent, so handed straight to the network lane a push clicked right after Commit ran
+     * while the commit was still in its hooks, pushed the old HEAD and reported success. A marker on the
+     * local lane passes the task on when its turn comes; the local lane itself never waits for the network.
+     */
+    private void submitNetworkInRequestOrder(Runnable task) {
+        submit(exec, () -> submit(networkExec, task));
     }
 
     /**
@@ -1205,7 +1315,11 @@ public final class GitService {
         String key = dir.toAbsolutePath().toString();
         Path cached = rootCache.get(key);
         if (cached != null) {
-            return cached == NO_ROOT ? null : cached;
+            return cached;
+        }
+        Long since = notARepoSince.get(key);
+        if (since != null && System.nanoTime() - since < NOT_A_REPO_TTL.toNanos()) {
+            return null;
         }
         ProcessRunner.Result r = git(dir, QUICK, "rev-parse", "--show-toplevel");
         Path root = null;
@@ -1215,8 +1329,21 @@ public final class GitService {
                 root = Path.of(top);
             }
         }
-        rootCache.put(key, root == null ? NO_ROOT : root);
+        if (root != null) {
+            rootCache.put(key, root);
+            notARepoSince.remove(key);
+        } else if (isNotARepository(r)) {
+            // Only git's own "not a repository", and only briefly: the folder can become one at any time
+            // (git init / clone in a terminal). A timeout or a directory that does not exist yet says
+            // nothing about the folder and is asked again next time.
+            notARepoSince.put(key, System.nanoTime());
+        }
         return root;
+    }
+
+    /** Whether a failed {@code rev-parse} is git's definite "not a repository" (read in the C locale). */
+    static boolean isNotARepository(ProcessRunner.Result r) {
+        return r.exit() == 128 && r.err() != null && r.err().contains("not a git repository");
     }
 
     /**
@@ -1225,8 +1352,9 @@ public final class GitService {
      */
     private ProcessRunner.Result gitLogged(Path dir, Duration timeout, String... args) {
         long startNanos = System.nanoTime();
-        ProcessRunner.Result r = ProcessRunner.run(dir, timeout, gitArgv(args), USER_ENV);
         List<String> argv = gitArgv(args);
+        // The user's locale, not LC_ALL=C: the hooks this runs are the user's programs (see GitSafety.userEnv).
+        ProcessRunner.Result r = ProcessRunner.runInUserLocale(dir, timeout, argv, USER_ENV);
         commandLog.record(
                 new CommandLog.Entry(argv, r.exit(), r.out(), r.err(), (System.nanoTime() - startNanos) / 1_000_000L));
         return r;
@@ -1249,7 +1377,7 @@ public final class GitService {
         long startNanos = System.nanoTime();
         List<String> argv = new ArrayList<>(GIT_CMD);
         argv.addAll(args);
-        ProcessRunner.Result result = ProcessRunner.runWithInput(dir, MUTATION, argv, environment, stdin);
+        ProcessRunner.Result result = ProcessRunner.runWithInputInUserLocale(dir, MUTATION, argv, environment, stdin);
         commandLog.record(new CommandLog.Entry(
                 argv, result.exit(), result.out(), result.err(), (System.nanoTime() - startNanos) / 1_000_000L));
         return result;
@@ -1258,6 +1386,7 @@ public final class GitService {
     /** Clears the cached repo roots (e.g. after switching projects or an external repo change). */
     public void invalidateCaches() {
         rootCache.clear();
+        notARepoSince.clear();
     }
 
     /**

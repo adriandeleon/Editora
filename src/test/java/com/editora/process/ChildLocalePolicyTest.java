@@ -49,7 +49,7 @@ class ChildLocalePolicyTest {
             "dap/DapManager.java", // probe(): `node --version`, `python -c "import debugpy"`
             "diagram/DiagramRenderer.java", // detect(): --version / --help
             "doctor/DoctorProbes.java", // version probes
-            "git/GitService.java", // porcelain output
+            "git/GitService.java", // background reads: porcelain output
             "github/GitHubService.java", // gh JSON
             "install/InstallService.java", // `npm root -g`: a path
             "mermaid/Mermaid.java", // detect() + maid's JSON report
@@ -71,6 +71,7 @@ class ChildLocalePolicyTest {
             Map.entry("dap/DapManager.java", 3), // debugpy adapter, js-debug adapter, javac of the user's file
             Map.entry("diagram/DiagramRenderer.java", 2), // render + export, scrubbed (PlantUML is a JVM)
             Map.entry("externaltool/ExternalToolService.java", 1), // the user's own filters
+            Map.entry("git/GitService.java", 1), // user-initiated commands: they run the user's hooks
             Map.entry("install/InstallService.java", 5), // npm/pip/gem/… installs + tar extraction
             Map.entry("lsp/LanguageServerSession.java", 1), // language servers
             Map.entry("maven/MavenClasspathResolver.java", 1), // Maven on the user's project

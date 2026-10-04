@@ -21,9 +21,16 @@ gutter work behind it. Working-tree mutations are serialised across both.
 - **No new dependency, no `module-info` change** — the integration is pure CLI.
 - **User-initiated commands** (commit, checkout, reset, stash, fetch/pull/push, …) are exactly the
   user's git: their version, config, credential helpers, hooks, and any `includeIf`/conditional
-  config. `LC_ALL=C` + `GIT_OPTIONAL_LOCKS=0` are set for stable parsing and lock-free status, and
-  `GIT_TERMINAL_PROMPT=0` so a missing credential fails at once instead of waiting on a terminal
-  nobody can see (askpass and credential helpers are unaffected).
+  config. They run in the user's locale — the hooks they start are the user's programs, and a JVM
+  hook under `LC_ALL=C` cannot open a non-ASCII path — with only the message language pinned
+  (`LC_MESSAGES=C`, `LANGUAGE=C`) so Git's replies stay recognisable. `GIT_OPTIONAL_LOCKS=0` keeps
+  status lock-free, and `GIT_TERMINAL_PROMPT=0` makes a missing credential fail at once instead of
+  waiting on a terminal nobody can see (askpass and credential helpers are unaffected). Background
+  reads keep `LC_ALL=C`: their output is parsed.
+- **User commands keep their request order across the two lanes.** A fetch/pull/push is handed to the
+  network lane only when the local lane reaches it, so a push never overtakes the commit requested
+  before it; a local mutation that finds a pull holding the working tree queues behind it on the
+  network lane rather than blocking the lane that also carries every read.
 - **Background commands are not the user's git verbatim.** Status and the gutter diff run on every
   tab activation, so with repository config honoured, opening a file from an extracted archive or a
   shared folder ran whatever program its `.git/config` named. Everything Editora runs on its own

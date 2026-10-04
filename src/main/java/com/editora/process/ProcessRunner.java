@@ -122,6 +122,15 @@ public final class ProcessRunner {
         return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), true, false));
     }
 
+    /**
+     * {@link #runWithInput} in the user's locale: raw {@code stdin} bytes for a user-initiated command (git
+     * applying a patch or hashing a blob through the user's clean filters).
+     */
+    public static Result runWithInputInUserLocale(
+            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, byte[] stdin) {
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, stdin, true, false));
+    }
+
     private static byte[] utf8(String stdin) {
         return stdin == null ? null : stdin.getBytes(StandardCharsets.UTF_8);
     }

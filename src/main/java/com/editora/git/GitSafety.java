@@ -49,6 +49,13 @@ public final class GitSafety {
     /** The marker after which Git treats every argument as a revision or path, never an option. */
     public static final String END_OF_OPTIONS = "--end-of-options";
 
+    /**
+     * Global option that makes every pathspec a literal path. A file name is data: without it
+     * {@code a[1].txt} or a Next.js {@code [id].tsx} is a glob that also matches {@code a1.txt} / {@code i.tsx},
+     * so the gutter diff, blame and file history of one file picked up its neighbours.
+     */
+    public static final String LITERAL_PATHSPECS = "--literal-pathspecs";
+
     private static final Set<String> DIFF_COMMANDS = Set.of("diff", "show", "log", "diff-tree", "diff-index");
     private static final Pattern VERSION = Pattern.compile("(\\d+)\\.(\\d+)");
 
@@ -62,6 +69,32 @@ public final class GitSafety {
      */
     static final Map<String, String> BACKGROUND_ENV =
             Map.of("GIT_OPTIONAL_LOCKS", "0", "GIT_TERMINAL_PROMPT", "0", "GIT_PAGER", "cat", "GIT_NO_LAZY_FETCH", "1");
+
+    /**
+     * Environment additions for a <em>user-initiated</em> command, given the environment Editora inherited.
+     *
+     * <p>These commands run the repository's hooks, which are the user's own programs, so they keep the
+     * user's locale: under {@code LC_ALL=C} a JVM-based hook (Spotless, google-java-format, a Gradle task)
+     * decodes file names as ASCII and cannot open {@code src/año/…}, failing a commit that works in a
+     * terminal. Only the <em>message</em> language is pinned ({@code LC_MESSAGES=C}, {@code LANGUAGE=C}), so
+     * Git's replies stay the English text the UI recognises. An inherited {@code LC_ALL} would override
+     * {@code LC_MESSAGES}; it is blanked (an empty {@code LC_ALL} counts as unset) and its value carried in
+     * {@code LC_CTYPE}, which is the category that decides how file names and text are decoded.
+     */
+    static Map<String, String> userEnv(Map<String, String> inherited) {
+        Map<String, String> env = new java.util.LinkedHashMap<>();
+        env.put("GIT_OPTIONAL_LOCKS", "0");
+        env.put("GIT_TERMINAL_PROMPT", "0");
+        env.put("COLUMNS", "1000");
+        env.put("LC_MESSAGES", "C");
+        env.put("LANGUAGE", "C");
+        String all = inherited == null ? null : inherited.get("LC_ALL");
+        if (all != null && !all.isEmpty()) {
+            env.put("LC_ALL", "");
+            env.put("LC_CTYPE", all);
+        }
+        return java.util.Collections.unmodifiableMap(env);
+    }
 
     /** {@code -c key=value} pairs that neutralise repository-controlled program execution. */
     static List<String> backgroundConfig(boolean windows) {
@@ -112,6 +145,24 @@ public final class GitSafety {
             }
         }
         return true;
+    }
+
+    /**
+     * Whether a {@code <rev>:<path>} blob spec (or a bare revision) can be handed to {@code git show}. The
+     * revision half follows {@link #isSafeRevision}; the path half is a file name, where a TAB or any other
+     * control character is legal and must not make a tracked file "not found". Only NUL, which cannot be
+     * passed in an argument at all, is refused there.
+     */
+    public static boolean isSafeBlobSpec(String spec) {
+        if (spec == null || spec.isBlank() || spec.charAt(0) == '-' || spec.indexOf('\0') >= 0) {
+            return false;
+        }
+        int colon = spec.indexOf(':');
+        if (colon < 0) {
+            return isSafeRevision(spec);
+        }
+        // ":path" and ":<stage>:path" name the index: everything after the first colon is stage and path.
+        return colon == 0 || isSafeRevision(spec.substring(0, colon));
     }
 
     /** Whether {@code git --version} output names a release with {@code --end-of-options} (2.24 or later). */
