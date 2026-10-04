@@ -130,11 +130,34 @@ class WorkspaceEditMapperTest {
                         new org.eclipse.lsp4j.RenameFile(uri("/tmp/B.java"), uri("/tmp/C.java")))));
         var textThenCreate = new WorkspaceEdit(List.of(
                 Either.<TextDocumentEdit, ResourceOperation>forLeft(docEdit("/tmp/A.java", edit(0, 0, 0, 0, "text"))),
-                Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/B.java")))));
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/A.java")))));
 
         assertNull(WorkspaceEditMapper.map(deleteThenCreate));
         assertNull(WorkspaceEditMapper.map(deleteThenRename));
-        assertNull(WorkspaceEditMapper.map(textThenCreate));
+        assertNull(WorkspaceEditMapper.map(textThenCreate), "a create cannot be hoisted over an edit to its own path");
+    }
+
+    /**
+     * jdtls answers a package rename with [edits…, CreateFile(placeholder), RenameFile…, DeleteFile]. The
+     * create touches a path no earlier edit addressed, so staging it first changes nothing — refusing the
+     * order made a Java package impossible to rename.
+     */
+    @Test
+    void aCreateAfterEditsToOtherFilesIsHoisted() {
+        var packageRename = new WorkspaceEdit(List.of(
+                Either.<TextDocumentEdit, ResourceOperation>forLeft(
+                        docEdit("/tmp/old/A.java", edit(0, 8, 0, 11, "neu"))),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/neu/.placeholder"))),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(
+                        new org.eclipse.lsp4j.RenameFile(uri("/tmp/old/A.java"), uri("/tmp/neu/A.java"))),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new DeleteFile(uri("/tmp/neu/.placeholder")))));
+
+        WorkspaceEditMapper.Mapped mapped = WorkspaceEditMapper.map(packageRename);
+
+        assertEquals(1, mapped.edits().size());
+        assertEquals(1, mapped.creates().size());
+        assertEquals(1, mapped.renames().size());
+        assertEquals(1, mapped.deletes().size());
     }
 
     // --- RenameFile resource operations (#676) -------------------------------------------------

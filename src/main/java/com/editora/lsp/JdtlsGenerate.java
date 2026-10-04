@@ -165,11 +165,45 @@ public final class JdtlsGenerate {
     }
 
     /**
-     * The single object parameter JDT LS expects for a generate request. Each handler receives one DTO,
-     * rather than positional JSON-RPC parameters; using an array makes LSP4J reject the request while parsing.
+     * The super constructors a {@code java/checkConstructorsStatus} response offers, in the server's order,
+     * the first one pre-selected. Each selected one yields one generated constructor, so with several on
+     * offer (an exception subclass has five) the user has to choose — sending them all back generated five.
      */
+    public static List<Candidate> constructorCandidates(JsonElement checkResponse) {
+        List<Candidate> out = new ArrayList<>();
+        if (checkResponse == null || !checkResponse.isJsonObject()) {
+            return out;
+        }
+        JsonElement arr = checkResponse.getAsJsonObject().get("constructors");
+        if (arr == null || !arr.isJsonArray()) {
+            return out;
+        }
+        for (JsonElement e : arr.getAsJsonArray()) {
+            if (e != null && e.isJsonObject()) {
+                out.add(new Candidate(label(e.getAsJsonObject()), out.isEmpty(), e));
+            }
+        }
+        return out;
+    }
+
+    /** {@link #generateParams(Kind, JsonElement, List, JsonElement, List)} with every super constructor. */
     public static JsonObject generateParams(
             Kind kind, JsonElement actionParams, List<Candidate> chosen, JsonElement checkResponse) {
+        return generateParams(kind, actionParams, chosen, checkResponse, null);
+    }
+
+    /**
+     * The single object parameter JDT LS expects for a generate request. Each handler receives one DTO,
+     * rather than positional JSON-RPC parameters; using an array makes LSP4J reject the request while parsing.
+     * {@code chosenConstructors} (constructors only) limits the super constructors to the user's choice;
+     * null sends every one the check response listed.
+     */
+    public static JsonObject generateParams(
+            Kind kind,
+            JsonElement actionParams,
+            List<Candidate> chosen,
+            JsonElement checkResponse,
+            List<Candidate> chosenConstructors) {
         JsonArray picked = new JsonArray();
         for (Candidate c : chosen) {
             picked.add(c.raw());
@@ -186,6 +220,11 @@ public final class JdtlsGenerate {
                 JsonElement constructors = checkResponse != null && checkResponse.isJsonObject()
                         ? checkResponse.getAsJsonObject().get("constructors")
                         : null;
+                if (chosenConstructors != null) {
+                    JsonArray only = new JsonArray();
+                    chosenConstructors.forEach(c -> only.add(c.raw()));
+                    constructors = only;
+                }
                 params.add(
                         "constructors",
                         constructors != null && constructors.isJsonArray() ? constructors : new JsonArray());

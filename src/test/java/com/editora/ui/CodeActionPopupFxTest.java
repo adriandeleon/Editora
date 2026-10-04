@@ -141,6 +141,84 @@ class CodeActionPopupFxTest {
         close(b);
     }
 
+    /**
+     * The list belongs to one caret position in one visible editor, and it does not auto-hide. Anything that
+     * takes the user elsewhere has to dismiss it — it used to float over another tab, and to outlive the
+     * buffer it was opened for, with Enter still bound to "apply".
+     */
+    @Test
+    void leavingTheEditorDismissesTheList() throws Exception {
+        EditorBuffer first = openBuffer();
+        FxTestSupport.runOnFx(() -> first.showCodeActions(ACTIONS, a -> {}));
+        assertTrue(FxTestSupport.callOnFx(first::codeActionsShowing));
+
+        EditorBuffer second = openBuffer(); // a new tab takes the selection and the focus
+        FxTestSupport.drainFx();
+        assertFalse(FxTestSupport.callOnFx(first::codeActionsShowing), "switching tabs closed the list");
+
+        close(second);
+        close(first);
+    }
+
+    @Test
+    void aMousePressInTheTextDismissesTheList() throws Exception {
+        EditorBuffer b = openBuffer();
+        AtomicReference<CodeAction> accepted = new AtomicReference<>();
+        FxTestSupport.runOnFx(() -> b.showCodeActions(ACTIONS, accepted::set));
+
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = b.getFocusedArea();
+            area.fireEvent(new javafx.scene.input.MouseEvent(
+                    javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                    5,
+                    5,
+                    5,
+                    5,
+                    javafx.scene.input.MouseButton.PRIMARY,
+                    1,
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    false,
+                    false,
+                    true,
+                    false,
+                    false,
+                    null));
+        });
+
+        assertFalse(FxTestSupport.callOnFx(b::codeActionsShowing), "a click elsewhere in the text closed it");
+        FxTestSupport.runOnFx(() -> press(b, KeyCode.ENTER));
+        assertNull(accepted.get(), "and Enter is an ordinary Enter again");
+        close(b);
+    }
+
+    @Test
+    void disposingTheBufferDismissesTheList() throws Exception {
+        EditorBuffer shown = openBuffer();
+        FxTestSupport.runOnFx(() -> shown.showCodeActions(ACTIONS, a -> {}));
+        assertTrue(FxTestSupport.callOnFx(shown::codeActionsShowing));
+
+        FxTestSupport.runOnFx(shown::cancelCompletion); // the first thing EditorBuffer.dispose() runs
+        assertFalse(FxTestSupport.callOnFx(shown::codeActionsShowing));
+        close(shown);
+    }
+
+    /** A click on the list's scroll bar or border is not a choice; only a row accepts. */
+    @Test
+    void onlyAClickOnARowAccepts() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            var cell = new javafx.scene.control.ListCell<String>();
+            var inside = new javafx.scene.control.Label("row");
+            cell.setGraphic(inside);
+            assertFalse(com.editora.editor.CodeActionPopup.onRow(new javafx.scene.control.ScrollBar()));
+            assertFalse(com.editora.editor.CodeActionPopup.onRow(cell), "an empty filler row is not an action");
+            assertFalse(com.editora.editor.CodeActionPopup.onRow(null));
+        });
+    }
+
     private static void press(EditorBuffer b, KeyCode code) {
         fire(b, code, false);
     }

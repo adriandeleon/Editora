@@ -904,6 +904,9 @@ public final class DapManager implements DapClient.Host {
                 fail(epoch, "The debug adapter did not return a port.");
                 return;
             }
+            // The adapter (and the debuggee it launches) live inside that jdtls: pin it for this session.
+            lspLease.run();
+            lspLease = lsp.retain(file);
             DapClient c = new DapClient(sessionHost(epoch));
             c.setBreakpoints(adapterBreakpoints(breakpointsSupplier.get())); // snapshot on the FX thread
             c.setExceptionFilters(exceptionFilters);
@@ -1557,7 +1560,14 @@ public final class DapManager implements DapClient.Host {
 
     // --- Internals ------------------------------------------------------------------------------
 
+    /** Keeps the jdtls hosting a Java debug session from being evicted as idle; released when it ends. */
+    private Runnable lspLease = () -> {};
+
     private void setState(State s) {
+        if (s == State.INACTIVE) {
+            lspLease.run();
+            lspLease = () -> {};
+        }
         this.state = s;
         listener.onState(s);
     }

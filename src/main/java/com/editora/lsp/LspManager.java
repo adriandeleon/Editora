@@ -22,8 +22,6 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
-import org.eclipse.lsp4j.MarkedString;
-import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
@@ -229,6 +227,29 @@ public final class LspManager {
         });
     }
 
+    /**
+     * Probes whether {@code command} (blank = {@code serverId}'s default) resolves to an executable, off-thread
+     * and <b>without touching this manager's configuration</b>. For a status label that describes a command
+     * other than the one in force — the Settings page shows the global command while a trusted project may
+     * override it; configuring the manager to probe it replaced the override and stopped the running server.
+     */
+    public void detectCommand(String serverId, String command, Consumer<Boolean> onResult) {
+        if (closed) {
+            return;
+        }
+        Map<String, String> one = new java.util.HashMap<>();
+        one.put(serverId, command);
+        List<String> argv = LspServerRegistry.commandFor(serverId, one);
+        detectExec.submit(() -> {
+            boolean ok = available(argv);
+            Platform.runLater(() -> {
+                if (!closed) {
+                    onResult.accept(ok);
+                }
+            });
+        });
+    }
+
     /** True if the command's executable resolves (an absolute path that exists, or found on the PATH). */
     static boolean available(List<String> command) {
         if (command == null || command.isEmpty()) {
@@ -264,11 +285,14 @@ public final class LspManager {
         session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId), text);
     }
 
-    public void changeDocument(Path file, String text) {
+    /**
+     * Syncs {@code text} to the server. Returns false when the server already holds exactly this text and so
+     * was sent nothing: it then has no reason to publish diagnostics again, and the caller must not wait for
+     * a publish that will not come.
+     */
+    public boolean changeDocument(Path file, String text) {
         LanguageServerSession s = sessionFor(file);
-        if (s != null) {
-            s.didChange(uri(file), text);
-        }
+        return s == null || s.didChange(uri(file), text);
     }
 
     public void saveDocument(Path file, String savedText) {
@@ -339,10 +363,37 @@ public final class LspManager {
         return null;
     }
 
+    /** Sessions something other than an open document depends on, with a use count; see {@link #retain}. */
+    private final Map<LanguageServerSession, Integer> retained = new ConcurrentHashMap<>();
+
+    /**
+     * Keeps the session serving {@code file} alive until the returned handle is run, even with no document
+     * open on it. Open documents are not the only client a server has: a Java debug session runs
+     * <em>inside</em> the jdtls process (the adapter is started there by {@code vscode.java.startDebugSession}
+     * and the debuggee is its child), so evicting the "idle" server three minutes after the last Java tab
+     * closed killed the adapter and the program being debugged. The handle is idempotent; releasing it
+     * re-arms the idle timer. A no-op handle is returned when {@code file} has no session.
+     */
+    public Runnable retain(Path file) {
+        LanguageServerSession session = sessionFor(file);
+        if (session == null) {
+            return () -> {};
+        }
+        retained.merge(session, 1, Integer::sum);
+        cancelEviction(session);
+        var released = new java.util.concurrent.atomic.AtomicBoolean();
+        return () -> {
+            if (released.compareAndSet(false, true)) {
+                retained.computeIfPresent(session, (k, n) -> n > 1 ? n - 1 : null);
+                maybeScheduleEviction(session);
+            }
+        };
+    }
+
     /** Starts the idle-eviction timer for {@code session} if it no longer serves any open document. */
     private void maybeScheduleEviction(LanguageServerSession session) {
-        if (sessionByDocUri.containsValue(session)) {
-            return; // still serving other open documents
+        if (sessionByDocUri.containsValue(session) || retained.containsKey(session)) {
+            return; // still serving other open documents, or pinned by a debug session
         }
         String key = keyOf(session);
         if (key == null) {
@@ -375,8 +426,10 @@ public final class LspManager {
     /** FX thread: disposes {@code session} if it is still cached under {@code key} and still document-less. */
     private void evictIfIdle(String key, LanguageServerSession session) {
         pendingEvictions.remove(key);
-        if (sessionsByRoot.get(key) != session || sessionByDocUri.containsValue(session)) {
-            return; // replaced, already dropped, or a document reopened during the grace period
+        if (sessionsByRoot.get(key) != session
+                || sessionByDocUri.containsValue(session)
+                || retained.containsKey(session)) {
+            return; // replaced, already dropped, pinned, or a document reopened during the grace period
         }
         sessionsByRoot.remove(key, session);
         disposeDeliberately(key, session);
@@ -823,17 +876,33 @@ public final class LspManager {
         return unique;
     }
 
-    /** Off-thread production claim. Sidecar markers identify caches whose previous session never completed
-     *  initialize and could not be safely removed (usually another process still held the Eclipse lock). */
-    private static String claimUsableJdtlsWorkspaceName(Path base, String baseName) {
+    /**
+     * Off-thread production claim. Sidecar markers identify caches whose previous session never completed
+     * initialize and could not be safely removed (usually another process still held the Eclipse lock).
+     *
+     * <p>A marker is re-tested here rather than obeyed forever: once the lock is free the rebuildable cache
+     * and its marker are removed and the name is reused. Nothing else ever deleted a marker, so one timed-out
+     * handshake orphaned the canonical index for good and every later start burned another suffix.
+     */
+    static String claimUsableJdtlsWorkspaceName(Path base, String baseName) {
         for (int i = 1; i <= 20; i++) {
             String candidate = workspaceCandidate(baseName, i);
-            if (Files.exists(failedWorkspaceMarker(base, candidate))) {
+            if (!claimedJdtlsWorkspaces.add(candidate)) {
                 continue;
             }
-            if (claimedJdtlsWorkspaces.add(candidate)) {
+            Path marker = failedWorkspaceMarker(base, candidate);
+            if (!Files.exists(marker)) {
                 return candidate;
             }
+            if (deleteUnlockedJdtlsWorkspace(base.resolve(candidate))) {
+                try {
+                    Files.deleteIfExists(marker);
+                    return candidate;
+                } catch (java.io.IOException e) {
+                    LOG.log(java.util.logging.Level.FINE, "Could not clear " + marker, e);
+                }
+            }
+            claimedJdtlsWorkspaces.remove(candidate); // still locked by someone else: leave it alone
         }
         String unique = baseName + "-x" + Long.toHexString(System.nanoTime());
         claimedJdtlsWorkspaces.add(unique);
@@ -878,13 +947,42 @@ public final class LspManager {
                     && !session.initializedOnce();
             session.dispose(); // hygiene: stop its executor + untrack the dead process
             if (failedJdtlsInitialization) {
-                repairFailedJdtlsWorkspace(workspaceName);
+                repairAfterExit(key, session.exited(), workspaceName);
+            } else {
+                releaseJdtlsWorkspaceName(workspaceName);
             }
-            releaseJdtlsWorkspaceName(workspaceName);
             Platform.runLater(() -> onSessionCrashed.accept(session.serverId(), session.root()));
         } else {
             releaseJdtlsWorkspaceName(workspaceName);
         }
+    }
+
+    /**
+     * Repairs a failed jdtls workspace once its process has really gone, then releases the claim.
+     *
+     * <p>{@code dispose()} only signals the process (the kill is non-blocking), and a JVM that has not exited
+     * yet still holds the Eclipse lock. Probing the lock in the same breath therefore always found the
+     * session's <em>own</em> dying server, kept the cache and marked it failed. The wait is bounded, and is
+     * remembered under the session key so the auto-restart waits for it ({@link #awaitPriorExit}) and gets the
+     * canonical name back instead of a fresh suffix.
+     */
+    void repairAfterExit(String key, CompletableFuture<Void> exited, String workspaceName) {
+        Runnable repair = () -> {
+            repairFailedJdtlsWorkspace(workspaceName);
+            releaseJdtlsWorkspaceName(workspaceName);
+        };
+        if (exited.isDone()) {
+            repair.run();
+            return;
+        }
+        CompletableFuture<Void> repaired = exited.copy()
+                .orTimeout(PRIOR_EXIT_WAIT_MILLIS / 2, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .handleAsync((done, error) -> {
+                    repair.run();
+                    return null;
+                });
+        exiting.put(key, repaired);
+        repaired.whenComplete((done, error) -> exiting.remove(key, repaired));
     }
 
     /** A jdtls data directory contains only rebuildable Eclipse indexes. After a failed handshake, remove it
@@ -2681,11 +2779,48 @@ public final class LspManager {
         });
     }
 
+    /**
+     * The basis for a server edit that no tracked command is waiting for (the edit of a completion item's
+     * command, one sent after {@code executeCommand} was already answered, an unsolicited one). There is no
+     * request to date it by, but a target the server names <em>with the version the session currently
+     * holds</em> needs none: that version identifies the text, which is the session's own copy. Such targets
+     * get that text as their preimage (and keep the applier's version check); every other target stays
+     * unknown and is refused as before.
+     */
+    static EditBasis versionedBasis(LanguageServerSession session, org.eclipse.lsp4j.WorkspaceEdit edit) {
+        if (session == null || edit == null || edit.getDocumentChanges() == null) {
+            return EditBasis.UNKNOWN;
+        }
+        Map<String, String> snapshots = null;
+        Map<Path, String> documents = new java.util.LinkedHashMap<>();
+        for (var change : edit.getDocumentChanges()) {
+            var id = change != null && change.isLeft() && change.getLeft() != null
+                    ? change.getLeft().getTextDocument()
+                    : null;
+            if (id == null || id.getUri() == null || id.getVersion() == null) {
+                continue;
+            }
+            Path path = uriToPath(id.getUri());
+            if (path == null || !id.getVersion().equals(session.documentVersion(id.getUri()))) {
+                continue;
+            }
+            if (snapshots == null) {
+                snapshots = session.documentSnapshots();
+            }
+            String text = snapshots.get(id.getUri());
+            if (text != null) {
+                documents.put(path, text);
+                documents.put(com.editora.config.PathKeys.canonical(path), text);
+            }
+        }
+        return documents.isEmpty() ? EditBasis.UNKNOWN : new EditBasis(Map.copyOf(documents), 0);
+    }
+
     /** A server-initiated {@code workspace/applyEdit} (from any session): apply on FX, answer the server. */
     private void onServerApplyEdit(
             LanguageServerSession session, org.eclipse.lsp4j.WorkspaceEdit edit, Consumer<Boolean> respond) {
         PendingApply pending = pendingApplyExpected.get(session);
-        EditBasis expected = pending == null ? EditBasis.UNKNOWN : pending.expected();
+        EditBasis expected = pending == null ? versionedBasis(session, edit) : pending.expected();
         Platform.runLater(() -> applyWorkspaceEdit(edit, expected, applied -> {
             if (pending != null) {
                 pending.applied().set(applied);
@@ -2984,6 +3119,13 @@ public final class LspManager {
      * file's server advertises a {@code diagnosticProvider} (so push-only servers like jdtls/pyright/tsserver
      * are untouched). An "unchanged" report leaves the current diagnostics in place.
      */
+    /** Told (FX thread) that a document's diagnostics are confirmed unchanged by its server. */
+    private volatile Consumer<Path> onDiagnosticsUnchanged = file -> {};
+
+    public void setOnDiagnosticsUnchanged(Consumer<Path> handler) {
+        onDiagnosticsUnchanged = handler == null ? file -> {} : handler;
+    }
+
     public void pullDiagnostics(Path file) {
         if (file == null) {
             return;
@@ -3001,12 +3143,27 @@ public final class LspManager {
             }
             List<LspDiagnostic> mapped = DiagnosticMapper.mapReport(report);
             if (mapped == null) {
-                return; // unchanged report — keep what's already shown
+                // An "unchanged" report: what was shown before the edit is still right. The editor cleared
+                // its marks on the edit, so say so rather than leave it showing a clean file.
+                Platform.runLater(() -> {
+                    if (sessionFor(file) == s
+                            && java.util.Objects.equals(diagnosticRequestGeneration.get(documentUri), generation)) {
+                        onDiagnosticsUnchanged.accept(file);
+                    }
+                });
+                return;
             }
+            var full = report == null ? null : report.getRelatedFullDocumentDiagnosticReport();
+            List<org.eclipse.lsp4j.Diagnostic> raw =
+                    full == null || full.getItems() == null ? List.of() : List.copyOf(full.getItems());
             Platform.runLater(() -> {
                 if (sessionFor(file) == s
                         && java.util.Objects.equals(diagnosticRequestGeneration.get(documentUri), generation)
                         && java.util.Objects.equals(s.documentVersion(documentUri), requestedVersion)) {
+                    // The code-action context is built from these. A pull-only server (vscode-css, ruby-lsp)
+                    // never publishes, so without this it was always asked with an empty context and offered
+                    // no quick fix for a diagnostic the editor was showing.
+                    rawDiagnostics.put(documentUri, raw);
                     onDiagnostics.accept(file, mapped);
                 }
             });
@@ -3197,6 +3354,19 @@ public final class LspManager {
             Map<Path, String> expectedAtAction,
             List<JdtlsGenerate.Candidate> chosen,
             Consumer<Boolean> cb) {
+        jdtlsGenerateApply(file, kind, actionParams, checkResponse, expectedAtAction, chosen, null, cb);
+    }
+
+    /** As above, with the super constructors the user chose (constructors only; null = all on offer). */
+    public void jdtlsGenerateApply(
+            Path file,
+            JdtlsGenerate.Kind kind,
+            Object actionParams,
+            JsonElement checkResponse,
+            Map<Path, String> expectedAtAction,
+            List<JdtlsGenerate.Candidate> chosen,
+            List<JdtlsGenerate.Candidate> chosenConstructors,
+            Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null || kind == null) {
             Platform.runLater(() -> cb.accept(false));
@@ -3207,7 +3377,8 @@ public final class LspManager {
                 : new EditBasis(expectedAtAction, System.currentTimeMillis());
         s.rawRequest(
                         kind.generateRequest(),
-                        JdtlsGenerate.generateParams(kind, asJson(actionParams), chosen, checkResponse))
+                        JdtlsGenerate.generateParams(
+                                kind, asJson(actionParams), chosen, checkResponse, chosenConstructors))
                 .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .whenComplete((r, e) -> {
                     org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
@@ -3516,27 +3687,7 @@ public final class LspManager {
     }
 
     private static String hoverText(Hover hover) {
-        if (hover == null || hover.getContents() == null) {
-            return "";
-        }
-        var contents = hover.getContents();
-        if (contents.isRight()) {
-            MarkupContent mc = contents.getRight();
-            return mc == null || mc.getValue() == null ? "" : mc.getValue();
-        }
-        StringBuilder sb = new StringBuilder();
-        for (var entry : contents.getLeft()) {
-            if (entry.isLeft()) {
-                sb.append(entry.getLeft());
-            } else {
-                MarkedString ms = entry.getRight();
-                if (ms != null && ms.getValue() != null) {
-                    sb.append(ms.getValue());
-                }
-            }
-            sb.append("\n\n");
-        }
-        return sb.toString().strip();
+        return HoverMarkdown.of(hover);
     }
 
     private static String uri(Path file) {

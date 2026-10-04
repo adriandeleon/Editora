@@ -57,9 +57,13 @@ which `isLspLanguage()` checks so `editor` imports nothing from `lsp`.
 ### One session per `(serverId, root)`
 
 [`lsp/RootResolver`](../../src/main/java/com/editora/lsp/RootResolver.java) computes the workspace
-root: the active Editora project folder (only when the file actually lives under it), else the
-nearest ancestor containing a root marker, else the file's directory. One root → one server process,
-shared by every file beneath it.
+root: this **window's** project folder (only when the file actually lives under it — compared by real
+path, so a project opened through a symlink and a location reported under its resolved path are one
+workspace), else the nearest ancestor containing a root marker, else the file's directory. A marker found in
+the user's home directory or at a filesystem root is ignored: a dotfiles `~/.git` must not hand a server the
+whole home directory. One root → one server process, shared by every file beneath it. A session with no open
+document is evicted after a grace period unless something holds a lease on it (`LspManager.retain`): a Java
+debug session runs inside its jdtls, so `DapManager` retains that session until the debug session ends.
 
 [`lsp/LspManager`](../../src/main/java/com/editora/lsp/LspManager.java) is the UI-facing facade
 (mirrors `MermaidService`). It keys sessions by `serverId + " " + root.toUri()` — **not** by
@@ -139,13 +143,17 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   them or throws. Each registration is applied on its own, so one unusable entry cannot abort the batch.
   Rename and code-action registrations keep their options object (`prepareProvider`, `codeActionKinds`)
   rather than being reduced to a Boolean. Diagnostic, semantic-token, inlay-hint, and folding refresh
-  requests immediately re-request data for managed open buffers; a capability change re-pushes every
+  requests are advertised (`workspace.*.refreshSupport` — servers send none without it) and re-request
+  data for managed open buffers, coalesced over a 100 ms window; semantic tokens and inlay hints are
+  re-requested for the active buffer only, the one their replies are applied to. A capability change re-pushes every
   buffer gate, including Go to Implementation / Type Definition.
 - **jdtls on-type formatting** is registered by the server only while `java.format.onType.enabled` is set.
   `Settings.lspOnTypeFormatting` is mirrored into it: in `initializationOptions`, in the configuration pushed
   after `initialized`, and again (to running Java sessions) when the setting flips. The opt-in
   `JdtlsDynamicRegistrationProbeTest` checks this, rename's `prepareProvider`, and semantic tokens against
-  a real jdtls.
+  a real jdtls. The on-type request is issued one pulse **after** the keystroke (the `KEY_TYPED` filter runs
+  before the character is inserted), and it and Tab's range-format re-indent flush the debounced `didChange`
+  first, so the server is asked about the line as it reads on screen.
 - **stderr must be drained.** A daemon thread (`drainStderr`) reads the server's stderr to EOF and
   logs the first 200 lines to the Debug Log. An undrained PIPE fills its ~64 KB OS buffer on a chatty
   server (jdtls logs heavily) and the server blocks mid-startup, deadlocking the handshake. Capturing
@@ -169,8 +177,10 @@ command. The dir is `jdtlsWorkspaceBase / workspaceDirName(root)`, where `worksp
 truncated SHA-256 of the root's absolute path (pure, unit-tested). `withDataDir` is a no-op if the
 user's configured command already specifies `-data`. The workspace persists across sessions so jdtls's
 index is reused. If a session dies before completing `initialize`, `LspManager` treats that data directory
-as suspect: it removes the rebuildable cache when the Eclipse lock is free, or writes a sidecar failure
-marker and selects a fresh suffixed directory when another process still owns the lock. Automatic crash
+as suspect: once the failed server's process has exited (bounded wait — the kill is non-blocking, and a
+dying JVM still holds the lock) it removes the rebuildable cache when the Eclipse lock is free, or writes a
+sidecar failure marker and selects a fresh suffixed directory when another process still owns the lock. A
+marker is re-tested on every later claim and removed with its cache as soon as the lock is free. Automatic crash
 restarts are scoped to the failed `(server, root)` pair so one broken project cannot deactivate or restart
 Java buffers belonging to another root. A deliberately disposed session keeps its workspace claim until its
 process has actually exited (it is given a moment to shut down cleanly, and still holds the Eclipse lock
@@ -295,8 +305,9 @@ closed target only when its modification time **predates the moment the request 
 content on disk is what the server computed from (`WorkspaceEditMapper.unchangedSince`; a whole-second
 timestamp needs a 2 s margin, since a coarse filesystem can record a later write as earlier). The file edit
 is marked `diskPreimageAt`, and the applier re-checks it against the buffer it loaded: no window has unsaved
-changes to the file, the buffer's recorded disk snapshot equals the file as it is now, and the file is still
-unmodified since the request. A version the server attaches to a document it never had open is dropped
+changes to the file, the buffer's recorded disk snapshot equals the file as it is now **and carries a content
+fingerprint** (only a load or a save records one — "changed on disk → Keep" re-baselines time and size over a
+buffer that holds different text, and must not pass), and the file is still unmodified since the request. A version the server attaches to a document it never had open is dropped
 rather than compared. The check runs twice: on the FX thread **before anything is staged**, and again after
 staging, where a target the same edit also moves (jdtls's answer to renaming a class from a usage site:
 an edit to the declaring file plus a `RenameFile` of it) is examined at the **destination** the staged

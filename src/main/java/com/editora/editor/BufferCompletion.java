@@ -456,9 +456,17 @@ final class BufferCompletion {
                 onAccept.accept(action);
             }
         });
+        releaseCodeActionKeys(); // a second invocation while the list is up: drop the first one's listeners
         codeActionArea = a;
         // Take C-n/C-p/cancel so they reach the list rather than moving the caret; nothing else.
         a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
+        // The list is about one caret position in one visible editor. It does not auto-hide (Escape has to
+        // reach the editor's filter), so everything that takes the user elsewhere must dismiss it: leaving
+        // the editor (a tab switch, another window), scrolling its line away, or a press in the text. Left
+        // up, it floated over another file and its Enter binding applied a fix for a line no longer in view.
+        a.focusedProperty().addListener(codeActionDismissOnBlur);
+        a.estimatedScrollYProperty().addListener(codeActionDismiss);
+        a.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, codeActionDismissOnPress);
         codeActionPopup.show(a.getScene().getWindow(), caretScreen, actions);
     }
 
@@ -470,9 +478,19 @@ final class BufferCompletion {
         releaseCodeActionKeys();
     }
 
-    /** Hands the list's chords back. Idempotent, since it runs from both hide paths. */
+    private final javafx.beans.value.ChangeListener<Boolean> codeActionDismissOnBlur = (o, was, focused) -> {
+        if (!focused) hideCodeActions();
+    };
+    private final javafx.beans.value.ChangeListener<Object> codeActionDismiss = (o, was, now) -> hideCodeActions();
+    private final javafx.event.EventHandler<javafx.scene.input.MouseEvent> codeActionDismissOnPress =
+            e -> hideCodeActions();
+
+    /** Hands the list's chords back and detaches its dismiss listeners. Idempotent: both hide paths run it. */
     void releaseCodeActionKeys() {
         if (codeActionArea != null) {
+            codeActionArea.focusedProperty().removeListener(codeActionDismissOnBlur);
+            codeActionArea.estimatedScrollYProperty().removeListener(codeActionDismiss);
+            codeActionArea.removeEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, codeActionDismissOnPress);
             codeActionArea.getProperties().remove(OWNED_CHORDS);
             codeActionArea = null;
         }
@@ -764,10 +782,12 @@ final class BufferCompletion {
         return ghostVisible() || (completionPopup != null && completionPopup.isShowing());
     }
 
-    /** Dismisses any active completion (popup or ghost) — the {@code edit.cancel} / Escape path. */
+    /** Dismisses any active completion (popup or ghost) and the quick-fix list — the {@code edit.cancel} /
+     *  Escape path, and what {@code EditorBuffer.dispose} calls. */
     public void cancelCompletion() {
         suppressCompletionAtVersion = host.docVersion();
         hideCompletion();
+        if (codeActionsShowing()) hideCodeActions(); // also the dispose path: a closed tab keeps no popup
     }
 
     /** Manual trigger (the {@code edit.completion} command), on the focused view. */

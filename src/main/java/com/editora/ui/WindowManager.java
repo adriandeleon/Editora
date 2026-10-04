@@ -872,6 +872,17 @@ public class WindowManager {
         }
     }
 
+    /**
+     * A folder-trust decision changed (granted or revoked, here or in Settings). Each window re-resolves the
+     * project overrides it may honour: revoking only edited the trust store, so a manager configured while
+     * the folder was trusted kept launching the project-supplied command.
+     */
+    public void broadcastTrustChanged() {
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller.trustChanged();
+        }
+    }
+
     /** Re-registers the synthetic {@code externalTool.run.*} commands in every window after the set changed. */
     public void broadcastExternalToolsChanged() {
         for (Holder h : new ArrayList<>(windows)) {

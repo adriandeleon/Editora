@@ -395,28 +395,83 @@ final class LspCoordinator {
         lspManager.setApplyEditHandler(this::applyWorkspaceEditsAsync); // server quick-fix edits land here (#670)
         lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
+        lspManager.setOnDiagnosticsUnchanged(this::diagnosticsUnchanged);
     }
 
+    /**
+     * {@code file}'s diagnostics are known to be what they were before the last edit — the server was sent
+     * nothing (the text ended up identical) or answered a pull with "unchanged". Every edit clears the
+     * buffer's overlay, scrollbar stripe and minimap marks on the assumption that a publish follows; when
+     * none will, the last published list is put back, so the editor does not show a clean file while the
+     * Problems window still lists its errors.
+     */
+    private void diagnosticsUnchanged(Path file) {
+        EditorBuffer buffer = ops.bufferForPath(file);
+        List<LspDiagnostic> last = problems.get(ops.canonicalize(file));
+        if (buffer != null && last != null && !last.isEmpty()) {
+            buffer.setLspDiagnostics(last);
+        }
+    }
+
+    /** Refresh kinds a server asked for since the last flush; see {@link #refreshRequested}. */
+    private final java.util.Set<String> pendingRefreshKinds = new java.util.LinkedHashSet<>();
+
+    private final javafx.animation.PauseTransition refreshFlush =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(REFRESH_COALESCE_MILLIS));
+
+    /** Window over which a server's {@code workspace/…/refresh} requests are folded into one re-request. */
+    static final int REFRESH_COALESCE_MILLIS = 100;
+
+    /**
+     * A server asked for its data to be re-requested. Servers send these in bursts (clangd: two right after
+     * an open, one per rebuilt dependent after a header save), so the kinds are collected for a short fixed
+     * window — the timer is not restarted by a later request, which would let a chatty server starve it.
+     */
     private void refreshRequested(String kind) {
         if ("capabilities".equals(kind)) {
             refreshCapabilityGates();
             return;
         }
+        pendingRefreshKinds.add(kind);
+        if (refreshFlush.getStatus() != javafx.animation.Animation.Status.RUNNING) {
+            refreshFlush.setOnFinished(e -> flushRefreshes());
+            refreshFlush.playFromStart();
+        }
+    }
+
+    private void flushRefreshes() {
+        List<String> kinds = List.copyOf(pendingRefreshKinds);
+        pendingRefreshKinds.clear();
+        EditorBuffer active = host.activeBuffer();
         host.forEachBuffer(buffer -> {
             Path path = buffer.getPath();
             if (path == null || !lspManager.isManaged(path)) {
                 return;
             }
-            switch (kind) {
-                case "diagnostics" -> lspManager.pullDiagnostics(path);
-                case "semanticTokens" -> requestSemanticTokens(buffer);
-                case "inlayHints" -> requestInlayHints(buffer);
-                case "foldingRanges" -> requestFoldingRanges(buffer);
-                default -> {
-                    // Future server refresh kinds are ignored until the corresponding UI feature exists.
+            for (String kind : kinds) {
+                if (!refreshAppliesTo(kind, buffer == active)) {
+                    continue;
+                }
+                switch (kind) {
+                    case "diagnostics" -> lspManager.pullDiagnostics(path);
+                    case "semanticTokens" -> requestSemanticTokens(buffer);
+                    case "inlayHints" -> requestInlayHints(buffer);
+                    case "foldingRanges" -> requestFoldingRanges(buffer);
+                    default -> {
+                        // Future server refresh kinds are ignored until the corresponding UI feature exists.
+                    }
                 }
             }
         });
+    }
+
+    /**
+     * Pure: whether a refresh of {@code kind} re-requests for a buffer. Semantic tokens and inlay hints are
+     * only ever applied to the active buffer (their replies are dropped for any other, and a tab re-requests
+     * when it is shown), so asking for them for every open tab was pure server load.
+     */
+    static boolean refreshAppliesTo(String kind, boolean activeBuffer) {
+        return activeBuffer || !("semanticTokens".equals(kind) || "inlayHints".equals(kind));
     }
 
     /** Re-applies every buffer/UI gate after initialize or a dynamic capability change. */
@@ -1595,7 +1650,9 @@ final class LspCoordinator {
                 var c = item.getCommand();
                 if (c != null && c.getCommand() != null && path.equals(buffer.getPath()) && !buffer.isDisposed()) {
                     buffer.sendLspChange();
-                    lspManager.executeCommand(path, c.getCommand(), c.getArguments(), (result, error) -> {});
+                    // Tracked, so the workspace/applyEdit the command answers with has a basis to be
+                    // validated against (an untracked one is refused unless it names current versions).
+                    lspManager.applyCodeAction(path, (Object) c, applied -> {});
                 }
             };
             var eager = com.editora.lsp.CompletionMapper.additionalEdits(item);
@@ -1724,8 +1781,10 @@ final class LspCoordinator {
         }); // '(' or ',' typed (#674, #725)
         buffer.setOccurrenceRequester(() -> requestOccurrences(buffer)); // caret at rest (#675)
         buffer.setLspChangeListener(text -> {
-            if (buffer.getPath() != null) {
-                lspManager.changeDocument(buffer.getPath(), text);
+            if (buffer.getPath() != null && !lspManager.changeDocument(buffer.getPath(), text)) {
+                // A net-zero edit (type + Backspace, edit + undo): the server was sent nothing and will
+                // publish nothing, but the edit already cleared the buffer's marks.
+                diagnosticsUnchanged(buffer.getPath());
             }
         });
         // Pull-model diagnostics (fired on the same debounce as didChange; no-op for push-only servers).
@@ -1763,6 +1822,7 @@ final class LspCoordinator {
         buffer.setLspRangeFormatter((sl, sc, el, ec, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
                 int tabSize = host.settings().getTabSize();
+                buffer.sendLspChange(); // the didChange debounce may be pending: format the text on screen
                 lspManager.rangeFormatting(
                         buffer.getPath(), sl, sc, el, ec, tabSize, buffer.detectInsertSpaces(tabSize), cb);
             } else {
@@ -1799,6 +1859,7 @@ final class LspCoordinator {
         buffer.setLspOnTypeFormatter((line, character, ch, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
                 int tabSize = host.settings().getTabSize();
+                buffer.sendLspChange(); // the server must have the character that triggered this
                 lspManager.onTypeFormatting(
                         buffer.getPath(), line, character, ch, tabSize, buffer.detectInsertSpaces(tabSize), cb);
             } else {
@@ -1954,31 +2015,58 @@ final class LspCoordinator {
         }
         lspManager.jdtlsGenerateCandidates(path, kind, params, plan -> {
             List<JdtlsGenerate.Candidate> candidates = plan.candidates();
-            if (candidates.isEmpty()) {
+            List<JdtlsGenerate.Candidate> constructors = kind == JdtlsGenerate.Kind.CONSTRUCTORS
+                    ? JdtlsGenerate.constructorCandidates(plan.status())
+                    : List.of();
+            if (candidates.isEmpty() && constructors.isEmpty()) {
                 host.setStatus(tr("status.lsp.generateNothing", item.title()));
                 return;
             }
-            List<MultiSelectPicker.Item<JdtlsGenerate.Candidate>> rows = new java.util.ArrayList<>();
-            for (JdtlsGenerate.Candidate c : candidates) {
-                rows.add(new MultiSelectPicker.Item<>(c.label(), c.preselected(), c));
-            }
-            MultiSelectPicker.show(
-                    host.overlayHost(),
-                    item.title(),
-                    rows,
-                    chosen -> lspManager.jdtlsGenerateApply(
+            // Constructors are a two-step choice: which super constructors to call (each one becomes a
+            // generated constructor), then which fields to initialise. A class with no fields — the usual
+            // exception subclass — still has constructors to generate.
+            java.util.function.Consumer<List<JdtlsGenerate.Candidate>> withConstructors = superChosen -> {
+                java.util.function.Consumer<List<JdtlsGenerate.Candidate>> apply = chosen -> {
+                    beginReportedEdit();
+                    lspManager.jdtlsGenerateApply(
                             path,
                             kind,
                             params,
                             plan.status(),
                             item.expectedDocuments(),
                             chosen,
+                            superChosen,
                             ok -> reportEdit(
                                     ok,
                                     tr("status.lsp.codeActionApplied", item.title()),
-                                    tr("status.lsp.codeActionFailed", item.title()))));
+                                    tr("status.lsp.codeActionFailed", item.title())));
+                };
+                if (candidates.isEmpty()) {
+                    apply.accept(List.of());
+                } else {
+                    MultiSelectPicker.show(host.overlayHost(), item.title(), pickerRows(candidates), apply);
+                }
+            };
+            if (constructors.size() > 1) {
+                MultiSelectPicker.show(
+                        host.overlayHost(),
+                        tr("picker.generate.superConstructors", item.title()),
+                        pickerRows(constructors),
+                        withConstructors);
+            } else {
+                withConstructors.accept(null);
+            }
         });
         return true;
+    }
+
+    private static List<MultiSelectPicker.Item<JdtlsGenerate.Candidate>> pickerRows(
+            List<JdtlsGenerate.Candidate> candidates) {
+        List<MultiSelectPicker.Item<JdtlsGenerate.Candidate>> rows = new java.util.ArrayList<>();
+        for (JdtlsGenerate.Candidate c : candidates) {
+            rows.add(new MultiSelectPicker.Item<>(c.label(), c.preselected(), c));
+        }
+        return rows;
     }
 
     // --- jdtls project + editing commands (#746) -----------------------------------------------------
@@ -2662,7 +2750,7 @@ final class LspCoordinator {
             return; // a jdtls generate prompt: we drive it, not the server (#741)
         }
         LspManager.CodeActionItem applied = item;
-        blockedTargets = List.of();
+        beginReportedEdit();
         lspManager.applyCodeAction(
                 path,
                 applied,
@@ -2722,7 +2810,7 @@ final class LspCoordinator {
                 return; // nothing to do
             }
             host.setStatus(tr("status.lsp.renaming"));
-            blockedTargets = List.of();
+            beginReportedEdit();
             lspManager.previewRename(path, line, col, name, mapped -> {
                 if (mapped == null) {
                     reportEdit(false, "", tr("status.lsp.renameFailed", name));
@@ -2769,7 +2857,7 @@ final class LspCoordinator {
 
     /** Applies a (possibly filtered) rename edit and reports the outcome. */
     private void applyRename(com.editora.lsp.WorkspaceEditMapper.Mapped mapped, String name) {
-        blockedTargets = List.of();
+        beginReportedEdit();
         applyWorkspaceEditsAsync(
                 mapped, ok -> reportEdit(ok, tr("status.lsp.renamed", name), tr("status.lsp.renameFailed", name)));
     }
@@ -2778,11 +2866,20 @@ final class LspCoordinator {
     private List<Path> blockedTargets = List.of();
 
     /**
+     * Starts an operation whose outcome {@link #reportEdit} will announce. The blocked-files note belongs to
+     * one operation: a server-initiated edit that was blocked earlier has no {@code reportEdit} of its own
+     * to consume it, and left standing it silenced the failure message of the next, unrelated operation.
+     */
+    void beginReportedEdit() {
+        blockedTargets = List.of();
+    }
+
+    /**
      * A workspace edit was refused because of specific files — changed since the request, unsaved, or not
      * loaded — rather than for a reason nobody can act on. Names them, so "Rename failed" is not all the
      * user gets when the fix is to save or reload one file.
      */
-    private void editBlocked(List<Path> files) {
+    void editBlocked(List<Path> files) {
         if (files == null || files.isEmpty()) {
             return;
         }
@@ -2805,7 +2902,7 @@ final class LspCoordinator {
     }
 
     /** Reports an edit's outcome. A failure whose blocking files were already named keeps that message. */
-    private void reportEdit(boolean ok, String success, String failure) {
+    void reportEdit(boolean ok, String success, String failure) {
         boolean named = !blockedTargets.isEmpty();
         blockedTargets = List.of();
         if (ok) {
@@ -2818,8 +2915,9 @@ final class LspCoordinator {
     /**
      * Whether an edit to a file the server did not have open may be applied to {@code buffer}. The server
      * computed it from the file on disk, so three things must hold: no window has unsaved changes to the
-     * file, the buffer mirrors the file as it is on disk now, and the file has not been modified since the
-     * request was sent. Anything that cannot be shown refuses the edit.
+     * file, the buffer mirrors the file as it is on disk now (its snapshot was taken by a load or a save and
+     * still matches), and the file has not been modified since the request was sent. Anything that cannot
+     * be shown refuses the edit.
      */
     private boolean diskPreimageHolds(
             com.editora.lsp.WorkspaceEditMapper.FileEdit edit, EditorBuffer buffer, Path onDiskAt) {
@@ -2834,7 +2932,12 @@ final class LspCoordinator {
             WorkspaceFileIdentity onDisk =
                     workspaceFiles.identity(onDiskAt.toAbsolutePath().normalize());
             EditorBuffer.DiskSnapshot loaded = buffer.diskSnapshot();
+            // The content fingerprint is recorded only by a load or a save — the two moments the buffer's
+            // text is known to be the file's. Answering "changed on disk" with Keep re-baselines the time
+            // and size without either, leaving a clean buffer that holds different text from the file; the
+            // snapshot then matched the disk and the server's edit landed at the wrong offsets.
             return loaded.modifiedMillis() >= 0
+                    && loaded.fingerprint() != null
                     && !loaded.differsFrom(onDisk.lastModifiedMillis(), onDisk.size())
                     && com.editora.lsp.WorkspaceEditMapper.unchangedSince(onDisk.lastModifiedMillis(), since);
         } catch (java.io.IOException | RuntimeException failure) {
@@ -3348,7 +3451,8 @@ final class LspCoordinator {
             for (StagedRename item : renames) {
                 Path from = item.rename().from().toAbsolutePath().normalize();
                 Path to = item.rename().to().toAbsolutePath().normalize();
-                if (workspaceFiles.exists(from)
+                // After a case-only rename on a case-insensitive volume the old spelling still "exists".
+                if ((workspaceFiles.exists(from) && !sameFileInAnotherCase(from, to))
                         || !workspaceFiles.exists(to)
                         || !java.util.Objects.equals(item.identity(), workspaceFiles.identity(to))) {
                     return false;
@@ -3611,7 +3715,7 @@ final class LspCoordinator {
             for (var r : renames) {
                 Path from = r.from().toAbsolutePath().normalize();
                 Path to = r.to().toAbsolutePath().normalize();
-                if (from.equals(to)) {
+                if (samePathSpelling(from, to)) {
                     continue;
                 }
                 if (!sources.add(from) || !destinations.add(to) || !workspaceFiles.isRegularFile(from)) {
@@ -3623,14 +3727,18 @@ final class LspCoordinator {
             for (var r : renames) {
                 Path from = r.from().toAbsolutePath().normalize();
                 Path to = r.to().toAbsolutePath().normalize();
-                if (!from.equals(to) && !r.overwrite() && workspaceFiles.exists(to) && !sources.contains(to)) {
+                if (!samePathSpelling(from, to)
+                        && !r.overwrite()
+                        && workspaceFiles.exists(to)
+                        && !sources.contains(to)
+                        && !sameFileInAnotherCase(from, to)) {
                     return null;
                 }
             }
             for (var r : renames) {
                 Path from = r.from().toAbsolutePath().normalize();
                 Path to = r.to().toAbsolutePath().normalize();
-                if (from.equals(to)) {
+                if (samePathSpelling(from, to)) {
                     continue;
                 }
                 Path stage = temporarySibling(from, ".source");
@@ -3658,6 +3766,35 @@ final class LspCoordinator {
         } catch (java.io.IOException | RuntimeException failure) {
             rollbackRenames(staged, transaction);
             return null;
+        }
+    }
+
+    /**
+     * Whether a rename is a no-op. Compared as text, not with {@code Path.equals}: on Windows that ignores
+     * case, so a case-only rename ({@code Httpclient.java} → {@code HttpClient.java}) was dropped from the
+     * batch while its text edits were applied.
+     */
+    private static boolean samePathSpelling(Path from, Path to) {
+        return from.toString().equals(to.toString());
+    }
+
+    /**
+     * Whether {@code to} "exists" only because it is {@code from} itself on a case-insensitive volume — a
+     * case-only rename, not a collision with someone else's file. Staging then performs the two-step move
+     * such a rename needs.
+     */
+    private boolean sameFileInAnotherCase(Path from, Path to) {
+        if (!from.toString().equalsIgnoreCase(to.toString())) {
+            return false;
+        }
+        try {
+            Object source = workspaceFiles.identity(from).fileKey();
+            Object destination = workspaceFiles.identity(to).fileKey();
+            // No file keys (Windows): the names differ only in case and both resolve, which is the same file
+            // on every volume but a case-sensitive directory.
+            return source == null || destination == null || source.equals(destination);
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
         }
     }
 

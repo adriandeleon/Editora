@@ -714,13 +714,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void revoke(String root) {
                 config.getTrustStore().revoke(java.nio.file.Path.of(root));
-                config.saveTrust();
+                saveTrustDecision();
             }
 
             @Override
             public void revokeAll() {
                 config.getTrustStore().revokeAll();
-                config.saveTrust();
+                saveTrustDecision();
             }
         });
         this.settingsWindow.setRipgrepProbe(
@@ -6070,7 +6070,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         @Override
                         public void trust(java.nio.file.Path root) {
                             config.getTrustStore().trust(root);
-                            config.saveTrust(); // durable: a security decision must survive a crash
+                            saveTrustDecision(); // durable: a security decision must survive a crash
                         }
                     },
                     buildOutputPanel));
@@ -6824,9 +6824,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public Path lspProjectRoot() {
-                    Project active =
-                            (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
-                    return active == null ? null : Path.of(active.root());
+                    return windowProjectRoot(); // this window's project, not the last-focused window's
                 }
 
                 @Override
@@ -7112,6 +7110,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         settingsWindow.showWorkspace(stage);
     }
 
+    /** Persists a trust change and lets every window re-resolve what its project may now override. */
+    private void saveTrustDecision() {
+        config.saveTrust();
+        if (windowManager != null) {
+            windowManager.broadcastTrustChanged();
+        }
+    }
+
+    /** Another window (or this one) changed folder trust: stop honouring overrides that lost it. */
+    void trustChanged() {
+        lspCoordinator.reloadProjectSettings();
+    }
+
     /**
      * Revokes trust for the active window's project root ({@code workspace.revokeTrust}) — the quick undo for
      * a folder trusted by mistake, without hunting for it in the Settings list. Only an <em>explicit</em>
@@ -7125,7 +7136,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         config.getTrustStore().revoke(root);
-        config.saveTrust();
+        saveTrustDecision();
         settingsWindow.refreshTrustedFolders();
         setStatus(tr(
                 config.getTrustStore().isTrusted(root) ? "status.trust.revokedButInherited" : "status.trust.revoked",
@@ -8443,7 +8454,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // mode or the segment can keep saying Read-Only even though the CodeArea is now editable. This is
         // especially visible for `--expert FILE`, where the status bar remains but the tab header is hidden.
         statusBar.refresh();
-        lspCoordinator.syncBuffer(buffer); // the temporary heavy-file shell deliberately suppressed this
+        lspCoordinator.syncBufferWhenShown(buffer); // the temporary heavy-file shell suppressed this
         // Set the default caret before releasing queued navigation. A later runLater(goToStart) would erase
         // a file:line request that waited on this loading shell.
         buffer.goToStart();

@@ -105,6 +105,31 @@ class LspManagerRequestsFxTest {
         return new Location(uri, new Range(new Position(line, ch), new Position(line, ch + 1)));
     }
 
+    /**
+     * A pull-only server (vscode-css, ruby-lsp) never publishes, so the diagnostics it returned from
+     * {@code textDocument/diagnostic} are the only ones there are: they must reach the code-action context,
+     * or the server is asked for quick fixes about nothing.
+     */
+    @Test
+    void pulledDiagnosticsReachTheCodeActionContext() throws Exception {
+        capabilities.setDiagnosticProvider(new org.eclipse.lsp4j.DiagnosticRegistrationOptions());
+        capabilities.setCodeActionProvider(true);
+        FakeLanguageServer fake = open();
+        var diagnostic = new org.eclipse.lsp4j.Diagnostic(new Range(new Position(0, 0), new Position(0, 5)), "typo");
+        fake.diagnosticResponse = new org.eclipse.lsp4j.DocumentDiagnosticReport(
+                new org.eclipse.lsp4j.RelatedFullDocumentDiagnosticReport(List.of(diagnostic)));
+
+        manager.pullDiagnostics(file);
+        var drained = new CountDownLatch(1);
+        Platform.runLater(drained::countDown);
+        assertTrue(drained.await(10, TimeUnit.SECONDS));
+        manager.codeActions(file, 0, 0, 0, 1, actions -> {});
+
+        assertEquals(1, fake.diagnosticPulls.size());
+        assertEquals(
+                List.of(diagnostic), fake.codeActions.getLast().getContext().getDiagnostics());
+    }
+
     @Test
     void staleVersionedPushDiagnosticsAreDropped() throws Exception {
         var delivered = new CopyOnWriteArrayList<List<com.editora.editor.LspDiagnostic>>();

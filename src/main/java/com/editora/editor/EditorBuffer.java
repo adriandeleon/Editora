@@ -8514,7 +8514,9 @@ public class EditorBuffer implements TabContent {
             // state the server's answer is expressed in. Never consumes, so the char inserts as normal.
             maybeSmartSemicolon(a, typed); // #746
             applyCloserDedent(a, typed);
-            maybeOnTypeFormat(a, typed); // #740 — after the local assist, which usually already got it right
+            // #740. Deferred: this filter runs BEFORE the character is inserted, and both the request's
+            // position and its staleness baseline must describe the line with the character in it.
+            Platform.runLater(() -> maybeOnTypeFormat(a, typed));
         });
     }
 
@@ -8616,7 +8618,7 @@ public class EditorBuffer implements TabContent {
      * leaves the line already correct.
      */
     private void maybeOnTypeFormat(CodeArea a, char typed) {
-        if (!onTypeFormattingEnabled || !lspActive || lspOnTypeFormatter == null) {
+        if (disposed || !onTypeFormattingEnabled || !lspActive || lspOnTypeFormatter == null) {
             return;
         }
         if (!lspOnTypeTriggers.contains(typed)) {
@@ -8632,6 +8634,9 @@ public class EditorBuffer implements TabContent {
         int par = a.getCurrentParagraph();
         String line = a.getParagraph(par).getText();
         int caret = a.getCaretPosition();
+        if (a.getCaretColumn() == 0 || line.charAt(a.getCaretColumn() - 1) != typed) {
+            return; // the keystroke did not insert its character after all
+        }
         long gen = ++reindentGen; // shares the Tab re-indent's generation: both adjust the same line's indent
         lspOnTypeFormatter.format(par, a.getCaretColumn(), typed, edits -> {
             if (gen != reindentGen
@@ -9222,6 +9227,7 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea != null ? focusedArea : area;
         int caretBefore = a.getCaretPosition();
         int anchorBefore = a.getAnchor();
+        LspEditView.Before view = preserveCaret ? null : LspEditView.capture(a);
         // Resolve each edit to an absolute [start,end] against the current document, keep valid + non-overlapping,
         // sorted ascending. Applying them as ONE MultiChangeBuilder commit makes the whole set a single undo
         // unit — a multi-line Format Document (or an auto-import's additional edits) was previously one
@@ -9257,7 +9263,7 @@ public class EditorBuffer implements TabContent {
         }
         if (ranges.size() == 1) {
             a.replaceText(ranges.get(0)[0], ranges.get(0)[1], texts.get(0));
-            restoreCaretAfterEdits(a, preserveCaret, caretBefore, anchorBefore, ranges, texts);
+            restoreCaretAfterEdits(a, view, caretBefore, anchorBefore, ranges, texts);
             return;
         }
         // Apply BOTTOM-TO-TOP. The fork's MultiChangeBuilder applies its replacements *sequentially against
@@ -9272,18 +9278,19 @@ public class EditorBuffer implements TabContent {
             builder.replaceTextAbsolutely(ranges.get(i)[0], ranges.get(i)[1], texts.get(i));
         }
         builder.commit(); // one undo unit for the whole edit set
-        restoreCaretAfterEdits(a, preserveCaret, caretBefore, anchorBefore, ranges, texts);
+        restoreCaretAfterEdits(a, view, caretBefore, anchorBefore, ranges, texts);
     }
 
     /** Puts the caret back where it was, translated across the edits just applied; see {@code LspEditShift}. */
     private static void restoreCaretAfterEdits(
             CodeArea a,
-            boolean preserveCaret,
+            LspEditView.Before view,
             int caretBefore,
             int anchorBefore,
             java.util.List<int[]> ranges,
             java.util.List<String> texts) {
-        if (!preserveCaret) {
+        if (view != null) {
+            LspEditView.restore(a, view, ranges, texts); // format / quick fix / rename: see LspEditView
             return;
         }
         int target = LspEditShift.caretAfterEdits(caretBefore, ranges, texts);

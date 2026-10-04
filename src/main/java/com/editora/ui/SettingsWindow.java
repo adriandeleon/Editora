@@ -5894,33 +5894,10 @@ public class SettingsWindow {
         if (lspManager == null || lspStatusLabels.isEmpty()) {
             return;
         }
-        // The manager caches its probe per command; configure it with the current commands first.
-        Settings cs = config.getSettings();
-        lspManager.configure(
-                cs.isLspSupport(),
-                java.util.Map.ofEntries(
-                        java.util.Map.entry("java", cs.getJavaLspCommand()),
-                        java.util.Map.entry("typescript", cs.getTypescriptLspCommand()),
-                        java.util.Map.entry("python", cs.getPythonLspCommand()),
-                        java.util.Map.entry("xml", cs.getXmlLspCommand()),
-                        java.util.Map.entry("json", cs.getJsonLspCommand()),
-                        java.util.Map.entry("bash", cs.getBashLspCommand()),
-                        java.util.Map.entry("yaml", cs.getYamlLspCommand()),
-                        java.util.Map.entry("go", cs.getGoLspCommand()),
-                        java.util.Map.entry("rust", cs.getRustLspCommand()),
-                        java.util.Map.entry("php", cs.getPhpLspCommand()),
-                        java.util.Map.entry("ruby", cs.getRubyLspCommand()),
-                        java.util.Map.entry("clangd", cs.getClangdLspCommand()),
-                        java.util.Map.entry("html", cs.getHtmlLspCommand()),
-                        java.util.Map.entry("css", cs.getCssLspCommand()),
-                        java.util.Map.entry("kotlin", cs.getKotlinLspCommand()),
-                        java.util.Map.entry("lua", cs.getLuaLspCommand()),
-                        java.util.Map.entry("dockerfile", cs.getDockerfileLspCommand()),
-                        java.util.Map.entry("sql", cs.getSqlLspCommand()),
-                        java.util.Map.entry("terraform", cs.getTerraformLspCommand()),
-                        java.util.Map.entry("toml", cs.getTomlLspCommand()),
-                        java.util.Map.entry("csharp", cs.getCsharpLspCommand()),
-                        java.util.Map.entry("typst", cs.getTypstLspCommand())));
+        // Probe the commands this page shows, without configuring the manager. This window must not
+        // (re)configure it: doing so with the global commands replaced a trusted project's override and
+        // shut its running server down every time Settings was merely opened.
+        java.util.Map<String, String> shown = LspCoordinator.commandsForAllServers(config.getSettings());
         for (LspServerUi srv : lspServerUis()) {
             Label status = lspStatusLabels.get(srv.id());
             if (status == null) {
@@ -5930,7 +5907,7 @@ public class SettingsWindow {
             status.getStyleClass().setAll("settings-git-status");
             status.setText(tr("settings.lsp.checking"));
             String langKey = installLangForServer(srv.id());
-            lspManager.detect(srv.id(), found -> {
+            lspManager.detectCommand(srv.id(), shown.get(srv.id()), found -> {
                 status.getStyleClass()
                         .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
                 status.setText(tr(statusKey, found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));

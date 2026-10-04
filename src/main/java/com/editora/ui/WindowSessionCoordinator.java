@@ -697,8 +697,9 @@ final class WindowSessionCoordinator {
         // restored file's real View mode has been applied so the status segment cannot retain that
         // temporary "Read-Only" state for an editable buffer.
         host.refreshStatusBar();
-        // The tab was set up before content loaded; start or close its server now that its real tier is known.
-        host.lspCoordinator().syncBuffer(buffer);
+        // The tab was set up before content loaded; its real tier is known now. Only the visible tab starts
+        // its server here — a restored background tab still waits for its first show.
+        host.lspCoordinator().syncBufferWhenShown(buffer);
         CodeArea area = buffer.getArea();
         int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
         area.moveTo(caret);

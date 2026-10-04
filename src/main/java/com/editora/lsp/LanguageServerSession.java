@@ -182,8 +182,45 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** Bounds an ordinary server request with the shared {@link #REQUEST_TIMEOUT}. */
-    private static <T> CompletableFuture<T> bounded(CompletableFuture<T> request) {
-        return bounded(request, REQUEST_TIMEOUT);
+    private <T> CompletableFuture<T> bounded(CompletableFuture<T> request) {
+        return track(bounded(request, REQUEST_TIMEOUT));
+    }
+
+    /**
+     * Requests on the wire that the server has not answered. A session that dies or is disposed settles
+     * them at once: left alone, each would wait for its own timer — 30 s for an ordinary request, ten
+     * minutes for a workspace build — and then report a failure against whatever the window was doing by
+     * then, while the timer queue kept the request, its callbacks and the dead session reachable.
+     */
+    private final java.util.Set<CompletableFuture<?>> inFlight = ConcurrentHashMap.newKeySet();
+
+    /** Registers {@code request} so a lost session fails it immediately instead of at its timeout. */
+    private <T> CompletableFuture<T> track(CompletableFuture<T> request) {
+        if (request.isDone()) {
+            return request;
+        }
+        inFlight.add(request);
+        request.whenComplete((result, error) -> inFlight.remove(request));
+        if (disposed || deadReported.get()) {
+            failInFlight(); // lost the race with markDead()/dispose(): nobody else will settle it
+        }
+        return request;
+    }
+
+    /**
+     * Completes every unanswered request exceptionally. Not {@code cancel}: LSP4J's cancel writes a
+     * {@code $/cancelRequest} to a pipe nobody reads any more. Completing the future also drops its timer.
+     */
+    private void failInFlight() {
+        var failure = new IllegalStateException("language server not available");
+        for (CompletableFuture<?> request : List.copyOf(inFlight)) {
+            request.completeExceptionally(failure);
+        }
+    }
+
+    /** Unanswered requests still tracked — package-private for the lost-session test. */
+    int inFlightRequests() {
+        return inFlight.size();
     }
 
     /**
@@ -492,7 +529,9 @@ final class LanguageServerSession implements LanguageClient {
         td.getCompletion()
                 .setCompletionList(new org.eclipse.lsp4j.CompletionListCapabilities(
                         List.of("editRange", "insertTextFormat", "insertTextMode", "data", "commitCharacters")));
-        td.setHover(new HoverCapabilities());
+        // contentFormat: without it a conforming server (pyright, rust-analyzer, clangd) answers in
+        // plaintext, which the hover popup then had to guess its way through as Markdown.
+        td.setHover(new HoverCapabilities(List.of("markdown", "plaintext"), true));
         td.setDefinition(new DefinitionCapabilities());
         td.setReferences(new ReferencesCapabilities());
         // Implementation / type definition / declaration (#735, #736) — the three navigation requests
@@ -579,7 +618,12 @@ final class LanguageServerSession implements LanguageClient {
         td.getCodeAction().setDynamicRegistration(true);
         td.getDiagnostic().setDynamicRegistration(true);
         td.getSemanticTokens().setDynamicRegistration(true);
-        td.setDocumentSymbol(new org.eclipse.lsp4j.DocumentSymbolCapabilities(true));
+        // The one-argument constructor is dynamicRegistration. hierarchicalDocumentSymbolSupport is what
+        // makes jdtls, pyright, clangd, lemminx and the JSON/YAML servers answer with a DocumentSymbol tree
+        // instead of the legacy flat SymbolInformation list (every member a top-level outline row).
+        var documentSymbol = new org.eclipse.lsp4j.DocumentSymbolCapabilities(true);
+        documentSymbol.setHierarchicalDocumentSymbolSupport(true);
+        td.setDocumentSymbol(documentSymbol);
         td.setFormatting(new org.eclipse.lsp4j.FormattingCapabilities(true));
         td.setRangeFormatting(new org.eclipse.lsp4j.RangeFormattingCapabilities(true));
         td.setOnTypeFormatting(new org.eclipse.lsp4j.OnTypeFormattingCapabilities(true));
@@ -619,6 +663,13 @@ final class LanguageServerSession implements LanguageClient {
                 org.eclipse.lsp4j.ResourceOperationKind.Rename,
                 org.eclipse.lsp4j.ResourceOperationKind.Delete));
         ws.setWorkspaceEdit(wsEdit);
+        // The four workspace/*/refresh requests are implemented below (refreshSemanticTokens & co.), but a
+        // server only sends one to a client that declares refreshSupport: clangd, rust-analyzer, jdtls and
+        // typescript-language-server all gate on it, so a header edit left dependent tabs on stale tokens.
+        ws.setSemanticTokens(new org.eclipse.lsp4j.SemanticTokensWorkspaceCapabilities(true));
+        ws.setInlayHint(new org.eclipse.lsp4j.InlayHintWorkspaceCapabilities(true));
+        ws.setDiagnostics(new org.eclipse.lsp4j.DiagnosticWorkspaceCapabilities(true));
+        ws.setFoldingRange(new org.eclipse.lsp4j.FoldingRangeWorkspaceCapabilities(true));
         cc.setWorkspace(ws);
         return cc;
     }
@@ -709,6 +760,7 @@ final class LanguageServerSession implements LanguageClient {
         if (deadReported.compareAndSet(false, true)) {
             initialized = false;
             failPending(new IllegalStateException("language server stopped"));
+            failInFlight();
             if (!disposed) {
                 // The server died on its own (crash, OOM-kill, instant startup death) — not a deliberate
                 // dispose(). Stop the status-bar loading bar NOW: for a process that dies before initialize
@@ -754,7 +806,7 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     private void whenReady(String collapseKey, Runnable action, Runnable onUnavailable) {
-        if (disposed) {
+        if (disposed || deadReported.get()) { // a dead session never initializes again: do not queue for it
             onUnavailable.run();
             return;
         }
@@ -800,10 +852,15 @@ final class LanguageServerSession implements LanguageClient {
         });
     }
 
-    void didChange(String uri, String text) {
+    /**
+     * Syncs {@code text}. Returns false only when the server is known to hold exactly this text already, so
+     * nothing was (or will be) sent — and therefore nothing will make it publish diagnostics again.
+     */
+    boolean didChange(String uri, String text) {
         if (changeSyncDisabled()) {
-            return; // server negotiated TextDocumentSyncKind.None — it doesn't track content changes
+            return true; // server negotiated TextDocumentSyncKind.None — it doesn't track content changes
         }
+        boolean[] identical = {false};
         // Collapse: a queued didChange for this uri is superseded by this one (only the latest content
         // matters) — otherwise every typing pause before initialize pins another copy of the document.
         // The full-vs-incremental decision happens INSIDE the queued action (#678): capabilities are only
@@ -812,6 +869,7 @@ final class LanguageServerSession implements LanguageClient {
             if (changeSyncDisabled()) return;
             List<TextDocumentContentChangeEvent> events = changeEventsFor(uri, text);
             if (events.isEmpty()) {
+                identical[0] = true;
                 return; // content identical to what the server already holds — nothing to sync
             }
             int version = versions.merge(uri, 1, Integer::sum);
@@ -819,6 +877,7 @@ final class LanguageServerSession implements LanguageClient {
                     .didChange(
                             new DidChangeTextDocumentParams(new VersionedTextDocumentIdentifier(uri, version), events));
         });
+        return !identical[0]; // a send still queued for initialize has compared nothing yet: reported as sent
     }
 
     /**
@@ -1004,7 +1063,7 @@ final class LanguageServerSession implements LanguageClient {
                         return;
                     }
                     try {
-                        bounded(l.getRemoteEndpoint().request(method, params), timeout)
+                        track(bounded(l.getRemoteEndpoint().request(method, params), timeout))
                                 .whenComplete((r, e) -> {
                                     if (e != null) {
                                         out.completeExceptionally(e);
@@ -1555,6 +1614,7 @@ final class LanguageServerSession implements LanguageClient {
         }
         disposed = true;
         failPending(new IllegalStateException("language server disposed"));
+        failInFlight();
         LanguageServer live = server;
         Process p = process;
         boolean handshook = live != null && initialized;
