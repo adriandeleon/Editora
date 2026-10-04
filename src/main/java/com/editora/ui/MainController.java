@@ -1594,8 +1594,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     void remapProjectFileLocal(Path old, Path target, boolean oldLspAlreadyClosed) {
         fileWorkflows.invalidatePendingWrite(old);
+        Tab tab = tabForPath(old); // before the cache goes: `old` no longer exists, so it cannot be re-resolved
         com.editora.config.PathKeys.invalidateCanonicalCache(); // stale resolutions must not survive a move (#680)
-        Tab tab = tabForPath(old);
         if (tab != null) {
             EditorBuffer buffer = bufferOf(tab);
             buffer.setPath(target);

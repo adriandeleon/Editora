@@ -133,9 +133,18 @@ class LspWorkspaceEditFxTest {
             return null;
         }
 
+        /** Off models a window whose tab lookup misses: the file moves and the tab stays behind. */
+        boolean remapTabs = true;
+
+        /** Like the real window: the tab holding {@code from} follows the file to {@code to}. */
         @Override
         public void fileRenamed(Path from, Path to) {
             renamed.add(new Path[] {from, to});
+            EditorBuffer moved = remapTabs ? open.remove(from.toAbsolutePath().normalize()) : null;
+            if (moved != null) {
+                moved.setPath(to);
+                open.put(to.toAbsolutePath().normalize(), moved);
+            }
         }
 
         @Override
@@ -884,6 +893,85 @@ class LspWorkspaceEditFxTest {
         assertTrue(applyAsync(closedFileEdit(b, System.currentTimeMillis()))
                 .get(10, java.util.concurrent.TimeUnit.SECONDS));
         assertEquals("class Renamed {}\n", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    /**
+     * jdtls's answer to renaming a class from a usage site while the declaring file is not open on the
+     * server: an edit to that file (planned against its disk preimage) plus a move of the same file. The
+     * production path re-checks the preimage after the move, when the old path no longer exists.
+     */
+    @Test
+    void theAsyncPathAppliesAClosedFileEditThatAlsoMovesTheFile() throws Exception {
+        EditorBuffer b = openBuffer("Foo.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+        Path from = b.getPath();
+        Path to = root.resolve("Renamed.java");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        from, List.of(new LspTextEdit(0, 6, 0, 7, "Renamed")), null, null, System.currentTimeMillis())),
+                List.of(new WorkspaceEditMapper.FileRename(from, to, false)));
+
+        assertTrue(applyAsync(mapped).get(10, java.util.concurrent.TimeUnit.SECONDS), "refused: " + host.error);
+
+        assertEquals("class Renamed {}\n", FxTestSupport.callOnFx(b::getContent));
+        assertTrue(Files.exists(to), "the file should have moved");
+        assertFalse(Files.exists(from));
+        assertEquals(to, FxTestSupport.callOnFx(b::getPath), "the tab follows the file");
+    }
+
+    /** The move must not hide a real change: the file was written after the request, then moved. */
+    @Test
+    void theAsyncPathStillRefusesAMovedClosedFileThatChangedAfterTheRequest() throws Exception {
+        EditorBuffer b = openBuffer("Foo.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+        Path from = b.getPath();
+        Path to = root.resolve("Renamed.java");
+        long sentBeforeTheLastWrite = Files.getLastModifiedTime(from).toMillis() - 5_000;
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        from, List.of(new LspTextEdit(0, 6, 0, 7, "Renamed")), null, null, sentBeforeTheLastWrite)),
+                List.of(new WorkspaceEditMapper.FileRename(from, to, false)));
+
+        assertFalse(applyAsync(mapped).get(10, java.util.concurrent.TimeUnit.SECONDS));
+
+        assertTrue(Files.exists(from), "nothing may be staged for a stale target");
+        assertFalse(Files.exists(to));
+        assertEquals("class B {}\n", FxTestSupport.callOnFx(b::getContent));
+        assertTrue(host.error != null && host.error.contains("Foo.java"), "the blocking file is named: " + host.error);
+    }
+
+    /** A tab left behind on a path that no longer exists is a half-applied refactoring, not a success. */
+    @Test
+    void aTabThatDoesNotFollowItsMovedFileIsNotReportedAsApplied() throws Exception {
+        EditorBuffer b = openBuffer("OldName.java", "class OldName {}\n");
+        Path from = b.getPath();
+        Path to = root.resolve("NewName.java");
+        ops.remapTabs = false;
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        from, List.of(new LspTextEdit(0, 6, 0, 13, "NewName")), null, "class OldName {}\n")),
+                List.of(new WorkspaceEditMapper.FileRename(from, to, false)));
+
+        assertFalse(applyAsync(mapped).get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertTrue(
+                host.error != null && host.error.contains("OldName.java"), "the stranded tab is named: " + host.error);
+    }
+
+    @Test
+    void aRenameDestinationIsWrittenInTheTabsSpelling() {
+        Path tab = Path.of("/home/u/dev/app/src/Foo.java").toAbsolutePath();
+        Path serverFrom = Path.of("/mnt/data/dev/app/src/Foo.java").toAbsolutePath();
+        Path serverTo = Path.of("/mnt/data/dev/app/src/Baz.java").toAbsolutePath();
+
+        assertEquals(
+                Path.of("/home/u/dev/app/src/Baz.java").toAbsolutePath(),
+                LspCoordinator.inSpellingOf(tab, serverFrom, serverTo));
+        assertEquals(
+                Path.of("/home/u/dev/app/src/sub/Baz.java").toAbsolutePath(),
+                LspCoordinator.inSpellingOf(tab, serverFrom, serverFrom.resolveSibling("sub/Baz.java")));
+        assertEquals(serverTo, LspCoordinator.inSpellingOf(serverFrom, serverFrom, serverTo), "same spelling");
+        Path elsewhere = Path.of("/srv/other/Baz.java").toAbsolutePath();
+        assertEquals(elsewhere, LspCoordinator.inSpellingOf(tab, serverFrom, elsewhere), "outside the shared tree");
     }
 
     @Test

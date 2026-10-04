@@ -149,8 +149,8 @@ class LspDynamicRegistrationTest {
      */
     @Test
     void javaOnTypeFormattingPreferenceFollowsTheSetting() {
-        assertEquals(Boolean.FALSE, onTypeEnabled(LanguageServerSession.defaultSettings(false)));
-        assertEquals(Boolean.TRUE, onTypeEnabled(LanguageServerSession.defaultSettings(true)));
+        assertEquals(Boolean.FALSE, onTypeEnabled(LspServerSettings.push("java", false)));
+        assertEquals(Boolean.TRUE, onTypeEnabled(LspServerSettings.push("java", true)));
 
         var s = session(new ServerCapabilities());
         int before = fake.configurations.size();

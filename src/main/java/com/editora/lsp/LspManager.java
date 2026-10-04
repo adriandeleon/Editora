@@ -721,6 +721,8 @@ public final class LspManager {
         String workspaceBaseName = needsJdtlsWorkspace ? LspServerRegistry.workspaceDirName(root) : null;
         List<String> bundles = List.copyOf(debugBundles);
         boolean onTypeFormatting = javaOnTypeFormatting;
+        // Trust is read here, on the caller's thread, where the trust list is also edited.
+        Path sdkCeiling = ASTRO_SERVER_ID.equals(serverId) ? trustedCeiling(root, folderTrust) : null;
         startExec.execute(() -> {
             awaitPriorExit(key); // a restart: let the server being replaced release what it holds
             if (closed || session.isDisposed()) {
@@ -752,8 +754,18 @@ public final class LspManager {
                 }
             }
             List<String> startCommand = resolvedSpec.command();
-            session.configureStart(
-                    startCommand, () -> initOptionsFor(serverId, bundles, root, startCommand, onTypeFormatting));
+            Path astroTsdk =
+                    ASTRO_SERVER_ID.equals(serverId) ? astroTypeScriptSdk(root, sdkCeiling, startCommand) : null;
+            if (ASTRO_SERVER_ID.equals(serverId) && astroTsdk == null) {
+                // astro-ls cannot initialize without a TypeScript SDK, and the only one on offer belongs
+                // to a folder that is not trusted to choose code that runs. Disposed first, so the drop
+                // reads as deliberate (no crash notice, no auto-restart).
+                session.dispose();
+                dropSession(key, session);
+                Platform.runLater(() -> onStartWithheld.accept(serverId, root));
+                return;
+            }
+            session.configureStart(startCommand, () -> initOptionsFor(serverId, bundles, astroTsdk, onTypeFormatting));
             if (!session.start()) {
                 dropSession(key, session);
             }
@@ -2839,8 +2851,9 @@ public final class LspManager {
      *       {@code provideFormatter} flag is passed; without it, Format Document was silently unavailable on a
      *       {@code .json}/{@code .css}/{@code .html} even though the server would format (#468; verified by
      *       driving the real servers: the flag flips the advertised capability from false to true).</li>
-     *   <li><b>astro</b> (astro-ls): {@code typescript.tsdk} points at the nearest project TypeScript SDK,
-     *       or the SDK installed beside the language server. Astro refuses initialization without it.</li>
+     *   <li><b>astro</b> (astro-ls): {@code typescript.tsdk} points at a <i>trusted</i> folder's own TypeScript
+     *       SDK, or the SDK installed beside the language server ({@link #astroTypeScriptSdk}). Astro refuses
+     *       initialization without it, so with neither the server is not started.</li>
      *   <li><b>maven-pom</b> (JVM lemminx + lemminx-maven): {@code settings.xml.maven.central.skip=true} —
      *       the lemminx-maven settings live under an {@code xml.maven} object (schema verified against the
      *       extension's {@code XMLMavenSettings}). {@code central.skip=true} disables the heavy Maven Central
@@ -2850,39 +2863,77 @@ public final class LspManager {
      * </ul>
      */
     static Object initOptionsFor(String serverId, List<String> debugBundles) {
-        return initOptionsFor(serverId, debugBundles, null, List.of());
+        return initOptionsFor(serverId, debugBundles, null, false);
     }
 
-    static Object initOptionsFor(String serverId, List<String> debugBundles, Path root, List<String> command) {
-        return initOptionsFor(serverId, debugBundles, root, command, false);
-    }
-
+    /** {@code astroTsdk} is the SDK {@link #astroTypeScriptSdk} chose; it is only read for the Astro server. */
     static Object initOptionsFor(
-            String serverId, List<String> debugBundles, Path root, List<String> command, boolean javaOnTypeFormatting) {
+            String serverId, List<String> debugBundles, Path astroTsdk, boolean javaOnTypeFormatting) {
         return switch (serverId == null ? "" : serverId) {
             case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting);
             case "go" -> Map.of("semanticTokens", true);
             case "json", "css", "html" -> Map.of("provideFormatter", true);
-            case "astro" ->
-                Map.of(
-                        "typescript",
-                        Map.of("tsdk", astroTypeScriptSdk(root, command).toString()));
+            case ASTRO_SERVER_ID ->
+                astroTsdk == null ? null : Map.of("typescript", Map.of("tsdk", astroTsdk.toString()));
             case LspServerRegistry.MAVEN_POM_SERVER_ID ->
                 Map.of("settings", Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", true)))));
             default -> null;
         };
     }
 
+    private static final String ASTRO_SERVER_ID = "astro";
+
     /**
-     * Finds the TypeScript SDK required by astro-ls. Prefer the project's own TypeScript version, walking
-     * upward for npm/pnpm workspace hoisting; then look beside the resolved global astro-ls installation.
-     * The final project-local fallback produces Astro's own clear "can't find TypeScript" error if neither
-     * exists, while still always satisfying its required initialization-options shape.
+     * Whether a folder is trusted to supply code a language server loads — today the project-local
+     * TypeScript SDK handed to astro-ls. The same per-folder record that gates project LSP commands; nothing
+     * is trusted until the coordinator installs the real check.
      */
-    static Path astroTypeScriptSdk(Path root, List<String> command) {
-        Path projectSdk = findTypeScriptSdk(root);
-        if (projectSdk != null) {
-            return projectSdk;
+    private volatile java.util.function.Predicate<Path> folderTrust = folder -> false;
+
+    public void setFolderTrust(java.util.function.Predicate<Path> trust) {
+        this.folderTrust = trust == null ? folder -> false : trust;
+    }
+
+    /** Told (on the FX thread) that a server was <b>not started</b> because it would need untrusted code. */
+    private volatile BiConsumer<String, Path> onStartWithheld = (id, root) -> {};
+
+    public void setOnStartWithheld(BiConsumer<String, Path> callback) {
+        this.onStartWithheld = callback == null ? (id, root) -> {} : callback;
+    }
+
+    /**
+     * The topmost ancestor of {@code root} (or {@code root} itself) that is still trusted — how far up a
+     * search for project-supplied code may go — or {@code null} when {@code root} is not trusted at all.
+     */
+    static Path trustedCeiling(Path root, java.util.function.Predicate<Path> trusted) {
+        if (root == null || trusted == null) {
+            return null;
+        }
+        Path dir = root.toAbsolutePath().normalize();
+        if (!trusted.test(dir)) {
+            return null;
+        }
+        for (Path parent = dir.getParent(); parent != null && trusted.test(parent); parent = parent.getParent()) {
+            dir = parent;
+        }
+        return dir;
+    }
+
+    /**
+     * Finds the TypeScript SDK required by astro-ls, which loads and <b>runs</b> the JavaScript in that
+     * directory during {@code initialize}. The folder's own TypeScript is therefore taken only from a
+     * trusted folder: {@code trustedCeiling} ({@link #trustedCeiling}) is null for an untrusted root, and
+     * otherwise bounds the upward walk (npm/pnpm workspace hoisting) so it never leaves the trusted folder.
+     * Next comes the SDK beside the resolved astro-ls installation, which is the user's own. A trusted
+     * folder with neither gets its deterministic project-local path, which produces Astro's own clear
+     * "can't find TypeScript" error; an untrusted one gets {@code null} — the server is not started.
+     */
+    static Path astroTypeScriptSdk(Path root, Path trustedCeiling, List<String> command) {
+        if (trustedCeiling != null) {
+            Path projectSdk = findTypeScriptSdk(root, trustedCeiling);
+            if (projectSdk != null) {
+                return projectSdk;
+            }
         }
         if (command != null && !command.isEmpty()) {
             List<String> resolved = ProcessRunner.resolveExecutable(command);
@@ -2892,21 +2943,32 @@ public final class LspManager {
                     if (Files.exists(executable)) {
                         executable = executable.toRealPath();
                     }
-                    Path installedSdk = findTypeScriptSdk(executable.getParent());
+                    Path installedSdk = findTypeScriptSdk(executable.getParent(), null);
                     if (installedSdk != null) {
                         return installedSdk;
                     }
                 } catch (java.io.IOException | java.nio.file.InvalidPathException ignored) {
-                    // Fall through to the deterministic project-local path below.
+                    // Fall through to the trusted project-local path, or to not starting.
                 }
             }
+        }
+        if (trustedCeiling == null) {
+            return null;
         }
         Path base = root == null ? Path.of("") : root;
         return base.toAbsolutePath().normalize().resolve("node_modules/typescript/lib");
     }
 
-    private static Path findTypeScriptSdk(Path start) {
+    /**
+     * The first {@code node_modules/typescript/lib} walking up from {@code start}; {@code ceiling}, when
+     * given, is the last directory looked at. Public for the trust prompt, which lists what trusting adds.
+     */
+    public static Path findTypeScriptSdk(Path start, Path ceiling) {
+        Path stop = ceiling == null ? null : ceiling.toAbsolutePath().normalize();
         for (Path dir = start == null ? null : start.toAbsolutePath().normalize(); dir != null; dir = dir.getParent()) {
+            if (stop != null && !dir.startsWith(stop)) {
+                break;
+            }
             Path candidate = dir.resolve("node_modules/typescript/lib");
             if (Files.isRegularFile(candidate.resolve("typescript.js"))
                     || Files.isRegularFile(candidate.resolve("tsserverlibrary.js"))) {

@@ -94,7 +94,18 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   [below](#processregistry--processrunner)), then registers the process with `ProcessRegistry.track`.
 - **Handshake**: `initialize` (client capabilities + workspace folder + optional
   `initializationOptions`) → on success cache the server `ServerCapabilities`, send `initialized`,
-  push default configuration (enables Pyright auto-imports), then flush queued requests.
+  push that server's own configuration, then flush queued requests.
+- **Settings are per server** (`lsp/LspServerSettings`), in both directions. The
+  `workspace/didChangeConfiguration` push goes only to a server Editora has settings for (`python`: the
+  `python.analysis` object; `java`: signature help, smart semicolon, on-type formatting) and every other
+  server gets **no push at all** — vscode-json-language-server reads any pushed object without
+  `json.validate.enable`, even `{}`, as "validation off". `workspace/configuration` is answered per server
+  and section: the Python server's `python` / `*.analysis` objects (always with `autoSearchPaths: true`
+  beside `autoImportCompletions`, because Pyright turns its default-on `src/` search path off as soon as an
+  `analysis` object without that key exists); `{}` for the CSS server's `css`/`scss`/`less` and the HTML
+  server's `css`/`html`/`javascript`, whose validators throw on `null`; and `null` for everything else —
+  including the HTML server's `js/ts`, where `{}` makes its JavaScript mode throw. A new server's sections
+  must be checked against the real server before anything other than `null` is answered.
 - **Startup preparation** runs on `lsp-start`: per-project JDT workspace directory creation and installed-JDK
   discovery never execute on the JavaFX routing path.
 - **One ordered writer.** LSP4J writes a message on the calling thread, and most callers are the FX thread.
@@ -265,6 +276,17 @@ cleanup on virtual threads; only RichTextFX mutation and tab/session bookkeeping
 Resource preflight includes dirty deletion targets, overwritten destinations, narrowed buffers, and buffers
 in other windows. Path changes retire the old URI before registering the new one.
 
+**Moved and deleted files are followed by buffer identity, not by path.** The open buffer for every rename
+source and delete target is resolved, with the buffer's own path, *before* the filesystem transaction —
+afterwards the file is gone, so the server's spelling of the old path can no longer be canonicalised, and
+when it differs from the tab's (a project opened through a symlink; `/tmp` on macOS) a second lookup finds
+nothing. The remap then uses the tab's own old path, closes the LSP document under that path, and writes the
+destination in the tab's spelling (`LspCoordinator.inSpellingOf`) so the tab stays under the project and
+LSP root it was opened in. A tab that changed or closed while the transaction was staging rolls the edit
+back; one that still did not follow its file is reported (`status.lsp.editTabNotRemapped`) and the edit is
+**not** reported as applied. `MainController.remapProjectFileLocal` looks the tab up before it clears the
+canonical-path cache for the same reason.
+
 **Targets the server did not have open** (a cross-file rename reaching a file with no tab, or a tab that was
 restored but never shown). jdtls sends a null version for every document, so these cannot be validated by
 version, and reading the file once the response is in would only bless whatever is there now. The preimage
@@ -275,7 +297,11 @@ timestamp needs a 2 s margin, since a coarse filesystem can record a later write
 is marked `diskPreimageAt`, and the applier re-checks it against the buffer it loaded: no window has unsaved
 changes to the file, the buffer's recorded disk snapshot equals the file as it is now, and the file is still
 unmodified since the request. A version the server attaches to a document it never had open is dropped
-rather than compared. Anything that cannot be shown — an edit with no known request time, a changed, missing,
+rather than compared. The check runs twice: on the FX thread **before anything is staged**, and again after
+staging, where a target the same edit also moves (jdtls's answer to renaming a class from a usage site:
+an edit to the declaring file plus a `RenameFile` of it) is examined at the **destination** the staged
+rename put it — a move keeps size and modification time, and the old path no longer exists. Anything that
+cannot be shown — an edit with no known request time, a changed, missing,
 unsaved or not-yet-loaded file — refuses the whole edit, and the blocking files are named in the status
 line (`status.lsp.editBlocked`) instead of a bare "Rename failed".
 
@@ -292,6 +318,19 @@ settings apply, and a save of the project file) re-runs `applySupport` when the 
 `syncBuffer` does the same when the window's project changed since the manager was configured, because a
 window learns its project after `init` has already run. The `lsp.setServerCommand` prompt is prefilled from
 the global value, never the project's, since it writes the global setting.
+
+**The Astro TypeScript SDK is under the same gate.** astro-ls refuses to initialize without
+`initializationOptions.typescript.tsdk` and loads — runs — the JavaScript in that directory, so the path
+Editora computes is a choice of code to execute, with or without a project settings file.
+`LspManager.astroTypeScriptSdk` takes the folder's own `node_modules/typescript/lib` only when the session
+root is trusted (`setFolderTrust`, wired to `TrustStore.isTrusted`), and the upward walk for hoisted
+workspaces stops at the topmost trusted ancestor (`trustedCeiling`) instead of running to the filesystem
+root. Otherwise it uses the SDK installed beside the resolved `astro-ls`, which is the user's own. An
+untrusted folder with no SDK beside the server gets **no server**: the session is dropped before the fork
+(no crash notice, no auto-restart) and the status line says why and names `lsp.trustProjectSettings`
+(`status.lsp.astroSdkUntrusted`). That command's prompt lists each folder SDK as an `astro: <dir>` line next
+to the project file's commands, and trusting restarts the Astro server so it picks the SDK up. Revoking
+trust does not stop a server that is already running; it applies from the next start.
 
 Save completion first synchronizes the current open document, then sends `didSave` with the exact transformed
 text written to disk when the server negotiated `includeText`; explicit and automatic saves share this path.
