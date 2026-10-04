@@ -180,6 +180,37 @@ class PatchWriterTest {
         assertTrue(checked > 200, "the matrix should cover every EOF combination, covered " + checked);
     }
 
+    @Test
+    void carriageReturnsStayOnTheirLines() {
+        String patch = PatchWriter.unifiedDiff("a/f", "b/f", "a\r\nb\r\n", "a\r\nB\r\n");
+
+        assertTrue(patch.endsWith(" a\r\n-b\r\n+B\r\n"), patch.replace("\r", "\\r"));
+    }
+
+    /** A patch exported for CRLF, mixed or lone-CR content must apply to that content with real Git. */
+    @Test
+    void carriageReturnShapesRoundTripThroughGitApply(@TempDir Path dir) throws Exception {
+        Assumptions.assumeTrue(gitAvailable(), "git is not installed");
+        run(dir, null, "git", "init", "-q");
+        run(dir, null, "git", "config", "core.autocrlf", "false");
+        List<String[]> cases = List.of(
+                new String[] {"a\r\nb\r\n", "a\r\nB\r\n"},
+                new String[] {"a\r\nb\nc\r\n", "a\r\nb\nC\r\n"},
+                new String[] {"a\rb\rc", "a\rB\rc"},
+                new String[] {"a\r\nb\r\n", "a\r\nb\r\nc\r\n"},
+                new String[] {"a\r\nb", "a\r\nb\r\n"},
+                new String[] {"a\r\nb\r\n", "a\nb\n"});
+        Path file = dir.resolve("f.txt");
+        for (String[] c : cases) {
+            String patch = PatchWriter.unifiedDiff("a/f.txt", "b/f.txt", c[0], c[1]);
+            Files.writeString(file, c[0]);
+            String label = (c[0] + " -> " + c[1] + "\n" + patch).replace("\r", "\\r");
+            assertEquals(0, run(dir, patch, "git", "apply", "--check", "-").exit(), "git apply --check: " + label);
+            assertEquals(0, run(dir, patch, "git", "apply", "-").exit(), "git apply: " + label);
+            assertEquals(c[1], Files.readString(file), label);
+        }
+    }
+
     private record Outcome(int exit, String output) {}
 
     private static boolean gitAvailable() {

@@ -26,7 +26,11 @@ document (`getContent()`), never just a narrowed region. `BinaryDiff` sniffs byt
 mojibake. Equal binary hashes therefore compare as equal; different binaries remain inspectable without
 pretending they are text. A Git blob or closed working file over 10 MB is likewise replaced by a short
 surrogate: the side always completes (a review never waits on it) and, like a binary side, it disables
-every mutation.
+every mutation. The surrogate names what it stands for — a file's size and SHA-256 prefix, a blob's spec —
+so two oversized sides do not compare as identical merely for both being too large. `DiffEngine` abandons
+the Myers search beyond 20,000 line edits for the linear coarse alignment (and `InlineDiff` beyond 1,000
+token edits for one changed-middle span), so one rewritten file or minified line cannot hold the window's
+single diff worker; a comparison that fails on the worker still calls back, with no model.
 
 ## Computation and refresh
 
@@ -74,13 +78,14 @@ the `diff.reviewStaged` / `diff.reviewUnstaged` commands open index-vs-HEAD or w
 untracked files compare against an empty index side, and rename/copy entries fetch their original path on the
 left. Active-diff commands route through the currently selected file.
 
-`DirectoryReviewPane` is the recursive folder-comparison surface. `DirectoryDiff` walks without following
-symbolic links, prunes `.git` trees and paths matched by either root's `.gitignore`, bounds each scan to
+`DirectoryReviewPane` is the recursive folder-comparison surface. `DirectoryDiff` resolves each root (which may
+itself be a symbolic link) and walks below it without following symbolic links, prunes `.git` trees and paths matched by either root's `.gitignore`, bounds each scan to
 20,000 files, compares candidates with `Files.mismatch`, counts identical files, and returns only modified
 and one-sided paths. The scan and review-entry conversion run on the file-read executor; the scanner reuses
 the walk's file attributes and one sorted path index to avoid duplicate filesystem reads and collections.
 Selecting an entry loads its two sides and builds a normal `DiffViewerPane` on demand; an access-ordered cache
-retains at most 32 visited panes. `diff.compareDirectories` opens the two-folder picker. Project-tree Git comparisons
+retains at most 32 visited panes (a pane holding an unapplied Result draft is never evicted, and evicted
+panes are disposed). `diff.compareDirectories` opens the two-folder picker. Project-tree Git comparisons
 reuse this surface for a selected subtree against HEAD, a branch, tag, or revision. `GitService` obtains a
 NUL-safe, rename-disabled changed-path list plus non-ignored untracked files; each selected entry lazily reads
 the ref blob and current working file instead of materializing a temporary snapshot tree.
@@ -115,7 +120,8 @@ restore goes through the same guarded path. Apply-all confirms; Undo and Save en
 operation. Line apply is deliberately secondary to hunk apply.
 
 Git-panel diffs add Stage/Unstage/Revert for the current hunk and line. The view derives the desired full
-index or worktree text. Working-tree application validates the displayed preimage. For the index there is
+index or worktree text. Working-tree application validates the displayed preimage; Revert goes through
+the pane's own apply path, so it counts for Undo and Save like an apply chevron. For the index there is
 no separate final-newline action, so `HunkText` gives the result the end-of-file state of the side that
 supplies its last line (and an empty file when no line is left); when the hunk is everything that differs,
 the result is the other side as it stands. Three such whole-file results are not a rewrite of the entry's
@@ -152,9 +158,12 @@ conflict; that divergence is deliberate. It automatically composes disjoint chan
 overlapping changes that produce identical text; only divergent overlapping regions become conflicts. Each
 conflict retains an explicit base-presence bit, because two competing insertions have a real but empty
 ancestor region. If all three Git stages are not available, `ConflictParser` remains the fallback for files
-that already contain standard merge/diff3 markers. It recognises a marker only as Git writes it — exactly
-seven characters followed by a space or the end of the line, and `=======` only as a whole line — so a
-Markdown or reStructuredText heading underline inside a conflict stays content.
+that already contain standard merge/diff3 markers. It recognises a marker only as Git writes it — a run of
+marker characters followed by a space or the end of the line, and the `=` separator only as a whole line.
+The run is seven long, or longer when the file's `conflict-marker-size` attribute says so: the opening
+marker fixes the size for its conflict, and a longer opening run counts only when its separator and closing
+marker follow. A run of any other length — a Markdown or reStructuredText heading underline inside a
+conflict — stays content, and an unresolved conflict is written back with the marker size it came with.
 
 `MergeViewerPane` shows Base/Ours/Theirs for each conflict and a lower editable Result. Acceptance actions
 recompute the Result until the user edits it manually; later acceptance actions are then refused so they

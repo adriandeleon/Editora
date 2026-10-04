@@ -206,7 +206,7 @@ class DiffApplyGuardsFxTest {
 
             // The blob side returned without calling back, so no pane ever appeared ("Loading…" in a review).
             DiffViewerPane pane = onlyPane(diff);
-            assertEquals(tr("diff.side.tooLarge"), FxTestSupport.<String>field(pane, "leftText"));
+            assertEquals(DiffCoordinator.tooLargeSide("HEAD:big.txt"), FxTestSupport.<String>field(pane, "leftText"));
             assertFalse(FxTestSupport.<Boolean>field(pane, "mutationAllowed"), "a surrogate side is never applied");
         }
     }
@@ -224,7 +224,8 @@ class DiffApplyGuardsFxTest {
             settle(async, fx);
 
             DiffViewerPane pane = onlyPane(diff);
-            assertEquals(tr("diff.side.tooLarge"), FxTestSupport.<String>field(pane, "leftText"));
+            assertTrue(
+                    FxTestSupport.<String>field(pane, "leftText").startsWith(tr("diff.side.tooLarge") + " ⟦10.3 MiB"));
             assertEquals("small\n", FxTestSupport.<String>field(pane, "rightText"));
         }
     }
@@ -264,6 +265,461 @@ class DiffApplyGuardsFxTest {
                     repo.git("show", ":win.txt").out(),
                     "exactly the first hunk, with every CRLF intact");
         }
+    }
+
+    // --- round 2 -------------------------------------------------------------------------------------------
+
+    /** B2-3: one constant stand-in text for every oversized side made any two such files "identical". */
+    @Test
+    void twoDifferentOversizedFilesAreNotReportedIdentical(@TempDir Path dir) throws Exception {
+        Path a = Files.writeString(dir.resolve("a.log"), ("y".repeat(1023) + "\n").repeat(10 * 1024 + 300));
+        Path b = Files.writeString(dir.resolve("b.log"), ("z".repeat(1023) + "\n").repeat(10 * 1024 + 300));
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            DiffCoordinator diff = FxTestSupport.field(fx.controller, "diffCoordinator");
+            FxTestSupport.runOnFx(() -> diff.compareFiles(a, b));
+            settle(async, fx);
+
+            DiffViewerPane pane = onlyPane(diff);
+            assertEquals(1, blockStarts(pane).size(), "two different 10 MB files must show as different");
+            assertFalse(FxTestSupport.<Boolean>field(pane, "mutationAllowed"));
+        }
+    }
+
+    /** A9-8: Revert hunk is an apply to the local file, so the pane's Undo and Save must follow it. */
+    @Test
+    void revertHunkEnablesUndoAndSaveAndSaveWritesTheFile(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        Path file = repo.write("letters.txt", "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n");
+        repo.commitAll("init");
+        repo.write("letters.txt", "A\nb\nc\nd\ne\nf\ng\nh\ni\nJ\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            DiffCoordinator diff = applyRepo(fx, repo.root);
+            FxTestSupport.runOnFx(() -> diff.diffGitPanelFile("letters.txt", false));
+            settle(async, fx);
+            DiffViewerPane pane = onlyPane(diff);
+            List<Integer> blocks = blockStarts(pane);
+            assertEquals(2, blocks.size());
+            javafx.scene.control.Button save = FxTestSupport.field(pane, "saveButton");
+            javafx.scene.control.Button undo = FxTestSupport.field(pane, "undoButton");
+            assertTrue(FxTestSupport.callOnFx(save::isDisabled));
+
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    pane,
+                    "performGitAction",
+                    new Class<?>[] {DiffViewerPane.GitHunkAction.class, int.class, boolean.class},
+                    DiffViewerPane.GitHunkAction.REVERT,
+                    blocks.get(0),
+                    false));
+            // The closed file is opened into a background buffer on the file-load worker first.
+            for (int attempt = 0; attempt < 200 && blockStarts(pane).size() != 1; attempt++) {
+                Thread.sleep(25);
+                settle(async, fx);
+            }
+
+            assertEquals(1, blockStarts(pane).size(), "the reverted hunk is gone from the diff");
+            assertFalse(FxTestSupport.callOnFx(save::isDisabled), "Save follows an accepted revert");
+            assertFalse(FxTestSupport.callOnFx(undo::isDisabled), "Undo follows an accepted revert");
+            assertEquals("A\nb\nc\nd\ne\nf\ng\nh\ni\nJ\n", Files.readString(file), "not on disk until saved");
+
+            FxTestSupport.runOnFx(save::fire);
+            settle(async, fx);
+            assertEquals("a\nb\nc\nd\ne\nf\ng\nh\ni\nJ\n", Files.readString(file));
+        }
+    }
+
+    /** C2-5: HEAD has a staged rename under its old path; HEAD:<new path> showed the whole file as added. */
+    @Test
+    void showDiffOnAStagedRenameComparesWithTheOldPath(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        String body = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\n";
+        repo.write("OldName.txt", body);
+        repo.commitAll("init");
+        repo.git("mv", "OldName.txt", "NewName.txt");
+        repo.write("NewName.txt", body.replace("six", "SIX"));
+        repo.git("add", "NewName.txt");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitCoordinator git = FxTestSupport.field(fx.controller, "git");
+            GitStatus status = new GitStatus(
+                    true, "main", null, 0, 0, List.of(new GitStatus.FileEntry("NewName.txt", 'R', '.', "OldName.txt")));
+            FxTestSupport.runOnFx(
+                    () -> git.applyState(new GitService.RepoState(repo.root, status, Map.of(), Map.of())));
+            DiffCoordinator diff = FxTestSupport.field(fx.controller, "diffCoordinator");
+            FxTestSupport.runOnFx(() -> diff.diffGitPanelFile("NewName.txt", true));
+            settle(async, fx);
+
+            DiffModel model = FxTestSupport.field(onlyPane(diff), "model");
+            assertEquals(1, model.added());
+            assertEquals(1, model.removed());
+        }
+    }
+
+    /** A8-6: closing the Result editor must bring the apply chevrons back. */
+    @Test
+    void closingTheResultEditorRestoresTheApplyChevrons(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        Path file = repo.write("sample.txt", "a\nb\nc\n");
+        repo.commitAll("init");
+        repo.write("sample.txt", "a\nB\nc\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            DiffCoordinator diff = applyRepo(fx, repo.root);
+            FxTestSupport.runOnFx(() -> diff.diffPathVsHead(file));
+            settle(async, fx);
+            DiffViewerPane pane = onlyPane(diff);
+            int before = applySlots(pane, 1);
+            assertTrue(before > 0, "the changed row offers an apply chevron");
+
+            FxTestSupport.runOnFx(pane::toggleResultEditing);
+            settle(async, fx);
+            assertTrue(FxTestSupport.callOnFx(pane::hasResultEditor));
+            assertEquals(0, applySlots(pane, 1), "no chevrons while the Result is being edited");
+
+            FxTestSupport.runOnFx(pane::toggleResultEditing);
+            settle(async, fx);
+            assertFalse(FxTestSupport.callOnFx(pane::hasResultEditor));
+            assertEquals(before, applySlots(pane, 1));
+        }
+    }
+
+    /** A8-6: a draft comparison must not survive as the "working" side once the editor is closed. */
+    @Test
+    void closingTheResultEditorDropsADraftComparison(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        Path file = repo.write("sample.txt", "a\nb\nc\n");
+        repo.commitAll("init");
+        repo.write("sample.txt", "a\nB\nc\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            DiffCoordinator diff = applyRepo(fx, repo.root);
+            FxTestSupport.runOnFx(() -> diff.diffPathVsHead(file));
+            settle(async, fx);
+            DiffViewerPane pane = onlyPane(diff);
+            FxTestSupport.runOnFx(pane::toggleResultEditing);
+            settle(async, fx);
+            String draft = "a\nB\nc\nEXTRA DRAFT LINE\n";
+            FxTestSupport.runOnFx(() -> FxTestSupport.<org.fxmisc.richtext.CodeArea>field(pane, "resultArea")
+                    .replaceText(draft));
+            // The draft re-diff is debounced by a 250 ms timer; wait until the pane shows the draft.
+            for (int attempt = 0;
+                    attempt < 200
+                            && !draft.equals(FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "rightText")));
+                    attempt++) {
+                Thread.sleep(25);
+                settle(async, fx);
+            }
+            assertEquals(draft, FxTestSupport.<String>callOnFx(() -> FxTestSupport.field(pane, "rightText")));
+
+            // Typed back to the baseline and closed before the correcting re-diff's timer fires.
+            FxTestSupport.runOnFx(() -> {
+                FxTestSupport.<org.fxmisc.richtext.CodeArea>field(pane, "resultArea")
+                        .replaceText("a\nB\nc\n");
+                pane.toggleResultEditing();
+            });
+            settle(async, fx);
+
+            assertFalse(FxTestSupport.callOnFx(pane::hasResultEditor));
+            assertEquals("a\nB\nc\n", FxTestSupport.<String>callOnFx(() -> FxTestSupport.field(pane, "rightText")));
+            assertEquals("a\nB\nc\n", FxTestSupport.callOnFx(pane::editableBaselineText));
+        }
+    }
+
+    /** A8-6: a focused editable RichTextFX area pins its window unless its owner disposes it. */
+    @Test
+    void aWindowClosedWithTheResultEditorFocusedIsReleased(@TempDir Path dir) throws Exception {
+        java.lang.ref.WeakReference<MainController> closed = openResultEditorAndClose(dir);
+        for (int attempt = 0; attempt < 60 && closed.get() != null; attempt++) {
+            FxTestSupport.runOnFx(() -> {}); // drain the FX queue: a pending event can hold the last edge
+            System.gc();
+            Thread.sleep(100);
+        }
+        assertNull(closed.get(), "the closed window is still reachable (Result editor caret blink timer?)");
+    }
+
+    private static java.lang.ref.WeakReference<MainController> openResultEditorAndClose(Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        Path file = repo.write("sample.txt", "a\nb\nc\n");
+        repo.commitAll("init");
+        repo.write("sample.txt", "a\nB\nc\n");
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            DiffCoordinator diff = applyRepo(fx, repo.root);
+            FxTestSupport.runOnFx(() -> diff.diffPathVsHead(file));
+            settle(async, fx);
+            DiffViewerPane pane = onlyPane(diff);
+            FxTestSupport.runOnFx(pane::toggleResultEditing);
+            settle(async, fx);
+            boolean focused = false;
+            for (int attempt = 0; attempt < 50 && !focused; attempt++) {
+                // Focus is granted asynchronously, and a window left by an earlier test may still hold it.
+                focused = FxTestSupport.callOnFx(() -> {
+                    javafx.stage.Stage stage = FxTestSupport.field(fx.controller, "stage");
+                    stage.toFront();
+                    stage.requestFocus();
+                    org.fxmisc.richtext.CodeArea result = FxTestSupport.field(pane, "resultArea");
+                    result.requestFocus();
+                    return result.isFocused();
+                });
+                FxTestSupport.drainFx();
+            }
+            assertTrue(focused, "the Result editor took focus, so its caret blink timer is running");
+            FxTestSupport.drainFx();
+            return new java.lang.ref.WeakReference<>(fx.controller);
+        }
+    }
+
+    /** A8-5: a scroll-bar drag moves no focus; the pane being scrolled must still lead the other. */
+    @Test
+    void scrollingAnUnfocusedPaneByItsScrollBarMovesTheOtherPane(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        StringBuilder body = new StringBuilder();
+        for (int i = 0; i < 600; i++) {
+            body.append("line ").append(i).append('\n');
+        }
+        Path file = repo.write("long.txt", body.toString());
+        repo.commitAll("init");
+        repo.write("long.txt", body.toString().replace("line 10\n", "LINE 10\n").replace("line 590\n", "LINE 590\n"));
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            DiffCoordinator diff = applyRepo(fx, repo.root);
+            FxTestSupport.runOnFx(() -> diff.diffPathVsHead(file));
+            settle(async, fx);
+            DiffViewerPane pane = onlyPane(diff);
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.control.ToggleButton context = FxTestSupport.field(pane, "contextButton");
+                if (context.isSelected()) {
+                    context.fire(); // expand the context so both panes have a real scroll range
+                }
+            });
+            settle(async, fx);
+            org.fxmisc.richtext.CodeArea left = FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "leftArea"));
+            org.fxmisc.richtext.CodeArea right = FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "rightArea"));
+            // Whatever has focus, it is not the pane about to be scrolled.
+            FxTestSupport.runOnFx(left::requestFocus);
+            settle(async, fx);
+
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.Node scrollPane = right.getParent();
+                javafx.event.Event.fireEvent(
+                        scrollPane,
+                        new javafx.scene.input.MouseEvent(
+                                javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                                1,
+                                1,
+                                1,
+                                1,
+                                javafx.scene.input.MouseButton.PRIMARY,
+                                1,
+                                false,
+                                false,
+                                false,
+                                false,
+                                true,
+                                false,
+                                false,
+                                false,
+                                false,
+                                false,
+                                null));
+                right.estimatedScrollYProperty().setValue(2000.0);
+            });
+            double leftY = 0;
+            for (int attempt = 0; attempt < 100 && leftY <= 0; attempt++) {
+                Thread.sleep(20);
+                FxTestSupport.drainFx();
+                leftY = FxTestSupport.callOnFx(left::getEstimatedScrollY);
+            }
+            double rightY = FxTestSupport.callOnFx(right::getEstimatedScrollY);
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.control.ToggleButton context = FxTestSupport.field(pane, "contextButton");
+                if (!context.isSelected()) {
+                    context.fire(); // the choice is remembered process-wide: put the default back
+                }
+            });
+            assertTrue(rightY > 0, "the right pane scrolled");
+            assertEquals(rightY, leftY, 1.0, "the left pane follows the scrolled right pane");
+        }
+    }
+
+    /** A9-n3: a newly recorded revision reloads the list; the diff being worked on must stay. */
+    @Test
+    void aNewlyRecordedRevisionKeepsTheSelectedHistoryDiff(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("story.txt"), "one\ntwo\nthree\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorBuffer buffer = open(fx, file);
+            HistoryCoordinator history = FxTestSupport.field(fx.controller, "historyCoordinator");
+            FxTestSupport.runOnFx(() -> history.record(buffer, HistoryRevision.REASON_SAVE));
+            settle(async, fx);
+            HistoryRevision first = FxTestSupport.callOnFx(() -> {
+                buffer.replaceWholeDocument("one\nTWO\nthree\n");
+                history.refresh();
+                ListView<HistoryRevision> revisions = FxTestSupport.field(history.panel(), "revisions");
+                revisions.getSelectionModel().select(0);
+                return revisions.getSelectionModel().getSelectedItem();
+            });
+            settle(async, fx);
+            DiffViewerPane pane = FxTestSupport.callOnFx(() -> FxTestSupport.field(history.panel(), "pane"));
+            assertNotNull(pane);
+
+            // A save (or autosave) of the active file records a revision and reloads the panel's list.
+            FxTestSupport.runOnFx(() -> history.record(buffer, HistoryRevision.REASON_SAVE));
+            settle(async, fx);
+
+            ListView<HistoryRevision> revisions = FxTestSupport.field(history.panel(), "revisions");
+            assertEquals(2, FxTestSupport.callOnFx(() -> revisions.getItems().size()));
+            assertEquals(
+                    first,
+                    FxTestSupport.callOnFx(() -> revisions.getSelectionModel().getSelectedItem()),
+                    "the revision being restored from stays selected");
+            assertTrue(
+                    pane == FxTestSupport.callOnFx(() -> FxTestSupport.<DiffViewerPane>field(history.panel(), "pane")),
+                    "and its diff stays on screen");
+        }
+    }
+
+    /** A9-n4 / C2-8: Revert re-baselines when the restore has landed, not before it. */
+    @Test
+    void historyRevertLeavesThePanelShowingTheRestoredText(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("story.txt"), "one\ntwo\nthree\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorBuffer buffer = open(fx, file);
+            HistoryCoordinator history = FxTestSupport.field(fx.controller, "historyCoordinator");
+            FxTestSupport.runOnFx(() -> history.record(buffer, HistoryRevision.REASON_SAVE));
+            settle(async, fx);
+            FxTestSupport.runOnFx(() -> {
+                buffer.replaceWholeDocument("one\nTWO edited\nthree\nfour\n");
+                history.refresh();
+                ListView<HistoryRevision> revisions = FxTestSupport.field(history.panel(), "revisions");
+                revisions.getSelectionModel().select(0);
+            });
+            settle(async, fx);
+            DiffViewerPane pane = FxTestSupport.callOnFx(() -> FxTestSupport.field(history.panel(), "pane"));
+            assertEquals(2, blockStarts(pane).size());
+
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(history.panel(), "revertSelected", new Class<?>[] {}));
+            settle(async, fx);
+
+            assertEquals("one\ntwo\nthree\n", FxTestSupport.callOnFx(buffer::getContent));
+            DiffViewerPane shown = FxTestSupport.callOnFx(() -> FxTestSupport.field(history.panel(), "pane"));
+            assertNotNull(shown);
+            assertEquals(0, blockStarts(shown).size(), "the panel compares with the restored text");
+            Label count = FxTestSupport.field(history.panel(), "diffCount");
+            assertEquals(tr("history.window.differences", 0), FxTestSupport.callOnFx(count::getText));
+        }
+    }
+
+    /** A9-n11: an option toggle issued while a swap is pending must not pair one side's model with the other's text. */
+    @Test
+    void patchReviewOptionToggleDuringAPendingSwapStaysConsistent(@TempDir Path dir) throws Exception {
+        Path patch = Files.writeString(
+                dir.resolve("change.patch"),
+                "--- a/f.txt\n+++ b/f.txt\n@@ -1,3 +1,3 @@\n keep\n-old line\n+new line\n tail\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorBuffer buffer = open(fx, patch);
+            DiffCoordinator diff = FxTestSupport.field(fx.controller, "diffCoordinator");
+            FxTestSupport.runOnFx(() -> diff.openPatchFile(buffer));
+            settle(async, fx);
+            DiffViewerPane pane = onlyPane(diff);
+
+            FxTestSupport.runOnFx(() -> {
+                FxTestSupport.call(pane, "requestSwap", new Class<?>[] {});
+                FxTestSupport.call(pane, "updateIgnoreCase", new Class<?>[] {boolean.class}, true);
+            });
+            settle(async, fx);
+
+            String leftText = FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "leftText"));
+            DiffModel model = FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "model"));
+            List<String> modelLeft = model.rows().stream()
+                    .filter(row -> row.leftLine() >= 1)
+                    .map(com.editora.diff.DiffModels.Row::left)
+                    .toList();
+            assertEquals(com.editora.diff.DiffEngine.lines(leftText), modelLeft, "the rows describe the text shown");
+            assertFalse(FxTestSupport.<Boolean>callOnFx(() -> FxTestSupport.field(pane, "swapPending")));
+        }
+    }
+
+    /** A9-6: the resolver may apply again after a change of mind; its baseline follows what it applied. */
+    @Test
+    void aSecondMergeApplyReplacesTheFirstResolution(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(
+                dir.resolve("notes.txt"), "top\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feature\nend\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorBuffer buffer = open(fx, file);
+            DiffCoordinator diff = FxTestSupport.field(fx.controller, "diffCoordinator");
+            FxTestSupport.runOnFx(diff::resolveConflicts);
+            settle(async, fx);
+            MergeViewerPane pane = FxTestSupport.callOnFx(() -> {
+                EditorArea area = FxTestSupport.field(fx.controller, "editorArea");
+                return (MergeViewerPane) area.selectedTab().getUserData();
+            });
+            List<com.editora.diff.ConflictParser.Choice> choices = FxTestSupport.field(pane, "choices");
+
+            assertTrue(FxTestSupport.<Boolean>callOnFx(() -> {
+                choices.set(0, com.editora.diff.ConflictParser.Choice.OURS);
+                FxTestSupport.call(pane, "refreshResult", new Class<?>[] {});
+                return (Boolean) FxTestSupport.call(pane, "saveResult", new Class<?>[] {});
+            }));
+            assertEquals("top\nours\nend\n", FxTestSupport.callOnFx(buffer::getContent));
+
+            assertTrue(
+                    FxTestSupport.<Boolean>callOnFx(() -> {
+                        choices.set(0, com.editora.diff.ConflictParser.Choice.THEIRS);
+                        FxTestSupport.call(pane, "refreshResult", new Class<?>[] {});
+                        return (Boolean) FxTestSupport.call(pane, "saveResult", new Class<?>[] {});
+                    }),
+                    "the document still holds what the resolver applied, so it is not stale");
+            assertEquals("top\ntheirs\nend\n", FxTestSupport.callOnFx(buffer::getContent));
+        }
+    }
+
+    /** A8-4: a diff that dies on the worker must still call back (with no model), not strand the caller. */
+    @Test
+    void aFailedDiffStillReportsBack() throws Exception {
+        com.editora.diff.DiffService service = new com.editora.diff.DiffService();
+        try {
+            CountDownLatch reported = new CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicReference<DiffModel> result =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            // Over the rendered-lines cap the metadata summary dereferences the (null) left text and throws.
+            service.compute(null, "\n".repeat(130_000), model -> {
+                result.set(model);
+                reported.countDown();
+            });
+            assertTrue(reported.await(30, java.util.concurrent.TimeUnit.SECONDS), "the callback never fired");
+            assertNull(result.get());
+        } finally {
+            service.shutdown();
+        }
+    }
+
+    private static int applySlots(DiffViewerPane pane, int row) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            org.fxmisc.richtext.CodeArea right = FxTestSupport.field(pane, "rightArea");
+            javafx.scene.Node graphic = right.getParagraphGraphicFactory().apply(row);
+            int slots = 0;
+            for (javafx.scene.Node child : ((javafx.scene.Parent) graphic).getChildrenUnmodifiable()) {
+                if (child.getStyleClass().contains("diff-apply")) {
+                    slots++;
+                }
+            }
+            return slots;
+        });
     }
 
     // --- helpers ------------------------------------------------------------------------------------------

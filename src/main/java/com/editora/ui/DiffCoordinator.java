@@ -281,7 +281,9 @@ final class DiffCoordinator {
                             ? pane.resultText()
                             : current[1];
                     diffService.compute(left, right, opts, next -> {
-                        if (requested == generation.get()) {
+                        if (next == null) {
+                            host.setStatus(tr("status.diff.tooLarge"));
+                        } else if (requested == generation.get()) {
                             if (pane.hasResultEditor()) {
                                 pane.updateDraftContent(left, right, next);
                             } else {
@@ -320,7 +322,8 @@ final class DiffCoordinator {
                         String left = pane.editableSide() == DiffViewerPane.EditableSide.LEFT ? draft : current[0];
                         String right = pane.editableSide() == DiffViewerPane.EditableSide.RIGHT ? draft : current[1];
                         diffService.compute(left, right, currentOptions[0], next -> {
-                            if (requested == generation.get()
+                            if (next != null
+                                    && requested == generation.get()
                                     && pane.hasResultEditor()
                                     && java.util.Objects.equals(draft, pane.resultText())) {
                                 pane.updateDraftContent(left, right, next);
@@ -358,7 +361,7 @@ final class DiffCoordinator {
                             return;
                         }
                         diffService.compute(displayLeft, displayRight, currentOptions[0], m -> {
-                            if (requested == generation.get()) {
+                            if (m != null && requested == generation.get()) {
                                 current[0] = displayLeft;
                                 current[1] = displayRight;
                                 pane.updateContent(displayLeft, displayRight, m);
@@ -576,6 +579,10 @@ final class DiffCoordinator {
                     model -> {
                         models.set(index, model);
                         if (remaining.decrementAndGet() == 0) {
+                            if (models.contains(null)) {
+                                host.setStatus(tr("status.diff.tooLarge"));
+                                return;
+                            }
                             openPatchReview(buffer, files, models);
                         }
                     });
@@ -612,21 +619,36 @@ final class DiffCoordinator {
             pane.setOnExportPatch(this::exportPatch);
             pane.setOptions(lastDiffOptions);
             String[] current = {leftText, rightText};
-            pane.setOnSwapRequested((newLeft, newRight) ->
-                    diffService.compute(newLeft, newRight, lastDiffOptions, model -> {
-                        if (model == null) {
-                            pane.cancelSwap();
-                            host.setStatus(tr("status.diff.tooLarge"));
-                            return;
-                        }
-                        current[0] = newLeft;
-                        current[1] = newRight;
-                        pane.swapSides(model);
-                    }));
+            // One generation for both requests, as in buildDiffPane: an option toggle issued while a swap
+            // was pending was computed for the unswapped texts and then installed beside the swapped ones.
+            AtomicLong generation = new AtomicLong();
+            pane.setOnSwapRequested((newLeft, newRight) -> {
+                long requested = generation.incrementAndGet();
+                diffService.compute(newLeft, newRight, lastDiffOptions, model -> {
+                    if (requested != generation.get()) {
+                        pane.cancelSwap();
+                        return;
+                    }
+                    if (model == null) {
+                        pane.cancelSwap();
+                        host.setStatus(tr("status.diff.tooLarge"));
+                        return;
+                    }
+                    current[0] = newLeft;
+                    current[1] = newRight;
+                    pane.swapSides(model);
+                });
+            });
             pane.setOnOptionsChanged(opts -> {
                 lastDiffOptions = opts;
-                diffService.compute(
-                        current[0], current[1], opts, model -> pane.updateContent(current[0], current[1], model));
+                long requested = generation.incrementAndGet();
+                String left = current[0];
+                String right = current[1];
+                diffService.compute(left, right, opts, model -> {
+                    if (model != null && requested == generation.get()) {
+                        pane.updateContent(left, right, model);
+                    }
+                });
             });
             entries.add(new PatchReviewPane.Entry(rightName, fp.additions(), fp.deletions(), pane));
         }
@@ -1104,6 +1126,9 @@ final class DiffCoordinator {
                 new java.util.concurrent.atomic.AtomicReference<>();
         java.util.concurrent.atomic.AtomicReference<GitService.BlobResult> headBlob =
                 new java.util.concurrent.atomic.AtomicReference<>();
+        // A staged rename lives in HEAD under its old path: HEAD:<new path> does not exist, and the failed
+        // lookup used to show the whole file as added. Same resolution as the review tab's targets.
+        String headRel = leftSourcePath(git.status(), repoRel, staged);
         if (staged) {
             // index↔HEAD: neither side is the working file, so no "apply" (read-only diff).
             openDiff(
@@ -1112,7 +1137,7 @@ final class DiffCoordinator {
                     tr("diff.side.staged"),
                     name,
                     name,
-                    blobSide(root, "HEAD:" + repoRel, abs, headBlob::set),
+                    blobSide(root, "HEAD:" + headRel, abs, headBlob::set),
                     indexBlobSide(root, repoRel, abs, expectedIndex),
                     DiffViewerPane.EditableSide.NONE,
                     null,
@@ -1228,6 +1253,22 @@ final class DiffCoordinator {
             }
         }
         return List.copyOf(targets);
+    }
+
+    /**
+     * The path the left (HEAD for a staged row, index for an unstaged one) side of {@code repoRel}'s Git-panel
+     * diff is read from: the rename/copy source when the status says the row is one, else the path itself.
+     */
+    static String leftSourcePath(GitStatus status, String repoRel, boolean staged) {
+        if (status == null || !staged) {
+            return repoRel;
+        }
+        for (FileEntry file : status.files()) {
+            if (file.staged() && repoRel.equals(file.path())) {
+                return sourcePath(file.path(), file.origPath(), file.index());
+            }
+        }
+        return repoRel;
     }
 
     private static String sourcePath(String path, String originalPath, char status) {
@@ -1461,7 +1502,7 @@ final class DiffCoordinator {
             // Same ceiling as a Git blob side: an untracked build artefact or data dump must not be read
             // whole into memory and handed to the line differ.
             if (Files.size(abs) > MAX_SIDE_BYTES) {
-                return DiffContent.presentation(tr("diff.side.tooLarge"));
+                return DiffContent.presentation(tooLargeSide(BinaryDiff.describeLarge(abs)));
             }
             // Decode the closed working file exactly as the editor would load it (lossless charset fallback,
             // bare \n): this text is later compared with the buffer the file is opened into for an apply.
@@ -1509,7 +1550,7 @@ final class DiffCoordinator {
                 // Complete the callback: a review surface waits on both sides, so returning here left it on
                 // "Loading…" forever. The surrogate text is not applicable, which disables every mutation.
                 host.setStatus(tr("status.git.blobTooLarge"));
-                onText.accept(DiffContent.presentation(tr("diff.side.tooLarge")));
+                onText.accept(DiffContent.presentation(tooLargeSide(spec)));
                 return;
             }
             onSnapshot.accept(result);
@@ -1520,6 +1561,15 @@ final class DiffCoordinator {
                             : DiffContent.text(DiffSideText.decode(bytes, ecCharset, openCharset(file))
                                     .text()));
         });
+    }
+
+    /**
+     * The stand-in text for a side over {@link #MAX_SIDE_BYTES}. It names what it stands for (a file's size
+     * and digest, a blob's spec): one constant text for every oversized side made two different 10 MB files
+     * compare as "No differences".
+     */
+    static String tooLargeSide(String identity) {
+        return tr("diff.side.tooLarge") + " ⟦" + identity + "⟧";
     }
 
     /** Saves a unified-diff patch (the diff viewer's export action) via a file chooser. */
@@ -1635,6 +1685,9 @@ final class DiffCoordinator {
         String name = buffer.getPath() == null
                 ? buffer.getTitle()
                 : buffer.getPath().getFileName().toString();
+        // The text the document must still hold for an Apply: the text the resolver opened on, then whatever
+        // it last applied. Left at the opening text, a second Apply (a change of mind) was always "stale".
+        String[] expected = {sourceText};
         MergeViewerPane pane = new MergeViewerPane(
                 tr("merge.title", name),
                 conflictFile,
@@ -1642,8 +1695,13 @@ final class DiffCoordinator {
                 host.settings().getFontSize(),
                 format.lineSeparator(),
                 format.finalNewline(),
-                (java.util.function.Predicate<String>)
-                        resolvedText -> applyMergeResolution(buffer, sourceText, resolvedText));
+                (java.util.function.Predicate<String>) resolvedText -> {
+                    boolean applied = applyMergeResolution(buffer, expected[0], resolvedText);
+                    if (applied) {
+                        expected[0] = resolvedText;
+                    }
+                    return applied;
+                });
         ops.addDiffTab(pane);
     }
 
@@ -1681,6 +1739,11 @@ final class DiffCoordinator {
 
     /** Stops the diff worker thread (window close). */
     public void shutdown() {
+        try {
+            ops.openDiffPanes().forEach(DiffViewerPane::dispose); // incl. panes nested in review tabs
+        } catch (RuntimeException e) {
+            // best effort: the workers below must still stop
+        }
         fileReadExecutor.shutdownNow();
         diffService.shutdown();
     }

@@ -3,6 +3,7 @@ package com.editora.diff;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InlineDiffTest {
 
@@ -57,5 +58,28 @@ class InlineDiffTest {
         assertEquals(5, merged[0][1]);
         assertEquals(7, merged[1][0]);
         assertEquals(9, merged[1][1]);
+    }
+
+    /** One long line with most identifiers renamed: mark the changed middle instead of searching for it. */
+    @Test
+    void aLinePairBeyondTheTokenBudgetGetsOneSpanBetweenTheCommonEnds() {
+        StringBuilder left = new StringBuilder("var x=[");
+        StringBuilder right = new StringBuilder("var x=[");
+        for (int i = 0; i < InlineDiff.MAX_TOKEN_EDITS * 2; i++) {
+            left.append("a").append(i).append(',');
+            right.append("b").append(i).append(',');
+        }
+        left.append("];");
+        right.append("];");
+
+        InlineDiff.Spans s = InlineDiff.compute(left.toString(), right.toString());
+
+        assertEquals(1, s.left().length);
+        assertEquals(1, s.right().length);
+        assertEquals(7, s.left()[0][0]);
+        assertEquals(7, s.right()[0][0]);
+        String leftTail = left.substring(s.left()[0][1]);
+        assertEquals(leftTail, right.substring(s.right()[0][1]), "the shared tail stays unmarked");
+        assertTrue(leftTail.endsWith(",];"), leftTail);
     }
 }

@@ -28,6 +28,7 @@ import com.editora.diff.ConflictParser.ConflictSegment;
 import com.editora.diff.ConflictParser.PlainSegment;
 import com.editora.diff.ConflictParser.Segment;
 import com.editora.diff.DiffText;
+import com.editora.diff.LossyEdit;
 import com.editora.editor.TabContent;
 
 import static com.editora.i18n.Messages.tr;
@@ -56,6 +57,8 @@ public final class MergeViewerPane implements TabContent {
     private boolean manuallyEdited;
     private boolean draftDirty;
     private String generatedResult = "";
+    /** What the Result area showed for {@link #generatedResult}: a TextArea drops control characters. */
+    private String shownResult = "";
 
     public MergeViewerPane(
             String title,
@@ -140,7 +143,7 @@ public final class MergeViewerPane implements TabContent {
         resultArea.setAccessibleText(tr("merge.resultDescription"));
         resultArea.textProperty().addListener((ignored, oldText, newText) -> {
             if (!updatingResult) {
-                manuallyEdited = !java.util.Objects.equals(newText, generatedResult);
+                manuallyEdited = !java.util.Objects.equals(newText, shownResult);
                 draftDirty = true;
             }
         });
@@ -236,6 +239,7 @@ public final class MergeViewerPane implements TabContent {
         updatingResult = true;
         try {
             resultArea.setText(text);
+            shownResult = resultArea.getText();
         } finally {
             updatingResult = false;
         }
@@ -251,10 +255,21 @@ public final class MergeViewerPane implements TabContent {
     }
 
     private String resultTextForSave() {
+        String current = resultArea.getText();
+        if (current.equals(shownResult)) {
+            // Not edited by hand: apply the generated text itself. The TextArea's copy has lost every control
+            // character (form feed page separators, ESC, …), in regions no conflict touched.
+            return generatedResult;
+        }
         // JavaFX TextArea normalizes entered CRLF/CR to LF. Restore the source document's separator while
-        // retaining the user's current choice about whether the result ends with a newline.
-        DiffText edited = DiffText.parse(resultArea.getText());
-        return new DiffText(edited.lines(), lineSeparator, edited.finalNewline()).compose(edited.lines());
+        // retaining the user's current choice about whether the result ends with a newline — and take the
+        // lines the user did not change from the generated text, so they keep their control characters.
+        DiffText edited = DiffText.parse(current);
+        List<String> lines = LossyEdit.restore(
+                DiffText.parse(generatedResult).lines(),
+                DiffText.parse(shownResult).lines(),
+                edited.lines());
+        return new DiffText(lines, lineSeparator, edited.finalNewline()).compose(lines);
     }
 
     private void refreshStatus() {

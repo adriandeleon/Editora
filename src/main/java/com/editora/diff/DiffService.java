@@ -31,7 +31,7 @@ public final class DiffService {
 
     /**
      * Computes the diff of {@code leftText} vs {@code rightText} off-thread and posts the
-     * {@link DiffModel} on the FX thread — or {@code null} when either side exceeds {@link #MAX_LINES}.
+     * {@link DiffModel} on the FX thread — or {@code null} when the comparison failed.
      */
     public void compute(String leftText, String rightText, Consumer<DiffModel> onResult) {
         compute(leftText, rightText, DiffEngine.DiffOptions.DEFAULT, onResult);
@@ -41,14 +41,15 @@ public final class DiffService {
     public void compute(String leftText, String rightText, DiffEngine.DiffOptions opts, Consumer<DiffModel> onResult) {
         try {
             exec.submit(() -> {
-                List<String> left = DiffEngine.lines(leftText);
-                List<String> right = DiffEngine.lines(rightText);
-                int largest = Math.max(left.size(), right.size());
-                DiffModel model = largest <= MAX_FULL_LINES
-                        ? DiffEngine.compute(leftText, rightText, opts)
-                        : largest <= MAX_RENDERED_LINES
-                                ? DiffEngine.computeCoarse(leftText, rightText)
-                                : DiffEngine.metadataOnly(leftText, rightText);
+                DiffModel computed;
+                try {
+                    computed = model(leftText, rightText, opts);
+                } catch (Throwable failed) { // incl. OutOfMemoryError: the caller must still hear back
+                    // A task that dies inside submit() is swallowed by its Future; without this the callback
+                    // never fired and the tab stayed "opening" for good. null is the "could not diff" answer.
+                    computed = null;
+                }
+                DiffModel model = computed;
                 Platform.runLater(() -> onResult.accept(model));
             });
         } catch (RejectedExecutionException shuttingDown) {
@@ -58,6 +59,17 @@ public final class DiffService {
                 throw shuttingDown;
             }
         }
+    }
+
+    static DiffModel model(String leftText, String rightText, DiffEngine.DiffOptions opts) {
+        List<String> left = DiffEngine.lines(leftText);
+        List<String> right = DiffEngine.lines(rightText);
+        int largest = Math.max(left.size(), right.size());
+        return largest <= MAX_FULL_LINES
+                ? DiffEngine.compute(leftText, rightText, opts)
+                : largest <= MAX_RENDERED_LINES
+                        ? DiffEngine.computeCoarse(leftText, rightText)
+                        : DiffEngine.metadataOnly(leftText, rightText);
     }
 
     public void shutdown() {

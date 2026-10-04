@@ -3,6 +3,7 @@ package com.editora.diff;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -47,6 +48,12 @@ public final class DirectoryDiff {
             throw new IOException("Both comparison roots must be directories");
         }
         int limit = Math.max(1, maxFiles);
+        // A root that is itself a symbolic link (a `current` -> release link, /tmp on macOS) passes the
+        // isDirectory check, which follows links, but the walk below does not: it would visit the link as
+        // one non-regular file and report two different trees as identical. Links below the root stay
+        // unfollowed.
+        leftRoot = leftRoot.toRealPath();
+        rightRoot = rightRoot.toRealPath();
         GitignoreFilter leftIgnore = GitignoreFilter.load(leftRoot);
         GitignoreFilter rightIgnore = GitignoreFilter.load(rightRoot);
         TreeMap<String, FilePair> files = new TreeMap<>();
@@ -64,6 +71,13 @@ public final class DirectoryDiff {
             String relative = item.getKey();
             FileInfo leftFile = item.getValue().left;
             FileInfo rightFile = item.getValue().right;
+            if (truncated) {
+                // Each capped scan kept whatever subset the filesystem happened to list first, so a file
+                // missing from one side's subset may simply not have been reached there. Ask the disk
+                // before calling it one-sided.
+                leftFile = leftFile != null ? leftFile : probe(leftRoot, relative);
+                rightFile = rightFile != null ? rightFile : probe(rightRoot, relative);
+            }
             if (leftFile == null) {
                 differences.add(new Entry(relative, Kind.RIGHT_ONLY, -1, rightFile.size()));
             } else if (rightFile == null) {
@@ -140,6 +154,18 @@ public final class DirectoryDiff {
             }
         });
         return new Scan(truncated[0], incomplete[0]);
+    }
+
+    /** The regular file at {@code relative} below {@code root}, or {@code null}; symbolic links are not followed. */
+    private static FileInfo probe(Path root, String relative) {
+        try {
+            Path file = root.resolve(relative);
+            BasicFileAttributes attrs =
+                    Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            return attrs.isRegularFile() ? new FileInfo(file, attrs.size()) : null;
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     private static boolean ignored(

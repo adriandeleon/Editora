@@ -234,8 +234,8 @@ final class HistoryCoordinator {
             }
 
             @Override
-            public void revert(HistoryRevision revision) {
-                restoreHistory(revision);
+            public void revert(HistoryRevision revision, Runnable done) {
+                restoreHistory(revision).whenComplete((result, failure) -> onFx(done));
             }
 
             @Override
@@ -365,7 +365,7 @@ final class HistoryCoordinator {
             return;
         }
         String key = historyKey(b.getPath());
-        int count = ops.historyMap().getOrDefault(key, List.of()).size();
+        int count = revisionsInEveryProject(key);
         if (count == 0) {
             host.setStatus(tr("status.history.nothingToPurge"));
             return;
@@ -374,9 +374,27 @@ final class HistoryCoordinator {
                 tr("dialog.history.purgeFile.confirm", count, b.getPath().getFileName()))) {
             return;
         }
-        // Re-read after the modal dialog: revisions recorded while it was open are purged too.
-        List<HistoryRevision> removed = ops.historyMap().remove(key);
-        finishPurge(removed == null ? 0 : removed.size());
+        // Re-read after the modal dialog: revisions recorded while it was open are purged too. Every
+        // project's bucket, not only this window's: the same file recorded from a No-Project window or an
+        // overlapping project kept its revisions (and its content on disk) while the status said "purged".
+        int removed = revisionsInEveryProject(key);
+        ops.historyMap().remove(key);
+        for (Map<String, List<HistoryRevision>> bucket : ops.historyByProject().values()) {
+            bucket.remove(key);
+        }
+        finishPurge(removed);
+    }
+
+    /** How many revisions of {@code key} are recorded, in this window's bucket and every other project's. */
+    private int revisionsInEveryProject(String key) {
+        Map<String, List<HistoryRevision>> own = ops.historyMap();
+        int count = own.getOrDefault(key, List.of()).size();
+        for (Map<String, List<HistoryRevision>> bucket : ops.historyByProject().values()) {
+            if (bucket != own) {
+                count += bucket.getOrDefault(key, List.of()).size();
+            }
+        }
+        return count;
     }
 
     /** Deletes every recorded revision of every file in the active project's history, after confirmation. */
@@ -720,6 +738,7 @@ final class HistoryCoordinator {
                                     finishDiskRestore(file, completion, RestoreResult.CONTENT_UNAVAILABLE);
                                     return;
                                 }
+                                recordBeforeOverwrite(file, target);
                                 byte[] replacement = restoredBytes(text, target.expectedBytes(), charsetRuleFor(file));
                                 if (!submitRestoreWork(
                                         completion,
@@ -731,6 +750,20 @@ final class HistoryCoordinator {
             ticket.close();
             finishDiskRestore(file, completion, RestoreResult.CONTENT_UNAVAILABLE);
         }
+    }
+
+    /**
+     * Records the file a disk restore is about to replace, as delete and replace-in-files do. Without it,
+     * content changed outside the editor since the last recorded save was gone once the user confirmed the
+     * overwrite. The text is captured here, from the bytes the write is conditional on.
+     */
+    private void recordBeforeOverwrite(Path file, TargetState target) {
+        byte[] current = target.existed() ? target.expectedBytes() : null;
+        if (current == null || com.editora.diff.BinaryDiff.isProbablyBinary(current)) {
+            return;
+        }
+        String text = LineEndings.toLf(decodeCaptured(current, charsetRuleFor(file)));
+        recordFor(file, text, HistoryRevision.REASON_EXTERNAL, "", false, null);
     }
 
     private void commitDiskRestore(

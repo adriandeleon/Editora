@@ -118,6 +118,14 @@ class LocalHistoryMaintenanceFxTest {
                             () -> fx.shared.historyBucket("").get(key).size()),
                     "Cancel keeps it");
 
+            // The same file was also recorded from another project's window.
+            FxTestSupport.runOnFx(() -> fx.shared
+                    .historyBucket("/another/project")
+                    .put(
+                            key,
+                            new java.util.ArrayList<>(
+                                    fx.shared.historyBucket("").get(key))));
+
             CountDownLatch confirmed = new CountDownLatch(1);
             FxTestSupport.runOnFx(() -> {
                 Platform.runLater(() -> pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed));
@@ -127,6 +135,10 @@ class LocalHistoryMaintenanceFxTest {
             settle(async, fx, worker);
 
             assertFalse(FxTestSupport.callOnFx(() -> fx.shared.historyBucket("").containsKey(key)));
+            assertFalse(
+                    FxTestSupport.callOnFx(
+                            () -> fx.shared.historyBucket("/another/project").containsKey(key)),
+                    "purging a file forgets it in every project's history");
             assertFalse(Files.readString(fx.shared.getHistoryFile()).contains(secretSha), "gone from the index file");
             assertNull(
                     blobs.get(secretSha),
