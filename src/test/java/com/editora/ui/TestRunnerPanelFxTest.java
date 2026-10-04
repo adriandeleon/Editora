@@ -3,7 +3,9 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.List;
 
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.TreeItem;
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -306,5 +309,105 @@ class TestRunnerPanelFxTest {
         TreeView<TestNode> tree = FxTestSupport.field(panel, "tree");
         assertTrue(tree.getSelectionModel().isEmpty(), "nothing is selected on open");
         assertTrue(follow.isSelected(), "tracking survives opening the window mid-run");
+    }
+
+    /**
+     * The verdict used to come from the test leaves alone: a build that exited 1 after two passing tests (a
+     * later module failing to compile, a crashed test JVM, Stop) read "2 of 2 tests passed".
+     */
+    @Test
+    void aNonZeroExitWithoutAFailedTestIsShownAsAFailedRun() throws Exception {
+        TestRun run = new TestRun(BuildTool.MAVEN, Path.of("."), List.of("test"), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "demo.ATest",
+                        List.of(
+                                ParsedTest.of("demo.ATest", "a", TestStatus.PASSED, 1),
+                                ParsedTest.of("demo.ATest", "b", TestStatus.PASSED, 1))));
+        run.finish(1, 100);
+        TestRunnerPanel panel = FxTestSupport.callOnFx(() -> {
+            TestRunnerPanel p = new TestRunnerPanel();
+            p.setOnRerunFailed(() -> {});
+            p.startRun("test");
+            p.finishRun(run, 1);
+            return p;
+        });
+        Label status = FxTestSupport.field(panel, "status");
+        ProgressBar progress = FxTestSupport.field(panel, "progress");
+        Button rerunFailed = FxTestSupport.field(panel, "rerunFailedButton");
+        assertEquals(tr("testrunner.finishedAborted", 1), status.getText());
+        assertTrue(status.getText().contains("1"), "the exit code is the visible reason: " + status.getText());
+        assertTrue(progress.getStyleClass().contains("test-progress-failed"));
+        assertTrue(rerunFailed.isDisable(), "there is no failed test to rerun");
+    }
+
+    /** A compile error before any test: nothing reported at all used to read "0 of 0 tests passed". */
+    @Test
+    void aNonZeroExitWithNoResultsAtAllIsShownAsAFailedRun() throws Exception {
+        TestRun run = new TestRun(BuildTool.CARGO, Path.of("."), List.of("test"), List.of(), 0L);
+        run.finish(101, 100);
+        TestRunnerPanel panel = FxTestSupport.callOnFx(() -> {
+            TestRunnerPanel p = new TestRunnerPanel();
+            p.startRun("test");
+            p.finishRun(run, 101);
+            return p;
+        });
+        Label status = FxTestSupport.field(panel, "status");
+        ProgressBar progress = FxTestSupport.field(panel, "progress");
+        assertEquals(tr("testrunner.finishedAborted", 101), status.getText());
+        assertTrue(progress.getStyleClass().contains("test-progress-failed"));
+        assertEquals(1.0, progress.getProgress(), "an empty bar could not show the failed colour");
+    }
+
+    /** Controls: a clean exit keeps the passed header, and a failed test keeps the "N of M failed" one. */
+    @Test
+    void theExitCodeDoesNotChangeTheHeaderOfAnOrdinaryRun() throws Exception {
+        TestRun green = new TestRun(BuildTool.MAVEN, Path.of("."), List.of("test"), List.of(), 0L);
+        TestTreeBuilder.merge(
+                green.root(),
+                new ParsedSuite("demo.ATest", List.of(ParsedTest.of("demo.ATest", "a", TestStatus.PASSED, 1))));
+        green.finish(0, 100);
+        TestRun red = new TestRun(BuildTool.MAVEN, Path.of("."), List.of("test"), List.of(), 0L);
+        TestTreeBuilder.merge(
+                red.root(),
+                new ParsedSuite("demo.ATest", List.of(ParsedTest.of("demo.ATest", "a", TestStatus.FAILED, 1))));
+        red.finish(1, 100);
+        TestRunnerPanel panel = FxTestSupport.callOnFx(TestRunnerPanel::new);
+        Label status = FxTestSupport.field(panel, "status");
+        ProgressBar progress = FxTestSupport.field(panel, "progress");
+
+        FxTestSupport.runOnFx(() -> {
+            panel.startRun("test");
+            panel.finishRun(green, 0);
+        });
+        assertEquals(tr("testrunner.finishedOk", 1, 1), status.getText());
+        assertFalse(progress.getStyleClass().contains("test-progress-failed"));
+
+        FxTestSupport.runOnFx(() -> {
+            panel.startRun("test");
+            panel.finishRun(red, 1);
+        });
+        assertEquals(tr("testrunner.finishedFailed", 1, 1), status.getText());
+        assertTrue(progress.getStyleClass().contains("test-progress-failed"));
+    }
+
+    /** The npm fallback banner is a suite with no tests; the filter hid it, leaving an empty window. */
+    @Test
+    void aSuiteWithNoTestsIsRenderedAsARow() throws Exception {
+        TestRun run = new TestRun(BuildTool.NPM, Path.of("."), List.of("run", "test"), List.of(), 0L);
+        TestTreeBuilder.merge(run.root(), new ParsedSuite(tr("testrunner.tap.unavailable"), List.of()));
+        run.finish(1, 100);
+        TestRunnerPanel panel = FxTestSupport.callOnFx(() -> {
+            TestRunnerPanel p = new TestRunnerPanel();
+            p.startRun("run test");
+            p.finishRun(run, 1);
+            return p;
+        });
+        TreeView<TestNode> tree = FxTestSupport.field(panel, "tree");
+        assertEquals(1, tree.getRoot().getChildren().size(), "the banner row is shown");
+        assertEquals(
+                tr("testrunner.tap.unavailable"),
+                tree.getRoot().getChildren().get(0).getValue().displayName());
     }
 }

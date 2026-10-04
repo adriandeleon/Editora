@@ -49,6 +49,20 @@ class TestRunTest {
                 runWithFailures(BuildTool.GO).failedTestFilters());
     }
 
+    /** "[build failed]" is a synthetic leaf, not a test: it must not end up in a -run pattern. */
+    @Test
+    void goFilterSkipsSyntheticPackageFailureLeaves() {
+        TestRun run = new TestRun(BuildTool.GO, Path.of("."), List.of("test", "./..."), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "ex/q", List.of(ParsedTest.of("ex/q", GoTestJsonParser.BUILD_FAILED, TestStatus.ERROR, 0))));
+        assertEquals(List.of(), run.failedTestFilters(), "nothing targetable: the caller does a full rerun");
+        TestTreeBuilder.merge(
+                run.root(), new ParsedSuite("ex/p", List.of(ParsedTest.of("ex/p", "TestBoom", TestStatus.FAILED, 0))));
+        assertEquals(List.of("test", "-run", "^(TestBoom)$", "./..."), run.failedTestFilters());
+    }
+
     @Test
     void cargoFilter() {
         assertEquals(

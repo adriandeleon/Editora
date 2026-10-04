@@ -113,7 +113,12 @@ public final class TestRun {
             case GO -> {
                 Set<String> names = new LinkedHashSet<>();
                 for (TestNode t : failed) {
-                    names.add(t.methodName());
+                    if (!GoTestJsonParser.isSynthetic(t.methodName())) { // "[build failed]" is not a -run target
+                        names.add(t.methodName());
+                    }
+                }
+                if (names.isEmpty()) {
+                    yield List.of(); // only a package/build failure — the caller does a full rerun
                 }
                 yield List.of("test", "-run", "^(" + String.join("|", names) + ")$", "./...");
             }

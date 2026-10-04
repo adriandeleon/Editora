@@ -5,7 +5,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BooleanSupplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.eclipse.tm4e.core.grammar.IStateStack;
@@ -26,6 +30,9 @@ public final class TextMateHighlighter {
 
     /** Zero means "no per-line timeout" to tm4e — we tokenize lazily/debounced anyway. */
     private static final Duration NO_TIMEOUT = Duration.ZERO;
+
+    private static final Logger LOG = Logger.getLogger(TextMateHighlighter.class.getName());
+    private static final Set<String> REPORTED_FAILURES = ConcurrentHashMap.newKeySet();
 
     private TextMateHighlighter() {}
 
@@ -106,6 +113,29 @@ public final class TextMateHighlighter {
         }
     }
 
+    /**
+     * Logs a swallowed tokenizer failure, once per grammar. Degrading a line to plain text is right for the
+     * editor, but doing it silently hid a grammar whose root scanner could never compile (one look-behind
+     * joni rejects): every line of every Ruby file threw, and nothing said so. Once per grammar, because a
+     * broken grammar throws on each line of each pass.
+     */
+    private static void reportTokenizeFailure(IGrammar grammar, Throwable e) {
+        String scope;
+        try {
+            scope = String.valueOf(grammar.getScopeName());
+        } catch (RuntimeException | LinkageError ex) {
+            scope = "?";
+        }
+        if (REPORTED_FAILURES.add(scope)) {
+            LOG.log(Level.WARNING, "Syntax highlighting: the " + scope + " grammar failed to tokenize a line", e);
+        }
+    }
+
+    /** Scopes whose tokenizer failure has been logged (see {@link #reportTokenizeFailure}). Test hook. */
+    static Set<String> reportedFailures() {
+        return REPORTED_FAILURES;
+    }
+
     private static IncrementalAnalysis analyzeFromLocked(
             String text, IGrammar grammar, int fromLine, IStateStack startState, BooleanSupplier cancelled) {
         // Adjacent runs with the same style are merged before they reach the builder: we collapse
@@ -139,6 +169,7 @@ public final class TextMateHighlighter {
                 collectSymbol(symbols, lineIndex, line, result.getTokens());
             } catch (Exception | LinkageError e) {
                 spans.add(null, line.length());
+                reportTokenizeFailure(grammar, e);
             }
             endStates.add(state); // end state of this line (carried unchanged on a tokenization failure)
             if (newline < 0) {

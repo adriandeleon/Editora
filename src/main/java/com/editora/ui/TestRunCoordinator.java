@@ -38,6 +38,7 @@ import com.editora.test.TestResultParsers;
 import com.editora.test.TestRun;
 import com.editora.test.TestRunRecognizer;
 import com.editora.test.TestSourceLocator;
+import com.editora.test.TestStatus;
 import com.editora.test.TestTreeBuilder;
 
 import static com.editora.i18n.Messages.tr;
@@ -281,7 +282,9 @@ final class TestRunCoordinator implements TestRunHook {
             mergeAll(parser.onExit(code));
             if (npm && !tapDecided) {
                 // No structured (TAP) output — surface an honest banner rather than an empty tree.
-                TestTreeBuilder.merge(run.root(), new ParsedSuite(tr("testrunner.tap.unavailable"), List.of()));
+                String banner = tr("testrunner.tap.unavailable");
+                TestTreeBuilder.merge(run.root(), new ParsedSuite(banner, List.of()));
+                run.root().childById(banner).setStatus(TestStatus.SKIPPED); // a message row, not a running suite
             }
             completeRun(run, gen, code);
         }
