@@ -76,10 +76,6 @@ class RectangleFxTest {
             EditorBuffer b = new EditorBuffer();
             b.setContent(content);
             FxTestSupport.call(fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, b, true);
-            // setContent is itself an undoable edit, and UndoMerge's boundary is an idle *pause* the
-            // test never takes — without a clean baseline it merges with whatever the command does,
-            // and a single undo would appear to revert the file to empty.
-            b.getArea().getUndoManager().forgetHistory();
             b.getArea().selectRange(at(content, l1, c1), at(content, l2, c2));
             return b;
         });

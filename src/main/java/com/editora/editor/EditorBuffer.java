@@ -1629,8 +1629,10 @@ public class EditorBuffer implements TabContent {
             return false;
         }
         CodeArea a = focusedArea != null ? focusedArea : area;
-        Commenter.Edit edit = Commenter.toggle(
-                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), Commenter.styleFor(language));
+        // A collapsed header is commented together with its (then expanded) body.
+        int[] span = folds.expandHeaderSpan(
+                a.getSelection().getStart(), a.getSelection().getEnd());
+        Commenter.Edit edit = Commenter.toggle(a.getText(), span[0], span[1], Commenter.styleFor(language));
         if (edit == null) {
             return false;
         }
@@ -1897,7 +1899,9 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea != null ? focusedArea : area;
         String sel = a.getSelectedText();
         boolean fromSelection = sel != null && !sel.isBlank();
-        String csv = fromSelection ? sel : Clipboard.getSystemClipboard().getString();
+        String csv = fromSelection
+                ? sel
+                : LineEndings.toLf(Clipboard.getSystemClipboard().getString());
         if (csv == null || csv.isBlank()) {
             return false;
         }
@@ -5552,8 +5556,9 @@ public class EditorBuffer implements TabContent {
     public void copyCurrentLine() {
         CodeArea a = focusedArea != null ? focusedArea : area;
         int p = a.getCurrentParagraph();
+        int q = folds.hiddenRunEnd(p); // a collapsed fold's header takes its hidden body along
         javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-        content.putString(a.getParagraph(p).getText() + "\n");
+        content.putString(a.getText(p, 0, q, a.getParagraphLength(q)) + "\n");
         Clipboard.getSystemClipboard().setContent(content);
     }
 
@@ -5562,18 +5567,19 @@ public class EditorBuffer implements TabContent {
     public void cutCurrentLine() {
         CodeArea a = focusedArea != null ? focusedArea : area;
         int p = a.getCurrentParagraph();
+        int q = folds.hiddenRunEnd(p); // a collapsed fold's header takes its hidden body along
         javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-        content.putString(a.getParagraph(p).getText() + "\n");
+        content.putString(a.getText(p, 0, q, a.getParagraphLength(q)) + "\n");
         Clipboard.getSystemClipboard().setContent(content);
         int total = a.getParagraphs().size();
         int start;
         int end;
-        if (p < total - 1) { // not the last line: take this line plus its trailing newline
+        if (q < total - 1) { // not the last line: take this line plus its trailing newline
             start = a.getAbsolutePosition(p, 0);
-            end = a.getAbsolutePosition(p + 1, 0);
-        } else if (total > 1) { // last line: take the preceding newline plus this line
+            end = a.getAbsolutePosition(q + 1, 0);
+        } else if (p > 0) { // last line: take the preceding newline plus this line
             start = a.getAbsolutePosition(p - 1, a.getParagraph(p - 1).length());
-            end = a.getAbsolutePosition(p, a.getParagraph(p).length());
+            end = a.getAbsolutePosition(q, a.getParagraph(q).length());
         } else { // only line in the buffer: clear it
             start = 0;
             end = a.getLength();
@@ -8754,7 +8760,7 @@ public class EditorBuffer implements TabContent {
         }
         // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
         String currentIndent = completionActions.leadingIndent(beforeCaret);
-        String aligned = Indenter.closerAlignIndent(a.getText(), caret, tabSize);
+        String aligned = Indenter.closerAlignIndent(style, a.getText(), caret, tabSize, currentIndent);
         if (!aligned.equals(currentIndent)) {
             a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
             a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent
@@ -9030,7 +9036,8 @@ public class EditorBuffer implements TabContent {
                 : path.toAbsolutePath().getParent().toString();
         String filePath = path == null ? "" : path.toAbsolutePath().toString();
         String clip = javafx.scene.input.Clipboard.getSystemClipboard().hasString()
-                ? javafx.scene.input.Clipboard.getSystemClipboard().getString()
+                ? LineEndings.toLf(
+                        javafx.scene.input.Clipboard.getSystemClipboard().getString())
                 : "";
         int line = a.offsetToPosition(from, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                 .getMajor();
@@ -9376,6 +9383,8 @@ public class EditorBuffer implements TabContent {
         } else {
             area.replaceText(initial);
         }
+        forgetHistoryAtNarrowBoundary(); // the load is the baseline, not an undo step: undoing it emptied the file
+        captureUndoCheckpoint(); // ...and the Undo History baseline is the loaded text, not the loading shell
         refilter.run();
         dirty.set(false);
         recomputeRun(); // detect a runnable file on load (drives the Run glyph)

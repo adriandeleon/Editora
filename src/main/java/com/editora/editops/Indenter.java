@@ -246,6 +246,35 @@ public final class Indenter {
         return "";
     }
 
+    /**
+     * As {@link #closerAlignIndent(String, int, int)}, but idempotent: returns {@code currentIndent} unchanged
+     * when the closer's line no longer sits at body level, so a closer that is already aligned is never
+     * stepped out to the <em>enclosing</em> block. "Shallower than the current indent" finds the opener only
+     * while the closer is still as deep as its body; once aligned, the nearest shallower line belongs to the
+     * block around it. The line is already aligned when the previous non-blank line is deeper (the body), or
+     * is a block opener at the same indent (an empty block).
+     */
+    public static String closerAlignIndent(Style style, String text, int caret, int tabSize, String currentIndent) {
+        int ls = lineStart(text, caret);
+        int curWidth = width(leadingWhitespace(text.substring(ls, lineEnd(text, caret))), tabSize);
+        int pos = ls;
+        int scanned = 0;
+        while (pos > 0 && scanned < MAX_SCAN) {
+            int prevStart = lineStart(text, pos - 1);
+            String prevLine = text.substring(prevStart, pos - 1);
+            scanned += pos - prevStart;
+            if (!prevLine.isBlank()) {
+                int prevWidth = width(leadingWhitespace(prevLine), tabSize);
+                if (prevWidth > curWidth || (prevWidth == curWidth && opensBlock(style, prevLine))) {
+                    return currentIndent;
+                }
+                break;
+            }
+            pos = prevStart;
+        }
+        return closerAlignIndent(text, caret, tabSize);
+    }
+
     /** True when typing {@code c} is a closing bracket that should de-indent for the style. */
     public static boolean isCloserChar(Style style, char c) {
         return (style == Style.BRACES || style == Style.SHELL || style == Style.RUBY || style == Style.LUA)
@@ -278,6 +307,11 @@ public final class Indenter {
         char last = rest.charAt(rest.length() - 1);
         if (isWordChar(last)) {
             return false; // still inside a word, which may yet turn out longer than the keyword
+        }
+        if (last != '\n' && Character.isISOControl(last)) {
+            // The KEY_TYPED that follows Backspace/Escape/Delete carries a control character and types
+            // nothing: `fix` + Backspace is on its way to `find`, not a finished `fi`.
+            return false;
         }
         if (closers.contains(rest)) {
             return true; // a symbolic closer (;;), complete as typed

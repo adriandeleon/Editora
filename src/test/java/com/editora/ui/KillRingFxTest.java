@@ -75,6 +75,43 @@ class KillRingFxTest {
         return FxTestSupport.callOnFx(() -> b.getArea().getText());
     }
 
+    // --- CRLF clipboard text (what another Windows application puts there) -------------------------
+
+    @Test
+    void pastingCrlfClipboardTextPutsTheCaretAtTheEndOfTheInsertedText() throws Exception {
+        EditorBuffer b = open("HEAD\nTAIL-0123456789\n", 1, 0);
+        FxTestSupport.runOnFx(() -> setClipboard("a\r\nb\r\nc\r\n"));
+        run("edit.paste");
+        assertEquals("HEAD\na\nb\nc\nTAIL-0123456789\n", text(b));
+        assertEquals(11, FxTestSupport.callOnFx(() -> b.getArea().getCaretPosition()), "one newline per CRLF");
+    }
+
+    @Test
+    void yankPopAfterACrlfPasteReplacesOnlyThePastedText() throws Exception {
+        EditorBuffer b = open("HEAD\nTAIL-0123456789\n", 1, 0);
+        FxTestSupport.runOnFx(() -> {
+            ring.save("OLD");
+            setClipboard("a\r\nb\r\nc\r\n");
+        });
+        run("edit.paste");
+        run("edit.yankPop");
+        assertEquals("HEAD\nOLDTAIL-0123456789\n", text(b), "the text after the paste must survive");
+        run("edit.yankPop"); // rotates back INTO the CRLF entry
+        run("edit.yankPop");
+        assertEquals("HEAD\nOLDTAIL-0123456789\n", text(b));
+    }
+
+    @Test
+    void pastingCrlfClipboardTextAtTheEndOfTheDocumentKeepsTheCaretInside() throws Exception {
+        EditorBuffer b = open("end", 0, 3);
+        FxTestSupport.runOnFx(() -> setClipboard("line1\r\nline2\r\n"));
+        run("edit.paste");
+        assertEquals("endline1\nline2\n", text(b));
+        assertEquals(
+                FxTestSupport.callOnFx(() -> b.getArea().getLength()),
+                FxTestSupport.callOnFx(() -> b.getArea().getCaretPosition()));
+    }
+
     // --- kill ------------------------------------------------------------------------------------
 
     @Test

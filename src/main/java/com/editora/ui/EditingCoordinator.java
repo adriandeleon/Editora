@@ -11,6 +11,7 @@ import com.editora.config.ConfigManager;
 import com.editora.editops.KillRing;
 import com.editora.editops.Rectangle;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.FoldManager;
 import com.editora.editor.TextNav;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
@@ -649,13 +650,22 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        com.editora.editops.Transposer.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        com.editora.editops.Transposer.Edit edit = op.apply(linesAsUnits(buffer, area), area.getCaretPosition());
         if (edit == null) {
             return;
         }
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
         area.moveTo(edit.caret());
         area.requestFocus();
+    }
+
+    /**
+     * The document text as a line command should see it: a collapsed fold's header and its hidden body are
+     * one line (see {@link FoldManager#linesAsUnits}), so killing, duplicating or moving "the line" takes
+     * the whole folded block instead of stranding its body.
+     */
+    private static String linesAsUnits(EditorBuffer buffer, CodeArea area) {
+        return buffer.getFoldManager().linesAsUnits(area.getText(), area.getCurrentParagraph());
     }
 
     /** Applies a pure {@link com.editora.editops.LineOps} edit to the active area (duplicate / move line). */
@@ -668,11 +678,14 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        com.editora.editops.LineOps.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        com.editora.editops.LineOps.Edit edit = op.apply(linesAsUnits(buffer, area), area.getCaretPosition());
         if (edit == null) {
             return;
         }
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        // The duplicate/moved block ends up expanded: its copy would otherwise be inserted into the hidden
+        // run (and the caret with it).
+        buffer.getFoldManager().expandHeaderAt(area.getCaretPosition());
+        area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
         area.moveTo(edit.caret());
         area.requestFocus();
     }
@@ -791,13 +804,13 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        com.editora.editops.EmacsEdits.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        com.editora.editops.EmacsEdits.Edit edit = op.apply(linesAsUnits(buffer, area), area.getCaretPosition());
         if (edit == null) {
             return;
         }
         boolean merge = continuesPreviousKill(buffer, area.getCaretPosition()); // decide before the edit
         String killed = area.getText(edit.from(), edit.to());
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
         area.moveTo(edit.caret());
         pushKill(buffer, area, killed, dir, merge);
         deactivateMark();
@@ -1667,7 +1680,8 @@ final class EditingCoordinator {
             to = token[1];
         }
         String before = area.getText().substring(from, to);
-        String after = op.apply(before);
+        // A decode (URL, Base64, JSON unescape) can produce '\r'; the document stores it as '\n'.
+        String after = com.editora.editor.LineEndings.toLf(op.apply(before));
         if (after.equals(before)) {
             host.setStatus(tr("status.stringops.noChange"));
             return;
@@ -1813,7 +1827,8 @@ final class EditingCoordinator {
             to = text.length();
         }
         String before = text.substring(from, to);
-        String after = op.apply(before);
+        // A decode (URL, Base64, JSON unescape) can produce '\r'; the document stores it as '\n'.
+        String after = com.editora.editor.LineEndings.toLf(op.apply(before));
         if (after.equals(before)) {
             host.setStatus(tr("status.stringops.noChange"));
             return;

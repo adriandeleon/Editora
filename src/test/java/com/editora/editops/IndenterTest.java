@@ -155,6 +155,32 @@ class IndenterTest {
     }
 
     @Test
+    void closerAlignIsIdempotent() {
+        // Still at body level (previous line is body at the same indent, or an opener one level out): align.
+        String fresh = "f() {\n    if a; then\n        b\n        fi";
+        assertEquals("    ", Indenter.closerAlignIndent(Style.SHELL, fresh, fresh.length(), 4, "        "));
+        String first = "f() {\n    if a; then\n        fi";
+        assertEquals("    ", Indenter.closerAlignIndent(Style.SHELL, first, first.length(), 4, "        "));
+        // Already aligned (the body above is deeper): unchanged, not stepped out to the enclosing block.
+        String aligned = "f() {\n    if a; then\n        b\n    fi";
+        assertEquals("    ", Indenter.closerAlignIndent(Style.SHELL, aligned, aligned.length(), 4, "    "));
+        // Already aligned, empty block: the opener is the previous line, at the same indent.
+        String empty = "class Foo\n  def bar\n  end";
+        assertEquals("  ", Indenter.closerAlignIndent(Style.RUBY, empty, empty.length(), 2, "  "));
+        // A sibling closer at the same indent is not an opener: `end` under `end` still closes the outer block.
+        String outer = "class Foo\n  def bar\n  end\n  end";
+        assertEquals("", Indenter.closerAlignIndent(Style.RUBY, outer, outer.length(), 2, "  "));
+    }
+
+    @Test
+    void aControlCharacterDoesNotFinishACloserKeyword() {
+        assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "    fi\b"));
+        assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "    fi\u001b"));
+        assertFalse(Indenter.completesCloserKeyword(Style.RUBY, "  end\u007f"));
+        assertTrue(Indenter.completesCloserKeyword(Style.SHELL, "    fi\n"));
+    }
+
+    @Test
     void closerCharAndKeywordDetection() {
         assertTrue(Indenter.isCloserChar(Style.BRACES, '}'));
         assertTrue(Indenter.isCloserChar(Style.BRACES, ')'));

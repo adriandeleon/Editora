@@ -31,8 +31,6 @@ class AutoRenameTagFxTest {
             b.setContent(text);
             b.setAutoRenameTag(true);
             b.getNode();
-            CodeArea area = FxTestSupport.field(b, "area");
-            area.getUndoManager().forgetHistory(); // the initial setContent must not be undoable in tests
             return b;
         });
     }
