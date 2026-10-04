@@ -247,6 +247,18 @@ final class RunCoordinator {
         return service.isRunning() || beforeLaunch.isActive();
     }
 
+    /** Set by the first launch (or before-launch step) that reaches the console; never cleared. */
+    private boolean consoleUsed;
+
+    /**
+     * Whether the Run console has something to show: a live process, or the output of one that ran in this
+     * window. Availability must not fall back to "the active tab is runnable" when a run exits — that closed
+     * the console on the very output it was opened for, and an instant-exit program never appeared at all.
+     */
+    boolean consoleInUse() {
+        return consoleUsed || isRunning();
+    }
+
     /** Runs a saved {@link RunConfiguration}: its main class with its own program/VM args + working dir. */
     void runConfig(RunConfiguration cfg) {
         if (!beginRunRequest()) {
@@ -282,6 +294,7 @@ final class RunCoordinator {
                     @Override
                     public void started(String commandLine) {
                         lastRunDir = cwd; // so a compiler error's file link in the build output resolves
+                        consoleUsed = true;
                         panel.started(commandLine);
                     }
 
@@ -815,6 +828,7 @@ final class RunCoordinator {
         lastRunLabel = label;
         lastRunCommand = command;
         lastRunEnv = env;
+        consoleUsed = true;
         ops.openToolWindow();
         panel.started(label);
         host.setStatus(tr("status.run.started", label));

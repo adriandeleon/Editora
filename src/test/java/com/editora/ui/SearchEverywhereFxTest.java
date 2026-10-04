@@ -358,4 +358,114 @@ class SearchEverywhereFxTest {
                 "the cursor must skip group headers, which are labels rather than results");
         hide();
     }
+
+    /**
+     * The fixture window has no project, so there is no index to build. The popup used to refresh a
+     * non-`>` query only through the index callback, which that state dropped: the list kept the
+     * empty-query rows — every command, cursor on the first — and Enter ran it.
+     */
+    @Test
+    void anUnscopedQueryFiltersWithoutAProject() throws Exception {
+        FxTestSupport.runOnFxUnchecked(() -> popup().show(""));
+        type("");
+        int all = items().size();
+        type("undo");
+        List<Item> hits = items();
+        assertFalse(hits.isEmpty());
+        assertTrue(hits.size() < all, "typing narrows the list: " + hits.size() + " of " + all);
+        assertEquals(paletteCommandTitles("undo").get(0), hits.get(0).label(), "the top row is the best match");
+        Object selected = FxTestSupport.callOnFx(
+                () -> itemOf(FxTestSupport.<javafx.scene.control.ListView<?>>field(popup(), "list")
+                        .getSelectionModel()
+                        .getSelectedItem()));
+        // The cursor skips grayed rows, so it sits on the first match that can run.
+        assertEquals(
+                hits.stream().filter(Item::enabled).findFirst().orElse(null),
+                selected,
+                "Enter would run a match, not the first command of the full list");
+
+        type("zzzzqqqq");
+        assertTrue(items().isEmpty(), "nothing matches, so nothing is listed");
+        hide();
+    }
+
+    /**
+     * While the first project walk is in flight the popup answers each query with what needs no corpus, and
+     * when the walk lands it refilters for the text in the field — not for the query that started the walk.
+     */
+    @Test
+    void aWalkLandingRefiltersForTheLiveQuery() throws Exception {
+        List<Runnable> parked = new java.util.ArrayList<>();
+        boolean[] built = {false};
+        SearchEverywherePopup local = FxTestSupport.callOnFx(() -> new SearchEverywherePopup(
+                FxTestSupport.<OverlayHost>field(fx.controller, "overlayHost"), new SearchEverywherePopup.Ops() {
+                    @Override
+                    public List<Item> commands(String query) {
+                        return List.of(new Item(Kind.COMMAND, "cmd:" + query, "", 1, "c"));
+                    }
+
+                    @Override
+                    public List<Item> files(String query) {
+                        return built[0] ? List.of(new Item(Kind.FILE, "file:" + query, "", 1, "f")) : List.of();
+                    }
+
+                    @Override
+                    public List<Item> symbols(String query) {
+                        return List.of();
+                    }
+
+                    @Override
+                    public void ensureIndex(Runnable then) {
+                        if (built[0]) {
+                            then.run();
+                        } else {
+                            parked.add(then);
+                        }
+                    }
+
+                    @Override
+                    public void choose(Item item) {}
+
+                    @Override
+                    public String disabledReason(Item item) {
+                        return null;
+                    }
+
+                    @Override
+                    public void openDocs(Item item) {}
+                }));
+        java.util.function.Supplier<List<String>> labels = () -> {
+            javafx.collections.ObservableList<Object> list = FxTestSupport.field(local, "rows");
+            return list.stream()
+                    .map(SearchEverywhereFxTest::itemOf)
+                    .filter(java.util.Objects::nonNull)
+                    .map(Item::label)
+                    .toList();
+        };
+        java.util.function.Consumer<String> typeLocal = q -> {
+            FxTestSupport.<javafx.scene.control.TextField>field(local, "input").setText(q);
+            FxTestSupport.invoke(local, "refresh");
+        };
+        try {
+            FxTestSupport.runOnFxUnchecked(() -> {
+                local.show("");
+                typeLocal.accept("ma");
+            });
+            assertEquals(List.of("cmd:ma"), FxTestSupport.callOnFx(labels::get), "commands show during the walk");
+            FxTestSupport.runOnFxUnchecked(() -> typeLocal.accept("main"));
+            assertEquals(List.of("cmd:main"), FxTestSupport.callOnFx(labels::get));
+            assertEquals(1, parked.size(), "one callback waits on the walk, however many queries were typed");
+
+            FxTestSupport.runOnFxUnchecked(() -> {
+                built[0] = true;
+                parked.get(0).run(); // the walk lands
+            });
+            assertEquals(
+                    List.of("cmd:main", "file:main"),
+                    FxTestSupport.callOnFx(labels::get),
+                    "the landing answers the field's text, not the query that started the walk");
+        } finally {
+            hide();
+        }
+    }
 }

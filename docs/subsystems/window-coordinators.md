@@ -53,6 +53,20 @@ Prefer focused responsibilities well below it.
 Run requests are also navigation requests: `RunCoordinator` opens and focuses the Run tool window before
 launch validation. If a process is already active, another Run request refocuses that existing console and
 reports the busy state. `ToolWindowManager.open(window, true)` must therefore refocus an already-open docked
-or floating window, not treat the call as a no-op. Run-window availability also includes a live process,
-independent of the active buffer's runnability; run-state changes must refresh that gate so a later buffer or
-settings refresh cannot close a console that was just reopened.
+or floating window, not treat the call as a no-op. Run-window availability is "the active buffer is
+runnable, or a run has reached the console in this window" (`RunCoordinator.consoleInUse()`: a live process or
+before-launch step, or any earlier one), independent of the active buffer's runnability. A run's own exit
+refreshes that gate with the process already gone, so a gate that only counted live processes closed the
+console on the output it had just streamed; like Test Results, the window stays available once used.
+
+Every open of a file runs `MainController.restorePerFileState` (folds, bookmarks, breakpoints, personal
+notes, read-only pin) — the ordinary load, session restore, and the background opens used by workspace
+edits, diff/merge apply, agent writes and run-configuration restore (`attachBackground`). The mark stores are
+replace-on-change, so a tab that skipped the restore would persist its empty lists over the stored ones at
+the next mark change, and the background callers' only protection for a pinned file is `isEditable()`.
+
+"Open, then act on a line" must wait for the load: `FileWorkflowCoordinator.openPath` only starts the read
+and the tab is an empty read-only shell until it lands. Use `openThen` / `whenLoaded` (or
+`WindowSessionCoordinator.gotoInFile`, which defers itself and carries its record decision and origin through
+the deferral) rather than `openPath` + `Platform.runLater`. `openAndGoto` records its jump once, after the
+load, through `NavigationCoordinator.landJump`.

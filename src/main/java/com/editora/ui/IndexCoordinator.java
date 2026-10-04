@@ -225,6 +225,7 @@ final class IndexCoordinator {
                 building = false;
                 close(task);
                 if (gen != generation.get()) {
+                    settleWaiters(); // they asked for "when it lands", and it has — with nothing to show
                     return; // a project switch or a rebuild superseded this walk
                 }
                 for (Scanned s : walked.scanned()) {
@@ -237,6 +238,7 @@ final class IndexCoordinator {
                 if (then != null) {
                     then.run();
                 }
+                settleWaiters();
                 if (truncated) {
                     // Last, so it is what the status bar is left showing: a partial index that looks
                     // complete sends the user hunting for a symbol that was simply never read.
@@ -331,15 +333,39 @@ final class IndexCoordinator {
         return indexedRoot != null;
     }
 
-    /** Builds if needed, then runs {@code then} — the entry point for a caller that wants results now. */
+    /** {@link #ensureBuilt} callbacks parked on the walk in flight; run when it lands, superseded or not. */
+    private final List<Runnable> waiters = new ArrayList<>();
+
+    private void settleWaiters() {
+        List<Runnable> due = List.copyOf(waiters);
+        waiters.clear(); // first: a callback may call ensureBuilt again
+        due.forEach(Runnable::run);
+    }
+
+    /**
+     * Builds if needed, then runs {@code then} — the entry point for a caller that wants results now.
+     *
+     * <p>{@code then} always runs, exactly once: at once when the index is built or cannot be (switched off,
+     * no local project), else when the walk — this call's or one already in flight — lands. A caller that
+     * was dropped on those exits never refreshed: Search Everywhere kept the previous query's rows, and Enter
+     * ran whatever they happened to start with.
+     */
     void ensureBuilt(Runnable then) {
-        if (!isEnabled()) {
+        if (!isEnabled() || isBuilt()) {
+            then.run();
             return;
         }
-        if (isBuilt()) {
+        Path root = ops.projectRoot();
+        if (root == null || !Vfs.isLocal(root)) {
+            host.setStatus(tr("status.index.noProject"));
             then.run();
+            return;
+        }
+        waiters.add(then);
+        if (building) {
+            host.setStatus(tr("status.index.building"));
         } else {
-            build(then);
+            build(null);
         }
     }
 

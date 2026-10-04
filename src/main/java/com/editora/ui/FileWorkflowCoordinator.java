@@ -324,6 +324,40 @@ final class FileWorkflowCoordinator {
         }
     }
 
+    /**
+     * Opens {@code file} (or selects its tab) and, a pulse later, runs {@code action} through
+     * {@link #whenLoaded} — the load-aware form of "open, then act on the editor". {@link #openPath} only
+     * starts the read: until it lands the tab is an empty read-only shell, so a bare {@code runLater} acts on
+     * one blank line.
+     */
+    void openThen(Path file, Runnable action) {
+        openPath(file);
+        Platform.runLater(() -> whenLoaded(file, action));
+    }
+
+    /**
+     * Runs {@code action} with {@code file}'s tab selected once its text is in the buffer: now when it is
+     * already loaded, else when the load lands. Never runs when the file has no text tab (an image, a PDF, a
+     * hex view), when its load fails, or when the tab is closed first.
+     */
+    void whenLoaded(Path file, Runnable action) {
+        Tab tab = host.tabForPath(file);
+        EditorBuffer buffer = tab == null ? null : host.bufferOf(tab);
+        if (buffer == null) {
+            return;
+        }
+        afterBufferLoad(buffer, () -> {
+            Tab now = host.tabForBuffer(buffer);
+            if (now == null) {
+                return;
+            }
+            if (host.editorArea().selectedTab() != now) {
+                host.editorArea().select(now); // the user looked elsewhere while it loaded
+            }
+            action.run();
+        });
+    }
+
     /** Opens {@code file} in a read-only {@link ImageViewerPane} tab (raster images render, not their bytes). */
     Tab openImageTab(Path file, boolean select) {
         ImageViewerPane pane = new ImageViewerPane(file);

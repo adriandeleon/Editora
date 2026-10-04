@@ -1749,10 +1749,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             projectPanel.revealPathInTree(file);
             return;
         }
-        fileWorkflows.openPath(file);
-        if (line >= 0) {
-            Platform.runLater(() -> navigateToLine(line));
-        }
+        fileWorkflows.openThen(file, () -> navigateToLine(line));
     }
 
     /**
@@ -5304,18 +5301,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void restoreFolds(EditorBuffer buffer) {
-            MainController.this.restoreFolds(buffer);
+        public void restorePerFileState(EditorBuffer buffer) {
+            MainController.this.restorePerFileState(buffer);
         }
 
         @Override
         public Tab tabForBuffer(EditorBuffer buffer) {
             return MainController.this.tabForBuffer(buffer);
-        }
-
-        @Override
-        public void restoreReadOnly(EditorBuffer buffer) {
-            MainController.this.restoreReadOnly(buffer);
         }
 
         @Override
@@ -5809,8 +5801,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void openAt(Path file, int line) {
-                    fileWorkflows.openPath(file);
-                    Platform.runLater(() -> navigateToLine(Math.max(0, line - 1)));
+                    openAndNavigate(file, Math.max(0, line - 1));
                 }
             });
 
@@ -6339,44 +6330,47 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private void applyTodoLineEdit(
             java.nio.file.Path file, int line, String expectedLine, String newLine, Runnable afterApply) {
-        fileWorkflows.openPath(file);
-        Platform.runLater(() -> {
-            EditorBuffer b = activeBuffer();
-            if (b == null || b.getPath() == null || !canonicalPath(b.getPath()).equals(canonicalPath(file))) {
-                return;
-            }
-            // Say so rather than doing nothing: a TODO in a read-only buffer is common (a .log opens in View
-            // mode, as does anything not writable on disk — i.e. exactly the vendored/generated code a scan
-            // turns up), and a menu click that produced no status, no error and no change looked like a bug.
-            if (!editing.activeEditable()) {
-                setStatus(tr("status.todo.readOnly"));
-                return;
-            }
-            org.fxmisc.richtext.CodeArea area = b.getArea();
-            int idx = line - 1;
-            int paragraphs = area.getParagraphs().size();
-            if (idx < 0 || idx >= paragraphs) {
-                setStatus(tr("status.todo.lineChanged")); // the file shrank under the scan snapshot
-                if (afterApply != null) {
-                    afterApply.run();
-                }
-                return;
-            }
-            String current = area.getParagraph(idx).getText();
-            if (!current.equals(expectedLine)) {
-                setStatus(tr("status.todo.lineChanged"));
-                if (afterApply != null) {
-                    afterApply.run();
-                }
-                return;
-            }
-            int start = area.getAbsolutePosition(idx, 0);
-            area.replaceText(start, start + current.length(), newLine); // undoable; marks the buffer dirty
-            setStatus(tr("status.todo.edited"));
-            if (afterApply != null) {
-                afterApply.run();
-            }
-        });
+        fileWorkflows.openThen(
+                file,
+                () -> { // after the load: the shell is empty and read-only until then
+                    EditorBuffer b = activeBuffer();
+                    if (b == null
+                            || b.getPath() == null
+                            || !canonicalPath(b.getPath()).equals(canonicalPath(file))) {
+                        return;
+                    }
+                    // Say so rather than doing nothing: a TODO in a read-only buffer is common (a .log opens in View
+                    // mode, as does anything not writable on disk — i.e. exactly the vendored/generated code a scan
+                    // turns up), and a menu click that produced no status, no error and no change looked like a bug.
+                    if (!editing.activeEditable()) {
+                        setStatus(tr("status.todo.readOnly"));
+                        return;
+                    }
+                    org.fxmisc.richtext.CodeArea area = b.getArea();
+                    int idx = line - 1;
+                    int paragraphs = area.getParagraphs().size();
+                    if (idx < 0 || idx >= paragraphs) {
+                        setStatus(tr("status.todo.lineChanged")); // the file shrank under the scan snapshot
+                        if (afterApply != null) {
+                            afterApply.run();
+                        }
+                        return;
+                    }
+                    String current = area.getParagraph(idx).getText();
+                    if (!current.equals(expectedLine)) {
+                        setStatus(tr("status.todo.lineChanged"));
+                        if (afterApply != null) {
+                            afterApply.run();
+                        }
+                        return;
+                    }
+                    int start = area.getAbsolutePosition(idx, 0);
+                    area.replaceText(start, start + current.length(), newLine); // undoable; marks the buffer dirty
+                    setStatus(tr("status.todo.edited"));
+                    if (afterApply != null) {
+                        afterApply.run();
+                    }
+                });
     }
 
     /** CSV/TSV grid preview feature; owns the grid panel + parse/refresh (the tool window stays here). */
@@ -7344,15 +7338,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void openAndGoto(Path file, int line0, int col0) {
         NavigationHistory.Location origin = navigation.navigating ? null : navigation.captureCurrent();
         fileWorkflows.openPath(file);
-        Platform.runLater(() -> {
-            navigation.suppressNavRecord = true; // let this outer call own the recording, not the nested gotoInFile
-            sessions.gotoInFile(file, line0 + 1, col0 + 1);
-            navigation.suppressNavRecord = false;
-            if (!navigation.navigating) {
-                navigation.recordJump(origin, new NavigationHistory.Location(file, line0, col0));
-            }
-            navigation.navigating = false; // a back/forward jump has landed
-        });
+        Platform.runLater(() -> navigation.landJump(origin, file, line0, col0));
     }
 
     /** The open buffer for {@code target} (canonical-path match), or null if not open. */
@@ -7379,11 +7365,20 @@ public class MainController implements com.editora.mcp.McpBridge {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(target);
             fileWorkflows.loadInto(buffer, target);
-            addBuffer(buffer, false); // background: keep the caller's current tab focused
-            return buffer;
+            return attachBackground(buffer);
         } catch (IOException e) {
             return null;
         }
+    }
+
+    /** Adds a loaded {@code buffer} as an unfocused tab with its stored per-file state, like any other open:
+     *  without the marks the next mark change would persist over them, and callers gate on the read-only pin. */
+    private EditorBuffer attachBackground(EditorBuffer buffer) {
+        Tab tab = addBuffer(buffer, false); // background: keep the caller's current tab focused
+        restorePerFileState(buffer);
+        previews.restoreMarkdownMode(buffer);
+        updateTabMeta(tab, buffer);
+        return buffer;
     }
 
     /** Workspace edits may touch unopened files. Decode them on the normal file-load executor and only
@@ -7410,8 +7405,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     EditorBuffer buffer = new EditorBuffer();
                     buffer.setPath(target);
                     fileWorkflows.applyPreparedLoad(buffer, load);
-                    addBuffer(buffer, false);
-                    done.accept(buffer);
+                    done.accept(attachBackground(buffer));
                 });
             } catch (IOException | RuntimeException e) {
                 Platform.runLater(() -> done.accept(null));
@@ -8440,11 +8434,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         String note = fileWorkflows.applyPreparedLoad(buffer, load);
         fileWorkflows.notePerfContentLoaded(buffer);
-        restoreFolds(buffer);
-        bookmarkCoordinator.restoreBookmarks(buffer);
-        debugCoordinator.restoreBreakpoints(buffer);
-        notesCoordinator.restoreNotes(buffer);
-        restoreReadOnly(buffer);
+        restorePerFileState(buffer);
         buffer.setLoading(false);
         previews.restoreMarkdownMode(buffer);
         updateTabMeta(tab, buffer);
@@ -9176,18 +9166,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         searchCoordinator.openToggle();
     }
 
-    /** Shows the Run tool window's stripe button for a runnable file or while a process is still active.
+    /** Shows the Run tool window's stripe button for a runnable file, or once a run has started in this window.
      *
-     * <p>The live-process half is essential even when the active buffer itself is not directly runnable (for
-     * example, a project Java or NPM configuration). Otherwise a normal context refresh can close a console
-     * that {@link RunCoordinator} just reopened when the user pressed Run again.
+     * <p>The second half is essential even when the active buffer itself is not directly runnable (for
+     * example, a project Java or NPM configuration). Otherwise a normal context refresh — including the one
+     * a run's own exit triggers — closes the console on the output the user is about to read.
      */
     private void updateRunButton() {
         EditorBuffer buffer = activeBuffer();
         boolean http = buffer != null && buffer.isHttpFile();
         boolean runnable = buffer != null && buffer.isRunnable() && !http;
         if (runToolWindow != null) {
-            toolWindows.setAvailable(runToolWindow, runnable || runCoordinator.isRunning());
+            toolWindows.setAvailable(runToolWindow, runnable || runCoordinator.consoleInUse());
         }
         if (http && httpClient.isEnabled()) {
             httpClient.refreshEnvironments(buffer); // the response preview's environment picker
@@ -9527,6 +9517,15 @@ public class MainController implements com.editora.mcp.McpBridge {
             manualMap.put(file.toString(), manual);
         }
         requestSave();
+    }
+
+    /** The stored state every open of a file re-applies: folds, bookmarks, breakpoints, notes, read-only. */
+    private void restorePerFileState(EditorBuffer buffer) {
+        restoreFolds(buffer);
+        bookmarkCoordinator.restoreBookmarks(buffer);
+        debugCoordinator.restoreBreakpoints(buffer);
+        notesCoordinator.restoreNotes(buffer);
+        restoreReadOnly(buffer);
     }
 
     /** Re-applies a file's saved manual fold ranges + collapsed fold regions after it is opened. */
