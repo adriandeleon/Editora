@@ -309,4 +309,17 @@ class KeyDispatcherTest {
         d.handle(pressAt(tree, KeyCode.F1)); // F1 = palette.show in the VS Code keymap, not claimed
         assertEquals(java.util.List.of("palette.show"), ran);
     }
+
+    /** A transient list over the editor takes a chord only while the keymap binds it to the command it stands in for. */
+    @Test
+    void ownedChordsYieldOnlyTheNamedChordBoundToTheNamedCommand() {
+        var chords = java.util.Map.of("C-n", "nav.lineDown", "C-g", "edit.cancel");
+        assertTrue(KeyDispatcher.chordOwned(chords, "C-n", "nav.lineDown"));
+        assertTrue(KeyDispatcher.chordOwned(chords, "C-g", "edit.cancel"));
+        assertFalse(KeyDispatcher.chordOwned(chords, "C-a", "nav.lineStart"), "every other chord stays on the keymap");
+        assertFalse(KeyDispatcher.chordOwned(chords, "C-g", "nav.goToLine"), "same chord, another keymap's meaning");
+        assertFalse(KeyDispatcher.chordOwned(chords, "C-n", null));
+        assertFalse(KeyDispatcher.chordOwned(null, "C-n", "nav.lineDown"));
+        assertFalse(KeyDispatcher.chordOwned(Boolean.TRUE, "C-n", "nav.lineDown"));
+    }
 }

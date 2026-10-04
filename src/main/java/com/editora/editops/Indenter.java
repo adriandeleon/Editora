@@ -464,7 +464,7 @@ public final class Indenter {
 
     /** The indent unit to use: an EditorConfig override when {@code insertSpaces != null} (tab, or
      *  {@code indentSize}/{@code tabSize} spaces), else the document's {@link #detectUnit detected} unit. */
-    static String unitFor(String text, int tabSize, Boolean insertSpaces, Integer indentSize) {
+    public static String unitFor(String text, int tabSize, Boolean insertSpaces, Integer indentSize) {
         if (insertSpaces == null) {
             return detectUnit(text, tabSize);
         }

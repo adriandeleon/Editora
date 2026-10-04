@@ -113,6 +113,31 @@ final class BufferCompletion {
     private int completionAnchorStart = -1;
     private boolean filteringEmpty;
 
+    /**
+     * The chords the completion popup and the quick-fix list take from the keymap while they are up, each
+     * with the command it stands in for (see {@link com.editora.command.KeyDispatcher#OWNED_CHORDS}): the
+     * list moves its own selection on {@code C-n}/{@code C-p} and closes on the cancel chord. Every other
+     * binding keeps running its command — the lists used to mark the whole area {@code editora.ownsKeys},
+     * which took all caret and editing chords off the keymap and left them to the text area's built-ins.
+     */
+    static final java.util.Map<String, String> LIST_CHORDS =
+            java.util.Map.of("C-n", "nav.lineDown", "C-p", "nav.lineUp", "C-g", "edit.cancel", "escape", "edit.cancel");
+
+    private static final String OWNED_CHORDS = com.editora.command.KeyDispatcher.OWNED_CHORDS;
+
+    /**
+     * State of the popup when it shows the <em>local</em> list (snippets/keywords, no server session): the
+     * caret and document version the list was computed for, and whether it was asked for explicitly. A local
+     * list has no {@link CompletionSession} to go stale against, so these are what a later edit or caret
+     * move is compared with (see {@link #queueLocalSync}).
+     */
+    private boolean localShown;
+
+    private boolean localManual;
+    private int localCaret = -1;
+    private long localVersion = -1;
+    private boolean localSyncQueued;
+
     /** The view the completion popup is currently driven by (for click-accept routing). */
     CodeArea completionArea;
 
@@ -242,7 +267,8 @@ final class BufferCompletion {
             completionPopup.setOnSelect(this::onCompletionSelect); // drive the documentation side-popup
             completionPopup.setOnHidden(() -> {
                 hideDocPopup();
-                if (completionArea != null) completionArea.getProperties().remove("editora.ownsKeys");
+                if (completionArea != null) completionArea.getProperties().remove(OWNED_CHORDS);
+                localShown = false;
                 if (!filteringEmpty && session != null) {
                     suppressCompletionAtVersion = host.docVersion();
                     hidePopup();
@@ -430,8 +456,8 @@ final class BufferCompletion {
             }
         });
         codeActionArea = a;
-        // Own the editor-context chords so C-n/C-p reach the list rather than moving the caret.
-        a.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        // Take C-n/C-p/cancel so they reach the list rather than moving the caret; nothing else.
+        a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
         codeActionPopup.show(a.getScene().getWindow(), caretScreen, actions);
     }
 
@@ -443,10 +469,10 @@ final class BufferCompletion {
         releaseCodeActionKeys();
     }
 
-    /** Hands the editor-context chords back. Idempotent, since it runs from both hide paths. */
+    /** Hands the list's chords back. Idempotent, since it runs from both hide paths. */
     void releaseCodeActionKeys() {
         if (codeActionArea != null) {
-            codeActionArea.getProperties().remove("editora.ownsKeys");
+            codeActionArea.getProperties().remove(OWNED_CHORDS);
             codeActionArea = null;
         }
     }
@@ -568,8 +594,8 @@ final class BufferCompletion {
             if (completionPopup == null || !completionPopup.isShowing()) {
                 return;
             }
-            // Emacs-style C-n / C-p move the selection too (the area owns these keys while the popup is
-            // open — see setOwnsKeys — so the global dispatcher leaves them for us).
+            // Emacs-style C-n / C-p move the selection too (the area takes just these chords while the popup
+            // is open — see LIST_CHORDS — so the global dispatcher leaves them for us).
             if (e.isControlDown() && !e.isAltDown() && !e.isMetaDown()) {
                 if (e.getCode() == KeyCode.N) {
                     completionPopup.moveDown();
@@ -616,14 +642,16 @@ final class BufferCompletion {
                     }
                     Completion sel = completionPopup.selected();
                     if (sel != null) {
-                        acceptCompletion(a, sel, e.getCode() == KeyCode.TAB);
-                        e.consume();
+                        // A local row the typed text no longer matches is refused: the popup closes and the
+                        // key is left alone, so Enter is a newline and Tab indents or expands the prefix.
+                        boolean local = localShown;
+                        if (acceptCompletion(a, sel, e.getCode() == KeyCode.TAB) || !local) e.consume();
                     } else {
                         hideCompletion();
                     }
                 }
                 case LEFT, RIGHT, HOME, END -> hideCompletion(); // let the caret move
-                default -> {} // letters/Backspace fall through; the debounced trigger refreshes the list
+                default -> {} // letters/Backspace fall through; the document change refreshes the list
             }
         });
         a.focusedProperty().addListener((obs, was, now) -> {
@@ -647,6 +675,10 @@ final class BufferCompletion {
         a.caretPositionProperty().addListener((o, ov, nv) -> {
             if (!a.isFocused()) return; // the inactive split has an independent caret on the shared document
             hideGhost();
+            // The quick-fix list is about one caret position. A chord that ran its command (they all reach
+            // the keymap now) moved the caret without passing the list's own key filter.
+            if (codeActionsShowing()) hideCodeActions();
+            queueLocalSync();
             if (session != null && !session.matches(a.getCaretPosition(), host.docVersion())) {
                 // Caret changes during the mutation itself settle before this deferred check.
                 Platform.runLater(() -> {
@@ -854,12 +886,71 @@ final class BufferCompletion {
         if (caretScreen == null) {
             return;
         }
+        // Keep the list where the word starts while it is refined, as the server-backed list does.
+        int anchorStart = caret - prefix.length();
+        if (localShown && completionAnchorStart == anchorStart && completionAnchor != null) {
+            caretScreen = completionAnchor;
+        }
+        completionAnchorStart = anchorStart;
+        completionAnchor = caretScreen;
         completionArea = a;
-        // Take ownership of editor-context chords so C-n/C-p reach the popup instead of moving the caret.
-        a.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        // Take C-n/C-p/cancel so they reach the popup instead of moving the caret; nothing else.
+        a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
         docPopupActive = completionDocEnabled; // arm the doc popup for this session (Ctrl+Q toggles it)
         completionPopup().setQuery(prefix);
         completionPopup().show(a.getScene().getWindow(), caretScreen, items, 0);
+        localShown = true;
+        localManual = manual;
+        localCaret = caret;
+        localVersion = host.docVersion();
+    }
+
+    /**
+     * Brings the local list back in line after an edit or a caret move, once the change has settled: an edit
+     * recomputes it for the word now before the caret (which also closes it when nothing matches), a caret
+     * move without an edit closes it. Without this the list was only recomputed by the 280 ms typing pause,
+     * so it kept offering — and Enter/Tab kept accepting — rows for a prefix typed several characters ago.
+     * Coalesced to one deferred pass per burst; a no-op unless the local list is up.
+     */
+    private void queueLocalSync() {
+        if (!localShown || localSyncQueued) return;
+        localSyncQueued = true;
+        Platform.runLater(() -> {
+            localSyncQueued = false;
+            CodeArea a = completionArea;
+            if (!localShown || a == null) return;
+            if (!a.isFocused() || !completionPopupShowing()) {
+                hideCompletion();
+            } else if (host.docVersion() != localVersion) {
+                updateCompletion(a, localManual);
+            } else if (a.getCaretPosition() != localCaret || a.getSelection().getLength() > 0) {
+                hideCompletion();
+            }
+        });
+    }
+
+    /**
+     * Whether a row of the local list still fits the text before the caret: a snippet's trigger (or a word)
+     * must start with the token typed so far. The check the server-backed list gets from its session.
+     */
+    private boolean localRowMatches(CodeArea a, Completion c) {
+        int caret = a.getCaretPosition();
+        String text = a.getText(Math.max(0, caret - PREFIX_LOOKBACK), caret);
+        int start = text.length();
+        while (start > 0 && isCompletionPrefixChar(text.charAt(start - 1))) {
+            start--;
+        }
+        return localRowMatches(c, text.substring(start), text.substring(snippetTokenStart(text, text.length())));
+    }
+
+    /** {@link #localRowMatches(CodeArea, Completion)} on the identifier run and the whole token. Pure. */
+    static boolean localRowMatches(Completion c, String prefix, String wideToken) {
+        String candidate = c.snippet() != null ? c.snippet().prefix() : c.insert();
+        if (candidate == null) return false;
+        return (!prefix.isEmpty() && candidate.regionMatches(true, 0, prefix, 0, prefix.length()))
+                || (c.snippet() != null
+                        && !wideToken.isEmpty()
+                        && candidate.regionMatches(true, 0, wideToken, 0, wideToken.length()));
     }
 
     /** Prompt-window sizes for AI inline completion (chars before/after the caret). */
@@ -1018,8 +1109,9 @@ final class BufferCompletion {
         shownSession = null;
         completionAnchor = null;
         completionAnchorStart = -1;
+        localShown = false;
         if (completionArea != null) {
-            completionArea.getProperties().remove("editora.ownsKeys"); // release the C-n/C-p ownership
+            completionArea.getProperties().remove(OWNED_CHORDS); // release the C-n/C-p ownership
         }
         if (completionPopup != null) {
             completionPopup.hide();
@@ -1047,6 +1139,8 @@ final class BufferCompletion {
 
     /** Called once per shared-document change, after the version advances, before the caret settles. */
     void documentChanged(org.fxmisc.richtext.model.PlainTextChange change) {
+        if (codeActionsShowing()) hideCodeActions(); // computed for the text as it was
+        queueLocalSync();
         if (!autocompleteEnabled || !host.lspActive()) return;
         lastEditNanos = CompletionTrace.now();
         if (session != null)
@@ -1132,7 +1226,8 @@ final class BufferCompletion {
                         } finally {
                             filteringEmpty = false;
                         }
-                        a.getProperties().remove("editora.ownsKeys");
+                        a.getProperties().remove(OWNED_CHORDS);
+                        localShown = false;
                         shownSession = null;
                         return;
                     }
@@ -1147,7 +1242,8 @@ final class BufferCompletion {
                     completionAnchor = bounds;
                     completionArea = a;
                     shownSession = context;
-                    a.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+                    localShown = false;
+                    a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
                     docPopupActive = completionDocEnabled;
                     completionPopup().setQuery(prefix);
                     completionPopup().show(a.getScene().getWindow(), bounds, merged, preselectIndexOf(merged));
@@ -1234,6 +1330,12 @@ final class BufferCompletion {
                                                         .getText()
                                                         .substring(0, a.getCaretColumn())))
                                 == 3)) {
+            hideCompletion();
+            return false;
+        }
+        // The local list has no session to check: refuse a row the word before the caret has outgrown, or
+        // Enter/Tab would replace what was typed with a snippet offered for an earlier prefix.
+        if (context == null && localShown && !localRowMatches(a, c)) {
             hideCompletion();
             return false;
         }

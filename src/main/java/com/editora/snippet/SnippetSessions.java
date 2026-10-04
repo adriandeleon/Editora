@@ -18,12 +18,17 @@ public final class SnippetSessions {
     }
 
     public void start(CodeArea area, ParsedSnippet parsed, int from, int to, String indent) {
+        start(area, parsed, from, to, indent, null);
+    }
+
+    /** As above, with the buffer's indent unit for the snippet's own indentation ({@code null} = keep tabs). */
+    public void start(CodeArea area, ParsedSnippet parsed, int from, int to, String indent, String indentUnit) {
         SnippetSession parent = active();
         if (stack.size() >= 16 || parent != null && !parent.suspendForChild(area, from, to)) {
             cancel();
             parent = null;
         }
-        SnippetSession child = new SnippetSession(area, parsed, from, to, indent);
+        SnippetSession child = new SnippetSession(area, parsed, from, to, indent, indentUnit);
         if (child.isActive()) {
             stack.add(child);
             child.setOnEnd(() -> ended(child));

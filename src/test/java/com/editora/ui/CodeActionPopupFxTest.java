@@ -119,7 +119,7 @@ class CodeActionPopupFxTest {
         assertNull(
                 FxTestSupport.callOnFx(() -> {
                     CodeArea area = FxTestSupport.field(b, "area");
-                    return area.getProperties().get("editora.ownsKeys");
+                    return area.getProperties().get(com.editora.command.KeyDispatcher.OWNED_CHORDS);
                 }),
                 "the editor chords were handed back to the dispatcher");
 

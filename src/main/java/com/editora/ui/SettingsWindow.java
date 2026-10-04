@@ -337,6 +337,10 @@ public class SettingsWindow {
 
     private boolean loadingSnippet = false;
     private String currentSnippetLang = "global";
+
+    /** Why the current language's user snippet file cannot be parsed, or null. While set the page is
+     *  read-only for that language: saving would replace the file with what little the page could load. */
+    private String snippetFileProblem;
     /** Shared template registry (injected after construction); backs the Templates management page. */
     private com.editora.template.TemplateRegistry templateRegistry;
     /** Working copy of the templates (bundled + user) shown on the Templates page. */
@@ -3550,10 +3554,14 @@ public class SettingsWindow {
         javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
         form.setDisable(true);
         HBox.setHgrow(form, Priority.ALWAYS);
+        Label problem = note("");
+        problem.setWrapText(true);
+        problem.setVisible(false);
+        problem.setManaged(false);
 
         Runnable commit = () -> {
             int i = list.getSelectionModel().getSelectedIndex();
-            if (i < 0 || loadingSnippet) {
+            if (i < 0 || loadingSnippet || snippetFileProblem != null) {
                 return;
             }
             com.editora.snippet.Snippet updated = new com.editora.snippet.Snippet(
@@ -3562,6 +3570,9 @@ public class SettingsWindow {
                     body.getText(),
                     description.getText().trim(),
                     currentSnippetLang);
+            if (updated.equals(snippetItems.get(i))) {
+                return; // nothing was edited (a field merely lost focus) — never rewrite the file for that
+            }
             snippetUserNames.add(updated.name()); // editing a bundled snippet makes it a user override
             loadingSnippet = true; // replacing at the same index keeps selection; don't reload the fields
             try {
@@ -3596,7 +3607,7 @@ public class SettingsWindow {
             com.editora.snippet.Snippet s = i >= 0 && i < snippetItems.size() ? snippetItems.get(i) : null;
             loadingSnippet = true;
             try {
-                form.setDisable(s == null);
+                form.setDisable(s == null || snippetFileProblem != null);
                 name.setText(s == null ? "" : s.name());
                 prefix.setText(s == null ? "" : s.prefix());
                 description.setText(s == null ? "" : s.description());
@@ -3609,6 +3620,16 @@ public class SettingsWindow {
         Runnable loadLang = () -> {
             String v = language.getValue();
             currentSnippetLang = v == null || v.isBlank() ? "global" : v.trim();
+            snippetFileProblem = snippetManager == null ? null : snippetManager.userFileProblem(currentSnippetLang);
+            problem.setText(
+                    snippetFileProblem == null
+                            ? ""
+                            : tr(
+                                    "settings.snippet.unreadable",
+                                    snippetManager.userFile(currentSnippetLang).getFileName(),
+                                    snippetFileProblem));
+            problem.setVisible(snippetFileProblem != null);
+            problem.setManaged(snippetFileProblem != null);
             loadingSnippet = true;
             try {
                 snippetItems.setAll(mergedSnippetsForCurrentLang());
@@ -3626,6 +3647,9 @@ public class SettingsWindow {
 
         Button add = new Button(tr("settings.snippet.add"));
         add.setOnAction(e -> {
+            if (snippetFileProblem != null) {
+                return;
+            }
             com.editora.snippet.Snippet s =
                     new com.editora.snippet.Snippet(tr("settings.snippet.newName"), "", "", "", currentSnippetLang);
             snippetUserNames.add(s.name());
@@ -3667,7 +3691,7 @@ public class SettingsWindow {
         save.setOnAction(e -> commit.run());
         HBox saveRow = new HBox(save);
         saveRow.setAlignment(Pos.CENTER_RIGHT);
-        VBox right = new VBox(8, form, saveRow);
+        VBox right = new VBox(8, problem, form, saveRow);
         VBox.setVgrow(form, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
 
@@ -3707,8 +3731,8 @@ public class SettingsWindow {
     }
 
     private void saveSnippets() {
-        if (snippetManager == null) {
-            return;
+        if (snippetManager == null || snippetFileProblem != null) {
+            return; // never write back over a file that could not be parsed
         }
         // Persist only user-owned snippets (overrides + net-new) — never copy the shipped bundled ones.
         java.util.List<com.editora.snippet.Snippet> userOnly = new java.util.ArrayList<>();

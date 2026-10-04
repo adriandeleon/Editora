@@ -90,8 +90,17 @@ public final class SnippetSession {
      * places the caret and ends.
      */
     public SnippetSession(CodeArea area, ParsedSnippet parsed, int from, int to, String indent) {
+        this(area, parsed, from, to, indent, null);
+    }
+
+    /**
+     * As above, converting the snippet's own indentation to {@code indentUnit} (the buffer's unit — a run of
+     * spaces or a tab) first; {@code null} keeps the body's tabs. Line endings are always normalised: the
+     * area stores a CRLF as one character, so offsets taken from text that still holds one would be late.
+     */
+    public SnippetSession(CodeArea area, ParsedSnippet parsed, int from, int to, String indent, String indentUnit) {
         this.area = area;
-        ParsedSnippet p = reindent(parsed, indent == null ? "" : indent);
+        ParsedSnippet p = reindent(normalize(parsed, indentUnit), indent == null ? "" : indent);
         area.replaceText(from, to, p.text());
 
         int end = from + p.text().length();
@@ -237,7 +246,9 @@ public final class SnippetSession {
         hideChoiceMenu();
         Field f = fields.get(active);
         int[] r = f.primary();
-        area.selectRange(r[0], r[1]);
+        // Clamped like placeFinalCaret: an out-of-range selection is stored before RichTextFX rejects it.
+        int len = area.getLength();
+        area.selectRange(Math.max(0, Math.min(r[0], len)), Math.max(0, Math.min(r[1], len)));
         area.requestFollowCaret();
         if (!f.choices.isEmpty()) {
             showChoices(f);
@@ -656,6 +667,50 @@ public final class SnippetSession {
     /** True when {@code range} lies wholly inside the {@code removed} characters at {@code editPos}. */
     private static boolean swallowed(int[] range, int editPos, int removed) {
         return removed > 0 && range[0] >= editPos && range[0] < editPos + removed && range[1] <= editPos + removed;
+    }
+
+    /**
+     * Makes a parsed snippet fit the buffer it is going into, shifting stop ranges: {@code \r\n} and a lone
+     * {@code \r} become {@code \n} (wherever they came from — the body, a {@code $CLIPBOARD} value, a
+     * server's text), and, when {@code indentUnit} is given and is not a tab, each tab that indents a line is
+     * replaced by that unit — in the snippet format a leading tab means "one indent level", not a tab
+     * character. Tabs after the first non-tab character of a line are text and are kept. Pure.
+     */
+    public static ParsedSnippet normalize(ParsedSnippet parsed, String indentUnit) {
+        String t = parsed.text();
+        boolean tabs = indentUnit != null && !indentUnit.isEmpty() && !indentUnit.equals("\t") && t.indexOf('\t') >= 0;
+        if (!tabs && t.indexOf('\r') < 0) {
+            return parsed;
+        }
+        int[] map = new int[t.length() + 1]; // old offset → new offset
+        StringBuilder sb = new StringBuilder(t.length() + 16);
+        boolean lineStart = true;
+        for (int k = 0; k < t.length(); k++) {
+            map[k] = sb.length();
+            char c = t.charAt(k);
+            if (c == '\r') {
+                if (k + 1 < t.length() && t.charAt(k + 1) == '\n') {
+                    continue; // the '\n' that follows is the line break
+                }
+                c = '\n';
+            }
+            if (c == '\t' && tabs && lineStart) {
+                sb.append(indentUnit);
+                continue;
+            }
+            sb.append(c);
+            lineStart = c == '\n';
+        }
+        map[t.length()] = sb.length();
+        List<TabStop> stops = new ArrayList<>();
+        for (TabStop s : parsed.stops()) {
+            List<int[]> rs = new ArrayList<>();
+            for (int[] r : s.ranges()) {
+                rs.add(new int[] {map[r[0]], map[r[1]]});
+            }
+            stops.add(new TabStop(s.number(), rs, s.placeholder(), s.choices(), s.transforms(), s.primaryIndex()));
+        }
+        return new ParsedSnippet(sb.toString(), stops);
     }
 
     /** Re-indents continuation lines of a parsed snippet to {@code indent}, shifting stop ranges. Pure. */

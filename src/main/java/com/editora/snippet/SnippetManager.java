@@ -12,9 +12,12 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.editora.config.ConfigManager;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 
 /**
  * Loads and serves snippets. Each language has a bundled resource
@@ -23,7 +26,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * override bundled ones with the same prefix, and a language snippet overrides a global one.
  *
  * <p>JSON is the VS Code format: a map of name → {@code {prefix, body, description}}, where
- * {@code body} is a string or an array of lines. Results are cached until {@link #reload()}.
+ * {@code body} is a string or an array of lines. Like VS Code's own snippet files it is read as JSONC —
+ * {@code //} and block comments and trailing commas are accepted. Results are cached until {@link #reload()}.
  */
 public final class SnippetManager {
 
@@ -31,9 +35,12 @@ public final class SnippetManager {
     private static final String GLOBAL = "global";
 
     private final ConfigManager config;
-    // Lenient: real-world VS Code snippet files (e.g. friendly-snippets) carry extra fields like "scope".
-    private final ObjectMapper mapper =
-            new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    // Lenient: real-world VS Code snippet files (e.g. friendly-snippets) carry extra fields like "scope",
+    // and VS Code's own template for a user snippet file opens with a block of // comments.
+    private final ObjectMapper mapper = JsonMapper.builder()
+            .enable(JsonReadFeature.ALLOW_JAVA_COMMENTS, JsonReadFeature.ALLOW_TRAILING_COMMA)
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+            .build();
     /** language → its own snippets (bundled+user merged), loaded lazily. */
     private final Map<String, List<Snippet>> cache = new LinkedHashMap<>();
     /** Extra source dirs (e.g. plugin {@code snippets/} folders), each holding {@code <lang>.json} files. */
@@ -130,6 +137,45 @@ public final class SnippetManager {
     }
 
     /**
+     * Why the user snippet file for {@code language} cannot be used — a short parse or read error — or
+     * {@code null} when it is fine or simply absent. {@link #userSnippets} and the editor's own loading
+     * treat an unreadable file as "no snippets"; callers that would <em>write</em> the file, or that want to
+     * tell the user their snippets were not loaded, ask here first.
+     */
+    public synchronized String userFileProblem(String language) {
+        Path file = userFile(norm(language));
+        if (!Files.exists(file)) {
+            return null;
+        }
+        try (InputStream in = Files.newInputStream(file)) {
+            mapper.readValue(in, new TypeReference<Map<String, Dto>>() {});
+            return null;
+        } catch (IOException e) {
+            return describe(e);
+        }
+    }
+
+    /** The user snippet files that exist but cannot be read, as file names ({@code python.json}), sorted. */
+    public synchronized List<String> unreadableUserFiles() {
+        List<String> out = new ArrayList<>();
+        for (String lang : userSnippetLanguages()) {
+            if (userFileProblem(lang) != null) {
+                out.add(lang + ".json");
+            }
+        }
+        return out;
+    }
+
+    private static String describe(IOException e) {
+        if (e instanceof JsonProcessingException j) {
+            String where =
+                    j.getLocation() == null ? "" : " (line " + j.getLocation().getLineNr() + ")";
+            return j.getOriginalMessage() + where;
+        }
+        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+    }
+
+    /**
      * The bundled (shipped) snippets for {@code language} — only the classpath resource, not the user file
      * or plugins. Shown read-only in the Settings → Snippets page; editing one writes a user override. A
      * multi-trigger snippet is collapsed to its first prefix (as in {@link #userSnippets}).
@@ -167,21 +213,49 @@ public final class SnippetManager {
      * Writes {@code snippets} as the user snippet file for {@code language} (VS Code shape:
      * {@code {name: {prefix, body, description}}}), creating {@code snippets/} as needed, then drops the
      * cache so the change is live. Blank-named entries are skipped; a blank description is omitted.
+     *
+     * <p>The file is rewritten <em>from what it already holds</em>: an entry that is saved again keeps the
+     * fields this model does not carry ({@code scope}, …), its other triggers when {@code prefix} is an
+     * array (a {@link Snippet} only has the first), and the array form of a body or description that did
+     * not change. A file that exists but cannot be parsed is never replaced — that would silently discard
+     * whatever the user wrote in it — and fails with an {@link IOException} instead. Comments in a JSONC
+     * file are not kept by a rewrite.
      */
     public synchronized void saveUserSnippets(String language, List<Snippet> snippets) throws IOException {
         String lang = norm(language);
         Path file = userFile(lang);
         Files.createDirectories(file.getParent());
-        LinkedHashMap<String, LinkedHashMap<String, String>> out = new LinkedHashMap<>();
+        Map<String, Map<String, Object>> existing = new LinkedHashMap<>();
+        if (Files.exists(file)) {
+            try (InputStream in = Files.newInputStream(file)) {
+                Map<String, Map<String, Object>> read =
+                        mapper.readValue(in, new TypeReference<LinkedHashMap<String, Map<String, Object>>>() {});
+                if (read != null) {
+                    existing = read;
+                }
+            } catch (IOException e) {
+                throw new IOException(
+                        file.getFileName() + " could not be read and was left untouched: " + describe(e), e);
+            }
+        }
+        LinkedHashMap<String, Map<String, Object>> out = new LinkedHashMap<>();
         for (Snippet s : snippets) {
             if (s == null || s.name() == null || s.name().isBlank()) {
                 continue;
             }
-            LinkedHashMap<String, String> entry = new LinkedHashMap<>();
-            entry.put("prefix", s.prefix() == null ? "" : s.prefix());
-            entry.put("body", s.body() == null ? "" : s.body());
+            Map<String, Object> old = existing.get(s.name());
+            LinkedHashMap<String, Object> entry = new LinkedHashMap<>();
+            entry.put("prefix", mergedPrefix(old == null ? null : old.get("prefix"), s.prefix()));
+            entry.put("body", keepShape(old == null ? null : old.get("body"), s.body(), "\n"));
             if (s.description() != null && !s.description().isBlank()) {
-                entry.put("description", s.description());
+                entry.put("description", keepShape(old == null ? null : old.get("description"), s.description(), " "));
+            }
+            if (old != null) {
+                old.forEach((k, v) -> {
+                    if (!k.equals("prefix") && !k.equals("body") && !k.equals("description")) {
+                        entry.put(k, v); // "scope" and anything else a VS Code file carries
+                    }
+                });
             }
             out.put(s.name(), entry);
         }
@@ -194,6 +268,34 @@ public final class SnippetManager {
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                 java.nio.file.StandardCopyOption.ATOMIC_MOVE);
         cache.remove(lang); // forLanguage(lang) re-reads; global is independent
+    }
+
+    /**
+     * The {@code prefix} value to write: when the file had an array of triggers, the array with its first
+     * (the one the editor shows) replaced by {@code prefix}; otherwise the plain string.
+     */
+    private static Object mergedPrefix(Object old, String prefix) {
+        String p = prefix == null ? "" : prefix;
+        List<String> olds = prefixes(old);
+        if (!(old instanceof List<?>) || olds.size() < 2) {
+            return p;
+        }
+        List<String> merged = new ArrayList<>();
+        if (!p.isBlank()) {
+            merged.add(p);
+        }
+        for (String o : olds.subList(1, olds.size())) {
+            if (!merged.contains(o)) {
+                merged.add(o);
+            }
+        }
+        return merged.size() == 1 ? merged.get(0) : merged;
+    }
+
+    /** {@code old} itself when it is an array that still joins to {@code value}; else the string. */
+    private static Object keepShape(Object old, String value, String separator) {
+        String v = value == null ? "" : value;
+        return old instanceof List<?> && joinText(old, separator).equals(v) ? old : v;
     }
 
     /** Languages that currently have a user snippet file (the basenames under {@code snippets/}), sorted. */

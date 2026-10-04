@@ -9046,7 +9046,11 @@ public class EditorBuffer implements TabContent {
                 new VariableResolver(fileName, directory, filePath, a.getSelectedText(), clip, line, currentLine);
         ParsedSnippet parsed = SnippetParser.parse(snippet.body(), vars);
         String indent = reindent ? completionActions.leadingIndent(currentLine) : "";
-        snippetSession.start(a, parsed, from, to, indent);
+        // asIs (no reindent) keeps the text untouched; otherwise the body's tabs become the buffer's unit.
+        String unit = reindent
+                ? Indenter.unitFor(a.getText(), tabSize, indentInsertSpacesOverride, indentSizeOverride)
+                : null;
+        snippetSession.start(a, parsed, from, to, indent, unit);
     }
 
     /**
