@@ -470,7 +470,7 @@ final class BufferCompletion {
         // the editor (a tab switch, another window), scrolling its line away, or a press in the text. Left
         // up, it floated over another file and its Enter binding applied a fix for a line no longer in view.
         a.focusedProperty().addListener(codeActionDismissOnBlur);
-        a.estimatedScrollYProperty().addListener(codeActionDismiss);
+        a.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, codeActionDismissOnScroll);
         a.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, codeActionDismissOnPress);
         codeActionPopup.show(a.getScene().getWindow(), caretScreen, actions);
     }
@@ -484,9 +484,17 @@ final class BufferCompletion {
     }
 
     private final javafx.beans.value.ChangeListener<Boolean> codeActionDismissOnBlur = (o, was, focused) -> {
-        if (!focused) hideCodeActions();
+        // Only when focus moved to another node (a tab switch, a panel). When the whole window merely goes
+        // inactive the editor is still the scene's focus owner and the list is still about its caret.
+        CodeArea a = codeActionArea;
+        if (!focused && (a == null || a.getScene() == null || a.getScene().getFocusOwner() != a)) {
+            hideCodeActions();
+        }
     };
-    private final javafx.beans.value.ChangeListener<Object> codeActionDismiss = (o, was, now) -> hideCodeActions();
+    // The user's own scroll gesture. Not the scroll *estimate*: that also moves while the viewport lays out
+    // after a navigation, which closed a list that had only just been opened.
+    private final javafx.event.EventHandler<javafx.scene.input.ScrollEvent> codeActionDismissOnScroll =
+            e -> hideCodeActions();
     private final javafx.event.EventHandler<javafx.scene.input.MouseEvent> codeActionDismissOnPress =
             e -> hideCodeActions();
 
@@ -494,7 +502,7 @@ final class BufferCompletion {
     void releaseCodeActionKeys() {
         if (codeActionArea != null) {
             codeActionArea.focusedProperty().removeListener(codeActionDismissOnBlur);
-            codeActionArea.estimatedScrollYProperty().removeListener(codeActionDismiss);
+            codeActionArea.removeEventFilter(javafx.scene.input.ScrollEvent.SCROLL, codeActionDismissOnScroll);
             codeActionArea.removeEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, codeActionDismissOnPress);
             codeActionArea.getProperties().remove(OWNED_CHORDS);
             codeActionArea = null;

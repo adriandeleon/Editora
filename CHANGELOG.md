@@ -7,6 +7,259 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Second round of coding-feature fixes (173 further issues from the same review):
+  - Editing, folding, highlighting and outline:
+    - Fixed multi-caret editing throwing and then dropping every key when an edit shortened the document with
+      a caret near its end (current-line highlight on).
+    - Fixed query-replace and zap-to-char keys also being acted on by auto-indent, smart Backspace/Tab and
+      auto-close; quitting query-replace with q no longer types a q; zap-to-char is cancelled by moving the
+      caret.
+    - fill-paragraph no longer reflows code into the comment above it, strips comment markers from code, or
+      breaks a Javadoc's delimiters; list items wrap with a hanging indent.
+    - Enter and Tab now indent after openers containing --, # or // that are not comments (i--, $#, #main,
+      this.#x, n // 2, #t); HTML void elements no longer indent the next line.
+    - Typing a new tag no longer renames the enclosing element's closing tag; a mirrored tag rename is one
+      undo step with the keystroke.
+    - Select All Occurrences from a bare caret matches whole words only.
+    - Expand Selection no longer starts a new ladder from the previous ladder's server ranges.
+    - Trim/sort/other whole-buffer line commands and Toggle Comment no longer leave their output selected when
+      started from a bare caret.
+    - forward/backward-sexp cross operators and separators; paragraph motion no longer skips a paragraph from
+      a block's edge line; mark-paragraph on a blank line takes the paragraph below.
+    - transpose-chars and the rectangle commands no longer split emoji and other supplementary characters.
+    - Comment toggle: a selection between two block comments is no longer 'uncommented'; batch REM is matched
+      as a whole word in any case.
+    - Smaller editing fixes: Shift-Tab honours indent_size, a closing bracket ignores a column-0 preprocessor
+      line, auto-fill no longer re-breaks after a quote marker, no tag auto-close on a comparison in inline
+      script, no doubled quote after ) or ., case-cycle works on one-word tokens, an empty cut/copy leaves the
+      kill ring alone.
+    - Jump to Structure works with the Structure tool window closed and after switching files.
+    - Brace folding (and sticky scroll / the outline that depend on it) survives an unpaired quote: Rust
+      lifetimes, apostrophes in template literals, raw strings, text blocks, JSX text and # comments.
+    - Server-free outline: Go methods are named after the method, type references are no longer listed as
+      types, declarations with a wrapped signature are found, and Python/Ruby/shell/Lua/YAML files get an
+      outline.
+    - Syntax highlighting: call arguments and punctuation are no longer coloured as function names;
+      TypeScript/Python type-annotation punctuation is no longer coloured as a decorator.
+    - Symbol index no longer invents declarations from return/throw/new/else/await statements or from the body
+      of a multi-line template literal; Rust `fn new` is indexed; a very long string literal no longer stalls
+      the scan.
+  - Completion and snippets:
+    - Accepting a completion that has no server edit range no longer duplicates what was typed (`$us` +
+      `$user` gave `$$user`; `apt-g` + `apt-get` gave `apt-apt-get`).
+    - Label-only completion items (bash-language-server commands such as `docker-compose` or `g++`, pyright
+      keyword arguments such as `timeout=`) insert their whole label instead of being cut at the first non-
+      identifier character.
+    - A commit character typed on a plain completion inside a snippet field no longer ends the enclosing
+      snippet session.
+    - Snippet variable transforms (`${TM_FILENAME_BASE/(.*)/${1:/upcase}/}`) are applied instead of leaking
+      the regex into the document; `${VAR:default}` uses its default when the variable is empty (no selection,
+      untitled buffer). The PowerShell `block-comment` snippet inserts its `<# #>` again.
+    - Snippet tab stops that contain another stop or a mirror (`${4:$1}`, `${2:${1}foo}`, `${0:${1/.../}}`)
+      keep their extent while the inner one is edited, and empty stops at the same position keep their order.
+    - Backspace, Delete or a paste in a mirrored snippet field is a single undo step together with its
+      mirrors.
+    - Pressing Control (or another modifier) on its own no longer dismisses the quick-fix list, so C-n / C-p /
+      C-g reach it.
+  - Find and replace:
+    - Query Replace no longer skips the next of several adjacent matches when the replacement is empty, and no
+      longer re-offers the same spot for ever for a zero-width pattern such as `$` or a lookahead.
+    - Query Replace `!` (replace all the rest) is linear instead of quadratic in the number of matches, so it
+      no longer freezes the window on large files; a replacement that names a missing group is reported
+      instead of throwing.
+    - Find Next steps through zero-width regex matches (`^`, `$`, `^$`), and Replace acts on them.
+    - Whole word now means the match is not glued to a word character on either side, identically in the find
+      bar, replace, Query Replace and Find in Files and matching ripgrep `-w`; queries such as `@Override`,
+      `$var` or `--flag` are found, and accented letters count as word characters in regex mode.
+    - In Find in Files, regex `^`, `^$` and `^\s*$` match empty lines again.
+    - A regular expression that exhausts the regex engine's stack (for example `(.|\n)*?` across a long block)
+      is reported as too complex instead of silently leaving the previous results in the find bar.
+    - The find bar follows the active tab: switching tabs re-searches the new file instead of applying the
+      previous file's match offsets, and the tab that was left keeps no highlights.
+    - Closing the find bar no longer re-highlights matches or moves the selection afterwards.
+    - Find reveals a match that lies inside a folded region.
+  - Find in Files, index and file finder:
+    - Find in Files: `$` now matches at the end of CRLF lines with the ripgrep backend, and ripgrep honours
+      `.gitignore` in folders that are not git repositories, as the built-in walker does.
+    - Find in Files: one unreadable folder no longer makes every ripgrep search be discarded and re-run by the
+      built-in walker; the result is kept and marked partial.
+    - Find in Files no longer fails when an SFTP tab is open, and the tool window, the popup and the MCP
+      `findInFiles` tool no longer cancel each other's searches.
+    - Find in Files: an invalid regex is reported instead of shown as "No results"; an invalid regex
+      replacement (`$9`, `$name`, trailing `\`) is refused up front instead of reporting "Replaced 0
+      occurrences".
+    - Replace in Files no longer rewrites read-only files that are not open; they are listed as not changed.
+    - Find in Files popup: long (minified) lines are previewed around the match instead of laid out whole,
+      typed prefixes are no longer stored in the search history, and the ripgrep badge shows after the first
+      detection.
+    - Include/exclude globs: an escaped comma (`we\,ird/*`) now matches the same files with both backends and
+      for open buffers.
+    - A ripgrep path containing spaces (e.g. under `Program Files`) is now accepted.
+    - Projects opened through a symbolic link are now searched, indexed and scanned for TODOs by the built-in
+      walker.
+    - A folder inside a git repository opened as the project now honours the repository's `.gitignore` files
+      above it (symbol index, Search Everywhere, built-in Find in Files, TODO scan).
+    - Search Everywhere follows the project: newly saved files are offered, deleted and renamed files are
+      dropped, and an external change triggers a re-index on next use.
+    - Test results: a test class stored outside its package directory, or in a module folder named
+      `out`/`build`/`target`, is found again.
+    - Related-file jump offers Python-style `test_<name>` files; the file finder resolves a bare name against
+      the listed directory instead of the working directory.
+  - Language servers:
+    - LSP: the Structure outline is nested again for Java, Python, C/C++, XML, JSON and YAML (hierarchical
+      document symbols are now requested; non-type containers keep their children).
+    - LSP: hovers are requested as Markdown; plaintext hovers are no longer reinterpreted as Markdown
+      (`__init__` shown as a bold `init`) and legacy language-tagged hovers render as code.
+    - LSP: servers are told Editora handles semantic-token, inlay-hint, diagnostic and folding refresh
+      requests, so dependent tabs update after e.g. a header edit; refresh bursts are coalesced.
+    - LSP: requests still in flight when a server dies or is restarted fail immediately instead of at their
+      timeout (up to 10 minutes for Build Project).
+    - LSP: a jdtls whose start-up timed out no longer leaves its workspace cache marked failed forever; the
+      cache is repaired once the process has exited and stale markers heal themselves.
+    - LSP: quick fixes are offered for diagnostics from pull-only servers (CSS, Ruby).
+    - LSP: a language server hosting a running Java debug session is no longer shut down as idle after its
+      last tab closes.
+    - LSP: server-initiated edits outside a tracked command are applied when they name the document's current
+      version.
+    - LSP: a marker in the home directory or filesystem root no longer becomes a server's workspace, and a
+      project reached through a symlink stays on one server.
+    - LSP: renaming a Java package works (a CreateFile after text edits is accepted; rename preview keeps
+      create/delete operations).
+    - LSP: Generate Constructors lets you choose the super constructors and works for classes without fields.
+    - LSP: revoking folder trust immediately stops a project-supplied server command from being used, in every
+      window.
+    - LSP: opening Settings no longer restarts a trusted project's language server on the global command.
+    - LSP: restoring a session no longer starts language servers for tabs that were never shown.
+    - LSP: each window resolves its workspace root, project overrides and trust from its own project.
+    - LSP: a case-only class/file rename works on case-insensitive volumes.
+    - LSP: a cross-file edit is refused for a tab that kept its own text over a changed file.
+    - LSP: Format Document, quick fixes and renames keep the caret, selection and scroll position.
+    - LSP: squiggles return after an edit that leaves the text unchanged (type + Backspace) or a pull answered
+      'unchanged'.
+    - LSP: on-type formatting is applied, and Tab re-indent formats the text on screen rather than the
+      server's stale copy.
+    - LSP: the quick-fix list closes on tab switch, scroll, click or tab close, and only a click on a row
+      applies an action.
+    - macOS: an Option navigation chord in a query picker no longer types its glyph into the query.
+  - Debugging, breakpoints and bookmarks:
+    - Debug Restart now saves the edited file and runs the configuration's before-launch build, like Stop +
+      Start, instead of relaunching the previous code.
+    - With several threads stopped on a breakpoint (Java), Continue no longer leaves the other threads
+      suspended behind a 'Running' session; the next stopped thread is shown.
+    - A Step the debug adapter refuses no longer leaves the Debug panel in 'Running' with its controls
+      disabled; the adapter's message is shown.
+    - Start/Continue (F5) pressed during a step no longer stops the session and launches the active file.
+    - Stepping no longer throws keyboard focus out of the Debug panel's Evaluate field (typed text could end
+      up in the source file).
+    - Breakpoints of a narrowed buffer are sent to the debugger with their real file lines; the execution
+      line, Run to Cursor and Jump to Line work in a narrowed buffer.
+    - Debug Test attaches even when the test class has no open tab.
+    - The execution-line highlight no longer sticks after editing above it while paused, and a stop inside a
+      collapsed fold reveals the whole fold.
+    - Bookmarks and breakpoints stay on their statement through Move Line Up/Down, Format Document and other
+      multi-edit changes, and undo of a multi-caret edit; deleting to the end of a marked line removes its
+      mark; pasting over lines no longer marks the line below.
+    - A breakpoint or bookmark whose line was edited no longer jumps to another line with the old text when
+      the file is reopened; lines longer than 200 characters re-anchor correctly.
+    - Fixed (Windows): a stack frame whose source is not a file path no longer empties the call stack.
+    - 'Debug via build tool' for Maven Spring Boot now opens the JDWP port on the loopback interface only (was
+      all interfaces).
+  - Git service:
+    - Git: a push, pull or fetch requested right after a commit or checkout now waits for it instead of
+      overtaking it (a push could publish the old HEAD and report success).
+    - Git: staging or committing while a pull is waiting on a slow remote no longer freezes status, gutters,
+      blame and diffs.
+    - Git: hooks started by commit/checkout/pull/push run in your locale again (LC_ALL=C broke JVM-based hooks
+      on non-ASCII paths); only Git's message language is pinned.
+    - Git: a folder that becomes a repository outside Editora (git init, clone) is picked up on the next
+      refresh; a timed-out probe is no longer remembered as 'not a repository'.
+    - Git: changing the git path in Settings now takes effect in every open window, and a path containing a
+      space (C:\Program Files\Git\cmd\git.exe) works.
+    - Git: file names with [ ] * ? are no longer treated as patterns by the gutter diff, blame, file history
+      and folder review; a tracked file with a control character in its name is found again.
+    - Git: the change-bar tooltip is shown for removed '-- comment' lines and added '++i;' lines.
+    - Git: Clone no longer reads a pasted value that starts with '-' as a git option.
+    - Git: refreshes superseded while queued no longer run git status and diff.
+  - Git panels, GitHub and remote files:
+    - With a remote (SFTP) tab open, switching to a local tab no longer aborts the tab-switch refresh, Git
+      checkout/pull/discard/stash run again, and LSP renames / workspace edits apply (paths on different file
+      systems are no longer compared).
+    - The Commit window no longer lists a conflicted file under Staged or offers to unstage it (which silently
+      discarded the conflict); conflicted files are marked '!' and Unstage refuses them.
+    - Clicking the blame annotation of a line older than a rename of the file opens that commit's diff instead
+      of an empty one.
+    - In File History, opening another file of the selected commit compares it with its own working copy, not
+      with the history file.
+    - A narrowed buffer no longer shows Git change bars on the wrong lines.
+    - The branch popup no longer displays credentials embedded in the remote URL.
+    - A pull-request review tab's Refresh / Submit review, and the GitHub window's row actions, act on the
+      repository the pull request was listed from.
+    - The pull-request review lists pure renames, mode-only changes and binary files, and shows non-ASCII file
+      names correctly.
+    - A failed GitHub list fetch shows gh's error instead of an empty list or an endless spinner; the CI
+      checks segment and the GitHub stripe follow branch and repository changes; github.refresh no longer
+      closes the GitHub window.
+    - `gh pr checkout` is no longer killed after two minutes or when the window closes mid-checkout.
+  - Diff, merge and Local History:
+    - Merge resolver: conflict markers written with a `conflict-marker-size` attribute are recognised again by
+      the marker fallback, and unresolved conflicts keep their marker size.
+    - Compare Directories: a root that is a symbolic link is compared through its target instead of reporting
+      'identical', and a scan that hits the file limit no longer lists files present on both sides as one-
+      sided.
+    - Diff: a heavily rewritten large file or one very long changed line no longer stalls every diff in the
+      window (bounded search with a coarse fallback), and a diff that fails still reports back instead of
+      never opening.
+    - Export Patch keeps carriage returns, so a patch exported for CRLF content applies with git.
+    - Git diff: Revert hunk/line now enables the pane's Undo and Save like any other apply.
+    - Diff: two sides over the 10 MB limit are no longer reported as 'No differences' when they differ.
+    - Commit window: Show Diff on a staged rename compares with the file's old path instead of showing the
+      whole file as added.
+    - Diff: scrolling one side by its scroll bar moves the other side too.
+    - Diff Result editor: closing it brings the apply chevrons back, no longer leaves a discarded draft shown
+      as the working side, and no longer keeps a closed window in memory.
+    - Folder review: the pane cache returns to its 32-pane cap after a draft is resolved.
+    - Local History: Revert updates the panel to the restored text; saving while a revision is selected keeps
+      the selection and its diff; purging a file removes it from every project's history; restoring a revision
+      over an existing file first records the content it replaces; a damaged stored revision is repaired when
+      the same content is recorded again; folder history works for the filesystem root.
+    - Merge resolver: Apply keeps form feeds and other control characters, and a second Apply after a change
+      of mind is no longer refused as stale.
+    - Patch review: toggling a diff option while a side swap is pending no longer mixes one side's rows with
+      the other's text.
+  - Run, build and test:
+    - Test results with the same name no longer overwrite each other - TAP subtests are named after their
+      parents and Cargo tests are grouped per test binary, so a failing test can no longer be shown as passed.
+    - 'Rerun failed' and 'Rerun/Debug this test' for a JUnit 5 @Nested test or a JUnit 4 parameterized test
+      (Maven), and for Go subtests with regex characters in their names; a filtered Maven run that matches no
+      test now says so instead of showing '0 of 0 tests passed'.
+    - Test Results' Rerun commands run in the directory of the run they repeat, not in the module of the
+      active tab.
+    - A second build tool's test run started while another is running no longer corrupts the first run's
+      results.
+    - An up-to-date Gradle test task shows its own previous results, not stale reports from other modules or
+      tasks.
+    - Run with a before-launch build saves the edited file first, so the build compiles what is on screen;
+      script configurations and Rerun save too. Rerun after a failed before-launch step no longer runs in the
+      wrong directory.
+    - A run or build could lose its exit (leaving Run 'busy' or Test Results 'running' forever) when another
+      was started just as it finished; one failing output handler no longer silences the console for good.
+    - Build output shows carriage-return progress (Maven downloads) line by line again.
+    - Non-UTF-8 program output (Windows code pages, legacy locales) is decoded with the system encoding
+      instead of turning into replacement characters; console input is sent in that encoding.
+    - Fixed (Windows): npm, mvn, gradle, yarn and pnpm resolve to their .cmd/.bat launcher rather than the
+      POSIX shim beside it.
+    - A before-launch step that reads stdin no longer hangs a debug launch.
+    - Run Configurations - committing a field of the only configuration no longer blanks the form, and an edit
+      is kept when another configuration is clicked.
+    - Gradle 'Load all tasks' is no longer discarded by a tab switch, save or focus change during the load.
+    - Opening a diff from the Git Log or Commit window no longer closes that window.
+    - Package.json, Cargo.toml and go.mod saved with a UTF-8 BOM are read correctly.
+    - Java classes, tests and symbols with non-ASCII names (Café, größe, 日本語) get their run/test gutter
+      markers and index entries.
+    - External-tool arguments containing a literal '$' (a shell variable) before a $Macro$ now expand the
+      macro.
+    - Double-clicking a very long console line no longer freezes the window; absurd line numbers and an empty
+      first console line no longer throw.
 - Coding-feature fixes from the October review of LSP, Git, diff, debugging, completion, editing, search and
   the test runner:
   - Security:
