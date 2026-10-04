@@ -151,17 +151,17 @@ final class GitWindowCoordinator {
 
             @Override
             public void showPrs() {
-                host.github().fetchPrs(host.githubPanel()::setPrs);
+                fetchGithub(GitHubPanel.Mode.PRS);
             }
 
             @Override
             public void showIssues() {
-                host.github().fetchIssues(host.githubPanel()::setIssues);
+                fetchGithub(GitHubPanel.Mode.ISSUES);
             }
 
             @Override
             public void showRuns() {
-                host.github().fetchRuns(host.githubPanel()::setRuns);
+                fetchGithub(GitHubPanel.Mode.RUNS);
             }
 
             @Override
@@ -204,14 +204,35 @@ final class GitWindowCoordinator {
     /** Re-fetches the GitHub tool window's current segment (PRs, Issues, or Runs). */
     void reloadGithubPanel() {
         host.githubPanel().showLoading();
-        switch (host.githubPanel().mode()) {
-            case PRS -> host.github().fetchPrs(host.githubPanel()::setPrs);
-            case ISSUES -> host.github().fetchIssues(host.githubPanel()::setIssues);
-            case RUNS -> host.github().fetchRuns(host.githubPanel()::setRuns);
+        fetchGithub(host.githubPanel().mode());
+    }
+
+    /** Fetches one segment of the GitHub tool window; a failure is shown in the list, not as an empty one. */
+    void fetchGithub(GitHubPanel.Mode mode) {
+        GitHubPanel panel = host.githubPanel();
+        java.util.function.Consumer<String> failed = message -> panel.showError(mode, message);
+        switch (mode) {
+            case PRS -> host.github().fetchPrs(panel::setPrs, failed);
+            case ISSUES -> host.github().fetchIssues(panel::setIssues, failed);
+            case RUNS -> host.github().fetchRuns(panel::setRuns, failed);
         }
     }
 
     /** The {@link GitLogPanel.Actions} the Git Log tool window routes user actions through. */
+    /**
+     * The working-tree file a commit's {@code repoRel} blob is compared with. A file history lists <em>every</em>
+     * file of the selected commit, so the history file is the working side only for its own row; any other row
+     * is compared with its own working copy — never written into the history file.
+     */
+    static Path historyWorkingFile(Path root, Path historyFile, String repoRel) {
+        if (historyFile != null
+                && !Files.isDirectory(historyFile)
+                && repoRel.equals(com.editora.git.GitService.repoRelative(root, historyFile))) {
+            return historyFile;
+        }
+        return root.resolve(repoRel);
+    }
+
     GitLogPanel.Actions gitLogActions() {
         return new GitLogPanel.Actions() {
             @Override
@@ -248,9 +269,8 @@ final class GitWindowCoordinator {
                 if (root == null) {
                     return;
                 }
-                Path workingFile =
-                        gitLogFilter != null && !Files.isDirectory(gitLogFilter) ? gitLogFilter : root.resolve(repoRel);
-                host.diffCoordinator().diffCommitFileVsWorking(root, hash, repoRel, workingFile);
+                host.diffCoordinator()
+                        .diffCommitFileVsWorking(root, hash, repoRel, historyWorkingFile(root, gitLogFilter, repoRel));
             }
 
             @Override
@@ -439,6 +459,9 @@ final class GitWindowCoordinator {
      * history is loaded when the window is open (a closed window loads on its next open).
      */
     void repositoryChanged(Path root, String branch) {
+        if (host.github() != null) {
+            host.github().repositoryChanged(root, branch); // re-gate the GitHub window, drop stale CI checks
+        }
         boolean sameRoot = java.util.Objects.equals(root, gitLogRoot);
         if (sameRoot && java.util.Objects.equals(branch, gitLogBranch)) {
             return;

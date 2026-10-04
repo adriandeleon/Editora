@@ -184,10 +184,10 @@ public final class BranchPopup {
             }
         }
         titleLabel.setText(tr("branchpopup.title"));
-        remoteUrlLabel.setText(remoteUrl == null ? "" : remoteUrl);
-        if (remoteUrl != null && !remoteUrl.isBlank()) {
-            remoteUrlLabel.setTooltip(new Tooltip(remoteUrl));
-        }
+        // Never the raw URL: one stored as https://user:token@host would put the token on screen.
+        String shownUrl = com.editora.git.GitFormat.displayRemoteUrl(remoteUrl);
+        remoteUrlLabel.setText(shownUrl);
+        remoteUrlLabel.setTooltip(shownUrl.isBlank() ? null : new Tooltip(shownUrl));
         all = rows;
         present(owner, anchor);
     }
@@ -199,6 +199,7 @@ public final class BranchPopup {
     public void showNoVcs(Window owner, Node anchor, Runnable onClone) {
         titleLabel.setText(tr("branchpopup.noVcs"));
         remoteUrlLabel.setText("");
+        remoteUrlLabel.setTooltip(null);
         all = List.of(new ActionRow(tr("branchpopup.clone"), "", "git.clone", onClone));
         present(owner, anchor);
     }

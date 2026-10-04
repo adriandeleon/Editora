@@ -35,6 +35,9 @@ public final class GitChangeBars {
         if (bufferPath == null || repoRoot == null || active || huge) {
             return false;
         }
+        if (bufferPath.getFileSystem() != repoRoot.getFileSystem()) {
+            return false; // a remote (SFTP) buffer is never inside a local repository
+        }
         // Not a lexical prefix test: git reports the real root, a buffer keeps its as-opened path, and the
         // two share no prefix when the project is reached through a symlink (see GitService.repoRelative).
         return GitService.repoRelative(repoRoot, bufferPath) != null;

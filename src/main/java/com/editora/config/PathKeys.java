@@ -120,15 +120,39 @@ public final class PathKeys {
         return p == null ? "" : canonical(p).toString();
     }
 
-    /** Whether two paths are the same file by absolute-normalized form, with a defensive equality fallback. */
+    /**
+     * Whether two paths are the same file by absolute-normalized form. Paths on different file systems are
+     * never the same file — and must not be handed to {@code Path.equals}, which a MINA SFTP path answers
+     * with {@link java.nio.file.ProviderMismatchException} when the other side is a local path.
+     */
     public static boolean sameNormalized(Path a, Path b) {
-        if (a == null || b == null) {
+        if (a == null || b == null || !sameFileSystem(a, b)) {
             return false;
         }
         try {
             return a.toAbsolutePath().normalize().equals(b.toAbsolutePath().normalize());
         } catch (RuntimeException e) {
-            return a.equals(b);
+            return samePath(a, b);
+        }
+    }
+
+    /** Whether both paths belong to the same {@code FileSystem} (so they may be compared or relativized). */
+    public static boolean sameFileSystem(Path a, Path b) {
+        return a != null && b != null && a.getFileSystem() == b.getFileSystem();
+    }
+
+    /**
+     * A null-safe, provider-safe {@code Path.equals}: {@code Objects.equals(a, b)} that answers {@code false}
+     * instead of throwing when the two paths are on different file systems (a remote tab next to a local one).
+     */
+    public static boolean samePath(Path a, Path b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        try {
+            return sameFileSystem(a, b) && a.equals(b);
+        } catch (RuntimeException e) {
+            return false;
         }
     }
 

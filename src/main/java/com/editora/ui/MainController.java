@@ -5702,8 +5702,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void openCommitFileDiff(String hash, String repoRel) {
-            diffCoordinator.diffCommitFile(hash, repoRel);
+        public void openCommitFileDiff(String hash, String repoRel, String origRepoRel) {
+            diffCoordinator.diffCommitFile(hash, repoRel, origRepoRel);
         }
 
         @Override

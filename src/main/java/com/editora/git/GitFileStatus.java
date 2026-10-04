@@ -17,7 +17,9 @@ public enum GitFileStatus {
     MODIFIED("git-status-modified"),
     DELETED("git-status-deleted"),
     RENAMED("git-status-renamed"),
-    UNTRACKED("git-status-untracked");
+    UNTRACKED("git-status-untracked"),
+    /** An unmerged path of a merge/rebase/cherry-pick in progress. */
+    CONFLICT("git-status-conflict");
 
     private final String cssClass;
 
@@ -30,7 +32,7 @@ public enum GitFileStatus {
         return cssClass;
     }
 
-    /** The single-letter status label (M/A/D/R/U), matching the Commit tool window's convention. */
+    /** The single-letter status label (M/A/D/R/U, ! for a conflict), matching the Commit tool window's convention. */
     public String letter() {
         return switch (this) {
             case ADDED -> "A";
@@ -38,6 +40,7 @@ public enum GitFileStatus {
             case DELETED -> "D";
             case RENAMED -> "R";
             case UNTRACKED -> "U";
+            case CONFLICT -> "!";
         };
     }
 
@@ -48,6 +51,9 @@ public enum GitFileStatus {
     public static GitFileStatus of(FileEntry e) {
         if (e.untracked()) {
             return UNTRACKED;
+        }
+        if (e.unmerged()) {
+            return CONFLICT;
         }
         char i = e.index();
         char w = e.worktree();

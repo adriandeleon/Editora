@@ -1970,7 +1970,7 @@ final class WindowCommandRegistrar {
                         () -> host.github().ifEnabled(() -> {
                             host.toolWindows().open(host.githubToolWindow());
                             host.githubPanel().selectRuns();
-                            host.github().fetchRuns(host.githubPanel()::setRuns);
+                            host.gitWindows().fetchGithub(GitHubPanel.Mode.RUNS);
                         })));
         host.registry().register(Command.of("github.viewRunLog", host.github()::viewRunLogPicked));
         host.registry().register(Command.of("github.refresh", host.github()::refresh));

@@ -112,8 +112,33 @@ final class GitHubCoordinator {
     /** Whether {@link #activityCheckedRoot} has at least one open PR or issue (gates the tool-window stripe). */
     private boolean hasActivity;
 
-    /** Open PR review tabs, keyed by PR number (one tab per PR; re-review re-selects + refreshes it). */
-    private final java.util.Map<Integer, PrReviewPane> reviewPanes = new java.util.HashMap<>();
+    /** A pull request is a number <em>in a repository</em>: #7 of two repositories are two pull requests. */
+    record ReviewKey(Path dir, int number) {}
+
+    /** Open PR review tabs, keyed by repository + PR number (one tab per PR; re-review refreshes it). */
+    private final java.util.Map<ReviewKey, PrReviewPane> reviewPanes = new java.util.HashMap<>();
+
+    /**
+     * The repository the tool window's rows were listed from. A row carries only a PR number / run id, so its
+     * actions must run there — not in whichever repository happens to be active when the row is clicked.
+     */
+    private Path panelDir;
+
+    /** Bumped per picker request, so only the latest picker opens (pickers are not generation-guarded by the service). */
+    private long pickGen;
+
+    /** The repository + branch the Git state was last seen with (see {@link #repositoryChanged}). */
+    private Path seenRoot;
+
+    private String seenBranch = "";
+    /** Whether the user has asked for the CI-checks roll-up (so a branch switch re-derives it). */
+    private boolean checksWanted;
+    /** Bumped per checks request and on every repository/branch change: a stale answer is dropped. */
+    private long checksGen;
+    /** Set by {@code github.refresh}: re-run the per-root probes, but keep their last answer meanwhile. */
+    private boolean remoteStale;
+
+    private boolean activityStale;
 
     GitHubCoordinator(CoordinatorHost host, GitCoordinator git, DiffCoordinator diff, WindowOps ops) {
         this.host = host;
@@ -189,16 +214,19 @@ final class GitHubCoordinator {
         if (root == null) {
             return false;
         }
-        if (!root.equals(activityCheckedRoot)) {
+        if (!root.equals(activityCheckedRoot) || activityStale) {
+            // A re-probe of the SAME root keeps its last answer while it runs: forcing "no activity" would
+            // close the open tool window on every github.refresh. A new root is unknown until probed.
+            boolean previous = root.equals(activityCheckedRoot) && hasActivity;
             activityCheckedRoot = root;
-            hasActivity = false;
+            activityStale = false;
+            hasActivity = previous;
             service.hasOpenActivity(root, any -> {
                 if (root.equals(activityCheckedRoot)) { // still the current root
                     hasActivity = any;
                     applyGating();
                 }
             });
-            return false;
         }
         return hasActivity;
     }
@@ -220,14 +248,17 @@ final class GitHubCoordinator {
         if (root == null) {
             return false;
         }
-        if (!root.equals(remoteCheckedRoot)) {
+        if (!root.equals(remoteCheckedRoot) || remoteStale) {
+            boolean previous = root.equals(remoteCheckedRoot) && remoteIsGitHub; // see hasOpenActivity()
             remoteCheckedRoot = root;
-            remoteIsGitHub = false;
+            remoteStale = false;
+            remoteIsGitHub = previous;
             git.service().branches(root, b -> {
-                remoteIsGitHub = GitHubRemote.isGitHub(b.remoteUrl());
-                applyGating();
+                if (root.equals(remoteCheckedRoot)) { // still the current root
+                    remoteIsGitHub = GitHubRemote.isGitHub(b.remoteUrl());
+                    applyGating();
+                }
             });
-            return false;
         }
         return remoteIsGitHub;
     }
@@ -237,30 +268,40 @@ final class GitHubCoordinator {
     /** Runs {@code then} with the repo working directory once GitHub is enabled + {@code gh} is usable + in a
      *  repo; otherwise echoes the precise reason (disabled / gh missing / not authenticated / no repo). */
     private void ready(Consumer<Path> then) {
-        if (!isEnabled()) {
-            host.setStatus(tr("statusbar.tip.githubDisabled"));
-            return;
-        }
+        readyIn(null, then);
+    }
+
+    /**
+     * {@link #ready(Consumer)} for an action that already belongs to a repository — a tool-window row, a PR
+     * review tab: {@code captured} (when non-null) is used instead of the active tab's repository, which is a
+     * different one, or none at all, by the time the row or the tab's own link is clicked. Returns the reason
+     * the action could not run (already echoed), or {@code null} when {@code then} ran.
+     */
+    private String readyIn(Path captured, Consumer<Path> then) {
+        String reason = null;
+        Path dir = null;
         GitHubService.Availability a = service.availability();
-        if (a == null) {
+        if (!isEnabled()) {
+            reason = tr("statusbar.tip.githubDisabled");
+        } else if (a == null) {
             service.detect(av -> applyGating()); // not probed yet — kick one off; the user can retry
-            host.setStatus(tr("status.github.checking"));
-            return;
+            reason = tr("status.github.checking");
+        } else if (!a.found()) {
+            reason = tr("status.github.ghNotFound");
+        } else if (!a.authenticated()) {
+            reason = tr("status.github.notAuthenticated");
+        } else {
+            dir = captured != null ? captured : contextDir();
+            if (dir == null) {
+                reason = tr("status.github.noRepo");
+            }
         }
-        if (!a.found()) {
-            host.setStatus(tr("status.github.ghNotFound"));
-            return;
-        }
-        if (!a.authenticated()) {
-            host.setStatus(tr("status.github.notAuthenticated"));
-            return;
-        }
-        Path dir = contextDir();
-        if (dir == null) {
-            host.setStatus(tr("status.github.noRepo"));
-            return;
+        if (reason != null) {
+            host.setStatus(reason);
+            return reason;
         }
         then.accept(dir);
+        return null;
     }
 
     /** The working directory for {@code gh}: the git repo root, else the active file's folder, else null. */
@@ -283,8 +324,9 @@ final class GitHubCoordinator {
      *  command). No background polling — checks refresh only here + after a PR checkout. */
     void refresh() {
         // Invalidate the per-root caches so the stripe re-evaluates (e.g. after the repo's first PR is opened).
-        remoteCheckedRoot = null;
-        activityCheckedRoot = null;
+        // Their last answers stand until the new ones arrive, so an open tool window is not closed meanwhile.
+        remoteStale = true;
+        activityStale = true;
         ifEnabled(() -> service.detect(a -> {
             applyGating();
             host.setStatus(tr(a.ready() ? "status.github.ready" : "status.github.notReady"));
@@ -292,6 +334,36 @@ final class GitHubCoordinator {
                 refreshChecks(contextDir());
             }
         }));
+    }
+
+    /**
+     * The active repository or its branch changed (told by {@code GitCoordinator.applyState} through the
+     * window). The tool-window gating is re-derived at once — a tab switch evaluates it before the
+     * asynchronous Git refresh has landed, so the stripe used to appear only on the <em>next</em> switch —
+     * and the CI roll-up, which describes one branch's pull request, is dropped rather than left showing the
+     * previous branch's result. After a branch change inside the same repository it is fetched again when the
+     * user has asked for it before; switching repositories only clears it (no {@code gh} call per tab switch).
+     */
+    void repositoryChanged(Path root, String branch) {
+        String now = branch == null ? "" : branch;
+        boolean sameRoot = java.util.Objects.equals(root, seenRoot);
+        if (sameRoot && now.equals(seenBranch)) {
+            return;
+        }
+        boolean branchSwitch = sameRoot && root != null && !seenBranch.isEmpty();
+        seenRoot = root;
+        seenBranch = now;
+        if (!isEnabled()) {
+            return;
+        }
+        checksGen++;
+        ops.setStatusBarChecks(null);
+        if (root != null) {
+            applyGating(); // losing the repository (a non-file tab) is still left to the tab-switch path
+        }
+        if (branchSwitch && checksWanted && ready()) {
+            refreshChecks(root);
+        }
     }
 
     /** Flips the {@code githubSupport} setting (the {@code view.toggleGithub} palette command). */
@@ -313,7 +385,7 @@ final class GitHubCoordinator {
 
     /** Checks out a specific PR by number (the panel's row action). */
     void checkoutNumber(int number) {
-        ready(dir -> doCheckout(dir, number));
+        readyIn(panelDir, dir -> doCheckout(dir, number));
     }
 
     private void doCheckout(Path dir, int number) {
@@ -342,7 +414,7 @@ final class GitHubCoordinator {
 
     /** Opens a specific PR's review tab by number (the panel's row action / double-click). */
     void reviewPrNumber(int number) {
-        ready(dir -> doPrDiff(dir, number));
+        readyIn(panelDir, dir -> doPrDiff(dir, number));
     }
 
     /**
@@ -364,7 +436,7 @@ final class GitHubCoordinator {
                 ghError(tr("status.github.diffFailed"), res.error());
                 return;
             }
-            openReview(number, detailSlot[0], res.files());
+            openReview(dir, number, detailSlot[0], res.files());
         };
         service.prView(dir, number, d -> {
             detailSlot[0] = d;
@@ -383,13 +455,14 @@ final class GitHubCoordinator {
      * otherwise a brand-new review of a single-file PR opens that file's diff directly (the overview adds
      * nothing), an empty diff reports a status, and a multi-file PR opens the {@link PrReviewPane}.
      */
-    private void openReview(int number, PrViewParser.PrDetail detail, List<PatchParser.FilePatch> files) {
-        PrReviewPane existing = reviewPanes.get(number);
+    private void openReview(Path dir, int number, PrViewParser.PrDetail detail, List<PatchParser.FilePatch> files) {
+        ReviewKey key = new ReviewKey(dir, number);
+        PrReviewPane existing = reviewPanes.get(key);
         if (existing != null && ops.selectTabOf(existing)) {
             existing.update(detail, files); // Refresh of an already-open tab
             return;
         }
-        reviewPanes.remove(number); // a stale entry whose tab was closed — rebuild
+        reviewPanes.remove(key); // a stale entry whose tab was closed — rebuild
         if (files.isEmpty()) {
             host.setStatus(tr("status.github.prDiffEmpty", number));
             return;
@@ -402,14 +475,16 @@ final class GitHubCoordinator {
                 number,
                 fp -> openFileDiff(number, fp),
                 () -> {
-                    PrReviewPane p = reviewPanes.get(number);
+                    PrReviewPane p = reviewPanes.get(key);
                     openAllFiles(number, p != null ? p.files() : files);
                 },
                 this::openUrl,
-                () -> reviewPrNumber(number),
-                () -> submitReview(number));
+                // The tab's own links act on the repository the pull request was opened from: with this tab
+                // active the Git context is the project's repository, or none at all in a No-Project window.
+                () -> readyIn(dir, d -> doPrDiff(d, number)),
+                () -> readyIn(dir, d -> submitReviewForm(d, number)));
         pane.update(detail, files);
-        reviewPanes.put(number, pane);
+        reviewPanes.put(key, pane);
         ops.addReviewTab(pane);
     }
 
@@ -420,34 +495,78 @@ final class GitHubCoordinator {
 
     // --- tool-window feeds (slice 2) -------------------------------------------------------------
 
-    /** Fetches open PRs for the tool window; delivers an empty list (with a status) when gh isn't usable. */
-    void fetchPrs(Consumer<List<PrListParser.PullRequest>> onResult) {
-        ready(dir -> service.prList(dir, res -> {
-            if (!res.ok()) {
-                host.setStatus(tr("status.github.prListFailed"));
-                onResult.accept(List.of());
-            } else {
-                onResult.accept(res.prs());
-            }
-        }));
+    /**
+     * Fetches open PRs for the tool window. Exactly one of the two callbacks always runs: {@code onError}
+     * gets the reason when {@code gh} isn't usable or the call failed (with gh's own message), so the window
+     * neither keeps its spinner nor passes a failure off as "no open pull requests".
+     */
+    void fetchPrs(Consumer<List<PrListParser.PullRequest>> onResult, Consumer<String> onError) {
+        String refused = readyIn(null, dir -> {
+            panelDir = dir;
+            service.prList(dir, res -> {
+                if (!res.ok()) {
+                    listFailed(tr("status.github.prListFailed"), res.error(), onError);
+                } else {
+                    onResult.accept(res.prs());
+                }
+            });
+        });
+        if (refused != null) {
+            onError.accept(refused);
+        }
     }
 
-    /** Fetches open issues for the tool window. */
-    void fetchIssues(Consumer<List<com.editora.github.IssueListParser.Issue>> onResult) {
-        ready(dir -> service.issueList(dir, res -> onResult.accept(res.ok() ? res.issues() : List.of())));
+    /** Fetches open issues for the tool window; see {@link #fetchPrs}. */
+    void fetchIssues(Consumer<List<com.editora.github.IssueListParser.Issue>> onResult, Consumer<String> onError) {
+        String refused = readyIn(null, dir -> {
+            panelDir = dir;
+            service.issueList(dir, res -> {
+                if (!res.ok()) {
+                    listFailed(tr("status.github.issueListFailed"), res.error(), onError);
+                } else {
+                    onResult.accept(res.issues());
+                }
+            });
+        });
+        if (refused != null) {
+            onError.accept(refused);
+        }
     }
 
-    /** Fetches recent workflow runs for the tool window. */
-    void fetchRuns(Consumer<List<RunListParser.WorkflowRun>> onResult) {
-        ready(dir -> service.runList(dir, res -> {
-            if (!res.ok()) {
-                // A repo with Actions disabled / no permission errors here — report, don't modal.
-                host.setStatus(tr("status.github.runListFailed"));
-                onResult.accept(List.of());
-            } else {
-                onResult.accept(res.runs());
-            }
-        }));
+    /** Fetches recent workflow runs for the tool window; see {@link #fetchPrs}. */
+    void fetchRuns(Consumer<List<RunListParser.WorkflowRun>> onResult, Consumer<String> onError) {
+        String refused = readyIn(null, dir -> {
+            panelDir = dir;
+            service.runList(dir, res -> {
+                if (!res.ok()) {
+                    // A repo with Actions disabled / no permission errors here — report, don't modal.
+                    listFailed(tr("status.github.runListFailed"), res.error(), onError);
+                } else {
+                    onResult.accept(res.runs());
+                }
+            });
+        });
+        if (refused != null) {
+            onError.accept(refused);
+        }
+    }
+
+    private void listFailed(String summary, String detail, Consumer<String> onError) {
+        String message = failureLine(summary, detail);
+        host.setStatus(message);
+        onError.accept(message);
+    }
+
+    /** {@code summary}, followed by the first non-blank line of {@code gh}'s own error text when there is one. */
+    static String failureLine(String summary, String detail) {
+        String first = detail == null
+                ? ""
+                : detail.lines()
+                        .map(String::strip)
+                        .filter(l -> !l.isEmpty())
+                        .findFirst()
+                        .orElse("");
+        return first.isEmpty() ? summary : summary + ": " + first;
     }
 
     // --- CI failure log → the shared Output console -----------------------------------------
@@ -461,7 +580,11 @@ final class GitHubCoordinator {
      * frames clickable — the runner's paths resolve to local files via the pure {@code run/RunnerPaths}.
      */
     void viewRunLog(long runId, String workflowName) {
-        ready(dir -> {
+        viewRunLog(panelDir, runId, workflowName);
+    }
+
+    private void viewRunLog(Path listedIn, long runId, String workflowName) {
+        readyIn(listedIn, dir -> {
             long gen = ++ciLogGen;
             // There's no live process to kill — Stop just abandons the pending delivery.
             ops.ciLogStarted(workflowName + " · run " + runId, () -> ciLogGen++);
@@ -487,7 +610,11 @@ final class GitHubCoordinator {
 
     /** Palette flow: pick a run (failed ones only, or all when none failed) and show its failure log. */
     void viewRunLogPicked() {
-        ready(dir -> service.runList(dir, res -> {
+        long pick = ++pickGen;
+        ready(dir -> service.runListOnce(dir, res -> {
+            if (pick != pickGen) {
+                return; // a newer picker was asked for
+            }
             if (!res.ok()) {
                 ghError(tr("status.github.runListFailed"), res.error());
                 return;
@@ -506,7 +633,7 @@ final class GitHubCoordinator {
                     r -> r.state().glyph() + "  " + r.workflowName() + "  " + r.displayTitle(),
                     r -> r.headBranch() + " · " + r.event(),
                     r -> r.workflowName() + " " + r.displayTitle() + " " + r.headBranch(),
-                    r -> viewRunLog(r.databaseId(), r.workflowName()));
+                    r -> viewRunLog(dir, r.databaseId(), r.workflowName()));
             picker.setOverlayHost(host.overlayHost());
             picker.show(host.window());
         }));
@@ -514,7 +641,7 @@ final class GitHubCoordinator {
 
     /** Re-runs a workflow run (optionally only its failed jobs), then refreshes the panel. */
     void rerunRun(long runId, boolean failedOnly) {
-        ready(dir -> {
+        readyIn(panelDir, dir -> {
             host.setStatus(tr("status.github.rerunning", runId));
             service.runRerun(dir, runId, failedOnly, r -> {
                 if (r.ok()) {
@@ -529,7 +656,7 @@ final class GitHubCoordinator {
 
     /** Cancels an in-flight workflow run, then refreshes the panel. */
     void cancelRun(long runId) {
-        ready(dir -> {
+        readyIn(panelDir, dir -> {
             host.setStatus(tr("status.github.cancelling", runId));
             service.runCancel(dir, runId, r -> {
                 if (r.ok()) {
@@ -566,11 +693,16 @@ final class GitHubCoordinator {
 
     /** Fetches the current branch's PR checks and pushes the roll-up to the status bar (null hides it). */
     private void refreshChecks(Path dir) {
+        long gen = ++checksGen;
         if (dir == null) {
             ops.setStatusBarChecks(null);
             return;
         }
+        checksWanted = true;
         service.prChecks(dir, 0, res -> {
+            if (gen != checksGen) {
+                return; // superseded, or the repository / branch changed while gh ran
+            }
             if (res.ok() && !res.runs().isEmpty()) {
                 ops.setStatusBarChecks(com.editora.github.ChecksParser.ChecksSummary.of(res.runs()));
             } else {
@@ -606,6 +738,11 @@ final class GitHubCoordinator {
         String oldName = cleanLabel(fp.oldPath());
         String newName = cleanLabel(fp.newPath());
         String name = !newName.isEmpty() ? newName : (!oldName.isEmpty() ? oldName : tr("github.pr.file"));
+        if (fp.oldLines().isEmpty() && fp.newLines().isEmpty()) {
+            // A pure rename, a mode-only change or a binary file: listed, but there is no text to compare.
+            host.setStatus(tr("status.github.prFileNoText", com.editora.github.PrReviewSummary.displayPath(fp)));
+            return;
+        }
         String leftName = !oldName.isEmpty() ? oldName : name;
         String rightName = !newName.isEmpty() ? newName : name;
         String leftText = String.join("\n", fp.oldLines());
@@ -779,11 +916,6 @@ final class GitHubCoordinator {
         ready(dir -> pickPr(tr("github.picker.reviewTitle"), pr -> submitReviewForm(dir, pr.number())));
     }
 
-    /** Opens the submit-review form for a specific PR (the review pane's "Submit review" link). */
-    void submitReview(int number) {
-        ready(dir -> submitReviewForm(dir, number));
-    }
-
     private void submitReviewForm(Path dir, int number) {
         KeymapManager keymap = ops.keymap();
         javafx.scene.control.ComboBox<PrReviewArgs.ReviewAction> actionBox = new javafx.scene.control.ComboBox<>();
@@ -861,7 +993,11 @@ final class GitHubCoordinator {
     /** Fetches open PRs and shows a picker; reports the failure / empty cases distinctly. */
     private void pickPr(String title, Consumer<PrListParser.PullRequest> onPick) {
         host.setStatus(tr("status.github.loadingPrs"));
-        service.prList(contextDir(), res -> {
+        long pick = ++pickGen;
+        service.prListOnce(contextDir(), res -> {
+            if (pick != pickGen) {
+                return; // a newer picker was asked for
+            }
             if (!res.ok()) {
                 ghError(tr("status.github.prListFailed"), res.error());
                 return;

@@ -39,9 +39,21 @@ public record GitStatus(boolean repo, String branch, String upstream, int ahead,
             return index == '?';
         }
 
-        /** Has staged changes (something different between HEAD and the index). */
+        /**
+         * An unmerged (conflicted) path — porcelain's {@code u} entries: {@code UU AU UA DU UD AA DD}. Its index
+         * holds the merge's stage 1/2/3 blobs, not a staged change, so it must never be offered for unstaging:
+         * {@code git reset HEAD -- <path>} drops those stages and Git forgets the path was ever conflicted.
+         */
+        public boolean unmerged() {
+            return index == 'U'
+                    || worktree == 'U'
+                    || (index == 'A' && worktree == 'A')
+                    || (index == 'D' && worktree == 'D');
+        }
+
+        /** Has staged changes (something different between HEAD and the index). Never an unmerged path. */
         public boolean staged() {
-            return !untracked() && index != '.';
+            return !untracked() && !unmerged() && index != '.';
         }
 
         /** Has unstaged worktree changes (something different between the index and the work tree). */

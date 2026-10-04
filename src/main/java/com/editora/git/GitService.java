@@ -645,8 +645,8 @@ public final class GitService {
      * to resolve.
      */
     public static String repoRelative(Path root, Path file) {
-        if (root == null || file == null) {
-            return null;
+        if (root == null || file == null || root.getFileSystem() != file.getFileSystem()) {
+            return null; // a path on another file system (a remote tab) is never inside this repository
         }
         Path r = realPath(root);
         Path f = realPath(file);

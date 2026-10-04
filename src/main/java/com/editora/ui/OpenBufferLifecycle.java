@@ -27,8 +27,8 @@ final class OpenBufferLifecycle {
         for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf.apply(tab);
             Path path = buffer == null ? null : buffer.getPath();
-            if (path == null) {
-                continue;
+            if (path == null || !com.editora.config.PathKeys.sameFileSystem(path, target)) {
+                continue; // a buffer on another file system (a remote tab) is never at or under a local target
             }
             try {
                 Path normalized = path.toAbsolutePath().normalize();
@@ -36,9 +36,7 @@ final class OpenBufferLifecycle {
                     out.add(buffer);
                 }
             } catch (java.nio.file.ProviderMismatchException ignored) {
-                if (com.editora.config.PathKeys.sameNormalized(path, target)) {
-                    out.add(buffer);
-                }
+                // Unreachable after the file-system check above; kept so a provider quirk cannot abort the walk.
             }
         }
         return List.copyOf(out);
