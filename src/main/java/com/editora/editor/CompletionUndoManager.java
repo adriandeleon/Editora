@@ -99,6 +99,41 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
         };
     }
 
+    /** Runs {@code action} with its edits grouped, for undo and redo, with the edit now on top of the history. */
+    private void joinLast(Runnable action) {
+        C last = delegate.getNextUndo();
+        if (closed || recording != null || last == null || delegate.isPerformingAction()) {
+            action.run();
+            return;
+        }
+        var group = new Group<C>();
+        group.changes.add(last);
+        if (groups.size() == MAX_GROUPS) groups.removeFirst();
+        groups.addLast(group);
+        begin(group);
+        try {
+            action.run();
+        } finally {
+            end();
+        }
+    }
+
+    /**
+     * Runs {@code action} so that whatever it edits is undone and redone together with the edit that was
+     * just committed — a follow-up that belongs to the user's keystroke (the paired-tag rename) must not
+     * be a separate undo step, or one undo leaves the document in a state the user never made.
+     */
+    static void joinLastEdit(CodeArea first, CodeArea second, Runnable action) {
+        Runnable run = action;
+        for (CodeArea area : second == null ? List.of(first) : List.of(first, second)) {
+            if (area.getUndoManager() instanceof CompletionUndoManager<?> manager) {
+                Runnable inner = run;
+                run = () -> manager.joinLast(inner);
+            }
+        }
+        run.run();
+    }
+
     static Runnable begin(CodeArea first, CodeArea second) {
         var ends = new ArrayList<Runnable>();
         for (CodeArea area : second == null ? List.of(first) : List.of(first, second)) {

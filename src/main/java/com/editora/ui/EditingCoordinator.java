@@ -152,7 +152,9 @@ final class EditingCoordinator {
             return;
         }
         area.cut();
-        adoptClipboardAsKill(); // Emacs kill-region: the cut text joins the kill ring
+        if (had) {
+            adoptClipboardAsKill(); // Emacs kill-region: the cut text joins the kill ring
+        }
         deactivateMark();
         host.refreshPasteState(); // clipboard now has content
         host.setStatus(tr(had ? "status.cut" : "status.nothingToCut"));
@@ -189,7 +191,9 @@ final class EditingCoordinator {
         if (had) {
             area.deselect(); // collapse the selection once copied (leaves the caret in place)
         }
-        adoptClipboardAsKill(); // Emacs kill-ring-save
+        if (had) {
+            adoptClipboardAsKill(); // Emacs kill-ring-save (nothing copied → the ring is left alone)
+        }
         deactivateMark();
         host.refreshPasteState(); // clipboard now has content
         host.setStatus(tr(had ? "status.copied" : "status.nothingToCopy"));
@@ -985,6 +989,7 @@ final class EditingCoordinator {
     private final class QueryReplaceSession {
         private final EditorBuffer buffer;
         private final CodeArea area;
+        private final javafx.scene.Node keyHost;
         private final com.editora.editor.QueryReplace.Spec spec;
         private final javafx.event.EventHandler<javafx.scene.input.KeyEvent> pressed = this::onPressed;
         private final javafx.event.EventHandler<javafx.scene.input.KeyEvent> typed = this::onTyped;
@@ -1001,6 +1006,7 @@ final class EditingCoordinator {
         QueryReplaceSession(EditorBuffer buffer, com.editora.editor.QueryReplace.Spec spec) {
             this.buffer = buffer;
             this.area = buffer.getFocusedArea();
+            this.keyHost = keyHost(area);
             this.spec = spec;
             this.from = area.getCaretPosition();
         }
@@ -1013,8 +1019,8 @@ final class EditingCoordinator {
             active = true;
             queryReplaceSession = this;
             area.getProperties().put("editora.ownsKeys", Boolean.TRUE);
-            area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, pressed);
-            area.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, typed);
+            keyHost.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, pressed);
+            keyHost.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, typed);
             area.focusedProperty().addListener(focusLost);
         }
 
@@ -1084,11 +1090,12 @@ final class EditingCoordinator {
                 skip();
             } else if (c == javafx.scene.input.KeyCode.ENTER
                     || c == javafx.scene.input.KeyCode.ESCAPE
-                    || c == javafx.scene.input.KeyCode.Q
                     || (c == javafx.scene.input.KeyCode.G && e.isControlDown())) {
                 finish();
             }
-            // Every other pressed key is swallowed; the character commands arrive as KEY_TYPED.
+            // Every other pressed key is swallowed; the character commands — q included, whose KEY_TYPED
+            // would otherwise arrive after the session had gone and be typed into the document — arrive
+            // as KEY_TYPED.
         }
 
         private void onTyped(javafx.scene.input.KeyEvent e) {
@@ -1121,8 +1128,8 @@ final class EditingCoordinator {
                 return;
             }
             active = false;
-            area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, pressed);
-            area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, typed);
+            keyHost.removeEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, pressed);
+            keyHost.removeEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, typed);
             area.focusedProperty().removeListener(focusLost);
             area.getProperties().remove("editora.ownsKeys");
             buffer.clearSearchMatches();
@@ -1472,14 +1479,18 @@ final class EditingCoordinator {
         // request is asynchronous by design — this press uses the local ladder, and every press after it
         // uses the grammar-accurate chain, so expand never waits on a round-trip.
         EditorBuffer buffer = host.activeBuffer();
-        if (buffer != null && !smartSelect.continues(start, end)) {
+        boolean newLadder = !smartSelect.continues(start, end);
+        if (buffer != null && newLadder) {
             host.lspCoordinator().requestSelectionChain(buffer, area.getCurrentParagraph(), area.getCaretColumn());
         }
+        // The cached chain still belongs to the previous ladder's origin until that request answers (same
+        // buffer, no edit since, so it looks valid): using it on this press selected the smallest old range
+        // that happened to contain the new caret — typically the whole class body.
         int[] next = smartSelect.expand(
                 area.getText(),
                 start,
                 end,
-                buffer == null ? null : host.lspCoordinator().selectionChain(buffer));
+                buffer == null || newLadder ? null : host.lspCoordinator().selectionChain(buffer));
         if (next == null) {
             return; // already the whole document
         }
@@ -1530,31 +1541,69 @@ final class EditingCoordinator {
         }
         CodeArea area = buffer.getFocusedArea();
         host.setStatus(tr("status.zapToChar"));
-        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, new javafx.event.EventHandler<>() {
-            @Override
-            public void handle(javafx.scene.input.KeyEvent e) {
-                area.removeEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, this);
-                e.consume();
-                String ch = e.getCharacter();
-                if (ch == null || ch.isEmpty() || ch.charAt(0) < ' ') {
-                    host.setStatus(""); // Escape / no printable character: cancel
-                    return;
-                }
-                com.editora.editops.EmacsEdits.Edit edit =
-                        com.editora.editops.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch.charAt(0));
-                if (edit == null) {
-                    host.setStatus(tr("status.zapNotFound", ch));
-                    return;
-                }
-                boolean merge = continuesPreviousKill(buffer, area.getCaretPosition());
-                String killed = area.getText(edit.from(), edit.to());
-                area.replaceText(edit.from(), edit.to(), edit.replacement());
-                area.moveTo(edit.caret());
-                pushKill(buffer, area, killed, KillRing.Direction.FORWARD, merge);
-                deactivateMark();
-                host.setStatus("");
+        new ZapSession(buffer, area).arm();
+    }
+
+    /**
+     * The node a modal key session (query-replace, zap-to-char) listens on: the area's parent. JavaFX runs
+     * <em>every</em> filter registered on one node, in registration order and whether or not an earlier one
+     * consumed the event, so a session filter added to the area itself ran after the buffer's own typing
+     * assists — auto-indent, smart Backspace/Tab and auto-close had already edited the document with the
+     * key the session meant to own. A filter on an ancestor runs first, and consuming there ends dispatch.
+     */
+    private static javafx.scene.Node keyHost(CodeArea area) {
+        return area.getParent() != null ? area.getParent() : area;
+    }
+
+    /** The armed half of {@code zap-to-char}: takes the next typed character, or stands down. */
+    private final class ZapSession implements javafx.event.EventHandler<javafx.scene.input.KeyEvent> {
+        private final EditorBuffer buffer;
+        private final CodeArea area;
+        private final javafx.scene.Node keyHost;
+        // Moving the caret or leaving the editor cancels, as any non-character key does in Emacs: an armed
+        // zap that survived navigation deleted text at the next ordinary keystroke, much later.
+        private final javafx.beans.InvalidationListener cancel = obs -> disarm();
+
+        ZapSession(EditorBuffer buffer, CodeArea area) {
+            this.buffer = buffer;
+            this.area = area;
+            this.keyHost = keyHost(area);
+        }
+
+        void arm() {
+            keyHost.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, this);
+            area.caretPositionProperty().addListener(cancel);
+            area.focusedProperty().addListener(cancel);
+        }
+
+        private void disarm() {
+            keyHost.removeEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, this);
+            area.caretPositionProperty().removeListener(cancel);
+            area.focusedProperty().removeListener(cancel);
+            host.setStatus("");
+        }
+
+        @Override
+        public void handle(javafx.scene.input.KeyEvent e) {
+            disarm();
+            e.consume();
+            String ch = e.getCharacter();
+            if (ch == null || ch.isEmpty() || ch.charAt(0) < ' ') {
+                return; // Escape / no printable character: cancel
             }
-        });
+            com.editora.editops.EmacsEdits.Edit edit =
+                    com.editora.editops.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch.charAt(0));
+            if (edit == null) {
+                host.setStatus(tr("status.zapNotFound", ch));
+                return;
+            }
+            boolean merge = continuesPreviousKill(buffer, area.getCaretPosition());
+            String killed = area.getText(edit.from(), edit.to());
+            area.replaceText(edit.from(), edit.to(), edit.replacement());
+            area.moveTo(edit.caret());
+            pushKill(buffer, area, killed, KillRing.Direction.FORWARD, merge);
+            deactivateMark();
+        }
     }
 
     /**
@@ -1833,8 +1882,19 @@ final class EditingCoordinator {
             host.setStatus(tr("status.stringops.noChange"));
             return;
         }
+        boolean hadSelection = sel.getLength() > 0;
+        int line = area.getCurrentParagraph();
+        int column = area.getCaretColumn();
         area.replaceText(from, to, after);
-        area.selectRange(from, from + after.length());
+        if (hadSelection) {
+            area.selectRange(from, from + after.length());
+        } else {
+            // A whole-buffer transform from a bare caret must not leave the document selected (the next
+            // key would replace it) nor throw the view to the end: put the caret back on its line.
+            int par = Math.min(line, area.getParagraphs().size() - 1);
+            area.moveTo(par, Math.min(column, area.getParagraphLength(par)));
+            area.requestFollowCaret();
+        }
         area.requestFocus();
     }
 

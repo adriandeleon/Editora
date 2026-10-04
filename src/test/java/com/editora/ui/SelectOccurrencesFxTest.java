@@ -63,6 +63,17 @@ class SelectOccurrencesFxTest {
     }
 
     @Test
+    void aWordSeededFromTheCaretMatchesWholeWordsOnly() throws Exception {
+        EditorBuffer b = buffer("int id = 1;\nboolean valid = width > id;\n");
+        int count = FxTestSupport.callOnFx(() -> {
+            CodeArea a = FxTestSupport.field(b, "area");
+            a.moveTo(5); // inside the first "id", no selection
+            return b.selectAllOccurrences();
+        });
+        assertEquals(2, count, "the two id identifiers, not the id inside valid and width");
+    }
+
+    @Test
     void caseSensitiveMatching() throws Exception {
         EditorBuffer b = buffer("Foo foo FOO foo");
         int count = FxTestSupport.callOnFx(() -> {

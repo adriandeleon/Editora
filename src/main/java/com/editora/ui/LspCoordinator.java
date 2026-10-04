@@ -1957,6 +1957,7 @@ final class LspCoordinator {
     private EditorBuffer selectionChainBuffer;
 
     private long selectionChainVersion = -1;
+    private int selectionChainRequest;
     private List<int[]> selectionChain = List.of();
 
     /**
@@ -1982,16 +1983,19 @@ final class LspCoordinator {
      */
     void requestSelectionChain(EditorBuffer buffer, int line, int character) {
         Path path = buffer == null ? null : buffer.getPath();
+        // The cache is anchored at one ladder's origin: drop it now, so presses made before this request
+        // answers fall back to the local ladder instead of walking the previous ladder's chain.
+        selectionChainBuffer = null;
+        selectionChain = List.of();
+        selectionChainVersion = -1;
+        int request = ++selectionChainRequest;
         if (path == null || !lspManager.isManaged(path) || !lspManager.supportsSelectionRanges(path)) {
-            selectionChainBuffer = null;
-            selectionChain = List.of();
-            selectionChainVersion = -1;
             return;
         }
         long version = buffer.docVersion();
         lspManager.selectionRanges(path, line, character, buffer.lineStartOffsets(), chain -> {
-            if (buffer.docVersion() != version) {
-                return; // stale: the offsets were computed against text that has since changed
+            if (buffer.docVersion() != version || request != selectionChainRequest) {
+                return; // stale: the text has since changed, or a newer ladder has asked
             }
             selectionChainBuffer = buffer;
             selectionChainVersion = version;

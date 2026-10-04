@@ -33,6 +33,8 @@ public final class TagAutoClose {
         int tagStart = -1; // position of the '<' the caret is inside, -1 = in text content
         char quote = 0;
         char lastMeaningful = 0;
+        int braces = 0; // JSX {expression} depth: operators are legitimate inside one
+        boolean operator = false;
         for (int k = 0; k < n; k++) {
             char c = beforeCaret.charAt(k);
             if (tagStart < 0) {
@@ -40,6 +42,8 @@ public final class TagAutoClose {
                     tagStart = k;
                     quote = 0;
                     lastMeaningful = 0;
+                    braces = 0;
+                    operator = false;
                 }
                 continue;
             }
@@ -57,9 +61,21 @@ public final class TagAutoClose {
             } else if (c == '<') {
                 tagStart = k; // stray '<' inside a tag: treat it as a fresh tag start
                 lastMeaningful = 0;
+                braces = 0;
+                operator = false;
             } else if (!Character.isWhitespace(c)) {
                 lastMeaningful = c;
+                if (c == '{') {
+                    braces++;
+                } else if (c == '}') {
+                    braces = Math.max(0, braces - 1);
+                } else if (braces == 0 && (c == '&' || c == '|' || c == ';')) {
+                    operator = true;
+                }
             }
+        }
+        if (operator) {
+            return null; // "if (i<n && j" in an inline script: a comparison, not a tag
         }
         if (tagStart < 0) {
             return null; // the caret is in text content — the > is plain text

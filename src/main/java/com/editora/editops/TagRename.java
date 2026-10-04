@@ -155,7 +155,7 @@ public final class TagRename {
                 int nameEnd = nameEnd(text, nameStart);
                 String name = text.substring(nameStart, nameEnd);
                 boolean isTarget = nameStart == targetNameStart;
-                if (isTarget && !targetIsClose) {
+                if (isTarget && (!targetIsClose || underConstruction(text, nameEnd))) {
                     return null; // region said opener but the lexer sees a closer — bail
                 }
                 if (isTarget || namesEqual(name, oldName, html)) {
@@ -175,7 +175,7 @@ public final class TagRename {
                 // and its close tag still go by the old one.
                 String effName = isTarget ? oldName : name;
                 boolean selfClosing = end[1] == 1 || (html && VOID_ELEMENTS.contains(lower(effName)));
-                if (isTarget && (targetIsClose || selfClosing)) {
+                if (isTarget && (targetIsClose || selfClosing || underConstruction(text, nameEnd))) {
                     return null; // region said close but lexer sees an opener (or a self-closer) — bail
                 }
                 if (!selfClosing) {
@@ -260,6 +260,34 @@ public final class TagRename {
             i++;
         }
         return new int[] {n, 0};
+    }
+
+    /**
+     * Whether the tag whose name ends at {@code from} is still being typed: its attribute region meets
+     * another {@code <} — or the end of the text — before its own {@code >}. Such a tag is a new one (the
+     * user has typed {@code <pr} on the way to {@code <pre>}), not a rename of an existing element, so it
+     * must not be paired with a closer that happens to bear the name typed so far.
+     */
+    private static boolean underConstruction(String text, int from) {
+        int n = text.length();
+        int i = from;
+        while (i < n) {
+            char c = text.charAt(i);
+            if (c == '"' || c == '\'') {
+                int close = text.indexOf(c, i + 1);
+                if (close < 0) {
+                    return true;
+                }
+                i = close + 1;
+            } else if (c == '>') {
+                return false;
+            } else if (c == '<') {
+                return true;
+            } else {
+                i++;
+            }
+        }
+        return true;
     }
 
     /** Position of {@code </name} (case-insensitive) at/after {@code from} — for raw-text content. */

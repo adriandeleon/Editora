@@ -5431,7 +5431,7 @@ public class EditorBuffer implements TabContent {
     /**
      * Selects every occurrence of the current selection (or, with none, the word under the caret) as a
      * multi-caret selection — VS Code's {@code selectHighlights} (Ctrl+Shift+L). Case-sensitive literal
-     * matching. Returns the number of carets placed (0 when there's nothing to match).
+     * matching (whole-word when seeded from the caret's word). Returns the number of carets placed (0 when there's nothing to match).
      */
     public int selectAllOccurrences() {
         CodeArea a = focusedArea != null ? focusedArea : area;
@@ -5450,7 +5450,8 @@ public class EditorBuffer implements TabContent {
             query = text.substring(w[0], w[1]);
             anchor = w[0];
         }
-        List<int[]> matches = SearchMatcher.matches(text, query, true, false, false);
+        // A query seeded from the word under a bare caret matches whole words only (id, not valid / width).
+        List<int[]> matches = SearchMatcher.matches(text, query, true, false, sel.isEmpty());
         return placeOccurrenceCarets(matches, anchor);
     }
 

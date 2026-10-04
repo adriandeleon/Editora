@@ -75,6 +75,31 @@ class KillRingFxTest {
         return FxTestSupport.callOnFx(() -> b.getArea().getText());
     }
 
+    // --- an empty cut/copy -------------------------------------------------------------------------
+
+    @Test
+    void cutOrCopyWithNothingSelectedLeavesTheKillRingAlone() throws Exception {
+        EditorBuffer b = open("alpha\nbeta\n", 0, 2);
+        boolean copyLine = fx.shared.getSettings().isCopyLineWhenNoSelection();
+        try {
+            FxTestSupport.runOnFx(() -> {
+                fx.shared.getSettings().setCopyLineWhenNoSelection(false);
+                ring.save("A");
+                ring.save("B");
+                setClipboard("A"); // an older entry is still on the clipboard
+            });
+            run("edit.copy");
+            run("edit.cut");
+            assertEquals(
+                    java.util.List.of("A", "B"),
+                    FxTestSupport.callOnFx(
+                            () -> ring.entries().stream().sorted().toList()));
+            assertEquals("alpha\nbeta\n", text(b));
+        } finally {
+            FxTestSupport.runOnFx(() -> fx.shared.getSettings().setCopyLineWhenNoSelection(copyLine));
+        }
+    }
+
     // --- CRLF clipboard text (what another Windows application puts there) -------------------------
 
     @Test
