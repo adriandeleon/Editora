@@ -392,6 +392,11 @@ public class FindReplaceBar extends HBox {
 
     /** Recomputes the full match set for the current query/options, highlights all, and selects the nearest. */
     private void recompute() {
+        recompute(searchAnchor);
+    }
+
+    /** As {@link #recompute()}, selecting the first match at/after {@code anchor} instead of the open-time caret. */
+    private void recompute(int anchor) {
         EditorBuffer buffer = activeBuffer.get();
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
         String query = findField.getText();
@@ -423,7 +428,7 @@ public class FindReplaceBar extends HBox {
             status.accept(tr("find.notFound", query));
             return;
         }
-        activeIndex = SearchMatcher.nextIndex(matches, searchAnchor, true);
+        activeIndex = SearchMatcher.nextIndex(matches, anchor, true);
         applyActive(buffer, area, false);
     }
 
@@ -551,8 +556,12 @@ public class FindReplaceBar extends HBox {
         }
         int start = area.getSelection().getStart();
         int end = area.getSelection().getEnd();
-        recompute();
-        boolean currentMatch = matches.stream().anyMatch(m -> m[0] == start && m[1] == end);
+        // Validate the selection against a fresh match list WITHOUT recompute(): that re-selects the first
+        // match after the open-time anchor, and the replace below then rewrote that match instead of this one.
+        String query = findField.getText();
+        boolean currentMatch =
+                !query.isEmpty() && computeMatches(area, query).stream().anyMatch(m -> m[0] == start && m[1] == end);
+        int next = start;
         if (end > start && inScope(start, end) && currentMatch) {
             String matched = area.getText(start, end);
             String repl;
@@ -562,10 +571,12 @@ public class FindReplaceBar extends HBox {
                 status.accept(tr("find.badReplacement", describe(badReference)));
                 return;
             }
-            area.replaceSelection(repl);
+            area.replaceText(start, end, repl); // by range: never whatever happens to be selected by now
+            next = start + repl.length();
         }
-        recompute();
-        navigate(true);
+        // Move on to the first match after the replaced text (or, when the selection was not a match, the
+        // first one at/after it) — the next match in document order, not one relative to the stale anchor.
+        recompute(next);
     }
 
     /**

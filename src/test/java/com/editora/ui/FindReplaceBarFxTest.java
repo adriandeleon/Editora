@@ -378,4 +378,61 @@ class FindReplaceBarFxTest {
         });
         assertEquals("alpha", h.content());
     }
+
+    // --- Replace acts on the selected match, not on the first one after the open-time caret ---
+
+    @Test
+    void replaceCurrentReplacesTheSelectedMatchNotTheFirstOne() throws Exception {
+        Harness h = harness("foo a\nfoo b\nfoo c\nfoo d\n");
+        FxTestSupport.runOnFx(() -> {
+            h.bar.show(false); // caret at 0: the bar anchors on the first match
+            h.query("foo", "X"); // selects the first foo
+            h.bar.findNext();
+            h.bar.findNext();
+            assertEquals(12, h.area().getSelection().getStart(), "the third foo is the selected match");
+            h.bar.replaceCurrentMatch();
+        });
+        assertEquals("foo a\nfoo b\nX c\nfoo d\n", h.content());
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(16, h.area().getSelection().getStart(), "and the match after it is selected next");
+            assertEquals(19, h.area().getSelection().getEnd());
+        });
+    }
+
+    @Test
+    void repeatedReplaceWalksTheMatchesInOrderWithEachOnesOwnGroups() throws Exception {
+        Harness h = harness("user_id = 1\norder_id = 2\nitem_id = 3\ncart_id = 4\n");
+        FxTestSupport.runOnFx(() -> {
+            h.bar.show(false);
+            h.toggle("regex", true);
+            h.query("(\\w+)_id", "$1Id");
+            h.bar.findNext(); // order_id
+            h.bar.findNext(); // item_id
+            assertEquals("item_id", h.area().getSelectedText());
+            h.bar.replaceCurrentMatch();
+        });
+        assertEquals("user_id = 1\norder_id = 2\nitemId = 3\ncart_id = 4\n", h.content());
+        FxTestSupport.runOnFx(() -> {
+            assertEquals("cart_id", h.area().getSelectedText());
+            h.bar.replaceCurrentMatch(); // wraps to user_id
+            h.bar.replaceCurrentMatch(); // then order_id
+            h.bar.replaceCurrentMatch();
+        });
+        assertEquals("userId = 1\norderId = 2\nitemId = 3\ncartId = 4\n", h.content());
+    }
+
+    @Test
+    void preserveCaseUsesTheSelectedMatchesOwnCasing() throws Exception {
+        Harness h = harness("FOO one\nfoo two\nFoo three\n");
+        FxTestSupport.runOnFx(() -> {
+            h.bar.show(false);
+            h.query("foo", "bar");
+            h.toggle("preserveCase", true);
+            h.bar.findNext();
+            h.bar.replaceCurrentMatch();
+            h.bar.replaceCurrentMatch();
+            h.bar.replaceCurrentMatch();
+        });
+        assertEquals("BAR one\nbar two\nBar three\n", h.content());
+    }
 }

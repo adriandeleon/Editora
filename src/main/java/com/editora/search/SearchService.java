@@ -219,7 +219,62 @@ public final class SearchService {
                 path -> !openKeys.contains(root.resolve(path).toAbsolutePath().normalize()))) {
             out.add(new FileResult(root.resolve(fr.file().toString()).normalize(), fr.matches()));
         }
+        if (!sameInBothEngines(query)) {
+            truncated[0] |= rematch(out, query, SearchService::readText, MAX_MATCHES + 1, () -> cancelled(generation));
+        }
         return out;
+    }
+
+    /**
+     * Whether ripgrep and the Java matcher are certain to report the same spans: only a case-sensitive
+     * literal without whole-word. A regex is read by two dialects ({@code [[:digit:]]} is a POSIX class to
+     * ripgrep and the character set {@code :digt} to {@code java.util.regex}; {@code \<} {@code \>} are word
+     * anchors to one and literal brackets to the other), {@code -w} is not {@code \b…\b}, and the two fold
+     * case differently.
+     */
+    static boolean sameInBothEngines(SearchQuery query) {
+        return !query.regex() && !query.wholeWord() && query.caseSensitive();
+    }
+
+    /**
+     * Turns ripgrep's hits into a file pre-filter: each listed file's matches are recomputed with the Java
+     * matcher — the engine Replace All and open buffers use — and a file where it finds nothing is dropped.
+     * One engine then decides both what the panel lists and what Replace All rewrites; before, Replace All
+     * re-matched the listed files with {@code java.util.regex} and rewrote spans ripgrep never previewed.
+     * A file the reader cannot return (null: not UTF-8, vanished) keeps ripgrep's matches — Replace All cannot
+     * read it either, so it reports the file as failed instead of rewriting it.
+     *
+     * @return true when the {@code limit} cut the list short
+     */
+    static boolean rematch(
+            List<FileResult> files,
+            SearchQuery query,
+            java.util.function.Function<Path, String> reader,
+            int limit,
+            java.util.function.BooleanSupplier cancelled) {
+        List<FileResult> rematched = new ArrayList<>();
+        int total = 0;
+        boolean truncated = false;
+        for (FileResult fr : files) {
+            if (cancelled.getAsBoolean()) {
+                break;
+            }
+            if (total >= limit) {
+                truncated = true;
+                break;
+            }
+            String content = reader.apply(fr.file());
+            List<LineMatch> ms = content == null
+                    ? fr.matches()
+                    : MultiFileSearch.matchesInText(content, query, limit - total, MultiFileSearch.UNICODE_CLASSES);
+            if (!ms.isEmpty()) {
+                rematched.add(new FileResult(fr.file(), ms));
+                total += ms.size();
+            }
+        }
+        files.clear();
+        files.addAll(rematched);
+        return truncated;
     }
 
     /** On-disk search via the built-in walker (dot-dir/oversize/binary skipping + include/exclude globs). */
